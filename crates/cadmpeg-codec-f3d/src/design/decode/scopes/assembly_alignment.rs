@@ -143,7 +143,11 @@ pub(super) fn exact_assembly_alignment(
                 Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
             };
-            let form = match exact_legacy_as_built_421_solved_frame(bytes, records, scope) {
+            let solved_frame = match exact_legacy_as_built_421_solved_frame(ctx, bytes, records, scope) {
+                Ok(solved_frame) => solved_frame,
+                Err(error) => return Some(Err(error)),
+            };
+            let form = match solved_frame {
                 Some(solved_frame) => DesignAssemblyAlignmentForm::SolvedOnly {
                     solved_frame,
                     limits: Some(exact.limits),

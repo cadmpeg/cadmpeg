@@ -21,7 +21,8 @@ use crate::records::{
     parameters::DesignParameterOwner,
     recipes::ConstructionRecipe,
 };
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use std::collections::HashMap;
 
 use super::scopes::hole::exact_hole_construction;
@@ -229,10 +230,12 @@ pub(super) fn exact_legacy_as_built_421_alignment(
 }
 
 pub(super) fn exact_legacy_as_built_421_solved_frame(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-) -> Option<DesignAssemblySolvedFrame> {
+) -> Result<Option<DesignAssemblySolvedFrame>, CodecError> {
+    let parsed = (|| -> Option<Result<DesignAssemblySolvedFrame, CodecError>> {
     let generation = crate::design::assembly::legacy_as_built_421_generation(
         scope.frame_length(),
         scope.class_tag.as_str(),
@@ -247,18 +250,22 @@ pub(super) fn exact_legacy_as_built_421_solved_frame(
     }
     let frame_record_index = frame_reference.value;
     let expected_class_tag = generation.frame_class_tag();
-    let mut frame_candidates =
-        records
-            .offsets(frame_record_index)
-            .iter()
-            .copied()
-            .filter(|frame_start| {
-                exact_indexed_header_at(bytes, *frame_start, frame_record_index).as_deref()
-                    == Some(expected_class_tag)
-            });
-    let frame_start = frame_candidates.next()?;
-    if frame_candidates.next().is_some() {
-        return None;
+    let mut frame_candidates = records.offsets(frame_record_index).iter().copied().filter_map(
+        |frame_start| match exact_indexed_header_at(ctx, bytes, frame_start, frame_record_index) {
+            Ok(Some(class_tag)) if class_tag == expected_class_tag => Some(Ok(frame_start)),
+            Ok(Some(_)) | Ok(None) => None,
+            Err(error) => Some(Err(error)),
+        },
+    );
+    let frame_start = match frame_candidates.next() {
+        Some(Ok(frame_start)) => frame_start,
+        Some(Err(error)) => return Some(Err(error)),
+        None => return None,
+    };
+    match frame_candidates.next() {
+        Some(Ok(_)) => return None,
+        Some(Err(error)) => return Some(Err(error)),
+        None => {}
     }
     let frame_length = generation.frame_length();
     let matrix_prefix = generation.matrix_prefix();
@@ -277,14 +284,17 @@ pub(super) fn exact_legacy_as_built_421_solved_frame(
             as_built_421_frame_297::MATRIX_PREFIX_VALUE
         }
     };
-    if exact_indexed_header_at(
+    let paired_class_tag = match exact_indexed_header_at(
+        ctx,
         bytes,
         frame_start.checked_add(frame_length)?,
         frame_record_index,
-    )
-    .as_deref()
-        != Some(generation.frame_paired_class_tag())
-    {
+    ) {
+        Ok(Some(class_tag)) => class_tag,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
+    if paired_class_tag != generation.frame_paired_class_tag() {
         return None;
     }
     if bytes
@@ -294,14 +304,23 @@ pub(super) fn exact_legacy_as_built_421_solved_frame(
         return None;
     }
     let transform_at = frame_start.checked_add(transform_offset)?;
-    Some(DesignAssemblySolvedFrame {
+    let class_tag = match ctx.copy_retained_text(expected_class_tag, "copy F3D As-built frame class tag") {
+        Ok(class_tag) => class_tag,
+        Err(error) => return Some(Err(error)),
+    };
+    let Ok(class_tag) = class_tag.try_into() else {
+        return None;
+    };
+    Some(Ok(DesignAssemblySolvedFrame {
         reference_record_index: frame_record_index,
         reference_offset: frame_reference.offset,
         record_byte_offset: u64::try_from(frame_start).ok()?,
-        class_tag: expected_class_tag.to_owned().try_into().ok()?,
+        class_tag,
         transform: rigid_transform_at(bytes, transform_at)?,
         transform_offset: u64::try_from(transform_at).ok()?,
-    })
+    }))
+    })();
+    parsed.transpose()
 }
 
 /// Maximum component error accepted when a legacy hole direction is compared
@@ -424,8 +443,16 @@ recipes,
         Ok(None) => return None,
         Err(error) => return Some(Err(error)),
     };
-    let point_class_tag = indexed_class_at(bytes, point.point_record_byte_offset)?;
-    let hole_class_tag = indexed_class_at(bytes, hole.point_record_byte_offset)?;
+    let point_class_tag = match indexed_class_at(ctx, bytes, point.point_record_byte_offset) {
+        Ok(Some(class_tag)) => class_tag,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
+    let hole_class_tag = match indexed_class_at(ctx, bytes, hole.point_record_byte_offset) {
+        Ok(Some(class_tag)) => class_tag,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     Some(Ok(
         crate::records::feature::assembly::DesignAssemblyLegacyOperands::new(
             DesignAssemblyLegacyOperand {
@@ -445,10 +472,27 @@ recipes,
     })().transpose()
 }
 
-fn indexed_class_at(bytes: &[u8], byte_offset: u64) -> Option<String> {
-    let start = usize::try_from(byte_offset).ok()?;
-    let (class_tag, after_tag) = lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
-    (after_tag == start.checked_add(7)?).then(|| class_tag.to_owned())
+fn indexed_class_at(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    byte_offset: u64,
+) -> Result<Option<String>, CodecError> {
+    let Ok(start) = usize::try_from(byte_offset) else {
+        return Ok(None);
+    };
+    let Some((class_tag, after_tag)) =
+        lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)
+    else {
+        return Ok(None);
+    };
+    let Some(expected_after_tag) = start.checked_add(7) else {
+        return Ok(None);
+    };
+    if after_tag != expected_after_tag {
+        return Ok(None);
+    }
+    ctx.copy_retained_text(class_tag, "copy F3D indexed class tag")
+        .map(Some)
 }
 
 fn exact_legacy_as_built_face_selection(
@@ -503,7 +547,11 @@ fn exact_legacy_as_built_face_selection(
         .iter()
         .copied()
         .filter_map(|byte_offset| {
-            let class_tag = indexed_class_at(bytes, u64::try_from(byte_offset).ok()?)?;
+            let class_tag = match indexed_class_at(ctx, bytes, u64::try_from(byte_offset).ok()?) {
+                Ok(Some(class_tag)) => class_tag,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
             if class_tag != expected_class_tag {
                 return None;
             }
@@ -522,10 +570,20 @@ fn exact_legacy_as_built_face_selection(
                     )))
                 }
             };
+            let copied_class_tag = match ctx.copy_retained_text(
+                class_tag.as_str(),
+                "copy F3D As-built selection class tag",
+            ) {
+                Ok(class_tag) => class_tag,
+                Err(error) => return Some(Err(error)),
+            };
+            let Ok(copied_class_tag) = copied_class_tag.try_into() else {
+                return None;
+            };
             let header = DesignRecordHeader {
                 id,
                 record_index,
-                class_tag: class_tag.clone().try_into().ok()?,
+                class_tag: copied_class_tag,
                 byte_offset: u64::try_from(byte_offset).ok()?,
             };
             let operand = parse_face_operand(
@@ -615,6 +673,82 @@ mod tests {
             Err(cadmpeg_core::CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::RetainedBytes
                     && failure.operation == "f3d legacy AsBuilt selection header ID"
+        ));
+    }
+
+    #[test]
+    fn legacy_as_built_indexed_class_tag_copy_refuses_retained_bytes() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"307");
+        bytes.extend_from_slice(&77u32.to_le_bytes());
+        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        let scope = crate::records::feature::scope::DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:design-parameter-scope#0",
+            crate::records::feature::scope::DesignFeatureKind::AsBuilt,
+            42,
+        );
+        let refusal = crate::test_support::resource_refusal_at(
+            ResourceDimension::RetainedBytes,
+            "copy F3D indexed class tag",
+            0,
+            |ctx| {
+                exact_legacy_as_built_face_selection(
+                    ctx,
+                    &bytes,
+                    &records,
+                    &scope,
+                    0,
+                    (77, "307"),
+                    &[],
+                )
+                .map(|_| ())
+            },
+        );
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(failure)
+                if failure.dimension == ResourceDimension::RetainedBytes
+                    && failure.operation == "copy F3D indexed class tag"
+                    && failure.additional == 3
+        ));
+    }
+
+    #[test]
+    fn legacy_as_built_selection_class_tag_copy_refuses_retained_bytes() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"307");
+        bytes.extend_from_slice(&77u32.to_le_bytes());
+        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        let scope = crate::records::feature::scope::DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:design-parameter-scope#0",
+            crate::records::feature::scope::DesignFeatureKind::AsBuilt,
+            42,
+        );
+        let refusal = crate::test_support::resource_refusal_at(
+            ResourceDimension::RetainedBytes,
+            "copy F3D As-built selection class tag",
+            0,
+            |ctx| {
+                exact_legacy_as_built_face_selection(
+                    ctx,
+                    &bytes,
+                    &records,
+                    &scope,
+                    0,
+                    (77, "307"),
+                    &[],
+                )
+                .map(|_| ())
+            },
+        );
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(failure)
+                if failure.dimension == ResourceDimension::RetainedBytes
+                    && failure.operation == "copy F3D As-built selection class tag"
+                    && failure.additional == 3
         ));
     }
 }

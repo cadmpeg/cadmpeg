@@ -2160,6 +2160,7 @@ pub(crate) fn decode_dimension_presentation_frames(
         }
         let bytes = scan.entry_bytes(&entry.name)?;
         for header in indexed_record_offsets(ctx, bytes)? {
+            let header = header?;
             let start = header.offset;
             let Some(primary_type_guid) =
                 presentation_classes.get(&u64::from(header.class_tag.code()))

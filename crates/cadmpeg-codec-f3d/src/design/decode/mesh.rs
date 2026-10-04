@@ -404,12 +404,25 @@ fn source_offset(frame_start: usize, relative: usize) -> Option<u64> {
 }
 
 fn indexed_class_tag(
+    ctx: &DecodeContext<'_>,
     record: &[u8],
     at: usize,
-) -> Option<crate::records::references::DesignClassTag> {
-    (View::u32_le_at(record, at) == Some(3)).then_some(())?;
-    let tag = std::str::from_utf8(record.get(at.checked_add(4)?..at.checked_add(7)?)?).ok()?;
-    crate::records::references::DesignClassTag::try_from(tag.to_owned()).ok()
+) -> Result<Option<crate::records::references::DesignClassTag>, CodecError> {
+    if View::u32_le_at(record, at) != Some(3) {
+        return Ok(None);
+    }
+    let Some(tag_bytes) = at
+        .checked_add(4)
+        .and_then(|start| start.checked_add(3).map(|end| (start, end)))
+        .and_then(|(start, end)| record.get(start..end))
+    else {
+        return Ok(None);
+    };
+    let Ok(tag) = std::str::from_utf8(tag_bytes) else {
+        return Ok(None);
+    };
+    let tag = ctx.copy_retained_text(tag, "copy F3D mesh indexed class tag")?;
+    Ok(crate::records::references::DesignClassTag::try_from(tag).ok())
 }
 
 fn record_identity(
@@ -419,7 +432,7 @@ fn record_identity(
     record_kind: &str,
 ) -> Result<DesignMeshRecordIdentity, CodecError> {
     let record_index = exact_record_index(ctx, record, frame, record_kind)?;
-    let class_tag = indexed_class_tag(record, 0)
+    let class_tag = indexed_class_tag(ctx, record, 0)?
         .ok_or_else(|| malformed_frame(ctx, record_kind, frame.entity_id))?;
     DesignMeshRecordIdentity::new(
         class_tag,
@@ -474,11 +487,13 @@ struct NestedMeshRecordFrame {
 }
 
 fn nested_record_identity(
+    ctx: &DecodeContext<'_>,
     record: &[u8],
     frame: NestedMeshRecordFrame,
     meta: &crate::metastream::MetaStream,
     input: MeshRecordType<'_>,
-) -> Option<DesignMeshRecordIdentity> {
+) -> Result<Option<DesignMeshRecordIdentity>, CodecError> {
+    let parsed = (|| -> Option<Result<DesignMeshRecordIdentity, CodecError>> {
     let NestedMeshRecordFrame {
         frame_start,
         at,
@@ -491,7 +506,11 @@ fn nested_record_identity(
         version: expected_version,
         module: expected_module,
     } = input;
-    let class_tag = indexed_class_tag(record, at)?;
+    let class_tag = match indexed_class_tag(ctx, record, at) {
+        Ok(Some(class_tag)) => class_tag,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     (View::u32_le_at(record, at.checked_add(indexed_header::RECORD_INDEX)?) == Some(record_index))
         .then_some(())?;
     let tag = class_tag.as_str().parse::<u32>().ok()?;
@@ -504,13 +523,15 @@ fn nested_record_identity(
         expected_module,
     )
     .then_some(())?;
-    DesignMeshRecordIdentity::new(
+    Some(Ok(DesignMeshRecordIdentity::new(
         class_tag,
         record_index,
         source_offset(frame_start, at)?,
         u64::try_from(end.checked_sub(at)?).ok()?,
     )
-    .ok()
+    .ok()?))
+    })();
+    parsed.transpose()
 }
 
 fn exact_local_record_index(record: &[u8], at: usize) -> Option<u32> {
@@ -699,7 +720,7 @@ fn parse_mesh_collection_record(
         record,
         mesh_collection::LEN + mesh_collection_base::BODY_COUNT,
     )?;
-    let parsed = (|| {
+    let parsed = (|| -> Option<Result<MeshCollectionRecord, CodecError>> {
         (record.get(mesh_collection::ZERO_RUN_10..mesh_collection::BODY_COUNT) == Some(&[0; 10]))
             .then_some(())?;
         (record.get(mesh_collection::CONSTANT_01_01..mesh_collection::TEXTURE_TABLE_REFERENCE)
@@ -709,7 +730,8 @@ fn parse_mesh_collection_record(
             usize::try_from(View::u32_le_at(record, mesh_collection::BODY_COUNT)?).ok()?;
         let texture_table_record_index =
             exact_local_record_index(record, mesh_collection::TEXTURE_TABLE_REFERENCE)?;
-        let base_record = nested_record_identity(
+        let base_record = match nested_record_identity(
+            ctx,
             record,
             crate::design::decode::mesh::NestedMeshRecordFrame {
                 frame_start: frame.start,
@@ -724,7 +746,11 @@ fn parse_mesh_collection_record(
                 version: MESH_COLLECTION_BASE_TYPE_VERSION,
                 module: COMMON_DATA_MODULE,
             },
-        )?;
+        ) {
+            Ok(Some(base_record)) => base_record,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         (record.get(
             mesh_collection::LEN + mesh_collection_base::ZERO_RUN_9
                 ..mesh_collection::LEN + mesh_collection_base::BODY_COUNT,
@@ -734,14 +760,16 @@ fn parse_mesh_collection_record(
         (first_count == body_records.len()).then_some(())?;
         let owner_record_index = exact_local_record_index(record, owner_at)?;
         (owner_at.checked_add(SAME_SEGMENT_REFERENCE_BYTES)? == record.len()).then_some(())?;
-        Some(MeshCollectionRecord {
+        Some(Ok(MeshCollectionRecord {
             collection: DesignMeshCollection::new(identity, base_record).ok()?,
             texture_table_record_index,
             body_records,
             owner_record_index,
-        })
+        }))
     })();
-    parsed.ok_or_else(|| malformed_frame(ctx, "mesh-collection", frame.entity_id))
+    parsed
+        .transpose()?
+        .ok_or_else(|| malformed_frame(ctx, "mesh-collection", frame.entity_id))
 }
 
 fn parse_mesh_texture_table_record(
@@ -1166,7 +1194,8 @@ fn parse_mesh_scope_record(
         (body_list_end <= paired_relative
             && paired_relative.checked_add(feature_scope_base::LEN) == Some(record.len()))
         .then_some(())?;
-        let base_record = nested_record_identity(
+        let base_record = match nested_record_identity(
+            ctx,
             record,
             crate::design::decode::mesh::NestedMeshRecordFrame {
                 frame_start: frame.start,
@@ -1181,7 +1210,11 @@ fn parse_mesh_scope_record(
                 version: MESH_SCOPE_BASE_RECORD_TYPE_VERSION,
                 module: DATA_MODEL_MODULE,
             },
-        )?;
+        ) {
+            Ok(Some(base_record)) => base_record,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         (record.get(
             paired_relative + feature_scope_base::ZERO_RUN_8
                 ..paired_relative + feature_scope_base::SCOPE_OWNER_REFERENCE,
@@ -2054,6 +2087,7 @@ mod tests {
 
     mod placement;
     mod text;
+    mod identity;
     use super::{
         parse_mesh_collection_owner_record, parse_mesh_scene_state_record,
         parse_mesh_texture_table_record, parse_mesh_wrapper_record, parse_scene_node_record,

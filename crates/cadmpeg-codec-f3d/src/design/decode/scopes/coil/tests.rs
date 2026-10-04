@@ -778,6 +778,30 @@ fn compact_coil_placement_accepts_face_recipe_selection() {
 }
 
 #[test]
+fn coil_selection_class_tag_and_recipe_design_copies_refuse_retained_bytes() {
+    let (bytes, scope, recipes) = compact_coil_face_selection_fixture();
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    for (operation, additional) in [
+        ("copy F3D Coil face-selection class tag", 3),
+        ("copy F3D Coil recipe design ID", 4),
+    ] {
+        let refusal = crate::test_support::resource_refusal_at(
+            ResourceDimension::RetainedBytes,
+            operation,
+            0,
+            |ctx| exact_coil_placement(ctx, &bytes, &records, &scope, &recipes).map(|_| ()),
+        );
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == operation
+                    && limit.additional == additional
+        ));
+    }
+}
+
+#[test]
 fn coil_face_selection_refuses_header_and_recipe_id_limits() {
     let (bytes, scope, recipes) = compact_coil_face_selection_fixture();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);

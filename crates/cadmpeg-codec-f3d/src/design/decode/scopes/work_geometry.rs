@@ -372,10 +372,26 @@ fn exact_direct_work_axis_construction(
     else {
         return None;
     };
-    let carrier_primary_class =
-        exact_indexed_header_at(bytes, carrier_start, *carrier_record_index)?;
-    let carrier_paired_class_tag =
-        exact_indexed_header_at(bytes, carrier_paired, *carrier_record_index)?;
+        let carrier_primary_class = match exact_indexed_header_at(
+            ctx,
+            bytes,
+            carrier_start,
+            *carrier_record_index,
+        ) {
+            Ok(Some(class_tag)) => class_tag,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let carrier_paired_class_tag = match exact_indexed_header_at(
+            ctx,
+            bytes,
+            carrier_paired,
+            *carrier_record_index,
+        ) {
+            Ok(Some(class_tag)) => class_tag,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
     if carrier_paired.checked_sub(carrier_start)? != carrier_length
         || carrier_primary_class != carrier_class
         || carrier_paired_class_tag != carrier_paired_class
@@ -388,10 +404,26 @@ fn exact_direct_work_axis_construction(
     else {
         return None;
     };
-    let support_primary_class =
-        exact_indexed_header_at(bytes, support_start, *support_record_index)?;
-    let support_paired_class_tag =
-        exact_indexed_header_at(bytes, support_paired, *support_record_index)?;
+        let support_primary_class = match exact_indexed_header_at(
+            ctx,
+            bytes,
+            support_start,
+            *support_record_index,
+        ) {
+            Ok(Some(class_tag)) => class_tag,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let support_paired_class_tag = match exact_indexed_header_at(
+            ctx,
+            bytes,
+            support_paired,
+            *support_record_index,
+        ) {
+            Ok(Some(class_tag)) => class_tag,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
     if support_paired.checked_sub(support_start)? != 293
         || support_primary_class != support_class
         || support_paired_class_tag != support_paired_class

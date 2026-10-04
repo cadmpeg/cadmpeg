@@ -3,6 +3,7 @@
 use cadmpeg_core::decode::u64_from_index;
 
 use super::parse_construction_operand_group;
+use crate::design::decode::operands::ConstructionOperandGroupParse;
 use crate::design::decode::operands::RecordFrame;
 
 use crate::records::decal::DesignRecordHeader;
@@ -257,6 +258,30 @@ fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
                 .unwrap(),
             record_index: group_record_index,
         };
+        if class_tag == "323" {
+            let refusal = crate::test_support::resource_refusal_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                "copy F3D legacy construction operand paired class tag",
+                0,
+                |ctx| match crate::design::decode::operands::parse_construction_operand_group(
+                    ctx,
+                    &bytes,
+                    &scope,
+                    0,
+                    &RecordFrame::from(&record),
+                ) {
+                    ConstructionOperandGroupParse::Refused(error) => Err(error),
+                    _ => Ok(()),
+                },
+            );
+            assert!(matches!(
+                refusal,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                        && limit.operation == "copy F3D legacy construction operand paired class tag"
+                        && limit.additional == 3
+            ));
+        }
         let group =
             parse_construction_operand_group(&bytes, &scope, 0, &RecordFrame::from(&record))
                 .complete()

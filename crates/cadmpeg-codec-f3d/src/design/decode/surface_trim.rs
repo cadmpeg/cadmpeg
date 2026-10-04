@@ -66,8 +66,16 @@ fn exact_surface_trim_operation(
             Ok(mut frames) => frames.next()?,
             Err(error) => return Some(Err(error)),
         };
-        let selection_class_tag =
-            exact_indexed_header_at(bytes, selection_byte_offset, selection_record_index)?;
+        let selection_class_tag = match exact_indexed_header_at(
+            ctx,
+            bytes,
+            selection_byte_offset,
+            selection_record_index,
+        ) {
+            Ok(Some(class_tag)) => class_tag,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         let selection = match parse_entity_selection_frame(
             ctx,
             bytes,
@@ -81,7 +89,11 @@ fn exact_surface_trim_operation(
 
         let mut chain_start = usize::try_from(selection.next_byte_offset).ok()?;
         let mut next_chain_record = || -> Option<Result<DesignSurfaceTrimChainRecord, CodecError>> {
-            let parsed = indexed_record_header_at(bytes, chain_start)?;
+            let parsed = match indexed_record_header_at(ctx, bytes, chain_start) {
+                Ok(Some(parsed)) => parsed,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
             let frame_end = match next_indexed_record_offset(ctx, bytes, chain_start.checked_add(11)?) {
                 Ok(Some(frame_end)) => frame_end,
                 Ok(None) => return None,
@@ -108,7 +120,11 @@ fn exact_surface_trim_operation(
         let chain_records = [first_chain_record, second_chain_record];
 
         let cell_table_byte_offset = chain_start;
-        let cell_table = indexed_record_header_at(bytes, cell_table_byte_offset)?;
+        let cell_table = match indexed_record_header_at(ctx, bytes, cell_table_byte_offset) {
+            Ok(Some(cell_table)) => cell_table,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         let cell_table_record_index = cell_table.record_index;
         let cell_table_class_tag = cell_table.class_tag;
         if !matches!(cell_table_class_tag.as_str(), "287" | "325") {
@@ -118,8 +134,16 @@ fn exact_surface_trim_operation(
             Ok(mut frames) => frames.find(|(primary, _)| *primary == cell_table_byte_offset)?,
             Err(error) => return Some(Err(error)),
         };
-        let cell_table_paired_class_tag =
-            exact_indexed_header_at(bytes, paired, cell_table_record_index)?;
+        let cell_table_paired_class_tag = match exact_indexed_header_at(
+            ctx,
+            bytes,
+            paired,
+            cell_table_record_index,
+        ) {
+            Ok(Some(class_tag)) => class_tag,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         if bytes.get(cell_table_byte_offset + 11..cell_table_byte_offset + 21)? != [0; 10] {
             return None;
         }

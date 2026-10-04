@@ -120,7 +120,11 @@ fn exact_assembly_operand_path_envelope(
     locator_at: usize,
 ) -> Result<Option<DesignAssemblyOperandPath>, CodecError> {
     (|| {
-        let locator_class_tag = exact_indexed_header_at(bytes, locator_at, locator_record_index)?;
+        let locator_class_tag = match exact_indexed_header_at(ctx, bytes, locator_at, locator_record_index) {
+            Ok(Some(class_tag)) => class_tag,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         let variable_reference = crate::design::assembly::variable_reference_assembly_generation(
             scope.class_tag.as_str(),
             scope.paired_class_tag.as_str(),
@@ -236,7 +240,11 @@ fn exact_assembly_operand_path_envelope(
             record_index = record_index.checked_add(1)?;
             record_at = next;
         };
-        let wrapper_class_tag = exact_indexed_header_at(bytes, wrapper_at, wrapper_record_index)?;
+        let wrapper_class_tag = match exact_indexed_header_at(ctx, bytes, wrapper_at, wrapper_record_index) {
+            Ok(Some(class_tag)) => class_tag,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         let wrapper_end = match next_indexed_record_offset(ctx, bytes, wrapper_at.checked_add(1)?) {
             Ok(Some(end)) => end,
             Ok(None) => return None,

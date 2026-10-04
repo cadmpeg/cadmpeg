@@ -70,6 +70,38 @@ fn lost_edge_reference_id_refuses_retained_limit() {
 }
 
 #[test]
+fn lost_edge_class_tag_copies_refuse_retained_limit() {
+    for operation in [
+        "copy F3D lost-edge primary class tag",
+        "copy F3D lost-edge paired class tag",
+    ] {
+        let bytes = lost_edge_bytes();
+        let refusal = crate::test_support::resource_refusal_at(
+            ResourceDimension::RetainedBytes,
+            operation,
+            0,
+            |ctx| {
+                let mut references = Vec::new();
+                decode_lost_edge_references_from_stream(
+                    ctx,
+                    "BulkStream.dat",
+                    &bytes,
+                    &mut references,
+                )
+                .map(|_| ())
+            },
+        );
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(failure)
+                if failure.dimension == ResourceDimension::RetainedBytes
+                    && failure.operation == operation
+                    && failure.additional == 3
+        ));
+    }
+}
+
+#[test]
 fn lost_edge_reference_scan_preserves_record_fields() {
     let bytes = lost_edge_bytes();
     let arena = DecodeArena::new();
