@@ -793,12 +793,14 @@ fn build_fan(
         ctx.reserve_vec(&mut fan, phantom_count, "complete T-spline fan gaps")?;
         for _ in ctx.admit_iter(&(0..phantom_count), "complete T-spline fan gaps")? {
             let moved_slots = cadmpeg_core::decode::u64_from_index(fan.len() - gap - 1);
-            let move_work = moved_slots
-                .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FanSlot>()))
-                .and_then(|bytes| bytes.checked_add(moved_slots))
-                .ok_or_else(|| ctx.refuse_codec_limit(
-                    "move T-spline fan slots", u64::MAX - 1, u64::MAX,
-                ))?;
+            let slot_bytes =
+                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FanSlot>());
+            let moved_bytes = moved_slots.checked_mul(slot_bytes).ok_or_else(|| {
+                ctx.refuse_codec_limit("move T-spline fan slots", u64::MAX / slot_bytes, moved_slots)
+            })?;
+            let move_work = moved_bytes.checked_add(moved_slots).ok_or_else(|| {
+                ctx.refuse_codec_limit("move T-spline fan slots", u64::MAX - moved_slots, moved_bytes)
+            })?;
             ctx.charge_work(move_work, "move T-spline fan slots")?;
             fan.insert(gap + 1, FanSlot::Phantom);
         }

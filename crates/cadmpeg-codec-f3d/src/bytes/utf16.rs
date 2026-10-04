@@ -34,8 +34,8 @@ impl<'a> Utf16View<'a> {
             let Some(next_length) = utf8_len.checked_add(length) else {
                 return Err(ctx.refuse_codec_limit(
                     "validate F3D UTF-16 text",
-                    u64::MAX - 1,
-                    u64::MAX,
+                    cadmpeg_core::decode::u64_from_index(usize::MAX - length),
+                    cadmpeg_core::decode::u64_from_index(utf8_len),
                 ));
             };
             utf8_len = next_length;

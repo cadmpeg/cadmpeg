@@ -24,6 +24,7 @@ mod selections;
 mod state_pairs;
 mod surface_stitch;
 mod topology_budget;
+mod transitions;
 mod vertex_recipe_limits;
 
 mod recipe_transitions;
