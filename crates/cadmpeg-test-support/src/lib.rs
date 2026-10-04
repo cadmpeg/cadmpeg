@@ -171,7 +171,8 @@ pub fn registry_ids(prefix: &str) -> Result<BTreeSet<String>, toml::de::Error> {
         unknown_kind: Option<String>,
     }
 
-    let registry: Registry = toml::from_str(include_str!("../../../docs/dialects.toml"))?;
+    let registry: Registry =
+        toml::from_str(include_str!("../../cadmpeg-registry/docs/dialects.toml"))?;
     let prefix = format!("{prefix}:");
     let ids = registry
         .dialect
