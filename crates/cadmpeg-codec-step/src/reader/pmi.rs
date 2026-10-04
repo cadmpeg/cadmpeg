@@ -311,7 +311,7 @@ pub(super) fn decode(
                 let mut category = None;
                 'record_parameters: for partial in ctx.admit_iter(&(record
                     .partials)[..], "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)?
-                    .find(|partial| partial.name == dimension_name)
+                    .map(|partial| -> Result<Option<_>, CodecError> { Ok((ctx.equal(partial.name.as_str(), dimension_name, "STEP PMI dimension name equality")?).then_some(partial)) }).find_map(Result::transpose).transpose()?
                     .into_iter() {
         for value in ctx.admit_iter(partial.parameters.as_slice(), "STEP record parameter traversal")?.rev() {
                     if let Some(text) = decode_text_charged(
@@ -1372,7 +1372,7 @@ fn admit_datum_reference_maps(
     for (index, reference) in ctx.admit_iter(&(references)[..], "STEP admit datum reference maps traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
         let prior = &references[..index];
         if !ctx.admit_iter(&(prior)[..], "STEP admit datum reference maps traversal").map_err(cadmpeg_core::CodecError::from)?
-            .any(|other| other.precedence == reference.precedence)
+            .map(|other| -> Result<Option<_>, CodecError> { Ok((ctx.equal(&other.precedence, &reference.precedence, "STEP admit datum reference maps equality")?).then_some(())) }).find_map(Result::transpose).transpose()?.is_some()
         {
             ctx.charge_collection_items(1, "step_pmi_datum_compartments")?;
         }

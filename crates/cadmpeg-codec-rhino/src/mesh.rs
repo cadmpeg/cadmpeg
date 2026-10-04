@@ -1122,7 +1122,7 @@ fn read_buffer<'a>(
                         "compressed buffer body escapes the archive bytes",
                     )
                 })?;
-            if source.window() != body {
+            if !expand.ctx().equal_bytes(source.window(), body, "Rhino compressed mesh source equality")? {
                 return Err(error(
                     chunk.body().start,
                     format!(

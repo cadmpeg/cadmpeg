@@ -561,7 +561,7 @@ pub(super) fn decode(
             let expected_id = ids::presentation(kind!("layer"), layer_id);
             let mut matched = false;
             for layer in &mut ir.model.presentation_layers {
-                if layer.id.as_str() == expected_id.as_str() {
+                if ctx.equal(layer.id.as_str(), expected_id.as_str(), "STEP presentation layer identity equality")? {
                     layer.visible = Some(false);
                     matched = true;
                     break;

@@ -4482,15 +4482,7 @@ fn append_link_to_record(
     links: &mut Vec<String>,
     link: &str,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    ctx.charge_work(
-        u64_from_index(id.len().min(link.len()))
-            .checked_add(1)
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("Rhino source link comparison", u64::MAX - 1, u64::MAX)
-            })?,
-        "Rhino source link comparison",
-    )?;
-    if link == id {
+    if ctx.equal(link, id, "Rhino source link equality")? {
         return Ok(false);
     }
     let mut first = 0;
@@ -5873,7 +5865,9 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
             )
             .or_else(|message| Err(crate::curves::GeometryError::unpositioned(ctx.format_retained(format_args!("{}", message), "Rhino stage_brep text")?)))?,
         );
-        if let Some(region) = regions.iter_mut().find(|region| region.id == region_id) {
+        if let Some(region) = regions.iter_mut().map(|region| -> Result<Option<_>, cadmpeg_core::CodecError> {
+            Ok(ctx.equal(&region.id, &region_id, "Rhino Brep region identity equality")?.then_some(region))
+        }).find_map(Result::transpose).transpose()? {
             ctx.reserve_vec(&mut region.shells, 1, "Rhino staged Brep region shells")
                 .map_err(crate::curves::GeometryError::from)?;
             region.shells.push(shell_id);

@@ -525,7 +525,7 @@ fn drawing_entities() -> [(&'static str, &'static crate::ids::IdentityKind); 7] 
 fn drawing_type(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<Option<(&'static str, &'static crate::ids::IdentityKind)>, CodecError> {
     for (name, kind) in drawing_entities() {
         if ctx.admit_iter(&record.partials[..], "STEP drawing type partial traversal")?
-            .any(|partial| partial.name == name) {
+            .map(|partial| -> Result<Option<_>, CodecError> { Ok((ctx.equal(partial.name.as_str(), name, "STEP drawing type equality")?).then_some(())) }).find_map(Result::transpose).transpose()?.is_some() {
             return Ok(Some((name, kind)));
         }
     }
@@ -556,7 +556,7 @@ fn required_parameter_count(name: &str) -> Option<usize> {
 
 fn source_parameters<'a>(ctx: &DecodeContext<'_>, record: &'a RawRecord, name: &str) -> Result<DrawingParameters<'a>, CodecError> {
     let direct = ctx.admit_iter(&record.partials[..], "STEP drawing source parameter traversal")?
-        .find(|partial| partial.name == name)
+        .map(|partial| -> Result<Option<_>, CodecError> { Ok((ctx.equal(partial.name.as_str(), name, "STEP source parameters equality")?).then_some(partial)) }).find_map(Result::transpose).transpose()?
         .map(|partial| partial.parameters.as_slice());
     if name == "DRAUGHTING_CALLOUT" {
         if let Some(parameters) = direct.filter(|parameters| parameters.len() >= 2) {
@@ -972,7 +972,7 @@ fn association_parameters<'a>(ctx: &DecodeContext<'_>, record: &'a RawRecord) ->
         "ITEM_IDENTIFIED_REPRESENTATION_USAGE",
     ] {
         if let Some(partial) = ctx.admit_iter(&record.partials[..], "STEP drawing association parameter traversal")?
-            .find(|partial| partial.name == name && partial.parameters.len() >= 5) {
+            .map(|partial| -> Result<Option<_>, CodecError> { Ok((ctx.equal(partial.name.as_str(), name, "STEP association parameters equality")? && partial.parameters.len() >= 5).then_some(partial)) }).find_map(Result::transpose).transpose()? {
             return Ok(Some(partial.parameters.as_slice()));
         }
     }

@@ -305,13 +305,13 @@ pub(super) fn decode(
             let missing = join_product_texts(
                 ctx.admit_iter(bodies.as_slice(), "STEP missing body reference traversal")?
                     .map(|body| {
-                        Ok::<_, CodecError>((!ctx.admit_iter(ir.model.bodies.as_slice(), "STEP missing body carrier traversal")?.any(|candidate| candidate.id == *body)).then_some(body.as_str()))
+                        Ok::<_, CodecError>((!ctx.admit_iter(ir.model.bodies.as_slice(), "STEP missing body carrier traversal")?.map(|candidate| -> Result<Option<_>, CodecError> { Ok((ctx.equal(&candidate.id, body, "STEP product body identity equality")?).then_some(())) }).find_map(Result::transpose).transpose()?.is_some()).then_some(body.as_str()))
                     }).filter_map(Result::transpose),
                 ctx,
                 "step_missing_shape_body_text",
             )?;
             ctx.retain_vec(&mut bodies, |body| {
-                Ok(ctx.admit_iter(ir.model.bodies.as_slice(), "STEP retained body carrier traversal")?.any(|candidate| candidate.id == *body))
+                Ok(ctx.admit_iter(ir.model.bodies.as_slice(), "STEP retained body carrier traversal")?.map(|candidate| -> Result<Option<_>, CodecError> { Ok((ctx.equal(&candidate.id, body, "STEP product body identity equality")?).then_some(())) }).find_map(Result::transpose).transpose()?.is_some())
             }, "STEP product body retention")?;
             ctx.stable_sort_by(
                 &mut bodies,

@@ -2282,7 +2282,7 @@ fn subedge_parent(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<Option<
 
 fn named_reference(ctx: &DecodeContext<'_>, record: &RawRecord, name: &str, simple_index: usize, complex_index: usize) -> Result<Option<u64>, CodecError> {
     if record.partials.len() == 1 { return Ok(entity_parameter(ctx, record, name, simple_index)?.and_then(ValueExt::reference)); }
-    let Some(partial) = ctx.admit_iter(&record.partials[..], "STEP named topology partial traversal")?.find(|partial| partial.name == name) else { return Ok(None); };
+    let Some(partial) = ctx.admit_iter(&record.partials[..], "STEP named topology partial traversal")?.map(|partial| -> Result<Option<_>, CodecError> { Ok((ctx.equal(partial.name.as_str(), name, "STEP named reference equality")?).then_some(partial)) }).find_map(Result::transpose).transpose()? else { return Ok(None); };
     Ok(ctx.admit_iter(partial.parameters.as_slice(), "STEP named topology parameter traversal")?.filter_map(ValueExt::reference).nth(complex_index))
 }
 
@@ -2300,7 +2300,7 @@ fn oriented_edge_forward(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<
 
 fn named_logical(ctx: &DecodeContext<'_>, record: &RawRecord, name: &str, simple_index: usize, _complex_index: usize) -> Result<Option<bool>, CodecError> {
     if record.partials.len() == 1 { return Ok(entity_parameter(ctx, record, name, simple_index)?.and_then(ValueExt::logical)); }
-    let Some(partial) = ctx.admit_iter(&record.partials[..], "STEP named topology partial traversal")?.find(|partial| partial.name == name) else { return Ok(None); };
+    let Some(partial) = ctx.admit_iter(&record.partials[..], "STEP named topology partial traversal")?.map(|partial| -> Result<Option<_>, CodecError> { Ok((ctx.equal(partial.name.as_str(), name, "STEP named logical equality")?).then_some(partial)) }).find_map(Result::transpose).transpose()? else { return Ok(None); };
     Ok(ctx.admit_iter(partial.parameters.as_slice(), "STEP named topology parameter traversal")?.find_map(ValueExt::logical))
 }
 
@@ -3857,7 +3857,7 @@ fn build_one(
                 Sense::Forward => &next_edge.start,
                 Sense::Reversed => &next_edge.end,
             };
-            if current_end != next_start {
+            if !ctx.equal(current_end, next_start, "STEP edge loop vertex equality")? {
                 note_failure(failure, loop_source, CarrierKind::EdgeLoopContinuity);
                 return Err(BuildError::Absent);
             }
@@ -4483,7 +4483,7 @@ fn select_associated_pcurve(
     let surface = ctx.admit_iter(&(ir
         .model
         .surfaces)[..], "STEP select associated pcurve traversal").map_err(cadmpeg_core::CodecError::from)?
-        .find(|surface| surface.id.as_str() == surface_identity.as_str())
+        .map(|surface| -> Result<Option<_>, CodecError> { Ok((ctx.equal(surface.id.as_str(), surface_identity.as_str(), "STEP select associated pcurve equality")?).then_some(surface)) }).find_map(Result::transpose).transpose()?
         .map(|surface| &surface.geometry)
         .ok_or(PcurveSelectionFailure::Carrier)?;
     let surface_id = SurfaceId::from(surface_identity);
@@ -4491,7 +4491,7 @@ fn select_associated_pcurve(
     let pcurve = ctx.admit_iter(&(ir
         .model
         .pcurves)[..], "STEP select associated pcurve traversal").map_err(cadmpeg_core::CodecError::from)?
-        .find(|pcurve| pcurve.id == candidate)
+        .map(|pcurve| -> Result<Option<_>, CodecError> { Ok((ctx.equal(&pcurve.id, &candidate, "STEP select associated pcurve equality")?).then_some(pcurve)) }).find_map(Result::transpose).transpose()?
         .ok_or(PcurveSelectionFailure::Carrier)?;
     let geometry = &pcurve.geometry;
     let bound = COINCIDENCE_TOLERANCE.max(ir.tolerances.linear.get());
@@ -4818,7 +4818,7 @@ fn surface_selection_parameters(
     u: f64,
     v: f64,
     ctx: &DecodeContext<'_>,
-) -> Result<[f64; 2], ResourceLimit> {
+) -> Result<[f64; 2], CodecError> {
     let domains = match index.surfaces(surface_id.as_str(), ctx)? {
         Some(surface) => {
             surface_selection_parameter_domains(index, surface_id, &surface.geometry, ctx)?
@@ -4851,7 +4851,7 @@ fn surface_selection_point(
     surface_id: &SurfaceId,
     u: f64,
     v: f64,
-) -> Result<Option<Point3>, ResourceLimit> {
+) -> Result<Option<Point3>, CodecError> {
     let [u, v] = surface_selection_parameters(index, surface_id, u, v, ctx)?;
     // A non-finite point is returned as the evaluation reached it; the
     // selection measures read it as a miss.
@@ -4863,7 +4863,7 @@ fn surface_selection_point(
         v,
     ) {
         Ok(point) => Ok(Some(point.get())),
-        Err(failure) => failure.non_finite(),
+        Err(failure) => failure.non_finite().map_err(CodecError::from),
     }
 }
 
@@ -4876,7 +4876,7 @@ fn pcurve_declared_endpoint_fit(
     range: [f64; 2],
     start: Point3,
     end: Point3,
-) -> Result<Option<f64>, ResourceLimit> {
+) -> Result<Option<f64>, CodecError> {
     let Some(first_uv) = pcurve_selection_uv(ctx, geometry, range[0])? else {
         return Ok(None);
     };
@@ -4903,7 +4903,7 @@ fn pcurve_declared_endpoint_fit_directed(
     range: [f64; 2],
     start: Point3,
     end: Point3,
-) -> Result<Option<f64>, ResourceLimit> {
+) -> Result<Option<f64>, CodecError> {
     let Some(first_uv) = pcurve_selection_uv(ctx, geometry, range[0])? else {
         return Ok(None);
     };
@@ -4945,7 +4945,7 @@ fn pcurve_surface_closest(
     geometry: &PcurveGeometry,
     target: Point3,
     seeds: &[f64],
-) -> Result<Option<(f64, f64)>, ResourceLimit> {
+) -> Result<Option<(f64, f64)>, CodecError> {
     ctx.charge_work_limit(0, "geometry helper boundary")?;
     // The minimum is only over the finite seed set. The caller treats the
     // directly evaluated result as a witness and omits the optional relation
@@ -4977,7 +4977,7 @@ fn mapped_pcurve_closest(
     geometry: &PcurveGeometry,
     target: Point3,
     seed: f64,
-) -> Result<Option<(f64, f64)>, ResourceLimit> {
+) -> Result<Option<(f64, f64)>, CodecError> {
     ctx.charge_work_limit(0, "geometry helper boundary")?;
     if !seed.is_finite() {
         return Ok(None);
@@ -4985,19 +4985,19 @@ fn mapped_pcurve_closest(
     let domain = pcurve_selection_parameter_domain(geometry);
     let clamp_to_domain =
         |parameter: f64| domain.map_or(parameter, |[lower, upper]| parameter.clamp(lower, upper));
-    let evaluate_point = |parameter: f64| -> Result<Option<Point3>, ResourceLimit> {
+    let evaluate_point = |parameter: f64| -> Result<Option<Point3>, CodecError> {
         let Some(uv) = pcurve_selection_uv(ctx, geometry, parameter)? else {
             return Ok(None);
         };
         surface_selection_point(ctx, index, surface_id, uv.u, uv.v)
     };
-    let evaluate_tangent = |parameter: f64| -> Result<Option<Vector3>, ResourceLimit> {
+    let evaluate_tangent = |parameter: f64| -> Result<Option<Vector3>, CodecError> {
         let Some(uv) = pcurve_selection_uv(ctx, geometry, parameter)? else {
             return Ok(None);
         };
         let tangent_uv = match pcurve_tangent(ctx, geometry, parameter) {
             Ok(value) => value,
-            Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
+            Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => return Err(limit.into()),
             Err(_) => return Ok(None),
         };
         let [u, v] = surface_selection_parameters(index, surface_id, uv.u, uv.v, ctx)?;
@@ -5009,7 +5009,7 @@ fn mapped_pcurve_closest(
             v,
         ) {
             Ok(value) => value,
-            Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
+            Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => return Err(limit.into()),
             Err(_) => return Ok(None),
         };
         Ok(Some(Vector3::new(
@@ -5341,15 +5341,21 @@ fn surface_selection_parameter_domains(
     surface_id: &SurfaceId,
     surface: &SurfaceGeometry,
     ctx: &DecodeContext<'_>,
-) -> Result<[Option<[f64; 2]>; 2], ResourceLimit> {
+) -> Result<[Option<[f64; 2]>; 2], CodecError> {
     let _depth = ctx.enter_nested_limit("STEP surface selection domain depth")?;
     let definition = ctx.admit_iter(&(index
         .ir()
         .model
         .procedural_surfaces)[..], "STEP surface selection parameter domains traversal")?
-        .find(|procedural| {
-            index.ir().model.procedural_surface_owner(&procedural.id) == Some(surface_id)
-        })
+        .map(|procedural| -> Result<Option<_>, CodecError> {
+            let mut owners = ctx.admit_iter(index.ir().model.surfaces.as_slice(), "STEP procedural surface owner traversal")?
+                .map(|surface| -> Result<Option<_>, CodecError> {
+                    Ok(ctx.equal(&surface.geometry.procedural_construction(), &Some(&procedural.id), "STEP procedural construction equality")?.then_some(&surface.id))
+                }).filter_map(Result::transpose);
+            let owner = owners.next().transpose()?;
+            let owner = if owner.is_some() && owners.next().transpose()?.is_some() { None } else { owner };
+            Ok(ctx.equal(&owner, &Some(surface_id), "STEP procedural surface owner equality")?.then_some(procedural))
+        }).find_map(Result::transpose).transpose()?
         .map(cadmpeg_ir::geometry::ProceduralSurface::definition);
     Ok(match definition {
         Some(ProceduralSurfaceDefinition::Subset(definition_payload)) => {
@@ -5617,7 +5623,7 @@ struct FaceInfo<'a> {
 
 fn is_face_record(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<bool, CodecError> {
     for name in ["FACE", "ADVANCED_FACE", "FACE_SURFACE", "ORIENTED_FACE", "SUBFACE"] {
-        if ctx.admit_iter(&record.partials[..], "STEP face classification partial traversal")?.any(|partial| partial.name == name) {
+        if ctx.admit_iter(&record.partials[..], "STEP face classification partial traversal")?.map(|partial| -> Result<Option<_>, CodecError> { Ok((ctx.equal(partial.name.as_str(), name, "STEP is face record equality")?).then_some(())) }).find_map(Result::transpose).transpose()?.is_some() {
             return Ok(true);
         }
     }
@@ -5758,7 +5764,7 @@ fn face_name_value<'a>(ctx: &DecodeContext<'_>, record: &'a RawRecord) -> Result
     let mut value = if record.partials.len() == 1 { record.parameter(0) } else { None };
     if record.partials.len() != 1 {
         for name in ["REPRESENTATION_ITEM", "ORIENTED_FACE", "SUBFACE", "ADVANCED_FACE", "FACE_SURFACE", "FACE"] {
-            value = ctx.admit_iter(&record.partials[..], "STEP face name partial traversal")?.find(|partial| partial.name == name).and_then(|partial| partial.parameters.first());
+            value = ctx.admit_iter(&record.partials[..], "STEP face name partial traversal")?.map(|partial| -> Result<Option<_>, CodecError> { Ok((ctx.equal(partial.name.as_str(), name, "STEP face name value equality")?).then_some(partial)) }).find_map(Result::transpose).transpose()?.and_then(|partial| partial.parameters.first());
             if value.is_some() { break; }
         }
     }
@@ -5851,7 +5857,7 @@ fn subface_parent(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<Option<
 /// instance, so subtype classification and attribute lookup are separate.
 fn face_bound_attribute_type(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<Option<&'static str>, CodecError> {
     for (name, minimum_parameters) in [("FACE_OUTER_BOUND", 3), ("FACE_BOUND", 3), ("FACE_BOUND", 0), ("FACE_OUTER_BOUND", 0)] {
-        if ctx.admit_iter(&record.partials[..], "STEP face bound attribute partial traversal")?.find(|partial| partial.name == name).is_some_and(|partial| partial.parameters.len() >= minimum_parameters) { return Ok(Some(name)); }
+        if ctx.admit_iter(&record.partials[..], "STEP face bound attribute partial traversal")?.map(|partial| -> Result<Option<_>, CodecError> { Ok((ctx.equal(partial.name.as_str(), name, "STEP face bound attribute type equality")?).then_some(partial)) }).find_map(Result::transpose).transpose()?.is_some_and(|partial| partial.parameters.len() >= minimum_parameters) { return Ok(Some(name)); }
     }
     Ok(None)
 }
@@ -5861,7 +5867,7 @@ fn face_bound_attribute_type(ctx: &DecodeContext<'_>, record: &RawRecord) -> Res
 /// the governing subtype and its attributes must drive decoding.
 fn most_specific<'a>(ctx: &DecodeContext<'_>, record: &RawRecord, chain: &[&'a str]) -> Result<Option<&'a str>, CodecError> {
     for name in ctx.admit_iter(chain, "STEP topology subtype dispatch traversal")? {
-        if ctx.admit_iter(&record.partials[..], "STEP topology subtype partial traversal")?.any(|partial| partial.name == *name) {
+        if ctx.admit_iter(&record.partials[..], "STEP topology subtype partial traversal")?.map(|partial| -> Result<Option<_>, CodecError> { Ok((ctx.equal(partial.name.as_str(), name, "STEP most specific equality")?).then_some(())) }).find_map(Result::transpose).transpose()?.is_some() {
             return Ok(Some(*name));
         }
     }
@@ -5911,7 +5917,7 @@ fn validate_subset_parent(
         return Ok(false);
     };
     let valid_parent = if let Some(parent_record) = exchange.records().get(&parent) {
-        most_specific(ctx, parent_record, &[base_type])? == Some(base_type)
+        ctx.equal(&most_specific(ctx, parent_record, &[base_type])?, &Some(base_type), "STEP subset parent type equality")?
     } else {
         false
     };
@@ -5930,5 +5936,5 @@ fn validate_subset_parent(
 }
 
 fn entity_parameter<'a>(ctx: &DecodeContext<'_>, record: &'a RawRecord, name: &str, index: usize) -> Result<Option<&'a Value>, CodecError> {
-    Ok(ctx.admit_iter(&record.partials[..], "STEP topology entity parameter partial traversal")?.find(|partial| partial.name == name).or_else(|| (record.partials.len() == 1).then(|| &record.partials[0])).and_then(|partial| partial.parameters.get(index)))
+    Ok(ctx.admit_iter(&record.partials[..], "STEP topology entity parameter partial traversal")?.map(|partial| -> Result<Option<_>, CodecError> { Ok((ctx.equal(partial.name.as_str(), name, "STEP entity parameter equality")?).then_some(partial)) }).find_map(Result::transpose).transpose()?.or_else(|| (record.partials.len() == 1).then(|| &record.partials[0])).and_then(|partial| partial.parameters.get(index)))
 }

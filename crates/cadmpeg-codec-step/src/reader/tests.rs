@@ -1768,3 +1768,5 @@ fn protected_root_copy_refuses_collection_limit() {
 }
 
 mod set_lookups;
+
+mod equality;

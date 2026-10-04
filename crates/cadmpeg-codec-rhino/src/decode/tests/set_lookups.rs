@@ -35,3 +35,20 @@ fn fallback_emitted_identity_lookup_preserves_work_refusal() {
     assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
     assert_eq!(ctx.resource_refusal(), Some(refusal));
 }
+
+#[test]
+fn fallback_self_link_equality_preserves_refusal() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+    let mut links = Vec::new();
+    let error = super::super::append_link_to_record(&ctx, "test:link#1", &mut links, "test:link#1").unwrap_err();
+    let CodecError::ResourceLimit(refusal) = error else {
+        panic!("self-link comparison must preserve its resource refusal");
+    };
+    assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(refusal.operation, "Rhino source link equality");
+    assert_eq!(ctx.resource_refusal(), Some(refusal));
+    assert!(links.is_empty());
+}
