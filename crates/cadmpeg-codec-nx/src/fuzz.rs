@@ -36,6 +36,7 @@ pub fn om(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
     let arena = DecodeArena::new();
     let policy = fuzz_policy();
     let (ctx, _) = DecodeContext::from_root_bytes(data, &arena, &policy)?;
+    // discarded-value: marker constants and unit classification are fuzz probes.
     let _ = (
         crate::om_tokens::ROOT_MARKER,
         crate::om_tokens::HOST_GLOBALS,
@@ -47,7 +48,8 @@ pub fn om(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
         // see the whole input.
         std::str::from_utf8(data)
             .ok()
-            .map(crate::om_tokens::unit_for),
+            .map(|token| crate::om_tokens::unit_for(&ctx, token))
+            .transpose()?,
     );
     let mut at = 0;
     while let Some(token) = crate::om::compact::NullableCompactIndex::read(data, at) {

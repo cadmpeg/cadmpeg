@@ -212,7 +212,7 @@ pub(in crate::native) fn feature_fset_reference_graphs(
             }
             let projected =
                 (|| -> Result<Option<FeatureFsetReferenceGraph>, cadmpeg_core::CodecError> {
-                    let Some(graph) = FsetReferences::read(record.payload_view()) else {
+                    let Some(graph) = FsetReferences::read(ctx, record.payload_view())? else {
                         return Ok(None);
                     };
                     let Some(references) = graph.resolve(entry_offset, |index| {
