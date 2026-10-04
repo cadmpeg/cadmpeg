@@ -134,7 +134,7 @@ impl Identity {
 
     /// Admit owned text with the same grammar used by standard reconstruction.
     /// Invalid grammar returns the owned input; admission failure stays outside it.
-    pub(crate) fn admit_text<E>(
+    pub fn admit_text<E>(
         value: String,
         visit: impl FnMut(u64) -> Result<(), E>,
     ) -> Result<Result<Self, String>, E> {
