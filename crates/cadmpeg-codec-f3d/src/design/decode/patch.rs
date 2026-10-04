@@ -27,7 +27,10 @@ pub(super) fn surface_patch_boundaries(
 ) -> Result<Vec<DesignSurfacePatchBoundary>, CodecError> {
     let mut boundaries = Vec::new();
     for (ordinal, record_index) in ctx
-        .admit_iter(reference_members, "scan F3D SurfacePatch boundary references")?
+        .admit_iter(
+            reference_members,
+            "scan F3D SurfacePatch boundary references",
+        )?
         .enumerate()
     {
         let Some(mut boundary) = records
@@ -70,8 +73,13 @@ mod tests {
                     && limit.additional == 1
         ));
         assert!(surface_patch_boundaries(
-            &cadmpeg_test_support::service_decode_context(), &[], &records, &[42],
-        ).unwrap().is_empty());
+            &cadmpeg_test_support::service_decode_context(),
+            &[],
+            &records,
+            &[42],
+        )
+        .unwrap()
+        .is_empty());
     }
 }
 

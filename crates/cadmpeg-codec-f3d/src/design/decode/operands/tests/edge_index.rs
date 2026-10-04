@@ -109,13 +109,13 @@ fn fixture_work_plane_parameter() -> crate::records::parameters::DesignParameter
         ),
     )
     .expect("canonical WorkPlane ExtraOffset parameter");
-    parameter.id =
-        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:parameter#105".to_owned();
+    parameter.id = "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:parameter#105".to_owned();
     parameter.record_index = 105;
     parameter
 }
 
-fn fixture_edge_identity_group() -> crate::records::topology::construction::DesignConstructionOperandGroup {
+fn fixture_edge_identity_group(
+) -> crate::records::topology::construction::DesignConstructionOperandGroup {
     use crate::records::topology::construction::{
         DesignConstructionOperandGroup, DesignConstructionOperandGroupDraft,
         DesignConstructionOperandGroupFrame, DesignConstructionOperandGroupFrameDraft,
@@ -127,24 +127,25 @@ fn fixture_edge_identity_group() -> crate::records::topology::construction::Desi
         scope_reference_ordinal: 0,
         record_index: 100,
         byte_offset: 1000,
-        class_tag: crate::records::references::DesignClassTag::try_from("332".to_owned())
-            .unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("332".to_owned()).unwrap(),
         members: Vec::new(),
         lost_edge_references: Vec::new(),
-        frame: DesignConstructionOperandGroupFrame::try_from(DesignConstructionOperandGroupFrameDraft {
-            member_count_offset: 1021,
-            auxiliary_records: Vec::new(),
-            auxiliary_paths: Vec::new(),
-            trailing_records: Vec::new(),
-            trailing_transforms: Vec::new(),
-            trailing_dual_transforms: Vec::new(),
-            trailing_flags: Vec::new(),
-            opaque_index: 180,
-            opaque_index_offset: 1071,
-            opaque_scalar: 0.125,
-            opaque_scalar_offset: 1075,
-            variant: false,
-        })
+        frame: DesignConstructionOperandGroupFrame::try_from(
+            DesignConstructionOperandGroupFrameDraft {
+                member_count_offset: 1021,
+                auxiliary_records: Vec::new(),
+                auxiliary_paths: Vec::new(),
+                trailing_records: Vec::new(),
+                trailing_transforms: Vec::new(),
+                trailing_dual_transforms: Vec::new(),
+                trailing_flags: Vec::new(),
+                opaque_index: 180,
+                opaque_index_offset: 1071,
+                opaque_scalar: 0.125,
+                opaque_scalar_offset: 1075,
+                variant: false,
+            },
+        )
         .unwrap(),
         operand_role: DesignConstructionOperandRole::Other(
             crate::records::topology::extrude_selection::DesignOperandRole::ROLE_0X5,
@@ -222,8 +223,15 @@ fn edge_identity_scope_search_refuses_work_limit() {
             ResourceDimension::WorkUnits,
             "find F3D edge identity scopes",
             0,
-            |ctx| decode_edge_identity_operands(ctx, scan, std::slice::from_ref(&scope),
-                std::slice::from_ref(&group), &[]),
+            |ctx| {
+                decode_edge_identity_operands(
+                    ctx,
+                    scan,
+                    std::slice::from_ref(&scope),
+                    std::slice::from_ref(&group),
+                    &[],
+                )
+            },
         );
         assert!(matches!(
             error,
@@ -485,16 +493,7 @@ fn indexed_face_operand_reference_ordinals_refuse_work_limit() {
             ResourceDimension::WorkUnits,
             "scan F3D indexed face operand reference ordinals",
             0,
-            |ctx| {
-                decode_face_operands(
-                    ctx,
-                    scan,
-                    std::slice::from_ref(&scope),
-                    &[],
-                    &[],
-                    &[],
-                )
-            },
+            |ctx| decode_face_operands(ctx, scan, std::slice::from_ref(&scope), &[], &[], &[]),
         );
         assert!(matches!(
             error,

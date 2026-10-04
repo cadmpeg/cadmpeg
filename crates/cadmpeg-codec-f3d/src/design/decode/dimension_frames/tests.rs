@@ -633,15 +633,23 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         let refused = std::cell::RefCell::new(bound.clone());
         let error = crate::test_support::resource_refusal_at(
             cadmpeg_core::decode::ResourceDimension::WorkUnits,
-            "find F3D dimension recipe design reference", skip,
-            |ctx| super::bind_recipe_reference_candidates_charged(
-                ctx, &mut refused.borrow_mut(), &tags, None,
-            ),
+            "find F3D dimension recipe design reference",
+            skip,
+            |ctx| {
+                super::bind_recipe_reference_candidates_charged(
+                    ctx,
+                    &mut refused.borrow_mut(),
+                    &tags,
+                    None,
+                )
+            },
         );
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
                 && limit.operation == "find F3D dimension recipe design reference"
-                && limit.additional == additional));
+                && limit.additional == additional)
+        );
         let refused = refused.into_inner();
         assert!(refused.candidate_faces.is_empty());
         assert!(refused.candidate_edges.is_empty());
@@ -791,9 +799,7 @@ fn face_recipe_decodes_paired_packed_reference_runs() {
     .is_empty());
     let mut invalid_header = prefix.clone();
     invalid_header[0] = 1;
-    assert!(
-        !paired_recipe_reference_frame(&invalid_header)
-    );
+    assert!(!paired_recipe_reference_frame(&invalid_header));
 
     let mut trailing = prefix.clone();
     trailing.extend_from_slice(&0u32.to_le_bytes());

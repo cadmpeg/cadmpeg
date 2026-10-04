@@ -56,156 +56,160 @@ pub(super) fn exact_symmetric_extrude_prologue(
     reference_members: &[u32],
 ) -> Result<Option<DesignExtrudePrologue>, cadmpeg_core::CodecError> {
     (|| {
-    const PROFILE_NORMAL_UNIT_EPS: f64 = 1.0e-12;
+        const PROFILE_NORMAL_UNIT_EPS: f64 = 1.0e-12;
 
-    let frame = Class397SymmetricFrame::new(
-        class_tag,
-        paired_class_tag,
-        u64::try_from(paired_at.checked_sub(start)?).ok()?,
-        u64::try_from(reference_count_at.checked_sub(start)?).ok()?,
-        reference_members.len(),
-    )?;
-    if View::u32_le_at(bytes, start.checked_add(symmetric::PREFIX_CONSTANT)?)?
-        != symmetric::PREFIX_CONSTANT_VALUE
-        || bytes.get(
-            start.checked_add(symmetric::PREFIX_CONSTANT + 4)?
-                ..start.checked_add(symmetric::OPERATION)?,
-        )? != [0; 3]
-    {
-        return None;
-    }
+        let frame = Class397SymmetricFrame::new(
+            class_tag,
+            paired_class_tag,
+            u64::try_from(paired_at.checked_sub(start)?).ok()?,
+            u64::try_from(reference_count_at.checked_sub(start)?).ok()?,
+            reference_members.len(),
+        )?;
+        if View::u32_le_at(bytes, start.checked_add(symmetric::PREFIX_CONSTANT)?)?
+            != symmetric::PREFIX_CONSTANT_VALUE
+            || bytes.get(
+                start.checked_add(symmetric::PREFIX_CONSTANT + 4)?
+                    ..start.checked_add(symmetric::OPERATION)?,
+            )? != [0; 3]
+        {
+            return None;
+        }
 
-    let operation_offset = start.checked_add(symmetric::OPERATION)?;
-    let operation = match View::u32_le_at(bytes, operation_offset)? {
-        1 => DesignExtrudeOperation::Join,
-        2 => DesignExtrudeOperation::Cut,
-        3 => DesignExtrudeOperation::Intersect,
-        4 => DesignExtrudeOperation::NewBody,
-        _ => return None,
-    };
-    let direction_face_extend_offsets = [
-        start.checked_add(symmetric::DIRECTION)?,
-        start.checked_add(symmetric::FACE_EXTEND)?,
-    ];
-    let direction_face_extend_values = [
-        View::u32_le_at(bytes, direction_face_extend_offsets[0])?,
-        View::u32_le_at(bytes, direction_face_extend_offsets[1])?,
-    ];
-    if direction_face_extend_values != [symmetric::DIRECTION_VALUE, symmetric::FACE_EXTEND_VALUE] {
-        return None;
-    }
+        let operation_offset = start.checked_add(symmetric::OPERATION)?;
+        let operation = match View::u32_le_at(bytes, operation_offset)? {
+            1 => DesignExtrudeOperation::Join,
+            2 => DesignExtrudeOperation::Cut,
+            3 => DesignExtrudeOperation::Intersect,
+            4 => DesignExtrudeOperation::NewBody,
+            _ => return None,
+        };
+        let direction_face_extend_offsets = [
+            start.checked_add(symmetric::DIRECTION)?,
+            start.checked_add(symmetric::FACE_EXTEND)?,
+        ];
+        let direction_face_extend_values = [
+            View::u32_le_at(bytes, direction_face_extend_offsets[0])?,
+            View::u32_le_at(bytes, direction_face_extend_offsets[1])?,
+        ];
+        if direction_face_extend_values
+            != [symmetric::DIRECTION_VALUE, symmetric::FACE_EXTEND_VALUE]
+        {
+            return None;
+        }
 
-    let direction_reversed_offset = start.checked_add(symmetric::DIRECTION_REVERSED)?;
-    let direction_reversed = match bytes.get(direction_reversed_offset)? {
-        0 => false,
-        1 => true,
-        _ => return None,
-    };
-    let solid_operation_offset = start.checked_add(symmetric::GEOMETRY_KIND)?;
-    let solid_operation = match bytes.get(solid_operation_offset)? {
-        0 => false,
-        1 => true,
-        _ => return None,
-    };
-    let start_offset = start.checked_add(symmetric::START_SUPPORT)?;
-    let start_support = match bytes.get(start_offset)? {
-        0 => DesignExtrudeStart::ProfilePlane,
-        1 => DesignExtrudeStart::OffsetProfilePlane,
-        2 => DesignExtrudeStart::FromFace,
-        _ => return None,
-    };
-
-    let profile_normal = f64s_at::<3>(bytes, start.checked_add(symmetric::PROFILE_NORMAL)?)?;
-    let profile_normal_squared = profile_normal
-        .iter()
-        .map(|component| component * component)
-        .sum::<f64>();
-    if profile_normal
-        .iter()
-        .any(|component| !component.is_finite())
-        || (profile_normal_squared - 1.0).abs() > PROFILE_NORMAL_UNIT_EPS
-    {
-        return None;
-    }
-
-    let mut slot_offset = start.checked_add(symmetric::REFERENCE_SLOTS)?;
-    for expected_present in [true, true, true, true, false, true, false] {
-        let present = match bytes.get(slot_offset)? {
+        let direction_reversed_offset = start.checked_add(symmetric::DIRECTION_REVERSED)?;
+        let direction_reversed = match bytes.get(direction_reversed_offset)? {
             0 => false,
             1 => true,
             _ => return None,
         };
-        if present != expected_present {
+        let solid_operation_offset = start.checked_add(symmetric::GEOMETRY_KIND)?;
+        let solid_operation = match bytes.get(solid_operation_offset)? {
+            0 => false,
+            1 => true,
+            _ => return None,
+        };
+        let start_offset = start.checked_add(symmetric::START_SUPPORT)?;
+        let start_support = match bytes.get(start_offset)? {
+            0 => DesignExtrudeStart::ProfilePlane,
+            1 => DesignExtrudeStart::OffsetProfilePlane,
+            2 => DesignExtrudeStart::FromFace,
+            _ => return None,
+        };
+
+        let profile_normal = f64s_at::<3>(bytes, start.checked_add(symmetric::PROFILE_NORMAL)?)?;
+        let profile_normal_squared = profile_normal
+            .iter()
+            .map(|component| component * component)
+            .sum::<f64>();
+        if profile_normal
+            .iter()
+            .any(|component| !component.is_finite())
+            || (profile_normal_squared - 1.0).abs() > PROFILE_NORMAL_UNIT_EPS
+        {
             return None;
         }
-        if present {
-            let record_index = super::shared_frames::marked_record_reference(bytes, slot_offset)?;
-            let is_reference_member = match ctx.contains(
-                reference_members,
-                &record_index,
-                "search F3D class-397 Extrude reference members",
-            ) {
-                Ok(value) => value,
-                Err(error) => return Some(Err(error)),
+
+        let mut slot_offset = start.checked_add(symmetric::REFERENCE_SLOTS)?;
+        for expected_present in [true, true, true, true, false, true, false] {
+            let present = match bytes.get(slot_offset)? {
+                0 => false,
+                1 => true,
+                _ => return None,
             };
-            if !is_reference_member {
+            if present != expected_present {
                 return None;
             }
-            slot_offset = slot_offset.checked_add(11)?;
-        } else {
-            slot_offset = slot_offset.checked_add(1)?;
+            if present {
+                let record_index =
+                    super::shared_frames::marked_record_reference(bytes, slot_offset)?;
+                let is_reference_member = match ctx.contains(
+                    reference_members,
+                    &record_index,
+                    "search F3D class-397 Extrude reference members",
+                ) {
+                    Ok(value) => value,
+                    Err(error) => return Some(Err(error)),
+                };
+                if !is_reference_member {
+                    return None;
+                }
+                slot_offset = slot_offset.checked_add(11)?;
+            } else {
+                slot_offset = slot_offset.checked_add(1)?;
+            }
         }
-    }
-    if slot_offset != start.checked_add(symmetric::FIRST_SIDE_EXTENT)? {
-        return None;
-    }
+        if slot_offset != start.checked_add(symmetric::FIRST_SIDE_EXTENT)? {
+            return None;
+        }
 
-    let first_side_extent_offset = start.checked_add(symmetric::FIRST_SIDE_EXTENT)?;
-    let second_side_extent_offset = start.checked_add(symmetric::SECOND_SIDE_EXTENT)?;
-    let side_extent_discriminators = [
-        View::u32_le_at(bytes, first_side_extent_offset)?,
-        View::u32_le_at(bytes, second_side_extent_offset)?,
-    ];
-    let extent = frame.extent(direction_face_extend_values[0], side_extent_discriminators)?;
-    if bytes.get(first_side_extent_offset.checked_add(4)?..second_side_extent_offset)? != [0; 9] {
-        return None;
-    }
+        let first_side_extent_offset = start.checked_add(symmetric::FIRST_SIDE_EXTENT)?;
+        let second_side_extent_offset = start.checked_add(symmetric::SECOND_SIDE_EXTENT)?;
+        let side_extent_discriminators = [
+            View::u32_le_at(bytes, first_side_extent_offset)?,
+            View::u32_le_at(bytes, second_side_extent_offset)?,
+        ];
+        let extent = frame.extent(direction_face_extend_values[0], side_extent_discriminators)?;
+        if bytes.get(first_side_extent_offset.checked_add(4)?..second_side_extent_offset)? != [0; 9]
+        {
+            return None;
+        }
 
-    let guid_offset = start.checked_add(symmetric::GUID)?;
-    let guid_end = match fixed_guid_end(ctx, bytes, guid_offset) {
-        Ok(value) => value?,
-        Err(error) => return Some(Err(error)),
-    };
-    let reference_count_offset = start.checked_add(symmetric::REFERENCE_COUNT)?;
-    if guid_end != guid_offset.checked_add(76)?
-        || bytes.get(guid_end..reference_count_offset)? != [0; 3]
-        || View::u32_le_at(bytes, reference_count_offset)? != symmetric::REFERENCE_COUNT_VALUE
-    {
-        return None;
-    }
+        let guid_offset = start.checked_add(symmetric::GUID)?;
+        let guid_end = match fixed_guid_end(ctx, bytes, guid_offset) {
+            Ok(value) => value?,
+            Err(error) => return Some(Err(error)),
+        };
+        let reference_count_offset = start.checked_add(symmetric::REFERENCE_COUNT)?;
+        if guid_end != guid_offset.checked_add(76)?
+            || bytes.get(guid_end..reference_count_offset)? != [0; 3]
+            || View::u32_le_at(bytes, reference_count_offset)? != symmetric::REFERENCE_COUNT_VALUE
+        {
+            return None;
+        }
 
-    Some(Ok(DesignExtrudePrologue::LegacyShifted {
-        operation_prefix_marker_offset: None,
-        operation,
-        operation_offset: u64::try_from(operation_offset).ok()?,
-        direction_face_extend_values,
-        side_extent_discriminators,
-        side_extent_discriminator_offsets: [
-            u64::try_from(first_side_extent_offset).ok()?,
-            u64::try_from(second_side_extent_offset).ok()?,
-        ],
-        extent: Some(extent),
-        direction_face_extend_offsets: [
-            u64::try_from(direction_face_extend_offsets[0]).ok()?,
-            u64::try_from(direction_face_extend_offsets[1]).ok()?,
-        ],
-        direction_reversed,
-        direction_reversed_offset: u64::try_from(direction_reversed_offset).ok()?,
-        solid_operation,
-        solid_operation_offset: u64::try_from(solid_operation_offset).ok()?,
-        start: start_support,
-        start_offset: u64::try_from(start_offset).ok()?,
-    }))
+        Some(Ok(DesignExtrudePrologue::LegacyShifted {
+            operation_prefix_marker_offset: None,
+            operation,
+            operation_offset: u64::try_from(operation_offset).ok()?,
+            direction_face_extend_values,
+            side_extent_discriminators,
+            side_extent_discriminator_offsets: [
+                u64::try_from(first_side_extent_offset).ok()?,
+                u64::try_from(second_side_extent_offset).ok()?,
+            ],
+            extent: Some(extent),
+            direction_face_extend_offsets: [
+                u64::try_from(direction_face_extend_offsets[0]).ok()?,
+                u64::try_from(direction_face_extend_offsets[1]).ok()?,
+            ],
+            direction_reversed,
+            direction_reversed_offset: u64::try_from(direction_reversed_offset).ok()?,
+            solid_operation,
+            solid_operation_offset: u64::try_from(solid_operation_offset).ok()?,
+            start: start_support,
+            start_offset: u64::try_from(start_offset).ok()?,
+        }))
     })()
     .transpose()
 }

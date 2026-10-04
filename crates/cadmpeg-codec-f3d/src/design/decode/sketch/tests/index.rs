@@ -427,7 +427,9 @@ fn native_scope_encoder_preserves_each_iteration_work_refusal() {
         ("scan F3D native stream key escaped bytes", 1),
     ] {
         let error = crate::test_support::resource_refusal_at(
-            ResourceDimension::WorkUnits, operation, 0,
+            ResourceDimension::WorkUnits,
+            operation,
+            0,
             |ctx| native_scope_scoped(ctx, name).map(|(_, text)| text),
         );
         assert!(matches!(error, CodecError::ResourceLimit(limit)
@@ -435,8 +437,7 @@ fn native_scope_encoder_preserves_each_iteration_work_refusal() {
                 && limit.operation == operation
                 && limit.additional == additional));
     }
-    let (_, text) = native_scope_scoped(
-        &cadmpeg_test_support::service_decode_context(), name,
-    ).unwrap();
+    let (_, text) =
+        native_scope_scoped(&cadmpeg_test_support::service_decode_context(), name).unwrap();
     assert_eq!(text, "f3d:A%3AB");
 }

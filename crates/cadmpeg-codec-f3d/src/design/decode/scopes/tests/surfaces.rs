@@ -65,15 +65,15 @@ fn ruled_surface_operation_reads_mode_parameters_and_ordered_edge_groups() {
             target_operation,
             skip,
             |ctx| {
-                exact_ruled_surface_operation(
-                    ctx, &bytes, 0, 366, 186, &[11, 12, 13, 14, 15, 16],
-                )
-                .map(|_| ())
+                exact_ruled_surface_operation(ctx, &bytes, 0, 366, 186, &[11, 12, 13, 14, 15, 16])
+                    .map(|_| ())
             },
         );
-        assert!(matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
+        assert!(
+            matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && limit.operation == target_operation && limit.additional == additional));
+                && limit.operation == target_operation && limit.additional == additional)
+        );
     }
 
     bytes[20..24].copy_from_slice(&2u32.to_le_bytes());
@@ -863,12 +863,9 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
         (cadmpeg_core::decode::ResourceDimension::CollectionItems, 6),
         (cadmpeg_core::decode::ResourceDimension::RetainedBytes, 6),
     ] {
-        let refusal = crate::test_support::resource_refusal_at(
-            dimension,
-            operation,
-            0,
-            |ctx| exact_base_feature_construction(ctx, &zero_body, &zero_scope).map(|_| ()),
-        );
+        let refusal = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
+            exact_base_feature_construction(ctx, &zero_body, &zero_scope).map(|_| ())
+        });
         assert!(matches!(
             refusal,
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1192,12 +1189,9 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
         (cadmpeg_core::decode::ResourceDimension::CollectionItems, 14),
         (cadmpeg_core::decode::ResourceDimension::RetainedBytes, 14),
     ] {
-        let refusal = crate::test_support::resource_refusal_at(
-            dimension,
-            operation,
-            0,
-            |ctx| exact_base_feature_construction(ctx, &zero_body, &zero_scope).map(|_| ()),
-        );
+        let refusal = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
+            exact_base_feature_construction(ctx, &zero_body, &zero_scope).map(|_| ())
+        });
         assert!(matches!(
             refusal,
             cadmpeg_core::CodecError::ResourceLimit(limit)

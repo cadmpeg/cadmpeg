@@ -108,15 +108,12 @@ pub(super) fn exact_legacy_class_388_scope(
         if external_component == 0 {
             return None;
         }
-        let identity_end = match fixed_guid_end(
-            ctx,
-            bytes,
-            start + class_388_assemble::COMPONENT_IDENTITY,
-        ) {
-            Ok(Some(value)) => value,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+        let identity_end =
+            match fixed_guid_end(ctx, bytes, start + class_388_assemble::COMPONENT_IDENTITY) {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
         if identity_end != start + class_388_assemble::COMPONENT_IDENTITY + 76 {
             return None;
         }
@@ -342,20 +339,29 @@ fn exact_legacy_class_383_operand_path(
         let placement_owners = [a, b, c, d];
         let (leading_at, leading_paired_at) =
             require_record_frame!(leading_record_index, "387", class_383_leading::LEN);
-        let (leading_identity_at, _) =
-            require_record_frame!(leading_identity_record_index, "359", class_383_identity::LEN);
+        let (leading_identity_at, _) = require_record_frame!(
+            leading_identity_record_index,
+            "359",
+            class_383_identity::LEN
+        );
         let (child_at, child_paired_at) =
             require_record_frame!(child_record_index, "387", class_383_child::LEN);
         let (child_identity_at, _) =
             require_record_frame!(child_identity_record_index, "359", class_383_identity::LEN);
         let (first_face_at, _) =
             require_record_frame!(first_face_record_index, "394", class_383_face::LEN);
-        let (first_face_identity_at, _) =
-            require_record_frame!(first_face_identity_record_index, "359", class_383_identity::LEN);
+        let (first_face_identity_at, _) = require_record_frame!(
+            first_face_identity_record_index,
+            "359",
+            class_383_identity::LEN
+        );
         let (second_face_at, _) =
             require_record_frame!(second_face_record_index, "394", class_383_face::LEN);
-        let (second_face_identity_at, _) =
-            require_record_frame!(second_face_identity_record_index, "359", class_383_identity::LEN);
+        let (second_face_identity_at, _) = require_record_frame!(
+            second_face_identity_record_index,
+            "359",
+            class_383_identity::LEN
+        );
         let (carrier_at, carrier_paired_at) =
             require_record_frame!(carrier_record_index, "378", class_383_carrier::LEN);
         let structural_checks = [
@@ -544,25 +550,28 @@ fn exact_legacy_class_383_record_frame(
     class_tag: &str,
     frame_length: usize,
 ) -> Result<Option<(usize, usize)>, CodecError> {
-    let mut candidates = records.frames(ctx, record_index)?.filter_map(|(start, paired_at)| {
-        if Some(paired_at) != start.checked_add(frame_length) {
-            return None;
-        }
-        let start_class_tag = match exact_indexed_header_at(ctx, bytes, start, record_index) {
-            Ok(Some(class_tag)) => class_tag,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
-        if start_class_tag != class_tag {
-            return None;
-        }
-        let paired_class_tag = match exact_indexed_header_at(ctx, bytes, paired_at, record_index) {
-            Ok(Some(class_tag)) => class_tag,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
-        (paired_class_tag == "258").then_some(Ok((start, paired_at)))
-    });
+    let mut candidates = records
+        .frames(ctx, record_index)?
+        .filter_map(|(start, paired_at)| {
+            if Some(paired_at) != start.checked_add(frame_length) {
+                return None;
+            }
+            let start_class_tag = match exact_indexed_header_at(ctx, bytes, start, record_index) {
+                Ok(Some(class_tag)) => class_tag,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
+            if start_class_tag != class_tag {
+                return None;
+            }
+            let paired_class_tag =
+                match exact_indexed_header_at(ctx, bytes, paired_at, record_index) {
+                    Ok(Some(class_tag)) => class_tag,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                };
+            (paired_class_tag == "258").then_some(Ok((start, paired_at)))
+        });
     let candidate = match candidates.next() {
         Some(Ok(candidate)) => candidate,
         Some(Err(error)) => return Err(error),
@@ -663,13 +672,13 @@ pub(super) fn exact_legacy_class_388_operand_paths(
                 exact_same_segment_record_reference(bytes, locator_reference_at)?;
             let mut candidate = None;
             let locator_offsets = records.offsets(locator_record_index);
-            let locator_candidates = match ctx.admit_iter(
-                locator_offsets,
-                "scan F3D legacy operand locator offsets",
-            ) {
-                Ok(offsets) => offsets.copied().filter(|locator_at| *locator_at >= search_start),
-                Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
-            };
+            let locator_candidates =
+                match ctx.admit_iter(locator_offsets, "scan F3D legacy operand locator offsets") {
+                    Ok(offsets) => offsets
+                        .copied()
+                        .filter(|locator_at| *locator_at >= search_start),
+                    Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+                };
             for locator_at in locator_candidates {
                 if let Err(error) = ctx.charge_work(1, "f3d legacy path candidate") {
                     return Some(Err(error));
@@ -740,27 +749,20 @@ fn exact_legacy_class_388_operand_path_envelope(
     locator_at: usize,
 ) -> Result<Option<DesignAssemblyOperandPath>, CodecError> {
     let parsed = (|| {
-        let locator_class_tag = match exact_indexed_header_at(
-            ctx,
-            bytes,
-            locator_at,
-            locator_record_index,
-        ) {
-            Ok(Some(class_tag)) => class_tag,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+        let locator_class_tag =
+            match exact_indexed_header_at(ctx, bytes, locator_at, locator_record_index) {
+                Ok(Some(class_tag)) => class_tag,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
         if locator_class_tag != "451" {
             return None;
         }
-        let actual_locator_end = match next_indexed_record_offset(
-            ctx,
-            bytes,
-            locator_at.checked_add(1)?,
-        ) {
-            Ok(value) => value,
-            Err(error) => return Some(Err(error)),
-        };
+        let actual_locator_end =
+            match next_indexed_record_offset(ctx, bytes, locator_at.checked_add(1)?) {
+                Ok(value) => value,
+                Err(error) => return Some(Err(error)),
+            };
         if actual_locator_end != Some(locator_at.checked_add(path_locator::LEN)?)
             || bytes.get(
                 locator_at.checked_add(path_locator::ZERO_RUN_10)?
@@ -823,16 +825,12 @@ fn exact_legacy_class_388_operand_path_envelope(
             Some(Err(error)) => return Some(Err(error)),
             None => {}
         }
-        let wrapper_class_tag = match exact_indexed_header_at(
-            ctx,
-            bytes,
-            wrapper_at,
-            wrapper_record_index,
-        ) {
-            Ok(Some(class_tag)) => class_tag,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+        let wrapper_class_tag =
+            match exact_indexed_header_at(ctx, bytes, wrapper_at, wrapper_record_index) {
+                Ok(Some(class_tag)) => class_tag,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
         if bytes.get(
             wrapper_at.checked_add(11)?
                 ..wrapper_at.checked_add(class_369_wrapper_one::WRAPPER_MARKER)?,
@@ -857,14 +855,11 @@ fn exact_legacy_class_388_operand_path_envelope(
             _ => return None,
         };
         let wrapper_end = wrapper_at.checked_add(wrapper_length)?;
-        let actual_wrapper_end = match next_indexed_record_offset(
-            ctx,
-            bytes,
-            wrapper_at.checked_add(1)?,
-        ) {
-            Ok(value) => value,
-            Err(error) => return Some(Err(error)),
-        };
+        let actual_wrapper_end =
+            match next_indexed_record_offset(ctx, bytes, wrapper_at.checked_add(1)?) {
+                Ok(value) => value,
+                Err(error) => return Some(Err(error)),
+            };
         if actual_wrapper_end != Some(wrapper_end)
             || wrapper_record_index
                 != locator_record_index
@@ -885,11 +880,12 @@ fn exact_legacy_class_388_operand_path_envelope(
         let mut final_path_reference_offset = None;
         for ordinal in 0..path_count {
             let path_record_index = locator_record_index.checked_add(ordinal)?.checked_add(1)?;
-            let path_class_tag = match exact_indexed_header_at(ctx, bytes, path_at, path_record_index) {
-                Ok(Some(class_tag)) => class_tag,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
+            let path_class_tag =
+                match exact_indexed_header_at(ctx, bytes, path_at, path_record_index) {
+                    Ok(Some(class_tag)) => class_tag,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                };
             if path_class_tag != "412" {
                 return None;
             }
@@ -937,9 +933,21 @@ fn exact_legacy_class_388_operand_path_envelope(
             return Some(Err(error));
         }
         for path in path_records.into_iter().flatten() {
-            if let Err(error) = ctx.push_vec(&mut occurrence_guids, path.occurrence_guid, "f3d legacy occurrence GUIDs") { return Some(Err(error)); };
+            if let Err(error) = ctx.push_vec(
+                &mut occurrence_guids,
+                path.occurrence_guid,
+                "f3d legacy occurrence GUIDs",
+            ) {
+                return Some(Err(error));
+            };
         }
-        if let Err(error) = ctx.push_vec(&mut occurrence_guids, final_path.occurrence_guid, "f3d legacy occurrence GUIDs") { return Some(Err(error)); };
+        if let Err(error) = ctx.push_vec(
+            &mut occurrence_guids,
+            final_path.occurrence_guid,
+            "f3d legacy occurrence GUIDs",
+        ) {
+            return Some(Err(error));
+        };
         DesignAssemblyOperandPath::try_new(
             DesignAssemblyOperandPathLink {
                 locator_reference_offset,
@@ -1041,10 +1049,16 @@ fn exact_legacy_class_412_path(
             if identity_end != start.checked_add(expected_end)? {
                 return None;
             }
-            if let Err(error) = ctx.push_vec(&mut identity_guids, crate::records::identity::Located {
-                value: identity_guid,
-                offset: u64::try_from(identity_at.checked_add(4)?).ok()?,
-            }, "collect F3D legacy path identity GUIDs") { return Some(Err(error)); };
+            if let Err(error) = ctx.push_vec(
+                &mut identity_guids,
+                crate::records::identity::Located {
+                    value: identity_guid,
+                    offset: u64::try_from(identity_at.checked_add(4)?).ok()?,
+                },
+                "collect F3D legacy path identity GUIDs",
+            ) {
+                return Some(Err(error));
+            };
         }
         Some(Ok(LegacyClass412Path {
             record_index,

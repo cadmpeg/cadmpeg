@@ -76,11 +76,12 @@ fn exact_class_363_operand_path(
             bytes,
             carrier_at.checked_add(class_363_carrier::TERMINAL_REFERENCE)?,
         )?;
-        let leading = match exact_class_363_node_frame(ctx, bytes, records, scope, leading_record_index) {
-            Ok(Some(value)) => value,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+        let leading =
+            match exact_class_363_node_frame(ctx, bytes, records, scope, leading_record_index) {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
         let (terminal_at, terminal_paired_at) = match exact_class_264_record_frame(
             ctx,
             bytes,
@@ -308,13 +309,11 @@ fn exact_class_307_joint_origin(
             return None;
         }
         let ordinals: [usize; 3] = [0, 1, 2];
-        let ordinals = match ctx.admit_iter(
-            &ordinals,
-            "validate F3D joint-origin reference entries",
-        ) {
-            Ok(ordinals) => ordinals,
-            Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
-        };
+        let ordinals =
+            match ctx.admit_iter(&ordinals, "validate F3D joint-origin reference entries") {
+                Ok(ordinals) => ordinals,
+                Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+            };
         for ordinal in ordinals.copied() {
             marked_record_reference(
                 bytes,
@@ -378,9 +377,14 @@ fn exact_class_363_identity_frame(
             scope_reference: class_363_identity_short::SCOPE_REFERENCE,
         }));
     }
-    if let Some((start, _paired_at)) =
-        exact_class_264_record_frame(ctx, bytes, records, record_index, "388", class_363_identity::LEN)?
-    {
+    if let Some((start, _paired_at)) = exact_class_264_record_frame(
+        ctx,
+        bytes,
+        records,
+        record_index,
+        "388",
+        class_363_identity::LEN,
+    )? {
         return Ok(Some(CarrierFrame {
             start,
             scope_reference: class_363_identity::SCOPE_REFERENCE,
@@ -393,7 +397,8 @@ fn exact_class_363_identity_frame(
         record_index,
         "388",
         class_363_identity_extended::LEN,
-    )? else {
+    )?
+    else {
         return Ok(None);
     };
     Ok(Some(CarrierFrame {

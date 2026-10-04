@@ -148,10 +148,15 @@ fn sketch_scope_entity_id_copy_refuses_retained_limit() {
 
 #[test]
 fn scope_payload_length_counts_supplementary_utf16_units_and_refuses_work() {
-    let kind = crate::records::feature::scope::DesignFeatureKind::try_from("A😀".to_owned()).unwrap();
+    let kind =
+        crate::records::feature::scope::DesignFeatureKind::try_from("A😀".to_owned()).unwrap();
     let scope = crate::records::feature::scope::DesignParameterScope::empty("scope", kind, 1);
     assert_eq!(
-        super::parameter_scope_payload_length(&cadmpeg_test_support::service_decode_context(), &scope).unwrap(),
+        super::parameter_scope_payload_length(
+            &cadmpeg_test_support::service_decode_context(),
+            &scope
+        )
+        .unwrap(),
         Some(122),
     );
     let error = crate::test_support::resource_refusal_at(
@@ -160,10 +165,12 @@ fn scope_payload_length_counts_supplementary_utf16_units_and_refuses_work() {
         0,
         |ctx| super::parameter_scope_payload_length(ctx, &scope),
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
             && limit.operation == "count F3D scope kind UTF-16 units"
-            && limit.additional == 5));
+            && limit.additional == 5)
+    );
 }
 
 #[test]
@@ -176,7 +183,13 @@ fn payload_property_ascii_scans_refuse_work_and_preserve_cursor() {
     bytes.extend_from_slice(b"IntrinsicMetaTypeuint64");
     bytes.extend_from_slice(&9_u64.to_le_bytes());
     assert_eq!(
-        super::payload_prologue(&cadmpeg_test_support::service_decode_context(), &bytes, 0, bytes.len()).unwrap(),
+        super::payload_prologue(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            0,
+            bytes.len()
+        )
+        .unwrap(),
         Some(46),
     );
     for (skip, additional) in [(0, 1), (1, 23)] {
@@ -186,10 +199,12 @@ fn payload_property_ascii_scans_refuse_work_and_preserve_cursor() {
             skip,
             |ctx| super::payload_prologue(ctx, &bytes, 0, bytes.len()),
         );
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
                 && limit.operation == "validate F3D payload property ASCII field"
-                && limit.additional == additional));
+                && limit.additional == additional)
+        );
     }
 }
 
@@ -206,8 +221,10 @@ fn named_scope_label_scans_refuse_work() {
             0,
             |ctx| named_parameter_scope_tail_is_valid(ctx, &bytes, 0, bytes.len(), bytes.len()),
         );
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && limit.operation == operation && limit.additional == 6));
+                && limit.operation == operation && limit.additional == 6)
+        );
     }
 }

@@ -49,8 +49,8 @@ fn group(
     record_index: u32,
     ordinal: u32,
 ) -> DesignConstructionOperandGroup {
-    let frame = DesignConstructionOperandGroupFrame::try_from(
-        DesignConstructionOperandGroupFrameDraft {
+    let frame =
+        DesignConstructionOperandGroupFrame::try_from(DesignConstructionOperandGroupFrameDraft {
             member_count_offset: 1021,
             auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
@@ -63,9 +63,8 @@ fn group(
             opaque_scalar: 0.125,
             opaque_scalar_offset: 1075,
             variant: false,
-        },
-    )
-    .expect("valid construction operand frame");
+        })
+        .expect("valid construction operand frame");
     DesignConstructionOperandGroup::try_from(DesignConstructionOperandGroupDraft {
         id: format!("f3d:{STREAM}:operand-group#{record_index}"),
         scope_record_index,
@@ -259,16 +258,15 @@ fn fillet_scoped_projection_collectors_refuse_at_each_exact_boundary() {
     let output = crate::test_support::with_decode_context(|ctx| constant.decode(ctx))
         .expect("valid constant Fillet groups");
     assert_eq!(output.len(), 2);
-    assert!(
-        output
-            .iter()
-            .all(|group| matches!(&group.law, DesignFilletRadiusLaw::Constant { .. }))
-    );
+    assert!(output
+        .iter()
+        .all(|group| matches!(&group.law, DesignFilletRadiusLaw::Constant { .. })));
 
     // Two indexed parameters avoid a hash-table rehash before the projections.
     let storage_constant = constant_fixture(1, 1, true);
-    let storage_output = crate::test_support::with_decode_context(|ctx| storage_constant.decode(ctx))
-        .expect("valid single constant Fillet group");
+    let storage_output =
+        crate::test_support::with_decode_context(|ctx| storage_constant.decode(ctx))
+            .expect("valid single constant Fillet group");
     assert!(matches!(storage_output.as_slice(), [group]
         if matches!(&group.law, DesignFilletRadiusLaw::Constant { .. })));
 
@@ -342,8 +340,9 @@ fn fillet_scoped_projection_collectors_refuse_at_each_exact_boundary() {
         )
     ));
     let storage_variable = one_scope_fixture(&["StartRadius", "EndRadius"]);
-    let storage_output = crate::test_support::with_decode_context(|ctx| storage_variable.decode(ctx))
-        .expect("valid endpoint-only variable Fillet group");
+    let storage_output =
+        crate::test_support::with_decode_context(|ctx| storage_variable.decode(ctx))
+            .expect("valid endpoint-only variable Fillet group");
     assert!(matches!(storage_output.as_slice(), [group]
         if matches!(&group.law, DesignFilletRadiusLaw::Variable { middle, .. }
             if middle.is_empty())));
@@ -366,21 +365,13 @@ fn fillet_scoped_projection_collectors_refuse_at_each_exact_boundary() {
             "index F3D Fillet parameters",
             constant.parameters.len(),
         ),
-        (
-            &constant,
-            "scan F3D Fillet scopes",
-            constant.scopes.len(),
-        ),
+        (&constant, "scan F3D Fillet scopes", constant.scopes.len()),
         (
             &constant,
             "scan F3D Fillet scope groups",
             constant.groups.len(),
         ),
-        (
-            &constant,
-            "scan F3D Fillet owners",
-            constant.owners.len(),
-        ),
+        (&constant, "scan F3D Fillet owners", constant.owners.len()),
         (
             &constant,
             "scan F3D Fillet radius parameters",
@@ -397,11 +388,7 @@ fn fillet_scoped_projection_collectors_refuse_at_each_exact_boundary() {
         (&asymmetric, "scan F3D Fillet asymmetric parameters", 3),
         (&variable, "scan F3D Fillet variable parameters", 4),
         (&variable, "scan F3D Fillet midpoint radii", 1),
-        (
-            &variable,
-            "scan F3D Fillet midpoint parameter indices",
-            1,
-        ),
+        (&variable, "scan F3D Fillet midpoint parameter indices", 1),
     ] {
         assert_work_admission(fixture, operation, additional);
     }
@@ -419,14 +406,22 @@ fn fillet_materialized_projection_storage_is_released_between_scopes() {
     // alignment padding, four control bytes, and the sixteen-byte control tail.
     let index_overlap = u64::try_from(
         4 * std::mem::size_of::<((&str, u32), &DesignParameter)>()
-            + std::mem::align_of::<((&str, u32), &DesignParameter)>().max(16) - 1
-            + 4 + 16,
-    ).expect("index overlap bytes fit u64");
+            + std::mem::align_of::<((&str, u32), &DesignParameter)>().max(16)
+            - 1
+            + 4
+            + 16,
+    )
+    .expect("index overlap bytes fit u64");
     let stream_bytes = u64::try_from(
-        crate::ids::native_stream(&fixture.scopes[0].id).expect("native stream").len(),
-    ).expect("stream bytes fit u64");
+        crate::ids::native_stream(&fixture.scopes[0].id)
+            .expect("native stream")
+            .len(),
+    )
+    .expect("stream bytes fit u64");
     // Output ID growth overlaps the live projections with the copied stream.
-    let output_peak = peak_bytes.checked_add(stream_bytes).expect("output peak fits u64");
+    let output_peak = peak_bytes
+        .checked_add(stream_bytes)
+        .expect("output peak fits u64");
     policy.limits.max_materialized_bytes = output_peak.max(index_overlap);
     let output = crate::test_support::with_decode_policy(&policy, |ctx| fixture.decode(ctx))
         .expect("scoped projection receipts release before the next scope");

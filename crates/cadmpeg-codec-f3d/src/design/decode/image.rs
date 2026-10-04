@@ -83,9 +83,7 @@ pub(super) fn embedded_image_asset(
             "validate F3D embedded image extension",
         )? {
             Ok(extension) => {
-                if extension.eq_ignore_ascii_case("jpg")
-                    || extension.eq_ignore_ascii_case("jpeg")
-                {
+                if extension.eq_ignore_ascii_case("jpg") || extension.eq_ignore_ascii_case("jpeg") {
                     Some("image/jpeg")
                 } else if extension.eq_ignore_ascii_case("png") {
                     Some("image/png")
@@ -135,10 +133,13 @@ pub(super) fn decode_scoped_images<T>(
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let stream = native_scope_charged(ctx, &entry.name)?;
-        for scope in ctx.admit_iter(scopes, "scan F3D image owner scopes")?.filter(|scope| {
-            scope.kind().as_str() == kind.as_str()
-                && crate::ids::native_stream(&scope.id) == Some(stream.as_str())
-        }) {
+        for scope in ctx
+            .admit_iter(scopes, "scan F3D image owner scopes")?
+            .filter(|scope| {
+                scope.kind().as_str() == kind.as_str()
+                    && crate::ids::native_stream(&scope.id) == Some(stream.as_str())
+            })
+        {
             if let Some(image) = parse(ctx, bytes, &entry.name, scope)? {
                 ctx.reserve_vec(&mut images, 1, "f3d scoped image records")?;
                 images.push(image);

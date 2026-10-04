@@ -603,12 +603,10 @@ fn legacy_edge_flange_two_sided_owner_pairs_refuse_at_each_exact_boundary() {
                 .expect("four owner-pair slots fit u64"),
         ),
     ] {
-        let refusal = crate::test_support::resource_refusal_at(
-            dimension,
-            operation_label,
-            0,
-            |ctx| decode(ctx).map(|_| ()),
-        );
+        let refusal =
+            crate::test_support::resource_refusal_at(dimension, operation_label, 0, |ctx| {
+                decode(ctx).map(|_| ())
+            });
         assert!(matches!(
             refusal,
             cadmpeg_core::CodecError::ResourceLimit(failure)
@@ -1020,23 +1018,18 @@ fn edge_flange_unclaimed_reference_copy_charges_actual_source_length() {
         (cadmpeg_core::decode::ResourceDimension::CollectionItems, 8),
         (cadmpeg_core::decode::ResourceDimension::RetainedBytes, 40),
     ] {
-        let refusal = crate::test_support::resource_refusal_at(
-            dimension,
-            operation,
-            0,
-            |ctx| {
-                crate::design::decode::scopes::sheet_metal::exact_edge_flange_operation(
-                    ctx,
-                    &frame.bytes,
-                    0,
-                    frame.paired_at,
-                    "414",
-                    "258",
-                    &references,
-                )
-                .map(|_| ())
-            },
-        );
+        let refusal = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
+            crate::design::decode::scopes::sheet_metal::exact_edge_flange_operation(
+                ctx,
+                &frame.bytes,
+                0,
+                frame.paired_at,
+                "414",
+                "258",
+                &references,
+            )
+            .map(|_| ())
+        });
         assert!(matches!(
             refusal,
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1052,39 +1045,36 @@ fn legacy_edge_flange_reference_copy_refuses_each_resource_limit() {
     let references = [201, 204, 207, 218, 240, 243, 251, 254];
     let frame = legacy_edge_flange_frame();
     let operation = "f3d legacy edge-flange reference copy";
-    assert!(crate::design::decode::scopes::sheet_metal::exact_edge_flange_operation(
-        &cadmpeg_test_support::service_decode_context(),
-        &frame.bytes,
-        0,
-        frame.paired_at,
-        "325",
-        "258",
-        &references,
-    )
-    .unwrap()
-    .is_some());
+    assert!(
+        crate::design::decode::scopes::sheet_metal::exact_edge_flange_operation(
+            &cadmpeg_test_support::service_decode_context(),
+            &frame.bytes,
+            0,
+            frame.paired_at,
+            "325",
+            "258",
+            &references,
+        )
+        .unwrap()
+        .is_some()
+    );
     for (dimension, additional) in [
         (cadmpeg_core::decode::ResourceDimension::WorkUnits, 8),
         (cadmpeg_core::decode::ResourceDimension::CollectionItems, 8),
         (cadmpeg_core::decode::ResourceDimension::RetainedBytes, 32),
     ] {
-        let refusal = crate::test_support::resource_refusal_at(
-            dimension,
-            operation,
-            0,
-            |ctx| {
-                crate::design::decode::scopes::sheet_metal::exact_edge_flange_operation(
-                    ctx,
-                    &frame.bytes,
-                    0,
-                    frame.paired_at,
-                    "325",
-                    "258",
-                    &references,
-                )
-                .map(|_| ())
-            },
-        );
+        let refusal = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
+            crate::design::decode::scopes::sheet_metal::exact_edge_flange_operation(
+                ctx,
+                &frame.bytes,
+                0,
+                frame.paired_at,
+                "325",
+                "258",
+                &references,
+            )
+            .map(|_| ())
+        });
         assert!(matches!(
             refusal,
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1100,39 +1090,36 @@ fn edge_flange_to_object_reference_copy_refuses_each_resource_limit() {
     let references = [201, 204, 207, 218, 221, 224, 240, 243, 251, 254, 270];
     let frame = edge_flange_to_object_frame(0);
     let operation = "f3d ToObject edge-flange reference copy";
-    assert!(crate::design::decode::scopes::sheet_metal::exact_edge_flange_operation(
-        &cadmpeg_test_support::service_decode_context(),
-        &frame.bytes,
-        0,
-        frame.paired_at,
-        "414",
-        "258",
-        &references,
-    )
-    .unwrap()
-    .is_some());
+    assert!(
+        crate::design::decode::scopes::sheet_metal::exact_edge_flange_operation(
+            &cadmpeg_test_support::service_decode_context(),
+            &frame.bytes,
+            0,
+            frame.paired_at,
+            "414",
+            "258",
+            &references,
+        )
+        .unwrap()
+        .is_some()
+    );
     for (dimension, additional) in [
         (cadmpeg_core::decode::ResourceDimension::WorkUnits, 11),
         (cadmpeg_core::decode::ResourceDimension::CollectionItems, 11),
         (cadmpeg_core::decode::ResourceDimension::RetainedBytes, 44),
     ] {
-        let refusal = crate::test_support::resource_refusal_at(
-            dimension,
-            operation,
-            0,
-            |ctx| {
-                crate::design::decode::scopes::sheet_metal::exact_edge_flange_operation(
-                    ctx,
-                    &frame.bytes,
-                    0,
-                    frame.paired_at,
-                    "414",
-                    "258",
-                    &references,
-                )
-                .map(|_| ())
-            },
-        );
+        let refusal = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
+            crate::design::decode::scopes::sheet_metal::exact_edge_flange_operation(
+                ctx,
+                &frame.bytes,
+                0,
+                frame.paired_at,
+                "414",
+                "258",
+                &references,
+            )
+            .map(|_| ())
+        });
         assert!(matches!(
             refusal,
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1501,7 +1488,9 @@ fn legacy_edge_flange_reference_vectors_refuse_collection_limit() {
         )
     };
     crate::test_support::with_decode_context(|ctx| {
-        assert!(decode(ctx).expect("valid legacy EdgeFlange frame").is_some());
+        assert!(decode(ctx)
+            .expect("valid legacy EdgeFlange frame")
+            .is_some());
     });
 
     for operation in [

@@ -64,8 +64,11 @@ fn hole_scopes_propagate_reference_and_ascii_scan_refusals() {
     assert_eq!(
         super::graphic_ascii_end(
             &cadmpeg_test_support::service_decode_context(),
-            &[1, 0, 0, 0, b'a'], 0, 0..=256,
-        ).unwrap(),
+            &[1, 0, 0, 0, b'a'],
+            0,
+            0..=256,
+        )
+        .unwrap(),
         Some(5),
     );
     for operation in [

@@ -51,10 +51,13 @@ pub(crate) fn project_canvas_images(
 ) -> Result<Vec<Asset>, CodecError> {
     let mut assets = Vec::new();
     for image in ctx.admit_iter(images, "scan F3D Canvas images")? {
-        let Some(scope) = ctx.admit_iter(scopes, "find F3D Canvas image scopes")?.find(|scope| {
-            scope.record_index == image.scope_record_index
-                && crate::ids::native_stream(&scope.id) == crate::ids::native_stream(&image.id)
-        }) else {
+        let Some(scope) = ctx
+            .admit_iter(scopes, "find F3D Canvas image scopes")?
+            .find(|scope| {
+                scope.record_index == image.scope_record_index
+                    && crate::ids::native_stream(&scope.id) == crate::ids::native_stream(&image.id)
+            })
+        else {
             continue;
         };
         let feature_id = crate::design::identity::neutral_feature_id(ctx, scope)?;
@@ -144,16 +147,12 @@ fn parse_canvas_image(
             return None;
         };
         let geometry_record_index = marked_reference(bytes, geometry_reference_at)?;
-        let geometry_at = match next_indexed_record_offset_with_index(
-            ctx,
-            bytes,
-            0,
-            geometry_record_index,
-        ) {
-            Ok(Some(geometry_at)) => geometry_at,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+        let geometry_at =
+            match next_indexed_record_offset_with_index(ctx, bytes, 0, geometry_record_index) {
+                Ok(Some(geometry_at)) => geometry_at,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
         let (geometry_class_tag, after_geometry_tag) =
             lp_ascii_filtered_view(bytes, geometry_at, 0..=2000, u8::is_ascii_graphic)?;
         let geometry_prologue: [u8; 15] = bytes
@@ -460,9 +459,7 @@ mod tests {
             ResourceDimension::WorkUnits,
             "scan F3D indexed record headers",
             0,
-            |ctx| {
-                parse_canvas_image(ctx, &bytes, "Design/BulkStream.dat", &scope).map(|_| ())
-            },
+            |ctx| parse_canvas_image(ctx, &bytes, "Design/BulkStream.dat", &scope).map(|_| ()),
         );
         assert!(matches!(
             error,
@@ -519,17 +516,21 @@ mod tests {
                 ResourceDimension::WorkUnits,
                 "find F3D Canvas neutral feature",
                 0,
-                |ctx| super::project_canvas_images(
-                    ctx,
-                    scan,
-                    std::slice::from_ref(&scope),
-                    std::slice::from_ref(&image),
-                    &mut [feature()],
-                ),
+                |ctx| {
+                    super::project_canvas_images(
+                        ctx,
+                        scan,
+                        std::slice::from_ref(&scope),
+                        std::slice::from_ref(&image),
+                        &mut [feature()],
+                    )
+                },
             );
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "find F3D Canvas neutral feature"));
+                    && limit.operation == "find F3D Canvas neutral feature")
+            );
             let asset_id_len = crate::ids::neutral_asset_id(ENTRY).as_str().len();
             let base = 3 + "a.png".len() + crate::ids::native_scope(ENTRY).len() + asset_id_len;
             for (retained, items, dimension, operation) in [

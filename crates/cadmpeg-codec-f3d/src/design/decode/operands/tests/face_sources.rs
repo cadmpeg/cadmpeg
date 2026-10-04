@@ -211,10 +211,10 @@ fn face_source_reference_push_refuses_each_collection_item() {
 
 #[test]
 fn face_source_member_vector_refuses_collection_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-    use cadmpeg_core::CodecError;
     use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
     use crate::records::identity::ReferenceRun;
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
 
     let stream_name = "FusionAssetName[Active]/Design1/BulkStream.dat";
     let mut bulk = Vec::new();
@@ -241,14 +241,8 @@ fn face_source_member_vector_refuses_collection_limit() {
         crate::test_support::indexed_header(&mut member, *b"286", record_index);
         member.extend_from_slice(&[0; 10]);
         member.extend_from_slice(&u64::from(record_index).to_le_bytes());
-        crate::test_support::lp_utf16(
-            &mut member,
-            "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-        );
-        crate::test_support::lp_utf16(
-            &mut member,
-            "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-        );
+        crate::test_support::lp_utf16(&mut member, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+        crate::test_support::lp_utf16(&mut member, "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
         member.extend_from_slice(&2_u32.to_le_bytes());
         member.push(0);
         member.extend_from_slice(&[0; 4]);
@@ -284,9 +278,7 @@ fn face_source_member_vector_refuses_collection_limit() {
             ResourceDimension::CollectionItems,
             "collect F3D face source members",
             0,
-            |ctx| {
-                decode_face_source_groups(ctx, scan, std::slice::from_ref(&scope)).map(|_| ())
-            },
+            |ctx| decode_face_source_groups(ctx, scan, std::slice::from_ref(&scope)).map(|_| ()),
         );
         assert!(matches!(
             refusal,

@@ -89,14 +89,14 @@ pub(super) fn fixed_kind_tail_operations(
             draft.layout_fixture_tail();
         })
         .unwrap();
-let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
-&cadmpeg_test_support::service_decode_context(),
-&bytes,
-&crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-&move_scope,
-)
-.unwrap()
-.expect("class-368 Move frame");
+    let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &move_scope,
+    )
+    .unwrap()
+    .expect("class-368 Move frame");
     assert_eq!(decoded.transform, move_transform.try_into().unwrap());
     assert_eq!(decoded.transform_offset, u64_from_index(move_at + 48));
     assert_eq!(u32::from(decoded.form), 5);
@@ -128,14 +128,14 @@ let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
             draft.layout_fixture_tail();
         })
         .unwrap();
-let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
-&cadmpeg_test_support::service_decode_context(),
-&bytes,
-&crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-&compact_move_scope,
-)
-.unwrap()
-.expect("class-296 Move frame");
+    let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &compact_move_scope,
+    )
+    .unwrap()
+    .expect("class-296 Move frame");
     assert_eq!(decoded.transform, move_transform.try_into().unwrap());
     assert_eq!(
         decoded.transform_offset,
@@ -146,14 +146,14 @@ let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
     assert_eq!(decoded.form_offset, u64_from_index(compact_move_at + 43));
     bytes[compact_move_at + 4..compact_move_at + 7].copy_from_slice(b"362");
     bytes[compact_move_at + 43..compact_move_at + 47].copy_from_slice(&5u32.to_le_bytes());
-let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
-&cadmpeg_test_support::service_decode_context(),
-&bytes,
-&crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-&compact_move_scope,
-)
-.unwrap()
-.expect("class-362 Move frame");
+    let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &compact_move_scope,
+    )
+    .unwrap()
+    .expect("class-362 Move frame");
     assert_eq!(decoded.transform, move_transform.try_into().unwrap());
     assert_eq!(u32::from(decoded.form), 5);
 
@@ -184,14 +184,14 @@ let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
             draft.layout_fixture_tail();
         })
         .unwrap();
-let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
-&cadmpeg_test_support::service_decode_context(),
-&bytes,
-&crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-&class_433_move_scope,
-)
-.unwrap()
-.expect("class-433 Move frame");
+    let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &class_433_move_scope,
+    )
+    .unwrap()
+    .expect("class-433 Move frame");
     assert_eq!(decoded.transform, move_transform.try_into().unwrap());
     assert_eq!(
         decoded.transform_offset,
@@ -512,11 +512,13 @@ let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
         })
         .unwrap();
     assert_eq!(
-        exact_direct_face_operation(&cadmpeg_test_support::service_decode_context(),
+        exact_direct_face_operation(
+            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &thicken_scope
-        ).unwrap(),
+        )
+        .unwrap(),
         None
     );
     let compact_thicken_at = bytes.len();
@@ -581,11 +583,13 @@ let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
         )) if signed_thickness.get() == -1.0
     ));
     {
-        let construction = exact_direct_face_operation(&cadmpeg_test_support::service_decode_context(),
+        let construction = exact_direct_face_operation(
+            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &thicken_scope,
-        ).unwrap();
+        )
+        .unwrap();
         match (thicken_scope.payload_mut(), construction) {
             (
                 crate::records::feature::scope::DesignScopePayloadMut::OffsetFaces(slot)
@@ -713,11 +717,13 @@ let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
         })
         .unwrap();
     {
-        let construction = exact_direct_face_operation(&cadmpeg_test_support::service_decode_context(),
+        let construction = exact_direct_face_operation(
+            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &shell_scope,
-        ).unwrap();
+        )
+        .unwrap();
         match (shell_scope.payload_mut(), construction) {
             (
                 crate::records::feature::scope::DesignScopePayloadMut::OffsetFaces(slot)
@@ -867,8 +873,10 @@ let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
                 9_000, 9_000, 9_000,
             ]),
             ..shifted_shell_scope.clone().into_draft()
-        }.with_fixture_layout(),
-    ).unwrap();
+        }
+        .with_fixture_layout(),
+    )
+    .unwrap();
     assert!(matches!(
         exact_direct_face_operation(
             &cadmpeg_test_support::service_decode_context(),
@@ -888,11 +896,13 @@ let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
         ))
     ));
     {
-        let construction = exact_direct_face_operation(&cadmpeg_test_support::service_decode_context(),
+        let construction = exact_direct_face_operation(
+            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &compact_shell_scope,
-        ).unwrap();
+        )
+        .unwrap();
         match (compact_shell_scope.payload_mut(), construction) {
             (
                 crate::records::feature::scope::DesignScopePayloadMut::OffsetFaces(slot)
@@ -930,11 +940,13 @@ let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
         })) if (body == "shell-group" && removed.is_empty()) && actual_thickness.get() == 2.5
     ));
     {
-        let construction = exact_direct_face_operation(&cadmpeg_test_support::service_decode_context(),
+        let construction = exact_direct_face_operation(
+            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &offset_scope,
-        ).unwrap();
+        )
+        .unwrap();
         match (offset_scope.payload_mut(), construction) {
             (
                 crate::records::feature::scope::DesignScopePayloadMut::OffsetFaces(slot)
@@ -975,11 +987,13 @@ let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
     ));
     bytes[compact_thicken_at + 46] = 0;
     assert_eq!(
-        exact_direct_face_operation(&cadmpeg_test_support::service_decode_context(),
+        exact_direct_face_operation(
+            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &thicken_scope
-        ).unwrap(),
+        )
+        .unwrap(),
         None
     );
 
@@ -1047,7 +1061,8 @@ let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
             &extrude_scope,
             &[],
             &[],
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(DesignFixedExtrudeParameters {
             along_distance: Some(DesignFixedExtrudeDistance::FixedScalar(
                 DesignFixedExtrudeScalar {
@@ -1081,7 +1096,8 @@ let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
             &extrude_scope,
             &[],
             &[],
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(DesignFixedExtrudeParameters {
             along_distance: Some(DesignFixedExtrudeDistance::FixedScalar(
                 DesignFixedExtrudeScalar {
@@ -1116,7 +1132,8 @@ let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
             &extrude_scope,
             &[],
             &[],
-        ).unwrap(),
+        )
+        .unwrap(),
         None
     );
 
@@ -1479,7 +1496,8 @@ let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
             &extrude_scope,
             &[],
             &[],
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(DesignFixedExtrudeParameters {
             along_distance: Some(DesignFixedExtrudeDistance::DistanceConstruction(
                 DesignFixedExtrudeScalar {
@@ -1516,7 +1534,8 @@ let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
             &extrude_scope,
             &[],
             &[],
-        ).unwrap(),
+        )
+        .unwrap(),
         None
     );
 

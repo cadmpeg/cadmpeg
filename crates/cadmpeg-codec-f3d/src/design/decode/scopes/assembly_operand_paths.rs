@@ -50,7 +50,9 @@ pub(super) fn exact_assembly_operand_paths(
                 records.offsets(locator_record_index),
                 "scan F3D assembly operand locator offsets",
             ) {
-                Ok(offsets) => offsets.copied().filter(|locator_at| *locator_at >= search_start),
+                Ok(offsets) => offsets
+                    .copied()
+                    .filter(|locator_at| *locator_at >= search_start),
                 Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
             };
             let mut candidate = None;
@@ -120,11 +122,12 @@ fn exact_assembly_operand_path_envelope(
     locator_at: usize,
 ) -> Result<Option<DesignAssemblyOperandPath>, CodecError> {
     (|| {
-        let locator_class_tag = match exact_indexed_header_at(ctx, bytes, locator_at, locator_record_index) {
-            Ok(Some(class_tag)) => class_tag,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+        let locator_class_tag =
+            match exact_indexed_header_at(ctx, bytes, locator_at, locator_record_index) {
+                Ok(Some(class_tag)) => class_tag,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
         let variable_reference = crate::design::assembly::variable_reference_assembly_generation(
             scope.class_tag.as_str(),
             scope.paired_class_tag.as_str(),
@@ -138,14 +141,14 @@ fn exact_assembly_operand_path_envelope(
                     locator_at.checked_add(variable_path_locator::TRANSFORM + 16 * 8)?
                         ..locator_at.checked_add(variable_path_locator::SCOPE_BACKLINK)?,
                 )?;
-                let padding_is_zero = match ctx.admit_iter(
-                    padding,
-                    "scan F3D variable assembly locator padding",
-                ) {
+                let padding_is_zero = match ctx
+                    .admit_iter(padding, "scan F3D variable assembly locator padding")
+                {
                     Ok(mut admitted) => admitted.all(|byte| *byte == 0),
                     Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
                 };
-                if !padding_is_zero || rigid_transform_at(
+                if !padding_is_zero
+                    || rigid_transform_at(
                         bytes,
                         locator_at.checked_add(variable_path_locator::TRANSFORM)?,
                     )
@@ -205,11 +208,8 @@ fn exact_assembly_operand_path_envelope(
             return None;
         }
         let path_at = locator_at.checked_add(locator_length)?;
-        let after_locator = match next_indexed_record_offset(
-            ctx,
-            bytes,
-            locator_at.checked_add(1)?,
-        ) {
+        let after_locator = match next_indexed_record_offset(ctx, bytes, locator_at.checked_add(1)?)
+        {
             Ok(Some(end)) => end,
             Ok(None) => return None,
             Err(error) => return Some(Err(error)),
@@ -221,7 +221,8 @@ fn exact_assembly_operand_path_envelope(
             usize::try_from(wrapper_record_index.checked_sub(path_record_index)?).ok()?;
 
         let mut path_spans = Vec::new();
-        if let Err(error) = ctx.reserve_capacity(&mut path_spans, span_count, "f3d assembly path spans")
+        if let Err(error) =
+            ctx.reserve_capacity(&mut path_spans, span_count, "f3d assembly path spans")
         {
             return Some(Err(error));
         }
@@ -236,15 +237,22 @@ fn exact_assembly_operand_path_envelope(
                 Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
             };
-            if let Err(error) = ctx.push_vec(&mut path_spans, (record_index, record_at, next), "f3d assembly path spans") { return Some(Err(error)); };
+            if let Err(error) = ctx.push_vec(
+                &mut path_spans,
+                (record_index, record_at, next),
+                "f3d assembly path spans",
+            ) {
+                return Some(Err(error));
+            };
             record_index = record_index.checked_add(1)?;
             record_at = next;
         };
-        let wrapper_class_tag = match exact_indexed_header_at(ctx, bytes, wrapper_at, wrapper_record_index) {
-            Ok(Some(class_tag)) => class_tag,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+        let wrapper_class_tag =
+            match exact_indexed_header_at(ctx, bytes, wrapper_at, wrapper_record_index) {
+                Ok(Some(class_tag)) => class_tag,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
         let wrapper_end = match next_indexed_record_offset(ctx, bytes, wrapper_at.checked_add(1)?) {
             Ok(Some(end)) => end,
             Ok(None) => return None,
@@ -282,21 +290,19 @@ fn exact_assembly_operand_path_envelope(
             return None;
         }
         if variable_reference {
-            let references_match = match ctx.admit_iter(
-                &path_spans,
-                "scan F3D variable assembly path spans",
-            ) {
-                Ok(admitted) => admitted.skip(1).enumerate().all(|(ordinal, span)| {
-                    let (record_index, _, _) = span;
-                    exact_same_segment_record_reference(
-                        bytes,
-                        wrapper_at + path_wrapper::LEN + ordinal * 11,
-                    )
-                    .map(|reference| reference.0)
-                        == Some(*record_index)
-                }),
-                Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
-            };
+            let references_match =
+                match ctx.admit_iter(&path_spans, "scan F3D variable assembly path spans") {
+                    Ok(admitted) => admitted.skip(1).enumerate().all(|(ordinal, span)| {
+                        let (record_index, _, _) = span;
+                        exact_same_segment_record_reference(
+                            bytes,
+                            wrapper_at + path_wrapper::LEN + ordinal * 11,
+                        )
+                        .map(|reference| reference.0)
+                            == Some(*record_index)
+                    }),
+                    Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+                };
             if !references_match {
                 return None;
             }
@@ -313,13 +319,11 @@ fn exact_assembly_operand_path_envelope(
             wrapper_byte_offset: u64::try_from(wrapper_at).ok()?,
             path_reference_offset,
         };
-        let admitted_path_spans = match ctx.admit_iter(
-            &path_spans,
-            "scan F3D assembly operand path continuations",
-        ) {
-            Ok(spans) => spans,
-            Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
-        };
+        let admitted_path_spans =
+            match ctx.admit_iter(&path_spans, "scan F3D assembly operand path continuations") {
+                Ok(spans) => spans,
+                Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+            };
         let mut paths = admitted_path_spans.map(|&(record_index, start, limit)| {
             exact_assembly_operand_path(ctx, bytes, start, record_index, limit, link.clone())
         });
@@ -388,10 +392,16 @@ fn exact_assembly_operand_path(
                         Ok(None) => return None,
                         Err(error) => return Some(Err(error)),
                     };
-                if let Err(error) = ctx.push_vec(&mut occurrence_guids, crate::records::identity::Located {
-                    value: occurrence,
-                    offset: u64::try_from(position + 4).ok()?,
-                }, "f3d assembly path occurrences") { return Some(Err(error)); };
+                if let Err(error) = ctx.push_vec(
+                    &mut occurrence_guids,
+                    crate::records::identity::Located {
+                        value: occurrence,
+                        offset: u64::try_from(position + 4).ok()?,
+                    },
+                    "f3d assembly path occurrences",
+                ) {
+                    return Some(Err(error));
+                };
                 position = after_occurrence;
                 for _ in 0..2 {
                     let (guid, after_guid) =
@@ -400,10 +410,16 @@ fn exact_assembly_operand_path(
                             Ok(None) => return None,
                             Err(error) => return Some(Err(error)),
                         };
-                    if let Err(error) = ctx.push_vec(&mut identity_guids, crate::records::identity::Located {
-                        value: guid,
-                        offset: u64::try_from(position + 4).ok()?,
-                    }, "collect F3D assembly path identity GUIDs") { return Some(Err(error)); };
+                    if let Err(error) = ctx.push_vec(
+                        &mut identity_guids,
+                        crate::records::identity::Located {
+                            value: guid,
+                            offset: u64::try_from(position + 4).ok()?,
+                        },
+                        "collect F3D assembly path identity GUIDs",
+                    ) {
+                        return Some(Err(error));
+                    };
                     position = after_guid;
                 }
                 if View::u64_le_at(bytes, position)? != 2 {
@@ -417,20 +433,25 @@ fn exact_assembly_operand_path(
                             Ok(None) => return None,
                             Err(error) => return Some(Err(error)),
                         };
-                    if let Err(error) = ctx.push_vec(&mut identity_guids, crate::records::identity::Located {
-                        value: guid,
-                        offset: u64::try_from(position + 4).ok()?,
-                    }, "collect F3D assembly path identity GUIDs") { return Some(Err(error)); };
+                    if let Err(error) = ctx.push_vec(
+                        &mut identity_guids,
+                        crate::records::identity::Located {
+                            value: guid,
+                            offset: u64::try_from(position + 4).ok()?,
+                        },
+                        "collect F3D assembly path identity GUIDs",
+                    ) {
+                        return Some(Err(error));
+                    };
                     position = after_guid;
                 }
                 if View::u32_le_at(bytes, position)? != 2 {
                     return None;
                 }
                 let padding = bytes.get(position + 4..end)?;
-                let padding_is_zero = match ctx.admit_iter(
-                    padding,
-                    "validate F3D assembly path padding",
-                ) {
+                let padding_is_zero = match ctx
+                    .admit_iter(padding, "validate F3D assembly path padding")
+                {
                     Ok(mut bytes) => bytes.all(|byte| *byte == 0),
                     Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
                 };
@@ -462,10 +483,16 @@ fn exact_assembly_operand_path(
                             Ok(None) => return None,
                             Err(error) => return Some(Err(error)),
                         };
-                    if let Err(error) = ctx.push_vec(&mut occurrence_guids, crate::records::identity::Located {
-                        value: guid,
-                        offset: u64::try_from(position + 4).ok()?,
-                    }, "f3d assembly path occurrences") { return Some(Err(error)); };
+                    if let Err(error) = ctx.push_vec(
+                        &mut occurrence_guids,
+                        crate::records::identity::Located {
+                            value: guid,
+                            offset: u64::try_from(position + 4).ok()?,
+                        },
+                        "f3d assembly path occurrences",
+                    ) {
+                        return Some(Err(error));
+                    };
                     position = after_guid;
                 }
                 if position == limit {
@@ -480,10 +507,16 @@ fn exact_assembly_operand_path(
                                 Ok(None) => return None,
                                 Err(error) => return Some(Err(error)),
                             };
-                        if let Err(error) = ctx.push_vec(&mut identity_guids, crate::records::identity::Located {
-                            value: guid,
-                            offset: u64::try_from(position + 4).ok()?,
-                        }, "collect F3D assembly path identity GUIDs") { return Some(Err(error)); };
+                        if let Err(error) = ctx.push_vec(
+                            &mut identity_guids,
+                            crate::records::identity::Located {
+                                value: guid,
+                                offset: u64::try_from(position + 4).ok()?,
+                            },
+                            "collect F3D assembly path identity GUIDs",
+                        ) {
+                            return Some(Err(error));
+                        };
                         position = after_guid;
                     }
                     if View::u64_le_at(bytes, position)? != 2 {
@@ -497,22 +530,29 @@ fn exact_assembly_operand_path(
                                 Ok(None) => return None,
                                 Err(error) => return Some(Err(error)),
                             };
-                        if let Err(error) = ctx.push_vec(&mut identity_guids, crate::records::identity::Located {
-                            value: guid,
-                            offset: u64::try_from(position + 4).ok()?,
-                        }, "collect F3D assembly path identity GUIDs") { return Some(Err(error)); };
+                        if let Err(error) = ctx.push_vec(
+                            &mut identity_guids,
+                            crate::records::identity::Located {
+                                value: guid,
+                                offset: u64::try_from(position + 4).ok()?,
+                            },
+                            "collect F3D assembly path identity GUIDs",
+                        ) {
+                            return Some(Err(error));
+                        };
                         position = after_guid;
                     }
                     if View::u32_le_at(bytes, position)? != 2 {
                         return None;
                     }
                     let padding = bytes.get(position + 4..limit)?;
-                    let padding_is_zero = match ctx.admit_iter(
-                        padding,
-                        "validate F3D assembly path trailing padding",
-                    ) {
+                    let padding_is_zero = match ctx
+                        .admit_iter(padding, "validate F3D assembly path trailing padding")
+                    {
                         Ok(mut bytes) => bytes.all(|byte| *byte == 0),
-                        Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+                        Err(error) => {
+                            return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error)))
+                        }
                     };
                     if !padding_is_zero {
                         return None;

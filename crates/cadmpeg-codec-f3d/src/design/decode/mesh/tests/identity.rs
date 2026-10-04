@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{synthetic_mesh_graph, typed_primary_frames, MESH_COLLECTION_TYPE_GUID};
 use super::super::parse_mesh_collection_record;
+use super::{synthetic_mesh_graph, typed_primary_frames, MESH_COLLECTION_TYPE_GUID};
 use cadmpeg_core::CodecError;
 
 #[test]
@@ -23,10 +23,7 @@ fn mesh_indexed_class_tag_copy_refuses_retained_bytes() {
         ResourceDimension::RetainedBytes,
         "copy F3D mesh indexed class tag",
         0,
-        |ctx| {
-            parse_mesh_collection_record(ctx, &graph.bytes, &graph.meta, *frame)
-                .map(|_| ())
-        },
+        |ctx| parse_mesh_collection_record(ctx, &graph.bytes, &graph.meta, *frame).map(|_| ()),
     );
     assert!(matches!(
         refusal,

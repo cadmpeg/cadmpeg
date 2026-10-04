@@ -161,9 +161,7 @@ fn legacy_class_412_identity_guid_push_refuses_each_collection_item() {
             ResourceDimension::CollectionItems,
             "collect F3D legacy path identity GUIDs",
             skip,
-            |ctx| {
-                super::exact_legacy_class_412_path(ctx, &bytes, start, 11, end).map(|_| ())
-            },
+            |ctx| super::exact_legacy_class_412_path(ctx, &bytes, start, 11, end).map(|_| ()),
         );
         assert!(matches!(
             refusal,

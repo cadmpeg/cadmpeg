@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact fixed extrude, fillet and chamfer parameter scopes.
 
+use super::parameter_scope::reference_members;
 use super::shared_frames::exact_fixed_scalar;
 use super::shared_frames::marked_record_reference;
 use super::shared_frames::FixedScalarFrame;
-use super::parameter_scope::reference_members;
 use crate::bytes::lp_ascii_filtered_view;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::design_feature_family;
@@ -60,13 +60,8 @@ pub(super) fn exact_fixed_extrude_parameters(
             *slot = Some((record_index, scalar));
             fixed_count += 1;
         }
-        if let Some(scalar) = exact_embedded_extrude_distance(
-            ctx,
-            bytes,
-            records,
-            record_index,
-            scope.record_index,
-        )?
+        if let Some(scalar) =
+            exact_embedded_extrude_distance(ctx, bytes, records, record_index, scope.record_index)?
         {
             if embedded_distance.replace((record_index, scalar)).is_some() {
                 return Ok(None);
@@ -168,38 +163,40 @@ fn exact_embedded_extrude_distance(
     record_index: u32,
     scope_record_index: u32,
 ) -> Result<Option<FixedScalarFrame<PositiveReal>>, CodecError> {
-    let mut candidates = records.frames(ctx, record_index)?.filter_map(|(start, end)| {
-        (end.checked_sub(start)? == 100).then_some(())?;
-        let (_, after_tag) = lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
-        let first_auxiliary = record_index.checked_add(1)?;
-        let second_auxiliary = record_index.checked_add(2)?;
-        if after_tag != start + 7
-            || bytes.get(start + 11..start + 21) != Some(&[0; 10])
-            || marked_record_reference(bytes, start + 21)? != scope_record_index
-            || bytes.get(start + 26..start + 32) != Some(&[0; 6])
-            || View::u32_le_at(bytes, start + 32)? != 1
-            || marked_record_reference(bytes, start + 36).is_none()
-            || bytes.get(start + 41..start + 47) != Some(&[0; 6])
-            || View::u32_le_at(bytes, start + 47)? != 210
-            || View::u32_le_at(bytes, start + 59)? != 210
-            || marked_record_reference(bytes, start + 63)? != second_auxiliary
-            || bytes.get(start + 68..start + 74) != Some(&[0; 6])
-            || bytes.get(start + 74..start + 77) != Some(&[1, 0, 0])
-            || marked_record_reference(bytes, start + 77)? != first_auxiliary
-            || bytes.get(start + 82..start + 89) != Some(&[0; 7])
-            || marked_record_reference(bytes, start + 89)? != scope_record_index
-            || bytes.get(start + 94..start + 100) != Some(&[0; 6])
-        {
-            return None;
-        }
-        let value = PositiveReal::new(View::f64_le_at(bytes, start + 51)?)?;
-        Some(FixedScalarFrame {
-            owner_record_index: Some(scope_record_index),
-            ordinal: 0,
-            value,
-            value_offset: u64::try_from(start + 51).ok()?,
-        })
-    });
+    let mut candidates = records
+        .frames(ctx, record_index)?
+        .filter_map(|(start, end)| {
+            (end.checked_sub(start)? == 100).then_some(())?;
+            let (_, after_tag) = lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
+            let first_auxiliary = record_index.checked_add(1)?;
+            let second_auxiliary = record_index.checked_add(2)?;
+            if after_tag != start + 7
+                || bytes.get(start + 11..start + 21) != Some(&[0; 10])
+                || marked_record_reference(bytes, start + 21)? != scope_record_index
+                || bytes.get(start + 26..start + 32) != Some(&[0; 6])
+                || View::u32_le_at(bytes, start + 32)? != 1
+                || marked_record_reference(bytes, start + 36).is_none()
+                || bytes.get(start + 41..start + 47) != Some(&[0; 6])
+                || View::u32_le_at(bytes, start + 47)? != 210
+                || View::u32_le_at(bytes, start + 59)? != 210
+                || marked_record_reference(bytes, start + 63)? != second_auxiliary
+                || bytes.get(start + 68..start + 74) != Some(&[0; 6])
+                || bytes.get(start + 74..start + 77) != Some(&[1, 0, 0])
+                || marked_record_reference(bytes, start + 77)? != first_auxiliary
+                || bytes.get(start + 82..start + 89) != Some(&[0; 7])
+                || marked_record_reference(bytes, start + 89)? != scope_record_index
+                || bytes.get(start + 94..start + 100) != Some(&[0; 6])
+            {
+                return None;
+            }
+            let value = PositiveReal::new(View::f64_le_at(bytes, start + 51)?)?;
+            Some(FixedScalarFrame {
+                owner_record_index: Some(scope_record_index),
+                ordinal: 0,
+                value,
+                value_offset: u64::try_from(start + 51).ok()?,
+            })
+        });
     let Some(candidate) = candidates.next() else {
         return Ok(None);
     };
@@ -262,8 +259,7 @@ pub(super) fn exact_fixed_fillet_parameters(
         };
         ctx.push_vec(&mut groups, value, "f3d fixed Fillet groups")?;
     } else if lanes.len() % 2 == 0 {
-        let mut admitted_lanes =
-            ctx.admit_iter(&lanes, "group F3D fixed Fillet scalar lanes")?;
+        let mut admitted_lanes = ctx.admit_iter(&lanes, "group F3D fixed Fillet scalar lanes")?;
         while let Some(tangency_lane) = admitted_lanes.next() {
             let Some(constant_lane) = admitted_lanes.next() else {
                 return Ok(None);
@@ -292,10 +288,14 @@ pub(super) fn exact_fixed_fillet_parameters(
         while let (Some(radius_lane), Some(parameter_lane)) =
             (admitted_lanes.next(), admitted_lanes.next())
         {
-            ctx.push_vec(&mut intermediate, DesignFixedFilletIntermediate {
-                radius: scalar(radius_lane),
-                parameter: scalar(parameter_lane),
-            }, "f3d fixed Fillet intermediate rows")?;
+            ctx.push_vec(
+                &mut intermediate,
+                DesignFixedFilletIntermediate {
+                    radius: scalar(radius_lane),
+                    parameter: scalar(parameter_lane),
+                },
+                "f3d fixed Fillet intermediate rows",
+            )?;
         }
         let Some(value) = group(
             Some(&lanes[0]),

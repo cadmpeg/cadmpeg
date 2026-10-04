@@ -33,15 +33,7 @@ fn body_member_marker_prefix_copy_refuses_work() {
         assert_eq!(members[0].entity_suffix, 9);
         assert_eq!(members[0].flags, 2);
 
-        for (skip, additional) in [
-            (0, 8),
-            (1, 20),
-            (2, 8),
-            (3, 4),
-            (4, 8),
-            (5, 16),
-            (6, 20),
-        ] {
+        for (skip, additional) in [(0, 8), (1, 20), (2, 8), (3, 4), (4, 8), (5, 16), (6, 20)] {
             let refusal = crate::test_support::resource_refusal_at(
                 ResourceDimension::WorkUnits,
                 "build F3D body-member marker prefix",

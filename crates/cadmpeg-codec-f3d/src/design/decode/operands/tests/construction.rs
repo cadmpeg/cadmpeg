@@ -1864,5 +1864,4 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     );
 }
 
-
 mod roles;

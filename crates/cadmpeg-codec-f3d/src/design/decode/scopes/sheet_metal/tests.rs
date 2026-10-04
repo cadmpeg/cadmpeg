@@ -23,8 +23,7 @@ fn source_kinds<'a>(
 ) -> impl Fn(u32, &str) -> Result<bool, cadmpeg_core::CodecError> + 'a {
     move |record_index, expected| {
         let mut matches = kinds.iter().filter(|(owner, _)| *owner == record_index);
-        Ok(matches.next().is_some_and(|(_, kind)| *kind == expected)
-            && matches.next().is_none())
+        Ok(matches.next().is_some_and(|(_, kind)| *kind == expected) && matches.next().is_none())
     }
 }
 
@@ -394,36 +393,30 @@ fn parse_hem_candidate(
     };
 
     match candidate {
-        HemCandidate::GapLength => {
-            hem_gap_length_operation_at(
-                ctx,
-                &frame.bytes,
-                0,
-                frame.paired_at,
-                references,
-                header_shift,
-            )
-        }
-        HemCandidate::Rolled => {
-            hem_radius_angle_operation_at(
-                ctx,
-                &frame.bytes,
-                0,
-                frame.paired_at,
-                references,
-                header_shift,
-            )
-        }
-        HemCandidate::Teardrop => {
-            hem_gap_length_radius_operation_at(
-                ctx,
-                &frame.bytes,
-                0,
-                frame.paired_at,
-                references,
-                header_shift,
-            )
-        }
+        HemCandidate::GapLength => hem_gap_length_operation_at(
+            ctx,
+            &frame.bytes,
+            0,
+            frame.paired_at,
+            references,
+            header_shift,
+        ),
+        HemCandidate::Rolled => hem_radius_angle_operation_at(
+            ctx,
+            &frame.bytes,
+            0,
+            frame.paired_at,
+            references,
+            header_shift,
+        ),
+        HemCandidate::Teardrop => hem_gap_length_radius_operation_at(
+            ctx,
+            &frame.bytes,
+            0,
+            frame.paired_at,
+            references,
+            header_shift,
+        ),
     }
 }
 
@@ -526,9 +519,7 @@ fn assert_hem_reference_collection_refusals(
             ResourceDimension::MaterializedBytes,
             collect_operation,
             0,
-            |ctx| {
-                parse_hem_candidate(ctx, frame, &references, candidate, header_shift).map(|_| ())
-            },
+            |ctx| parse_hem_candidate(ctx, frame, &references, candidate, header_shift).map(|_| ()),
         );
         // Each scoped pool first reserves four u32 slots.
         let minimum_bytes = std::mem::size_of::<u32>()
@@ -557,37 +548,33 @@ mod contains {
         let mut bytes = vec![0; 576];
         bytes[COMMON + edge_flange::EDGE_COUNT..COMMON + edge_flange::EDGE_COUNT + 4]
             .copy_from_slice(&1u32.to_le_bytes());
-        write_marked_reference(&mut bytes, COMMON + edge_flange::EDGE_WRAPPER_REFERENCE, 100);
+        write_marked_reference(
+            &mut bytes,
+            COMMON + edge_flange::EDGE_WRAPPER_REFERENCE,
+            100,
+        );
         write_marked_reference(&mut bytes, COMMON + edge_flange::SETTINGS_REFERENCE, 101);
         write_marked_reference(&mut bytes, COMMON + edge_flange::ANGLE_OWNER_REFERENCE, 102);
-        write_marked_reference(&mut bytes, COMMON + edge_flange::HEIGHT_OWNER_REFERENCE, 103);
+        write_marked_reference(
+            &mut bytes,
+            COMMON + edge_flange::HEIGHT_OWNER_REFERENCE,
+            103,
+        );
         bytes[COMMON + edge_flange::INSIDE_BEND_RADIUS
             ..COMMON + edge_flange::INSIDE_BEND_RADIUS + 8]
             .copy_from_slice(&0.25f64.to_le_bytes());
         bytes[COMMON + edge_flange::INSIDE_BEND_RADIUS + 14
             ..COMMON + edge_flange::INSIDE_BEND_RADIUS + 18]
             .copy_from_slice(&1u32.to_le_bytes());
-        write_marked_reference(
-            &mut bytes,
-            COMMON + to_object::TARGET_GROUP_REFERENCE,
-            104,
-        );
+        write_marked_reference(&mut bytes, COMMON + to_object::TARGET_GROUP_REFERENCE, 104);
         bytes[COMMON + to_object::TARGET_REFERENCE_COUNT
             ..COMMON + to_object::TARGET_REFERENCE_COUNT + 4]
             .copy_from_slice(&2u32.to_le_bytes());
-        write_marked_reference(
-            &mut bytes,
-            COMMON + to_object::INSERTED_REFERENCE_ONE,
-            9001,
-        );
+        write_marked_reference(&mut bytes, COMMON + to_object::INSERTED_REFERENCE_ONE, 9001);
         bytes[COMMON + to_object::INSERTED_REFERENCE_COUNT
             ..COMMON + to_object::INSERTED_REFERENCE_COUNT + 4]
             .copy_from_slice(&1u32.to_le_bytes());
-        write_marked_reference(
-            &mut bytes,
-            COMMON + to_object::INSERTED_REFERENCE_TWO,
-            9002,
-        );
+        write_marked_reference(&mut bytes, COMMON + to_object::INSERTED_REFERENCE_TWO, 9002);
         bytes[COMMON + to_object::AGGREGATE_REFERENCE_COUNT
             ..COMMON + to_object::AGGREGATE_REFERENCE_COUNT + 4]
             .copy_from_slice(&1u32.to_le_bytes());
@@ -599,11 +586,7 @@ mod contains {
         bytes[COMMON + to_object::EDGE_REFERENCE_COUNT
             ..COMMON + to_object::EDGE_REFERENCE_COUNT + 4]
             .copy_from_slice(&1u32.to_le_bytes());
-        write_marked_reference(
-            &mut bytes,
-            COMMON + to_object::EDGE_GROUP_REFERENCE,
-            108,
-        );
+        write_marked_reference(&mut bytes, COMMON + to_object::EDGE_GROUP_REFERENCE, 108);
 
         let context = cadmpeg_test_support::service_decode_context();
         let Ok(Some(operation)) = super::super::edge_flange_to_object_operation_at(

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{synthetic_mesh_graph, synthetic_mesh_graph_with_body_count};
 use super::super::parse_mesh_design_records;
+use super::{synthetic_mesh_graph, synthetic_mesh_graph_with_body_count};
 use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::CodecError;
 
@@ -56,12 +56,7 @@ fn mesh_output_pushes_refuse_each_collection_item() {
     });
 
     for operation in ["f3d mesh feature bodies", "f3d mesh graph features"] {
-        let refusal = mesh_push_refusal(
-            &no_textures.bytes,
-            &no_textures.meta,
-            operation,
-            0,
-        );
+        let refusal = mesh_push_refusal(&no_textures.bytes, &no_textures.meta, operation, 0);
         assert!(matches!(
             refusal,
             CodecError::ResourceLimit(limit)

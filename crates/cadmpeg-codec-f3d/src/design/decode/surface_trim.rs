@@ -60,9 +60,7 @@ fn exact_surface_trim_operation(
         let selection_record_index = *unlocated_members
             .chain(located_members.map(|member| &member.value))
             .nth(3)?;
-        let (selection_byte_offset, _) = match records
-            .frames(ctx, selection_record_index)
-        {
+        let (selection_byte_offset, _) = match records.frames(ctx, selection_record_index) {
             Ok(mut frames) => frames.next()?,
             Err(error) => return Some(Err(error)),
         };
@@ -88,27 +86,29 @@ fn exact_surface_trim_operation(
         };
 
         let mut chain_start = usize::try_from(selection.next_byte_offset).ok()?;
-        let mut next_chain_record = || -> Option<Result<DesignSurfaceTrimChainRecord, CodecError>> {
-            let parsed = match indexed_record_header_at(ctx, bytes, chain_start) {
-                Ok(Some(parsed)) => parsed,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
+        let mut next_chain_record =
+            || -> Option<Result<DesignSurfaceTrimChainRecord, CodecError>> {
+                let parsed = match indexed_record_header_at(ctx, bytes, chain_start) {
+                    Ok(Some(parsed)) => parsed,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                };
+                let frame_end =
+                    match next_indexed_record_offset(ctx, bytes, chain_start.checked_add(11)?) {
+                        Ok(Some(frame_end)) => frame_end,
+                        Ok(None) => return None,
+                        Err(error) => return Some(Err(error)),
+                    };
+                let frame_length = u64::try_from(frame_end.checked_sub(chain_start)?).ok()?;
+                let record = DesignSurfaceTrimChainRecord {
+                    record_index: parsed.record_index,
+                    byte_offset: u64::try_from(chain_start).ok()?,
+                    class_tag: parsed.class_tag,
+                    frame_length,
+                };
+                chain_start = frame_end;
+                Some(Ok(record))
             };
-            let frame_end = match next_indexed_record_offset(ctx, bytes, chain_start.checked_add(11)?) {
-                Ok(Some(frame_end)) => frame_end,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
-            let frame_length = u64::try_from(frame_end.checked_sub(chain_start)?).ok()?;
-            let record = DesignSurfaceTrimChainRecord {
-                record_index: parsed.record_index,
-                byte_offset: u64::try_from(chain_start).ok()?,
-                class_tag: parsed.class_tag,
-                frame_length,
-            };
-            chain_start = frame_end;
-            Some(Ok(record))
-        };
         let first_chain_record = match next_chain_record()? {
             Ok(record) => record,
             Err(error) => return Some(Err(error)),
@@ -134,16 +134,12 @@ fn exact_surface_trim_operation(
             Ok(mut frames) => frames.find(|(primary, _)| *primary == cell_table_byte_offset)?,
             Err(error) => return Some(Err(error)),
         };
-        let cell_table_paired_class_tag = match exact_indexed_header_at(
-            ctx,
-            bytes,
-            paired,
-            cell_table_record_index,
-        ) {
-            Ok(Some(class_tag)) => class_tag,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+        let cell_table_paired_class_tag =
+            match exact_indexed_header_at(ctx, bytes, paired, cell_table_record_index) {
+                Ok(Some(class_tag)) => class_tag,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
         if bytes.get(cell_table_byte_offset + 11..cell_table_byte_offset + 21)? != [0; 10] {
             return None;
         }
@@ -243,12 +239,18 @@ fn exact_surface_trim_operation(
             {
                 return None;
             }
-            if let Err(error) = ctx.push_vec(&mut cell_entries, DesignSurfaceTrimCellEntry {
-                record_index: cell_record_index,
-                record_reference_offset: cell_record_reference_offset,
-                ordinal: ordinal_value,
-                ordinal_offset,
-            }, "f3d surface-trim cell entries") { return Some(Err(error)); };
+            if let Err(error) = ctx.push_vec(
+                &mut cell_entries,
+                DesignSurfaceTrimCellEntry {
+                    record_index: cell_record_index,
+                    record_reference_offset: cell_record_reference_offset,
+                    ordinal: ordinal_value,
+                    ordinal_offset,
+                },
+                "f3d surface-trim cell entries",
+            ) {
+                return Some(Err(error));
+            };
         }
         let operation = DesignSurfaceTrimOperation::try_from(
             crate::records::feature::surface_ops::DesignSurfaceTrimOperationWire {
@@ -286,9 +288,12 @@ pub(crate) fn decode_surface_trim_operations(
 ) -> Result<Vec<DesignSurfaceTrimOperation>, CodecError> {
     let mut record_offsets = HashMap::<String, IndexedRecordOffsets>::new();
     let mut out = Vec::new();
-    for scope in ctx.admit_iter(scopes, "scan F3D SurfaceTrim scopes")?.filter(|scope| {
-        scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfaceTrim
-    }) {
+    for scope in ctx
+        .admit_iter(scopes, "scan F3D SurfaceTrim scopes")?
+        .filter(|scope| {
+            scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfaceTrim
+        })
+    {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };

@@ -89,7 +89,8 @@ pub(crate) fn decode_parameter_scopes(
     let component_occurrences = &native.design_component_occurrences;
     let recipes = &native.construction_recipes;
     let mut out = Vec::new();
-    for entry in ctx.admit_iter(&scan.entries, "scan F3D parameter-scope streams")?
+    for entry in ctx
+        .admit_iter(&scan.entries, "scan F3D parameter-scope streams")?
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -139,7 +140,9 @@ pub(crate) fn decode_parameter_scopes(
                     // marked reference (a one byte, a u32 suffix, six zero
                     // bytes), then each eligible entity looks its suffix up.
                     let first_at = first_marked_reference_offsets(ctx, frame)?;
-                    for entity in ctx.admit_iter(entities, "scan F3D sketch scope entity headers")? {
+                    for entity in
+                        ctx.admit_iter(entities, "scan F3D sketch scope entity headers")?
+                    {
                         if native_stream(&entity.id) != Some(stream.as_str())
                             || !entity.in_sketch_module()
                             || entity.entity_id.suffix() > u64::from(u32::MAX)
@@ -194,7 +197,8 @@ pub(crate) fn decode_parameter_scopes(
                     }
                 }
             }
-            if let Some(construction) = exact_work_axis_construction(ctx, bytes, &records, &scope)? {
+            if let Some(construction) = exact_work_axis_construction(ctx, bytes, &records, &scope)?
+            {
                 if let scope::DesignScopePayloadMut::WorkAxis(slot) = scope.payload_mut() {
                     *slot = Some(construction);
                 }
@@ -346,13 +350,8 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let construction = exact_fixed_chamfer_parameters(
-                    ctx,
-                    bytes,
-                    &records,
-                    &scope,
-                    parameter_owners,
-                )?;
+                let construction =
+                    exact_fixed_chamfer_parameters(ctx, bytes, &records, &scope, parameter_owners)?;
                 if let scope::DesignScopePayloadMut::Chamfer(slot)
                 | scope::DesignScopePayloadMut::Chanfrein(slot) = scope.payload_mut()
                 {
@@ -549,8 +548,11 @@ fn first_marked_reference_offsets(
     frame: &[u8],
 ) -> Result<HashMap<u32, usize>, CodecError> {
     let mut first_at = HashMap::new();
-    for (at, _) in ctx.admit_iter(frame, "scan F3D sketch marked reference positions")?
-        .enumerate().filter(|(_, byte)| **byte == 1) {
+    for (at, _) in ctx
+        .admit_iter(frame, "scan F3D sketch marked reference positions")?
+        .enumerate()
+        .filter(|(_, byte)| **byte == 1)
+    {
         if at + 11 <= frame.len() && frame[at + 5..at + 11] == [0; 6] {
             if let Some(suffix) = View::u32_le_at(frame, at + 1) {
                 if !first_at.contains_key(&suffix) {
@@ -587,7 +589,10 @@ pub(crate) fn admit_history_bound_scope_variants(
     admitted.extend(std::iter::repeat_n(true, scopes.len()));
     let mut group_storage = ctx.reserve_scoped(0, "f3d scope admission groups")?;
     let mut groups = HashMap::<(&str, u32), Vec<usize>>::new();
-    for (index, scope) in ctx.admit_iter(&*scopes, "scan F3D scope admission identities")?.enumerate() {
+    for (index, scope) in ctx
+        .admit_iter(&*scopes, "scan F3D scope admission identities")?
+        .enumerate()
+    {
         let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
         let key = (stream, scope.record_index);
         group_storage.with_storage(|| {
@@ -630,7 +635,9 @@ pub(crate) fn admit_history_bound_scope_variants(
         }
         let mut equivalent_payload = history_bound.is_none() && !multiple_history_bounds;
         if equivalent_payload {
-            for index in ctx.admit_iter(following, "scan F3D equivalent scope admission candidates")? {
+            for index in
+                ctx.admit_iter(following, "scan F3D equivalent scope admission candidates")?
+            {
                 if !equivalent_scope_variant_payload(ctx, &scopes[*first], &scopes[*index])? {
                     equivalent_payload = false;
                     break;
@@ -639,16 +646,16 @@ pub(crate) fn admit_history_bound_scope_variants(
         }
         let keep = match (history_bound, multiple_history_bounds) {
             (Some(keep), false) => keep,
-            (None, false) if equivalent_payload => {
-                ctx.admit_iter(following, "select F3D latest equivalent scope envelope")?
-                    .copied().fold(*first, |keep, index| {
+            (None, false) if equivalent_payload => ctx
+                .admit_iter(following, "select F3D latest equivalent scope envelope")?
+                .copied()
+                .fold(*first, |keep, index| {
                     if scopes[index].byte_offset() >= scopes[keep].byte_offset() {
                         index
                     } else {
                         keep
                     }
-                })
-            }
+                }),
             _ => {
                 return Err(CodecError::Malformed(
                     "Design scope record identity has unresolved duplicate envelopes".into(),
@@ -662,8 +669,10 @@ pub(crate) fn admit_history_bound_scope_variants(
 
     drop(groups);
     drop(group_storage);
-    let retained_count = ctx.admit_iter(&admitted, "count F3D retained scope admission candidates")?
-        .filter(|selected| **selected).count();
+    let retained_count = ctx
+        .admit_iter(&admitted, "count F3D retained scope admission candidates")?
+        .filter(|selected| **selected)
+        .count();
 
     let mut retained = Vec::new();
     ctx.reserve_capacity(
@@ -857,57 +866,62 @@ pub(in crate::design::decode) fn payload_prologue(
     at: usize,
     end: usize,
 ) -> Result<Option<usize>, CodecError> {
-    fn graphic_ascii_at<'bytes>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, bytes: &'bytes [u8], at: usize)
-        -> Result<Option<(&'bytes [u8], usize)>, CodecError> {
+    fn graphic_ascii_at<'bytes>(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        bytes: &'bytes [u8],
+        at: usize,
+    ) -> Result<Option<(&'bytes [u8], usize)>, CodecError> {
         (|| {
-        let length = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
-        if !(1..=64).contains(&length) {
-            return None;
-        }
-        let start = at.checked_add(4)?;
-        let end = start.checked_add(length)?;
-        let raw = bytes.get(start..end)?;
-        let valid = match ctx.admit_iter(raw, "validate F3D payload property ASCII field") {
-            Ok(mut bytes) => bytes.all(u8::is_ascii_graphic),
-            Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
-        };
-        valid.then_some(Ok((raw, end)))
-        })().transpose()
+            let length = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
+            if !(1..=64).contains(&length) {
+                return None;
+            }
+            let start = at.checked_add(4)?;
+            let end = start.checked_add(length)?;
+            let raw = bytes.get(start..end)?;
+            let valid = match ctx.admit_iter(raw, "validate F3D payload property ASCII field") {
+                Ok(mut bytes) => bytes.all(u8::is_ascii_graphic),
+                Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+            };
+            valid.then_some(Ok((raw, end)))
+        })()
+        .transpose()
     }
 
     (|| {
-    let mut cursor = at.checked_add(1)?;
-    let present = *bytes.get(cursor)?;
-    cursor += 1;
-    match present {
-        0 => Some(Ok(cursor)),
-        1 => {
-            let count = View::u32_le_at(bytes, cursor)?;
-            if count > 16 {
-                return None;
-            }
-            cursor += 4;
-            for _ in 0..count {
-                let (_key, after_key) = match graphic_ascii_at(ctx, bytes, cursor) {
-                    Ok(Some(value)) => value,
-                    Ok(None) => return None,
-                    Err(error) => return Some(Err(error)),
-                };
-                let (type_name, after_type) = match graphic_ascii_at(ctx, bytes, after_key) {
-                    Ok(Some(value)) => value,
-                    Ok(None) => return None,
-                    Err(error) => return Some(Err(error)),
-                };
-                if type_name != b"IntrinsicMetaTypeuint64" {
+        let mut cursor = at.checked_add(1)?;
+        let present = *bytes.get(cursor)?;
+        cursor += 1;
+        match present {
+            0 => Some(Ok(cursor)),
+            1 => {
+                let count = View::u32_le_at(bytes, cursor)?;
+                if count > 16 {
                     return None;
                 }
-                cursor = after_type.checked_add(8)?;
+                cursor += 4;
+                for _ in 0..count {
+                    let (_key, after_key) = match graphic_ascii_at(ctx, bytes, cursor) {
+                        Ok(Some(value)) => value,
+                        Ok(None) => return None,
+                        Err(error) => return Some(Err(error)),
+                    };
+                    let (type_name, after_type) = match graphic_ascii_at(ctx, bytes, after_key) {
+                        Ok(Some(value)) => value,
+                        Ok(None) => return None,
+                        Err(error) => return Some(Err(error)),
+                    };
+                    if type_name != b"IntrinsicMetaTypeuint64" {
+                        return None;
+                    }
+                    cursor = after_type.checked_add(8)?;
+                }
+                (cursor <= end).then_some(Ok(cursor))
             }
-            (cursor <= end).then_some(Ok(cursor))
+            _ => None,
         }
-        _ => None,
-    }
-    })().transpose()
+    })()
+    .transpose()
 }
 
 /// Every indexed-record header that can open a parameter scope: a scope is
@@ -933,7 +947,8 @@ pub(super) fn parameter_scope_candidate_headers(
             else {
                 continue;
             };
-            let class_tag = match crate::design::decode::text::class_tag_from_view(ctx, class_tag)? {
+            let class_tag = match crate::design::decode::text::class_tag_from_view(ctx, class_tag)?
+            {
                 Ok(class_tag) => class_tag,
                 Err(_) => continue,
             };
@@ -1021,12 +1036,15 @@ pub(in crate::design::decode) fn parse_parameter_scope(
         let kind_scan_end = paired_at.checked_sub(72)?;
         let scan_start = start.checked_add(11)?;
         let kind_positions = match ctx.admit_iter(
-            bytes.get(scan_start..paired_at).unwrap_or(&[]), "scan F3D parameter-scope kind positions",
+            bytes.get(scan_start..paired_at).unwrap_or(&[]),
+            "scan F3D parameter-scope kind positions",
         ) {
             Ok(positions) => positions,
             Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
         };
-        for at in kind_positions.enumerate().map(|(relative, _)| scan_start + relative)
+        for at in kind_positions
+            .enumerate()
+            .map(|(relative, _)| scan_start + relative)
             .rev()
             .take(590 + 4 + 2 * 256)
             .rev()
@@ -1043,7 +1061,10 @@ pub(in crate::design::decode) fn parse_parameter_scope(
                 Ok(None) => continue,
                 Err(error) => return Some(Err(error)),
             };
-            let kind_is_valid = match ctx.admit_iter(kind.as_str(), "validate F3D parameter-scope kind characters") {
+            let kind_is_valid = match ctx.admit_iter(
+                kind.as_str(),
+                "validate F3D parameter-scope kind characters",
+            ) {
                 Ok(mut characters) => characters.all(|character| !character.is_control()),
                 Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
             };
@@ -1181,8 +1202,20 @@ pub(in crate::design::decode) fn parse_parameter_scope(
                     members.clear();
                     break;
                 }
-                if let Err(error) = ctx.push_vec(&mut members, View::u32_le_at(bytes, marker + 1)?, "f3d Design scope reference members") { return Some(Err(error)); };
-                if let Err(error) = ctx.push_vec(&mut offsets, u64::try_from(marker + 1).ok()?, "f3d Design scope reference offsets") { return Some(Err(error)); };
+                if let Err(error) = ctx.push_vec(
+                    &mut members,
+                    View::u32_le_at(bytes, marker + 1)?,
+                    "f3d Design scope reference members",
+                ) {
+                    return Some(Err(error));
+                };
+                if let Err(error) = ctx.push_vec(
+                    &mut offsets,
+                    u64::try_from(marker + 1).ok()?,
+                    "f3d Design scope reference offsets",
+                ) {
+                    return Some(Err(error));
+                };
             }
             if members.len() == count
                 && reference_table
@@ -1364,14 +1397,12 @@ pub(in crate::design::decode) fn parse_parameter_scope(
                 .zip(reference_member_offsets.iter().copied())
                 .map(|(value, offset)| crate::records::identity::Located { value, offset }),
         );
-        let paired_class_tag = match crate::design::decode::text::class_tag_from_view(
-            ctx,
-            paired_class_tag,
-        ) {
-            Ok(Ok(class_tag)) => class_tag,
-            Ok(Err(_)) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+        let paired_class_tag =
+            match crate::design::decode::text::class_tag_from_view(ctx, paired_class_tag) {
+                Ok(Ok(class_tag)) => class_tag,
+                Ok(Err(_)) => return None,
+                Err(error) => return Some(Err(error)),
+            };
         let mut scope = DesignParameterScope::try_new(scope::DesignParameterScopeDraft {
             id: String::new(),
             byte_offset,
@@ -1479,8 +1510,10 @@ fn named_parameter_scope_tail_is_valid(
     else {
         return Ok(None);
     };
-    let label_code_units: usize = ctx.admit_iter(label.as_str(), "count F3D named scope label UTF-16 units")?
-        .encode_utf16().count();
+    let label_code_units: usize = ctx
+        .admit_iter(label.as_str(), "count F3D named scope label UTF-16 units")?
+        .encode_utf16()
+        .count();
     (|| {
         if tail_length != 78usize.checked_add(label_code_units.checked_mul(2)?)?
             || label_end.checked_add(7)? != kind_end.checked_add(19 + label_code_units * 2)?
@@ -1498,30 +1531,31 @@ fn named_parameter_scope_tail_is_valid(
         let first_lane_value = View::u64_le_at(bytes, marker + 2)?;
         let second_lane_value = View::u64_le_at(bytes, marker + 34)?;
         let third_lane_value = View::u64_le_at(bytes, marker + 48)?;
-        Some(Ok(
-            bytes.get(kind_end + 4..kind_end + 8)? == [0; 4]
-                && bytes.get(marker) == Some(&1)
-                && bytes.get(marker + 1).is_some_and(|field_id| *field_id != 0)
-                && matches!(first_lane_value, 0 | 1)
-                && second_lane_value == first_lane_value
-                && third_lane_value == first_lane_value
-                && bytes.get(marker + 10..marker + 12)? == [0; 2]
-                && View::u32_le_at(bytes, marker + 12)? > 0
-                && View::u32_le_at(bytes, marker + 16)? == 0xfc
-                && View::f64_le_at(bytes, marker + 20)?.is_finite()
-                && View::u32_le_at(bytes, marker + 28)? == 0xfc
-                && bytes.get(marker + 32) == Some(&1)
-                && bytes
-                    .get(marker + 33)
-                    .is_some_and(|field_id| *field_id != 0)
-                && bytes.get(marker + 42..marker + 46)? == [0, 1, 0, 0]
-                && bytes.get(marker + 46) == Some(&1)
-                && bytes
-                    .get(marker + 47)
-                    .is_some_and(|field_id| *field_id != 0)
-                && bytes.get(marker + 56..marker + 59)? == [0; 3],
-        ))
-    })().transpose()
+        Some(Ok(bytes.get(kind_end + 4..kind_end + 8)? == [0; 4]
+            && bytes.get(marker) == Some(&1)
+            && bytes
+                .get(marker + 1)
+                .is_some_and(|field_id| *field_id != 0)
+            && matches!(first_lane_value, 0 | 1)
+            && second_lane_value == first_lane_value
+            && third_lane_value == first_lane_value
+            && bytes.get(marker + 10..marker + 12)? == [0; 2]
+            && View::u32_le_at(bytes, marker + 12)? > 0
+            && View::u32_le_at(bytes, marker + 16)? == 0xfc
+            && View::f64_le_at(bytes, marker + 20)?.is_finite()
+            && View::u32_le_at(bytes, marker + 28)? == 0xfc
+            && bytes.get(marker + 32) == Some(&1)
+            && bytes
+                .get(marker + 33)
+                .is_some_and(|field_id| *field_id != 0)
+            && bytes.get(marker + 42..marker + 46)? == [0, 1, 0, 0]
+            && bytes.get(marker + 46) == Some(&1)
+            && bytes
+                .get(marker + 47)
+                .is_some_and(|field_id| *field_id != 0)
+            && bytes.get(marker + 56..marker + 59)? == [0; 3]))
+    })()
+    .transpose()
 }
 
 pub(crate) fn parameter_scope_payload_length(
@@ -1529,10 +1563,13 @@ pub(crate) fn parameter_scope_payload_length(
     scope: &DesignParameterScope,
 ) -> Result<Option<u64>, CodecError> {
     // A character uses at most its UTF-8 byte count in UTF-16 code units.
-    let code_units: usize = ctx.admit_iter(scope.kind_name(), "count F3D scope kind UTF-16 units")?
-        .encode_utf16().count();
-    let kind_bytes = u64_from_index(code_units).checked_mul(2)
-        .ok_or_else(|| ctx.refuse_codec_limit("count F3D scope kind UTF-16 units", u64::MAX, u64::MAX))?;
+    let code_units: usize = ctx
+        .admit_iter(scope.kind_name(), "count F3D scope kind UTF-16 units")?
+        .encode_utf16()
+        .count();
+    let kind_bytes = u64_from_index(code_units).checked_mul(2).ok_or_else(|| {
+        ctx.refuse_codec_limit("count F3D scope kind UTF-16 units", u64::MAX, u64::MAX)
+    })?;
     Ok(scope.frame_length().checked_sub(kind_bytes))
 }
 

@@ -92,7 +92,8 @@ fn class_338_two_sided_distance_requires_its_null_scope_scalar_lane() {
         "262",
         282,
         &[4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
-    ).unwrap()
+    )
+    .unwrap()
     .expect("class-338 frame should satisfy its exact admission grammar");
     assert_eq!(parsed.operation(), DesignExtrudeOperation::Cut);
     assert_eq!(parsed.extent(), Some(DesignExtrudeExtent::TwoSidedDistance));
@@ -109,6 +110,7 @@ fn class_338_two_sided_distance_requires_its_null_scope_scalar_lane() {
         "262",
         282,
         &[4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
-    ).unwrap()
+    )
+    .unwrap()
     .is_none());
 }

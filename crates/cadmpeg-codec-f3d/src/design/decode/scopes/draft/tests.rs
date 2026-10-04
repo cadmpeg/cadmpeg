@@ -11,7 +11,8 @@ fn consecutive_guid_pair_scan_propagates_candidate_and_guid_refusals() {
     assert!(super::contains_consecutive_guid_pair(
         &cadmpeg_test_support::service_decode_context(),
         &bytes,
-    ).unwrap());
+    )
+    .unwrap());
 
     for (operation, additional) in [
         ("scan F3D consecutive GUID pair candidates", 152),

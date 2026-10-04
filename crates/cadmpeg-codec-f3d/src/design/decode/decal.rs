@@ -61,38 +61,45 @@ pub(crate) fn project_decal_images(
             continue;
         }
         let native_stream = ids::native_stream(&image.id);
-        let Some(scope) = ctx.admit_iter(scopes, "find F3D Decal image scopes")?.find(|scope| {
-            scope.record_index == image.scope_record_index()
-                && ids::native_stream(&scope.id) == native_stream
-        }) else {
+        let Some(scope) = ctx
+            .admit_iter(scopes, "find F3D Decal image scopes")?
+            .find(|scope| {
+                scope.record_index == image.scope_record_index()
+                    && ids::native_stream(&scope.id) == native_stream
+            })
+        else {
             continue;
         };
-        let Some(group) = ctx.admit_iter(groups, "find F3D Decal operand groups")?.find(|group| {
-            group.scope_record_index == scope.record_index
-                && group.record_index == image.target_group_record_index
-                && group.role() == DECAL_TARGET_ROLE
-                && group.members().len() == 1
-                && ids::native_stream(&group.id) == native_stream
-        }) else {
+        let Some(group) = ctx
+            .admit_iter(groups, "find F3D Decal operand groups")?
+            .find(|group| {
+                group.scope_record_index == scope.record_index
+                    && group.record_index == image.target_group_record_index
+                    && group.role() == DECAL_TARGET_ROLE
+                    && group.members().len() == 1
+                    && ids::native_stream(&group.id) == native_stream
+            })
+        else {
             continue;
         };
-        let Some(operand) = ctx.admit_iter(operands, "find F3D Decal recipe operands")?.find(|operand| {
-            operand.scope_record_index == scope.record_index
-                && operand.owner.group() == Some((group.record_index, 0))
-                && operand.record_index() == group.members()[0].value
-                && ids::native_stream(&operand.id) == native_stream
-        }) else {
+        let Some(operand) = ctx
+            .admit_iter(operands, "find F3D Decal recipe operands")?
+            .find(|operand| {
+                operand.scope_record_index == scope.record_index
+                    && operand.owner.group() == Some((group.record_index, 0))
+                    && operand.record_index() == group.members()[0].value
+                    && ids::native_stream(&operand.id) == native_stream
+            })
+        else {
             continue;
         };
         let mut faces = Vec::new();
-        for reference in ctx.admit_iter(
-            operand.references(),
-            "scan F3D Decal operand references",
-        )? {
-            for face in ctx.admit_iter(
-                &reference.candidate_faces,
-                "scan F3D Decal face candidates",
-            )? {
+        for reference in
+            ctx.admit_iter(operand.references(), "scan F3D Decal operand references")?
+        {
+            for face in
+                ctx.admit_iter(&reference.candidate_faces, "scan F3D Decal face candidates")?
+            {
                 let copied = face.try_clone_for_decode(ctx, "f3d Decal face identifier")?;
                 ctx.reserve_vec(&mut faces, 1, "f3d Decal faces")?;
                 faces.push(copied);
@@ -124,10 +131,8 @@ pub(crate) fn project_decal_images(
         let asset_id = asset
             .id
             .try_clone_for_decode(ctx, "f3d image feature asset identifier")?;
-        let native_id = ctx.copy_retained_text(
-            &operand.id,
-            "f3d Decal native operand identifier",
-        )?;
+        let native_id =
+            ctx.copy_retained_text(&operand.id, "f3d Decal native operand identifier")?;
         feature
             .evaluation
             .set_definition(FeatureDefinition::Operation(FeatureOperation::Decal {
@@ -256,11 +261,12 @@ fn parse_decal_asset_record(
         if bytes.get(asset_at + decal_asset::ZERO_RUN_6..asset_at + decal_asset::LEN)? != [0; 6] {
             return None;
         }
-        let name_at = match next_indexed_record_offset(ctx, bytes, asset_at + decal_asset::ZERO_RUN_8) {
-            Ok(Some(name_at)) => name_at,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+        let name_at =
+            match next_indexed_record_offset(ctx, bytes, asset_at + decal_asset::ZERO_RUN_8) {
+                Ok(Some(name_at)) => name_at,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
         if name_at != asset_at + decal_asset::LEN {
             return None;
         }
@@ -284,11 +290,12 @@ fn parse_decal_asset_record(
             Ok(None) => return None,
             Err(error) => return Some(Err(error)),
         };
-        let next_at = match next_indexed_record_offset(ctx, bytes, name_at + decal_name::ZERO_RUN_10) {
-            Ok(Some(next_at)) => next_at,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+        let next_at =
+            match next_indexed_record_offset(ctx, bytes, name_at + decal_name::ZERO_RUN_10) {
+                Ok(Some(next_at)) => next_at,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
         if after_asset_name != next_at {
             return None;
         }
@@ -447,14 +454,8 @@ mod tests {
             "scan F3D indexed record headers",
             0,
             |ctx| {
-                parse_decal_image_frame(
-                    ctx,
-                    &bytes,
-                    "Design/BulkStream.dat",
-                    23,
-                    scope_at,
-                )
-                .map(|_| ())
+                parse_decal_image_frame(ctx, &bytes, "Design/BulkStream.dat", 23, scope_at)
+                    .map(|_| ())
             },
         );
         assert!(matches!(

@@ -173,13 +173,11 @@ fn exact_surface_offset_face_groups(
                 return Some(Err(error));
             }
             covered_references.insert(group.record_index);
-            let group_members = match ctx.admit_iter(
-                group.members(),
-                "scan F3D surface offset group members",
-            ) {
-                Ok(members) => members.map(|member| &member.value),
-                Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
-            };
+            let group_members =
+                match ctx.admit_iter(group.members(), "scan F3D surface offset group members") {
+                    Ok(members) => members.map(|member| &member.value),
+                    Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+                };
             for member in group_members {
                 if *member == *distance_record_index {
                     return None;
@@ -213,7 +211,13 @@ fn exact_surface_offset_face_groups(
             ) {
                 return Some(Err(error));
             }
-            if let Err(error) = ctx.push_vec(&mut group_record_indices, group.record_index, "f3d surface offset face group") { return Some(Err(error)); };
+            if let Err(error) = ctx.push_vec(
+                &mut group_record_indices,
+                group.record_index,
+                "f3d surface offset face group",
+            ) {
+                return Some(Err(error));
+            };
         }
         if group_record_indices.is_empty() || covered_references.len() != support_reference_count {
             return None;
@@ -350,14 +354,16 @@ fn exact_surface_boundary_operation(
                 && marked_record_reference(bytes, start + 24) == Some(scope.record_index)
                 && bytes.get(start + 29..start + 35) == Some(&[0; 6])
                 && bytes.get(start + 35..start + 40) == Some(&[0; 5])
-                && marked_record_reference(bytes, start + 48) == distance_record_index.checked_sub(1)
+                && marked_record_reference(bytes, start + 48)
+                    == distance_record_index.checked_sub(1)
                 && bytes.get(start + 53..start + 59) == Some(&[0; 6])
                 && View::u32_le_at(bytes, start + 59).is_some_and(|value| value != 0)
                 && bytes.get(start + 63..start + 67) == Some(&[0; 4])
                 && marked_record_reference(bytes, start + 67) == Some(scope.record_index)
                 && bytes.get(start + 72..start + 78) == Some(&[0; 6])
                 && bytes.get(start + 78..start + 81) == Some(&[1, 0, 0])
-                && marked_record_reference(bytes, start + 81) == distance_record_index.checked_add(1)
+                && marked_record_reference(bytes, start + 81)
+                    == distance_record_index.checked_add(1)
                 && bytes.get(start + 86..start + 93) == Some(&[0; 7])
                 && marked_record_reference(bytes, start + 93) == Some(scope.record_index)
                 && bytes.get(start + 98..start + 104) == Some(&[0; 6])
@@ -402,10 +408,15 @@ fn exact_surface_boundary_operation(
                     scope.reference_members(),
                     "validate F3D surface boundary edge references",
                 ) {
-                    Ok(references) => references.skip(2).enumerate().any(|(ordinal, record_index)| {
-                        marked_record_reference(bytes, start + 25 + ordinal * 11)
-                            != Some(record_index)
-                    }),
+                    Ok(references) => {
+                        references
+                            .skip(2)
+                            .enumerate()
+                            .any(|(ordinal, record_index)| {
+                                marked_record_reference(bytes, start + 25 + ordinal * 11)
+                                    != Some(record_index)
+                            })
+                    }
                     Err(error) => return Some(Err(error)),
                 };
                 if has_wrong_edge_reference
@@ -590,15 +601,22 @@ pub(super) fn exact_ruled_surface_operation(
             cursor = cursor.checked_add(4)?;
 
             let mut records = Vec::new();
-            if let Err(error) = ctx.reserve_capacity(&mut records, count, "f3d ruled surface references")
+            if let Err(error) =
+                ctx.reserve_capacity(&mut records, count, "f3d ruled surface references")
             {
                 return Some(Err(error));
             }
             for _ in 0..count {
-                if let Err(error) = ctx.push_vec(&mut records, match fixed_reference(cursor) {
-                    Some(record) => record,
-                    None => return None,
-                }, "f3d ruled surface references") { return Some(Err(error)); };
+                if let Err(error) = ctx.push_vec(
+                    &mut records,
+                    match fixed_reference(cursor) {
+                        Some(record) => record,
+                        None => return None,
+                    },
+                    "f3d ruled surface references",
+                ) {
+                    return Some(Err(error));
+                };
                 cursor = cursor.checked_add(11)?;
             }
             Some(Ok((records, cursor)))
@@ -681,7 +699,7 @@ pub(super) fn exact_ruled_surface_operation(
                     }
                 }
                 unlisted
-            },
+            }
             Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
         };
         if has_unlisted_edge_group {

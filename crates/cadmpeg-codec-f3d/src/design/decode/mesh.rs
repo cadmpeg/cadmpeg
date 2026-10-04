@@ -311,12 +311,20 @@ impl MeshBody {
         )?;
         let mut placed_vertices = ctx.vector_storage(vertices.len(), "f3d placed mesh vertices")?;
         for point in ctx.admit_iter(&vertices, "place F3D mesh vertices")? {
-            ctx.push_vec(&mut placed_vertices, transform.transform_point(*point)?, "f3d placed mesh vertices")?;
+            ctx.push_vec(
+                &mut placed_vertices,
+                transform.transform_point(*point)?,
+                "f3d placed mesh vertices",
+            )?;
         }
         let placed_normals = if let Some(normals) = corner_normals {
             let mut placed = ctx.vector_storage(normals.len(), "f3d placed mesh normals")?;
             for normal in ctx.admit_iter(&normals, "place F3D mesh corner normals")? {
-                ctx.push_vec(&mut placed, transform.transform_normal(*normal)?, "f3d placed mesh normals")?;
+                ctx.push_vec(
+                    &mut placed,
+                    transform.transform_normal(*normal)?,
+                    "f3d placed mesh normals",
+                )?;
             }
             Some(placed)
         } else {
@@ -495,42 +503,43 @@ fn nested_record_identity(
     input: MeshRecordType<'_>,
 ) -> Result<Option<DesignMeshRecordIdentity>, CodecError> {
     let parsed = (|| -> Option<Result<DesignMeshRecordIdentity, CodecError>> {
-    let NestedMeshRecordFrame {
-        frame_start,
-        at,
-        end,
-        record_index,
-    } = frame;
-    let MeshRecordType {
-        type_guid: expected_type_guid,
-        base_type_guid: expected_base_type_guid,
-        version: expected_version,
-        module: expected_module,
-    } = input;
-    let class_tag = match indexed_class_tag(ctx, record, at) {
-        Ok(Some(class_tag)) => class_tag,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    (View::u32_le_at(record, at.checked_add(indexed_header::RECORD_INDEX)?) == Some(record_index))
+        let NestedMeshRecordFrame {
+            frame_start,
+            at,
+            end,
+            record_index,
+        } = frame;
+        let MeshRecordType {
+            type_guid: expected_type_guid,
+            base_type_guid: expected_base_type_guid,
+            version: expected_version,
+            module: expected_module,
+        } = input;
+        let class_tag = match indexed_class_tag(ctx, record, at) {
+            Ok(Some(class_tag)) => class_tag,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        (View::u32_le_at(record, at.checked_add(indexed_header::RECORD_INDEX)?)
+            == Some(record_index))
         .then_some(())?;
-    let tag = class_tag.as_str().parse::<u32>().ok()?;
-    let ordinal = usize::try_from(tag.checked_sub(256)?).ok()?;
-    validate_design_type(
-        meta.types.get(ordinal)?,
-        expected_type_guid,
-        expected_base_type_guid,
-        expected_version,
-        expected_module,
-    )
-    .then_some(())?;
-    Some(Ok(DesignMeshRecordIdentity::new(
-        class_tag,
-        record_index,
-        source_offset(frame_start, at)?,
-        u64::try_from(end.checked_sub(at)?).ok()?,
-    )
-    .ok()?))
+        let tag = class_tag.as_str().parse::<u32>().ok()?;
+        let ordinal = usize::try_from(tag.checked_sub(256)?).ok()?;
+        validate_design_type(
+            meta.types.get(ordinal)?,
+            expected_type_guid,
+            expected_base_type_guid,
+            expected_version,
+            expected_module,
+        )
+        .then_some(())?;
+        Some(Ok(DesignMeshRecordIdentity::new(
+            class_tag,
+            record_index,
+            source_offset(frame_start, at)?,
+            u64::try_from(end.checked_sub(at)?).ok()?,
+        )
+        .ok()?))
     })();
     parsed.transpose()
 }
@@ -844,11 +853,15 @@ fn parse_mesh_texture_table_record(
             let Ok(ordinal) = u32::try_from(ordinal) else {
                 return Ok(None);
             };
-            ctx.push_vec(&mut flags, MeshTextureMapEntry {
-                ordinal,
-                resource_guid,
-                value,
-            }, "f3d mesh texture flags")?;
+            ctx.push_vec(
+                &mut flags,
+                MeshTextureMapEntry {
+                    ordinal,
+                    resource_guid,
+                    value,
+                },
+                "f3d mesh texture flags",
+            )?;
         }
         let Some(raw_filename_count) = View::u32_le_at(record, at) else {
             return Ok(None);
@@ -905,11 +918,15 @@ fn parse_mesh_texture_table_record(
             let Ok(ordinal) = u32::try_from(ordinal) else {
                 return Ok(None);
             };
-            ctx.push_vec(&mut filenames, MeshTextureFilenameEntry {
-                ordinal,
-                resource_guid,
-                filename_record_index,
-            }, "f3d mesh texture filenames")?;
+            ctx.push_vec(
+                &mut filenames,
+                MeshTextureFilenameEntry {
+                    ordinal,
+                    resource_guid,
+                    filename_record_index,
+                },
+                "f3d mesh texture filenames",
+            )?;
         }
         if at != record.len() || flag_keys != filename_keys {
             return Ok(None);
@@ -953,10 +970,7 @@ fn parse_mesh_wrapper_record(
     parsed.ok_or_else(|| malformed_frame(ctx, "mesh-wrapper", frame.entity_id))
 }
 
-fn scene_state_mask_is_exact(
-    ctx: &DecodeContext<'_>,
-    mask: &[u8],
-) -> Result<bool, CodecError> {
+fn scene_state_mask_is_exact(ctx: &DecodeContext<'_>, mask: &[u8]) -> Result<bool, CodecError> {
     if mask.len() != 49 {
         return Ok(false);
     }
@@ -1636,9 +1650,7 @@ where
         let stream_error = |invariant| malformed_mesh_graph(ctx, &stream, invariant);
         let mut candidate = None;
         let mut second_candidate = None;
-        for (scope_index, scope) in
-            ctx.admit_iter(&scopes, "find F3D mesh collection scopes")?
-        {
+        for (scope_index, scope) in ctx.admit_iter(&scopes, "find F3D mesh collection scopes")? {
             if scope.body_records != collection.body_records
                 || !ctx
                     .admit_iter(
@@ -1664,8 +1676,8 @@ where
         let Some(scope_record_index) = candidate.filter(|_| second_candidate.is_none()) else {
             let mut scope_lists = Vec::new();
             for (index, scope) in ctx.admit_iter(&scopes, "format F3D mesh scope diagnostics")? {
-                let mut body_records =
-                    ctx.vector_storage(scope.body_records.len(), "f3d mesh diagnostic scope bodies")?;
+                let mut body_records = ctx
+                    .vector_storage(scope.body_records.len(), "f3d mesh diagnostic scope bodies")?;
                 ctx.extend_from_slice(
                     &mut body_records,
                     &scope.body_records,
@@ -1737,19 +1749,23 @@ where
             let (filename_record, filename) =
                 parse_mesh_texture_filename_record(ctx, bytes, filename_frame)?;
             let (archive_entry_name, asset) = asset_for_filename(&filename)?;
-            ctx.push_vec(&mut textures, DesignMeshTextureResource {
-                ordinal: flag.ordinal,
-                resource_guid: flag.resource_guid.clone(),
-                flags: flag.value,
-                filename_ordinal: filename_entry.ordinal,
-                file: crate::records::mesh::DesignMeshTextureFile::new(
-                    filename_record,
-                    &filename,
-                    archive_entry_name,
-                )
-                .map_err(|message| malformed_mesh_graph(ctx, &stream, &message))?,
-                asset,
-            }, "f3d mesh texture resources")?;
+            ctx.push_vec(
+                &mut textures,
+                DesignMeshTextureResource {
+                    ordinal: flag.ordinal,
+                    resource_guid: flag.resource_guid.clone(),
+                    flags: flag.value,
+                    filename_ordinal: filename_entry.ordinal,
+                    file: crate::records::mesh::DesignMeshTextureFile::new(
+                        filename_record,
+                        &filename,
+                        archive_entry_name,
+                    )
+                    .map_err(|message| malformed_mesh_graph(ctx, &stream, &message))?,
+                    asset,
+                },
+                "f3d mesh texture resources",
+            )?;
         }
         if !filename_entries.is_empty() {
             return Err(stream_error(
@@ -1814,23 +1830,29 @@ where
                 "Body",
                 "mesh-body-owner",
             )?;
-            ctx.push_vec(&mut feature_bodies, DesignMeshBody {
-                placement: body.placement,
-                entry: entry_name.entry,
-                guid: guid.guid,
-                wrapper_record: wrapper.identity,
-                scene_state,
-                scene_node: scene_node.node,
-                scene_auxiliary_record: scene_auxiliary,
-                owner_record: body_owner,
-                container_mesh_uuid: None,
-                tessellation_id: None,
-            }, "f3d mesh feature bodies")?;
+            ctx.push_vec(
+                &mut feature_bodies,
+                DesignMeshBody {
+                    placement: body.placement,
+                    entry: entry_name.entry,
+                    guid: guid.guid,
+                    wrapper_record: wrapper.identity,
+                    scene_state,
+                    scene_node: scene_node.node,
+                    scene_auxiliary_record: scene_auxiliary,
+                    owner_record: body_owner,
+                    container_mesh_uuid: None,
+                    tessellation_id: None,
+                },
+                "f3d mesh feature bodies",
+            )?;
         }
         let scope_offset = usize::try_from(scope.scope.record().byte_offset()).map_err(|_| {
             stream_error("mesh feature scope byte offsets fit the platform address domain")
         })?;
-        ctx.push_vec(&mut features, DesignMeshFeature::new(
+        ctx.push_vec(
+            &mut features,
+            DesignMeshFeature::new(
                 mesh_feature_id_charged(ctx, &stream, scope_offset)?,
                 scope.scope,
                 collection.collection,
@@ -1844,7 +1866,9 @@ where
                 collection_owner.owner,
                 feature_bodies,
             )
-            .map_err(|message| malformed_mesh_graph(ctx, &stream, &message))?, "f3d mesh graph features")?;
+            .map_err(|message| malformed_mesh_graph(ctx, &stream, &message))?,
+            "f3d mesh graph features",
+        )?;
     }
     if !entry_names.is_empty()
         || !guids.is_empty()
@@ -1919,9 +1943,9 @@ fn flatten_mesh_features(
     let feature_count = ctx
         .admit_iter(&design_records, "count F3D mesh design features")?
         .try_fold(0_usize, |count, design| {
-        count
-            .checked_add(design.len())
-            .ok_or_else(|| ctx.refuse_codec_limit("f3d mesh feature count", u64::MAX - 1, u64::MAX))
+            count.checked_add(design.len()).ok_or_else(|| {
+                ctx.refuse_codec_limit("f3d mesh feature count", u64::MAX - 1, u64::MAX)
+            })
         })?;
 
     let mut features = Vec::new();
@@ -2088,11 +2112,11 @@ pub(crate) fn decode_mesh_bodies(
 mod tests {
     use cadmpeg_core::decode::u64_from_index;
 
-    mod placement;
-    mod text;
-    mod identity;
     mod diagnostic_scope_copy;
+    mod identity;
+    mod placement;
     mod push_vec;
+    mod text;
     use super::{
         parse_mesh_collection_owner_record, parse_mesh_scene_state_record,
         parse_mesh_texture_table_record, parse_mesh_wrapper_record, parse_scene_node_record,

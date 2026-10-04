@@ -116,8 +116,8 @@ fn fixed_kind_edge_and_revolve_operations(
 ) -> (Vec<u8>, DesignParameterScope) {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let draft_start = bytes.len();
     for (record_index, ordinal, value) in [(175u32, 0u8, 0.4f64), (176, 1, 0.0)] {
         let mut scalar = vec![0; 104];
@@ -622,12 +622,14 @@ fn fixed_kind_edge_and_revolve_operations(
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let revolve_construction = exact_path_feature_construction(&cadmpeg_test_support::service_decode_context(),
+    let revolve_construction = exact_path_feature_construction(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &revolve_scope,
         &[],
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(
         revolve_construction,
         Some(DesignPathFeatureConstruction::Revolve(
@@ -700,12 +702,14 @@ fn fixed_kind_edge_and_revolve_operations(
         },
     )
     .unwrap();
-    let indexed_revolve_construction = exact_path_feature_construction(&cadmpeg_test_support::service_decode_context(),
+    let indexed_revolve_construction = exact_path_feature_construction(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &indexed_revolve_scope,
         std::slice::from_ref(&indexed_angle),
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(
         indexed_revolve_construction,
         Some(DesignPathFeatureConstruction::Revolve(
@@ -766,12 +770,14 @@ fn fixed_kind_edge_and_revolve_operations(
         class403_angle = crate::records::parameters::DesignParameterOwner::try_from(wire).unwrap();
     }
     assert_eq!(
-        exact_path_feature_construction(&cadmpeg_test_support::service_decode_context(),
+        exact_path_feature_construction(
+            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &class403_scope,
             std::slice::from_ref(&class403_angle),
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(DesignPathFeatureConstruction::Revolve(
             crate::records::feature::path_features::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::Cut,
@@ -785,12 +791,14 @@ fn fixed_kind_edge_and_revolve_operations(
     );
     bytes[class403_start + 34] = 0;
     assert_eq!(
-        exact_path_feature_construction(&cadmpeg_test_support::service_decode_context(),
+        exact_path_feature_construction(
+            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &class403_scope,
             std::slice::from_ref(&class403_angle),
-        ).unwrap(),
+        )
+        .unwrap(),
         None
     );
     bytes[class403_start + 34] = 1;
@@ -855,12 +863,14 @@ fn fixed_kind_edge_and_revolve_operations(
     )
     .unwrap();
     assert_eq!(
-        exact_path_feature_construction(&cadmpeg_test_support::service_decode_context(),
+        exact_path_feature_construction(
+            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &legacy_revolve_scope,
             std::slice::from_ref(&legacy_angle),
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(DesignPathFeatureConstruction::Revolve(
             crate::records::feature::path_features::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::NewBody,
@@ -895,12 +905,14 @@ fn fixed_kind_edge_and_revolve_operations(
         })
         .unwrap();
     assert_eq!(
-        exact_path_feature_construction(&cadmpeg_test_support::service_decode_context(),
+        exact_path_feature_construction(
+            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &legacy_revolve_scope,
             std::slice::from_ref(&legacy_angle),
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(DesignPathFeatureConstruction::Revolve(
             crate::records::feature::path_features::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::NewBody,
@@ -933,12 +945,14 @@ fn fixed_kind_edge_and_revolve_operations(
         })
         .unwrap();
     assert_eq!(
-        exact_path_feature_construction(&cadmpeg_test_support::service_decode_context(),
+        exact_path_feature_construction(
+            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &legacy_revolve_scope,
             std::slice::from_ref(&legacy_angle),
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(DesignPathFeatureConstruction::Revolve(
             crate::records::feature::path_features::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::NewBody,

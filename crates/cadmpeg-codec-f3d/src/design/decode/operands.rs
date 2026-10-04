@@ -148,10 +148,13 @@ pub(crate) fn decode_edge_operands(
         .filter(|scope| has_edge_recipe_operands(&scope.kind()))
     {
         let mut member_indices = HashSet::new();
-        for group in ctx.admit_iter(groups, "find F3D edge operand groups")?.filter(|group| {
-            native_stream(&group.id) == native_stream(&scope.id)
-                && group.scope_record_index == scope.record_index
-        }) {
+        for group in ctx
+            .admit_iter(groups, "find F3D edge operand groups")?
+            .filter(|group| {
+                native_stream(&group.id) == native_stream(&scope.id)
+                    && group.scope_record_index == scope.record_index
+            })
+        {
             for member in ctx.admit_iter(group.members(), "scan F3D edge operand group members")? {
                 ctx.insert_hash_set(
                     &mut member_indices,
@@ -190,10 +193,9 @@ pub(crate) fn decode_edge_operands(
             }
         }
         if let Some(construction) = scope.work_point_construction() {
-            for input in ctx.admit_iter(
-                construction.rule.inputs(),
-                "scan F3D WorkPoint rule inputs",
-            )? {
+            for input in
+                ctx.admit_iter(construction.rule.inputs(), "scan F3D WorkPoint rule inputs")?
+            {
                 ctx.insert_hash_set(
                     &mut member_indices,
                     input.record_index(),
@@ -423,9 +425,12 @@ pub(crate) fn bind_work_point_input_carriers(
         header_index.insert(key, header);
     }
     let mut work_planes: HashMap<String, HashMap<u32, u32>> = HashMap::new();
-    for scope in ctx.admit_iter(scopes, "index F3D WorkPlane scopes")?.filter(|scope| {
-        scope.kind() == crate::records::feature::scope::DesignFeatureKind::WorkPlane
-    }) {
+    for scope in ctx
+        .admit_iter(scopes, "index F3D WorkPlane scopes")?
+        .filter(|scope| {
+            scope.kind() == crate::records::feature::scope::DesignFeatureKind::WorkPlane
+        })
+    {
         let (Some(stream), Some(preceding_index)) =
             (native_stream(&scope.id), scope.record_index.checked_sub(1))
         else {
@@ -1107,29 +1112,30 @@ pub(crate) fn decode_face_operands(
         .admit_iter(&scope_index, "scan F3D indexed face operand scopes")?
         .map(|(_, scope)| *scope)
         .filter(|scope| {
-        let is_legacy_as_built_421 = scope.kind()
-            == crate::records::feature::scope::DesignFeatureKind::AsBuilt
-            && crate::design::assembly::legacy_as_built_421_generation(
-                scope.frame_length(),
-                scope.class_tag.as_str(),
-                scope.paired_class_tag.as_str(),
-            )
-            .is_some();
-        matches!(
-            design_feature_family(&scope.kind()),
-            Some(
-                DesignFeatureFamily::OffsetFaces
-                    | DesignFeatureFamily::Shell
-                    | DesignFeatureFamily::Thicken
-                    | DesignFeatureFamily::Split
-                    | DesignFeatureFamily::ReplaceFace
-            )
-        ) || matches!(
-            scope.kind(),
-            crate::records::feature::scope::DesignFeatureKind::SplitFace
-                | crate::records::feature::scope::DesignFeatureKind::Hole
-        ) || is_legacy_as_built_421
-    }) {
+            let is_legacy_as_built_421 = scope.kind()
+                == crate::records::feature::scope::DesignFeatureKind::AsBuilt
+                && crate::design::assembly::legacy_as_built_421_generation(
+                    scope.frame_length(),
+                    scope.class_tag.as_str(),
+                    scope.paired_class_tag.as_str(),
+                )
+                .is_some();
+            matches!(
+                design_feature_family(&scope.kind()),
+                Some(
+                    DesignFeatureFamily::OffsetFaces
+                        | DesignFeatureFamily::Shell
+                        | DesignFeatureFamily::Thicken
+                        | DesignFeatureFamily::Split
+                        | DesignFeatureFamily::ReplaceFace
+                )
+            ) || matches!(
+                scope.kind(),
+                crate::records::feature::scope::DesignFeatureKind::SplitFace
+                    | crate::records::feature::scope::DesignFeatureKind::Hole
+            ) || is_legacy_as_built_421
+        })
+    {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
@@ -1207,18 +1213,18 @@ pub(crate) fn decode_face_operands(
                     reference_members.unlocated_values().unwrap_or(&[]),
                     "find next F3D indexed face operand scope reference",
                 )?
-                    .chain(
-                        ctx.admit_iter(
-                            reference_members.located_rows().unwrap_or(&[]),
-                            "find next F3D indexed face operand scope reference",
-                        )?
-                        .map(|member| &member.value),
-                    )
-                    .copied()
-                    .enumerate()
-                    .nth(ordinal + 1)
-                    .and_then(|(_, record_index)| header_index.get(&(stream, record_index)))
-                    .map(|header| header.byte_offset)
+                .chain(
+                    ctx.admit_iter(
+                        reference_members.located_rows().unwrap_or(&[]),
+                        "find next F3D indexed face operand scope reference",
+                    )?
+                    .map(|member| &member.value),
+                )
+                .copied()
+                .enumerate()
+                .nth(ordinal + 1)
+                .and_then(|(_, record_index)| header_index.get(&(stream, record_index)))
+                .map(|header| header.byte_offset)
             } else {
                 None
             };
@@ -1361,7 +1367,11 @@ pub(crate) fn decode_face_source_groups(
             let mut complete = true;
             for member in parsed_source_members {
                 match member? {
-                    Some(member) => ctx.push_vec(&mut source_members, member, "collect F3D face source members")?,
+                    Some(member) => ctx.push_vec(
+                        &mut source_members,
+                        member,
+                        "collect F3D face source members",
+                    )?,
                     None => complete = false,
                 }
             }
@@ -1382,20 +1392,16 @@ pub(crate) fn decode_face_source_groups(
             else {
                 continue;
             };
-            let carrier_class_tag = match crate::design::decode::text::class_tag_from_view(
-                ctx,
-                carrier_class_tag,
-            )? {
-                Ok(class_tag) => class_tag,
-                Err(_) => continue,
-            };
-            let paired_class_tag = match crate::design::decode::text::class_tag_from_view(
-                ctx,
-                paired_class_tag,
-            )? {
-                Ok(class_tag) => class_tag,
-                Err(_) => continue,
-            };
+            let carrier_class_tag =
+                match crate::design::decode::text::class_tag_from_view(ctx, carrier_class_tag)? {
+                    Ok(class_tag) => class_tag,
+                    Err(_) => continue,
+                };
+            let paired_class_tag =
+                match crate::design::decode::text::class_tag_from_view(ctx, paired_class_tag)? {
+                    Ok(class_tag) => class_tag,
+                    Err(_) => continue,
+                };
             ctx.push_vec(
                 &mut out,
                 DesignFaceSourceGroup {
@@ -1547,7 +1553,13 @@ fn parse_face_source_carrier_prefix(
             let offset = start
                 .checked_add(layout.source_reference_offset)?
                 .checked_add(ordinal.checked_mul(11)?)?;
-            if let Err(error) = ctx.push_vec(&mut references, (offset, marked_face_source_reference(bytes, offset)?), "collect F3D face source references") { return Some(Err(error)); };
+            if let Err(error) = ctx.push_vec(
+                &mut references,
+                (offset, marked_face_source_reference(bytes, offset)?),
+                "collect F3D face source references",
+            ) {
+                return Some(Err(error));
+            };
         }
         Some(Ok(references))
     })();
@@ -1690,7 +1702,10 @@ pub(crate) fn bind_face_operand_candidates(
             push_operand_face_candidate(ctx, &mut operand.unreferenced_candidate_faces, face)?;
         }
         for reference in ctx
-            .admit_iter(&operand.recipe_references, "scan F3D face recipe references")?
+            .admit_iter(
+                &operand.recipe_references,
+                "scan F3D face recipe references",
+            )?
             .filter(|reference| reference.design_reference == design_reference)
         {
             for face in ctx.admit_iter(
@@ -1772,9 +1787,9 @@ pub(crate) fn edge_operand_candidate_faces(
     let mut faces = ctx.try_collect_vec(
         ctx.admit_iter(tags, "scan F3D edge operand candidate tags")?
             .filter_map(|tag| {
-                if !owner_id.is_none_or(|owner_id| {
-                    crate::ids::same_native_occurrence(&tag.id, owner_id)
-                }) {
+                if !owner_id
+                    .is_none_or(|owner_id| crate::ids::same_native_occurrence(&tag.id, owner_id))
+                {
                     return None;
                 }
                 match ctx.contains(
@@ -1785,10 +1800,9 @@ pub(crate) fn edge_operand_candidate_faces(
                     Ok(false) => None,
                     Err(error) => Some(Err(error)),
                     Ok(true) => match &tag.target {
-                        AttributeTarget::Face(id) => Some(id.try_clone_for_decode(
-                            ctx,
-                            "f3d operand face candidate ID",
-                        )),
+                        AttributeTarget::Face(id) => {
+                            Some(id.try_clone_for_decode(ctx, "f3d operand face candidate ID"))
+                        }
                         _ => None,
                     },
                 }
@@ -1840,7 +1854,8 @@ pub(crate) fn bind_sketch_profiles(
         )?;
         for (ordinal, record_index) in unlocated_members
             .chain(located_members.map(|member| &member.value))
-            .copied().enumerate()
+            .copied()
+            .enumerate()
         {
             let (Ok(ordinal), Some(header)) =
                 (u32::try_from(ordinal), headers.get(&(stream, record_index)))
@@ -1917,7 +1932,8 @@ pub(crate) fn decode_extrude_selection_groups(
         )?;
         for (ordinal, record_index) in unlocated_members
             .chain(located_members.map(|member| &member.value))
-            .copied().enumerate()
+            .copied()
+            .enumerate()
         {
             let Ok(ordinal) = u32::try_from(ordinal) else {
                 continue;
@@ -2038,7 +2054,8 @@ pub(crate) fn decode_construction_operand_groups(
         )?;
         for (ordinal, record_index) in unlocated_members
             .chain(located_members.map(|member| &member.value))
-            .copied().enumerate()
+            .copied()
+            .enumerate()
         {
             let (Ok(ordinal), Some(header)) =
                 (u32::try_from(ordinal), headers.get(&(stream, record_index)))
@@ -2198,169 +2215,171 @@ fn parse_loft_legacy_body_carrier(
     header: &DesignRecordHeader,
 ) -> Result<Option<DesignLoftLegacyBodyCarrier>, CodecError> {
     let parsed = (|| {
-    let start = usize::try_from(header.byte_offset).ok()?;
-    let (paired_class, frame_length, has_trailing_scope) = match header.class_tag.as_str() {
-        "322" => {
-            let short_paired_offset = start.checked_add(legacy_loft_322::LEN)?;
-            let long_paired_offset = start.checked_add(legacy_loft_322_tail::LEN)?;
-            let pair_matches = |at: usize| {
-                indexed_record_header_at(ctx, bytes, at).map(|paired| {
-                    paired.is_some_and(|paired| {
-                        paired.record_index == header.record_index
-                            && paired.class_tag.as_str() == "262"
+        let start = usize::try_from(header.byte_offset).ok()?;
+        let (paired_class, frame_length, has_trailing_scope) = match header.class_tag.as_str() {
+            "322" => {
+                let short_paired_offset = start.checked_add(legacy_loft_322::LEN)?;
+                let long_paired_offset = start.checked_add(legacy_loft_322_tail::LEN)?;
+                let pair_matches = |at: usize| {
+                    indexed_record_header_at(ctx, bytes, at).map(|paired| {
+                        paired.is_some_and(|paired| {
+                            paired.record_index == header.record_index
+                                && paired.class_tag.as_str() == "262"
+                        })
                     })
-                })
-            };
-            let short_pair_matches = match pair_matches(short_paired_offset) {
-                Ok(matches) => matches,
-                Err(error) => return Some(Err(error)),
-            };
-            let long_pair_matches = match pair_matches(long_paired_offset) {
-                Ok(matches) => matches,
-                Err(error) => return Some(Err(error)),
-            };
-            if short_pair_matches {
-                ("262", legacy_loft_322::LEN, false)
-            } else if long_pair_matches {
-                ("262", legacy_loft_322_tail::LEN, true)
-            } else {
+                };
+                let short_pair_matches = match pair_matches(short_paired_offset) {
+                    Ok(matches) => matches,
+                    Err(error) => return Some(Err(error)),
+                };
+                let long_pair_matches = match pair_matches(long_paired_offset) {
+                    Ok(matches) => matches,
+                    Err(error) => return Some(Err(error)),
+                };
+                if short_pair_matches {
+                    ("262", legacy_loft_322::LEN, false)
+                } else if long_pair_matches {
+                    ("262", legacy_loft_322_tail::LEN, true)
+                } else {
+                    return None;
+                }
+            }
+            "411" => ("266", legacy_loft_411::LEN, true),
+            _ => return None,
+        };
+        let parsed_header = match indexed_record_header_at(ctx, bytes, start) {
+            Ok(Some(parsed)) => parsed,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        if parsed_header.record_index != header.record_index
+            || bytes.get(
+                start + legacy_loft_322::ZERO_RUN_10..start + legacy_loft_322::ZERO_RUN_10 + 10,
+            )? != [0; 10]
+            || bytes.get(start + legacy_loft_322::PRESENCE)? != &1
+            || View::u32_le_at(bytes, start + legacy_loft_322::OWNER_SCOPE_RECORD_INDEX)?
+                != scope.record_index
+            || bytes
+                .get(start + legacy_loft_322::ZERO_RUN_6..start + legacy_loft_322::ZERO_RUN_6 + 6)?
+                != [0; 6]
+            || View::u32_le_at(bytes, start + legacy_loft_322::MEMBER_COUNT)? != 1
+        {
+            return None;
+        }
+        let mut cursor = start.checked_add(legacy_loft_322::MEMBER_REFERENCE)?;
+        let member_offset = cursor;
+        let (member, _) = take_record_reference(bytes, &mut cursor)?;
+        if cursor != start.checked_add(legacy_loft_322::OPAQUE_INDEX)? {
+            return None;
+        }
+        let opaque_index = u8::try_from(View::u32_le_at(bytes, cursor)?)
+            .ok()
+            .and_then(std::num::NonZeroU8::new)?;
+        cursor = cursor.checked_add(4)?;
+        let opaque_scalar = cadmpeg_ir::scalar::FiniteReal::new(View::f64_le_at(bytes, cursor)?)?;
+        cursor = cursor.checked_add(8)?;
+        let repeated_opaque_index = View::u32_le_at(bytes, cursor)?;
+        if repeated_opaque_index != u32::from(opaque_index.get()) {
+            return None;
+        }
+        cursor = cursor.checked_add(4)?;
+        let (next_next_record_index, _) = take_record_reference(bytes, &mut cursor)?;
+        if cursor != start.checked_add(legacy_loft_322::FLAGS)?
+            || bytes.get(cursor..cursor + 2)? != [0, 0]
+        {
+            return None;
+        }
+        cursor = cursor.checked_add(2)?;
+        let (next_record_index, _) = take_record_reference(bytes, &mut cursor)?;
+        if cursor != start.checked_add(legacy_loft_322::LEN)? {
+            return None;
+        }
+        let trailing_scope_reference_offset = if has_trailing_scope {
+            if cursor != start + legacy_loft_322_tail::TAIL_ZERO || bytes.get(cursor)? != &0 {
                 return None;
             }
-        }
-        "411" => ("266", legacy_loft_411::LEN, true),
-        _ => return None,
-    };
-    let parsed_header = match indexed_record_header_at(ctx, bytes, start) {
-        Ok(Some(parsed)) => parsed,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    if parsed_header.record_index != header.record_index
-        || bytes
-            .get(start + legacy_loft_322::ZERO_RUN_10..start + legacy_loft_322::ZERO_RUN_10 + 10)?
-            != [0; 10]
-        || bytes.get(start + legacy_loft_322::PRESENCE)? != &1
-        || View::u32_le_at(bytes, start + legacy_loft_322::OWNER_SCOPE_RECORD_INDEX)?
-            != scope.record_index
-        || bytes
-            .get(start + legacy_loft_322::ZERO_RUN_6..start + legacy_loft_322::ZERO_RUN_6 + 6)?
-            != [0; 6]
-        || View::u32_le_at(bytes, start + legacy_loft_322::MEMBER_COUNT)? != 1
-    {
-        return None;
-    }
-    let mut cursor = start.checked_add(legacy_loft_322::MEMBER_REFERENCE)?;
-    let member_offset = cursor;
-    let (member, _) = take_record_reference(bytes, &mut cursor)?;
-    if cursor != start.checked_add(legacy_loft_322::OPAQUE_INDEX)? {
-        return None;
-    }
-    let opaque_index = u8::try_from(View::u32_le_at(bytes, cursor)?)
-        .ok()
-        .and_then(std::num::NonZeroU8::new)?;
-    cursor = cursor.checked_add(4)?;
-    let opaque_scalar = cadmpeg_ir::scalar::FiniteReal::new(View::f64_le_at(bytes, cursor)?)?;
-    cursor = cursor.checked_add(8)?;
-    let repeated_opaque_index = View::u32_le_at(bytes, cursor)?;
-    if repeated_opaque_index != u32::from(opaque_index.get()) {
-        return None;
-    }
-    cursor = cursor.checked_add(4)?;
-    let (next_next_record_index, _) = take_record_reference(bytes, &mut cursor)?;
-    if cursor != start.checked_add(legacy_loft_322::FLAGS)?
-        || bytes.get(cursor..cursor + 2)? != [0, 0]
-    {
-        return None;
-    }
-    cursor = cursor.checked_add(2)?;
-    let (next_record_index, _) = take_record_reference(bytes, &mut cursor)?;
-    if cursor != start.checked_add(legacy_loft_322::LEN)? {
-        return None;
-    }
-    let trailing_scope_reference_offset = if has_trailing_scope {
-        if cursor != start + legacy_loft_322_tail::TAIL_ZERO || bytes.get(cursor)? != &0 {
+            cursor = cursor.checked_add(1)?;
+            if cursor != start + legacy_loft_322_tail::TRAILING_SCOPE_REFERENCE {
+                return None;
+            }
+            let reference_offset = cursor;
+            let (record_index, _) = take_record_reference(bytes, &mut cursor)?;
+            if record_index != scope.record_index {
+                return None;
+            }
+            Some(u64::try_from(reference_offset).ok()?)
+        } else {
+            None
+        };
+        let paired_byte_offset = start.checked_add(frame_length)?;
+        if cursor != paired_byte_offset {
             return None;
         }
-        cursor = cursor.checked_add(1)?;
-        if cursor != start + legacy_loft_322_tail::TRAILING_SCOPE_REFERENCE {
+        let paired_header = match indexed_record_header_at(ctx, bytes, paired_byte_offset) {
+            Ok(Some(parsed)) => parsed,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        if paired_header.record_index != header.record_index {
             return None;
         }
-        let reference_offset = cursor;
-        let (record_index, _) = take_record_reference(bytes, &mut cursor)?;
-        if record_index != scope.record_index {
+        let paired_class_tag_bytes = bytes.get(
+            paired_byte_offset + indexed_header::CLASS_TAG
+                ..paired_byte_offset + indexed_header::CLASS_TAG + 3,
+        )?;
+        let paired_class_tag = match ctx.validate_utf8(
+            paired_class_tag_bytes,
+            "validate F3D legacy Loft paired class tag",
+        ) {
+            Ok(Ok(class_tag)) => class_tag,
+            Ok(Err(_)) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        if paired_class_tag != paired_class {
             return None;
         }
-        Some(u64::try_from(reference_offset).ok()?)
-    } else {
-        None
-    };
-    let paired_byte_offset = start.checked_add(frame_length)?;
-    if cursor != paired_byte_offset {
-        return None;
-    }
-    let paired_header = match indexed_record_header_at(ctx, bytes, paired_byte_offset) {
-        Ok(Some(parsed)) => parsed,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    if paired_header.record_index != header.record_index {
-        return None;
-    }
-    let paired_class_tag_bytes = bytes.get(
-        paired_byte_offset + indexed_header::CLASS_TAG
-            ..paired_byte_offset + indexed_header::CLASS_TAG + 3,
-    )?;
-    let paired_class_tag = match ctx.validate_utf8(
-        paired_class_tag_bytes,
-        "validate F3D legacy Loft paired class tag",
-    ) {
-        Ok(Ok(class_tag)) => class_tag,
-        Ok(Err(_)) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    if paired_class_tag != paired_class {
-        return None;
-    }
-    let paired_class_tag = match ctx.copy_retained_text(
-        paired_class_tag,
-        "copy F3D legacy Loft paired class tag",
-    ) {
-        Ok(class_tag) => class_tag,
-        Err(error) => return Some(Err(error)),
-    };
-    let Ok(paired_class_tag) = crate::records::references::DesignClassTag::try_from(paired_class_tag)
-    else {
-        return None;
-    };
-    Some(Ok(DesignLoftLegacyBodyCarrier {
-        id: String::new(),
-        scope_record_index: scope.record_index,
-        record_index: header.record_index,
-        byte_offset: header.byte_offset,
-        class_tag: header.class_tag.clone(),
-        owner_scope_record_index_offset: u64::try_from(
-            start + legacy_loft_322::OWNER_SCOPE_RECORD_INDEX,
-        )
-        .ok()?,
-        member,
-        member_offset: u64::try_from(member_offset).ok()?,
-        member_count_offset: u64::try_from(start + legacy_loft_322::MEMBER_COUNT).ok()?,
-        opaque_index,
-        opaque_index_offset: u64::try_from(start + legacy_loft_322::OPAQUE_INDEX).ok()?,
-        opaque_scalar,
-        opaque_scalar_offset: u64::try_from(start + legacy_loft_322::OPAQUE_SCALAR).ok()?,
-        repeated_opaque_index_offset: u64::try_from(start + legacy_loft_322::REPEATED_OPAQUE_INDEX)
+        let paired_class_tag = match ctx
+            .copy_retained_text(paired_class_tag, "copy F3D legacy Loft paired class tag")
+        {
+            Ok(class_tag) => class_tag,
+            Err(error) => return Some(Err(error)),
+        };
+        let Ok(paired_class_tag) =
+            crate::records::references::DesignClassTag::try_from(paired_class_tag)
+        else {
+            return None;
+        };
+        Some(Ok(DesignLoftLegacyBodyCarrier {
+            id: String::new(),
+            scope_record_index: scope.record_index,
+            record_index: header.record_index,
+            byte_offset: header.byte_offset,
+            class_tag: header.class_tag.clone(),
+            owner_scope_record_index_offset: u64::try_from(
+                start + legacy_loft_322::OWNER_SCOPE_RECORD_INDEX,
+            )
             .ok()?,
-        next_next_record_index,
-        next_next_reference_offset: u64::try_from(start + legacy_loft_322::NEXT_NEXT_REFERENCE)
+            member,
+            member_offset: u64::try_from(member_offset).ok()?,
+            member_count_offset: u64::try_from(start + legacy_loft_322::MEMBER_COUNT).ok()?,
+            opaque_index,
+            opaque_index_offset: u64::try_from(start + legacy_loft_322::OPAQUE_INDEX).ok()?,
+            opaque_scalar,
+            opaque_scalar_offset: u64::try_from(start + legacy_loft_322::OPAQUE_SCALAR).ok()?,
+            repeated_opaque_index_offset: u64::try_from(
+                start + legacy_loft_322::REPEATED_OPAQUE_INDEX,
+            )
             .ok()?,
-        flags_offset: u64::try_from(start + legacy_loft_322::FLAGS).ok()?,
-        next_record_index,
-        next_reference_offset: u64::try_from(start + legacy_loft_322::NEXT_REFERENCE).ok()?,
-        trailing_scope_reference_offset,
-        paired_class_tag,
-        paired_byte_offset: u64::try_from(paired_byte_offset).ok()?,
-    }))
+            next_next_record_index,
+            next_next_reference_offset: u64::try_from(start + legacy_loft_322::NEXT_NEXT_REFERENCE)
+                .ok()?,
+            flags_offset: u64::try_from(start + legacy_loft_322::FLAGS).ok()?,
+            next_record_index,
+            next_reference_offset: u64::try_from(start + legacy_loft_322::NEXT_REFERENCE).ok()?,
+            trailing_scope_reference_offset,
+            paired_class_tag,
+            paired_byte_offset: u64::try_from(paired_byte_offset).ok()?,
+        }))
     })();
     parsed.transpose()
 }
@@ -2459,9 +2478,8 @@ pub(crate) fn decode_fillet_radius_groups(
         };
         let _scope_groups_storage;
         let mut scope_groups;
-        (scope_groups, _scope_groups_storage) = ctx.with_scoped_storage(
-            "f3d Fillet scope groups",
-            || {
+        (scope_groups, _scope_groups_storage) =
+            ctx.with_scoped_storage("f3d Fillet scope groups", || {
                 ctx.collect_vec(
                     ctx.admit_iter(groups, "scan F3D Fillet scope groups")?
                         .filter(|group| {
@@ -2470,8 +2488,7 @@ pub(crate) fn decode_fillet_radius_groups(
                         }),
                     "f3d Fillet scope groups",
                 )
-            },
-        )?;
+            })?;
         ctx.stable_sort_by_key(
             &mut scope_groups[..],
             |value| {
@@ -2485,9 +2502,8 @@ pub(crate) fn decode_fillet_radius_groups(
         )?;
         let _owned_parameters_storage;
         let mut owned_parameters;
-        (owned_parameters, _owned_parameters_storage) = ctx.with_scoped_storage(
-            "f3d Fillet owned parameters",
-            || {
+        (owned_parameters, _owned_parameters_storage) =
+            ctx.with_scoped_storage("f3d Fillet owned parameters", || {
                 ctx.collect_vec(
                     ctx.admit_iter(owners, "scan F3D Fillet owners")?
                         .filter(|owner| {
@@ -2502,8 +2518,7 @@ pub(crate) fn decode_fillet_radius_groups(
                         }),
                     "f3d Fillet owned parameters",
                 )
-            },
-        )?;
+            })?;
         ctx.stable_sort_by_key(
             &mut owned_parameters[..],
             |value| {
@@ -2515,9 +2530,8 @@ pub(crate) fn decode_fillet_radius_groups(
         )?;
         let _radii_storage;
         let radii;
-        (radii, _radii_storage) = ctx.with_scoped_storage(
-            "f3d Fillet radius parameters",
-            || {
+        (radii, _radii_storage) =
+            ctx.with_scoped_storage("f3d Fillet radius parameters", || {
                 ctx.collect_vec(
                     ctx.admit_iter(&owned_parameters, "scan F3D Fillet radius parameters")?
                         .filter_map(|(_, parameter)| {
@@ -2525,13 +2539,11 @@ pub(crate) fn decode_fillet_radius_groups(
                         }),
                     "f3d Fillet radius parameters",
                 )
-            },
-        )?;
+            })?;
         let _weights_storage;
         let weights;
-        (weights, _weights_storage) = ctx.with_scoped_storage(
-            "f3d Fillet weight parameters",
-            || {
+        (weights, _weights_storage) =
+            ctx.with_scoped_storage("f3d Fillet weight parameters", || {
                 ctx.collect_vec(
                     ctx.admit_iter(&owned_parameters, "scan F3D Fillet weight parameters")?
                         .filter_map(|(_, parameter)| {
@@ -2539,8 +2551,7 @@ pub(crate) fn decode_fillet_radius_groups(
                         }),
                     "f3d Fillet weight parameters",
                 )
-            },
-        )?;
+            })?;
         if owned_parameters.len() == radii.len() + weights.len()
             && scope_groups.len() == radii.len()
             && (weights.is_empty() || weights.len() == scope_groups.len())
@@ -2570,9 +2581,8 @@ pub(crate) fn decode_fillet_radius_groups(
         };
         let _chord_lengths_storage;
         let chord_lengths;
-        (chord_lengths, _chord_lengths_storage) = ctx.with_scoped_storage(
-            "f3d Fillet chord lengths",
-            || {
+        (chord_lengths, _chord_lengths_storage) =
+            ctx.with_scoped_storage("f3d Fillet chord lengths", || {
                 ctx.collect_vec(
                     ctx.admit_iter(&owned_parameters, "scan F3D Fillet chord-length parameters")?
                         .filter_map(|(_, parameter)| {
@@ -2581,8 +2591,7 @@ pub(crate) fn decode_fillet_radius_groups(
                         }),
                     "f3d Fillet chord lengths",
                 )
-            },
-        )?;
+            })?;
         // TangencyWeight is optional for the chordal law; older records carry
         // only the required ChordLen input.
         if (weights.is_empty() && owned_parameters.len() == 1)
@@ -2910,10 +2919,16 @@ pub(super) fn parse_construction_operand_group(
         let Some((record_index, offset)) = take_record_reference(bytes, &mut cursor) else {
             return NotAGroup;
         };
-        if let Err(error) = ctx.push_vec(&mut members, crate::records::identity::Located {
-            value: record_index,
-            offset,
-        }, "f3d construction operand members") { return Refused(error); };
+        if let Err(error) = ctx.push_vec(
+            &mut members,
+            crate::records::identity::Located {
+                value: record_index,
+                offset,
+            },
+            "f3d construction operand members",
+        ) {
+            return Refused(error);
+        };
     }
     let mut auxiliary_records = Vec::new();
     let mut auxiliary_reference_slots = [false; 2];
@@ -2934,10 +2949,16 @@ pub(super) fn parse_construction_operand_group(
         ) {
             return Refused(error);
         }
-        if let Err(error) = ctx.push_vec(&mut auxiliary_records, crate::records::identity::Located {
-            value: record_index,
-            offset,
-        }, "f3d construction operand auxiliary record") { return Refused(error); };
+        if let Err(error) = ctx.push_vec(
+            &mut auxiliary_records,
+            crate::records::identity::Located {
+                value: record_index,
+                offset,
+            },
+            "f3d construction operand auxiliary record",
+        ) {
+            return Refused(error);
+        };
     }
     let Some(trailing_count) = View::u32_le_at(bytes, cursor) else {
         return NotAGroup;
@@ -2963,10 +2984,16 @@ pub(super) fn parse_construction_operand_group(
         let Some((record_index, offset)) = take_record_reference(bytes, &mut cursor) else {
             return NotAGroup;
         };
-        if let Err(error) = ctx.push_vec(&mut trailing_records, crate::records::identity::Located {
-            value: record_index,
-            offset,
-        }, "f3d construction operand trailing records") { return Refused(error); };
+        if let Err(error) = ctx.push_vec(
+            &mut trailing_records,
+            crate::records::identity::Located {
+                value: record_index,
+                offset,
+            },
+            "f3d construction operand trailing records",
+        ) {
+            return Refused(error);
+        };
     }
     let legacy_move_class_328 = scope.kind()
         == crate::records::feature::scope::DesignFeatureKind::Move
@@ -3275,7 +3302,9 @@ pub(crate) fn bind_construction_operand_trailing_records(
             let Some(header) = headers.get(&(stream, record.value)) else {
                 continue;
             };
-            if let Some(transform) = parse_construction_operand_transform(ctx, bytes, header).transpose()? {
+            if let Some(transform) =
+                parse_construction_operand_transform(ctx, bytes, header).transpose()?
+            {
                 ctx.push_vec(
                     &mut trailing_transforms,
                     transform,
@@ -3368,13 +3397,9 @@ pub(crate) fn bind_construction_operand_paths(
             let Some(header) = headers.get(&(stream, record.value)) else {
                 continue;
             };
-            if let Some(path) = parse_construction_operand_path(
-                ctx,
-                bytes,
-                group.scope_record_index,
-                header,
-            )
-            .transpose()?
+            if let Some(path) =
+                parse_construction_operand_path(ctx, bytes, group.scope_record_index, header)
+                    .transpose()?
             {
                 ctx.push_vec(
                     &mut auxiliary_paths,
@@ -3396,7 +3421,8 @@ fn parse_construction_operand_path(
     bytes: &[u8],
     expected_scope_record_index: u32,
     header: &DesignRecordHeader,
-) -> Option<Result<crate::records::topology::construction::DesignConstructionOperandPath, CodecError>> {
+) -> Option<Result<crate::records::topology::construction::DesignConstructionOperandPath, CodecError>>
+{
     let start = usize::try_from(header.byte_offset).ok()?;
     if bytes.get(start + 11..start + 21)? != [0; 10] || bytes.get(start + 21) != Some(&1) {
         return None;
@@ -3445,14 +3471,12 @@ fn parse_construction_operand_path(
     if following_record_index != header.record_index.checked_add(1)? {
         return None;
     }
-    let following_class_tag = match crate::design::decode::text::class_tag_from_view(
-        ctx,
-        following_class_tag,
-    ) {
-        Ok(Ok(class_tag)) => class_tag,
-        Ok(Err(_)) => return None,
-        Err(error) => return Some(Err(error)),
-    };
+    let following_class_tag =
+        match crate::design::decode::text::class_tag_from_view(ctx, following_class_tag) {
+            Ok(Ok(class_tag)) => class_tag,
+            Ok(Err(_)) => return None,
+            Err(error) => return Some(Err(error)),
+        };
     crate::records::topology::construction::DesignConstructionOperandPath::try_new(
         crate::records::topology::construction::DesignConstructionOperandPathDraft {
             record_index: header.record_index,
@@ -3478,7 +3502,9 @@ fn parse_construction_operand_transform(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     header: &DesignRecordHeader,
-) -> Option<Result<crate::records::topology::construction::DesignConstructionOperandTransform, CodecError>> {
+) -> Option<
+    Result<crate::records::topology::construction::DesignConstructionOperandTransform, CodecError>,
+> {
     let start = usize::try_from(header.byte_offset).ok()?;
     if bytes.get(start + 11..start + 22)? != [0; 11]
         || bytes.get(start + 150..start + 152)? != [1, 0]
@@ -3494,14 +3520,12 @@ fn parse_construction_operand_transform(
     if following_record_index != header.record_index.checked_add(1)? {
         return None;
     }
-    let following_class_tag = match crate::design::decode::text::class_tag_from_view(
-        ctx,
-        following_class_tag,
-    ) {
-        Ok(Ok(class_tag)) => class_tag,
-        Ok(Err(_)) => return None,
-        Err(error) => return Some(Err(error)),
-    };
+    let following_class_tag =
+        match crate::design::decode::text::class_tag_from_view(ctx, following_class_tag) {
+            Ok(Ok(class_tag)) => class_tag,
+            Ok(Err(_)) => return None,
+            Err(error) => return Some(Err(error)),
+        };
     crate::records::topology::construction::DesignConstructionOperandTransform::try_new(
         crate::records::topology::construction::DesignConstructionOperandTransformDraft {
             record_index: header.record_index,
@@ -3653,7 +3677,11 @@ fn copy_lost_edge_run_ids(
     let mut ids = Vec::new();
     ctx.reserve_capacity(&mut ids, run.len(), "f3d lost-edge run IDs")?;
     for edge in ctx.admit_iter(run, "copy F3D lost-edge run IDs")? {
-        ctx.push_vec(&mut ids, ctx.copy_retained_text(&edge.id, "f3d lost-edge run ID text")?, "f3d lost-edge run IDs")?;
+        ctx.push_vec(
+            &mut ids,
+            ctx.copy_retained_text(&edge.id, "f3d lost-edge run ID text")?,
+            "f3d lost-edge run IDs",
+        )?;
     }
     Ok(ids)
 }
@@ -3671,10 +3699,12 @@ pub(crate) fn bind_lost_edge_groups(
         let Some(stream) = native_stream(&group.id) else {
             continue;
         };
-        let mut identity_matches = ctx.admit_iter(identities, "find F3D construction identities")?.filter(|identity| {
-            native_stream(&identity.id) == Some(stream)
-                && identity.group_record_index == group.record_index
-        });
+        let mut identity_matches = ctx
+            .admit_iter(identities, "find F3D construction identities")?
+            .filter(|identity| {
+                native_stream(&identity.id) == Some(stream)
+                    && identity.group_record_index == group.record_index
+            });
         let Some(identity) = identity_matches.next() else {
             continue;
         };
@@ -3759,11 +3789,11 @@ fn parse_construction_operand_identity(
     let mut current_record_index = wrapper_header.record_index;
     let mut current_class_tag = wrapper_header.class_tag.clone();
     let mut chain_started = false;
-    let transform = match parse_construction_operand_transform(ctx, bytes, wrapper_header).transpose()
-    {
-        Ok(transform) => transform,
-        Err(error) => return Some(Err(error)),
-    };
+    let transform =
+        match parse_construction_operand_transform(ctx, bytes, wrapper_header).transpose() {
+            Ok(transform) => transform,
+            Err(error) => return Some(Err(error)),
+        };
     if let Some(transform) = transform {
         current_at = usize::try_from(transform.following_byte_offset()).ok()?;
         current_record_index = transform.following_record_index();
@@ -3804,15 +3834,22 @@ fn parse_construction_operand_identity(
         }
         seen.insert((current_record_index, current_at));
 
-        if let Err(error) = ctx.reserve_capacity(&mut wrappers, 1, "f3d construction identity wrappers")
+        if let Err(error) =
+            ctx.reserve_capacity(&mut wrappers, 1, "f3d construction identity wrappers")
         {
             return Some(Err(error));
         }
-        if let Err(error) = ctx.push_vec(&mut wrappers, crate::records::topology::construction::DesignIdentityWrapper {
+        if let Err(error) = ctx.push_vec(
+            &mut wrappers,
+            crate::records::topology::construction::DesignIdentityWrapper {
                 record_index: current_record_index,
                 byte_offset: u64::try_from(current_at).ok()?,
                 class_tag: current_class_tag,
-            }, "f3d construction identity wrappers") { return Some(Err(error)); };
+            },
+            "f3d construction identity wrappers",
+        ) {
+            return Some(Err(error));
+        };
         current_at = current_at.checked_add(24)?;
         let (next_class_tag, after_next_tag) =
             lp_ascii_filtered_view(bytes, current_at, 0..=2000, u8::is_ascii_graphic)?;
@@ -3820,11 +3857,12 @@ fn parse_construction_operand_identity(
             return None;
         }
         current_record_index = View::u32_le_at(bytes, after_next_tag)?;
-        current_class_tag = match crate::design::decode::text::class_tag_from_view(ctx, next_class_tag) {
-            Ok(Ok(class_tag)) => class_tag,
-            Ok(Err(_)) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+        current_class_tag =
+            match crate::design::decode::text::class_tag_from_view(ctx, next_class_tag) {
+                Ok(Ok(class_tag)) => class_tag,
+                Ok(Err(_)) => return None,
+                Err(error) => return Some(Err(error)),
+            };
         chain_started = true;
     }
     let tracking_path = match parse_construction_tracking_path(
@@ -3935,22 +3973,18 @@ fn parse_construction_tracking_path(
     if following_record_index != carrier_record_index.checked_add(1)? {
         return None;
     }
-    let carrier_class_tag = match crate::design::decode::text::class_tag_from_view(
-        ctx,
-        carrier_class_tag,
-    ) {
-        Ok(Ok(class_tag)) => class_tag,
-        Ok(Err(_)) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    let following_class_tag = match crate::design::decode::text::class_tag_from_view(
-        ctx,
-        following_class_tag,
-    ) {
-        Ok(Ok(class_tag)) => class_tag,
-        Ok(Err(_)) => return None,
-        Err(error) => return Some(Err(error)),
-    };
+    let carrier_class_tag =
+        match crate::design::decode::text::class_tag_from_view(ctx, carrier_class_tag) {
+            Ok(Ok(class_tag)) => class_tag,
+            Ok(Err(_)) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+    let following_class_tag =
+        match crate::design::decode::text::class_tag_from_view(ctx, following_class_tag) {
+            Ok(Ok(class_tag)) => class_tag,
+            Ok(Err(_)) => return None,
+            Err(error) => return Some(Err(error)),
+        };
     DesignConstructionTrackingPath::try_new(
         crate::records::topology::construction::DesignConstructionTrackingPathDraft {
             wrapper_record_index,
@@ -4457,26 +4491,25 @@ fn parse_work_point_sketch_point_frame(
         Ok(None) => return None,
         Err(error) => return Some(Err(error)),
     };
-    let nested_one_at = match next_indexed_record_offset(ctx, bytes, paired_at + indexed_header::LEN)
-    {
-        Ok(Some(at)) => at,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    let nested_two_at = match next_indexed_record_offset(ctx, bytes, nested_one_at + indexed_header::LEN)
-    {
-        Ok(Some(at)) => at,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    let identity_at = match next_indexed_record_offset(ctx, bytes, nested_two_at + indexed_header::LEN)
-    {
-        Ok(Some(at)) => at,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    let next_at = match next_indexed_record_offset(ctx, bytes, identity_at + indexed_header::LEN)
-    {
+    let nested_one_at =
+        match next_indexed_record_offset(ctx, bytes, paired_at + indexed_header::LEN) {
+            Ok(Some(at)) => at,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+    let nested_two_at =
+        match next_indexed_record_offset(ctx, bytes, nested_one_at + indexed_header::LEN) {
+            Ok(Some(at)) => at,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+    let identity_at =
+        match next_indexed_record_offset(ctx, bytes, nested_two_at + indexed_header::LEN) {
+            Ok(Some(at)) => at,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+    let next_at = match next_indexed_record_offset(ctx, bytes, identity_at + indexed_header::LEN) {
         Ok(Some(at)) => at,
         Ok(None) => return None,
         Err(error) => return Some(Err(error)),
@@ -4757,11 +4790,14 @@ pub(crate) fn decode_body_recipe_operands(
         let Some(stream) = native_stream(&group.id) else {
             continue;
         };
-        if ctx.admit_iter(scopes, "find F3D body recipe scope")?.any(|scope| {
-            scope.record_index == group.scope_record_index
-                && native_stream(&scope.id) == Some(stream)
-                && scope.kind() == crate::records::feature::scope::DesignFeatureKind::Hole
-        }) {
+        if ctx
+            .admit_iter(scopes, "find F3D body recipe scope")?
+            .any(|scope| {
+                scope.record_index == group.scope_record_index
+                    && native_stream(&scope.id) == Some(stream)
+                    && scope.kind() == crate::records::feature::scope::DesignFeatureKind::Hole
+            })
+        {
             continue;
         }
         let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
@@ -4799,10 +4835,13 @@ pub(crate) fn decode_body_recipe_operands(
             }
         }
     }
-    for scope in ctx.admit_iter(scopes, "scan F3D body recipe scopes")?.filter(|scope| {
-        scope.combine_operation().is_some()
-            || scope.kind() == crate::records::feature::scope::DesignFeatureKind::Hole
-    }) {
+    for scope in ctx
+        .admit_iter(scopes, "scan F3D body recipe scopes")?
+        .filter(|scope| {
+            scope.combine_operation().is_some()
+                || scope.kind() == crate::records::feature::scope::DesignFeatureKind::Hole
+        })
+    {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
@@ -5118,15 +5157,21 @@ fn parse_body_recipe_operand_frame_with_index(
         return Some(Err(error));
     }
     for _ in 0..reference_count {
-        if let Err(error) = ctx.push_vec(&mut references, DesignBodyRecipeReference {
-            design_reference: View::u64_le_at(bytes, cursor)?,
-            design_reference_offset: u64::try_from(cursor).ok()?,
-            form: View::u32_le_at(bytes, cursor + 8)?,
-            form_offset: u64::try_from(cursor + 8).ok()?,
-            candidate_faces: Vec::new(),
-            preceding_candidate_faces: Vec::new(),
-            preceding_body_slots: Vec::new(),
-        }, "f3d body recipe references") { return Some(Err(error)); };
+        if let Err(error) = ctx.push_vec(
+            &mut references,
+            DesignBodyRecipeReference {
+                design_reference: View::u64_le_at(bytes, cursor)?,
+                design_reference_offset: u64::try_from(cursor).ok()?,
+                form: View::u32_le_at(bytes, cursor + 8)?,
+                form_offset: u64::try_from(cursor + 8).ok()?,
+                candidate_faces: Vec::new(),
+                preceding_candidate_faces: Vec::new(),
+                preceding_body_slots: Vec::new(),
+            },
+            "f3d body recipe references",
+        ) {
+            return Some(Err(error));
+        };
         cursor = cursor.checked_add(12)?;
     }
     if bytes.get(cursor) != Some(&1)
@@ -5263,7 +5308,7 @@ pub(crate) fn bind_body_recipe_operand_candidates(
             let Ok(design_reference) = i64::try_from(reference.design_reference) else {
                 continue;
             };
-    for tag in ctx.admit_iter(tags, "scan F3D body recipe tags")? {
+            for tag in ctx.admit_iter(tags, "scan F3D body recipe tags")? {
                 if !crate::ids::same_native_occurrence(&tag.id, &operand_id)
                     || !ctx.contains(
                         &tag.design_references,
@@ -5309,10 +5354,13 @@ pub(crate) fn bind_extrude_selection_geometry(
         let Some(stream) = native_stream(&group.id) else {
             continue;
         };
-        let Some(scope) = ctx.admit_iter(scopes, "find F3D selected Sketch scope")?.find(|scope| {
-            native_stream(&scope.id) == Some(stream)
-                && scope.record_index == group.scope_record_index
-        }) else {
+        let Some(scope) = ctx
+            .admit_iter(scopes, "find F3D selected Sketch scope")?
+            .find(|scope| {
+                native_stream(&scope.id) == Some(stream)
+                    && scope.record_index == group.scope_record_index
+            })
+        else {
             continue;
         };
         let Some(profile) = scope.extrude_profile() else {
@@ -5379,16 +5427,19 @@ pub(crate) fn bind_extrude_selection_identities(
             continue;
         };
         let mut matches = Vec::new();
-        for identity in ctx.admit_iter(identities, "scan F3D Extrude identity records")?.filter(|identity| {
-            native_stream(&identity.id) == Some(stream)
-                && identity.following_record_index() == member.record_index()
-                && identity.following_byte_offset() == member.byte_offset()
-                && identity.persistent_identity().is_some_and(|persistent| {
-                    persistent.local_id == member.local_id
-                        && persistent.asset_id == member.asset_id
-                        && persistent.context_id == member.context_id
-                })
-        }) {
+        for identity in ctx
+            .admit_iter(identities, "scan F3D Extrude identity records")?
+            .filter(|identity| {
+                native_stream(&identity.id) == Some(stream)
+                    && identity.following_record_index() == member.record_index()
+                    && identity.following_byte_offset() == member.byte_offset()
+                    && identity.persistent_identity().is_some_and(|persistent| {
+                        persistent.local_id == member.local_id
+                            && persistent.asset_id == member.asset_id
+                            && persistent.context_id == member.context_id
+                    })
+            })
+        {
             ctx.reserve_vec(&mut matches, 1, "f3d Extrude identity matches")?;
             matches.push(identity);
         }
@@ -5409,8 +5460,15 @@ pub(crate) fn bind_extrude_selection_identities(
 
         let mut ids = Vec::new();
         ctx.reserve_capacity(&mut ids, matches.len(), "f3d Extrude identity IDs")?;
-        for identity in ctx.admit_iter(&matches, "copy F3D Extrude identity matches")?.copied() {
-            ctx.push_vec(&mut ids, ctx.copy_retained_text(&identity.id, "f3d Extrude identity ID text")?, "f3d Extrude identity IDs")?;
+        for identity in ctx
+            .admit_iter(&matches, "copy F3D Extrude identity matches")?
+            .copied()
+        {
+            ctx.push_vec(
+                &mut ids,
+                ctx.copy_retained_text(&identity.id, "f3d Extrude identity ID text")?,
+                "f3d Extrude identity IDs",
+            )?;
         }
         member.operand_identity_ids = ids;
     }
@@ -5846,7 +5904,9 @@ fn parse_sketch_profile_region_selection(
     }
 
     let mut regions = Vec::new();
-    if let Err(error) = ctx.reserve_capacity(&mut regions, region_count, "f3d sketch profile regions") {
+    if let Err(error) =
+        ctx.reserve_capacity(&mut regions, region_count, "f3d sketch profile regions")
+    {
         return Some(Err(error));
     }
     for region_ordinal in 0..region_count {
@@ -5910,32 +5970,44 @@ fn parse_sketch_profile_region_selection(
             {
                 return None;
             }
-            if let Err(error) = ctx.push_vec(&mut members, DesignSketchProfileRegionMember {
-                kind_offset: u64::try_from(kind_offset).ok()?,
-                curve_primary_id,
-                curve_primary_id_offset: u64::try_from(
-                    cursor.checked_add(region_member::CURVE_PRIMARY_ID)?,
-                )
-                .ok()?,
-                incidence_flag: incidence_words[3] == 1,
-                incidence_values: [
-                    crate::records::topology::sketch_profile::DesignRegionIncidence::try_from(
-                        incidence_words[4],
+            if let Err(error) = ctx.push_vec(
+                &mut members,
+                DesignSketchProfileRegionMember {
+                    kind_offset: u64::try_from(kind_offset).ok()?,
+                    curve_primary_id,
+                    curve_primary_id_offset: u64::try_from(
+                        cursor.checked_add(region_member::CURVE_PRIMARY_ID)?,
                     )
                     .ok()?,
-                    crate::records::topology::sketch_profile::DesignRegionIncidence::try_from(
-                        incidence_words[5],
-                    )
-                    .ok()?,
-                ],
-                incidence_words_offset: u64::try_from(incidence_words_offset).ok()?,
-            }, "f3d sketch profile region members") { return Some(Err(error)); };
+                    incidence_flag: incidence_words[3] == 1,
+                    incidence_values: [
+                        crate::records::topology::sketch_profile::DesignRegionIncidence::try_from(
+                            incidence_words[4],
+                        )
+                        .ok()?,
+                        crate::records::topology::sketch_profile::DesignRegionIncidence::try_from(
+                            incidence_words[5],
+                        )
+                        .ok()?,
+                    ],
+                    incidence_words_offset: u64::try_from(incidence_words_offset).ok()?,
+                },
+                "f3d sketch profile region members",
+            ) {
+                return Some(Err(error));
+            };
             cursor = cursor.checked_add(region_member::LEN)?;
         }
-        if let Err(error) = ctx.push_vec(&mut regions, DesignSketchProfileRegion {
-            member_count_offset: u64::try_from(member_count_offset).ok()?,
-            members,
-        }, "f3d sketch profile regions") { return Some(Err(error)); };
+        if let Err(error) = ctx.push_vec(
+            &mut regions,
+            DesignSketchProfileRegion {
+                member_count_offset: u64::try_from(member_count_offset).ok()?,
+                members,
+            },
+            "f3d sketch profile regions",
+        ) {
+            return Some(Err(error));
+        };
     }
     let companion_at = cursor.checked_add(TERMINATOR_LEN)?;
     if bytes.get(cursor..companion_at)? != [0; TERMINATOR_LEN]
@@ -6171,7 +6243,8 @@ fn parse_recipe_operand(
     };
     Some(Ok(ParsedRecipeOperand {
         paired_byte_offset: u64::try_from(offsets[0]).ok()?,
-        paired_class_tag: match crate::design::decode::text::class_tag_from_view(ctx, indexed[0].0) {
+        paired_class_tag: match crate::design::decode::text::class_tag_from_view(ctx, indexed[0].0)
+        {
             Ok(Ok(class_tag)) => class_tag,
             Ok(Err(_)) => return None,
             Err(error) => return Some(Err(error)),
@@ -6444,13 +6517,17 @@ pub(crate) fn surface_patch_recipe_structure_with_context(
         else {
             return Ok(None);
         };
-        ctx.push_vec(&mut clauses, crate::records::topology::edge_recipe::DesignSurfacePatchRecipeClause {
+        ctx.push_vec(
+            &mut clauses,
+            crate::records::topology::edge_recipe::DesignSurfacePatchRecipeClause {
                 fields,
                 face_reference_ordinals,
                 edge_reference_ordinals,
 
                 entries,
-            }, "collect F3D SurfacePatch clauses")?;
+            },
+            "collect F3D SurfacePatch clauses",
+        )?;
     }
     if let Some(&delimiter) = remaining.first() {
         if delimiter != 0 {
@@ -6795,7 +6872,10 @@ fn face_recipe_nodes_with_context(
         return Ok(None);
     }
     let node_starts = ctx
-        .admit_iter(&recipe_node_indices, "scan F3D face recipe node range starts")?
+        .admit_iter(
+            &recipe_node_indices,
+            "scan F3D face recipe node range starts",
+        )?
         .copied();
     let node_ends = ctx
         .admit_iter(&recipe_node_indices, "scan F3D face recipe node range ends")?
@@ -6888,9 +6968,12 @@ fn edge_recipe_entries_with_context(
 ) -> Result<Option<Vec<DesignTopologyRecipeEntry>>, CodecError> {
     let mut entries = Vec::new();
     let Some(entry_width) = std::num::NonZeroUsize::new(8) else {
-        return Err(CodecError::malformed("F3D topology recipe entry width is zero"));
+        return Err(CodecError::malformed(
+            "F3D topology recipe entry width is zero",
+        ));
     };
-    for entry in ctx.admit_iter(words, "scan F3D topology recipe entry words")?
+    for entry in ctx
+        .admit_iter(words, "scan F3D topology recipe entry words")?
         .chunks(entry_width)
         .filter(|entry| entry.len() == 8)
     {
@@ -6985,21 +7068,16 @@ fn face_recipe_next_boundary(
                 .is_some_and(|limit| offset <= limit)
         })
     };
-    let Some(expected_indices) = record_index
-        .checked_add(4)
-        .zip(record_index.checked_add(5))
+    let Some(expected_indices) = record_index.checked_add(4).zip(record_index.checked_add(5))
     else {
         return Ok(None);
     };
     let expected_indices = [expected_indices.0, expected_indices.1];
     let mut selected = None;
     for expected_index in expected_indices {
-        let Some(offset) = next_indexed_record_offset_with_index(
-            ctx,
-            bytes,
-            position,
-            expected_index,
-        )? else {
+        let Some(offset) =
+            next_indexed_record_offset_with_index(ctx, bytes, position, expected_index)?
+        else {
             continue;
         };
         if within_limit(offset)
@@ -7014,8 +7092,8 @@ fn face_recipe_next_boundary(
     let Some(offset) = next_indexed_record_offset(ctx, bytes, position)? else {
         return Ok(None);
     };
-    let Some(record_index) = indexed_record_header_at(ctx, bytes, offset)?
-        .map(|header| header.record_index)
+    let Some(record_index) =
+        indexed_record_header_at(ctx, bytes, offset)?.map(|header| header.record_index)
     else {
         return Ok(None);
     };
@@ -7174,7 +7252,8 @@ pub(super) fn parse_face_operand(
         byte_offset: header.byte_offset,
         class_tag: header.class_tag.clone(),
         paired_byte_offset: u64::try_from(offsets[0]).ok()?,
-        paired_class_tag: match crate::design::decode::text::class_tag_from_view(ctx, indexed[0].0) {
+        paired_class_tag: match crate::design::decode::text::class_tag_from_view(ctx, indexed[0].0)
+        {
             Ok(Ok(class_tag)) => class_tag,
             Ok(Err(_)) => return None,
             Err(error) => return Some(Err(error)),

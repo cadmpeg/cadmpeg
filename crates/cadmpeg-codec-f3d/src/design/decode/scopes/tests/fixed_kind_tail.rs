@@ -102,8 +102,7 @@ fn joint_origin_reference_member_admission_refusal_propagates() {
     bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
     bytes[4..7].copy_from_slice(b"337");
     bytes[7..11].copy_from_slice(&72u32.to_le_bytes());
-    bytes[joint_origin_class_337_266::MATRIX_PREFIX
-        ..joint_origin_class_337_266::MATRIX]
+    bytes[joint_origin_class_337_266::MATRIX_PREFIX..joint_origin_class_337_266::MATRIX]
         .copy_from_slice(&joint_origin_class_337_266::MATRIX_PREFIX_VALUE);
     for (ordinal, value) in transform.into_iter().flatten().enumerate() {
         let at = joint_origin_class_337_266::MATRIX + ordinal * 8;
@@ -541,12 +540,13 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     work_plane.extend_from_slice(b"261");
     work_plane.extend_from_slice(&55u32.to_le_bytes());
     bytes.extend_from_slice(&work_plane);
-    let decoded = exact_work_plane_frame(&cadmpeg_test_support::service_decode_context(),
-
+    let decoded = exact_work_plane_frame(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
-    ).unwrap()
+    )
+    .unwrap()
     .expect("exact WorkPlane frame");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(decoded.transform_offset, u64_from_index(work_plane_at + 76));
@@ -580,12 +580,13 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let decoded = exact_work_plane_frame(&cadmpeg_test_support::service_decode_context(),
-
+    let decoded = exact_work_plane_frame(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &extended_scope,
-    ).unwrap()
+    )
+    .unwrap()
     .expect("extended referenced WorkPlane frame");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(decoded.transform_offset, u64_from_index(extended_at + 76));
@@ -618,12 +619,13 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let decoded = exact_work_plane_frame(&cadmpeg_test_support::service_decode_context(),
-
+    let decoded = exact_work_plane_frame(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &direct_scope,
-    ).unwrap()
+    )
+    .unwrap()
     .expect("direct WorkPlane frame");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(decoded.transform_offset, u64_from_index(direct_at + 66));
@@ -653,12 +655,13 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let decoded = exact_work_plane_frame(&cadmpeg_test_support::service_decode_context(),
-
+    let decoded = exact_work_plane_frame(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &extended_direct_scope,
-    ).unwrap()
+    )
+    .unwrap()
     .expect("extended direct WorkPlane frame");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(
@@ -691,12 +694,13 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let decoded = exact_work_plane_frame(&cadmpeg_test_support::service_decode_context(),
-
+    let decoded = exact_work_plane_frame(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &large_direct_scope,
-    ).unwrap()
+    )
+    .unwrap()
     .expect("large direct WorkPlane frame");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(
@@ -753,12 +757,13 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let construction = exact_work_axis_construction(&cadmpeg_test_support::service_decode_context(),
-
+    let construction = exact_work_axis_construction(
+        &cadmpeg_test_support::service_decode_context(),
         &axis_bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&axis_bytes),
         &axis_scope,
-    ).unwrap()
+    )
+    .unwrap()
     .expect("exact two-point WorkAxis construction");
     assert_eq!(
         construction.origin.map(cadmpeg_ir::scalar::FiniteReal::get),
@@ -829,12 +834,13 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let decoded = exact_work_plane_frame(&cadmpeg_test_support::service_decode_context(),
-
+    let decoded = exact_work_plane_frame(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &compact_scope,
-    ).unwrap()
+    )
+    .unwrap()
     .expect("compact direct WorkPlane frame");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(decoded.transform_offset, u64_from_index(compact_at + 49));
@@ -863,12 +869,13 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let decoded = exact_work_plane_frame(&cadmpeg_test_support::service_decode_context(),
-
+    let decoded = exact_work_plane_frame(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &compact_431_scope,
-    ).unwrap()
+    )
+    .unwrap()
     .expect("class-431 compact direct WorkPlane frame");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(
@@ -901,12 +908,13 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let decoded = exact_work_plane_frame(&cadmpeg_test_support::service_decode_context(),
-
+    let decoded = exact_work_plane_frame(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &compact_364_scope,
-    ).unwrap()
+    )
+    .unwrap()
     .expect("class-364 marked compact direct WorkPlane frame");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(
@@ -939,12 +947,13 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let decoded = exact_work_plane_frame(&cadmpeg_test_support::service_decode_context(),
-
+    let decoded = exact_work_plane_frame(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &compact_364_variant_scope,
-    ).unwrap()
+    )
+    .unwrap()
     .expect("class-364 compact direct WorkPlane frame variant");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(
@@ -976,12 +985,13 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let decoded = exact_work_plane_frame(&cadmpeg_test_support::service_decode_context(),
-
+    let decoded = exact_work_plane_frame(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &compact_450_scope,
-    ).unwrap()
+    )
+    .unwrap()
     .expect("class-450 compact direct WorkPlane frame");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(
@@ -1013,12 +1023,13 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let decoded = exact_work_plane_frame(&cadmpeg_test_support::service_decode_context(),
-
+    let decoded = exact_work_plane_frame(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &class_279_scope,
-    ).unwrap()
+    )
+    .unwrap()
     .expect("class-279 compact direct WorkPlane frame");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(decoded.transform_offset, u64_from_index(class_279_at + 50));
@@ -1041,12 +1052,13 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let decoded = exact_work_plane_frame(&cadmpeg_test_support::service_decode_context(),
-
+    let decoded = exact_work_plane_frame(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &compact_409_short_scope,
-    ).unwrap()
+    )
+    .unwrap()
     .expect("short class-409 compact direct WorkPlane frame");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(
@@ -1078,12 +1090,13 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let decoded = exact_work_plane_frame(&cadmpeg_test_support::service_decode_context(),
-
+    let decoded = exact_work_plane_frame(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &compact_409_scope,
-    ).unwrap()
+    )
+    .unwrap()
     .expect("class-409 compact direct WorkPlane frame");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(
@@ -1120,12 +1133,13 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let decoded = exact_joint_origin_frame(&cadmpeg_test_support::service_decode_context(),
-
+    let decoded = exact_joint_origin_frame(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &joint_origin_scope,
-    ).unwrap()
+    )
+    .unwrap()
     .expect("exact JointOrigin frame");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(
@@ -1186,12 +1200,13 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let decoded = exact_joint_origin_frame(&cadmpeg_test_support::service_decode_context(),
-
+    let decoded = exact_joint_origin_frame(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &compact_joint_origin_scope,
-    ).unwrap()
+    )
+    .unwrap()
     .expect("exact compact JointOrigin frame");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(
@@ -1229,12 +1244,13 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let decoded = exact_joint_origin_frame(&cadmpeg_test_support::service_decode_context(),
-
+    let decoded = exact_joint_origin_frame(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &legacy_joint_origin_scope,
-    ).unwrap()
+    )
+    .unwrap()
     .expect("exact class-337/266 JointOrigin frame");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(

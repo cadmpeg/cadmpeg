@@ -1610,10 +1610,8 @@ fn circular_pattern_historical_wrappers_refuse_collection_limit() {
             operation,
             0,
             |ctx| {
-                super::exact_legacy_circular_pattern_axis(
-                    ctx, &bytes, &records, 0, 129, 50, &scope,
-                )
-                .map(|_| ())
+                super::exact_legacy_circular_pattern_axis(ctx, &bytes, &records, 0, 129, 50, &scope)
+                    .map(|_| ())
             },
         );
         assert!(matches!(

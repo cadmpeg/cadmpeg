@@ -2,8 +2,8 @@
 //! Exact combine operations and external body identities.
 
 use super::draft::contains_consecutive_guid_pair;
-use super::parameter_scope::reference_members;
 use super::parameter_scope::parameter_scope_payload_length;
+use super::parameter_scope::reference_members;
 use crate::bytes::lp_utf16_bounded_charged;
 use crate::bytes::take_reference;
 use crate::design::decode::sketch::IndexedRecordOffsets;
@@ -38,16 +38,15 @@ pub(super) fn exact_combine_operation(
             return None;
         }
         let start = usize::try_from(scope.byte_offset()).ok()?;
-        let compact = if scope.class_tag.as_str() == "387"
-            && scope.paired_class_tag.as_str() == "258"
-        {
-            match parameter_scope_payload_length(ctx, scope) {
-                Ok(length) => length == Some(314),
-                Err(error) => return Some(Err(error)),
-            }
-        } else {
-            false
-        };
+        let compact =
+            if scope.class_tag.as_str() == "387" && scope.paired_class_tag.as_str() == "258" {
+                match parameter_scope_payload_length(ctx, scope) {
+                    Ok(length) => length == Some(314),
+                    Err(error) => return Some(Err(error)),
+                }
+            } else {
+                false
+            };
         let extended_reference = scope.class_tag.as_str() == "329"
             && scope.paired_class_tag.as_str() == "261"
             && scope.frame_length() == 363;
@@ -179,7 +178,7 @@ pub(super) fn exact_combine_operation(
                             return Some(Err(error));
                         }
                     }
-                        let external_identity = match exact_combine_external_body_identity(
+                    let external_identity = match exact_combine_external_body_identity(
                         ctx,
                         bytes,
                         *selection_at,
@@ -195,7 +194,13 @@ pub(super) fn exact_combine_operation(
                         external_identity,
                     };
                     if additional {
-                        if let Err(error) = ctx.push_vec(&mut additional_tools, selection, "f3d Combine additional tools") { return Some(Err(error)); };
+                        if let Err(error) = ctx.push_vec(
+                            &mut additional_tools,
+                            selection,
+                            "f3d Combine additional tools",
+                        ) {
+                            return Some(Err(error));
+                        };
                     } else {
                         first_tool = Some(selection);
                     }

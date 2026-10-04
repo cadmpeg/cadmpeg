@@ -78,7 +78,7 @@ pub(super) fn browser_node_records(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
-    ) -> Result<Vec<BrowserNodeRecord>, CodecError> {
+) -> Result<Vec<BrowserNodeRecord>, CodecError> {
     let mut out = Vec::new();
     let frames = typed_primary_frames(ctx, bytes, meta, BROWSER_NODE_TYPE_GUID, "browser-node")?;
     for frame in ctx.admit_iter(&frames, "scan F3D browser-node frames")? {
@@ -296,10 +296,7 @@ fn copy_browser_node(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     node: &BrowserNodeRecord,
 ) -> Result<BrowserNodeRecord, CodecError> {
-    let guid = ctx.copy_retained_text(
-        &node.guid,
-        "f3d body presentation browser node GUID",
-    )?;
+    let guid = ctx.copy_retained_text(&node.guid, "f3d body presentation browser node GUID")?;
     Ok(BrowserNodeRecord {
         record_index: node.record_index,
         guid,
@@ -512,9 +509,8 @@ fn bare_presentation_material(
     };
     let _marker_storage;
     let marker;
-    (marker, _marker_storage) = ctx.with_scoped_storage(
-        "collect F3D bare presentation material marker",
-        || {
+    (marker, _marker_storage) =
+        ctx.with_scoped_storage("collect F3D bare presentation material marker", || {
             let envelope_marker = lp_utf16_bytes(BODY_PRESENTATION_MATERIAL_ENVELOPE_ID)?;
             let library_marker = lp_utf16_bytes(PHYSICAL_MATERIAL_LIBRARY_ID)?;
             ctx.collect_vec(
@@ -526,8 +522,7 @@ fn bare_presentation_material(
                     ),
                 "collect F3D bare presentation material marker",
             )
-        },
-    )?;
+        })?;
     let modern_marker = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[0])?;
     let modern_trailer = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[1])?;
     let mut candidate = None;
@@ -679,10 +674,10 @@ fn record_tail_visual_offset(
     let Some(markers) = bytes.get(name_end..end) else {
         return Ok(None);
     };
-    for (relative_marker_at, _) in
-        ctx.admit_iter(markers, "scan F3D presentation visual markers")?
-            .enumerate()
-            .take(40)
+    for (relative_marker_at, _) in ctx
+        .admit_iter(markers, "scan F3D presentation visual markers")?
+        .enumerate()
+        .take(40)
     {
         // The relative offset comes from bytes[name_end..end].
         let marker_at = name_end + relative_marker_at;
@@ -840,8 +835,7 @@ mod tests {
     use super::{
         bare_presentation_material as bare_presentation_material_with_context,
         body_presentations as body_presentations_with_context,
-        browser_node_records as browser_node_records_with_context, find_all,
-        BodyPresentationOwner,
+        browser_node_records as browser_node_records_with_context, find_all, BodyPresentationOwner,
     };
     use crate::bytes::lp_utf16_bytes;
     use crate::design::presentation::{
@@ -1510,7 +1504,10 @@ mod tests {
         for (dimension, additional) in [
             (cadmpeg_core::decode::ResourceDimension::WorkUnits, 1),
             (cadmpeg_core::decode::ResourceDimension::CollectionItems, 1),
-            (cadmpeg_core::decode::ResourceDimension::MaterializedBytes, 8),
+            (
+                cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+                8,
+            ),
         ] {
             let refusal = crate::test_support::resource_refusal_at(
                 dimension,
