@@ -23,6 +23,11 @@ pub struct Transform2 {
     rows: [[f64; 3]; 2],
 }
 
+decode_cost_record!(
+    [] Transform2;
+    Self { rows } => [rows:  [[f64; 3]; 2]]
+);
+
 const BOTTOM_ROW_2: [f64; 3] = [0.0, 0.0, 1.0];
 const BOTTOM_ROW_4: [f64; 4] = [0.0, 0.0, 0.0, 1.0];
 
@@ -156,6 +161,11 @@ pub enum TransformError {
 pub struct Transform {
     rows: [[f64; 4]; 3],
 }
+
+decode_cost_record!(
+    [] Transform;
+    Self { rows } => [rows:  [[f64; 4]; 3]]
+);
 
 impl Default for Transform {
     fn default() -> Self {

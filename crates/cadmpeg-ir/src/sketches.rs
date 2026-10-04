@@ -639,6 +639,11 @@ pub struct OrderedMajorRadius {
     minor: PositiveLength,
 }
 
+decode_cost_record!(
+    [] OrderedMajorRadius;
+    Self { major, minor } => [major:  PositiveLength, minor:  PositiveLength]
+);
+
 impl OrderedMajorRadius {
     /// Admit the relation between two positive radii.
     pub fn new(major: PositiveLength, minor: PositiveLength) -> Option<Self> {

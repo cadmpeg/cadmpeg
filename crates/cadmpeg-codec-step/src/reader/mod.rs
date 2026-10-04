@@ -946,24 +946,12 @@ fn retain_unowned_carriers(
         .procedural_surfaces)[..], "STEP retain unowned carriers traversal").map_err(cadmpeg_core::CodecError::from)?
         .filter(|surface| !retains_carrier(surface.id.as_str(), &removed_closure, &protected))
         .count();
-    ir.model
-        .pcurves
-        .retain(|pcurve| owned.contains(pcurve.id.as_str()));
-    ir.model
-        .points
-        .retain(|point| retains_carrier(point.id.as_str(), &removed_closure, &protected));
-    ir.model
-        .curves
-        .retain(|curve| retains_carrier(curve.id.as_str(), &removed_closure, &protected));
-    ir.model
-        .surfaces
-        .retain(|surface| retains_carrier(surface.id.as_str(), &removed_closure, &protected));
-    ir.model
-        .procedural_curves
-        .retain(|curve| retains_carrier(curve.id.as_str(), &removed_closure, &protected));
-    ir.model
-        .procedural_surfaces
-        .retain(|surface| retains_carrier(surface.id.as_str(), &removed_closure, &protected));
+    ctx.retain_vec(&mut ir.model.pcurves, |pcurve| Ok(owned.contains(pcurve.id.as_str())), "STEP unowned pcurves retention")?;
+    ctx.retain_vec(&mut ir.model.points, |point| Ok(retains_carrier(point.id.as_str(), &removed_closure, &protected)), "STEP unowned points retention")?;
+    ctx.retain_vec(&mut ir.model.curves, |curve| Ok(retains_carrier(curve.id.as_str(), &removed_closure, &protected)), "STEP unowned curves retention")?;
+    ctx.retain_vec(&mut ir.model.surfaces, |surface| Ok(retains_carrier(surface.id.as_str(), &removed_closure, &protected)), "STEP unowned surfaces retention")?;
+    ctx.retain_vec(&mut ir.model.procedural_curves, |curve| Ok(retains_carrier(curve.id.as_str(), &removed_closure, &protected)), "STEP unowned procedural_curves retention")?;
+    ctx.retain_vec(&mut ir.model.procedural_surfaces, |surface| Ok(retains_carrier(surface.id.as_str(), &removed_closure, &protected)), "STEP unowned procedural_surfaces retention")?;
     typed_records.retain(|id| {
         !unowned_pcurves.contains(id) && (!removed_closure.contains(id) || protected.contains(id))
     });

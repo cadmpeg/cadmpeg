@@ -39,6 +39,11 @@ pub struct PlaneSurface {
     frame: OrthonormalFrame3,
 }
 
+decode_cost_record!(
+    [] PlaneSurface;
+    Self { origin, frame } => [origin:  FinitePoint3, frame:  OrthonormalFrame3]
+);
+
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -134,6 +139,11 @@ pub struct CylinderSurface {
     radius: PositiveLength,
     frame: OrthonormalFrame3,
 }
+
+decode_cost_record!(
+    [] CylinderSurface;
+    Self { origin, radius, frame } => [origin:  FinitePoint3, radius:  PositiveLength, frame:  OrthonormalFrame3]
+);
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -266,6 +276,11 @@ pub struct ConeSurface {
     half_angle: Angle,
     frame: OrthonormalFrame3,
 }
+
+decode_cost_record!(
+    [] ConeSurface;
+    Self { origin, radius, ratio, half_angle, frame } => [origin:  FinitePoint3, radius:  NonNegativeLength, ratio:  PositiveReal, half_angle:  Angle, frame:  OrthonormalFrame3]
+);
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -454,6 +469,11 @@ pub struct SphereSurface {
     frame: OrthonormalFrame3,
 }
 
+decode_cost_record!(
+    [] SphereSurface;
+    Self { center, radius, frame } => [center:  FinitePoint3, radius:  NonZeroLength, frame:  OrthonormalFrame3]
+);
+
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -587,6 +607,11 @@ pub struct TorusSurface {
     minor_radius: NonZeroLength,
     frame: OrthonormalFrame3,
 }
+
+decode_cost_record!(
+    [] TorusSurface;
+    Self { center, major_radius, minor_radius, frame } => [center:  FinitePoint3, major_radius:  PositiveLength, minor_radius:  NonZeroLength, frame:  OrthonormalFrame3]
+);
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -746,6 +771,11 @@ pub struct LineCurve {
     direction: UnitVector3,
 }
 
+decode_cost_record!(
+    [] LineCurve;
+    Self { origin, direction } => [origin:  FinitePoint3, direction:  UnitVector3]
+);
+
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -837,6 +867,11 @@ pub struct CircleCurve {
     radius: PositiveLength,
     frame: OrthonormalFrame3,
 }
+
+decode_cost_record!(
+    [] CircleCurve;
+    Self { center, radius, frame } => [center:  FinitePoint3, radius:  PositiveLength, frame:  OrthonormalFrame3]
+);
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -957,6 +992,11 @@ pub struct EllipseCurve {
     radii: OrderedMajorRadius,
     frame: OrthonormalFrame3,
 }
+
+decode_cost_record!(
+    [] EllipseCurve;
+    Self { center, radii, frame } => [center:  FinitePoint3, radii:  OrderedMajorRadius, frame:  OrthonormalFrame3]
+);
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1210,6 +1250,11 @@ pub struct ParabolaCurve {
     frame: OrthonormalFrame3,
 }
 
+decode_cost_record!(
+    [] ParabolaCurve;
+    Self { vertex, focal_distance, frame } => [vertex:  FinitePoint3, focal_distance:  PositiveLength, frame:  OrthonormalFrame3]
+);
+
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -1328,6 +1373,11 @@ pub struct HyperbolaCurve {
     minor_radius: PositiveLength,
     frame: OrthonormalFrame3,
 }
+
+decode_cost_record!(
+    [] HyperbolaCurve;
+    Self { center, major_radius, minor_radius, frame } => [center:  FinitePoint3, major_radius:  PositiveLength, minor_radius:  PositiveLength, frame:  OrthonormalFrame3]
+);
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1470,6 +1520,11 @@ impl TryFrom<HyperbolaCurveWire> for HyperbolaCurve {
 pub struct DegenerateCurve {
     point: FinitePoint3,
 }
+
+decode_cost_record!(
+    [] DegenerateCurve;
+    Self { point } => [point:  FinitePoint3]
+);
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]

@@ -5095,7 +5095,7 @@ impl BrepDraft {
                 )?;
             }
         }
-        self.links.retain(|id| emitted.contains(id));
+        ctx.retain_vec(&mut self.links, |id| ctx.contains_btree_set(&emitted, id, "Rhino emitted fallback identity lookup"), "Rhino fallback link retention")?;
         self.draft.retain_exactness(ctx, |id| {
             let work = u64_from_index(emitted.len())
                 .checked_mul(u64_from_index(id.len()).checked_add(1).ok_or_else(|| {

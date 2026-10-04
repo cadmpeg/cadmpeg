@@ -41,6 +41,11 @@ pub const COINCIDENCE_TOLERANCE: f64 = 0.01;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FiniteVector<const N: usize>([f64; N]);
 
+decode_cost_record!(
+    [const N: usize] FiniteVector<N>;
+    Self(field_0) => [field_0: [f64; N]]
+);
+
 impl<const N: usize> FiniteVector<N> {
     /// Construct finite coordinates.
     pub fn new(value: [f64; N]) -> Option<Self> {
@@ -346,6 +351,11 @@ impl SumSquaresUnitVector3 {
 #[serde(try_from = "Vector3", into = "Vector3")]
 pub struct UnitVector3(Vector3);
 
+decode_cost_record!(
+    [] UnitVector3;
+    Self(field_0) => [field_0: Vector3]
+);
+
 impl UnitVector3 {
     /// The unit +x direction.
     pub const X_AXIS: Self = Self(Vector3 {
@@ -626,6 +636,11 @@ impl From<UnitVector3> for Vector3 {
 #[serde(transparent)]
 pub struct DirectionAboveEpsilon(FiniteVector3);
 
+decode_cost_record!(
+    [] DirectionAboveEpsilon;
+    Self(field_0) => [field_0: FiniteVector3]
+);
+
 impl DirectionAboveEpsilon {
     /// Admit a finite direction with length above machine epsilon.
     pub fn new(value: Vector3) -> Option<Self> {
@@ -768,6 +783,11 @@ pub struct OrthonormalFrame3 {
     axis: UnitVector3,
     reference: UnitVector3,
 }
+
+decode_cost_record!(
+    [] OrthonormalFrame3;
+    Self { axis, reference } => [axis:  UnitVector3, reference:  UnitVector3]
+);
 impl OrthonormalFrame3 {
     /// The model coordinate frame: first direction +z, second direction +x.
     pub const IDENTITY: Self = Self {
@@ -1050,6 +1070,9 @@ impl Transform {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "Point2", into = "Point2")]
 pub struct FinitePoint2(Point2);
+
+decode_cost_record!([] FinitePoint2; Self(field_0) => [field_0: Point2]);
+
 impl FinitePoint2 {
     /// The parameter-space origin.
     pub const ZERO: Self = Self(Point2 { u: 0.0, v: 0.0 });
@@ -1126,6 +1149,11 @@ impl PartialEq<Point2> for FinitePoint2 {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "Point2", into = "Point2")]
 pub struct NonzeroPoint2(Point2);
+
+decode_cost_record!(
+    [] NonzeroPoint2;
+    Self(field_0) => [field_0: Point2]
+);
 impl NonzeroPoint2 {
     /// The unit-u direction.
     pub const U_AXIS: Self = Self(Point2 { u: 1.0, v: 0.0 });
