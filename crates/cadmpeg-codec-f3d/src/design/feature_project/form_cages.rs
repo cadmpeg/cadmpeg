@@ -58,9 +58,11 @@ pub(crate) fn bind_form_cages(
         .iter()
         .filter(|scope| scope.kind() == crate::records::feature::scope::DesignFeatureKind::Form)
     {
-        let Some(stream) =
-            native_stream(&scope.id).and_then(|stream| stream.strip_prefix(ids::SCHEME_PREFIX))
-        else {
+        let Some(stream) = native_stream(&scope.id) else {
+            continue;
+        };
+        let Some(stream) = ctx.strip_prefix(stream, ids::SCHEME_PREFIX,
+            "f3d form cage stream prefix")? else {
             continue;
         };
         let bytes = scan.entry_bytes(stream)?;
