@@ -618,10 +618,6 @@ fn attach_configurations<'a>(
             "NX attached configurations",
         )?;
         ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(configuration_name.len()),
-            "NX configuration name",
-        )?;
-        ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(configuration_id.len()),
             "NX configuration native reference",
         )?;
@@ -658,7 +654,7 @@ fn attach_configurations<'a>(
             ordinal: ordinal_u32,
             active: active_attribute_use.is_some(),
             source_index: Some(ordinal_u32),
-            name: configuration_name.to_string().into(),
+            name: Some(ctx.copy_retained_text(configuration_name, "NX configuration name")?),
             material: None,
             properties,
             parameter_overrides: BTreeMap::new(),
@@ -850,8 +846,7 @@ fn attach_rm_appearances(
         let binding_bytes = binding_id
             .as_str()
             .len()
-            .checked_add(binding.source_id.len())
-            .and_then(|bytes| bytes.checked_add(appearance_id.as_str().len()))
+            .checked_add(appearance_id.as_str().len())
             .ok_or_else(|| {
                 ctx.refuse_codec_limit(
                     "NX RM source appearance binding",
@@ -872,7 +867,7 @@ fn attach_rm_appearances(
         ir.model.appearance_bindings.push(AppearanceBinding {
             id: binding_id,
             target: AppearanceTarget::Source {
-                source_id: binding.source_id.clone(),
+                source_id: ctx.copy_retained_text(&binding.source_id, "NX RM source appearance binding")?,
             },
             appearance: appearance_id,
             source_entity_id: Some(binding.source_id),
@@ -1355,13 +1350,7 @@ fn resolve_rm_face_color_bindings(
         let Some(face_id) = candidate else {
             continue;
         };
-        let bytes = face_id.len().checked_add(definition.len()).ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX RM face color binding",
-                0,
-                cadmpeg_core::decode::u64_from_index(face_id.len()),
-            )
-        })?;
+        let bytes = face_id.len();
         ctx.charge_collection_items(1, "NX RM face color bindings")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(bytes),
@@ -1370,7 +1359,7 @@ fn resolve_rm_face_color_bindings(
         ctx.reserve_capacity(&mut bindings, 1, "NX RM face color bindings")?;
         bindings.push(RmFaceColorBinding {
             face_id,
-            color_definition: definition.to_owned(),
+            color_definition: ctx.copy_retained_text(definition, "NX RM face color binding")?,
             source_offset,
         });
     }
@@ -1549,21 +1538,6 @@ fn attach_material_texture_assets(
             cadmpeg_core::decode::u64_from_index(id_bytes),
             "NX material asset identity",
         )?;
-        let text_bytes = texture
-            .name()
-            .len()
-            .checked_add(texture.id.len())
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "NX material asset text",
-                    0,
-                    cadmpeg_core::decode::u64_from_index(texture.id.len()),
-                )
-            })?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(text_bytes),
-            "NX material asset text",
-        )?;
         ctx.reserve_vec(&mut assets, 1, "NX material asset records")?;
         assets.push(Asset::try_new(
             ctx,
@@ -1571,7 +1545,7 @@ fn attach_material_texture_assets(
                 .ok_or_else(|| {
                     CodecError::malformed(format_args!("NX material texture id is not an identity"))
                 })?,
-            Some(texture.name().to_owned()),
+            Some(ctx.copy_retained_text(texture.name(), "NX material asset text")?),
             Some("image/tiff".to_string()),
             AssetContent::Embedded {
                 data: cadmpeg_ir::assets::AssetData::new(
@@ -1579,7 +1553,7 @@ fn attach_material_texture_assets(
                 )
                 .ok_or_else(|| CodecError::Malformed("asset data must not be empty".into()))?,
             },
-            Some(texture.id.clone()),
+            Some(ctx.copy_retained_text(&texture.id, "NX material asset text")?),
         )?);
     }
     let stream = StreamHandle::new(
@@ -1908,23 +1882,10 @@ fn attach_initial_segment_bodies(
                 continue;
             }
             matched = true;
-            let bytes = std::mem::size_of::<(String, String)>()
-                .checked_add(binding.id.len())
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit(
-                        "NX retained-history binding property",
-                        0,
-                        cadmpeg_core::decode::u64_from_index(binding.id.len()),
-                    )
-                })?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(bytes),
-                "NX retained-history binding properties",
-            )?;
             ctx.insert_btree_map(
                 &mut source_properties,
                 cadmpeg_core::nonblank_literal!(ctx, "segment_body_binding.{binding_ordinal}")?,
-                binding.id.clone(),
+                ctx.copy_retained_text(&binding.id, "NX retained-history binding properties")?,
                 "NX retained-history binding properties",
             )?;
             binding_ordinal = binding_ordinal.checked_add(1).ok_or_else(|| {
@@ -2222,12 +2183,15 @@ fn attach_feature_operations(
         else {
             continue;
         };
+        let data_block = group_reservation.with_storage(|| {
+            ctx.copy_retained_text(&body_use.data_block, "NX feature operation group index")
+        })?;
         ctx.push_scoped_btree_group(
             &mut group_reservation,
             &mut offset_store_bodies_by_operation,
             reference.operation_label.as_str(),
-            || (reference.body.value(), body_use.data_block.clone()),
-            body_use.data_block.len(),
+            || (reference.body.value(), data_block),
+            0,
             "NX feature operation group index",
         )?;
     }
@@ -5571,28 +5535,12 @@ fn attach_feature_operations(
             cadmpeg_core::decode::u64_from_index(dependency_check_work),
             "NX feature dependency validation",
         )?;
-        let feature_text_bytes = label
-            .value
-            .len()
-            .checked_add(label.value.len())
-            .and_then(|bytes| bytes.checked_add(label.id.len()))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "NX feature record",
-                    0,
-                    cadmpeg_core::decode::u64_from_index(label.id.len()),
-                )
-            })?;
         ctx.charge_collection_items(1, "NX feature records")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(feature_text_bytes),
-            "NX feature record",
-        )?;
         ctx.reserve_capacity(&mut ir.model.features, 1, "allocate NX feature records")?;
         ir.model.features.push(Feature {
             id: id.try_clone_for_decode(ctx, "NX decoded IR value copy")?,
             ordinal: base_ordinal + cadmpeg_core::decode::u64_from_index(ordinal),
-            name: Some(label.value.clone()),
+            name: Some(ctx.copy_retained_text(&label.value, "NX feature record")?),
             suppressed: None,
             dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies, ctx)
                 .map_err(cadmpeg_core::CodecError::from)?,
@@ -5601,7 +5549,7 @@ fn attach_feature_operations(
                 &label.id,
                 source_properties,
             )?,
-            source_tag: Some(label.value.clone()),
+            source_tag: Some(ctx.copy_retained_text(&label.value, "NX feature record")?),
             source_text: None,
             source_content,
 
@@ -5609,7 +5557,7 @@ fn attach_feature_operations(
                 definition,
                 DistinctMembers::try_from(outputs, ctx).map_err(CodecError::from)?,
             ),
-            native_ref: Some(label.id.clone()),
+            native_ref: Some(ctx.copy_retained_text(&label.id, "NX feature record")?),
         });
         if !deletes_body && !operation_body_writes.is_empty() {
             let key = label
