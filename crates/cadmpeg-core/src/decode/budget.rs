@@ -872,12 +872,12 @@ impl<'a> WorkBudget<'a> {
                 OPERATION,
             )?;
             let reservation = session.reserve_scoped_limit(bytes, OPERATION)?;
-            let storage = super::work_scratch::WorkScratch::from_reservation(reservation);
             let mut copied = Vec::new();
             copied
                 .try_reserve_exact(capacity)
                 .map_err(|_| session.scoped_allocation_failed_limit(bytes, OPERATION))?;
             copied.extend(path.iter().copied());
+            let storage = super::work_scratch::WorkScratch::from_reservation(reservation);
             return Ok((copied, storage));
         }
         if path_len >= Self::INDEPENDENT_RECURSION_DEPTH {

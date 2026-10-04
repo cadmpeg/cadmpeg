@@ -65,6 +65,18 @@ pub mod decode {
             }
         }
     }
+
+    pub mod work_scratch {
+        pub struct WorkScratch {
+            pub reservation: super::budget::ScopedReservation,
+        }
+
+        impl WorkScratch {
+            pub fn from_reservation(reservation: super::budget::ScopedReservation) -> Self {
+                Self { reservation }
+            }
+        }
+    }
 }
 
 pub mod foreign {
@@ -251,6 +263,50 @@ pub fn attached_direct_budget(
     copied.try_reserve_exact(capacity).map_err(|_| ())?;
     copied.extend(path.iter().copied());
     Ok(copied)
+}
+
+pub fn attached_generic_guard_is_transferred_after_growth<T: Copy>(
+    _ctx: &DecodeContext,
+    session: &decode::budget::DecodeBudget,
+    path: &[T],
+) -> Result<(Vec<T>, decode::work_scratch::WorkScratch), ()> {
+    let path_len = path.len();
+    let capacity = path_len.checked_add(1).ok_or_else(|| ())?;
+    let capacity_units = u64::try_from(capacity).map_err(|_| ())?;
+    let path_units = u64::try_from(path_len).map_err(|_| ())?;
+    let element_size = u64::try_from(std::mem::size_of::<T>()).map_err(|_| ())?;
+    let bytes = capacity_units.checked_mul(element_size).ok_or_else(|| ())?;
+    let work = bytes.checked_add(path_units).ok_or_else(|| ())?;
+    session.charge_collection_items_limit(capacity_units, "attached generic copy")?;
+    session.charge_work_limit(work, "attached generic copy")?;
+    let reservation = session.reserve_scoped_limit(bytes, "attached generic copy")?;
+    let mut copied = Vec::new();
+    copied.try_reserve_exact(capacity).map_err(|_| ())?;
+    copied.extend(path.iter().copied());
+    let storage = decode::work_scratch::WorkScratch::from_reservation(reservation);
+    Ok((copied, storage))
+}
+
+pub fn moved_generic_guard_does_not_prove_growth<T: Copy>(
+    _ctx: &DecodeContext,
+    session: &decode::budget::DecodeBudget,
+    path: &[T],
+) -> Result<(Vec<T>, decode::work_scratch::WorkScratch), ()> {
+    let path_len = path.len();
+    let capacity = path_len.checked_add(1).ok_or_else(|| ())?;
+    let capacity_units = u64::try_from(capacity).map_err(|_| ())?;
+    let path_units = u64::try_from(path_len).map_err(|_| ())?;
+    let element_size = u64::try_from(std::mem::size_of::<T>()).map_err(|_| ())?;
+    let bytes = capacity_units.checked_mul(element_size).ok_or_else(|| ())?;
+    let work = bytes.checked_add(path_units).ok_or_else(|| ())?;
+    session.charge_collection_items_limit(capacity_units, "moved generic guard")?;
+    session.charge_work_limit(work, "moved generic guard")?;
+    let reservation = session.reserve_scoped_limit(bytes, "moved generic guard")?;
+    let storage = decode::work_scratch::WorkScratch::from_reservation(reservation);
+    let mut copied = Vec::new();
+    copied.try_reserve_exact(capacity).map_err(|_| ())?; // finding: unproven_decode_charge
+    copied.extend(path.iter().copied()); // finding: unproven_decode_charge
+    Ok((copied, storage))
 }
 
 pub fn optional_budget_is_not_authority(
