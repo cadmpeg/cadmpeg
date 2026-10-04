@@ -245,10 +245,14 @@ pub(super) fn typed_linear_pattern_dimensions(
             None => Ok(None),
         }
     };
-    let Some(count) = parameter("moNumberDim_c")?
-        .and_then(|value| value.trim().parse::<u32>().ok())
-        .filter(|count| *count > 0)
-    else {
+    let count = match parameter("moNumberDim_c")? {
+        Some(value) => ctx
+            .parse_text::<u32>(value.trim(), "parse SLDPRT linear pattern count")?
+            .ok()
+            .filter(|count| *count > 0),
+        None => None,
+    };
+    let Some(count) = count else {
         return Ok(None);
     };
     let spacing = parameter("ParallelPlaneDistanceDim_c")?
