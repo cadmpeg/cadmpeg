@@ -5410,17 +5410,21 @@ pub(super) fn feature_body_segment_uses(
                 continue;
             }
             let Some(binding) = crate::native::segments::unique_segment_body_alias_binding(
+                ctx,
                 reference.body.value(),
                 bindings,
-            ) else {
+            )?
+            else {
                 continue;
             };
             binding
         } else {
             let Some(binding) = crate::native::segments::unique_segment_body_binding(
+                ctx,
                 reference.body.value(),
                 bindings,
-            ) else {
+            )?
+            else {
                 continue;
             };
             binding
@@ -8490,7 +8494,8 @@ pub(super) fn feature_sketch_datum_csys_dependencies(
             if let (
                 Some((point_store, point_ordinal)),
                 Some((construction_store, construction_ordinal)),
-            ) = (point_block_key, construction_block_key) {
+            ) = (point_block_key, construction_block_key)
+            {
                 if point_store == construction_store
                     && point_ordinal.checked_add(1) == Some(construction_ordinal)
                 {

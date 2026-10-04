@@ -164,12 +164,12 @@ fn report_untransferred_streams(
                 control_count - classified_control_count
             ), "nx offset control loss text")?), "nx decode losses")?;
     }
-    for entry in &scan.container.entries {
+    let typed_toggle_stream = typed_native == TypedNative::Available
+        && crate::native::toggle::has_complete_saved_toggle_stream(ctx, &scan.container)?;
+    for entry in ctx.admit_iter(&scan.container.entries, "nx opaque stream losses")? {
         let content = entry.content();
         if content.retains_opaque_payload()
-            && !(typed_native == TypedNative::Available
-                && content == EntryContent::SaveToggleInfo
-                && crate::native::toggle::has_complete_saved_toggle_stream(&scan.container))
+            && !(typed_toggle_stream && content == EntryContent::SaveToggleInfo)
         {
             charge_loss_code(ctx, NxLossCode::ContainerStreamOpaque)?;
             ctx.push_vec(&mut body.losses, NxLossCode::ContainerStreamOpaque.note(ctx.format_retained(format_args!(
@@ -179,7 +179,10 @@ fn report_untransferred_streams(
                 ), "nx opaque stream loss text")?), "nx decode losses")?;
         }
     }
-    for (index, stream) in scan.streams.iter().enumerate() {
+    for (index, stream) in ctx
+        .admit_iter(&scan.streams, "nx omitted stream losses")?
+        .enumerate()
+    {
         if !stream.kind().is_parasolid() {
             charge_loss_code(ctx, NxLossCode::NonParasolidStreamOmitted)?;
             ctx.push_vec(

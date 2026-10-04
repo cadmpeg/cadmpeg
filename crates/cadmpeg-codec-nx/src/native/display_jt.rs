@@ -179,7 +179,7 @@ impl DisplayJtIndex {
     }
 
     /// Number of indexed JT documents.
-    fn declared_count(&self) -> usize {
+    pub(super) fn declared_count(&self) -> usize {
         self.rows.len()
     }
 
@@ -3137,7 +3137,8 @@ pub(super) fn display_jt_documents(
             version_field,
             |field| ctx.copy_retained_text(field, "retain DisplayJT version text"),
             |text, operation| ctx.parse_text(text, operation),
-        )? else {
+        )?
+        else {
             return Ok(Vec::new());
         };
         let Some(&byte_order) = document.get(jt_hdr::BYTE_ORDER) else {
