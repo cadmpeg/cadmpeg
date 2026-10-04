@@ -1990,5 +1990,6 @@ fn numerical_ranges_sketch_axes_use_angular_orthogonality() {
 }
 
 mod angle_wire;
+mod constraint_cost;
 mod decode_cost;
 mod geometry_clone;

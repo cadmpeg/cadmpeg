@@ -398,12 +398,20 @@ pub(in super::super) fn close_sketch_constraint_parameter_references(
             )?;
         }
     }
-    ir.model.sketch_constraints.retain_mut(|constraint| {
-        constraint
-            .definition
-            .edit(|kind| reconcile_constraint_parameter_reference(kind, &emitted))
-            .unwrap_or(false)
-    });
+    ctx.retain_mut(
+        &mut ir.model.sketch_constraints,
+        |constraint| {
+            let retained = match constraint
+                .definition
+                .edit(|kind| reconcile_constraint_parameter_reference(kind, &emitted))
+            {
+                Ok(retained) => retained,
+                Err(_) => false,
+            };
+            Ok(retained)
+        },
+        "creo sketch constraint parameter reconciliation",
+    )?;
     Ok(())
 }
 
@@ -2955,6 +2963,7 @@ pub(in super::super) fn section_linear_distance_vectors(vectors: [[Option<u32>; 
 #[cfg(test)]
 mod tests {
     mod retain_vec;
+    mod retain_mut;
 
     use super::{
         close_sketch_constraint_parameter_references, insert_native_equation_property,
