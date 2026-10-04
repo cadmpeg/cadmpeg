@@ -12,8 +12,6 @@ use cadmpeg_core::decode::work_scratch::WorkScratch;
 use super::{admission::EvaluationAdmission, EvaluationFailure};
 use crate::geometry::{Curve, Surface};
 
-const INDEPENDENT_MODEL_EVALUATION_DEPTH: usize = 256;
-
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum ModelEvaluationIdentity {
     Curve(*const Curve),
@@ -46,12 +44,12 @@ impl<'budget, 'session> ModelEvaluationDepthGuard<'budget, 'session> {
             let depth = if let Some(budget) = budget {
                 Some(budget.recursion_guard()?)
             } else {
-                if identities.len() >= INDEPENDENT_MODEL_EVALUATION_DEPTH {
+                if identities.len() >= WorkBudget::INDEPENDENT_RECURSION_DEPTH {
                     return Err(ResourceLimit {
                         dimension: ResourceDimension::RecursionDepth,
                         reason: ResourceFailure::BudgetExceeded,
                         limit: cadmpeg_core::decode::u64_from_index(
-                            INDEPENDENT_MODEL_EVALUATION_DEPTH,
+                            WorkBudget::INDEPENDENT_RECURSION_DEPTH,
                         ),
                         used: cadmpeg_core::decode::u64_from_index(identities.len()),
                         additional: 1,

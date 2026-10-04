@@ -31,7 +31,15 @@ fn polar_poles() -> Vec<PolarNurbsPole> {
 #[test]
 fn pcurve_construction_preserves_original_refusals_for_pairing_conversion_and_knots() {
     for polar in [false, true] {
-        for (cap, stage) in [(0, "poles"), (1, "poles"), (2, "finiteness"), (6, "order")] {
+        // Two yielded poles plus iterator exhaustion cost 3; four knot checks cost 4; three order comparisons cost 3.
+        for (cap, stage) in [
+            (0, "poles"),
+            (1, "poles"),
+            (2, "poles"),
+            (3, "finiteness"),
+            (6, "finiteness"),
+            (7, "order"),
+        ] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
@@ -274,7 +282,12 @@ fn pcurve_construction_moves_admitted_lanes_and_admits_finite_knot_conversion() 
     assert_eq!(points.as_ptr(), pole_address);
     assert_eq!(built.knots().as_ptr(), knot_address);
     ctx.finish_session().expect("no duplicate admission");
-    for (cap, operation) in [(0, "IR finite knot values"), (4, "IR NURBS knot order")] {
+    // Four yielded finite knots plus iterator exhaustion cost 5, then three order comparisons.
+    for (cap, operation) in [
+        (0, "IR finite knot values"),
+        (4, "IR finite knot values"),
+        (5, "IR NURBS knot order"),
+    ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = cap;
