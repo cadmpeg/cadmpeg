@@ -42,7 +42,8 @@ fn plane() -> SubdPlaneFrame {
 #[test]
 fn cage_validation_admits_each_topology_and_grip_walk_before_visiting() {
     // Core's BTreeSet<u32> node bound is 11 u32 key lanes + 16 pointer widths + two max-alignment pads.
-    // On 64-bit targets: 752 first-node + 1,504 second-insert + 88 key-comparison + 27 prior work = 2,371 before two final vertex visits, for 2,373 total.
+    // On 64-bit targets: 752 first-node + 1,504 second-insert + 8 key-comparison + 25 prior work = 2,289 before two final vertex visits, for 2,291 total.
+    // The second insertion compares its four-byte key once with the one stored key, in its lookup and its insertion.
     const NODE_ALIGNMENT: usize = if std::mem::align_of::<u32>() > std::mem::align_of::<usize>() {
         std::mem::align_of::<u32>()
     } else {
@@ -54,7 +55,7 @@ fn cage_validation_admits_each_topology_and_grip_walk_before_visiting() {
     let first_node_work = 4 * NODE_BYTES;
     let second_insert_work = 8 * NODE_BYTES;
     let after_first_node = 24 + first_node_work;
-    let before_final_vertices = 27 + first_node_work + second_insert_work + 2 * 44;
+    let before_final_vertices = 25 + first_node_work + second_insert_work + 2 * 4;
     let full_work = before_final_vertices + 2;
 
     for (cap, operation, used, additional) in [
@@ -86,19 +87,19 @@ fn cage_validation_admits_each_topology_and_grip_walk_before_visiting() {
             after_first_node + 1,
             "SubD validation member search",
             after_first_node + 1,
-            1,
+            4,
         ),
         (
-            after_first_node + 2,
+            after_first_node + 5,
             "SubD validation members",
-            after_first_node + 2,
-            1,
+            after_first_node + 5,
+            second_insert_work,
         ),
         (
             before_final_vertices - 1,
             "SubD validation members",
-            before_final_vertices - 44,
-            44,
+            before_final_vertices - 4,
+            4,
         ),
         (
             before_final_vertices,
