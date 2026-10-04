@@ -276,3 +276,16 @@ fn schema_identifier_admission_trim_preserves_refusal() {
     assert_eq!(refusal.operation, "STEP schema identifier trim");
     assert_eq!(ctx.resource_refusal(), Some(refusal));
 }
+
+#[test]
+fn schema_identifier_brace_split_preserves_refusal() {
+    cadmpeg_test_support::refusal::resource_limit_at(cadmpeg_core::decode::ResourceDimension::WorkUnits, "STEP schema identifier brace split", |cap| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = split_schema_identifier(&ctx, " AP242 { 1 2 } ").map(|_| ());
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}

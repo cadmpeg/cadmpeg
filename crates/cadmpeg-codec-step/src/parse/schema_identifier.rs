@@ -180,7 +180,7 @@ fn schema_identifier_form<'a>(ctx: &'a DecodeContext<'_>, identifier: &'a str) -
 /// of the identifier has no schema name and no object identifier.
 pub(crate) fn split_schema_identifier<'a>(ctx: &DecodeContext<'_>, identifier: &'a str) -> Result<Option<(&'a str, Option<&'a str>)>, CodecError> {
     let identifier = ctx.trim_text(identifier, "STEP schema identifier trim")?;
-    let Some((name, object_identifier)) = identifier.split_once('{') else {
+    let Some((name, object_identifier)) = ctx.split_once(identifier, "{", "STEP schema identifier brace split")? else {
         return Ok(Some((identifier, None)));
     };
     let Some(object_identifier) = object_identifier.strip_suffix('}') else { return Ok(None); };
