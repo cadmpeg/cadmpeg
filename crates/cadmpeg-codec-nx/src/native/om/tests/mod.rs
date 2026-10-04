@@ -10,8 +10,8 @@ fn parameterized_expression_refuses_scoped_limit() {
             policy.limits.max_materialized_bytes = 0;
         },
         |ctx| {
-            let error =
-                super::evaluate_parameterized_expression(ctx, "p1 + 2", |_| Some(3.0)).unwrap_err();
+            let error = super::evaluate_parameterized_expression(ctx, "p1 + 2", |_| Ok(Some(3.0)))
+                .unwrap_err();
             assert!(
                 matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
             );
@@ -464,11 +464,12 @@ fn data_block_control_form_route_refuses_retained_limit() {
 
 #[test]
 fn data_block_control_form_route_refuses_work_limit() {
+    // The cached indexed-section traversal is admitted before control-field work.
     let early = control_form_route_refusal(|policy| policy.limits.max_work_units = 0);
     assert!(
         matches!(early, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && limit.operation == "NX nonempty entries")
+            && limit.operation == "NX indexed OM section visits")
     );
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
@@ -562,7 +563,24 @@ fn data_block_control_reference_route_refuses_scoped_limit() {
 
 #[test]
 fn data_block_control_reference_route_refuses_work_limit() {
-    let error = control_reference_route_refusal(|policy| policy.limits.max_work_units = 0);
+    // The cached indexed-section traversal is admitted before control-field work.
+    let early = control_reference_route_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(early, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && limit.operation == "NX indexed OM section visits"),
+        "{early:?}"
+    );
+
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "NX control reference block id",
+        |limit| {
+            Err::<(), _>(control_reference_route_refusal(|policy| {
+                policy.limits.max_work_units = limit;
+            }))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
@@ -654,11 +672,12 @@ fn data_block_control_value_route_refuses_scoped_limit() {
 
 #[test]
 fn data_block_control_value_route_refuses_work_limit() {
+    // The cached indexed-section traversal is admitted before control-field work.
     let early = control_value_route_refusal(|policy| policy.limits.max_work_units = 0);
     assert!(
         matches!(early, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && limit.operation == "NX nonempty entries")
+            && limit.operation == "NX indexed OM section visits")
     );
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
@@ -822,20 +841,43 @@ fn data_blocks_refuses_identity_work_at_caller_limit() {
     )
     .unwrap();
 
-    crate::test_support::with_decode_context_over(
+    // The section-count traversal precedes each data-block identity digest.
+    let early = crate::test_support::with_decode_context_over(
         &file,
         |policy| {
             policy.limits.max_work_units = 0;
         },
-        |ctx| {
-            let error = super::data_blocks(ctx, &container).expect_err("work refusal");
-            assert!(matches!(
-                error,
-                cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                        && limit.operation == "nx data block identity digest"
-            ));
+        |ctx| super::data_blocks(ctx, &container).expect_err("work refusal"),
+    );
+    assert!(
+        matches!(
+            early,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                    && limit.operation == "NX data block section count"
+        ),
+        "{early:?}"
+    );
+
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "nx data block identity digest",
+        |limit| {
+            crate::test_support::with_decode_context_over(
+                &file,
+                |policy| policy.limits.max_work_units = limit,
+                |ctx| super::data_blocks(ctx, &container),
+            )
         },
+    );
+    assert!(
+        matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                    && limit.operation == "nx data block identity digest"
+        ),
+        "{error:?}"
     );
 }
 
@@ -963,11 +1005,12 @@ fn data_block_control_index_value_route_refuses_scoped_limit() {
 
 #[test]
 fn data_block_control_index_value_route_refuses_work_limit() {
+    // The cached indexed-section traversal is admitted before control-field work.
     let early = control_index_value_route_refusal(|policy| policy.limits.max_work_units = 0);
     assert!(
         matches!(early, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && limit.operation == "NX nonempty entries")
+            && limit.operation == "NX indexed OM section visits")
     );
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
@@ -1412,7 +1455,13 @@ fn nx_part_attributes_require_typed_atomic_xml() {
         [attribute_version_at..attribute_version_at + attribute_version.len()]
         .copy_from_slice(b"version=\"x\"");
     assert!(crate::test_support::with_decode_context(|ctx| {
-        super::parse_part_attributes(ctx, &malformed_attribute_version, 7, "/Root/part/attrs", 100)
+        super::parse_part_attributes(
+            ctx,
+            &malformed_attribute_version,
+            7,
+            "/Root/part/attrs",
+            100,
+        )
     })
     .expect("invalid attribute-version budget")
     .is_none());
@@ -1698,14 +1747,8 @@ fn nx_part_attribute_version_parses_refuse_named_work() {
             ResourceDimension::WorkUnits,
             operation,
             |ctx| {
-                super::parse_part_attributes(
-                    ctx,
-                    XML.as_bytes(),
-                    7,
-                    "/Root/part/attrs",
-                    100,
-                )
-                .map(|_| ())
+                super::parse_part_attributes(ctx, XML.as_bytes(), 7, "/Root/part/attrs", 100)
+                    .map(|_| ())
             },
         );
         assert_om_work_refusal(error, operation);
@@ -1755,15 +1798,23 @@ fn nx_xml_attribute_lookup_refuses_named_work() {
 
 #[test]
 fn nx_xml_attribute_lookup_preserves_local_names_and_fallbacks() {
-    const XML: &str = r#"<root xmlns:n="urn:test" n:item="namespaced" item="plain" fallback="backup"/>"#;
+    const XML: &str =
+        r#"<root xmlns:n="urn:test" n:item="namespaced" item="plain" fallback="backup"/>"#;
     crate::test_support::with_decode_context(|ctx| {
         let admitted = ctx.parse_xml(XML, "decode XML tree")?;
         let root = super::xml_root_element(ctx, admitted.document())?.expect("XML root");
-        assert_eq!(super::xml_attribute(ctx, root, &["item", "fallback"])? , Some("namespaced"));
-        assert_eq!(super::xml_attribute(ctx, root, &["missing", "fallback"])? , Some("backup"));
-        assert_eq!(super::xml_attribute(ctx, root, &["missing"])? , None);
+        assert_eq!(
+            super::xml_attribute(ctx, root, &["item", "fallback"])?,
+            Some("namespaced")
+        );
+        assert_eq!(
+            super::xml_attribute(ctx, root, &["missing", "fallback"])?,
+            Some("backup")
+        );
+        assert_eq!(super::xml_attribute(ctx, root, &["missing"])?, None);
         Ok::<_, cadmpeg_core::CodecError>(())
-    }).expect("admitted XML lookup");
+    })
+    .expect("admitted XML lookup");
 }
 
 #[test]
@@ -1815,8 +1866,8 @@ fn nx_object_record_graph_stack_probe_refuses_named_work() {
 
 #[test]
 fn nx_control_handle_pair_work_loops_refuse_named_sites() {
-    use cadmpeg_core::decode::ResourceDimension;
     use crate::om::reference_value::DirectReference;
+    use cadmpeg_core::decode::ResourceDimension;
 
     let reference = |ordinal: u32, source_offset: u64| super::DataBlockControlReference {
         id: format!("reference#{ordinal}"),
@@ -1843,8 +1894,8 @@ fn nx_control_handle_pair_work_loops_refuse_named_sites() {
 
 #[test]
 fn nx_object_record_handle_pair_work_loops_refuse_named_sites() {
-    use cadmpeg_core::decode::ResourceDimension;
     use crate::om::reference_value::{DirectReference, RecordReference};
+    use cadmpeg_core::decode::ResourceDimension;
 
     let reference = |ordinal: u32, source_offset: u64| super::ObjectReference {
         id: format!("reference#{ordinal}"),
@@ -1870,3 +1921,7 @@ fn nx_object_record_handle_pair_work_loops_refuse_named_sites() {
         assert_om_work_refusal(error, operation);
     }
 }
+
+mod registry_search;
+
+mod column_search;

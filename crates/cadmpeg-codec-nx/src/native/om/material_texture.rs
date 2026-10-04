@@ -4,7 +4,6 @@
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
-use std::fmt::Write;
 
 use crate::container::Container;
 
@@ -71,10 +70,13 @@ impl MaterialTextureAsset {
         source_entry: String,
         source_offset: u64,
     ) -> Result<Self, &'static str> {
-        if source_entry
-            .strip_prefix(TEXTURE_PREFIX)
-            .is_none_or(str::is_empty)
-        {
+        let Some((prefix, path)) = source_entry
+            .as_bytes()
+            .split_first_chunk::<{ TEXTURE_PREFIX.len() }>()
+        else {
+            return Err("source_entry: requires a nonempty materialsTif path");
+        };
+        if prefix != TEXTURE_PREFIX.as_bytes() || path.is_empty() {
             return Err("source_entry: requires a nonempty materialsTif path");
         }
         if first_ifd_offset < 8 || u64::from(first_ifd_offset) >= byte_len {
@@ -170,29 +172,19 @@ pub(in crate::native) fn material_texture_assets(
     ctx: &DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<MaterialTextureAsset>, CodecError> {
-    let name_bytes = container
-        .entries
-        .iter()
-        .try_fold(0usize, |total, entry| total.checked_add(entry.name.len()))
-        .and_then(|total| total.checked_mul(2))
-        .ok_or_else(|| ctx.refuse_codec_limit("NX material texture entry scan", 0, 1))?;
-    ctx.charge_work(
-        u64_from_index(name_bytes),
-        "scan NX material texture entries",
-    )?;
-    let count = container
-        .entries
-        .iter()
-        .filter(|entry| entry.name.starts_with(TEXTURE_PREFIX))
-        .count();
     let mut entries = Vec::new();
-    ctx.reserve_capacity(&mut entries, count, "allocate NX material texture entries")?;
-    entries.extend(
-        container
-            .entries
-            .iter()
-            .filter(|entry| entry.name.starts_with(TEXTURE_PREFIX)),
-    );
+    let mut entries_reservation = ctx.reserve_scoped(0, "allocate NX material texture entries")?;
+    for entry in ctx.admit_iter(&container.entries, "NX material texture directory entries")? {
+        if ctx.starts_with(
+            &entry.name,
+            TEXTURE_PREFIX,
+            "scan NX material texture entries",
+        )? {
+            entries_reservation.with_storage(|| {
+                ctx.push_vec(&mut entries, entry, "allocate NX material texture entries")
+            })?;
+        }
+    }
     ctx.stable_sort_by(
         &mut entries,
         |value| &value.name,
@@ -200,7 +192,12 @@ pub(in crate::native) fn material_texture_assets(
         "sort NX material texture entries",
     )?;
     let mut assets = Vec::new();
-    for entry in entries {
+    let entries_count = entries.len();
+    let mut entries = entries.into_iter();
+    for _index in ctx.admit_iter(&(0..entries_count), "NX material texture entries visits")? {
+        let Some(entry) = entries.next() else {
+            break;
+        };
         let parsed = (|| {
             let (offset, size) = entry.file_span()?;
             let (start, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
@@ -222,22 +219,12 @@ pub(in crate::native) fn material_texture_assets(
         };
         ctx.reserve_vec(&mut assets, 1, "NX material texture assets")?;
         let ordinal = assets.len();
-        let mut digits = 1;
-        let mut value = ordinal;
-        while value >= 10 {
-            value /= 10;
-            digits += 1;
-        }
-        let id_len = "nx:container:material-texture#"
-            .len()
-            .checked_add(digits)
-            .ok_or_else(|| ctx.refuse_codec_limit("NX material texture identity length", 0, 1))?;
-        let mut id = ctx.retained_string(id_len, "retain NX material texture identity")?;
-        write!(id, "nx:container:material-texture#{ordinal}")
-            .map_err(|_| ctx.refuse_codec_limit("write NX material texture identity", 0, 1))?;
-        let mut source_entry =
-            ctx.retained_string(entry.name.len(), "retain NX material texture source entry")?;
-        source_entry.push_str(&entry.name);
+        let id = ctx.format_retained(
+            format_args!("nx:container:material-texture#{ordinal}"),
+            "retain NX material texture identity",
+        )?;
+        let source_entry =
+            ctx.copy_retained_text(&entry.name, "retain NX material texture source entry")?;
         let asset = MaterialTextureAsset::new(
             id,
             byte_order,
@@ -250,8 +237,15 @@ pub(in crate::native) fn material_texture_assets(
             )?,
             source_entry,
             offset,
-        )
-        .map_err(|error| CodecError::InvalidInput(error.to_owned()))?;
+        );
+        let asset = match asset {
+            Ok(asset) => asset,
+            Err(error) => {
+                return Err(CodecError::InvalidInput(
+                    ctx.copy_retained_text(error, "NX material texture asset error")?,
+                ))
+            }
+        };
         assets.push(asset);
     }
     Ok(assets)

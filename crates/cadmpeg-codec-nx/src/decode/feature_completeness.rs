@@ -296,10 +296,9 @@ pub(crate) fn incomplete_expression_parameters(
                         return Ok(None);
                     };
                     let mut dependencies = Vec::new();
-                    for name in crate::native::om::expression_parameter_names(
-                        ctx,
-                        &parameter.expression,
-                    ) {
+                    for name in
+                        crate::native::om::expression_parameter_names(ctx, &parameter.expression)
+                    {
                         let name = name?;
                         let Some(ids) = ids_by_name.get(&(name, unit)) else {
                             return Ok(None);
@@ -355,10 +354,13 @@ pub(crate) fn incomplete_expression_parameters(
                 ctx,
                 &parameter.expression,
                 |name| {
-                    let [dependency] = ids_by_name.get(&(name, unit))?.as_slice() else {
-                        return None;
+                    let Some(ids) = ids_by_name.get(&(name, unit)) else {
+                        return Ok(None);
                     };
-                    evaluated.get(*dependency).copied()
+                    let [dependency] = ids.as_slice() else {
+                        return Ok(None);
+                    };
+                    Ok(evaluated.get(*dependency).copied())
                 },
             )?;
             let stored = match (unit, parameter.value.as_ref()) {
