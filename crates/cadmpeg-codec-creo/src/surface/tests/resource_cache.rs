@@ -208,3 +208,59 @@ fn prototype_fields_retain_refuses_work() {
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
             && resource.operation == "creo named prototype field retain"));
 }
+
+#[test]
+fn placed_outline_retain_refuses_work() {
+    let records = [crate::surface::PlaneEnvelopeRecord {
+        surface_id: 42, body: Vec::new(),
+        envelope: crate::surface::PlaneEnvelope::Standard {
+            bounds_2d: [[Some(0.0), Some(1.0)], [Some(0.0), Some(1.0)]],
+            corners_3d: [[Some(3.0), Some(-2.0), Some(4.0)], [Some(3.0), Some(5.0), Some(9.0)]],
+        },
+        corner_coordinate_equal: [Some(true), Some(false), Some(false)],
+        scalar_tokens: Vec::new(), row_offset: 10, offset: 20,
+    }];
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo placed outline retain",
+        |ctx| crate::surface::placed_outline_planes(ctx, &records, &[]),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo placed outline retain"));
+}
+
+#[test]
+fn unique_surface_row_retain_refuses_work() {
+    let payload = b"srf_array\0geom_id\0\x01geom_type\0\x22feat_id\0\x01next_geom_ptr\0\x01orient\0\x01boundary_type\0\x00";
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo unique surface row retain",
+        |ctx| crate::surface::rows_with_boundaries(ctx, payload, &[crate::surface::BoundaryType::Code00]),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo unique surface row retain"));
+}
+
+#[test]
+fn prototype_surface_row_retain_refuses_work() {
+    let payload = b"srf_array\0geom_id\0\x01geom_type\0\x22feat_id\0\x01next_geom_ptr\0\x01orient\0\x01boundary_type\0\x00";
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo prototype surface row retain",
+        |ctx| crate::surface::rows_with_boundaries(ctx, payload, &[crate::surface::BoundaryType::Code00]),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo prototype surface row retain"));
+}
+
+#[test]
+fn boundary_surface_row_retain_refuses_work() {
+    let payload = b"srf_array\0geom_id\0\x01geom_type\0\x22feat_id\0\x01next_geom_ptr\0\x01orient\0\x01boundary_type\0\x00";
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo boundary surface row retain",
+        |ctx| crate::surface::rows_with_boundaries(ctx, payload, &[crate::surface::BoundaryType::Code00]),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo boundary surface row retain"));
+}

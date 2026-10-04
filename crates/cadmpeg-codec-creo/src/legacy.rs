@@ -502,6 +502,13 @@ struct AttributeValue {
     continuation: Option<Continuation>,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for AttributeValue {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.depth, &self.attribute_id, &self.offset, &self.payload.start, &self.payload.end, &self.continuation,), ctx, operation)
+    }
+}
+
+
 /// A nonempty sequence of continuation rows following one value.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Continuation {
@@ -510,6 +517,13 @@ pub(crate) struct Continuation {
     /// Number of rows in the source range.
     count: NonZeroUsize,
 }
+
+impl cadmpeg_core::decode::cost::DecodeCost for Continuation {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.rows.start, &self.rows.end, &self.count,), ctx, operation)
+    }
+}
+
 
 /// Declarations and values owned by one outer object or named ASCII section.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1692,10 +1706,10 @@ fn scan_scope(
     }
 
     let candidate_count = candidates.len();
-    candidates.retain(|value| {
+    ctx.retain_vec(&mut candidates, |value| Ok({
         declaration_indices.contains_key(&value.attribute_id)
             && !conflicting_ids.contains(&value.attribute_id)
-    });
+    }), "creo legacy candidate retain")?;
     Ok(Scope {
         range,
         declarations,

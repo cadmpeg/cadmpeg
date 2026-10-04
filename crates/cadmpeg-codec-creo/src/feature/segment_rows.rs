@@ -22,6 +22,22 @@ pub(crate) enum SegmentRow {
     Opaque(FeatureOpaqueSegment),
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for SegmentRow {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        match self {
+            Self::Ordinary(field_0) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&0_u8, field_0,), ctx, operation),
+            Self::Circle(field_0) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&0_u8, field_0,), ctx, operation),
+            Self::Point(field_0) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&0_u8, field_0,), ctx, operation),
+            Self::CenteredLine(field_0) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&0_u8, field_0,), ctx, operation),
+            Self::ReferenceLine(field_0) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&0_u8, field_0,), ctx, operation),
+            Self::BoundedCurve(field_0) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&0_u8, field_0,), ctx, operation),
+            Self::Conic(field_0) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&0_u8, field_0,), ctx, operation),
+            Self::Opaque(field_0) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&0_u8, field_0,), ctx, operation),
+        }
+    }
+}
+
+
 impl SegmentRow {
     fn external_id(&self) -> u32 {
         match self {
@@ -58,6 +74,18 @@ pub(crate) struct SegmentRows {
     rows: Vec<SegmentRow>,
     identities: BTreeMap<u32, Option<usize>>,
 }
+
+impl cadmpeg_core::decode::cost::DecodeCost for SegmentRows {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        let identities = ctx.admit_iter(&self.identities, operation)?.try_fold(0_u64, |bytes, (key, value)| {
+            let entry = cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(key, value), ctx, operation)?;
+            bytes.checked_add(entry).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))
+        })?;
+        let rows = cadmpeg_core::decode::cost::DecodeCost::decode_cost(&self.rows, ctx, operation)?;
+        rows.checked_add(identities).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))
+    }
+}
+
 
 #[cfg(test)]
 impl FromIterator<SegmentRow> for SegmentRows {

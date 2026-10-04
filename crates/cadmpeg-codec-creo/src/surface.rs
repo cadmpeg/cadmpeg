@@ -56,6 +56,8 @@ pub(crate) enum SurfaceKind {
     Extrusion(ExtrusionVariant),
 }
 
+
+
 impl SurfaceKind {
     /// Compare surface families without the extrusion encoding variant.
     pub(crate) fn same_family(self, other: Self) -> bool {
@@ -109,6 +111,8 @@ pub(crate) enum BoundaryType {
     CodeF6,
 }
 
+
+
 impl BoundaryType {
     pub(crate) fn from_byte(value: u8) -> Option<Self> {
         match value {
@@ -156,6 +160,14 @@ pub(crate) struct SurfaceRow {
     /// Byte offset of the row's `geom_id` field in the original stream.
     pub(crate) offset: usize,
 }
+
+impl cadmpeg_core::decode::cost::DecodeCost for SurfaceRow {
+    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
+    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    }
+}
+
 
 /// Return the surface row for `id` only when the namespace contains one match.
 pub(crate) fn unique_surface_row(rows: &[SurfaceRow], id: u32) -> Option<&SurfaceRow> {
@@ -2539,6 +2551,14 @@ pub(crate) struct OutlinePlane {
     pub(crate) offset: usize,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for OutlinePlane {
+    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
+    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    }
+}
+
+
 impl OutlinePlane {
     pub(crate) fn normal(&self) -> [f64; 3] {
         Vector3::from(self.normal).into()
@@ -2908,10 +2928,10 @@ pub(crate) fn placed_outline_planes(
         )?;
     }
     let mut result = outline_planes(ctx, envelopes)?;
-    result.retain(|plane| {
+    ctx.retain_vec(&mut result, |plane| Ok({
         !frame_bound_ids.contains(&plane.surface_id)
             && !matrix_frame_ids.contains(&plane.surface_id)
-    });
+    }), "creo placed outline retain")?;
     for plane in frame_bound {
         ctx.reserve_vec(&mut result, 1, "creo placed outline planes")?;
         result.push(plane);
@@ -3224,7 +3244,7 @@ fn rows_with_boundaries(
             }
         }
     }
-    result.retain(|row| id_counts.get(&row.id) == Some(&1));
+    ctx.retain_vec(&mut result, |row| Ok(id_counts.get(&row.id) == Some(&1)), "creo unique surface row retain")?;
     let mut prototype_parameter_spans = Vec::new();
     for frame in named_prototype_frames(ctx, payload)? {
         for parameter in frame.parameters {
@@ -3236,12 +3256,12 @@ fn rows_with_boundaries(
             prototype_parameter_spans.push((parameter.value_offset, parameter.value_end));
         }
     }
-    result.retain(|row| {
+    ctx.retain_vec(&mut result, |row| Ok({
         !prototype_parameter_spans
             .iter()
             .any(|(start, end)| row.offset >= *start && row.offset < *end)
-    });
-    result.retain(|row| boundary_types.contains(&row.boundary_type));
+    }), "creo prototype surface row retain")?;
+    ctx.retain_vec(&mut result, |row| Ok(boundary_types.contains(&row.boundary_type)), "creo boundary surface row retain")?;
     let mut frames = surface_array_frames(ctx, payload);
     if let Some(first) = frames.next().transpose()? {
         let mut framed = Vec::new();
