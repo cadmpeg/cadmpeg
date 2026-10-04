@@ -8,38 +8,56 @@ use super::{
 use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::CodecError;
 
+/// Each diagnostic list of a two-body collection whose scope repeats its
+/// first body admits its items.
 #[test]
-fn mesh_diagnostic_scope_body_copy_refuses_each_resource_limit() {
+fn mesh_scope_diagnostic_lists_refuse_collection_items() {
     let mut graph = synthetic_mesh_graph_with_body_count(false, 2);
     let start = sole_typed_frame(&graph, MESH_FEATURE_SCOPE_TYPE_GUID).start;
     put_reference(&mut graph.bytes, start + 36, 104);
-    for (dimension, additional) in [
-        (ResourceDimension::WorkUnits, 10),
-        (ResourceDimension::CollectionItems, 2),
-        (ResourceDimension::RetainedBytes, 8),
+    for operation in [
+        "f3d mesh diagnostic collection bodies",
+        "f3d mesh diagnostic scope bodies",
+        "f3d mesh diagnostic body links",
     ] {
-        let refusal = crate::test_support::resource_refusal_at(
-            dimension,
-            "f3d mesh diagnostic scope bodies",
-            0,
-            |ctx| {
-                let mut no_asset = no_texture_asset;
-                parse_mesh_design_records(
-                    ctx,
-                    &graph.bytes,
-                    &graph.meta,
-                    "Synthetic/BulkStream.dat",
-                    &mut no_asset,
-                )
-                .map(|_| ())
-            },
-        );
+        let dimension = ResourceDimension::CollectionItems;
+        let refusal = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
+            let mut no_asset = no_texture_asset;
+            parse_mesh_design_records(
+                ctx,
+                &graph.bytes,
+                &graph.meta,
+                "Synthetic/BulkStream.dat",
+                &mut no_asset,
+            )
+            .map(|_| ())
+        });
         assert!(matches!(
             refusal,
             CodecError::ResourceLimit(limit)
                 if limit.dimension == dimension
-                    && limit.operation == "f3d mesh diagnostic scope bodies"
-                    && limit.additional == additional
+                    && limit.operation == operation
+                    && limit.additional == 1
         ));
     }
+    crate::test_support::with_decode_context(|ctx| {
+        let mut no_asset = no_texture_asset;
+        let error = parse_mesh_design_records(
+            ctx,
+            &graph.bytes,
+            &graph.meta,
+            "Synthetic/BulkStream.dat",
+            &mut no_asset,
+        )
+        .err()
+        .expect("disagreeing scope body list");
+        assert!(matches!(
+            error,
+            CodecError::Malformed(message)
+                if message.ends_with(
+                    "collection 100 bodies [104, 117], scope Some(109) bodies Some([104, 104]), \
+                     body links [(104, 109, 100), (117, 109, 100)]"
+                )
+        ));
+    });
 }
