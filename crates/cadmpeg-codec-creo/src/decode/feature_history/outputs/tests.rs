@@ -3,7 +3,7 @@
 use super::{
     bodies_containing_edges, copy_body_id, decoded_feature_reference_name,
     evaluated_sweep_body_kind, evaluated_sweep_output_bodies, feature_output_bodies,
-    generated_edge_output_bodies, generated_input_output_bodies,
+    feature_reference_name, generated_edge_output_bodies, generated_input_output_bodies,
 };
 
 #[test]
@@ -26,6 +26,36 @@ fn invalid_feature_reference_name_refuses_before_lossy_copy() {
         Ok::<_, cadmpeg_core::CodecError>(())
     })
     .expect("service-profile reference names");
+}
+
+#[test]
+fn feature_reference_name_admits_byte_comparison() {
+    let mut scan = crate::test_support::empty_container_scan();
+    scan.features.reference_names.extend([
+        crate::feature::operations::FeatureReferenceName {
+            feature_id: 42,
+            name_bytes: b"feature-reference".to_vec(),
+            own_reference_id: 7,
+            reference_type: 1,
+            offset: 0,
+        },
+        crate::feature::operations::FeatureReferenceName {
+            feature_id: 42,
+            name_bytes: b"feature-reference".to_vec(),
+            own_reference_id: 8,
+            reference_type: 1,
+            offset: 10,
+        },
+    ]);
+
+    let name = crate::test_support::assert_work_boundaries(
+        &[
+            "creo feature reference names",
+            "creo feature reference name agreement",
+        ],
+        |ctx| feature_reference_name(ctx, &scan, 42),
+    );
+    assert_eq!(name, Some(b"feature-reference".as_slice()));
 }
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
