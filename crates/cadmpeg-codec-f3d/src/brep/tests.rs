@@ -1058,3 +1058,40 @@ fn fusion_attribute_family_scan_preserves_work_refusal() {
         );
     });
 }
+
+#[test]
+fn sketch_link_text_parse_preserves_resource_refusal() {
+    let values = [
+        AttributeValue::Integer(1),
+        AttributeValue::Integer(1),
+        AttributeValue::Integer(3),
+        AttributeValue::String("7 18446744073709551615 -1 0 2 0".into()),
+    ];
+    crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "parse F3D sketch link sketch_curve_id",
+        0,
+        |ctx| super::sketch_link_payload(ctx, &values),
+    );
+    let parsed = with_context(|ctx| super::sketch_link_payload(ctx, &values))
+        .unwrap()
+        .unwrap();
+    assert_eq!(parsed.sketch_curve_id, 7);
+    assert_eq!(parsed.ref_b, u64::MAX);
+    assert_eq!(parsed.sense, -1);
+    assert_eq!(parsed.role, 2);
+    assert_eq!(parsed.closure, 0);
+}
+
+#[test]
+fn sketch_link_invalid_text_remains_absent() {
+    let values = [
+        AttributeValue::Integer(1),
+        AttributeValue::Integer(1),
+        AttributeValue::Integer(3),
+        AttributeValue::String("invalid 9 -1 0 2 0".into()),
+    ];
+    assert!(with_context(|ctx| super::sketch_link_payload(ctx, &values))
+        .unwrap()
+        .is_none());
+}

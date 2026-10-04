@@ -1460,3 +1460,14 @@ fn archive_entries_do_not_hide_new_model_entities() {
         });
     });
 }
+
+#[test]
+fn mesh_texture_table_scan_preserves_work_refusal() {
+    let table = one_texture_table();
+    crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan F3D mesh texture table",
+        0,
+        |ctx| super::super::clone_mesh_texture_table(ctx, &table),
+    );
+}

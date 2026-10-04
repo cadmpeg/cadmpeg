@@ -135,7 +135,7 @@ fn container_only_dimension_parameters(
         &native.design_dimension_recipe_records,
     )?;
     let mut parameters_by_id = std::collections::HashSet::new();
-    for owner in &native.design_parameter_owners {
+    for owner in ctx.admit_iter(&native.design_parameter_owners, "scan F3D native design parameter owners")? {
         let stream = crate::ids::native_stream(owner.id()).unwrap_or(crate::ids::DEFAULT_STREAM);
         if !container_only.contains(&(stream, owner.companion_record_index())) {
             continue;
@@ -174,7 +174,7 @@ fn unresolved_dimension_companion_count(
         native.design_parameters.len(),
         "index F3D dimension parameters",
     )?;
-    for parameter in &native.design_parameters {
+    for parameter in ctx.admit_iter(&native.design_parameters, "scan F3D native design parameters")? {
         parameters.insert(
             (
                 crate::ids::native_stream(&parameter.id).unwrap_or(crate::ids::DEFAULT_STREAM),
@@ -184,7 +184,7 @@ fn unresolved_dimension_companion_count(
         );
     }
     let mut dimension_owners = HashSet::new();
-    for owner in &native.design_parameter_owners {
+    for owner in ctx.admit_iter(&native.design_parameter_owners, "scan F3D native design parameter owners")? {
         let stream = crate::ids::native_stream(owner.id()).unwrap_or(crate::ids::DEFAULT_STREAM);
         if parameters.get(&(stream, owner.parameter_record_index()))
             == Some(&crate::records::parameters::DesignParameterKind::Dimension)
@@ -202,7 +202,7 @@ fn unresolved_dimension_companion_count(
         }
         Ok(())
     };
-    for pair in &native.design_dimension_locus_pairs {
+    for pair in ctx.admit_iter(&native.design_dimension_locus_pairs[..], "scan F3D native design dimension locus pairs")? {
         insert_typed((
             crate::ids::native_stream(&pair.id).unwrap_or(crate::ids::DEFAULT_STREAM),
             pair.companion_record_index,
@@ -212,19 +212,19 @@ fn unresolved_dimension_companion_count(
             pair.governing_companion_record_index,
         ))?;
     }
-    for frame in &native.design_dimension_annotation_frames {
+    for frame in ctx.admit_iter(&native.design_dimension_annotation_frames, "scan F3D native design dimension annotation frames")? {
         insert_typed((
             crate::ids::native_stream(&frame.id).unwrap_or(crate::ids::DEFAULT_STREAM),
             frame.governing_companion_record_index,
         ))?;
     }
-    for group in &native.design_dimension_locus_groups {
+    for group in ctx.admit_iter(&native.design_dimension_locus_groups, "scan F3D native design dimension locus groups")? {
         insert_typed((
             crate::ids::native_stream(&group.id).unwrap_or(crate::ids::DEFAULT_STREAM),
             group.companion_record_index,
         ))?;
     }
-    for pair in &native.design_dimension_null_locus_pairs {
+    for pair in ctx.admit_iter(&native.design_dimension_null_locus_pairs[..], "scan F3D native design dimension null locus pairs")? {
         insert_typed((
             crate::ids::native_stream(&pair.id).unwrap_or(crate::ids::DEFAULT_STREAM),
             pair.companion_record_index,
@@ -234,13 +234,13 @@ fn unresolved_dimension_companion_count(
             pair.governing_companion_record_index,
         ))?;
     }
-    for record in &native.design_dimension_recipe_records {
+    for record in ctx.admit_iter(&native.design_dimension_recipe_records, "scan F3D native design dimension recipe records")? {
         insert_typed((
             crate::ids::native_stream(&record.id).unwrap_or(crate::ids::DEFAULT_STREAM),
             record.companion_record_index,
         ))?;
     }
-    for constraint in &ir.model.sketch_constraints {
+    for constraint in ctx.admit_iter(&ir.model.sketch_constraints, "scan F3D ir model sketch constraints")? {
         if !matches!(
             constraint.definition.kind(),
             cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Native { .. }
@@ -1099,7 +1099,7 @@ fn incomplete_feature_families<'a>(
     ir: &'a CadIr,
 ) -> Result<std::collections::BTreeMap<&'a str, usize>, CodecError> {
     let mut families = std::collections::BTreeMap::new();
-    for feature in &ir.model.features {
+    for feature in ctx.admit_iter(&ir.model.features, "scan F3D ir model features")? {
         if !feature_definition_is_incomplete(feature.evaluation.definition()) {
             continue;
         }
@@ -1214,12 +1214,12 @@ fn design_projection_gaps(
         &native.design_component_naming_spaces,
         &native.asm_histories,
     )?;
-    for scope in &native.design_parameter_scopes {
+    for scope in ctx.admit_iter(&native.design_parameter_scopes, "scan F3D native design parameter scopes")? {
         let Some(feature) = projected_features.get(scope.id.as_str()) else {
             continue;
         };
         let predecessor_scope = match scope_history.predecessor(ctx, scope, |candidate| {
-            projected_features.contains_key(candidate.id.as_str())
+            ctx.contains_key_hash_map(&projected_features, candidate.id.as_str(), "find F3D projected predecessor feature")
         }) {
             Ok(crate::design::feature_project::ScopeHistoryPredecessor::Scope(predecessor)) => {
                 predecessor
@@ -1300,7 +1300,7 @@ fn design_projection_gaps(
     )?;
     let mut native_sketch_relations = 0;
     let mut native_dimensions = 0;
-    for constraint in &ir.model.sketch_constraints {
+    for constraint in ctx.admit_iter(&ir.model.sketch_constraints, "scan F3D ir model sketch constraints")? {
         if !matches!(
             constraint.definition.kind(),
             SketchConstraintDefinitionInput::Native { .. }
@@ -1317,7 +1317,7 @@ fn design_projection_gaps(
             native_dimensions += 1;
         }
     }
-    for constraint in &ir.model.spatial_sketch_constraints {
+    for constraint in ctx.admit_iter(&ir.model.spatial_sketch_constraints, "scan F3D ir model spatial sketch constraints")? {
         if !matches!(
             constraint.definition.kind(),
             cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::Native { .. }
@@ -1601,7 +1601,7 @@ fn design_projection_gaps(
         | BodySelection::Generated { .. }
         | BodySelection::Local { .. } => 0,
     };
-    for feature in &ir.model.features {
+    for feature in ctx.admit_iter(&ir.model.features, "scan F3D ir model features")? {
         gaps.incomplete_features += usize::from(feature_definition_is_incomplete(
             feature.evaluation.definition(),
         ));
@@ -1666,12 +1666,12 @@ fn design_projection_gaps(
                 }
             }
             FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) => {
-                for group in groups {
+                for group in ctx.admit_iter(&groups[..], "scan F3D fillet groups")? {
                     edge_selection(&group.edges)?;
                 }
             }
             FeatureDefinition::Operation(FeatureOperation::FullRoundFillet { groups }) => {
-                for group in groups {
+                for group in ctx.admit_iter(&groups[..], "scan F3D full round fillet groups")? {
                     face_selection(group.center_faces());
                     for side in [group.side_one_faces(), group.side_two_faces()] {
                         if let cadmpeg_ir::features::edge_treatments::FullRoundSideSelection::Explicit(selection) =
@@ -1683,7 +1683,7 @@ fn design_projection_gaps(
                 }
             }
             FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. }) => {
-                for group in groups {
+                for group in ctx.admit_iter(&groups[..], "scan F3D chamfer groups")? {
                     edge_selection(&group.edges)?;
                 }
             }
@@ -2183,7 +2183,7 @@ fn model_brep_candidates<'s>(
     blob_names: &[String],
 ) -> Result<Vec<&'s BrepFacts>, CodecError> {
     let mut candidates = Vec::new();
-    for blob_name in blob_names {
+    for blob_name in ctx.admit_iter(blob_names, "scan F3D blob names")? {
         let mut matches = container::design_breps(ctx, scan)?.filter_map(|brep| match brep {
             Err(error) => Some(Err(error)),
             Ok(brep) if brep.name.rsplit('/').next() == Some(blob_name.as_str()) => Some(Ok(brep)),
@@ -3463,7 +3463,7 @@ fn decode_scanned_document<'a>(
             crate::design::decode::body::decode_all_body_visibility(ctx, scan)?;
         let mut selected_body_keys =
             std::collections::HashMap::<String, std::collections::HashSet<u64>>::new();
-        for binding in &unbound_body_bindings {
+        for binding in ctx.admit_iter(&unbound_body_bindings, "scan F3D unbound body bindings")? {
             index_selected_body_key(
                 ctx,
                 &mut selected_body_keys,
@@ -3471,7 +3471,7 @@ fn decode_scanned_document<'a>(
                 binding.asm_body_key,
             )?;
         }
-        for &candidate in &model_breps {
+        for &candidate in ctx.admit_iter(&model_breps, "scan F3D model BREP candidates")? {
             let Some(mut part) = try_decode_brep(ctx, scan, candidate)? else {
                 continue;
             };
@@ -3515,7 +3515,7 @@ fn decode_scanned_document<'a>(
                     None => part.body_selectors(ctx)?,
                 };
             }
-            for body in &part.asm.bodies {
+            for body in ctx.admit_iter(&part.asm.bodies, "scan F3D part asm bodies")? {
                 if let Some((body_selector, visibility)) = body_selectors
                     .get(&body.id)
                     .map(|selector| {
@@ -3690,7 +3690,7 @@ fn clone_mesh_texture_table(
     table: &[(String, cadmpeg_ir::assets::AssetId)],
 ) -> Result<Vec<(String, cadmpeg_ir::assets::AssetId)>, CodecError> {
     let mut copy = Vec::new();
-    for (source_id, asset) in table {
+    for (source_id, asset) in ctx.admit_iter(table, "scan F3D mesh texture table")? {
         let source_id =
             ctx.copy_retained_text(source_id, "copy F3D mesh texture table source ID")?;
         let asset = asset.try_clone_for_decode(ctx, "copy F3D mesh texture table asset ID")?;
@@ -3824,7 +3824,7 @@ fn project_mesh_bodies(
     }
     extend_unique_assets(ctx, &mut ir.model.assets, texture_assets)?;
     let mut texture_tables = std::collections::HashMap::new();
-    for feature in &native.design_mesh_features {
+    for feature in ctx.admit_iter(&native.design_mesh_features, "scan F3D native design mesh features")? {
         let mut texture_table = Vec::new();
         for texture in feature.texture_table.resources_in_flags_order(ctx)? {
             let source_id = ctx.copy_retained_text(
@@ -3934,7 +3934,7 @@ fn project_mesh_bodies(
             "F3D mesh texture table has no joined tessellation body".into(),
         ));
     }
-    for feature in &native.design_mesh_features {
+    for feature in ctx.admit_iter(&native.design_mesh_features, "scan F3D native design mesh features")? {
         let stream = crate::ids::native_stream(&feature.id).unwrap_or(crate::ids::DEFAULT_STREAM);
         insert_mesh_scope_tessellations(
             ctx,
@@ -4091,7 +4091,7 @@ fn mesh_attribute_channels(
     use crate::paramesh::MeshAttributeDomain;
 
     let mut channels = Vec::new();
-    for attribute in attributes {
+    for attribute in ctx.admit_iter(attributes, "scan F3D attributes")? {
         match (
             attribute.addressing.domain(),
             attribute.item_size(),
@@ -4259,7 +4259,7 @@ fn report_xref_placement_failures(
     report: &mut DecodeBody,
     table: &crate::xref::XrefTable,
 ) -> Result<(), CodecError> {
-    for ordinal in &table.placement_failures {
+    for ordinal in ctx.admit_iter(&table.placement_failures, "scan F3D table placement failures")? {
         let Some(reference) = table
             .references
             .iter()
@@ -4290,7 +4290,7 @@ fn report_xref_placement_overrides(
     report: &mut DecodeBody,
     table: &crate::xref::XrefTable,
 ) -> Result<(), CodecError> {
-    for override_ in &table.placement_overrides {
+    for override_ in ctx.admit_iter(&table.placement_overrides, "scan F3D table placement overrides")? {
         let ordinal = override_.ordinal;
         let count = override_.count;
         let Some(reference) = table
@@ -4423,7 +4423,7 @@ fn apply_assembly_classification(
         "collect F3D assembly classification losses",
         "retain F3D assembly classification loss",
     )?;
-    for reference in &table.references {
+    for reference in ctx.admit_iter(&table.references, "scan F3D table references")? {
         let property_note = XrefPropertyNote(reference);
         match crate::xref::design_for(table, reference) {
             Some(design) => ctx.push_formatted_retained(
@@ -4615,14 +4615,14 @@ fn populate_annotations(
                 record.offset,
                 Some(record.tag.as_str()),
             )?;
-            for field in &record.derived_fields {
+            for field in ctx.admit_iter(&record.derived_fields, "scan F3D derived annotation fields")? {
                 annotations.derived(ctx, &record.id, field)?;
             }
         }
     }
 
     let mut constraints_by_native = HashMap::new();
-    for constraint in &ir.model.sketch_constraints {
+    for constraint in ctx.admit_iter(&ir.model.sketch_constraints, "scan F3D ir model sketch constraints")? {
         if let Some(native_ref) = constraint.native_ref.as_deref() {
             if !constraints_by_native.contains_key(native_ref) {
                 ctx.reserve_map(
@@ -4635,7 +4635,7 @@ fn populate_annotations(
         }
     }
     let mut entities_by_native = HashMap::new();
-    for entity in &ir.model.sketch_entities {
+    for entity in ctx.admit_iter(&ir.model.sketch_entities, "scan F3D ir model sketch entities")? {
         if let Some(native_ref) = entity.native_ref.as_deref() {
             if !entities_by_native.contains_key(native_ref) {
                 ctx.reserve_map(&mut entities_by_native, 1, "index F3D annotation entities")?;
@@ -4666,37 +4666,37 @@ fn populate_annotations(
         }};
     }
     {
-        for entity in &native.construction_recipes {
+        for entity in ctx.admit_iter(&native.construction_recipes, "scan F3D native construction recipes")? {
             note!(&entity.id, "construction_recipe");
         }
-        for entity in &native.persistent_references {
+        for entity in ctx.admit_iter(&native.persistent_references, "scan F3D native persistent references")? {
             note!(&entity.id, "persistent_reference");
         }
-        for entity in &native.lost_edge_references {
+        for entity in ctx.admit_iter(&native.lost_edge_references, "scan F3D native lost edge references")? {
             note!(&entity.id, "EDGE_REFERENCE_LOST");
         }
-        for entity in &native.design_types {
+        for entity in ctx.admit_iter(&native.design_types, "scan F3D native design types")? {
             note!(entity.id(), "design_type");
         }
-        for entity in &native.design_parameters {
+        for entity in ctx.admit_iter(&native.design_parameters, "scan F3D native design parameters")? {
             note!(&entity.id, "design_parameter");
         }
-        for entity in &native.design_parameter_companions {
+        for entity in ctx.admit_iter(&native.design_parameter_companions, "scan F3D native design parameter companions")? {
             note!(entity.id(), "design_parameter_companion");
         }
-        for entity in &native.design_dimension_locus_pairs {
+        for entity in ctx.admit_iter(&native.design_dimension_locus_pairs[..], "scan F3D native design dimension locus pairs")? {
             note!(&entity.id, "design_dimension_locus_pair");
             if let Some(projected) = constraints_by_native.get(entity.id.as_str()) {
                 note!(projected, "sketch_constraint");
             }
         }
-        for entity in &native.design_dimension_annotation_frames {
+        for entity in ctx.admit_iter(&native.design_dimension_annotation_frames, "scan F3D native design dimension annotation frames")? {
             note!(&entity.id, "design_dimension_annotation_frame");
             if let Some(projected) = constraints_by_native.get(entity.id.as_str()) {
                 note!(projected, "sketch_constraint");
             }
         }
-        for entity in &native.design_dimension_presentation_frames {
+        for entity in ctx.admit_iter(&native.design_dimension_presentation_frames, "scan F3D native design dimension presentation frames")? {
             note!(&entity.id, "design_dimension_presentation_frame");
             let projected = native
                 .design_parameter_companions
@@ -4712,34 +4712,34 @@ fn populate_annotations(
                 note!(projected, "sketch_constraint");
             }
         }
-        for entity in &native.design_dimension_locus_groups {
+        for entity in ctx.admit_iter(&native.design_dimension_locus_groups, "scan F3D native design dimension locus groups")? {
             note!(&entity.id, "design_dimension_locus_group");
             if let Some(projected) = constraints_by_native.get(entity.id.as_str()) {
                 note!(projected, "sketch_constraint");
             }
         }
-        for entity in &native.design_dimension_null_locus_pairs {
+        for entity in ctx.admit_iter(&native.design_dimension_null_locus_pairs[..], "scan F3D native design dimension null locus pairs")? {
             note!(&entity.id, "design_dimension_null_locus_pair");
             if let Some(projected) = constraints_by_native.get(entity.id.as_str()) {
                 note!(projected, "sketch_constraint");
             }
         }
-        for entity in &native.design_parameter_owners {
+        for entity in ctx.admit_iter(&native.design_parameter_owners, "scan F3D native design parameter owners")? {
             note!(entity.id(), "design_parameter_owner");
         }
-        for entity in &native.design_parameter_scopes {
+        for entity in ctx.admit_iter(&native.design_parameter_scopes, "scan F3D native design parameter scopes")? {
             note!(&entity.id, "design_parameter_scope");
         }
-        for entity in &native.design_edge_operands {
+        for entity in ctx.admit_iter(&native.design_edge_operands, "scan F3D native design edge operands")? {
             note!(&entity.id, "design_edge_operand");
         }
-        for entity in &native.design_face_operands {
+        for entity in ctx.admit_iter(&native.design_face_operands, "scan F3D native design face operands")? {
             note!(&entity.id, "design_face_operand");
         }
-        for entity in &native.design_face_source_groups {
+        for entity in ctx.admit_iter(&native.design_face_source_groups, "scan F3D native design face source groups")? {
             note!(&entity.id, "design_face_source_group");
         }
-        for entity in &native.design_sketch_placements {
+        for entity in ctx.admit_iter(&native.design_sketch_placements, "scan F3D native design sketch placements")? {
             note!(&entity.id, "design_sketch_placement");
             let planar = crate::ids::neutral_sketch_id_charged(ctx, entity)?;
             if planar_sketches.contains(planar.as_str()) {
@@ -4750,19 +4750,19 @@ fn populate_annotations(
                 note!(spatial.as_str(), "spatial_sketch");
             }
         }
-        for entity in &native.design_entity_headers {
+        for entity in ctx.admit_iter(&native.design_entity_headers, "scan F3D native design entity headers")? {
             note!(&entity.id, "design_entity_header");
         }
-        for entity in &native.design_record_headers {
+        for entity in ctx.admit_iter(&native.design_record_headers, "scan F3D native design record headers")? {
             note!(&entity.id, "design_record_header");
         }
-        for entity in &native.design_body_members {
+        for entity in ctx.admit_iter(&native.design_body_members, "scan F3D native design body members")? {
             note!(entity.id(), "BodiesRoot");
         }
-        for entity in &native.design_material_assignments {
+        for entity in ctx.admit_iter(&native.design_material_assignments, "scan F3D native design material assignments")? {
             note!(&entity.id, "material_assignment");
         }
-        for entity in &native.sketch_relations {
+        for entity in ctx.admit_iter(&native.sketch_relations, "scan F3D native sketch relations")? {
             note!(&entity.id, "sketch_relation");
             if constraints_by_native.contains_key(entity.id.as_str()) {
                 let constraint = crate::ids::neutral_sketch_constraint_id_charged(
@@ -4773,56 +4773,56 @@ fn populate_annotations(
                 note!(constraint.as_str(), "sketch_constraint");
             }
         }
-        for entity in &native.sketch_points {
+        for entity in ctx.admit_iter(&native.sketch_points, "scan F3D native sketch points")? {
             note!(&entity.id, "sketch_point");
             if let Some(projected) = entities_by_native.get(entity.id.as_str()) {
                 note!(projected, "sketch_entity");
             }
         }
-        for entity in &native.sketch_curve_identities {
+        for entity in ctx.admit_iter(&native.sketch_curve_identities, "scan F3D native sketch curve identities")? {
             note!(&entity.id, "sketch_curve");
             if let Some(projected) = entities_by_native.get(entity.id.as_str()) {
                 note!(projected, "sketch_entity");
             }
         }
-        for entity in &native.sketch_surfaces {
+        for entity in ctx.admit_iter(&native.sketch_surfaces, "scan F3D native sketch surfaces")? {
             note!(&entity.id, "sketch_surface");
         }
-        for entity in &native.sketch_curve_links {
+        for entity in ctx.admit_iter(&native.sketch_curve_links, "scan F3D native sketch curve links")? {
             note!(&entity.id, "sketch_curve_link");
         }
-        for entity in &native.persistent_design_links {
+        for entity in ctx.admit_iter(&native.persistent_design_links, "scan F3D native persistent design links")? {
             note!(&entity.id, "persistent_design_link");
         }
-        for entity in &native.persistent_subentity_tags {
+        for entity in ctx.admit_iter(&native.persistent_subentity_tags, "scan F3D native persistent subentity tags")? {
             note!(&entity.id, "persistent_subentity_tag");
         }
-        for entity in &native.act_entities {
+        for entity in ctx.admit_iter(&native.act_entities, "scan F3D native act entities")? {
             note!(entity.id(), "ACTEntity");
         }
-        for entity in &native.act_guids {
+        for entity in ctx.admit_iter(&native.act_guids, "scan F3D native act guids")? {
             note!(entity.id(), "ACTGuid");
         }
-        for entity in &native.act_registry_channels {
+        for entity in ctx.admit_iter(&native.act_registry_channels, "scan F3D native act registry channels")? {
             note!(entity.id(), "ACTRegistryChannel");
         }
-        for entity in &native.act_root_components {
+        for entity in ctx.admit_iter(&native.act_root_components, "scan F3D native act root components")? {
             note!(entity.id(), "ACTRootComponent");
         }
-        for entity in &native.act_table_references {
+        for entity in ctx.admit_iter(&native.act_table_references, "scan F3D native act table references")? {
             note!(entity.id(), "ACTTableReference");
         }
-        for history in &native.asm_histories {
+        for history in ctx.admit_iter(&native.asm_histories, "scan F3D native asm histories")? {
             note!(&history.id, "history_stream");
-            for state in &history.states {
+            for state in ctx.admit_iter(&history.states, "scan F3D annotation history states")? {
                 note!(&state.id, "delta_state");
-                for board in &state.bulletin_boards {
+                for board in ctx.admit_iter(&state.bulletin_boards, "scan F3D annotation bulletin boards")? {
                     note!(&board.id, "BulletinBoard");
-                    for change in &board.changes {
+                    for change in ctx.admit_iter(&board.changes, "scan F3D annotation entity changes")? {
                         note!(&change.id, "entity_change");
                     }
                 }
-                for record in &state.records {
+                for record in ctx.admit_iter(&state.records, "scan F3D annotation history records")? {
                     note!(&record.id, record.name());
                 }
             }
@@ -4838,7 +4838,7 @@ fn populate_annotations(
         .map(|index| annotation_stream(ctx, &scan.entries[index].name))
         .transpose()?;
     if let Some(stream) = appearance_stream {
-        for appearance in &ir.model.appearances {
+        for appearance in ctx.admit_iter(&ir.model.appearances, "scan F3D ir model appearances")? {
             annotations.note(
                 ctx,
                 appearance.id.as_str(),
@@ -4848,7 +4848,7 @@ fn populate_annotations(
             )?;
         }
     }
-    for binding in &ir.model.appearance_bindings {
+    for binding in ctx.admit_iter(&ir.model.appearance_bindings, "scan F3D ir model appearance bindings")? {
         annotations.note(
             ctx,
             binding.id.as_str(),
@@ -4860,7 +4860,7 @@ fn populate_annotations(
     if brep.is_none() {
         if let Some(fallback) = container::select_fallback_brep(ctx, scan)? {
             let stream = annotation_stream(ctx, &fallback.name)?;
-            for unknown in unknowns {
+            for unknown in ctx.admit_iter(unknowns, "scan F3D annotation unknown records")? {
                 annotations.note(
                     ctx,
                     unknown.id().as_str(),
@@ -5041,7 +5041,7 @@ fn extend_related_design_records(
         "index F3D scope record headers",
     )?;
     let mut scope_headers = Vec::new();
-    for scope in &native.design_parameter_scopes {
+    for scope in ctx.admit_iter(&native.design_parameter_scopes, "scan F3D native design parameter scopes")? {
         let Some(stream) = crate::ids::native_stream(&scope.id) else {
             continue;
         };
@@ -6241,7 +6241,7 @@ pub(crate) fn resolve_face_appearance_bindings(
     }
 
     let mut assignments_by_guid = std::collections::BTreeMap::new();
-    for assignment in face_assignments {
+    for assignment in ctx.admit_iter(face_assignments, "scan F3D face appearance assignments")? {
         ctx.admit_btree_entry(
             &assignments_by_guid,
             &assignment.face_guid.as_str(),
@@ -6279,7 +6279,7 @@ pub(crate) fn resolve_face_appearance_bindings(
     let mut faces_by_guid =
         std::collections::BTreeMap::<&str, Vec<&cadmpeg_ir::ids::FaceId>>::new();
     let mut guid_by_face = std::collections::BTreeMap::<&cadmpeg_ir::ids::FaceId, &str>::new();
-    for attribute in &ir.model.attributes {
+    for attribute in ctx.admit_iter(&ir.model.attributes, "scan F3D ir model attributes")? {
         let AttributeTarget::Face(face) = &attribute.target else {
             continue;
         };
@@ -6375,7 +6375,7 @@ pub(crate) fn resolve_face_appearance_bindings(
             assignment.visual_guid,
             None,
         )?;
-        for face in faces {
+        for face in ctx.admit_iter(faces, "scan F3D appearance assignment faces")? {
             if let Some(color) = assignment.color {
                 if let Some(index) = face_indices.get(face.as_str()).copied() {
                     let target = &mut ir.model.faces[index];
@@ -6467,7 +6467,7 @@ fn apply_appearance_base_colors(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Resu
     )?;
     let mut body_colors = std::collections::HashMap::new();
     let mut face_colors = std::collections::HashMap::new();
-    for binding in &ir.model.appearance_bindings {
+    for binding in ctx.admit_iter(&ir.model.appearance_bindings, "scan F3D ir model appearance bindings")? {
         let Some(color) = colors.get(&binding.appearance).copied() else {
             continue;
         };
