@@ -136,16 +136,10 @@ pub fn wrong_lookup<K: Ord + decode::cost::DecodeCost, V>(
     Ok(values.contains_key(key))
 }
 
-pub fn generic_write_char<W: std::fmt::Write>(
-    output: &mut W,
-    character: char,
-) -> std::fmt::Result {
+pub fn generic_write_char<W: std::fmt::Write>(output: &mut W, character: char) -> std::fmt::Result {
     output.write_char(character)
 }
 
-pub fn generic_write_str<W: std::fmt::Write>(
-    output: &mut W,
-    suffix: &str,
-) -> std::fmt::Result {
+pub fn generic_write_str<W: std::fmt::Write>(output: &mut W, suffix: &str) -> std::fmt::Result {
     output.write_str(suffix)
 }

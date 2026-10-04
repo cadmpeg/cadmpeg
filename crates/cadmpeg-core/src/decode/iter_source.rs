@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Closed collection sources with bounds available before the first visit.
+//! Closed traversal sources with bounds available before the first visit.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
@@ -9,11 +9,13 @@ mod sealed {
     pub trait Sealed {}
 }
 
-/// A core-owned collection whose complete traversal bound is known in advance.
+/// A core-owned source whose complete traversal bound is known in advance.
 /// Hash traversal includes vacant buckets; text traversal counts bytes.
 pub trait IterSource: sealed::Sealed {
-    /// Borrowed traversal without copying or allocating elements.
-    type Iter<'a>: Iterator where Self: 'a;
+    /// Traversal without allocating element storage.
+    type Iter<'a>: Iterator
+    where
+        Self: 'a;
 
     /// Returns the traversal work bound without visiting an element.
     fn visit_bound(&self) -> Result<u64, VisitBoundError>;
@@ -36,9 +38,7 @@ fn half_open_range_bound(start: u128, end: u128) -> Result<u64, VisitBoundError>
     if start >= end {
         return Ok(0);
     }
-    let count = end
-        .checked_sub(start)
-        .ok_or(VisitBoundError::ExceedsU64)?;
+    let count = end.checked_sub(start).ok_or(VisitBoundError::ExceedsU64)?;
     checked_u64_bound(count)
 }
 
@@ -52,18 +52,32 @@ fn inclusive_range_bound(start: u128, end: u128) -> Result<u64, VisitBoundError>
 
 impl<T> sealed::Sealed for [T] {}
 impl<T> IterSource for [T] {
-    type Iter<'a> = std::slice::Iter<'a, T> where T: 'a;
-    fn visit_bound(&self) -> Result<u64, VisitBoundError> { Ok(u64_from_index(self.len())) }
-    fn source_iter(&self) -> Self::Iter<'_> { self.iter() }
+    type Iter<'a>
+        = std::slice::Iter<'a, T>
+    where
+        T: 'a;
+    fn visit_bound(&self) -> Result<u64, VisitBoundError> {
+        Ok(u64_from_index(self.len()))
+    }
+    fn source_iter(&self) -> Self::Iter<'_> {
+        self.iter()
+    }
 }
 
 macro_rules! slice_source {
     ($type:ty) => {
         impl<T> sealed::Sealed for $type {}
         impl<T> IterSource for $type {
-            type Iter<'a> = std::slice::Iter<'a, T> where T: 'a;
-            fn visit_bound(&self) -> Result<u64, VisitBoundError> { Ok(u64_from_index(self.len())) }
-            fn source_iter(&self) -> Self::Iter<'_> { self.iter() }
+            type Iter<'a>
+                = std::slice::Iter<'a, T>
+            where
+                T: 'a;
+            fn visit_bound(&self) -> Result<u64, VisitBoundError> {
+                Ok(u64_from_index(self.len()))
+            }
+            fn source_iter(&self) -> Self::Iter<'_> {
+                self.iter()
+            }
         }
     };
 }
@@ -72,58 +86,111 @@ slice_source!(Box<[T]>);
 
 impl<T, const N: usize> sealed::Sealed for [T; N] {}
 impl<T, const N: usize> IterSource for [T; N] {
-    type Iter<'a> = std::slice::Iter<'a, T> where T: 'a;
-    fn visit_bound(&self) -> Result<u64, VisitBoundError> { Ok(u64_from_index(N)) }
-    fn source_iter(&self) -> Self::Iter<'_> { self.iter() }
+    type Iter<'a>
+        = std::slice::Iter<'a, T>
+    where
+        T: 'a;
+    fn visit_bound(&self) -> Result<u64, VisitBoundError> {
+        Ok(u64_from_index(N))
+    }
+    fn source_iter(&self) -> Self::Iter<'_> {
+        self.iter()
+    }
 }
 
 impl sealed::Sealed for str {}
 impl IterSource for str {
     type Iter<'a> = std::str::Chars<'a>;
-    fn visit_bound(&self) -> Result<u64, VisitBoundError> { Ok(u64_from_index(self.len())) }
-    fn source_iter(&self) -> Self::Iter<'_> { self.chars() }
+    fn visit_bound(&self) -> Result<u64, VisitBoundError> {
+        Ok(u64_from_index(self.len()))
+    }
+    fn source_iter(&self) -> Self::Iter<'_> {
+        self.chars()
+    }
 }
 
 impl<T> sealed::Sealed for VecDeque<T> {}
 impl<T> IterSource for VecDeque<T> {
-    type Iter<'a> = std::collections::vec_deque::Iter<'a, T> where T: 'a;
-    fn visit_bound(&self) -> Result<u64, VisitBoundError> { Ok(u64_from_index(self.len())) }
-    fn source_iter(&self) -> Self::Iter<'_> { self.iter() }
+    type Iter<'a>
+        = std::collections::vec_deque::Iter<'a, T>
+    where
+        T: 'a;
+    fn visit_bound(&self) -> Result<u64, VisitBoundError> {
+        Ok(u64_from_index(self.len()))
+    }
+    fn source_iter(&self) -> Self::Iter<'_> {
+        self.iter()
+    }
 }
 
 impl<K, V, S> sealed::Sealed for HashMap<K, V, S> {}
 impl<K, V, S> IterSource for HashMap<K, V, S> {
-    type Iter<'a> = std::collections::hash_map::Iter<'a, K, V> where K: 'a, V: 'a, S: 'a;
-    fn visit_bound(&self) -> Result<u64, VisitBoundError> { Ok(u64_from_index(self.capacity())) }
-    fn source_iter(&self) -> Self::Iter<'_> { self.iter() }
+    type Iter<'a>
+        = std::collections::hash_map::Iter<'a, K, V>
+    where
+        K: 'a,
+        V: 'a,
+        S: 'a;
+    fn visit_bound(&self) -> Result<u64, VisitBoundError> {
+        Ok(u64_from_index(self.capacity()))
+    }
+    fn source_iter(&self) -> Self::Iter<'_> {
+        self.iter()
+    }
 }
 
 impl<T, S> sealed::Sealed for HashSet<T, S> {}
 impl<T, S> IterSource for HashSet<T, S> {
-    type Iter<'a> = std::collections::hash_set::Iter<'a, T> where T: 'a, S: 'a;
-    fn visit_bound(&self) -> Result<u64, VisitBoundError> { Ok(u64_from_index(self.capacity())) }
-    fn source_iter(&self) -> Self::Iter<'_> { self.iter() }
+    type Iter<'a>
+        = std::collections::hash_set::Iter<'a, T>
+    where
+        T: 'a,
+        S: 'a;
+    fn visit_bound(&self) -> Result<u64, VisitBoundError> {
+        Ok(u64_from_index(self.capacity()))
+    }
+    fn source_iter(&self) -> Self::Iter<'_> {
+        self.iter()
+    }
 }
 
 impl<K, V> sealed::Sealed for BTreeMap<K, V> {}
 impl<K, V> IterSource for BTreeMap<K, V> {
-    type Iter<'a> = std::collections::btree_map::Iter<'a, K, V> where K: 'a, V: 'a;
-    fn visit_bound(&self) -> Result<u64, VisitBoundError> { Ok(u64_from_index(self.len())) }
-    fn source_iter(&self) -> Self::Iter<'_> { self.iter() }
+    type Iter<'a>
+        = std::collections::btree_map::Iter<'a, K, V>
+    where
+        K: 'a,
+        V: 'a;
+    fn visit_bound(&self) -> Result<u64, VisitBoundError> {
+        Ok(u64_from_index(self.len()))
+    }
+    fn source_iter(&self) -> Self::Iter<'_> {
+        self.iter()
+    }
 }
 
 impl<T> sealed::Sealed for BTreeSet<T> {}
 impl<T> IterSource for BTreeSet<T> {
-    type Iter<'a> = std::collections::btree_set::Iter<'a, T> where T: 'a;
-    fn visit_bound(&self) -> Result<u64, VisitBoundError> { Ok(u64_from_index(self.len())) }
-    fn source_iter(&self) -> Self::Iter<'_> { self.iter() }
+    type Iter<'a>
+        = std::collections::btree_set::Iter<'a, T>
+    where
+        T: 'a;
+    fn visit_bound(&self) -> Result<u64, VisitBoundError> {
+        Ok(u64_from_index(self.len()))
+    }
+    fn source_iter(&self) -> Self::Iter<'_> {
+        self.iter()
+    }
 }
 
 macro_rules! unsigned_range_source {
     ($type:ty) => {
         impl sealed::Sealed for std::ops::Range<$type> {}
         impl IterSource for std::ops::Range<$type> {
-            type Iter<'a> = std::ops::Range<$type> where Self: 'a;
+            type Iter<'a>
+                = std::ops::Range<$type>
+            where
+                Self: 'a;
 
             fn visit_bound(&self) -> Result<u64, VisitBoundError> {
                 half_open_range_bound(u128::from(self.start), u128::from(self.end))
@@ -136,7 +203,10 @@ macro_rules! unsigned_range_source {
 
         impl sealed::Sealed for std::ops::RangeInclusive<$type> {}
         impl IterSource for std::ops::RangeInclusive<$type> {
-            type Iter<'a> = std::ops::RangeInclusive<$type> where Self: 'a;
+            type Iter<'a>
+                = std::ops::RangeInclusive<$type>
+            where
+                Self: 'a;
 
             fn visit_bound(&self) -> Result<u64, VisitBoundError> {
                 if self.is_empty() {
@@ -160,7 +230,10 @@ unsigned_range_source!(u128);
 
 impl sealed::Sealed for std::ops::Range<usize> {}
 impl IterSource for std::ops::Range<usize> {
-    type Iter<'a> = std::ops::Range<usize> where Self: 'a;
+    type Iter<'a>
+        = std::ops::Range<usize>
+    where
+        Self: 'a;
 
     fn visit_bound(&self) -> Result<u64, VisitBoundError> {
         let start = u128::try_from(self.start).map_err(|_| VisitBoundError::ExceedsU64)?;
@@ -175,7 +248,10 @@ impl IterSource for std::ops::Range<usize> {
 
 impl sealed::Sealed for std::ops::RangeInclusive<usize> {}
 impl IterSource for std::ops::RangeInclusive<usize> {
-    type Iter<'a> = std::ops::RangeInclusive<usize> where Self: 'a;
+    type Iter<'a>
+        = std::ops::RangeInclusive<usize>
+    where
+        Self: 'a;
 
     fn visit_bound(&self) -> Result<u64, VisitBoundError> {
         if self.is_empty() {

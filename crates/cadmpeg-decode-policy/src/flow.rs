@@ -66,9 +66,10 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     .next()
                     .is_some_and(|pointee| self.owns_field(pointee, name))
             }
-            ty::Adt(owner, _) => owner.variants().iter().any(|variant| {
-                variant.fields.iter().any(|field| field.name == name)
-            }),
+            ty::Adt(owner, _) => owner
+                .variants()
+                .iter()
+                .any(|variant| variant.fields.iter().any(|field| field.name == name)),
             ty::Tuple(fields) => name
                 .as_str()
                 .parse::<usize>()
@@ -100,12 +101,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
             ExprKind::AddrOf(_, _, inner) | ExprKind::DropTemps(inner) => {
                 self.stable_index_key(inner)
             }
-            ExprKind::Lit(literal)
-                if matches!(literal.node, rustc_ast::LitKind::Int(_, _)) =>
-            {
-                self.constant_count(expression, &mut Vec::new())
-                    .map(|value| format!("constant:{value}"))
-            }
+            ExprKind::Lit(literal) if matches!(literal.node, rustc_ast::LitKind::Int(_, _)) => self
+                .constant_count(expression, &mut Vec::new())
+                .map(|value| format!("constant:{value}")),
             ExprKind::Path(ref path) => match self.typeck.qpath_res(path, expression.hir_id) {
                 Res::Local(id) => Some(format!("local:{id:?}")),
                 Res::Def(_, id) => Some(format!("definition:{id:?}")),
@@ -180,7 +178,10 @@ impl<'tcx> Analysis<'_, 'tcx> {
             ty::Char => true,
             ty::Adt(owner, arguments)
                 if types::standard(self.tcx, owner.did())
-                    && matches!(self.tcx.item_name(owner.did()).as_str(), "Option" | "Result") =>
+                    && matches!(
+                        self.tcx.item_name(owner.did()).as_str(),
+                        "Option" | "Result"
+                    ) =>
             {
                 arguments
                     .types()
@@ -191,11 +192,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         }
     }
 
-    fn char_key(
-        &self,
-        expression: &'tcx Expr<'tcx>,
-        seen: &mut Vec<HirId>,
-    ) -> Option<String> {
+    fn char_key(&self, expression: &'tcx Expr<'tcx>, seen: &mut Vec<HirId>) -> Option<String> {
         if seen.contains(&expression.hir_id) {
             return None;
         }
@@ -228,9 +225,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
             ExprKind::Field(base, field) => {
                 if let Some(initializer) = self.initializer(base) {
                     if let ExprKind::Struct(_, fields, _) = initializer.kind {
-                        if let Some(value) = fields
-                            .iter()
-                            .find(|value| value.ident.name == field.name)
+                        if let Some(value) =
+                            fields.iter().find(|value| value.ident.name == field.name)
                         {
                             return self.char_key(value.expr, seen);
                         }
@@ -253,13 +249,23 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if let Some((definition, operands)) = self.call(expression) {
             let name = self.tcx.item_name(definition);
             if types::standard(self.tcx, definition)
-                && matches!(name.as_str(), "unwrap" | "expect" | "map_err" | "ok_or" | "ok_or_else")
-                && operands.first().is_some_and(|operand| self.char_result(self.expr_ty(operand)))
+                && matches!(
+                    name.as_str(),
+                    "unwrap" | "expect" | "map_err" | "ok_or" | "ok_or_else"
+                )
+                && operands
+                    .first()
+                    .is_some_and(|operand| self.char_result(self.expr_ty(operand)))
             {
-                return operands.first().and_then(|value| self.char_key(value, seen));
+                return operands
+                    .first()
+                    .and_then(|value| self.char_key(value, seen));
             }
             if self.char_result(self.expr_ty(expression))
-                && matches!(name.as_str(), "from_u32" | "try_from" | "try_into" | "from" | "into")
+                && matches!(
+                    name.as_str(),
+                    "from_u32" | "try_from" | "try_into" | "from" | "into"
+                )
             {
                 return Some(format!("char-conversion:{:?}", expression.hir_id));
             }
@@ -272,10 +278,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         None
     }
 
-    pub(crate) fn utf8_char_term(
-        &self,
-        expression: &'tcx Expr<'tcx>,
-    ) -> Option<ExtentTerm> {
+    pub(crate) fn utf8_char_term(&self, expression: &'tcx Expr<'tcx>) -> Option<ExtentTerm> {
         let key = self.char_key(expression, &mut Vec::new())?;
         Some(ExtentTerm {
             factors: vec![format!("utf8_len:{key}")],
