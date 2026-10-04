@@ -35,19 +35,36 @@ pub(crate) fn copy_summary_entries(
     entries: &[ContainerEntry],
 ) -> Result<Vec<ContainerEntry>, CodecError> {
     let mut copied = ctx.collection_vec(entries.len(), "copy F3D summary entries")?;
-    for entry in entries {
+    for entry in ctx.admit_iter(entries, "copy F3D summary entries")? {
         let mut attributes = BTreeMap::new();
-        for (key, value) in &entry.attributes {
-            ctx.admit_btree_entry(&attributes, key, "copy F3D summary attributes")?;
-            attributes.insert(
+        for (key, value) in ctx.admit_iter(&entry.attributes, "copy F3D summary attributes")? {
+            ctx.insert_btree_map(
+                &mut attributes,
                 ctx.copy_retained_text(key, "copy F3D summary attribute key")?,
                 ctx.copy_retained_text(value, "copy F3D summary attribute value")?,
-            );
+                "copy F3D summary attributes",
+            )
+            .map(|_| ())?;
         }
         copied.push(ContainerEntry {
             name: ctx.copy_retained_text(&entry.name, "copy F3D summary entry name")?,
             role: entry.role,
-            storage: entry.storage.clone(),
+            storage: match &entry.storage {
+                EntryStorage::Directory => EntryStorage::Directory,
+                EntryStorage::Verbatim { label, size } => EntryStorage::Verbatim {
+                    label: *label,
+                    size: *size,
+                },
+                EntryStorage::Compressed {
+                    method,
+                    stored,
+                    expanded,
+                } => EntryStorage::Compressed {
+                    method: *method,
+                    stored: *stored,
+                    expanded: *expanded,
+                },
+            },
             attributes,
         });
     }
@@ -108,48 +125,58 @@ pub(crate) fn read_entry_bounded(
 }
 
 /// Classify an entry by its name using the spec's naming families ([§1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#1-container-layer), [§6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/asm.md#6-geometry-carriers)).
-pub(crate) fn classify(name: &str) -> ContainerRole {
+pub(crate) fn classify(
+    ctx: &DecodeContext<'_>,
+    name: &str,
+) -> Result<ContainerRole, CodecError> {
     if name.ends_with('/') {
-        return ContainerRole::Directory;
+        return Ok(ContainerRole::Directory);
     }
     let base = name.rsplit('/').next().unwrap_or(name);
-    if std::path::Path::new(name)
-        .extension()
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("smbh"))
-    {
-        ContainerRole::BrepSmbh
-    } else if std::path::Path::new(name)
-        .extension()
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("smb"))
-    {
-        ContainerRole::BrepSmb
-    } else if std::path::Path::new(name)
-        .extension()
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("sat") || ext.eq_ignore_ascii_case("smt"))
-    {
-        ContainerRole::BrepText
-    } else if name.ends_with(".protein") {
-        ContainerRole::ProteinAssets
+    let extension = match std::path::Path::new(name).extension() {
+        Some(extension) => ctx
+            .validate_utf8(
+                extension.as_encoded_bytes(),
+                "validate F3D entry extension",
+            )?
+            .ok(),
+        None => None,
+    };
+    if let Some(extension) = extension {
+        if ctx.eq_ignore_ascii_case(extension, "smbh", "classify F3D entry extension")? {
+            return Ok(ContainerRole::BrepSmbh);
+        }
+        if ctx.eq_ignore_ascii_case(extension, "smb", "classify F3D entry extension")? {
+            return Ok(ContainerRole::BrepSmb);
+        }
+        if ctx.eq_ignore_ascii_case(extension, "sat", "classify F3D entry extension")?
+            || ctx.eq_ignore_ascii_case(extension, "smt", "classify F3D entry extension")?
+        {
+            return Ok(ContainerRole::BrepText);
+        }
+    }
+    if name.ends_with(".protein") {
+        Ok(ContainerRole::ProteinAssets)
     } else if name.ends_with(".paramesh") {
-        ContainerRole::Paramesh
+        Ok(ContainerRole::Paramesh)
     } else if name.ends_with(".dsgcfg") || name.ends_with(".dsgcfgrule") {
-        ContainerRole::DesignConfig
+        Ok(ContainerRole::DesignConfig)
     } else if base == "Manifest.dat" {
-        ContainerRole::Manifest
+        Ok(ContainerRole::Manifest)
     } else if base == "MetaStream.dat" {
-        ContainerRole::Metastream
+        Ok(ContainerRole::Metastream)
     } else if base == "BulkStream.dat" {
-        ContainerRole::Bulkstream
+        Ok(ContainerRole::Bulkstream)
     } else if base == "Properties.dat" {
-        ContainerRole::Properties
-    } else if name.contains("Previews/") {
-        ContainerRole::Preview
-    } else if name.contains("Images.BlobParts") {
-        ContainerRole::Image
-    } else if name.contains("OGS.BlobFolder/") {
-        ContainerRole::OgsCache
+        Ok(ContainerRole::Properties)
+    } else if ctx.contains_text(name, "Previews/", "classify F3D entry path")? {
+        Ok(ContainerRole::Preview)
+    } else if ctx.contains_text(name, "Images.BlobParts", "classify F3D entry path")? {
+        Ok(ContainerRole::Image)
+    } else if ctx.contains_text(name, "OGS.BlobFolder/", "classify F3D entry path")? {
+        Ok(ContainerRole::OgsCache)
     } else {
-        ContainerRole::Other
+        Ok(ContainerRole::Other)
     }
 }
 
@@ -298,15 +325,29 @@ pub(crate) enum TextBrepFraming {
 
 impl<'a> ContainerScan<'a> {
     /// Returns an entry payload retained during the single archive scan.
-    pub(crate) fn entry_bytes(&self, name: &str) -> Result<&'a [u8], CodecError> {
-        self.entry_view(name)
+    pub(crate) fn entry_bytes(
+        &self,
+        ctx: &DecodeContext<'_>,
+        name: &str,
+    ) -> Result<&'a [u8], CodecError> {
+        self.entry_view(ctx, name)?
             .map(View::window)
             .ok_or_else(|| CodecError::malformed(format_args!("entry {name} not found")))
     }
 
     /// Returns an entry's payload view.
-    pub(crate) fn entry_view(&self, name: &str) -> Option<View<'a>> {
-        self.inflated_entries.get(name).copied()
+    pub(crate) fn entry_view(
+        &self,
+        ctx: &DecodeContext<'_>,
+        name: &str,
+    ) -> Result<Option<View<'a>>, CodecError> {
+        Ok(ctx
+            .get_btree_map(
+                &self.inflated_entries,
+                name,
+                "look up F3D entry payload",
+            )?
+            .copied())
     }
 
     /// The first entry, in entry order, whose native scope key is `scope` and
@@ -314,14 +355,25 @@ impl<'a> ContainerScan<'a> {
     /// `find` over `entries` with both predicates.
     pub(crate) fn design_stream_entry_for_scope(
         &self,
+        ctx: &DecodeContext<'_>,
         expected_role: ContainerRole,
         scope: &str,
-    ) -> Option<&ContainerEntry> {
-        self.scope_entry_indices
-            .get(scope)?
-            .iter()
-            .filter_map(|index| self.entries.get(*index))
-            .find(|entry| self.is_design_stream(entry, expected_role))
+    ) -> Result<Option<&ContainerEntry>, CodecError> {
+        let Some(indices) = ctx.get_hash_map(
+            &self.scope_entry_indices,
+            scope,
+            "find F3D entries by native scope",
+        )? else {
+            return Ok(None);
+        };
+        for index in ctx.admit_iter(indices, "find F3D Design stream by scope")? {
+            if let Some(entry) = self.entries.get(*index) {
+                if self.is_design_stream(ctx, entry, expected_role)? {
+                    return Ok(Some(entry));
+                }
+            }
+        }
+        Ok(None)
     }
 
     /// The parse of one `MetaStream` entry, computed at most once per scan.
@@ -333,7 +385,7 @@ impl<'a> ContainerScan<'a> {
         if let Some(cached) = self.metastream_cache.borrow().get(name) {
             return Ok(std::rc::Rc::clone(cached));
         }
-        let parsed = crate::metastream::parse(ctx, self.entry_bytes(name)?, name)?;
+        let parsed = crate::metastream::parse(ctx, self.entry_bytes(ctx, name)?, name)?;
         let mut cache = self.metastream_cache.borrow_mut();
         ctx.reserve_map(&mut cache, 1, "cache F3D MetaStream")?;
         let key = ctx.copy_retained_text(name, "cache F3D MetaStream name")?;
@@ -355,60 +407,107 @@ impl<'a> ContainerScan<'a> {
     }
 
     /// Whether `name` is inside the manifest-selected Design asset folder.
-    pub(crate) fn belongs_to_design_asset(&self, name: &str) -> bool {
-        self.design_asset_folder().is_some_and(|folder| {
-            name.strip_prefix(folder)
-                .is_some_and(|suffix| suffix.starts_with('/'))
-        })
+    pub(crate) fn belongs_to_design_asset(
+        &self,
+        ctx: &DecodeContext<'_>,
+        name: &str,
+    ) -> Result<bool, CodecError> {
+        let Some(folder) = self.design_asset_folder() else {
+            return Ok(false);
+        };
+        let Some(suffix) = ctx.strip_prefix(name, folder, "match F3D Design asset path")? else {
+            return Ok(false);
+        };
+        Ok(suffix.starts_with('/'))
     }
 
     /// Whether `entry` has `expected_role` inside the manifest-selected
     /// Design asset.
     pub(crate) fn is_design_asset_entry(
         &self,
+        ctx: &DecodeContext<'_>,
         entry: &ContainerEntry,
         expected_role: ContainerRole,
-    ) -> bool {
-        entry.role == expected_role && self.belongs_to_design_asset(&entry.name)
+    ) -> Result<bool, CodecError> {
+        if entry.role != expected_role {
+            return Ok(false);
+        }
+        self.belongs_to_design_asset(ctx, &entry.name)
     }
 
     /// Whether `entry` is a stream of `expected_role` in a Design segment of
     /// the manifest-selected Design asset.
     pub(crate) fn is_design_stream(
         &self,
+        ctx: &DecodeContext<'_>,
         entry: &ContainerEntry,
         expected_role: ContainerRole,
-    ) -> bool {
-        if !self.is_design_asset_entry(entry, expected_role) {
-            return false;
+    ) -> Result<bool, CodecError> {
+        if !self.is_design_asset_entry(ctx, entry, expected_role)? {
+            return Ok(false);
         }
-        self.asset_segment(&entry.name).is_some_and(|segment| {
-            segment == "Design1" || is_numbered_segment(segment, "FusionDesignSegmentType")
-        })
+        let Some(segment) = self.asset_segment(ctx, &entry.name)? else {
+            return Ok(false);
+        };
+        if segment == "Design1" {
+            return Ok(true);
+        }
+        is_numbered_segment(ctx, segment, "FusionDesignSegmentType")
     }
 
     /// Whether `entry` is a `BulkStream.dat` in an ACT segment of the
     /// manifest-selected Design asset.
-    pub(crate) fn is_act_stream(&self, entry: &ContainerEntry) -> bool {
-        self.is_design_asset_entry(entry, ContainerRole::Bulkstream)
-            && self
-                .asset_segment(&entry.name)
-                .is_some_and(|segment| is_numbered_segment(segment, "FusionACTSegmentType"))
+    pub(crate) fn is_act_stream(
+        &self,
+        ctx: &DecodeContext<'_>,
+        entry: &ContainerEntry,
+    ) -> Result<bool, CodecError> {
+        if !self.is_design_asset_entry(ctx, entry, ContainerRole::Bulkstream)? {
+            return Ok(false);
+        }
+        let Some(segment) = self.asset_segment(ctx, &entry.name)? else {
+            return Ok(false);
+        };
+        is_numbered_segment(ctx, segment, "FusionACTSegmentType")
     }
 
-    fn asset_segment<'n>(&self, name: &'n str) -> Option<&'n str> {
-        let relative = self
-            .design_asset_folder()
-            .and_then(|folder| name.strip_prefix(folder))?
-            .strip_prefix('/')?;
-        relative.split_once('/').map(|(segment, _)| segment)
+    fn asset_segment<'n>(
+        &self,
+        ctx: &DecodeContext<'_>,
+        name: &'n str,
+    ) -> Result<Option<&'n str>, CodecError> {
+        let Some(folder) = self.design_asset_folder() else {
+            return Ok(None);
+        };
+        let Some(relative) = ctx.strip_prefix(name, folder, "locate F3D asset segment")? else {
+            return Ok(None);
+        };
+        let Some(relative) = ctx.strip_prefix(relative, "/", "locate F3D asset segment")? else {
+            return Ok(None);
+        };
+        Ok(ctx
+            .split_once(relative, "/", "locate F3D asset segment")?
+            .map(|(segment, _)| segment))
     }
 }
 
-fn is_numbered_segment(segment: &str, prefix: &str) -> bool {
-    segment.strip_prefix(prefix).is_some_and(|ordinal| {
-        !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit())
-    })
+fn is_numbered_segment(
+    ctx: &DecodeContext<'_>,
+    segment: &str,
+    prefix: &str,
+) -> Result<bool, CodecError> {
+    let Some(ordinal) = ctx.strip_prefix(segment, prefix, "match F3D numbered segment")? else {
+        return Ok(false);
+    };
+    if ordinal.is_empty() {
+        return Ok(false);
+    }
+    Ok(ctx
+        .admit_iter(
+            ordinal.as_bytes(),
+            "validate F3D numbered segment digits",
+        )?
+        .all(|byte| byte.is_ascii_digit()))
 }
 
 /// Read and classify every entry, decoding ASM headers for BREP streams.
@@ -426,9 +525,9 @@ pub(crate) fn scan<'a>(
     let mut breps = Vec::new();
     let mut inflated_entries = BTreeMap::new();
 
-    for file in archive.entries() {
+    for file in ctx.admit_iter(archive.entries(), "scan F3D archive entries")? {
         let name = ctx.copy_retained_text(&file.name, "retain F3D entry name")?;
-        let role = classify(&name);
+        let role = classify(ctx, &name)?;
         let compression = file.compression;
         let compressed_size = file.compressed_size;
         let uncompressed_size = file.uncompressed_size;
@@ -461,7 +560,7 @@ pub(crate) fn scan<'a>(
             ctx.insert_btree_map(
                 &mut attributes,
                 "asm_magic".to_owned(),
-                asm_magic_label(buf),
+                asm_magic_label(ctx, buf)?,
                 "index F3D container attributes",
             )
             .map(|_| ())?;
@@ -594,7 +693,7 @@ pub(crate) fn scan<'a>(
             ctx.insert_btree_map(
                 &mut attributes,
                 "sha256".to_owned(),
-                sha.as_str().to_owned(),
+                ctx.copy_retained_text(sha.as_str(), "retain F3D SHA-256 attribute")?,
                 "index F3D container attributes",
             )
             .map(|_| ())?;
@@ -617,7 +716,10 @@ pub(crate) fn scan<'a>(
                 ctx.insert_btree_map(
                     &mut attributes,
                     "storage_declaration".to_owned(),
-                    format!("{message}: {compressed_size}/{uncompressed_size}"),
+                    ctx.format_retained(
+                        format_args!("{message}: {compressed_size}/{uncompressed_size}"),
+                        "retain F3D storage declaration",
+                    )?,
                     "index F3D container attributes",
                 )
                 .map(|_| ())?;
@@ -649,11 +751,21 @@ pub(crate) fn scan<'a>(
     let kind = if let Some(top_level_manifest) = inflated_entries.get("Manifest.dat") {
         let top_level_manifest = manifest::parse_top_level(ctx, top_level_manifest.window())?;
         let matched = F3dDialect::classify_document(ctx, top_level_manifest.declared_version())?;
+        let available_paths = ctx
+            .admit_iter(&inflated_entries, "scan F3D manifest entry paths")?
+            .map(|(name, _)| name.as_str());
         let design_asset_folder = manifest::resolve_design_folder(
             ctx,
             &top_level_manifest,
-            inflated_entries.keys().map(String::as_str),
-            |name| inflated_entries.get(name).map(|view| view.window()),
+            available_paths,
+            |name| {
+                ctx.get_btree_map(
+                    &inflated_entries,
+                    name,
+                    "look up F3D asset manifest entry",
+                )
+                .map(|view| view.map(|view| view.window()))
+            },
         )?;
         F3dContainerKind::Document {
             design_asset_folder,
@@ -673,7 +785,7 @@ pub(crate) fn scan<'a>(
     };
 
     let mut scope_entry_indices = std::collections::HashMap::<String, Vec<usize>>::new();
-    for (index, entry) in entries.iter().enumerate() {
+    for (index, entry) in ctx.admit_iter(&entries, "index F3D native entry scopes")?.enumerate() {
         let scope = crate::ids::native_scope_charged(ctx, &entry.name)?;
         ctx.push_hash_group(
             &mut scope_entry_indices,
@@ -694,12 +806,13 @@ pub(crate) fn scan<'a>(
         scope_entry_indices,
         metastream_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
     };
-    for index in 0..scan.entries.len() {
-        let entry = &scan.entries[index];
-        if entry.role != ContainerRole::BrepText || !scan.belongs_to_design_asset(&entry.name) {
+    for entry in ctx.admit_iter(&scan.entries, "frame F3D text BREP entries")? {
+        if entry.role != ContainerRole::BrepText
+            || !scan.belongs_to_design_asset(ctx, &entry.name)?
+        {
             continue;
         }
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let framing = match cadmpeg_asm::sat::parse(ctx, bytes) {
             Ok(stream) => TextBrepFraming::Parsed(stream),
             Err(cadmpeg_asm::stream_error::StreamFailure::Parse(error)) => {
@@ -712,15 +825,19 @@ pub(crate) fn scan<'a>(
                 TextBrepFraming::UnsupportedLength(error)
             }
             Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => {
-                return Err(error.into())
+                return Err(CodecError::ResourceLimit(error))
             }
             Err(cadmpeg_asm::stream_error::StreamFailure::Operation(error)) => {
                 return Err(error.into_codec_error())
             }
         };
-        ctx.reserve_map(&mut scan.text_breps, 1, "retain F3D text B-rep framing")?;
         let name = ctx.copy_retained_text(&entry.name, "retain F3D text B-rep name")?;
-        scan.text_breps.insert(name, framing);
+        ctx.insert_hash_map(
+            &mut scan.text_breps,
+            name,
+            framing,
+            "retain F3D text B-rep framing",
+        )?;
     }
     Ok(scan)
 }
@@ -772,7 +889,19 @@ pub(crate) fn summary_notes(
             "retain F3D summary note",
         )?;
     }
-    let design_brep_count = design_breps(scan).count();
+    let design_brep_count = design_breps(ctx, scan)?.try_fold(
+        0usize,
+        |count, brep| {
+            brep?;
+            count.checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "count F3D Design BREP facts",
+                    u64::MAX - 1,
+                    u64::MAX,
+                )
+            })
+        },
+    )?;
     ctx.push_formatted_retained(
         &mut notes,
         format_args!(
@@ -792,7 +921,19 @@ pub(crate) fn summary_notes(
             "retain F3D summary note",
         )?;
     }
-    let history_brep_count = history_breps(scan).count();
+    let history_brep_count = history_breps(ctx, scan)?.try_fold(
+        0usize,
+        |count, brep| {
+            brep?;
+            count.checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "count F3D history BREP facts",
+                    u64::MAX - 1,
+                    u64::MAX,
+                )
+            })
+        },
+    )?;
     match history_brep_count {
         0 => {
             if design_brep_count != 0 {
@@ -805,7 +946,7 @@ pub(crate) fn summary_notes(
             }
         }
         1 => {
-            if let Some(history) = history_breps(scan).next() {
+            if let Some(history) = history_breps(ctx, scan)?.next().transpose()? {
                 ctx.push_formatted_retained(
                     &mut notes,
                     format_args!(
@@ -847,59 +988,94 @@ fn root_f3d_members<'a>(
     entries: &'a BTreeMap<String, View<'_>>,
 ) -> Result<Vec<&'a str>, CodecError> {
     let mut members = Vec::new();
-    for name in entries.keys().map(String::as_str) {
-        if !name.contains('/') && is_f3d_name(name) {
-            ctx.push_vec(&mut members, name, "collect F3Z document members")?;
+    for (name, _) in ctx.admit_iter(entries, "scan F3D root member names")? {
+        if !ctx.contains_text(name, "/", "classify F3D root member path")?
+            && is_f3d_name(ctx, name)?
+        {
+            ctx.push_vec(&mut members, name.as_str(), "collect F3Z document members")?;
         }
     }
     Ok(members)
 }
 
 /// Whether an archive path names an F3D document by extension.
-pub(crate) fn is_f3d_name(name: &str) -> bool {
-    std::path::Path::new(name)
-        .extension()
-        .is_some_and(|extension| extension.eq_ignore_ascii_case("f3d"))
+pub(crate) fn is_f3d_name(
+    ctx: &DecodeContext<'_>,
+    name: &str,
+) -> Result<bool, CodecError> {
+    let Some(extension) = std::path::Path::new(name).extension() else {
+        return Ok(false);
+    };
+    let extension = match ctx.validate_utf8(
+        extension.as_encoded_bytes(),
+        "validate F3D document extension",
+    )? {
+        Ok(extension) => extension,
+        Err(_) => return Ok(false),
+    };
+    ctx.eq_ignore_ascii_case(extension, "f3d", "classify F3D document extension")
 }
 
 /// Iterate over every BREP whose parsed header sets the history-partition bit.
 /// The extension is not used as a semantic substitute for the header flag.
 pub(crate) fn history_breps<'s>(
+    ctx: &'s DecodeContext<'_>,
     scan: &'s ContainerScan<'_>,
-) -> impl Iterator<Item = &'s BrepFacts> + 's {
-    design_breps(scan).filter(|brep| {
-        brep.kernel
+) -> Result<impl Iterator<Item = Result<&'s BrepFacts, CodecError>> + 's, CodecError> {
+    Ok(design_breps(ctx, scan)?.filter_map(|brep| match brep {
+        Err(error) => Some(Err(error)),
+        Ok(brep) => brep
+            .kernel
             .as_ref()
             .and_then(KernelFraming::asm_header)
             .is_some_and(|header| header.metadata.has_history_partition())
-    })
+            .then_some(Ok(brep)),
+    }))
 }
 
 /// Return the history-bearing BREP only when the header relation is unique.
-pub(crate) fn select_history_brep<'s>(scan: &'s ContainerScan<'_>) -> Option<&'s BrepFacts> {
-    let mut candidates = history_breps(scan);
-    let candidate = candidates.next()?;
-    candidates.next().is_none().then_some(candidate)
+pub(crate) fn select_history_brep<'s>(
+    ctx: &'s DecodeContext<'_>,
+    scan: &'s ContainerScan<'_>,
+) -> Result<Option<&'s BrepFacts>, CodecError> {
+    let mut candidates = history_breps(ctx, scan)?;
+    let Some(candidate) = candidates.next().transpose()? else {
+        return Ok(None);
+    };
+    Ok(candidates.next().transpose()?.is_none().then_some(candidate))
 }
 
 /// Return one unambiguous BREP for compatibility metadata and reporting.
-pub(crate) fn select_fallback_brep<'s>(scan: &'s ContainerScan<'_>) -> Option<&'s BrepFacts> {
-    if let Some(history) = select_history_brep(scan) {
-        return Some(history);
+pub(crate) fn select_fallback_brep<'s>(
+    ctx: &'s DecodeContext<'_>,
+    scan: &'s ContainerScan<'_>,
+) -> Result<Option<&'s BrepFacts>, CodecError> {
+    if let Some(history) = select_history_brep(ctx, scan)? {
+        return Ok(Some(history));
     }
-    let mut candidates = design_breps(scan);
-    let candidate = candidates.next()?;
-    candidates.next().is_none().then_some(candidate)
+    let mut candidates = design_breps(ctx, scan)?;
+    let Some(candidate) = candidates.next().transpose()? else {
+        return Ok(None);
+    };
+    Ok(candidates.next().transpose()?.is_none().then_some(candidate))
 }
 
 /// Iterate over binary ASM BREP entries inside the manifest-selected Design
 /// asset.
-pub(crate) fn design_breps<'s>(
+pub(crate) fn design_breps<'s, 'c>(
+    ctx: &'c DecodeContext<'_>,
     scan: &'s ContainerScan<'_>,
-) -> impl Iterator<Item = &'s BrepFacts> + 's {
-    scan.breps
-        .iter()
-        .filter(|brep| scan.belongs_to_design_asset(&brep.name))
+) -> Result<impl Iterator<Item = Result<&'s BrepFacts, CodecError>> + 'c, CodecError>
+where
+    's: 'c,
+{
+    Ok(ctx
+        .admit_iter(&scan.breps, "scan F3D Design BREP facts")?
+        .filter_map(move |brep| match scan.belongs_to_design_asset(ctx, &brep.name) {
+            Ok(true) => Some(Ok(brep)),
+            Ok(false) => None,
+            Err(error) => Some(Err(error)),
+        }))
 }
 
 /// Names of the text-encoded ASM BREP entries, in archive order.
@@ -909,23 +1085,30 @@ pub(crate) fn design_breps<'s>(
 /// independent of geometry transfer: a text-only document has a carrier even
 /// when its transfer fails.
 pub(crate) fn text_brep_names<'s>(
+    ctx: &'s DecodeContext<'_>,
     scan: &'s ContainerScan<'_>,
-) -> impl Iterator<Item = &'s str> + 's {
-    scan.entries
-        .iter()
-        .filter(|entry| {
-            entry.role == ContainerRole::BrepText && scan.belongs_to_design_asset(&entry.name)
-        })
-        .map(|entry| entry.name.as_str())
+) -> Result<impl Iterator<Item = Result<&'s str, CodecError>> + 's, CodecError> {
+    Ok(ctx
+        .admit_iter(&scan.entries, "scan F3D text BREP names")?
+        .filter_map(move |entry| {
+            if entry.role != ContainerRole::BrepText {
+                return None;
+            }
+            match scan.belongs_to_design_asset(ctx, &entry.name) {
+                Ok(true) => Some(Ok(entry.name.as_str())),
+                Ok(false) => None,
+                Err(error) => Some(Err(error)),
+            }
+        }))
 }
 
-fn asm_magic_label(bytes: &[u8]) -> String {
+fn asm_magic_label(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<String, CodecError> {
     if asm_header::has_asm_magic(bytes) {
         // Both magics are the 15-byte prefix plus the width digit; byte 15 is
         // save-format-version data.
-        String::from_utf8_lossy(&bytes[..15]).to_string()
+        ctx.copy_retained_lossy_utf8(&bytes[..15], "retain F3D ASM magic label")
     } else {
-        "absent".to_string()
+        Ok("absent".to_string())
     }
 }
 
@@ -1112,9 +1295,12 @@ mod tests {
 
     #[test]
     fn f3d_name_requires_a_nonempty_stem_and_case_insensitive_extension() {
-        assert!(is_f3d_name("part.f3d"));
-        assert!(is_f3d_name("folder/part.F3D"));
-        assert!(!is_f3d_name(".f3d"));
-        assert!(!is_f3d_name("part.f3d.tmp"));
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("test context");
+        assert!(is_f3d_name(&ctx, "part.f3d").expect("valid name"));
+        assert!(is_f3d_name(&ctx, "folder/part.F3D").expect("valid name"));
+        assert!(!is_f3d_name(&ctx, ".f3d").expect("valid name"));
+        assert!(!is_f3d_name(&ctx, "part.f3d.tmp").expect("valid name"));
     }
 }

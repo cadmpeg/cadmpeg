@@ -232,11 +232,11 @@ pub(crate) fn decode_surface_trim_operations(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) = scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let records = cached_owned_record_offsets(ctx, &mut record_offsets, stream, bytes)?;
         let Some(mut operation) = exact_surface_trim_operation(ctx, bytes, records, scope)? else {
             continue;

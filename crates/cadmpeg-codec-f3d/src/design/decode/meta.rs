@@ -47,14 +47,21 @@ struct MetaStreamEntry<'a> {
 }
 
 impl<'a> MetaStreamEntry<'a> {
-    fn from_design_entry(scan: &ContainerScan, entry: &'a ContainerEntry) -> Option<Self> {
-        if !scan.is_design_stream(entry, ContainerRole::Metastream) {
-            return None;
+    fn from_design_entry(
+        ctx: &DecodeContext<'_>,
+        scan: &ContainerScan,
+        entry: &'a ContainerEntry,
+    ) -> Result<Option<Self>, CodecError> {
+        if !scan.is_design_stream(ctx, entry, ContainerRole::Metastream)? {
+            return Ok(None);
         }
-        Some(Self {
+        let Some(prefix) = entry.name.strip_suffix("MetaStream.dat") else {
+            return Ok(None);
+        };
+        Ok(Some(Self {
             entry,
-            prefix: entry.name.strip_suffix("MetaStream.dat")?,
-        })
+            prefix,
+        }))
     }
 }
 
@@ -89,11 +96,10 @@ pub(crate) fn decode_types(
     scan: &ContainerScan,
 ) -> Result<Vec<SegmentType>, CodecError> {
     let mut out = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter_map(|entry| MetaStreamEntry::from_design_entry(scan, entry))
-    {
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D Design MetaStreams")? {
+        let Some(entry) = MetaStreamEntry::from_design_entry(ctx, scan, entry)? else {
+            continue;
+        };
         let meta = scan.parsed_metastream(ctx, &entry.entry.name)?;
         for design_type in &meta.types {
             ctx.reserve_vec(&mut out, 1, "f3d design type table")?;
@@ -207,11 +213,10 @@ pub(crate) fn decode_component_naming_spaces(
     scan: &ContainerScan,
 ) -> Result<Vec<DesignComponentNamingSpace>, CodecError> {
     let mut out = Vec::new();
-    for meta_entry in scan
-        .entries
-        .iter()
-        .filter_map(|entry| MetaStreamEntry::from_design_entry(scan, entry))
-    {
+    for meta_entry in ctx.admit_iter(&scan.entries, "scan F3D Design MetaStreams")? {
+        let Some(meta_entry) = MetaStreamEntry::from_design_entry(ctx, scan, meta_entry)? else {
+            continue;
+        };
         let meta = scan.parsed_metastream(ctx, &meta_entry.entry.name)?;
         let mut component_entities = HashSet::new();
         for design_type in meta.types.iter().filter(|design_type| {
@@ -236,7 +241,7 @@ pub(crate) fn decode_component_naming_spaces(
             continue;
         }
         let bulk_name = paired_bulk_entry_name(ctx, scan, meta_entry.prefix)?;
-        let bytes = scan.entry_bytes(bulk_name)?;
+        let bytes = scan.entry_bytes(ctx, bulk_name)?;
         let mut by_component = HashMap::<u64, DesignComponentNamingSpace>::new();
         for reserved_len in COMPONENT_UUID_RESERVED_LENGTHS {
             let prefix_len = 1 + 8 + reserved_len;
@@ -823,14 +828,13 @@ pub(crate) fn decode_feature_timelines(
     scan: &ContainerScan,
 ) -> Result<Vec<DesignFeatureTimeline>, CodecError> {
     let mut out = Vec::new();
-    for meta_entry in scan
-        .entries
-        .iter()
-        .filter_map(|entry| MetaStreamEntry::from_design_entry(scan, entry))
-    {
+    for meta_entry in ctx.admit_iter(&scan.entries, "scan F3D Design MetaStreams")? {
+        let Some(meta_entry) = MetaStreamEntry::from_design_entry(ctx, scan, meta_entry)? else {
+            continue;
+        };
         let meta = crate::metastream::parse(
             ctx,
-            scan.entry_bytes(&meta_entry.entry.name)?,
+            scan.entry_bytes(ctx, &meta_entry.entry.name)?,
             &meta_entry.entry.name,
         )?;
         let is_timeline_type = |design_type: &SegmentTypeData| {
@@ -872,7 +876,7 @@ pub(crate) fn decode_feature_timelines(
             ));
         }
         let bulk_name = paired_bulk_entry_name(ctx, scan, meta_entry.prefix)?;
-        let bytes = scan.entry_bytes(bulk_name)?;
+        let bytes = scan.entry_bytes(ctx, bulk_name)?;
         let mut type_guids_by_entity = HashMap::<u64, Vec<&str>>::new();
         for design_type in &meta.types {
             for entity_id in design_type.entities.values() {

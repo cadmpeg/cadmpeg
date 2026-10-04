@@ -3308,11 +3308,11 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
         let Some(stream) = native_stream(&group.id) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) = scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let Some(header) = header_index.get(&(stream, group.members()[0].value)) else {
             continue;
         };

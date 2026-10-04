@@ -267,12 +267,11 @@ pub(crate) fn decode_sketch_placements(
 ) -> Result<Vec<DesignSketchPlacement>, CodecError> {
     let mut out = Vec::new();
     let mut record_offsets = HashMap::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
-        let bytes = scan.entry_bytes(&entry.name)?;
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D Design stream entries")? {
+        if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
+            continue;
+        }
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let scope = native_scope_charged(ctx, &entry.name)?;
         if !record_offsets.contains_key(&scope) {
             ctx.reserve_map(&mut record_offsets, 1, "f3d sketch placement stream index")?;
@@ -280,12 +279,11 @@ pub(crate) fn decode_sketch_placements(
         record_offsets.insert(scope, IndexedRecordOffsets::build(ctx, bytes)?);
     }
     let mut visibilities = HashMap::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
-        let bytes = scan.entry_bytes(&entry.name)?;
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D Design stream entries")? {
+        if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
+            continue;
+        }
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let Some(metadata) = metadata_for_bulk_stream(ctx, scan, &entry.name)? else {
             continue;
         };
@@ -322,26 +320,25 @@ pub(crate) fn decode_sketch_placements(
             continue;
         };
         let entity_id = &binding.entity_id;
-        let mut entry = None;
-        for candidate in scan
-            .entries
-            .iter()
-            .filter(|candidate| scan.is_design_stream(candidate, ContainerRole::Bulkstream))
-        {
-            let (_reservation, candidate_scope) = native_scope_scoped(ctx, &candidate.name)?;
-            if scope
-                .id
-                .strip_prefix(candidate_scope.as_str())
-                .is_some_and(|tail| tail.starts_with(':'))
-            {
-                entry = Some(candidate);
-                break;
-            }
-        }
-        let Some(entry) = entry else {
+        let entry_index = ctx.position_by(
+            &scan.entries,
+            |candidate| {
+                if !scan.is_design_stream(ctx, candidate, ContainerRole::Bulkstream)? {
+                    return Ok(false);
+                }
+                let (_reservation, candidate_scope) =
+                    native_scope_scoped(ctx, &candidate.name)?;
+                Ok(scope
+                    .id
+                    .strip_prefix(candidate_scope.as_str())
+                    .is_some_and(|tail| tail.starts_with(':')))
+            },
+            "find F3D sketch placement stream",
+        )?;
+        let Some(entry) = entry_index.map(|index| &scan.entries[index]) else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let (_scope_reservation, stream_scope) = native_scope_scoped(ctx, &entry.name)?;
         let Some(records) = record_offsets.get(&stream_scope) else {
             continue;
@@ -427,7 +424,7 @@ pub(crate) fn decode_sketch_placements(
         let Some(entry_name) = stream.strip_prefix(ids::SCHEME_PREFIX) else {
             continue;
         };
-        let bytes = scan.entry_bytes(entry_name)?;
+        let bytes = scan.entry_bytes(ctx, entry_name)?;
         let Some(records) = record_offsets.get(stream) else {
             continue;
         };
@@ -887,13 +884,14 @@ pub(crate) fn decode_persistent_references(
     scan: &ContainerScan,
 ) -> Result<Vec<PersistentReference>, CodecError> {
     let mut out = Vec::new();
-    for (entry_ordinal, entry) in scan
-        .entries
-        .iter()
+    for (entry_ordinal, entry) in ctx
+        .admit_iter(&scan.entries, "scan F3D Design stream entries")?
         .enumerate()
-        .filter(|(_, entry)| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        let bytes = scan.entry_bytes(&entry.name)?;
+        if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
+            continue;
+        }
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         decode_persistent_references_from_stream(ctx, entry_ordinal, &entry.name, bytes, &mut out)?;
     }
     finish_persistent_references(ctx, out)
@@ -1009,12 +1007,11 @@ pub(crate) fn decode_lost_edge_references(
     scan: &ContainerScan,
 ) -> Result<Vec<LostEdgeReference>, CodecError> {
     let mut out = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
-        let bytes = scan.entry_bytes(&entry.name)?;
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D Design stream entries")? {
+        if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
+            continue;
+        }
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         decode_lost_edge_references_from_stream(ctx, &entry.name, bytes, &mut out)?;
     }
     Ok(out)
@@ -1410,12 +1407,11 @@ pub(crate) fn decode_entity_headers(
             }
         }
     }
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
-        let bytes = scan.entry_bytes(&entry.name)?;
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D Design stream entries")? {
+        if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
+            continue;
+        }
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         // Modules come from the type table of this stream's own `MetaStream`.
         let (_scope_reservation, scope) = native_scope_scoped(ctx, &entry.name)?;
         let meta_scope = entity_meta_scope(ctx, &scope)?;
@@ -1662,12 +1658,11 @@ fn decode_headers_for_indices(
         return Ok(Vec::new());
     }
     let mut out = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
-        let bytes = scan.entry_bytes(&entry.name)?;
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D Design stream entries")? {
+        if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
+            continue;
+        }
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let (_scope_reservation, scope) = native_scope_scoped(ctx, &entry.name)?;
         decode_headers_for_indices_from_stream(ctx, &entry.name, &scope, bytes, wanted, &mut out)?;
     }
@@ -1728,14 +1723,13 @@ pub(crate) fn decode_sketch_relations(
     // entry in its segment's own type table, and only that entry's GUID names
     // the class across segments.
     let types = decode_types(ctx, scan)?;
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D Design stream entries")? {
+        if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
+            continue;
+        }
         let stream_types = stream_types_by_class_tag(ctx, &types, &entry.name)?;
         let scope = ids::native_scope(&entry.name);
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         for record in records
             .iter()
             .filter(|record| native_stream(&record.id) == Some(scope.as_str()))
@@ -3725,12 +3719,11 @@ pub(crate) fn decode_sketch_surfaces(
     scan: &ContainerScan,
 ) -> Result<Vec<SketchSurface>, CodecError> {
     let mut out = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
-        let bytes = scan.entry_bytes(&entry.name)?;
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D Design stream entries")? {
+        if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
+            continue;
+        }
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let mut at = 0usize;
         while let Some(record_at) = next_indexed_record_offset(bytes, at) {
             at = record_at + 1;
@@ -5340,12 +5333,11 @@ fn decode_sketch_streams<T>(
     ) -> Result<Vec<T>, CodecError>,
 ) -> Result<Vec<T>, CodecError> {
     let mut out = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
-        let bytes = scan.entry_bytes(&entry.name)?;
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D Design stream entries")? {
+        if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
+            continue;
+        }
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let Some(meta) = metadata_for_bulk_stream(ctx, scan, &entry.name)? else {
             continue;
         };

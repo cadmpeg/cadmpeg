@@ -38,17 +38,13 @@ pub(crate) fn inspect<'a>(
     scan: &ContainerScan<'a>,
 ) -> Result<ContainerSummary, CodecError> {
     let (model_root, _) = archive::model_root(ctx, scan)?;
-    scan.entry_view(&model_root).ok_or_else(|| {
+    scan.entry_view(ctx, &model_root)?.ok_or_else(|| {
         CodecError::malformed(format_args!(
             "f3z root member {model_root} is not present in the archive"
         ))
     })?;
     let classified = archive::classify_members(ctx, scan)?;
-    let member_count = scan
-        .entries
-        .iter()
-        .filter(|entry| crate::container::is_f3d_name(&entry.name))
-        .count();
+    let member_count = f3d_member_count(ctx, scan)?;
     let mut notes = Vec::new();
     ctx.push_formatted_retained(
         &mut notes,
@@ -72,7 +68,7 @@ pub(crate) fn decode<'a>(
 ) -> Result<Decoded, CodecError> {
     let (model_root, omitted_drawing_root) = archive::model_root(ctx, scan)?;
     let outer = archive::classify_members(ctx, scan)?;
-    let root_scan = outer.member_scan(&model_root)?;
+    let root_scan = outer.member_scan(ctx, &model_root)?;
     let AuthoredDecoded {
         mut ir,
         source,
@@ -86,11 +82,7 @@ pub(crate) fn decode<'a>(
             "drawing root {drawing_root} is omitted; decoded its unambiguous derived model {model_root}"
         ))?;
     }
-    let member_count = scan
-        .entries
-        .iter()
-        .filter(|entry| crate::container::is_f3d_name(&entry.name))
-        .count();
+    let member_count = f3d_member_count(ctx, scan)?;
     ctx.push_formatted_retained(
         &mut report.notes,
         format_args!("f3z archive: {member_count} document member(s); root {model_root}"),
@@ -134,6 +126,21 @@ pub(crate) fn decode<'a>(
         "append F3Z report losses",
     )?;
     finalize_result(ctx, ir, source, report, fidelity)
+}
+
+fn f3d_member_count(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+) -> Result<usize, CodecError> {
+    let mut count = 0usize;
+    for entry in ctx.admit_iter(&scan.entries, "count F3Z document members")? {
+        if crate::container::is_f3d_name(ctx, &entry.name)? {
+            count = count.checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit("count F3Z document members", u64::MAX - 1, u64::MAX)
+            })?;
+        }
+    }
+    Ok(count)
 }
 
 fn finalize_result(

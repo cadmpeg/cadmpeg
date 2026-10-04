@@ -228,12 +228,11 @@ pub(crate) fn decode_configurations(
     scan: &ContainerScan,
 ) -> Result<Vec<DesignConfiguration>, CodecError> {
     let mut configurations = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_asset_entry(entry, ContainerRole::DesignConfig))
-    {
-        let bytes = scan.entry_bytes(&entry.name)?;
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D Design config asset entries")? {
+        if !scan.is_design_asset_entry(ctx, entry, ContainerRole::DesignConfig)? {
+            continue;
+        }
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let payload = json::parse_configuration_payload(ctx, &entry.name, bytes)?;
         let serde_json::Value::Object(payload) = payload else {
             return Err(CodecError::Malformed(ctx.format_retained(

@@ -240,7 +240,7 @@ fn validate_component_reference_data(
     {
         return Ok(());
     }
-    parse_component_reference_data(ctx, scan.entry_bytes(COMPONENT_REFERENCE_ENTRY)?)?;
+    parse_component_reference_data(ctx, scan.entry_bytes(ctx, COMPONENT_REFERENCE_ENTRY)?)?;
     Ok(())
 }
 
@@ -300,7 +300,7 @@ pub(crate) fn decode_with_scopes(
     // table is present. Its members are application-defined and retained by
     // source fidelity, so no field-level semantics are guessed here.
     validate_component_reference_data(ctx, scan)?;
-    let bytes = match scan.entry_bytes(REDIRECTIONS_ENTRY) {
+    let bytes = match scan.entry_bytes(ctx, REDIRECTIONS_ENTRY) {
         Ok(bytes) => bytes,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => return Ok(None),
@@ -419,7 +419,7 @@ pub(crate) fn docstruct(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Option<Docstruct>, CodecError> {
-    let bytes = match scan.entry_bytes(PROPERTIES_ENTRY) {
+    let bytes = match scan.entry_bytes(ctx, PROPERTIES_ENTRY) {
         Ok(bytes) => bytes,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => return Ok(None),
@@ -463,7 +463,10 @@ pub(crate) fn is_assembly(
     scan: &ContainerScan,
     table: Option<&XrefTable>,
 ) -> Result<bool, CodecError> {
-    if crate::container::design_breps(scan).next().is_some()
+    if crate::container::design_breps(ctx, scan)?
+        .next()
+        .transpose()?
+        .is_some()
         || table.is_none_or(|table| table.references.is_empty())
     {
         return Ok(false);
@@ -582,12 +585,11 @@ fn bind_occurrences(
     scopes: &[DesignParameterScope],
 ) -> Result<(), CodecError> {
     let mut streams = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
-        let bytes = scan.entry_bytes(&entry.name)?;
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D Design stream entries")? {
+        if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
+            continue;
+        }
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let meta_entry = entry
             .name
             .strip_suffix("BulkStream.dat")
@@ -598,7 +600,7 @@ fn bind_occurrences(
             });
         let (serializer_magic, placement_offsets) = if let Some(meta_entry) = meta_entry {
             let meta = scan.parsed_metastream(ctx, &meta_entry.name)?;
-            let meta_bytes = scan.entry_bytes(&meta_entry.name)?;
+            let meta_bytes = scan.entry_bytes(ctx, &meta_entry.name)?;
             (
                 Some(crate::metastream::serializer_magic(
                     ctx,

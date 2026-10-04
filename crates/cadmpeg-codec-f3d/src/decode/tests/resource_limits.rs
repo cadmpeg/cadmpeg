@@ -528,9 +528,13 @@ fn model_brep_candidate_index_refuses_collection_limit() {
     let (scan_ctx, root) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
     let scan = crate::container::scan(&scan_ctx, root).unwrap();
-    let blob_names: Vec<String> = crate::container::design_breps(&scan)
-        .map(|brep| brep.name.rsplit('/').next().unwrap().to_owned())
-        .collect();
+    let blob_names: Vec<String> = crate::container::design_breps(&scan_ctx, &scan)
+        .unwrap()
+        .map(|brep| {
+            brep.map(|brep| brep.name.rsplit('/').next().unwrap().to_owned())
+        })
+        .collect::<Result<_, _>>()
+        .unwrap();
     assert!(!blob_names.is_empty());
     let limited = context(&arena, 0);
     let error = super::super::model_brep_candidates(&limited, &scan, &blob_names).unwrap_err();
@@ -798,7 +802,7 @@ fn mesh_texture_asset_bytes_refuse_retained_limit() {
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
     let scan = crate::container::scan(&scan_ctx, root).unwrap();
     let entry_name = &scan.entries.first().unwrap().name;
-    assert!(!scan.entry_bytes(entry_name).unwrap().is_empty());
+    assert!(!scan.entry_bytes(&scan_ctx, entry_name).unwrap().is_empty());
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
@@ -1137,7 +1141,9 @@ fn metadata_unknown_collection_refuses_limit() {
     let (scan_ctx, root) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
     let scan = crate::container::scan(&scan_ctx, root).unwrap();
-    let brep = crate::container::select_fallback_brep(&scan).unwrap();
+    let brep = crate::container::select_fallback_brep(&scan_ctx, &scan)
+        .unwrap()
+        .unwrap();
     let limited = context(&arena, 0);
     let mut unknowns = Vec::new();
     let error = super::super::append_metadata_unknown(&limited, &mut unknowns, brep).unwrap_err();
@@ -1155,7 +1161,9 @@ fn metadata_unknown_id_refuses_retained_limit() {
     let (scan_ctx, root) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
     let scan = crate::container::scan(&scan_ctx, root).unwrap();
-    let brep = crate::container::select_fallback_brep(&scan).unwrap();
+    let brep = crate::container::select_fallback_brep(&scan_ctx, &scan)
+        .unwrap()
+        .unwrap();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();

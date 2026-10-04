@@ -205,15 +205,17 @@ pub(crate) fn decode_document_length_unit(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Option<String>, CodecError> {
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
-        if let Ok(bytes) = scan.entry_bytes(&entry.name) {
-            if let Some(unit) = decode_modeling_length_unit(ctx, bytes)? {
-                return Ok(Some(unit));
-            }
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D Design stream entries")? {
+        if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
+            continue;
+        }
+        let bytes = match scan.entry_bytes(ctx, &entry.name) {
+            Ok(bytes) => bytes,
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+            Err(_) => continue,
+        };
+        if let Some(unit) = decode_modeling_length_unit(ctx, bytes)? {
+            return Ok(Some(unit));
         }
     }
     Ok(None)

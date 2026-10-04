@@ -67,13 +67,25 @@ pub(super) fn embedded_image_asset(
     scan: &ContainerScan,
     asset_name: &str,
 ) -> Result<Option<Asset>, CodecError> {
-    let mut entries = scan.entries.iter().filter(|entry| {
-        scan.is_design_asset_entry(entry, ContainerRole::Image)
-            && entry.name.rsplit('/').next() == Some(asset_name)
-    });
-    let (Some(entry), None) = (entries.next(), entries.next()) else {
+    let mut matches_asset = |entry: &cadmpeg_core::container::ContainerEntry| {
+        Ok(scan.is_design_asset_entry(ctx, entry, ContainerRole::Image)?
+            && entry.name.rsplit('/').next() == Some(asset_name))
+    };
+    let Some(first_index) = ctx.position_by(
+        &scan.entries,
+        &mut matches_asset,
+        "find F3D embedded image entry",
+    )? else {
         return Ok(None);
     };
+    if ctx.position_by(
+        &scan.entries[first_index + 1..],
+        &mut matches_asset,
+        "check F3D embedded image uniqueness",
+    )?.is_some() {
+        return Ok(None);
+    }
+    let entry = &scan.entries[first_index];
     let media_type = std::path::Path::new(asset_name)
         .extension()
         .and_then(|extension| extension.to_str())
@@ -87,7 +99,7 @@ pub(super) fn embedded_image_asset(
             }
         })
         .map(str::to_owned);
-    let data = ctx.copy_retained(scan.entry_bytes(&entry.name)?, "f3d embedded image data")?;
+    let data = ctx.copy_retained(scan.entry_bytes(ctx, &entry.name)?, "f3d embedded image data")?;
     let name =
         String::from_utf8(ctx.copy_retained(asset_name.as_bytes(), "f3d embedded image name")?)
             .map_err(|_| CodecError::Malformed("asset name must be UTF-8".into()))?;
@@ -120,12 +132,11 @@ pub(super) fn decode_scoped_images<T>(
     id: impl Fn(&T) -> &str,
 ) -> Result<Vec<T>, CodecError> {
     let mut images = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
-        let bytes = scan.entry_bytes(&entry.name)?;
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D Design stream entries")? {
+        if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
+            continue;
+        }
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let stream = native_scope_charged(ctx, &entry.name)?;
         for scope in scopes.iter().filter(|scope| {
             scope.kind().as_str() == kind.as_str()

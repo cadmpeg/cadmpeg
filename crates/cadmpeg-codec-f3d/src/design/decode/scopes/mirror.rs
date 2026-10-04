@@ -271,11 +271,11 @@ pub(crate) fn bind_mirror_constructions(
         let (_stream_reservation, stream) = ctx
             .format_scoped(format_args!("{stream}"), "f3d scoped stream identity")
             .map(|(text, reservation)| (reservation, text))?;
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, &stream)
+        let Some(entry) = scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, &stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let scope_record_index = scopes[index].record_index;
         let seed_groups = unique_match(
             groups

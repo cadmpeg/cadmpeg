@@ -1779,18 +1779,17 @@ fn decode_mesh_design_records(
     scan: &ContainerScan,
 ) -> Result<Vec<Vec<DesignMeshFeature>>, CodecError> {
     let mut out = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D Design stream entries")? {
+        if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
+            continue;
+        }
         let Some(meta) = metadata_for_bulk_stream(ctx, scan, &entry.name)? else {
             continue;
         };
         let mut asset_for_filename = |filename: &str| mesh_image_asset(ctx, scan, filename);
         let records = parse_mesh_design_records(
             ctx,
-            scan.entry_bytes(&entry.name)?,
+            scan.entry_bytes(ctx, &entry.name)?,
             &meta,
             &entry.name,
             &mut asset_for_filename,
@@ -1807,11 +1806,15 @@ fn mesh_image_asset(
     scan: &ContainerScan,
     filename: &str,
 ) -> Result<(String, cadmpeg_ir::assets::AssetId), CodecError> {
-    let mut matches = scan.entries.iter().filter(|candidate| {
-        scan.is_design_asset_entry(candidate, ContainerRole::Image)
-            && candidate.name.rsplit('/').next() == Some(filename)
-    });
-    let (Some(asset), None) = (matches.next(), matches.next()) else {
+    let mut matches_filename = |candidate: &cadmpeg_core::container::ContainerEntry| {
+        Ok(scan.is_design_asset_entry(ctx, candidate, ContainerRole::Image)?
+            && candidate.name.rsplit('/').next() == Some(filename))
+    };
+    let Some(first_index) = ctx.position_by(
+        &scan.entries,
+        &mut matches_filename,
+        "find F3D mesh image entry",
+    )? else {
         return Err(crate::design::text::malformed_design(
             ctx,
             format_args!(
@@ -1819,6 +1822,22 @@ fn mesh_image_asset(
             ),
         ));
     };
+    if ctx
+        .position_by(
+            &scan.entries[first_index + 1..],
+            &mut matches_filename,
+            "check F3D mesh image uniqueness",
+        )?
+        .is_some()
+    {
+        return Err(crate::design::text::malformed_design(
+            ctx,
+            format_args!(
+                "F3D Design mesh texture `{filename}` does not resolve to one embedded image"
+            ),
+        ));
+    }
+    let asset = &scan.entries[first_index];
     Ok((
         ctx.copy_retained_text(&asset.name, "f3d mesh image entry name")?,
         neutral_asset_id_charged(ctx, &asset.name)?,
@@ -1889,13 +1908,12 @@ pub(crate) fn decode_mesh_bodies(
 ) -> Result<MeshDecode, CodecError> {
     let mut design_records = decode_mesh_design_records(ctx, scan)?;
     let mut outcomes = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_asset_entry(entry, ContainerRole::Paramesh))
-    {
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D Paramesh asset entries")? {
+        if !scan.is_design_asset_entry(ctx, entry, ContainerRole::Paramesh)? {
+            continue;
+        }
         let container = match scan
-            .entry_bytes(&entry.name)
+            .entry_bytes(ctx, &entry.name)
             .and_then(|bytes| decode_mesh_container(ctx, bytes))
         {
             Ok(container) => container,
