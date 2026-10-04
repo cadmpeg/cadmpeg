@@ -14,8 +14,7 @@ fn points() -> Vec<Vec<Point3>> {
 
 #[test]
 fn bspline_constructor_admits_each_scan_row_and_pole_before_its_visit() {
-    // Four finite values and three adjacent comparisons per axis, then two
-    // row-shape visits and two rows with two poles each.
+    // Two knot axes cost 14; two shape visits and the nested 2x2 collectors cost 11, for 25.
     let visits = [
         "IR NURBS knot finiteness",
         "IR NURBS knot finiteness",
@@ -36,9 +35,12 @@ fn bspline_constructor_admits_each_scan_row_and_pole_before_its_visit() {
         "IR admitted B-spline grid rows",
         "IR admitted B-spline grid poles",
         "IR admitted B-spline grid poles",
+        "IR admitted B-spline grid poles",
         "IR admitted B-spline grid rows",
         "IR admitted B-spline grid poles",
         "IR admitted B-spline grid poles",
+        "IR admitted B-spline grid poles",
+        "IR admitted B-spline grid rows",
     ];
     for (cap, operation) in visits.into_iter().enumerate() {
         let cap = u64::try_from(cap).expect("visit count");
@@ -64,32 +66,31 @@ fn bspline_constructor_admits_each_scan_row_and_pole_before_its_visit() {
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
         );
     }
-    for cap in [22, 23, 24] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let surface = BsplineSurface::new(
-            &ctx,
-            1,
-            1,
-            vec![0., 0., 1., 1.],
-            vec![0., 0., 1., 1.],
-            points(),
-        )
-        .expect("every visit fits")
-        .expect("valid surface");
-        assert_eq!(
-            surface
-                .control_points
-                .iter()
-                .map(|row| row.iter().map(|point| point.get()).collect::<Vec<_>>())
-                .collect::<Vec<_>>(),
-            points()
-        );
-        ctx.finish_session()
-            .expect("no refusal after the last visit");
-    }
+    let cap = 25;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = cap;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let surface = BsplineSurface::new(
+        &ctx,
+        1,
+        1,
+        vec![0., 0., 1., 1.],
+        vec![0., 0., 1., 1.],
+        points(),
+    )
+    .expect("every visit fits")
+    .expect("valid surface");
+    assert_eq!(
+        surface
+            .control_points
+            .iter()
+            .map(|row| row.iter().map(|point| point.get()).collect::<Vec<_>>())
+            .collect::<Vec<_>>(),
+        points()
+    );
+    ctx.finish_session()
+        .expect("no refusal after the last visit");
 }
 
 #[test]
@@ -124,7 +125,8 @@ fn bspline_constructor_preserves_storage_refusal_wire_and_source_order() {
     }
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 24;
+    // Two knot axes, two shape visits, and the nested 2x2 collectors cost 25 work units.
+    policy.limits.max_work_units = 25;
     policy.limits.max_collection_items = 6;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let knots = vec![0.0, 0.0, 1.0, 1.0];
