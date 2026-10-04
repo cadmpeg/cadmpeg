@@ -320,13 +320,10 @@ fn reparent_component_roots(
             occurrence.parent,
             cadmpeg_ir::products::OccurrenceParent::Root {}
         ) {
-            let parent_id = ctx.copy_retained_text(
-                parent.as_str(),
-                "copy F3Z parent occurrence identity",
-            )?;
+            let parent_id =
+                parent.try_clone_for_decode(ctx, "copy F3Z parent occurrence identity")?;
             occurrence.parent = cadmpeg_ir::products::OccurrenceParent::Occurrence {
-                occurrence: cadmpeg_ir::ids::OccurrenceId::mint(parent_id)
-                    .map_err(CodecError::malformed)?,
+                occurrence: parent_id,
             };
         }
     }

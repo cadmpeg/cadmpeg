@@ -345,11 +345,6 @@ impl DesignVisualToken {
         self.0.as_str().eq_ignore_ascii_case(other.0.as_str())
     }
 
-    /// The admitted visual token as an identity key.
-    #[cfg(test)]
-    pub(crate) fn identity_key(&self) -> cadmpeg_ir::ids::IdentityKey {
-        self.0.clone()
-    }
 }
 
 /// One Design `BulkStream` material assignment joining a design entity to visual assets.

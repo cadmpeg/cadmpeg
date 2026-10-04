@@ -6510,7 +6510,7 @@ pub(crate) fn resolve_face_appearance_bindings(
             let appearance_id = appearance
                 .id
                 .try_clone_for_decode(ctx, "retain F3D face appearance ID")?;
-            let id = crate::ids::face_appearance_binding_id_charged(
+            let id = crate::ids::face_appearance_binding_id(
                 ctx,
                 face_guid,
                 assignment.visual_guid,

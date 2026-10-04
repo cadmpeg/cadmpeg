@@ -1047,3 +1047,185 @@ fn history_complete_table_binding_refuses_work_limit() {
         if refusal.operation == "bind F3D complete history topology work")
     );
 }
+
+fn one_graph_history_with_board_and_record() -> crate::history_records::AsmHistory {
+    use crate::history_records::{
+        AsmBulletinBoard, AsmEntityChange, AsmEntityChangeKind, AsmHistoryRecord,
+        AsmHistoryRecordFraming,
+    };
+
+    let mut history = one_state_history();
+    history.states[0].bulletin_boards.push(AsmBulletinBoard {
+        id: "board".into(),
+        parent: "state".into(),
+        byte_offset: 0,
+        owner_ref: 0,
+        number: 1,
+        changes: vec![AsmEntityChange {
+            id: "change".into(),
+            parent: "board".into(),
+            byte_offset: 0,
+            kind: AsmEntityChangeKind::Insert { new: 1 },
+        }],
+    });
+    history.states[0].records.push(AsmHistoryRecord {
+        id: "record".into(),
+        parent: "state".into(),
+        revision_id: None,
+        byte_offset: 0,
+        framing: AsmHistoryRecordFraming::Framed {
+            index: 0,
+            name: "edge".into(),
+            entity_references: Vec::new(),
+        },
+        raw_bytes: vec![0x11],
+    });
+    history
+}
+
+fn graph_work_refusal(
+    operation: &'static str,
+    history: crate::history_records::AsmHistory,
+) -> cadmpeg_core::CodecError {
+    crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| super::super::graph_is_coherent_charged(ctx, &history),
+    )
+}
+
+#[test]
+fn history_graph_state_iteration_refuses_work_limit() {
+    let operation = "scan F3D ASM history states";
+    let error = graph_work_refusal(operation, one_state_history());
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn history_graph_state_index_refuses_scoped_storage_limit() {
+    let operation = "index F3D ASM history states";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        operation,
+        0,
+        |ctx| super::super::graph_is_coherent_charged(ctx, &one_state_history()),
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn history_graph_parent_comparison_refuses_work_limit() {
+    let operation = "compare F3D ASM history state parent";
+    let error = graph_work_refusal(operation, one_state_history());
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn history_graph_tail_count_refuses_work_limit() {
+    let operation = "count F3D ASM history tail states";
+    let error = graph_work_refusal(operation, one_state_history());
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn history_graph_chain_step_refuses_work_limit() {
+    let operation = "visit F3D ASM history chain link";
+    let error = graph_work_refusal(operation, one_state_history());
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn history_graph_bulletin_board_iteration_refuses_work_limit() {
+    let operation = "scan F3D ASM history bulletin boards";
+    let error = graph_work_refusal(operation, one_graph_history_with_board_and_record());
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn history_graph_board_parent_comparison_refuses_work_limit() {
+    let operation = "compare F3D ASM history board parent";
+    let error = graph_work_refusal(operation, one_graph_history_with_board_and_record());
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn history_graph_board_change_scan_refuses_work_limit() {
+    let operation = "scan F3D ASM history board changes";
+    let error = graph_work_refusal(operation, one_graph_history_with_board_and_record());
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn history_graph_change_parent_comparison_refuses_work_limit() {
+    let operation = "compare F3D ASM history change parent";
+    let error = graph_work_refusal(operation, one_graph_history_with_board_and_record());
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn history_graph_record_scan_refuses_work_limit() {
+    let operation = "scan F3D ASM history records";
+    let error = graph_work_refusal(operation, one_graph_history_with_board_and_record());
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn history_graph_record_parent_comparison_refuses_work_limit() {
+    let operation = "compare F3D ASM history record parent";
+    let error = graph_work_refusal(operation, one_graph_history_with_board_and_record());
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn history_state_reach_range_refuses_work_limit() {
+    let history = one_state_history();
+    let state = &history.states[0];
+    let operation = "walk F3D history state chain";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |decode| {
+            super::super::history_state_reaches(decode, &history, state, state.state_id)
+                .map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}

@@ -31,6 +31,73 @@ use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
+fn recipe_selector_storage_fixture() -> (
+    crate::records::topology::edge_recipe::DesignEdgeRecipeStructure,
+    Vec<crate::records::topology::historical_context::DesignHistoricalEdgeContext>,
+) {
+    use crate::records::topology::edge_recipe::{
+        DesignEdgeRecipeStructure, DesignTopologyRecipeEntry, DesignTopologyRecipeSide,
+        DesignTopologyRecipeTriplet,
+    };
+    use crate::records::topology::historical_context::{
+        DesignHistoricalEdgeContext, DesignHistoricalEdgeLoopContext,
+    };
+
+    let triplet = || DesignTopologyRecipeTriplet {
+        outer: std::num::NonZeroU32::new(1).unwrap(),
+        middle: 0,
+        incident: None,
+    };
+    let structure = DesignEdgeRecipeStructure {
+        root: 1,
+        sides: vec![DesignTopologyRecipeSide {
+            header_value: 0,
+            scalars: Vec::new(),
+            payload_prefix: Vec::new(),
+            entries: vec![DesignTopologyRecipeEntry {
+                selector: 1,
+                boundary_edge_count: std::num::NonZeroU32::new(1).unwrap(),
+                topology_triplets: [triplet(), triplet()],
+            }],
+        }],
+    };
+    let contexts = vec![DesignHistoricalEdgeContext {
+        edge_slot: 1,
+        incident_loops: vec![DesignHistoricalEdgeLoopContext {
+            coedge_slot: 2,
+            loop_slot: 3,
+            face_slot: 4,
+            boundary_edge_count: 1,
+            coedge_ordinal: 0,
+            previous_edge_slot: 5,
+            next_edge_slot: 6,
+        }],
+    }];
+    (structure, contexts)
+}
+
+#[test]
+fn recipe_selector_temporary_vectors_refuse_materialized_limit() {
+    for operation in [
+        "collect F3D recipe side counts",
+        "collect F3D incident loop counts",
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+            operation,
+            0,
+            |decode| {
+                let (structure, contexts) = recipe_selector_storage_fixture();
+                recipe_selector_candidates(decode, Some(&structure), &contexts).map(|_| ())
+            },
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+        ));
+    }
+}
+
 #[test]
 fn identity_index_refuses_history_collection_limit() {
     let history = AsmHistory {
@@ -1119,4 +1186,62 @@ fn preceding_support_face_index_refuses_collection_limit() {
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D preceding support faces")
     );
+}
+
+#[test]
+fn entity_selection_scope_stream_comparison_propagates_work_refusal() {
+    let stream = "f3d:Design/BulkStream.dat";
+    let scope = crate::records::feature::scope::DesignParameterScope::empty(
+        &format!("{stream}:design-parameter-scope#42"),
+        crate::records::feature::scope::DesignScopePayload::Sweep(None),
+        42,
+    );
+    let scopes = [scope];
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "compare F3D selection entity scope stream",
+        0,
+        |decode| {
+            let mut operands = [
+                crate::records::topology::entity_selection::DesignEntitySelectionOperand::try_new(
+                    crate::records::topology::entity_selection::DesignEntitySelectionOperandDraft {
+                        id: format!("{stream}:design-entity-selection-operand#200"),
+                        scope_record_index: 42,
+                        group_record_index: 100,
+                        group_member_ordinal: 0,
+                        record_index: 200,
+                        byte_offset: 0,
+                        class_tag: "377".to_owned().try_into().unwrap(),
+                        asset_id: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+                            .to_owned()
+                            .try_into()
+                            .unwrap(),
+                        asset_id_offset: 0,
+                        context_id: "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e"
+                            .to_owned()
+                            .try_into()
+                            .unwrap(),
+                        context_id_offset: 0,
+                        identity_record_index: 203,
+                        identity_record_offset: 0,
+                        primary_identity: 7,
+                        primary_identity_offset: 21,
+                        secondary: None,
+                        historical_edge_candidates: Vec::new(),
+                        historical_face_candidates: Vec::new(),
+                        resolved_edge_slot: None,
+                        next_record_index: 202,
+                        next_byte_offset: 29,
+                    },
+                )
+                .unwrap(),
+            ];
+            bind_entity_selection_history(decode, &mut operands, &scopes, &[]).map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "compare F3D selection entity scope stream"
+    ));
 }

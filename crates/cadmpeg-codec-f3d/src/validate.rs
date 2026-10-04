@@ -7241,7 +7241,15 @@ fn validate_edge_operands<'a>(
                     &operand.candidate_faces,
                     "compare F3D edge operand candidate faces",
                 )?)
-            && ctx.decode.get_hash_map(&expected_edge_operands, operand.id.as_str(), "find F3D expected operand")? == Some(&operand);
+            && ctx.decode.equal(
+                &ctx.decode.get_hash_map(
+                    &expected_edge_operands,
+                    operand.id.as_str(),
+                    "find F3D expected operand",
+                )?,
+                &Some(&operand),
+                "compare F3D expected edge operand",
+            )?;
         let valid = valid
             && ctx.decode.insert_hash_set(
                 &mut edge_operand_slots,
@@ -7401,7 +7409,15 @@ fn validate_edge_treatment_vertex_operands<'a>(
             && scope_valid
             && group_member_valid
             && unique_group
-            && ctx.decode.get_hash_map(&expected, operand.id.as_str(), "find F3D expected operand")? == Some(&operand);
+            && ctx.decode.equal(
+                &ctx.decode.get_hash_map(
+                    &expected,
+                    operand.id.as_str(),
+                    "find F3D expected operand",
+                )?,
+                &Some(&operand),
+                "compare F3D expected edge-treatment vertex operand",
+            )?;
         let valid = valid
             && ctx.decode.insert_hash_set(
                 &mut records,
@@ -7832,14 +7848,22 @@ fn validate_face_operands<'a>(
                                     == records::recipes::ConstructionRecipeKind::Face
                             }
                             Some(design::DesignFeatureFamily::Thread) => {
-                                group.is_some_and(|group| {
-                                    group.role() == DesignOperandRole::ROLE_0X10
-                                        && scope.thread_construction().is_some_and(|construction| {
-                                            construction
-                                                .face_group_record_indices
-                                                .contains(&group.record_index)
-                                        })
-                                }) && operand.recipe_kind
+                                let thread_group_valid = match group {
+                                    Some(group)
+                                        if group.role() == DesignOperandRole::ROLE_0X10 =>
+                                    {
+                                        match scope.thread_construction() {
+                                            Some(construction) => ctx.decode.contains(
+                                                &construction.face_group_record_indices,
+                                                &group.record_index,
+                                                "find F3D thread face operand group",
+                                            )?,
+                                            None => false,
+                                        }
+                                    }
+                                    _ => false,
+                                };
+                                thread_group_valid && operand.recipe_kind
                                     == records::recipes::ConstructionRecipeKind::BoundedFace
                             }
                             Some(

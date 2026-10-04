@@ -78,20 +78,35 @@ fn graph_is_coherent_inner(
     if history.states.is_empty() {
         return Ok(false);
     }
+    let mut by_index_storage = decode.reserve_scoped(0, "index F3D ASM history states")?;
     let mut by_index = HashMap::new();
-    for state in &history.states {
-        if !by_index.contains_key(&state.node_index) {
-            {
-                decode.reserve_map(&mut by_index, 1, "index F3D ASM history states")?;
-            }
-        }
-        by_index.insert(state.node_index, state);
+    for state in decode.admit_iter(&history.states, "scan F3D ASM history states")? {
+        by_index_storage.with_storage(|| {
+            decode
+                .insert_hash_map(
+                    &mut by_index,
+                    state.node_index,
+                    state,
+                    "index F3D ASM history states",
+                )
+                .map(|_| ())
+        })?;
     }
     if by_index.len() != history.states.len()
-        || history
-            .states
-            .iter()
-            .any(|state| state.node_index < 0 || state.parent != history.id)
+        || decode.any_by(
+            &history.states,
+            |state| {
+                if state.node_index < 0 {
+                    return Ok(true);
+                }
+                Ok(!decode.equal(
+                    &state.parent,
+                    &history.id,
+                    "compare F3D ASM history state parent",
+                )?)
+            },
+            "scan F3D ASM history state parents",
+        )?
     {
         return Ok(false);
     }
@@ -100,9 +115,8 @@ fn graph_is_coherent_inner(
         .iter()
         .filter(|state| state.previous_ref.is_none());
     let head = heads.next();
-    let tails = history
-        .states
-        .iter()
+    let tails = decode
+        .admit_iter(&history.states, "count F3D ASM history tail states")?
         .filter(|state| state.next_ref.is_none())
         .count();
     if head.is_none() || heads.next().is_some() || tails != 1 {
@@ -120,6 +134,7 @@ fn graph_is_coherent_inner(
     let mut previous = None;
     let mut current = Some(head.node_index);
     while let Some(index) = current {
+        decode.charge_work(1, "visit F3D ASM history chain link")?;
         let Some(state) = by_index.get(&index) else {
             return Ok(false);
         };
@@ -133,18 +148,42 @@ fn graph_is_coherent_inner(
         if state.version_flag != 1 || state.state_flag != 0 {
             return Ok(false);
         }
-        for board in &state.bulletin_boards {
-            if board.parent != state.id
-                || board.changes.iter().any(|change| change.parent != board.id)
-            {
+        for board in decode.admit_iter(
+            &state.bulletin_boards,
+            "scan F3D ASM history bulletin boards",
+        )? {
+            if !decode.equal(
+                &board.parent,
+                &state.id,
+                "compare F3D ASM history board parent",
+            )? || decode.any_by(
+                &board.changes,
+                |change| {
+                    decode
+                        .equal(
+                            &change.parent,
+                            &board.id,
+                            "compare F3D ASM history change parent",
+                        )
+                        .map(|matches| !matches)
+                },
+                "scan F3D ASM history board changes",
+            )? {
                 return Ok(false);
             }
         }
-        if state
-            .records
-            .iter()
-            .any(|record| record.parent != state.id || record.raw_bytes.is_empty())
-        {
+        if decode.any_by(
+            &state.records,
+            |record| {
+                let parent_matches = decode.equal(
+                    &record.parent,
+                    &state.id,
+                    "compare F3D ASM history record parent",
+                )?;
+                Ok(!parent_matches || record.raw_bytes.is_empty())
+            },
+            "scan F3D ASM history records",
+        )? {
             return Ok(false);
         }
         previous = Some(index);
@@ -5621,7 +5660,8 @@ fn history_state_reaches(
     previous_state_id: i64,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let mut current = state;
-    for _ in 0..=history.states.len() {
+    let state_chain_steps = 0..=history.states.len();
+    for _ in decode.admit_iter(&state_chain_steps, "walk F3D history state chain")? {
         if current.state_id == previous_state_id {
             return Ok(true);
         }

@@ -1448,3 +1448,80 @@ fn body_recipe_face_selection_group_identity_propagates_work_refusal() {
         cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
     ));
 }
+
+#[test]
+fn body_recipe_face_selection_slot_scan_propagates_work_refusal() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_ir::features::{FaceSelection, FeatureId};
+
+    let scope = face_selection_scope();
+    let group_id = "f3d:Design/BulkStream.dat:operand-group#100";
+    let groups = [face_selection_group(
+        group_id,
+        DesignOperandRole::ROLE_0X5,
+        vec![crate::records::identity::Located {
+            value: 200,
+            offset: 1010,
+        }],
+    )];
+    let operands = [
+        crate::records::topology::body_recipe::DesignBodyRecipeOperand::try_new(
+            crate::records::topology::body_recipe::DesignBodyRecipeOperandDraft {
+                id: "f3d:Design/BulkStream.dat:design-body-recipe-operand#200".into(),
+                scope_record_index: 42,
+                owner: crate::records::topology::body_recipe::DesignOperandOwner::Group {
+                    group_record_index: 100,
+                    group_member_ordinal: 0,
+                },
+                record_index: 200,
+                byte_offset: 0,
+                class_tag: "365".to_owned().try_into().unwrap(),
+                asset_id: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+                    .to_owned()
+                    .try_into()
+                    .unwrap(),
+                asset_id_offset: 44,
+                context_id: "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e"
+                    .to_owned()
+                    .try_into()
+                    .unwrap(),
+                context_id_offset: 132,
+                selector_tail: None,
+                references: Vec::new(),
+                nested_record_index: 203,
+                nested_record_index_offset: 26,
+                recipe_id: "f3d:Design/BulkStream.dat:construction-recipe#203".into(),
+                resolved_face_slot: Some(7),
+                resolved_body_state_id: None,
+                resolved_body_slot: None,
+                resolved_body_face_slots: Vec::new(),
+                next_record_index: 204,
+                next_byte_offset: 256,
+            },
+        )
+        .unwrap(),
+    ];
+    let feature_id = FeatureId::mint("f3d:test:feature#42").unwrap();
+    let operation = "scan F3D body recipe face slots";
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| {
+            let mut selection = FaceSelection::Native(group_id.into());
+            crate::history::selection::bind_body_recipe_face_selection(
+                ctx,
+                &mut selection,
+                &feature_id,
+                1,
+                &scope,
+                &groups,
+                &operands,
+            )
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}

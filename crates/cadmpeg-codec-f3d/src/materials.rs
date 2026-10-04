@@ -977,7 +977,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
             ctx.push_vec(
                 &mut out,
                 Appearance {
-                    id: crate::ids::appearance_id_charged(ctx, &assignment.visual_guid)?,
+                    id: crate::ids::appearance_id(ctx, &assignment.visual_guid)?,
                     name: (assignment
                         .visual_preset
                         .as_ref()
@@ -1058,7 +1058,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
         ctx.push_vec(
             &mut bindings,
             AppearanceBinding {
-                id: crate::ids::body_appearance_binding_id_charged(
+                id: crate::ids::body_appearance_binding_id(
                     ctx,
                     over.entity_suffix,
                     &over.visual_guid,
@@ -1194,7 +1194,7 @@ fn appearances_from_schema_records(
         )?;
         let base_color = appearance_base_color(ctx, record)?;
         let appearance = Appearance {
-            id: crate::ids::appearance_id_charged(ctx, &record.guid)?,
+            id: crate::ids::appearance_id(ctx, &record.guid)?,
             name: Some(ctx.copy_retained_text(&record.base, "copy F3D appearance name")?),
             asset_guid: Some(ctx.copy_retained_text(&record.guid, "copy F3D appearance GUID")?),
             library_id: library_id(ctx, &record.asset_lib_id)?,
@@ -2045,7 +2045,7 @@ fn bind_bodies(
         ctx.push_vec(
             &mut out,
             AppearanceBinding {
-                id: crate::ids::assignment_appearance_binding_id_charged(
+                id: crate::ids::assignment_appearance_binding_id(
                     ctx,
                     assignment.entity_id.as_str(),
                     &assignment.visual_guid,
@@ -2773,7 +2773,7 @@ fn decode_fixed_record(
         properties,
     )?;
     Ok(Some(Appearance {
-        id: crate::ids::appearance_id_charged(ctx, &guid)?,
+        id: crate::ids::appearance_id(ctx, &guid)?,
         name: Some(base),
         asset_guid: Some(ctx.copy_retained_text(&guid, "copy F3D fixed appearance GUID")?),
         library_id: library_id(ctx, &asset_lib_id)?,

@@ -2,6 +2,7 @@
 #![deny(clippy::disallowed_methods)]
 //! Fusion ASM construction-history record shapes.
 
+use cadmpeg_core::decode::cost::DecodeCost;
 use serde::{Deserialize, Serialize};
 
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -11,6 +12,16 @@ use cadmpeg_ir::math::{Point3, Vector3};
 pub(crate) struct AsmPreamble {
     pub(crate) stream_size: i64,
     pub(crate) history_entry_count: i64,
+}
+
+impl DecodeCost for AsmPreamble {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        DecodeCost::decode_cost(&(&self.stream_size, &self.history_entry_count), ctx, operation)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -23,6 +34,26 @@ pub(crate) struct AsmHistory {
     /// state-by-record work estimate exceeded the decoder safety budget.
     pub(crate) record_table_binding_budget_exceeded: bool,
     pub(crate) states: Vec<AsmDeltaState>,
+}
+
+impl DecodeCost for AsmHistory {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        DecodeCost::decode_cost(
+            &(
+                &self.id,
+                &self.byte_offset,
+                &self.preamble,
+                &self.record_table_binding_budget_exceeded,
+                &self.states,
+            ),
+            ctx,
+            operation,
+        )
+    }
 }
 
 impl AsmHistory {
@@ -147,6 +178,43 @@ pub(crate) struct AsmDeltaState {
     pub(crate) transition: Option<AsmHistoricalTransition>,
 }
 
+impl DecodeCost for AsmDeltaState {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        DecodeCost::decode_cost(
+            &(
+                (
+                    &self.id,
+                    &self.parent,
+                    &self.byte_offset,
+                    &self.state_id,
+                    &self.version_flag,
+                    &self.state_flag,
+                ),
+                (
+                    &self.previous_ref,
+                    &self.next_ref,
+                    &self.node_index,
+                    &self.partner_ref,
+                    &self.owner_ref,
+                    &self.bulletin_boards,
+                ),
+                (
+                    &self.records,
+                    &self.entity_versions,
+                    &self.topology_cache,
+                    &self.transition,
+                ),
+            ),
+            ctx,
+            operation,
+        )
+    }
+}
+
 /// Historical topology retained for projection or for late identity resolution.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) enum AsmTopologyCache {
@@ -156,6 +224,20 @@ pub(crate) enum AsmTopologyCache {
     Retained(AsmHistoricalTopology),
     /// The complete snapshot was released at finalization and nothing was kept.
     Released,
+}
+
+impl DecodeCost for AsmTopologyCache {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        let topology = match self {
+            Self::Absent | Self::Released => None,
+            Self::Complete(topology) | Self::Retained(topology) => Some(topology),
+        };
+        DecodeCost::decode_cost(&topology, ctx, operation)
+    }
 }
 
 /// Serialized discriminant of one state's topology cache.
@@ -435,6 +517,62 @@ pub(crate) struct AsmHistoricalTopology {
     pub(crate) point_positions: Vec<AsmHistoricalPoint>,
 }
 
+impl DecodeCost for AsmHistoricalTopology {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        DecodeCost::decode_cost(
+            &(
+                (
+                    &self.bodies,
+                    &self.regions,
+                    &self.shells,
+                    &self.faces,
+                    &self.loops,
+                    &self.coedges,
+                ),
+                (
+                    &self.edges,
+                    &self.vertices,
+                    &self.points,
+                    &self.surfaces,
+                    &self.surface_radii,
+                    &self.surface_cylinders,
+                ),
+                (
+                    &self.surface_planes,
+                    &self.surface_axes,
+                    &self.curves,
+                    &self.curve_axes,
+                    &self.pcurves,
+                    &self.persistent_subentity_tags,
+                ),
+                (
+                    &self.body_regions,
+                    &self.region_shells,
+                    &self.shell_faces,
+                    &self.shell_wire_edges,
+                    &self.shell_free_vertices,
+                    &self.face_loops,
+                ),
+                (
+                    &self.loop_coedges,
+                    &self.coedge_topology,
+                    &self.edge_vertices,
+                    &self.face_surfaces,
+                    &self.edge_curves,
+                    &self.coedge_pcurves,
+                ),
+                (&self.vertex_points, &self.point_positions),
+            ),
+            ctx,
+            operation,
+        )
+    }
+}
+
 /// One persistent tag group attached to a historical face or edge revision.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalPersistentSubentityTag {
@@ -446,6 +584,27 @@ pub(crate) struct AsmHistoricalPersistentSubentityTag {
     pub(crate) ordinal: u32,
 }
 
+impl DecodeCost for AsmHistoricalPersistentSubentityTag {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        DecodeCost::decode_cost(
+            &(
+                &self.entity_kind,
+                &self.entity_ref,
+                &self.selector,
+                &self.token,
+                &self.design_references,
+                &self.ordinal,
+            ),
+            ctx,
+            operation,
+        )
+    }
+}
+
 /// Stable axis-bearing curve carrier value in one historical B-rep state.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalCurveAxis {
@@ -454,12 +613,32 @@ pub(crate) struct AsmHistoricalCurveAxis {
     pub(crate) direction: Vector3,
 }
 
+impl DecodeCost for AsmHistoricalCurveAxis {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        DecodeCost::decode_cost(&(&self.curve, &self.origin, &self.direction), ctx, operation)
+    }
+}
+
 /// Stable axis line of one cylinder, cone, or torus carrier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalSurfaceAxis {
     pub(crate) surface: i64,
     pub(crate) origin: Point3,
     pub(crate) direction: Vector3,
+}
+
+impl DecodeCost for AsmHistoricalSurfaceAxis {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        DecodeCost::decode_cost(&(&self.surface, &self.origin, &self.direction), ctx, operation)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -491,12 +670,36 @@ pub(crate) struct AsmHistoricalCylinder {
     pub(crate) radius: f64,
 }
 
+impl DecodeCost for AsmHistoricalCylinder {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        DecodeCost::decode_cost(
+            &(&self.surface, &self.origin, &self.axis, &self.radius),
+            ctx,
+            operation,
+        )
+    }
+}
+
 /// Stable geometry of one plane carrier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalPlane {
     pub(crate) surface: i64,
     pub(crate) origin: Point3,
     pub(crate) normal: Vector3,
+}
+
+impl DecodeCost for AsmHistoricalPlane {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        DecodeCost::decode_cost(&(&self.surface, &self.origin, &self.normal), ctx, operation)
+    }
 }
 
 /// Stable point-carrier value in one historical B-rep state.
@@ -506,11 +709,31 @@ pub(crate) struct AsmHistoricalPoint {
     pub(crate) position: Point3,
 }
 
+impl DecodeCost for AsmHistoricalPoint {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        DecodeCost::decode_cost(&(&self.point, &self.position), ctx, operation)
+    }
+}
+
 /// Ordered stable entity-slot relation in a historical B-rep.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalRelation {
     pub(crate) owner_ref: i64,
     pub(crate) member_refs: Vec<i64>,
+}
+
+impl DecodeCost for AsmHistoricalRelation {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        DecodeCost::decode_cost(&(&self.owner_ref, &self.member_refs), ctx, operation)
+    }
 }
 
 /// Stable topology links of one historical coedge.
@@ -524,6 +747,27 @@ pub(crate) struct AsmHistoricalCoedge {
     pub(crate) radial_next: i64,
 }
 
+impl DecodeCost for AsmHistoricalCoedge {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        DecodeCost::decode_cost(
+            &(
+                &self.coedge,
+                &self.owner_loop,
+                &self.edge,
+                &self.next,
+                &self.previous,
+                &self.radial_next,
+            ),
+            ctx,
+            operation,
+        )
+    }
+}
+
 /// Ordered endpoint links of one historical edge.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalEdge {
@@ -532,11 +776,35 @@ pub(crate) struct AsmHistoricalEdge {
     pub(crate) end_vertex: i64,
 }
 
+impl DecodeCost for AsmHistoricalEdge {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        DecodeCost::decode_cost(
+            &(&self.edge, &self.start_vertex, &self.end_vertex),
+            ctx,
+            operation,
+        )
+    }
+}
+
 /// Stable binding from a topology entity to its required geometry carrier.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalCarrierBinding {
     pub(crate) entity: i64,
     pub(crate) carrier: i64,
+}
+
+impl DecodeCost for AsmHistoricalCarrierBinding {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        DecodeCost::decode_cost(&(&self.entity, &self.carrier), ctx, operation)
+    }
 }
 
 /// Stable binding from a topology entity to its optional geometry carrier.
@@ -549,6 +817,16 @@ pub(crate) struct AsmHistoricalOptionalCarrierBinding {
         deserialize_with = "deserialize_carrier"
     )]
     pub(crate) carrier: Option<i64>,
+}
+
+impl DecodeCost for AsmHistoricalOptionalCarrierBinding {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        DecodeCost::decode_cost(&(&self.entity, &self.carrier), ctx, operation)
+    }
 }
 
 /// Forward stable-slot changes from an older ASM state to a newer state.
@@ -567,6 +845,20 @@ pub(crate) struct AsmHistoricalTransition {
     pub(crate) topology: AsmHistoricalTopologyDelta,
 }
 
+impl DecodeCost for AsmHistoricalTransition {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        DecodeCost::decode_cost(
+            &(&self.previous_state_id, &self.records, &self.topology),
+            ctx,
+            operation,
+        )
+    }
+}
+
 /// Stable entity slots inserted, deleted, or assigned a different record revision.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalEntityDelta {
@@ -576,6 +868,16 @@ pub(crate) struct AsmHistoricalEntityDelta {
     pub(crate) deleted: Vec<i64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) updated: Vec<i64>,
+}
+
+impl DecodeCost for AsmHistoricalEntityDelta {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        DecodeCost::decode_cost(&(&self.inserted, &self.deleted, &self.updated), ctx, operation)
+    }
 }
 
 /// Per-family topology changes between two complete historical states.
@@ -595,6 +897,37 @@ pub(crate) struct AsmHistoricalTopologyDelta {
     pub(crate) pcurves: AsmHistoricalEntityDelta,
 }
 
+impl DecodeCost for AsmHistoricalTopologyDelta {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        DecodeCost::decode_cost(
+            &(
+                (
+                    &self.bodies,
+                    &self.regions,
+                    &self.shells,
+                    &self.faces,
+                    &self.loops,
+                    &self.coedges,
+                ),
+                (
+                    &self.edges,
+                    &self.vertices,
+                    &self.points,
+                    &self.surfaces,
+                    &self.curves,
+                    &self.pcurves,
+                ),
+            ),
+            ctx,
+            operation,
+        )
+    }
+}
+
 #[derive(Debug, PartialEq, Deserialize)]
 #[cfg_attr(not(test), derive(Clone))]
 #[serde(try_from = "AsmHistoryRecordWire")]
@@ -605,6 +938,27 @@ pub(crate) struct AsmHistoryRecord {
     pub(crate) byte_offset: u64,
     pub(crate) framing: AsmHistoryRecordFraming,
     pub(crate) raw_bytes: Vec<u8>,
+}
+
+impl DecodeCost for AsmHistoryRecord {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        DecodeCost::decode_cost(
+            &(
+                &self.id,
+                &self.parent,
+                &self.revision_id,
+                &self.byte_offset,
+                &self.framing,
+                &self.raw_bytes,
+            ),
+            ctx,
+            operation,
+        )
+    }
 }
 
 #[cfg(test)]
@@ -681,6 +1035,30 @@ pub(crate) enum AsmHistoryRecordFraming {
     Opaque {
         error: String,
     },
+}
+
+impl DecodeCost for AsmHistoryRecordFraming {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        const VARIANT_TAG: u8 = 0;
+        match self {
+            Self::Framed {
+                index,
+                name,
+                entity_references,
+            } => DecodeCost::decode_cost(
+                &(&VARIANT_TAG, index, name, entity_references),
+                ctx,
+                operation,
+            ),
+            Self::Opaque { error } => {
+                DecodeCost::decode_cost(&(&VARIANT_TAG, error), ctx, operation)
+            }
+        }
+    }
 }
 
 impl AsmHistoryRecord {
@@ -801,6 +1179,27 @@ pub(crate) struct AsmBulletinBoard {
     pub(crate) changes: Vec<AsmEntityChange>,
 }
 
+impl DecodeCost for AsmBulletinBoard {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        DecodeCost::decode_cost(
+            &(
+                &self.id,
+                &self.parent,
+                &self.byte_offset,
+                &self.owner_ref,
+                &self.number,
+                &self.changes,
+            ),
+            ctx,
+            operation,
+        )
+    }
+}
+
 #[derive(Debug, PartialEq, Deserialize)]
 #[cfg_attr(not(test), derive(Clone))]
 #[serde(try_from = "AsmEntityChangeSerde")]
@@ -809,6 +1208,20 @@ pub(crate) struct AsmEntityChange {
     pub(crate) parent: String,
     pub(crate) byte_offset: u64,
     pub(crate) kind: AsmEntityChangeKind,
+}
+
+impl DecodeCost for AsmEntityChange {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        DecodeCost::decode_cost(
+            &(&self.id, &self.parent, &self.byte_offset, &self.kind),
+            ctx,
+            operation,
+        )
+    }
 }
 
 #[cfg(test)]
@@ -871,6 +1284,23 @@ pub(crate) enum AsmEntityChangeKind {
     Insert { new: i64 },
     Delete { old: i64 },
     Update { old: i64, new: i64 },
+}
+
+impl DecodeCost for AsmEntityChangeKind {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        const VARIANT_TAG: u8 = 0;
+        match self {
+            Self::Insert { new } => DecodeCost::decode_cost(&(&VARIANT_TAG, new), ctx, operation),
+            Self::Delete { old } => DecodeCost::decode_cost(&(&VARIANT_TAG, old), ctx, operation),
+            Self::Update { old, new } => {
+                DecodeCost::decode_cost(&(&VARIANT_TAG, old, new), ctx, operation)
+            }
+        }
+    }
 }
 
 impl AsmEntityChange {
@@ -977,6 +1407,59 @@ impl From<AsmEntityChange> for AsmEntityChangeSerde {
 #[cfg(test)]
 mod tests {
     use super::{AsmDeltaState, AsmHistoricalTopology, AsmTopologyCache};
+
+    #[test]
+    fn asm_history_decode_cost_counts_owned_children() {
+        let record = super::AsmHistoryRecord {
+            id: "r".into(),
+            parent: "p".into(),
+            revision_id: None,
+            byte_offset: 0,
+            framing: super::AsmHistoryRecordFraming::Framed {
+                index: 0,
+                name: "n".into(),
+                entity_references: vec![1],
+            },
+            raw_bytes: vec![0],
+        };
+        let history = super::AsmHistory {
+            id: "h".into(),
+            byte_offset: 0,
+            preamble: None,
+            record_table_binding_budget_exceeded: false,
+            states: vec![super::AsmDeltaState {
+                id: "s".into(),
+                parent: "p".into(),
+                byte_offset: 0,
+                state_id: 1,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref: None,
+                node_index: 1,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: vec![record],
+                entity_versions: Vec::new(),
+                topology_cache: super::AsmTopologyCache::Absent,
+                transition: None,
+            }],
+        };
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .expect("context");
+        // The total includes history and state fields, record framing, references, and raw bytes.
+        assert_eq!(
+            cadmpeg_core::decode::cost::DecodeCost::decode_cost(&history, &ctx, "measure history")
+                .expect("cost"),
+            96
+        );
+    }
 
     #[test]
     fn history_record_borrowed_wire_matches_owned_wire_bytes() {

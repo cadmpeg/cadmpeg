@@ -1080,7 +1080,7 @@ fn message_pack_name_table(
         }
     };
     let mut entries = Vec::new();
-    for _ in 0..count {
+    for _ in ctx.admit_iter(&(0..count), "visit paramesh stream-name entries")? {
         let name = take_string(ctx, bytes, &mut at)?;
         if name.is_empty() {
             return Err(CodecError::malformed(
@@ -1178,7 +1178,7 @@ fn stream_descriptor(
         }
     };
     let mut entries = Vec::new();
-    for _ in 0..count {
+    for _ in ctx.admit_iter(&(0..count), "visit paramesh stream descriptor entries")? {
         let tag = *bytes
             .get(at)
             .ok_or_else(|| CodecError::malformed("paramesh stream descriptor is truncated"))?;
@@ -1731,6 +1731,7 @@ fn decode_triangles(
     while let (Some(first), Some(second), Some(third)) =
         (corners.next(), corners.next(), corners.next())
     {
+        ctx.charge_work(1, "group paramesh triangle corners")?;
         ctx.push_vec(
             &mut triangles,
             [first, second, third],
@@ -2030,6 +2031,7 @@ fn registry_feature_edges(
         .admit_iter(&endpoints, "collect paramesh feature-edge endpoints")?
         .copied();
     while let (Some(first), Some(second)) = (endpoint_values.next(), endpoint_values.next()) {
+        ctx.charge_work(1, "validate paramesh feature-edge pair")?;
         let edge = [first, second];
         let high_in_domain = index_from_u32(edge[1]) < vertices;
         if edge[0] >= edge[1] || !high_in_domain {
@@ -2660,6 +2662,34 @@ mod tests {
     }
 
     #[test]
+    fn paramesh_stream_name_table_refuses_work_before_visiting_entries() {
+        let bytes = [0x81, 0xa1, b'A', 0];
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "visit paramesh stream-name entries",
+            0,
+            |ctx| message_pack_name_table_charged(ctx, &bytes),
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "visit paramesh stream-name entries"));
+    }
+
+    #[test]
+    fn paramesh_stream_descriptor_refuses_work_before_visiting_entries() {
+        let bytes = [0x81, 0xa1, b'D', 3];
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "visit paramesh stream descriptor entries",
+            0,
+            |ctx| stream_descriptor_charged(ctx, &bytes),
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "visit paramesh stream descriptor entries"));
+    }
+
+    #[test]
     fn paramesh_protobuf_field_vector_refuses_collection_limit() {
         for bytes in [
             &[0x08, 0][..],
@@ -2928,6 +2958,23 @@ mod tests {
         });
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.operation == "collect paramesh triangles"));
+    }
+
+    #[test]
+    fn paramesh_triangle_grouping_refuses_work_limit() {
+        let stream = [1i32.to_le_bytes(), 1i32.to_le_bytes(), 0i32.to_le_bytes()].concat();
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "group paramesh triangle corners",
+            0,
+            |ctx| decode_triangles_charged(ctx, &stream, 3).map(|_| ()),
+        );
+        assert!(matches!(
+            error,
+            CodecError::ResourceLimit(limit)
+                if limit.operation == "group paramesh triangle corners"
+                    && limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+        ));
     }
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::units::UnitVector3;
@@ -3509,6 +3556,33 @@ mod tests {
         ))
         .expect("mesh container");
         assert_eq!(mesh.feature_edges, [[0, 1], [1, 2]]);
+    }
+
+    #[test]
+    fn paramesh_feature_edge_pair_validation_refuses_work_limit() {
+        let registry = feature_edge_entry("edges");
+        let bytes = container_with_registry(
+            &TRIANGLE_VERTICES,
+            &TRIANGLE_CORNERS,
+            &registry,
+            &[(
+                "edges",
+                delta_descriptor(),
+                terminal_delta_values(&[1, 2, 0, 1]),
+            )],
+        );
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "validate paramesh feature-edge pair",
+            0,
+            |ctx| decode_mesh_container_charged(ctx, &bytes).map(|_| ()),
+        );
+        assert!(matches!(
+            error,
+            CodecError::ResourceLimit(limit)
+                if limit.operation == "validate paramesh feature-edge pair"
+                    && limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+        ));
     }
 
     #[test]

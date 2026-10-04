@@ -115,24 +115,35 @@ pub(super) fn recipe_selector_candidates(
             decode.reserve_vec(&mut clauses, 1, "collect F3D recipe selector clauses")?;
             clauses.push(clause);
         }
-        let required = decode.collect_vec(
-            clauses.iter().map(|entry| {
-                entry
-                    .as_ref()
-                    .map(|entry| i64::from(entry.entry.boundary_edge_count.get()))
-            }),
-            "collect F3D recipe side counts",
-        )?;
+        let mut required_storage = decode.reserve_scoped(0, "collect F3D recipe side counts")?;
+        let required = required_storage.with_storage(|| {
+            decode.collect_vec(
+                decode
+                    .admit_iter(&clauses, "scan F3D recipe selector clauses")?
+                    .map(|entry| {
+                        entry
+                            .as_ref()
+                            .map(|entry| i64::from(entry.entry.boundary_edge_count.get()))
+                    }),
+                "collect F3D recipe side counts",
+            )
+        })?;
         let mut boundary_count_matching_edge_slots = Vec::new();
         for context in decode.admit_iter(contexts, "scan F3D recipe selector contexts")? {
-            let counts = decode.collect_vec(
-                context
-                    .incident_loops
-                    .iter()
-                    .map(|incident| i64::from(incident.boundary_edge_count)),
-                "collect F3D incident loop counts",
-            )?;
-            if incident_loop_counts_satisfy_sides(&counts, &required) {
+            let mut counts_storage =
+                decode.reserve_scoped(0, "collect F3D incident loop counts")?;
+            let counts = counts_storage.with_storage(|| {
+                decode.collect_vec(
+                    decode
+                        .admit_iter(
+                            &context.incident_loops,
+                            "scan F3D recipe selector incident loops",
+                        )?
+                        .map(|incident| i64::from(incident.boundary_edge_count)),
+                    "collect F3D incident loop counts",
+                )
+            })?;
+            if incident_loop_counts_satisfy_sides(decode, &counts, &required)? {
                 decode.reserve_vec(
                     &mut boundary_count_matching_edge_slots,
                     1,
@@ -288,18 +299,34 @@ pub(super) fn historical_edge_context(
     )
 }
 
-pub(super) fn incident_loop_counts_satisfy_sides(counts: &[i64], required: &[Option<i64>]) -> bool {
-    required.iter().enumerate().all(|(ordinal, value)| {
+pub(super) fn incident_loop_counts_satisfy_sides(
+    decode: &cadmpeg_core::decode::DecodeContext<'_>,
+    counts: &[i64],
+    required: &[Option<i64>],
+) -> Result<bool, cadmpeg_core::CodecError> {
+    for (ordinal, value) in decode
+        .admit_iter(required, "scan F3D recipe selector required sides")?
+        .enumerate()
+    {
         let Some(value) = value else {
-            return true;
+            continue;
         };
-        let available = counts.iter().filter(|count| *count == value).count();
-        let needed = required[..=ordinal]
-            .iter()
+        let available = decode
+            .admit_iter(counts, "count F3D recipe selector incident loops")?
+            .filter(|count| *count == value)
+            .count();
+        let needed = decode
+            .admit_iter(
+                &required[..=ordinal],
+                "count F3D recipe selector required loop occurrences",
+            )?
             .filter(|candidate| *candidate == &Some(*value))
             .count();
-        available >= needed
-    })
+        if available < needed {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 pub(super) fn bind_face_selection(
@@ -570,9 +597,9 @@ pub(super) fn bind_body_recipe_face_selection(
     }
     let state = crate::ids::history_input_state_id_charged(ctx, feature_id, previous_state_id)?;
     let mut faces = Vec::new();
-    for slot in slots {
+    for slot in ctx.admit_iter(&slots, "scan F3D body recipe face slots")? {
         let face =
-            crate::ids::history_input_face_id_charged(ctx, feature_id, previous_state_id, slot)?;
+            crate::ids::history_input_face_id_charged(ctx, feature_id, previous_state_id, *slot)?;
 
         ctx.reserve_vec(&mut faces, 1, "collect F3D body recipe face identities")?;
         faces.push(face);
@@ -1165,11 +1192,7 @@ fn component_histories<'a>(
             continue;
         };
         let mut matches_blob = false;
-        for blob in &blobs {
-            {
-                let ctx = decode;
-                ctx.charge_work(1, "match F3D component history blobs")?;
-            }
+        for blob in decode.admit_iter(&blobs, "match F3D component history blobs")? {
             if crate::ids::encoded_identity_key_component_matches(encoded_basename, blob) {
                 matches_blob = true;
                 break;
@@ -1186,7 +1209,17 @@ fn component_histories<'a>(
         Ord::cmp,
         "sort F3D component histories",
     )?;
-    selected.dedup_by(|left, right| left.id == right.id);
+    decode.dedup_by(
+        &mut selected,
+        |left, right| {
+            decode.equal(
+                &left.id,
+                &right.id,
+                "compare F3D component history IDs",
+            )
+        },
+        "compact F3D component history IDs",
+    )?;
     Ok(Some(selected))
 }
 
@@ -1279,16 +1312,34 @@ pub(crate) fn bind_entity_selection_history(
         operand.historical_face_candidates =
             entity_selection_face_candidates(decode, operand.primary_identity, histories)?;
         let stream = crate::ids::native_stream(&operand.id);
-        let mut matching_scopes = scopes.iter().filter(|scope| {
-            scope.record_index == operand.scope_record_index
-                && crate::ids::native_stream(&scope.id) == stream
-        });
-        let Some(scope) = matching_scopes.next() else {
+        let matches_scope = |scope: &crate::records::feature::scope::DesignParameterScope| {
+            if scope.record_index != operand.scope_record_index {
+                return Ok(false);
+            }
+            decode.equal(
+                &crate::ids::native_stream(&scope.id),
+                &stream,
+                "compare F3D selection entity scope stream",
+            )
+        };
+        let Some(scope_index) = decode.position_by(
+            scopes,
+            |scope| matches_scope(scope),
+            "find F3D selection entity scope",
+        )? else {
             continue;
         };
-        if matching_scopes.next().is_some() {
+        if decode
+            .position_by(
+                &scopes[scope_index + 1..],
+                |scope| matches_scope(scope),
+                "find F3D selection entity scope",
+            )?
+            .is_some()
+        {
             continue;
         }
+        let scope = &scopes[scope_index];
         let Some(previous_state_id) = scope.previous_history_state_id() else {
             continue;
         };
@@ -1941,57 +1992,138 @@ pub(crate) fn bind_mirror_selection_planes(
         else {
             continue;
         };
-        let mut matching_groups = groups.iter().filter(|group| {
-            crate::ids::native_stream(&group.id) == stream.as_deref()
-                && group.scope_record_index == record_index
+        let matches_group = |group: &crate::records::topology::construction::DesignConstructionOperandGroup| {
+            if !decode.equal(
+                &crate::ids::native_stream(&group.id),
+                &stream.as_deref(),
+                "compare F3D Mirror plane group stream",
+            )? {
+                return Ok(false);
+            }
+            Ok(group.scope_record_index == record_index
                 && group.record_index == construction.plane_group_record_index
                 && group.role() == DesignOperandRole::ROLE_0X5
                 && group
                     .members()
                     .iter()
                     .map(|member| member.value)
-                    .eq([selection_record_index])
-        });
-        let Some(group) = matching_groups.next() else {
+                    .eq([selection_record_index]))
+        };
+        let Some(group_index) = decode.position_by(
+            groups,
+            |group| matches_group(group),
+            "find F3D Mirror plane group",
+        )? else {
             continue;
         };
-        if matching_groups.next().is_some() {
+        if decode
+            .position_by(
+                &groups[group_index + 1..],
+                |group| matches_group(group),
+                "find F3D Mirror plane group",
+            )?
+            .is_some()
+        {
             continue;
         }
-        let mut matching_operands = operands.iter().filter(|operand| {
-            crate::ids::native_stream(&operand.id) == stream.as_deref()
-                && operand.scope_record_index == record_index
+        let group = &groups[group_index];
+        let matches_operand = |operand: &crate::records::topology::entity_selection::DesignEntitySelectionOperand| {
+            if !decode.equal(
+                &crate::ids::native_stream(&operand.id),
+                &stream.as_deref(),
+                "compare F3D Mirror plane operand stream",
+            )? {
+                return Ok(false);
+            }
+            Ok(operand.scope_record_index == record_index
                 && operand.group_record_index == group.record_index
                 && operand.group_member_ordinal == 0
-                && operand.record_index() == selection_record_index
-        });
-        let matching_operand = matching_operands.next();
-        if matching_operands.next().is_some() {
-            continue;
-        }
-        let mut matching_face_operands = face_operands.iter().filter(|operand| {
-            crate::ids::native_stream(&operand.id) == stream.as_deref()
-                && operand.scope_record_index == record_index
+                && operand.record_index() == selection_record_index)
+        };
+        let matching_operand = if let Some(index) = decode.position_by(
+            operands,
+            |operand| matches_operand(operand),
+            "find F3D Mirror plane operand",
+        )? {
+            if decode
+                .position_by(
+                    &operands[index + 1..],
+                    |operand| matches_operand(operand),
+                    "find F3D Mirror plane operand",
+                )?
+                .is_some()
+            {
+                continue;
+            }
+            Some(&operands[index])
+        } else {
+            None
+        };
+        let matches_face_operand = |operand: &crate::records::topology::face::DesignFaceOperand| {
+            if !decode.equal(
+                &crate::ids::native_stream(&operand.id),
+                &stream.as_deref(),
+                "compare F3D Mirror plane face-operand stream",
+            )? {
+                return Ok(false);
+            }
+            Ok(operand.scope_record_index == record_index
                 && operand.group_record_index() == Some(group.record_index)
                 && operand.group_member_ordinal() == Some(0)
-                && operand.record_index() == selection_record_index
-        });
-        let matching_face_operand = matching_face_operands.next();
-        if matching_face_operands.next().is_some() {
-            continue;
-        }
+                && operand.record_index() == selection_record_index)
+        };
+        let matching_face_operand = if let Some(index) = decode.position_by(
+            face_operands,
+            |operand| matches_face_operand(operand),
+            "find F3D Mirror plane face operand",
+        )? {
+            if decode
+                .position_by(
+                    &face_operands[index + 1..],
+                    |operand| matches_face_operand(operand),
+                    "find F3D Mirror plane face operand",
+                )?
+                .is_some()
+            {
+                continue;
+            }
+            Some(&face_operands[index])
+        } else {
+            None
+        };
         let plane = if let Some(operand) = matching_operand {
             if matching_face_operand.is_some() {
                 continue;
             }
-            let mut matching_identities = identities.iter().filter(|identity| {
-                crate::ids::native_stream(&identity.id) == stream.as_deref()
-                    && identity.group_record_index == group.record_index
-            });
-            let identity = matching_identities.next();
-            if matching_identities.next().is_some() {
-                continue;
-            }
+            let matches_identity = |identity: &crate::records::topology::construction::DesignConstructionOperandIdentity| {
+                if !decode.equal(
+                    &crate::ids::native_stream(&identity.id),
+                    &stream.as_deref(),
+                    "compare F3D Mirror plane identity stream",
+                )? {
+                    return Ok(false);
+                }
+                Ok(identity.group_record_index == group.record_index)
+            };
+            let identity = if let Some(index) = decode.position_by(
+                identities,
+                |identity| matches_identity(identity),
+                "find F3D Mirror plane identity",
+            )? {
+                if decode
+                    .position_by(
+                        &identities[index + 1..],
+                        |identity| matches_identity(identity),
+                        "find F3D Mirror plane identity",
+                    )?
+                    .is_some()
+                {
+                    continue;
+                }
+                Some(&identities[index])
+            } else {
+                None
+            };
             let persistent_candidates = if let Some(identity) = identity
                 .and_then(crate::records::topology::construction::DesignConstructionOperandIdentity::persistent_identity) {
                 entity_selection_face_candidates(decode, identity.local_id, histories)?
