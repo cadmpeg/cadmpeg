@@ -10,6 +10,7 @@ use crate::math::sum::{finite_dot, ExactSignedSum, ScaledValue};
 use crate::math::{Point2, Point3, Vector3};
 use crate::scalar::{FiniteReal, PositiveReal};
 use crate::units::UnitVector3;
+use cadmpeg_core::decode::cost::DecodeCost;
 
 /// A row-major affine transform applied to two-dimensional geometry.
 ///
@@ -619,3 +620,13 @@ mod tests {
 }
 
 mod identity_rewrite;
+
+impl DecodeCost for Transform {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        self.affine_rows().decode_cost(ctx, operation)
+    }
+}
