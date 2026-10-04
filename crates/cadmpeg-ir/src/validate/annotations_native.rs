@@ -223,9 +223,8 @@ fn source_field_path_resolves(
     let Some(index) = ctx.strip_prefix(path, "links.", "annotation source field path scan")? else {
         return Ok(false);
     };
-    let index = match ctx.parse_text::<usize>(index, "annotation source field path scan")? {
-        Ok(index) => index,
-        Err(_) => return Ok(false),
+    let Ok(index) = ctx.parse_text::<usize>(index, "annotation source field path scan")? else {
+        return Ok(false);
     };
     Ok(index < record.links().len())
 }

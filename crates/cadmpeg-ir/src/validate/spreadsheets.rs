@@ -50,7 +50,10 @@ pub(super) fn check_spreadsheets(
                 continue;
             };
             if !ctx.equal(
-                &parameter.owner.as_ref().map(|owner| owner.as_str()),
+                &parameter
+                    .owner
+                    .as_ref()
+                    .map(crate::features::FeatureId::as_str),
                 &Some(sheet.feature.as_str()),
                 "compare spreadsheet parameter owner",
             )? {
