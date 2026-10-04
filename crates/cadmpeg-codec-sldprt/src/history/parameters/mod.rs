@@ -318,7 +318,7 @@ pub(super) fn apply_evaluated_parameters(
             replacements.push((name, value));
         }
         for (name, value) in replacements {
-            feature.parameters.insert(name, value);
+            ctx.insert_btree_map(&mut (feature.parameters), name, value, "insert SLDPRT ordered entry")?;
         }
     }
     Ok(())

@@ -1467,13 +1467,12 @@ fn scan_solidworks_envelopes<'a>(
                     ctx.reserve_vec(indices, 1, "collect SLDPRT configuration source indices")?;
                     indices.push(index);
                 } else {
-                    ctx.charge_collection_items(1, "collect SLDPRT configuration source names")?;
                     let name =
                         ctx.copy_retained_text(name, "retain SLDPRT configuration source name")?;
                     let mut indices = Vec::new();
                     ctx.reserve_vec(&mut indices, 1, "collect SLDPRT configuration source indices")?;
                     indices.push(index);
-                    scan.configuration_source_indices.insert(name, indices);
+                    ctx.insert_btree_map(&mut (scan.configuration_source_indices), name, indices, "collect SLDPRT configuration source names")?;
                 }
             }
         }
@@ -1495,6 +1494,7 @@ fn scan_solidworks_envelopes<'a>(
             continue;
         }
         let model = root.descendants().find(|node| node.has_tag_name("swModel"));
+        let mut source_attributes_storage = ctx.reserve_scoped(0, "SLDPRT temporary configuration attributes")?;
         let mut source_attributes = BTreeMap::new();
         for configuration in root
             .descendants()
@@ -1513,10 +1513,7 @@ fn scan_solidworks_envelopes<'a>(
                 ("swConfigurationAlternateName", "alternate_name"),
             ] {
                 if let Some(value) = configuration.attribute(source) {
-                    if !ctx.contains_key_btree_map(&(source_attributes), &(slot, target), "test SLDPRT map key")? {
-                        ctx.charge_collection_items(1, "collect SLDPRT configuration attributes")?;
-                    }
-                    source_attributes.insert((slot, target), value);
+                    source_attributes_storage.with_storage(|| ctx.insert_btree_map(&mut source_attributes, (slot, target), value, "collect SLDPRT configuration attributes"))?;
                 }
             }
         }
@@ -1530,8 +1527,7 @@ fn scan_solidworks_envelopes<'a>(
             ctx.push_retained_char(&mut key, '_', "append SLDPRT decoded character")?;
             key.push_str(target);
             let value = ctx.copy_retained_text(value, "retain SLDPRT configuration value")?;
-            ctx.charge_collection_items(1, "retain SLDPRT configuration attribute")?;
-            configuration_attributes.insert(key, value);
+            ctx.insert_btree_map(&mut (configuration_attributes), key, value, "retain SLDPRT configuration attribute")?;
         }
         scan.first = Some(SolidWorksEnvelope {
             sw_version: root.attribute("swVersion").map(|value| ctx.copy_retained_text(value, "retain SLDPRT version")).transpose()?,

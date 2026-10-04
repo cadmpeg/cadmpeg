@@ -3148,14 +3148,8 @@ fn build_geometry_ir(
     };
     assign_native_configuration_indices(ctx, &ir, &mut native)?;
     if let Some(source) = &mut ir.source {
-        source.attributes.insert(
-            cadmpeg_core::nonblank_literal!("sldprt_native_configuration_sha256"),
-            crate::history::hash::native_configuration_hash(ctx, &native.feature_histories)?,
-        );
-        source.attributes.insert(
-            cadmpeg_core::nonblank_literal!("sldprt_native_history_sha256"),
-            crate::history::hash::history_hash(ctx, &native.feature_histories)?,
-        );
+        ctx.insert_btree_map(&mut (source.attributes), cadmpeg_core::nonblank_literal!("sldprt_native_configuration_sha256"), crate::history::hash::native_configuration_hash(ctx, &native.feature_histories)?, "insert SLDPRT ordered entry")?;
+        ctx.insert_btree_map(&mut (source.attributes), cadmpeg_core::nonblank_literal!("sldprt_native_history_sha256"), crate::history::hash::history_hash(ctx, &native.feature_histories)?, "insert SLDPRT ordered entry")?;
     }
     ctx.admit_entities(
         u64_from_index(ir.model.entity_count()),
@@ -3642,52 +3636,25 @@ fn source_meta(
     display: crate::tessellation::Summary,
 ) -> Result<SourceMeta, CodecError> {
     let mut attributes = BTreeMap::new();
-    attributes.insert(
-        cadmpeg_core::nonblank_literal!("outer_version"),
-        format!("0x{:08x}", scan.version),
-    );
+    ctx.insert_btree_map(&mut (attributes), cadmpeg_core::nonblank_literal!("outer_version"), format!("0x{:08x}", scan.version), "insert SLDPRT ordered entry")?;
     if display.vertices > 0 {
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("displaylist_vertices"),
-            display.vertices.to_string(),
-        );
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("displaylist_triangles"),
-            display.triangles.to_string(),
-        );
+        ctx.insert_btree_map(&mut (attributes), cadmpeg_core::nonblank_literal!("displaylist_vertices"), display.vertices.to_string(), "insert SLDPRT ordered entry")?;
+        ctx.insert_btree_map(&mut (attributes), cadmpeg_core::nonblank_literal!("displaylist_triangles"), display.triangles.to_string(), "insert SLDPRT ordered entry")?;
     }
-    attributes.insert(
-        cadmpeg_core::nonblank_literal!("block_count"),
-        scan.blocks.len().to_string(),
-    );
-    attributes.insert(
-        cadmpeg_core::nonblank_literal!("compound_stream_count"),
-        scan.compound_streams.len().to_string(),
-    );
+    ctx.insert_btree_map(&mut (attributes), cadmpeg_core::nonblank_literal!("block_count"), scan.blocks.len().to_string(), "insert SLDPRT ordered entry")?;
+    ctx.insert_btree_map(&mut (attributes), cadmpeg_core::nonblank_literal!("compound_stream_count"), scan.compound_streams.len().to_string(), "insert SLDPRT ordered entry")?;
     if let Some(site) = container::select_active_parasolid_site(ctx, scan)? {
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("active_parasolid_block"),
-            copy_retained_string(
+        ctx.insert_btree_map(&mut (attributes), cadmpeg_core::nonblank_literal!("active_parasolid_block"), copy_retained_string(
                 ctx,
                 site.source_stream().as_str(),
                 "retain SLDPRT active site name",
-            )?,
-        );
+            )?, "insert SLDPRT ordered entry")?;
     } else {
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("sldprt_active_partition_unresolved"),
-            "true".into(),
-        );
+        ctx.insert_btree_map(&mut (attributes), cadmpeg_core::nonblank_literal!("sldprt_active_partition_unresolved"), "true".into(), "insert SLDPRT ordered entry")?;
     }
     if let Some(header) = header {
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("parasolid_schema"),
-            copy_retained_string(ctx, header.schema.value(), "retain SLDPRT source schema")?,
-        );
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("parasolid_description"),
-            copy_retained_string(ctx, &header.description, "retain SLDPRT source description")?,
-        );
+        ctx.insert_btree_map(&mut (attributes), cadmpeg_core::nonblank_literal!("parasolid_schema"), copy_retained_string(ctx, header.schema.value(), "retain SLDPRT source schema")?, "insert SLDPRT ordered entry")?;
+        ctx.insert_btree_map(&mut (attributes), cadmpeg_core::nonblank_literal!("parasolid_description"), copy_retained_string(ctx, &header.description, "retain SLDPRT source description")?, "insert SLDPRT ordered entry")?;
     }
     add_preview_metadata(ctx, scan, &mut attributes)?;
     add_solidworks_xml_metadata(ctx, scan, &mut attributes)?;
@@ -3725,14 +3692,13 @@ fn add_preview_metadata(
                 let key = |field: &str| {
                     cadmpeg_core::nonblank_literal!(ctx, "png_preview_{png_index}_{field}")
                 };
-                ctx.charge_collection_items(7, "collect SLDPRT PNG preview metadata")?;
-                attributes.insert(key("width")?, width.to_string());
-                attributes.insert(key("height")?, height.to_string());
-                attributes.insert(key("bit_depth")?, fields[0].to_string());
-                attributes.insert(key("color_type")?, fields[1].to_string());
-                attributes.insert(key("compression")?, fields[2].to_string());
-                attributes.insert(key("filter")?, fields[3].to_string());
-                attributes.insert(key("interlace")?, fields[4].to_string());
+                ctx.insert_btree_map(&mut *attributes, key("width")?, width.to_string(), "insert SLDPRT ordered entry")?;
+                ctx.insert_btree_map(&mut *attributes, key("height")?, height.to_string(), "insert SLDPRT ordered entry")?;
+                ctx.insert_btree_map(&mut *attributes, key("bit_depth")?, fields[0].to_string(), "insert SLDPRT ordered entry")?;
+                ctx.insert_btree_map(&mut *attributes, key("color_type")?, fields[1].to_string(), "insert SLDPRT ordered entry")?;
+                ctx.insert_btree_map(&mut *attributes, key("compression")?, fields[2].to_string(), "insert SLDPRT ordered entry")?;
+                ctx.insert_btree_map(&mut *attributes, key("filter")?, fields[3].to_string(), "insert SLDPRT ordered entry")?;
+                ctx.insert_btree_map(&mut *attributes, key("interlace")?, fields[4].to_string(), "insert SLDPRT ordered entry")?;
                 png_index += 1;
             }
             container::PayloadFamily::BmpThumbnail => {
@@ -3753,26 +3719,19 @@ fn add_preview_metadata(
                 let key = |field: &str| {
                     cadmpeg_core::nonblank_literal!(ctx, "bmp_thumbnail_{bmp_index}_{field}")
                 };
-                ctx.charge_collection_items(6, "collect SLDPRT BMP preview metadata")?;
-                attributes.insert(key("width")?, width.to_string());
-                attributes.insert(key("height")?, height.to_string());
-                attributes.insert(key("planes")?, planes.to_string());
-                attributes.insert(key("bit_count")?, bits_per_pixel.to_string());
-                attributes.insert(key("compression")?, compression.to_string());
-                attributes.insert(key("image_size")?, image_size.to_string());
+                ctx.insert_btree_map(&mut *attributes, key("width")?, width.to_string(), "insert SLDPRT ordered entry")?;
+                ctx.insert_btree_map(&mut *attributes, key("height")?, height.to_string(), "insert SLDPRT ordered entry")?;
+                ctx.insert_btree_map(&mut *attributes, key("planes")?, planes.to_string(), "insert SLDPRT ordered entry")?;
+                ctx.insert_btree_map(&mut *attributes, key("bit_count")?, bits_per_pixel.to_string(), "insert SLDPRT ordered entry")?;
+                ctx.insert_btree_map(&mut *attributes, key("compression")?, compression.to_string(), "insert SLDPRT ordered entry")?;
+                ctx.insert_btree_map(&mut *attributes, key("image_size")?, image_size.to_string(), "insert SLDPRT ordered entry")?;
                 bmp_index += 1;
             }
             _ => {}
         }
     }
-    attributes.insert(
-        cadmpeg_core::nonblank_literal!("png_preview_count"),
-        png_index.to_string(),
-    );
-    attributes.insert(
-        cadmpeg_core::nonblank_literal!("bmp_thumbnail_count"),
-        bmp_index.to_string(),
-    );
+    ctx.insert_btree_map(&mut *attributes, cadmpeg_core::nonblank_literal!("png_preview_count"), png_index.to_string(), "insert SLDPRT ordered entry")?;
+    ctx.insert_btree_map(&mut *attributes, cadmpeg_core::nonblank_literal!("bmp_thumbnail_count"), bmp_index.to_string(), "insert SLDPRT ordered entry")?;
     Ok(())
 }
 
@@ -3798,22 +3757,13 @@ fn add_solidworks_xml_metadata(
             ),
         ] {
             if let Some(value) = value {
-                attributes.insert(
-                    key,
-                    copy_retained_string(ctx, value, "retain SLDPRT XML metadata")?,
-                );
+                ctx.insert_btree_map(&mut *attributes, key, copy_retained_string(ctx, value, "retain SLDPRT XML metadata")?, "insert SLDPRT ordered entry")?;
             }
         }
         if let Some(value) = active_configuration_name {
-            attributes.insert(
-                cadmpeg_core::nonblank_literal!("sw_configuration_name"),
-                copy_retained_string(ctx, value, "retain SLDPRT configuration name")?,
-            );
+            ctx.insert_btree_map(&mut *attributes, cadmpeg_core::nonblank_literal!("sw_configuration_name"), copy_retained_string(ctx, value, "retain SLDPRT configuration name")?, "insert SLDPRT ordered entry")?;
         } else if let Some(value) = &envelope.configuration_name {
-            attributes.insert(
-                cadmpeg_core::nonblank_literal!("sw_configuration_name"),
-                copy_retained_string(ctx, value, "retain SLDPRT configuration name")?,
-            );
+            ctx.insert_btree_map(&mut *attributes, cadmpeg_core::nonblank_literal!("sw_configuration_name"), copy_retained_string(ctx, value, "retain SLDPRT configuration name")?, "insert SLDPRT ordered entry")?;
         }
         for (key, value) in ctx.admit_iter(&envelope.configuration_attributes, "scan SLDPRT add_solidworks_xml_metadata values")? {
             let name = copy_retained_string(ctx, key, "retain SLDPRT configuration key")?;
@@ -3988,14 +3938,8 @@ fn build_metadata_ir(
     ir.model.sketch_entities = sketch_entities;
     ir.model.sketch_constraints = sketch_constraints;
     let mut attributes = BTreeMap::new();
-    attributes.insert(
-        cadmpeg_core::nonblank_literal!("outer_version"),
-        format!("0x{:08x}", scan.version),
-    );
-    attributes.insert(
-        cadmpeg_core::nonblank_literal!("block_count"),
-        scan.blocks.len().to_string(),
-    );
+    ctx.insert_btree_map(&mut (attributes), cadmpeg_core::nonblank_literal!("outer_version"), format!("0x{:08x}", scan.version), "insert SLDPRT ordered entry")?;
+    ctx.insert_btree_map(&mut (attributes), cadmpeg_core::nonblank_literal!("block_count"), scan.blocks.len().to_string(), "insert SLDPRT ordered entry")?;
     add_solidworks_xml_metadata(ctx, scan, &mut attributes)?;
 
     if let Some(site) = container::select_active_parasolid_site(ctx, scan)? {
@@ -4004,22 +3948,16 @@ fn build_metadata_ir(
             container::Section::Block(block) => u64_from_index(block.offset),
             container::Section::Compound(_) => 0,
         };
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("active_parasolid_block"),
-            copy_retained_string(
+        ctx.insert_btree_map(&mut (attributes), cadmpeg_core::nonblank_literal!("active_parasolid_block"), copy_retained_string(
                 ctx,
                 site.source_stream().as_str(),
                 "retain SLDPRT metadata active site name",
-            )?,
-        );
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("parasolid_schema"),
-            copy_retained_string(
+            )?, "insert SLDPRT ordered entry")?;
+        ctx.insert_btree_map(&mut (attributes), cadmpeg_core::nonblank_literal!("parasolid_schema"), copy_retained_string(
                 ctx,
                 site.header.schema.value(),
                 "retain SLDPRT metadata schema",
-            )?,
-        );
+            )?, "insert SLDPRT ordered entry")?;
         crate::annotations::note(
             ctx,
             &mut annotations,
@@ -4484,26 +4422,11 @@ fn project_design_history(
         form_padding,
     )?;
     if let Some(source) = &mut ir.source {
-        source.attributes.insert(
-            cadmpeg_core::nonblank_literal!("sldprt_neutral_feature_local_sha256"),
-            crate::history::hash::feature_hash(ctx, &ir.model)?,
-        );
-        source.attributes.insert(
-            cadmpeg_core::nonblank_literal!("sldprt_native_history_sha256"),
-            crate::history::hash::history_hash(ctx, histories)?,
-        );
-        source.attributes.insert(
-            cadmpeg_core::nonblank_literal!("sldprt_native_configuration_sha256"),
-            crate::history::hash::native_configuration_hash(ctx, histories)?,
-        );
-        source.attributes.insert(
-            cadmpeg_core::nonblank_literal!("sldprt_neutral_parameter_local_sha256"),
-            crate::history::hash::parameter_hash(ctx, &ir.model.parameters)?,
-        );
-        source.attributes.insert(
-            cadmpeg_core::nonblank_literal!("sldprt_native_parameter_sha256"),
-            crate::history::hash::native_parameter_hash(ctx, histories)?,
-        );
+        ctx.insert_btree_map(&mut (source.attributes), cadmpeg_core::nonblank_literal!("sldprt_neutral_feature_local_sha256"), crate::history::hash::feature_hash(ctx, &ir.model)?, "insert SLDPRT ordered entry")?;
+        ctx.insert_btree_map(&mut (source.attributes), cadmpeg_core::nonblank_literal!("sldprt_native_history_sha256"), crate::history::hash::history_hash(ctx, histories)?, "insert SLDPRT ordered entry")?;
+        ctx.insert_btree_map(&mut (source.attributes), cadmpeg_core::nonblank_literal!("sldprt_native_configuration_sha256"), crate::history::hash::native_configuration_hash(ctx, histories)?, "insert SLDPRT ordered entry")?;
+        ctx.insert_btree_map(&mut (source.attributes), cadmpeg_core::nonblank_literal!("sldprt_neutral_parameter_local_sha256"), crate::history::hash::parameter_hash(ctx, &ir.model.parameters)?, "insert SLDPRT ordered entry")?;
+        ctx.insert_btree_map(&mut (source.attributes), cadmpeg_core::nonblank_literal!("sldprt_native_parameter_sha256"), crate::history::hash::native_parameter_hash(ctx, histories)?, "insert SLDPRT ordered entry")?;
     }
 
     Ok(())
@@ -5005,10 +4928,7 @@ fn sync_active_configuration_resolutions(
 fn stamp_feature_baseline(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), CodecError> {
     let hash = crate::history::hash::feature_hash(ctx, &ir.model)?;
     if let Some(source) = &mut ir.source {
-        source.attributes.insert(
-            cadmpeg_core::nonblank_literal!("sldprt_neutral_feature_local_sha256"),
-            hash,
-        );
+        ctx.insert_btree_map(&mut (source.attributes), cadmpeg_core::nonblank_literal!("sldprt_neutral_feature_local_sha256"), hash, "insert SLDPRT ordered entry")?;
     }
     Ok(())
 }
@@ -5188,18 +5108,9 @@ fn stamp_configuration_baseline(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Resu
     let feature_state_hash =
         crate::history::hash::configuration_feature_state_hash(ctx, &ir.model.configurations)?;
     if let Some(source) = &mut ir.source {
-        source.attributes.insert(
-            cadmpeg_core::nonblank_literal!("sldprt_neutral_configuration_local_sha256"),
-            hash,
-        );
-        source.attributes.insert(
-            cadmpeg_core::nonblank_literal!("sldprt_configuration_parameter_values_local_sha256"),
-            parameter_value_hash,
-        );
-        source.attributes.insert(
-            cadmpeg_core::nonblank_literal!("sldprt_configuration_feature_states_local_sha256"),
-            feature_state_hash,
-        );
+        ctx.insert_btree_map(&mut (source.attributes), cadmpeg_core::nonblank_literal!("sldprt_neutral_configuration_local_sha256"), hash, "insert SLDPRT ordered entry")?;
+        ctx.insert_btree_map(&mut (source.attributes), cadmpeg_core::nonblank_literal!("sldprt_configuration_parameter_values_local_sha256"), parameter_value_hash, "insert SLDPRT ordered entry")?;
+        ctx.insert_btree_map(&mut (source.attributes), cadmpeg_core::nonblank_literal!("sldprt_configuration_feature_states_local_sha256"), feature_state_hash, "insert SLDPRT ordered entry")?;
     }
     Ok(())
 }
@@ -5219,18 +5130,9 @@ fn stamp_sketch_baseline(
     let constraint_hash = crate::resolved_features::hashes::constraint_hash(ctx, ir)?;
     let native_hash = crate::resolved_features::hashes::lane_hash(ctx, lanes)?;
     if let Some(source) = &mut ir.source {
-        source.attributes.insert(
-            cadmpeg_core::nonblank_literal!("sldprt_neutral_sketch_local_sha256"),
-            neutral_hash,
-        );
-        source.attributes.insert(
-            cadmpeg_core::nonblank_literal!("sldprt_native_sketch_sha256"),
-            native_hash,
-        );
-        source.attributes.insert(
-            cadmpeg_core::nonblank_literal!("sldprt_neutral_sketch_constraint_local_sha256"),
-            constraint_hash,
-        );
+        ctx.insert_btree_map(&mut (source.attributes), cadmpeg_core::nonblank_literal!("sldprt_neutral_sketch_local_sha256"), neutral_hash, "insert SLDPRT ordered entry")?;
+        ctx.insert_btree_map(&mut (source.attributes), cadmpeg_core::nonblank_literal!("sldprt_native_sketch_sha256"), native_hash, "insert SLDPRT ordered entry")?;
+        ctx.insert_btree_map(&mut (source.attributes), cadmpeg_core::nonblank_literal!("sldprt_neutral_sketch_constraint_local_sha256"), constraint_hash, "insert SLDPRT ordered entry")?;
     }
     Ok(())
 }
@@ -5244,10 +5146,7 @@ fn stamp_local_digests(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Co
     ir.finalize(ctx)?;
     let brep_hash = brep_local_sha256_in_place(ctx, ir)?;
     if let Some(source) = &mut ir.source {
-        source.attributes.insert(
-            cadmpeg_core::nonblank_literal!("brep_local_sha256"),
-            brep_hash,
-        );
+        ctx.insert_btree_map(&mut (source.attributes), cadmpeg_core::nonblank_literal!("brep_local_sha256"), brep_hash, "insert SLDPRT ordered entry")?;
     }
     let has_swobjects_semantics = ctx.admit_iter(&ir.model.attributes[..], "scan SLDPRT stamp_local_digests values")?
         .any(|attribute| attribute.id.as_str().starts_with("sldprt:metadata:"))
@@ -5262,24 +5161,15 @@ fn stamp_local_digests(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Co
                 let identity_hash =
                     crate::writer::swobjects_metadata_identity_local_sha256(ctx, ir)?;
                 if let Some(source) = &mut ir.source {
-                    source.attributes.insert(
-                        cadmpeg_core::nonblank_const!(
+                    ctx.insert_btree_map(&mut (source.attributes), cadmpeg_core::nonblank_const!(
                             crate::writer::SWOBJECTS_LOCAL_DIGEST_ATTRIBUTE
-                        ),
-                        swobjects_hash,
-                    );
-                    source.attributes.insert(
-                        cadmpeg_core::nonblank_const!(
+                        ), swobjects_hash, "insert SLDPRT ordered entry")?;
+                    ctx.insert_btree_map(&mut (source.attributes), cadmpeg_core::nonblank_const!(
                             crate::writer::SWOBJECTS_MATERIAL_LOCAL_DIGEST_ATTRIBUTE
-                        ),
-                        material_hash,
-                    );
-                    source.attributes.insert(
-                        cadmpeg_core::nonblank_const!(
+                        ), material_hash, "insert SLDPRT ordered entry")?;
+                    ctx.insert_btree_map(&mut (source.attributes), cadmpeg_core::nonblank_const!(
                             crate::writer::SWOBJECTS_METADATA_IDENTITY_LOCAL_DIGEST_ATTRIBUTE
-                        ),
-                        identity_hash,
-                    );
+                        ), identity_hash, "insert SLDPRT ordered entry")?;
                 }
             }
             (Err(error @ CodecError::ResourceLimit(_)), _)
@@ -5290,10 +5180,7 @@ fn stamp_local_digests(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Co
     if !ir.model.pmi.is_empty() {
         if let Ok(hash) = crate::writer::pmi_local_sha256(ir) {
             if let Some(source) = &mut ir.source {
-                source.attributes.insert(
-                    cadmpeg_core::nonblank_const!(crate::writer::PMI_LOCAL_DIGEST_ATTRIBUTE),
-                    hash,
-                );
+                ctx.insert_btree_map(&mut (source.attributes), cadmpeg_core::nonblank_const!(crate::writer::PMI_LOCAL_DIGEST_ATTRIBUTE), hash, "insert SLDPRT ordered entry")?;
             }
         }
     }
@@ -5306,10 +5193,7 @@ fn stamp_local_digests(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Co
         "record SLDPRT document digest",
     )?;
     if let Some(source) = &mut ir.source {
-        source.attributes.insert(
-            cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
-            hash,
-        );
+        ctx.insert_btree_map(&mut (source.attributes), cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE), hash, "insert SLDPRT ordered entry")?;
     }
     Ok(())
 }

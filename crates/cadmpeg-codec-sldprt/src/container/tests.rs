@@ -931,3 +931,33 @@ fn first_solidworks_envelope_propagates_resource_refusal() {
     };
     assert_eq!(ctx.resource_refusal(), Some(limit));
 }
+
+
+#[test]
+fn configuration_attribute_map_scoped_refusal_preserves_replacement_semantics() {
+    let payload = b"<swSolidWorks><swConfiguration swID=\"0\" swConfigurationFlags=\"first\"/><swConfiguration swID=\"0\" swConfigurationFlags=\"last\"/></swSolidWorks>";
+    let service = cadmpeg_test_support::service_decode_context();
+    let envelope = container::first_solidworks_envelope(&service, [payload.as_slice()])
+        .unwrap().unwrap();
+    assert_eq!(envelope.configuration_attributes.len(), 1);
+    assert_eq!(envelope.configuration_attributes.get("sw_configuration_0_flags").unwrap(), "last");
+    let arena = DecodeArena::new();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "collect SLDPRT configuration attributes",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = container::first_solidworks_envelope(&ctx, [payload.as_slice()]);
+            if let Err(CodecError::ResourceLimit(ref limit)) = result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+            }
+            result
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes
+            && limit.operation == "collect SLDPRT configuration attributes"
+            && limit.additional > 0));
+}
