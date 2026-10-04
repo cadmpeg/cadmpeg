@@ -1221,10 +1221,12 @@ pub(crate) fn bind_feature_outputs(
         for state in ctx
             .admit_iter(&history.states, "scan F3D history states")?
         {
-            if !by_node.contains_key(&state.node_index) {
-                ctx.reserve_map(&mut by_node, 1, "index F3D feature output history nodes")?;
-            }
-            by_node.insert(state.node_index, state);
+            ctx.insert_hash_map(
+                &mut by_node,
+                state.node_index,
+                state,
+                "index F3D feature output history nodes",
+            )?;
         }
         if by_node.len() != history.states.len() {
             continue;
@@ -1259,17 +1261,23 @@ pub(crate) fn bind_feature_outputs(
         let id = body
             .id
             .try_clone_for_decode(ctx, "copy F3D active body identity")?;
-        if !active.contains_key(&slot) {
-            ctx.reserve_map(&mut active, 1, "index F3D active feature output bodies")?;
-        }
-        active.insert(slot, id);
+        ctx.insert_hash_map(
+            &mut active,
+            slot,
+            id,
+            "index F3D active feature output bodies",
+        )?;
     }
     for feature in features {
-        let Some(scope) = feature
-            .native_ref
-            .as_deref()
-            .and_then(|id| scopes.iter().find(|scope| scope.id == id))
-        else {
+        let Some(id) = feature.native_ref.as_deref() else {
+            continue;
+        };
+        let operation = "find F3D feature output scope";
+        let Some(scope) = ctx.find_by(
+            scopes,
+            |scope| ctx.equal(scope.id.as_str(), id, operation),
+            operation,
+        )? else {
             continue;
         };
         let (Some(state_id), Some(previous_state_id)) =
@@ -1358,12 +1366,24 @@ pub(crate) fn bind_sweep_result_modes(
 
     let mut body_kinds = HashMap::new();
     for body in ctx.admit_iter(bodies, "scan F3D sweep bodies")? {
-        if !body_kinds.contains_key(&body.id) {
-            ctx.reserve_map(&mut body_kinds, 1, "index F3D sweep body kinds")?;
-        }
-        body_kinds.insert(&body.id, body.kind);
+        ctx.insert_hash_map(
+            &mut body_kinds,
+            &body.id,
+            body.kind,
+            "index F3D sweep body kinds",
+        )?;
     }
-    for feature in features {
+    let mut feature_position_storage =
+        ctx.reserve_scoped(0, "stage F3D sweep feature positions")?;
+    let feature_positions = feature_position_storage.with_storage(|| {
+        ctx.collect_indexed_vec(
+            features.len(),
+            "stage F3D sweep feature positions",
+            |index| Ok(index),
+        )
+    })?;
+    for index in ctx.admit_iter(&feature_positions, "scan F3D sweep features")? {
+        let feature = &mut features[*index];
         let FeatureDefinition::Operation(FeatureOperation::Sweep {
             shape: SweepShape::Unresolved { sections, .. },
             ..
@@ -1378,8 +1398,7 @@ pub(crate) fn bind_sweep_result_modes(
         let mut all_sheet = true;
         let mut all_solid = true;
         for output in feature.evaluation.outputs() {
-            ctx.charge_work(1, "resolve F3D sweep output kind")?;
-            match body_kinds.get(output) {
+            match ctx.get_hash_map(&body_kinds, output, "resolve F3D sweep output kind")? {
                 Some(BodyKind::Sheet) => all_solid = false,
                 Some(BodyKind::Solid) => all_sheet = false,
                 _ => {
@@ -2388,7 +2407,10 @@ fn unique_external_body_candidate(
         })
         .transpose()?;
     let mut candidates: Option<BTreeSet<cadmpeg_ir::ids::BodyId>> = None;
-    for reference in operand.references() {
+    for reference in ctx.admit_iter(
+        operand.references(),
+        "scan F3D external body references",
+    )? {
         let mut reference_candidates = BTreeSet::new();
         for face in ctx
             .admit_iter(&reference.candidate_faces, "scan F3D reference candidate faces")?

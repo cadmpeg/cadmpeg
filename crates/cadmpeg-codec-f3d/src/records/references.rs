@@ -48,6 +48,16 @@ pub(crate) struct PersistentReference {
 #[serde(try_from = "String")]
 pub(crate) struct DesignClassTag(String);
 
+impl cadmpeg_core::decode::cost::DecodeCost for DesignClassTag {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&self.0, ctx, operation)
+    }
+}
+
 impl TryFrom<String> for DesignClassTag {
     type Error = String;
     fn try_from(value: String) -> Result<Self, Self::Error> {

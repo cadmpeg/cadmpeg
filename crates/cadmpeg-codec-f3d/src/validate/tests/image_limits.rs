@@ -275,3 +275,65 @@ fn decal_invalid_entity_refuses_retained_limit() {
         if limit.operation == "retain F3D validation entity")
     );
 }
+
+fn image_work_error(canvas: bool, operation: &str) -> cadmpeg_core::CodecError {
+    crate::test_support::with_decode_context(|service_ctx| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let mut native = crate::native::F3dNative::default();
+        if canvas {
+            native.design_canvas_images.push(canvas_image());
+            native.design_parameter_scopes.push(scope(
+                crate::records::feature::scope::DesignScopePayload::Canvas,
+                103,
+            ));
+        } else {
+            native.design_decal_images.push(decal_image());
+            native.design_parameter_scopes.push(scope(
+                crate::records::feature::scope::DesignScopePayload::Decal,
+                23,
+            ));
+        }
+        crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |decode| {
+                let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+                ctx.decode = decode;
+                if canvas {
+                    super::super::validate_canvas_images(&ctx, &mut Vec::new())
+                } else {
+                    super::super::validate_decal_images(&ctx, &mut Vec::new())
+                }
+            },
+        )
+    })
+}
+
+#[test]
+fn canvas_scope_lookup_preserves_work_refusal() {
+    let error = image_work_error(true, "find F3D Canvas scope");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "find F3D Canvas scope"));
+}
+
+#[test]
+fn canvas_scope_kind_preserves_work_refusal() {
+    let error = image_work_error(true, "compare F3D Canvas scope kind");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "compare F3D Canvas scope kind"));
+}
+
+#[test]
+fn decal_scope_lookup_preserves_work_refusal() {
+    let error = image_work_error(false, "find F3D Decal scope");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "find F3D Decal scope"));
+}
+
+#[test]
+fn decal_scope_kind_preserves_work_refusal() {
+    let error = image_work_error(false, "compare F3D Decal scope kind");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "compare F3D Decal scope kind"));
+}

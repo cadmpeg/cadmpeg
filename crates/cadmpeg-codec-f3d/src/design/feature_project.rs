@@ -569,7 +569,7 @@ impl<'a> ScopeHistoryGraph<'a> {
         projected: F,
     ) -> Result<ScopeHistoryPredecessor<'a>, CodecError>
     where
-        F: Fn(&DesignParameterScope) -> bool,
+        F: Fn(&DesignParameterScope) -> Result<bool, CodecError>,
     {
         let mut storage = ctx.reserve_scoped(0, "f3d predecessor lookup storage")?;
         storage.with_storage(|| {
@@ -606,7 +606,7 @@ impl<'a> ScopeHistoryGraph<'a> {
                         "Design scope history-state dependency is cyclic".into(),
                     ));
                 }
-                if projected(candidate) {
+                if projected(candidate)? {
                     return Ok(ScopeHistoryPredecessor::Scope(candidate));
                 }
                 if !ctx.insert_hash_set(
@@ -1380,7 +1380,7 @@ face_operands,
         let ScopeHistoryPredecessor::Scope(predecessor_scope) =
             scope_history.predecessor(ctx, scope, |candidate| {
                 let stream = native_stream(&candidate.id).unwrap_or(ids::DEFAULT_STREAM);
-                scope_ids.contains_key(&(stream, candidate.record_index))
+                Ok(scope_ids.contains_key(&(stream, candidate.record_index)))
             })?
         else {
             continue;

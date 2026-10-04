@@ -1658,6 +1658,20 @@ pub(crate) struct DesignMeshRecordIdentity {
     frame_length: u64,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for DesignMeshRecordIdentity {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(&self.class_tag, self.record_index, self.byte_offset, self.frame_length),
+            ctx,
+            operation,
+        )
+    }
+}
+
 #[cfg(test)]
 thread_local! {
     static MESH_RECORD_IDENTITY_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };

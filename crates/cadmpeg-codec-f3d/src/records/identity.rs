@@ -44,6 +44,18 @@ pub(crate) struct DesignEntityId {
     suffix: u64,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for DesignEntityId {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        let text = cadmpeg_core::decode::cost::DecodeCost::decode_cost(&self.text, ctx, operation)?;
+        let suffix = cadmpeg_core::decode::cost::DecodeCost::decode_cost(&self.suffix, ctx, operation)?;
+        text.checked_add(suffix).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))
+    }
+}
+
 impl TryFrom<String> for DesignEntityId {
     type Error = String;
 
@@ -134,6 +146,14 @@ impl<T, O> ReferenceRun<T, O> {
         match &self.0 {
             ReferenceRunData::Located(rows) => Some(rows),
             ReferenceRunData::Unlocated(_) => None,
+        }
+    }
+
+    /// Borrows the backing values and located rows without traversing either storage form.
+    pub(crate) fn storage_slices(&self) -> (&[T], &[Located<T, O>]) {
+        match &self.0 {
+            ReferenceRunData::Unlocated(values) => (values.as_slice(), &[]),
+            ReferenceRunData::Located(rows) => (&[], rows.as_slice()),
         }
     }
 

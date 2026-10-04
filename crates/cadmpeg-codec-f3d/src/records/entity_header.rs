@@ -814,14 +814,17 @@ impl DesignEntityHeader {
             .flat_map(|list| list.references.iter().map(|row| &row.value))
     }
 
-    /// Member record indices.
-    pub(crate) fn member_values(&self) -> impl Iterator<Item = &u32> {
+    /// Borrows the sketch member run when this registration has one.
+    pub(crate) fn sketch_members(&self) -> Option<&ReferenceRun<u32>> {
         match &self.registration.0 {
             DesignEntityRegistrationKind::Sketch { members, .. } => Some(members),
             DesignEntityRegistrationKind::Other(_) => None,
         }
-        .into_iter()
-        .flat_map(ReferenceRun::values)
+    }
+
+    /// Member record indices.
+    pub(crate) fn member_values(&self) -> impl Iterator<Item = &u32> {
+        self.sketch_members().into_iter().flat_map(ReferenceRun::values)
     }
 
     /// Whether the entity belongs to the sketch module.
