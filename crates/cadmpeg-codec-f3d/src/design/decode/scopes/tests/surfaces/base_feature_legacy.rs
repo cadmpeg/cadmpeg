@@ -75,7 +75,7 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
             crate::layout::base_feature_class_377_prefix::KIND_LENGTH_VALUE,
         );
         bytes[kind..feature_ordinal].copy_from_slice(
-            &crate::bytes::lp_utf16_bytes("Base Feature")
+            &crate::bytes::lp_utf16_fixture_bytes("Base Feature")
                 .expect("fixture UTF-16 code-unit count fits u32")[4..],
         );
         put_u32(bytes, feature_ordinal, ordinal);
@@ -153,7 +153,7 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
         put_u64_reference(&mut bytes, compact::AUXILIARY_REFERENCE_MARKER, 202);
         bytes[compact::ENVELOPE_GUID_CODE_UNIT_COUNT..compact::ZERO_RUN_AFTER_GUID]
             .copy_from_slice(
-                &crate::bytes::lp_utf16_bytes("fcec56e3-832f-4468-88a4-d710e62e629f")
+                &crate::bytes::lp_utf16_fixture_bytes("fcec56e3-832f-4468-88a4-d710e62e629f")
                     .expect("fixture UTF-16 code-unit count fits u32"),
             );
         let _ = put_kind_tail(
@@ -372,7 +372,7 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
     );
     expanded_bytes[expanded::ENVELOPE_GUID_CODE_UNIT_COUNT..expanded::ZERO_RUN_AFTER_GUID]
         .copy_from_slice(
-            &crate::bytes::lp_utf16_bytes("00000000-0000-0000-0000-000000000000")
+            &crate::bytes::lp_utf16_fixture_bytes("00000000-0000-0000-0000-000000000000")
                 .expect("fixture UTF-16 code-unit count fits u32"),
         );
     let mut expanded_scope = put_kind_tail(

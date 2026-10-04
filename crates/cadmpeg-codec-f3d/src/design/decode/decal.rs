@@ -228,8 +228,23 @@ fn parse_decal_asset_record(
     asset_record_index: u32,
 ) -> Result<Option<DesignDecalAsset>, CodecError> {
     let parsed = (|| {
+        macro_rules! admitted_option {
+            ($result:expr) => {
+                match $result {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
         let (asset_class_tag, after_asset_tag) =
-            lp_ascii_filtered_view(bytes, asset_at, 0..=2000, u8::is_ascii_graphic)?;
+            admitted_option!(lp_ascii_filtered_view(
+                ctx,
+                bytes,
+                asset_at,
+                0..=2000,
+                u8::is_ascii_graphic
+            ));
         if View::u32_le_at(bytes, after_asset_tag)? != asset_record_index
             || bytes.get(
                 asset_at + decal_asset::ZERO_RUN_8
@@ -248,7 +263,13 @@ fn parse_decal_asset_record(
             return None;
         }
         let (name_class_tag, after_name_tag) =
-            lp_ascii_filtered_view(bytes, name_at, 0..=2000, u8::is_ascii_graphic)?;
+            admitted_option!(lp_ascii_filtered_view(
+                ctx,
+                bytes,
+                name_at,
+                0..=2000,
+                u8::is_ascii_graphic
+            ));
         let name_record_index = View::u32_le_at(bytes, after_name_tag)?;
         if bytes.get(
             name_at + decal_name::ZERO_RUN_10..name_at + decal_name::ASSET_NAME_CODE_UNIT_COUNT,

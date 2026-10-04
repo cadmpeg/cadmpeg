@@ -186,7 +186,7 @@ pub(crate) fn write_semantic(
     )?;
     let sketch_point_edits = validate_sketch_point_edits(natives)?;
     let sketch_curve_edits = validate_sketch_curve_edits(natives)?;
-    let sketch_relation_edits = validate_sketch_relation_edits(natives)?;
+    let sketch_relation_edits = validate_sketch_relation_edits(&encode_ctx, natives)?;
     let persistent_reference_edits = validate_persistent_reference_edits(natives)?;
     let construction_recipe_edits = validate_construction_recipe_edits(natives)?;
     let body_member_edits = validate_body_member_edits(natives)?;
@@ -658,6 +658,7 @@ pub(crate) fn write_semantic(
         } else {
             if name.ends_with(".protein") && !protein_appearance_edits.is_empty() {
                 let (patched_bytes, patched_guids) = crate::materials::patch_protein_appearances(
+                    &encode_ctx,
                     &bytes,
                     &protein_appearance_edits,
                     notes,

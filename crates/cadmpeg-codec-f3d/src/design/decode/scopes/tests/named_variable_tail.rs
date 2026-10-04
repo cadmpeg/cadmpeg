@@ -9,6 +9,7 @@ use crate::test_support::lp_utf16;
 
 #[test]
 fn parameter_scope_parses_named_variable_tail() {
+    let bytes_decode_ctx = cadmpeg_test_support::service_decode_context();
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"378");
@@ -133,11 +134,12 @@ fn parameter_scope_parses_named_variable_tail() {
         .unwrap(),
     ];
     let operation = exact_draft_operation_with_owners(
+        &bytes_decode_ctx,
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &owner_scope,
         &owners,
-    )
+    ).unwrap()
     .expect("owner-lane Draft operation");
     assert_eq!(operation.angle.get(), 0.0);
     assert_eq!(operation.angle_record_index, 327);

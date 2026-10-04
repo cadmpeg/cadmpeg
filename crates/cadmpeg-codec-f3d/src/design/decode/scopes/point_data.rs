@@ -62,6 +62,15 @@ fn point_data_level(
     version: u32,
 ) -> Result<Option<PointDataLevel>, CodecError> {
     (|| {
+        macro_rules! admitted_option {
+            ($result:expr) => {
+                match $result {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
         let body = bytes.get(..end)?;
         let mut cursor = payload_prologue(bytes, start, end)?;
         if version >= 2 {
@@ -69,7 +78,8 @@ fn point_data_level(
         }
         cursor = cursor.checked_add(16)?;
         if version >= 1 {
-            take_reference(body, &mut cursor)?;
+        // discarded-value: consume the reference slot defined by this payload version.
+        let _ = admitted_option!(take_reference(ctx, body, &mut cursor));
         }
         let position_at = cursor;
         cursor = cursor.checked_add(24)?;
@@ -91,7 +101,7 @@ fn point_data_level(
         }
         for _ in 0..arity {
             let reference_offset = cursor.checked_add(1)?;
-            let reference = take_reference(body, &mut cursor)?;
+            let reference = admitted_option!(take_reference(ctx, body, &mut cursor));
             inputs.push(
                 DesignWorkPointInput::try_new(
                     u32::try_from(reference.target()?).ok()?,

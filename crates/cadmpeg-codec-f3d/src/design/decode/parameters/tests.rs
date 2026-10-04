@@ -573,7 +573,8 @@ fn tagged_scalar_variant_parameter_owner_frame() -> Vec<u8> {
 
 #[test]
 fn parameter_owner_frame_has_repeated_scope_and_both_record_orders() {
-    let parsed = parse_parameter_owner(&parameter_owner_frame()).unwrap();
+    let bytes_decode_ctx = cadmpeg_test_support::service_decode_context();
+    let parsed = parse_parameter_owner(&bytes_decode_ctx, &parameter_owner_frame()).transpose().unwrap().unwrap();
     assert_eq!(parsed.frame_length, 104);
     assert_eq!(parsed.record_index, 44);
     assert_eq!(parsed.scope_record_index, 12);
@@ -587,18 +588,19 @@ fn parameter_owner_frame_has_repeated_scope_and_both_record_orders() {
     let mut parameter_first = parameter_owner_frame();
     parameter_first[49..53].copy_from_slice(&43u32.to_le_bytes());
     parameter_first[82..86].copy_from_slice(&45u32.to_le_bytes());
-    let parsed = parse_parameter_owner(&parameter_first).expect("parameter-first owner frame");
+    let parsed = parse_parameter_owner(&bytes_decode_ctx, &parameter_first).transpose().unwrap().expect("parameter-first owner frame");
     assert_eq!(parsed.parameter_record_index, 43);
     assert_eq!(parsed.record_index, 44);
     assert_eq!(parsed.companion_record_index, 45);
 
     let mut malformed = parameter_owner_frame();
     malformed[94..98].copy_from_slice(&13u32.to_le_bytes());
-    assert!(parse_parameter_owner(&malformed).is_none());
+    assert!(parse_parameter_owner(&bytes_decode_ctx, &malformed).transpose().unwrap().is_none());
 }
 
 #[test]
 fn parameter_owner_requires_its_complete_structural_suffix() {
+    let bytes_decode_ctx = cadmpeg_test_support::service_decode_context();
     let builders: [fn() -> Vec<u8>; 7] = [
         parameter_owner_frame,
         compact_parameter_owner_frame,
@@ -610,21 +612,21 @@ fn parameter_owner_requires_its_complete_structural_suffix() {
     ];
     for build in builders {
         let frame = build();
-        assert!(parse_parameter_owner(&frame).is_some());
+        assert!(parse_parameter_owner(&bytes_decode_ctx, &frame).transpose().unwrap().is_some());
         let mut longer = frame.clone();
         longer.push(0);
-        assert!(parse_parameter_owner(&longer).is_none());
-        assert!(parse_parameter_owner(&frame[..frame.len() - 1]).is_none());
+        assert!(parse_parameter_owner(&bytes_decode_ctx, &longer).transpose().unwrap().is_none());
+        assert!(parse_parameter_owner(&bytes_decode_ctx, &frame[..frame.len() - 1]).transpose().unwrap().is_none());
     }
 
     assert_eq!(
-        parse_parameter_owner(&parameter_owner_frame())
+        parse_parameter_owner(&bytes_decode_ctx, &parameter_owner_frame()).transpose().unwrap()
             .expect("owner frame")
             .evaluated_value_offset,
         super::FrameRelative(40)
     );
     assert_eq!(
-        parse_parameter_owner(&compact_parameter_owner_frame())
+        parse_parameter_owner(&bytes_decode_ctx, &compact_parameter_owner_frame()).transpose().unwrap()
             .expect("compact owner frame")
             .evaluated_value_offset,
         super::FrameRelative(40)
@@ -633,8 +635,9 @@ fn parameter_owner_requires_its_complete_structural_suffix() {
 
 #[test]
 fn compact_parameter_owner_omits_the_variant_slot() {
+    let bytes_decode_ctx = cadmpeg_test_support::service_decode_context();
     let parsed =
-        parse_parameter_owner(&compact_parameter_owner_frame()).expect("compact parameter owner");
+        parse_parameter_owner(&bytes_decode_ctx, &compact_parameter_owner_frame()).transpose().unwrap().expect("compact parameter owner");
     assert_eq!(parsed.frame_length, 103);
     assert_eq!(parsed.record_index, 6653);
     assert_eq!(parsed.scope_record_index, 6644);
@@ -647,8 +650,9 @@ fn compact_parameter_owner_omits_the_variant_slot() {
 
 #[test]
 fn counted_parameter_owner_uses_typed_u32_scalar() {
+    let bytes_decode_ctx = cadmpeg_test_support::service_decode_context();
     let parsed =
-        parse_parameter_owner(&counted_parameter_owner_frame()).expect("counted parameter owner");
+        parse_parameter_owner(&bytes_decode_ctx, &counted_parameter_owner_frame()).transpose().unwrap().expect("counted parameter owner");
     assert_eq!(parsed.frame_length, 101);
     assert_eq!(parsed.evaluated_value.get(), 6.0);
     assert_eq!(parsed.evaluated_value_offset, super::FrameRelative(41));
@@ -658,9 +662,10 @@ fn counted_parameter_owner_uses_typed_u32_scalar() {
 
 #[test]
 fn legacy_counted_parameter_owner_uses_zero_typed_u32_scalar() {
+    let bytes_decode_ctx = cadmpeg_test_support::service_decode_context();
     let mut frame = counted_parameter_owner_frame();
     frame[40] = 0;
-    let parsed = parse_parameter_owner(&frame)
+    let parsed = parse_parameter_owner(&bytes_decode_ctx, &frame).transpose().unwrap()
         .expect("legacy counted parameter owner with zero scalar marker");
     assert_eq!(parsed.frame_length, 101);
     assert_eq!(parsed.evaluated_value.get(), 6.0);
@@ -671,14 +676,16 @@ fn legacy_counted_parameter_owner_uses_zero_typed_u32_scalar() {
 
 #[test]
 fn legacy_parameter_owner_68_uses_parameter_scalar_and_zero_scope() {
+    let bytes_decode_ctx = cadmpeg_test_support::service_decode_context();
     let parsed = parse_legacy_parameter_owner_68(
+        &bytes_decode_ctx,
         &legacy_parameter_owner_68_frame("284"),
         crate::records::identity::Located {
             value: 0.0,
             offset: 700,
         },
         0,
-    )
+    ).transpose().unwrap()
     .expect("legacy 68-byte parameter owner")
     .into_record("Design/BulkStream.dat", 0)
     .unwrap();
@@ -701,52 +708,58 @@ fn legacy_parameter_owner_68_uses_parameter_scalar_and_zero_scope() {
 
     for class_tag in ["268", "282", "289", "297", "299", "325", "336"] {
         assert!(parse_legacy_parameter_owner_68(
+            &bytes_decode_ctx,
             &legacy_parameter_owner_68_frame(class_tag),
             crate::records::identity::Located {
                 value: 1.25,
                 offset: 700
             },
             0
-        )
+        ).transpose().unwrap()
         .is_some());
     }
 }
 
 #[test]
 fn legacy_parameter_owner_68_requires_its_admitted_class_and_shape() {
+    let bytes_decode_ctx = cadmpeg_test_support::service_decode_context();
     assert!(parse_legacy_parameter_owner_68(
+        &bytes_decode_ctx,
         &legacy_parameter_owner_68_frame("291"),
         crate::records::identity::Located {
             value: 1.0,
             offset: 700
         },
         0
-    )
+    ).transpose().unwrap()
     .is_none());
 
     let mut malformed = legacy_parameter_owner_68_frame("284");
     malformed[55] = 0;
     assert!(parse_legacy_parameter_owner_68(
+        &bytes_decode_ctx,
         &malformed,
         crate::records::identity::Located {
             value: 1.0,
             offset: 700
         },
         0
-    )
+    ).transpose().unwrap()
     .is_none());
 }
 
 #[test]
 fn legacy_parameter_owner_88_repeats_a_nonzero_scope_without_a_scalar_lane() {
+    let bytes_decode_ctx = cadmpeg_test_support::service_decode_context();
     let parsed = parse_legacy_parameter_owner_88(
+        &bytes_decode_ctx,
         &legacy_parameter_owner_88_frame("284"),
         crate::records::identity::Located {
             value: 2.5,
             offset: 700,
         },
         0,
-    )
+    ).transpose().unwrap()
     .expect("legacy 88-byte parameter owner")
     .into_record("Design/BulkStream.dat", 0)
     .unwrap();
@@ -768,43 +781,47 @@ fn legacy_parameter_owner_88_repeats_a_nonzero_scope_without_a_scalar_lane() {
     for class_tag in ["282", "336", "325", "297"] {
         assert!(
             parse_legacy_parameter_owner_88(
+                &bytes_decode_ctx,
                 &legacy_parameter_owner_88_frame(class_tag),
                 crate::records::identity::Located {
                     value: 2.5,
                     offset: 700
                 },
                 0
-            )
+            ).transpose().unwrap()
             .is_some(),
             "class {class_tag} must use the admitted 88-byte owner grammar"
         );
     }
     assert!(parse_legacy_parameter_owner_88(
+        &bytes_decode_ctx,
         &legacy_parameter_owner_88_frame("268"),
         crate::records::identity::Located {
             value: 2.5,
             offset: 700
         },
         0
-    )
+    ).transpose().unwrap()
     .is_none());
 
     let mut mismatched = legacy_parameter_owner_88_frame("284");
     mismatched[78..82].copy_from_slice(&78u32.to_le_bytes());
     assert!(parse_legacy_parameter_owner_88(
+        &bytes_decode_ctx,
         &mismatched,
         crate::records::identity::Located {
             value: 2.5,
             offset: 700
         },
         0
-    )
+    ).transpose().unwrap()
     .is_none());
 }
 
 #[test]
 fn compact_typed_counted_parameter_owner_omits_variant_slot() {
-    let parsed = parse_parameter_owner(&compact_typed_counted_parameter_owner_frame())
+    let bytes_decode_ctx = cadmpeg_test_support::service_decode_context();
+    let parsed = parse_parameter_owner(&bytes_decode_ctx, &compact_typed_counted_parameter_owner_frame()).transpose().unwrap()
         .expect("compact typed counted parameter owner");
     assert_eq!(parsed.frame_length, 100);
     assert_eq!(parsed.record_index, 44);
@@ -820,10 +837,11 @@ fn compact_typed_counted_parameter_owner_omits_variant_slot() {
 
 #[test]
 fn compact_counted_parameter_owner_omits_type_and_variant_markers() {
+    let bytes_decode_ctx = cadmpeg_test_support::service_decode_context();
     let mut frame = compact_counted_parameter_owner_frame();
     frame[45..49].copy_from_slice(&46u32.to_le_bytes());
     frame[77..81].copy_from_slice(&45u32.to_le_bytes());
-    let parsed = parse_parameter_owner(&frame).expect("compact counted parameter owner");
+    let parsed = parse_parameter_owner(&bytes_decode_ctx, &frame).transpose().unwrap().expect("compact counted parameter owner");
     assert_eq!(parsed.frame_length, 99);
     assert_eq!(parsed.evaluated_value.get(), 6.0);
     assert_eq!(parsed.evaluated_value_offset, super::FrameRelative(40));
@@ -834,7 +852,8 @@ fn compact_counted_parameter_owner_omits_type_and_variant_markers() {
 
 #[test]
 fn tagged_scalar_parameter_owner_carries_a_scalar_type_prefix() {
-    let parsed = parse_parameter_owner(&tagged_scalar_parameter_owner_frame())
+    let bytes_decode_ctx = cadmpeg_test_support::service_decode_context();
+    let parsed = parse_parameter_owner(&bytes_decode_ctx, &tagged_scalar_parameter_owner_frame()).transpose().unwrap()
         .expect("tagged scalar parameter owner");
     assert_eq!(parsed.frame_length, 107);
     assert_eq!(parsed.evaluated_value.get(), 6.0);
@@ -846,7 +865,8 @@ fn tagged_scalar_parameter_owner_carries_a_scalar_type_prefix() {
 
 #[test]
 fn tagged_scalar_parameter_owner_can_carry_a_variant_slot() {
-    let parsed = parse_parameter_owner(&tagged_scalar_variant_parameter_owner_frame())
+    let bytes_decode_ctx = cadmpeg_test_support::service_decode_context();
+    let parsed = parse_parameter_owner(&bytes_decode_ctx, &tagged_scalar_variant_parameter_owner_frame()).transpose().unwrap()
         .expect("tagged scalar variant parameter owner");
     assert_eq!(parsed.frame_length, 108);
     assert_eq!(parsed.evaluated_value.get(), 0.8);
@@ -859,7 +879,8 @@ fn tagged_scalar_parameter_owner_can_carry_a_variant_slot() {
 
 #[test]
 fn compact_scalar_parameter_owner_can_carry_a_two_byte_variant_slot() {
-    let parsed = parse_parameter_owner(&compact_variant_parameter_owner_frame())
+    let bytes_decode_ctx = cadmpeg_test_support::service_decode_context();
+    let parsed = parse_parameter_owner(&bytes_decode_ctx, &compact_variant_parameter_owner_frame()).transpose().unwrap()
         .expect("compact scalar variant parameter owner");
     assert_eq!(parsed.frame_length, 103);
     assert_eq!(parsed.class_tag.as_str(), "299");
@@ -870,6 +891,7 @@ fn compact_scalar_parameter_owner_can_carry_a_two_byte_variant_slot() {
 
 #[test]
 fn parameter_companion_prefix_has_owner_backlink_and_timestamp() {
+    let bytes_decode_ctx = cadmpeg_test_support::service_decode_context();
     let mut prefix = vec![0; 58];
     prefix[0..4].copy_from_slice(&3u32.to_le_bytes());
     prefix[4..7].copy_from_slice(b"408");
@@ -878,7 +900,7 @@ fn parameter_companion_prefix_has_owner_backlink_and_timestamp() {
     prefix[32..36].copy_from_slice(&44u32.to_le_bytes());
     prefix[42..50].copy_from_slice(&1_678_000_000_000_000u64.to_le_bytes());
 
-    let parsed = parse_parameter_companion(&prefix).unwrap();
+    let parsed = parse_parameter_companion(&bytes_decode_ctx, &prefix).transpose().unwrap().unwrap();
     assert_eq!(parsed.record_index, 46);
     assert_eq!(parsed.owner_record_index, 44);
     assert_eq!(parsed.timestamp_micros.get(), 1_678_000_000_000_000);
@@ -889,13 +911,13 @@ fn parameter_companion_prefix_has_owner_backlink_and_timestamp() {
 
     prefix[32..36].copy_from_slice(&45u32.to_le_bytes());
     assert_eq!(
-        parse_parameter_companion(&prefix)
+        parse_parameter_companion(&bytes_decode_ctx, &prefix).transpose().unwrap()
             .unwrap()
             .owner_record_index,
         45
     );
     prefix[42..50].fill(0);
-    assert!(parse_parameter_companion(&prefix).is_none());
+    assert!(parse_parameter_companion(&bytes_decode_ctx, &prefix).transpose().unwrap().is_none());
 }
 
 #[test]
@@ -1491,33 +1513,36 @@ fn parameter_source_rejects_missing_or_unexpected_owner() {
 
 #[test]
 fn parameter_owner_value_offset_is_localized_once() {
-    let parsed = parse_parameter_owner(&parameter_owner_frame()).unwrap();
+    let bytes_decode_ctx = cadmpeg_test_support::service_decode_context();
+    let parsed = parse_parameter_owner(&bytes_decode_ctx, &parameter_owner_frame()).transpose().unwrap().unwrap();
     assert_eq!(parsed.evaluated_value_offset, super::FrameRelative(40));
     let owner = parsed.into_record("Design/BulkStream.dat", 1000).unwrap();
     assert_eq!(owner.byte_offset(), 1000);
     assert_eq!(owner.evaluated_value_offset(), 1040);
-    assert!(parse_parameter_owner(&parameter_owner_frame())
+    assert!(parse_parameter_owner(&bytes_decode_ctx, &parameter_owner_frame()).transpose().unwrap()
         .unwrap()
         .into_record("Design/BulkStream.dat", u64::MAX)
         .is_none());
     for owner in [
         parse_legacy_parameter_owner_68(
+            &bytes_decode_ctx,
             &legacy_parameter_owner_68_frame("284"),
             crate::records::identity::Located {
                 value: 2.5,
                 offset: 700,
             },
             0,
-        )
+        ).transpose().unwrap()
         .unwrap(),
         parse_legacy_parameter_owner_88(
+            &bytes_decode_ctx,
             &legacy_parameter_owner_88_frame("284"),
             crate::records::identity::Located {
                 value: 2.5,
                 offset: 700,
             },
             0,
-        )
+        ).transpose().unwrap()
         .unwrap(),
     ] {
         let owner = owner.into_record("Design/BulkStream.dat", 0).unwrap();
@@ -1527,6 +1552,7 @@ fn parameter_owner_value_offset_is_localized_once() {
 
 #[test]
 fn legacy_parameter_owner_preserves_external_scalar_offsets() {
+    let bytes_decode_ctx = cadmpeg_test_support::service_decode_context();
     for frame_start in [400, 1000] {
         let evaluated = crate::records::identity::Located {
             value: 2.5,
@@ -1534,16 +1560,18 @@ fn legacy_parameter_owner_preserves_external_scalar_offsets() {
         };
         for parsed in [
             parse_legacy_parameter_owner_68(
+                &bytes_decode_ctx,
                 &legacy_parameter_owner_68_frame("284"),
                 evaluated,
                 frame_start,
-            )
+            ).transpose().unwrap()
             .unwrap(),
             parse_legacy_parameter_owner_88(
+                &bytes_decode_ctx,
                 &legacy_parameter_owner_88_frame("284"),
                 evaluated,
                 frame_start,
-            )
+            ).transpose().unwrap()
             .unwrap(),
         ] {
             assert_eq!(

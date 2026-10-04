@@ -1707,20 +1707,20 @@ fn grouped_face_reference_selects_one_changed_topology_face() {
     };
 
     assert_eq!(
-        grouped_reference_face_candidate(&operand, &topology, &HashSet::from([10])),
+        crate::test_support::with_decode_context(|decode| grouped_reference_face_candidate(decode, &operand, &topology, &HashSet::from([10]))).expect("grouped face admission"),
         Some(
             cadmpeg_ir::ids::FaceId::mint(crate::ids::brep_entity_id(10))
                 .expect("identity grammar")
         )
     );
     assert_eq!(
-        grouped_reference_face_candidate(&operand, &topology, &HashSet::from([10, 20])),
+        crate::test_support::with_decode_context(|decode| grouped_reference_face_candidate(decode, &operand, &topology, &HashSet::from([10, 20]))).expect("grouped face admission"),
         None
     );
     let mut trailing = operand;
     trailing.recipe_prefix_bytes.extend_from_slice(&[0; 4]);
     assert_eq!(
-        grouped_reference_face_candidate(&trailing, &topology, &HashSet::from([10])),
+        crate::test_support::with_decode_context(|decode| grouped_reference_face_candidate(decode, &trailing, &topology, &HashSet::from([10]))).expect("grouped face admission"),
         None
     );
 }

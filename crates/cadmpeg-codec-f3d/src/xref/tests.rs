@@ -423,6 +423,24 @@ fn xref_direct_transform_conversion_refuses_collection_limit() {
     );
 }
 
+fn component_insert_scope(
+    stream: &str,
+    construction: crate::records::feature::assembly_features::DesignComponentInsertConstruction,
+) -> crate::records::feature::scope::DesignParameterScope {
+    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut};
+    let scope_id = format!("{stream}:design-parameter-scope#0");
+    let mut scope = DesignParameterScope::empty(
+        &scope_id,
+        DesignFeatureKind::ComponentInsert,
+        0,
+    );
+    let DesignScopePayloadMut::ComponentInsert(slot) = scope.payload_mut() else {
+        panic!("expected Component Insert payload");
+    };
+    *slot = Some(construction);
+    scope
+}
+
 #[test]
 fn xref_component_insert_selection_refuses_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -438,7 +456,7 @@ fn xref_component_insert_selection_refuses_collection_limit() {
         };
     let error = super::select_component_insert_transforms(
         &ctx,
-        [("stream", &construction)],
+        &[component_insert_scope("stream", construction)],
         "stream",
         "role",
     )
@@ -938,12 +956,12 @@ fn reflected_matrix_is_reported_by_complete_document_admission() {
 #[test]
 fn component_reference_data_is_an_open_json_object() {
     let ctx = cadmpeg_test_support::service_decode_context();
-    let (value, _reservation) = super::parse_component_reference_data(
+    let parsed = super::parse_component_reference_data(
         &ctx,
         br#"{"schema":7,"references":[{"id":"component"}],"extension":{"x":true}}"#,
     )
     .expect("open component-reference object");
-    assert_eq!(value["schema"], 7);
+    assert_eq!(parsed.0["schema"], 7);
     assert!(super::parse_component_reference_data(&ctx, br"[]").is_err());
     assert!(super::parse_component_reference_data(&ctx, b"not-json").is_err());
 }
@@ -1148,23 +1166,23 @@ fn repeated_target_occurrence_record_with_path_role(
     bytes.truncate(path_end);
     bytes.extend_from_slice(&envelope_discriminator.to_le_bytes());
     bytes.extend(
-        crate::bytes::lp_utf16_bytes(metadata_guid_a)
+        crate::bytes::lp_utf16_fixture_bytes(metadata_guid_a)
             .expect("fixture UTF-16 code-unit count fits u32"),
     );
     bytes.extend(
-        crate::bytes::lp_utf16_bytes(metadata_guid_b)
+        crate::bytes::lp_utf16_fixture_bytes(metadata_guid_b)
             .expect("fixture UTF-16 code-unit count fits u32"),
     );
     bytes.extend_from_slice(&[0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0]);
     bytes.extend(
-        crate::bytes::lp_utf16_bytes(component_guid)
+        crate::bytes::lp_utf16_fixture_bytes(component_guid)
             .expect("fixture UTF-16 code-unit count fits u32"),
     );
     bytes.push(0);
     bytes.extend_from_slice(&36_u32.to_le_bytes());
     bytes.extend_from_slice(type_guid.as_bytes());
     bytes.extend(
-        crate::bytes::lp_utf16_bytes(role).expect("fixture UTF-16 code-unit count fits u32"),
+        crate::bytes::lp_utf16_fixture_bytes(role).expect("fixture UTF-16 code-unit count fits u32"),
     );
     bytes.push(0);
     match transform {
@@ -1178,7 +1196,7 @@ fn repeated_target_occurrence_record_with_path_role(
     }
     bytes.extend_from_slice(&0_u32.to_le_bytes());
     bytes.extend(
-        crate::bytes::lp_utf16_bytes(role).expect("fixture UTF-16 code-unit count fits u32"),
+        crate::bytes::lp_utf16_fixture_bytes(role).expect("fixture UTF-16 code-unit count fits u32"),
     );
     bytes.push(0);
     bytes.extend(local_reference(3));
@@ -1263,7 +1281,7 @@ fn repeated_target_placements_decode_identity_and_matrix_forms() {
     .expect("identity carrier with an independent retained role");
     assert_eq!(decoded_role, retained_role);
     assert_eq!(transform_offset, None);
-    let encoded_role = crate::bytes::lp_utf16_bytes(&retained_role)
+    let encoded_role = crate::bytes::lp_utf16_fixture_bytes(&retained_role)
         .expect("fixture UTF-16 code-unit count fits u32");
     assert_eq!(
         &local_carrier[role_offset - 4..role_offset - 4 + encoded_role.len()],
@@ -1288,38 +1306,38 @@ fn grouped_identity_carrier(role: &str, record_index: u32) -> Vec<u8> {
     bytes.push(1);
     bytes.extend_from_slice(&[0; 4]);
     bytes.extend(
-        crate::bytes::lp_utf16_bytes(component_guid)
+        crate::bytes::lp_utf16_fixture_bytes(component_guid)
             .expect("fixture UTF-16 code-unit count fits u32"),
     );
     bytes.push(0);
     bytes.extend_from_slice(&36_u32.to_le_bytes());
     bytes.extend_from_slice(type_guid.as_bytes());
     bytes.extend(
-        crate::bytes::lp_utf16_bytes(role).expect("fixture UTF-16 code-unit count fits u32"),
+        crate::bytes::lp_utf16_fixture_bytes(role).expect("fixture UTF-16 code-unit count fits u32"),
     );
     bytes.extend_from_slice(&[0, 1, 0, 0, 0, 0, 1, 0, 0, 0]);
     bytes.extend(
-        crate::bytes::lp_utf16_bytes(metadata_guid_a)
+        crate::bytes::lp_utf16_fixture_bytes(metadata_guid_a)
             .expect("fixture UTF-16 code-unit count fits u32"),
     );
     bytes.extend(
-        crate::bytes::lp_utf16_bytes(metadata_guid_b)
+        crate::bytes::lp_utf16_fixture_bytes(metadata_guid_b)
             .expect("fixture UTF-16 code-unit count fits u32"),
     );
     bytes.extend_from_slice(&[0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0]);
     bytes.extend(
-        crate::bytes::lp_utf16_bytes(component_guid)
+        crate::bytes::lp_utf16_fixture_bytes(component_guid)
             .expect("fixture UTF-16 code-unit count fits u32"),
     );
     bytes.push(0);
     bytes.extend_from_slice(&36_u32.to_le_bytes());
     bytes.extend_from_slice(type_guid.as_bytes());
     bytes.extend(
-        crate::bytes::lp_utf16_bytes(role).expect("fixture UTF-16 code-unit count fits u32"),
+        crate::bytes::lp_utf16_fixture_bytes(role).expect("fixture UTF-16 code-unit count fits u32"),
     );
     bytes.extend_from_slice(&[0, 1, 0, 0, 0, 0]);
     bytes.extend(
-        crate::bytes::lp_utf16_bytes(role).expect("fixture UTF-16 code-unit count fits u32"),
+        crate::bytes::lp_utf16_fixture_bytes(role).expect("fixture UTF-16 code-unit count fits u32"),
     );
     bytes.extend_from_slice(&[0, 1, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     assert_eq!(bytes.len(), 695);
@@ -1378,11 +1396,11 @@ fn legacy_occurrence_record(
     bytes.push(0);
     bytes.extend_from_slice(&1_u32.to_le_bytes());
     bytes.extend(
-        crate::bytes::lp_utf16_bytes("11111111-2222-3333-4444-555555555555")
+        crate::bytes::lp_utf16_fixture_bytes("11111111-2222-3333-4444-555555555555")
             .expect("fixture UTF-16 code-unit count fits u32"),
     );
     bytes.extend(
-        crate::bytes::lp_utf16_bytes("66666666-7777-8888-9999-aaaaaaaaaaaa")
+        crate::bytes::lp_utf16_fixture_bytes("66666666-7777-8888-9999-aaaaaaaaaaaa")
             .expect("fixture UTF-16 code-unit count fits u32"),
     );
     bytes.push(0);
@@ -1398,7 +1416,7 @@ fn legacy_occurrence_record(
     }
     bytes.extend_from_slice(&0_u32.to_le_bytes());
     bytes.extend(
-        crate::bytes::lp_utf16_bytes(role).expect("fixture UTF-16 code-unit count fits u32"),
+        crate::bytes::lp_utf16_fixture_bytes(role).expect("fixture UTF-16 code-unit count fits u32"),
     );
     bytes.extend_from_slice(&[0, 1, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     bytes
@@ -1853,12 +1871,32 @@ fn exact_component_insert_carriers_precede_structured_placements() {
     );
     assert_eq!(
         super::superseded_placement_count(
+            &cadmpeg_test_support::service_decode_context(),
             std::slice::from_ref(&direct),
             std::slice::from_ref(&structured),
             "role"
-        ),
+        ).unwrap(),
         1
     );
+}
+
+#[test]
+fn grouped_component_identity_preserves_ascii_scan_refusal() {
+    let bytes = [3, 0, 0, 0, b'3', b'8', b'2'];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap()
+        .0;
+
+    let error = super::grouped_component_insert_identity(&ctx, &bytes, 0, bytes.len(), 0)
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "filter F3D ASCII bytes"
+    ));
 }
 
 #[test]
@@ -1910,10 +1948,10 @@ fn component_insert_selection_uses_stream_and_role_not_class_tag() {
     assert_eq!(
         super::select_component_insert_transforms(
             &cadmpeg_test_support::service_decode_context(),
-            [
-                ("stream", &selected_construction),
-                ("stream", &ignored_construction),
-                ("other-stream", &selected_construction),
+            &[
+                component_insert_scope("stream", selected_construction.clone()),
+                component_insert_scope("stream", ignored_construction),
+                component_insert_scope("other-stream", selected_construction),
             ],
             "stream",
             "role"

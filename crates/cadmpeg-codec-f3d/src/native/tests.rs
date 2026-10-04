@@ -1590,11 +1590,14 @@ fn oversized_nested_protein_entry_is_rejected_before_allocation() {
     let mut protein = zip.finish().unwrap().into_inner();
     set_zip_entry_uncompressed_size(&mut protein, target, u32::MAX);
 
-    let error = crate::materials::patch_protein_appearances(
-        &protein,
-        &std::collections::BTreeMap::new(),
-        &mut Vec::new(),
-    )
+    let error = crate::test_support::with_decode_context(|ctx| {
+        crate::materials::patch_protein_appearances(
+            ctx,
+            &protein,
+            &std::collections::BTreeMap::new(),
+            &mut Vec::new(),
+        )
+    })
     .expect_err("oversized nested Protein entry must be rejected");
     assert!(error.to_string().contains("inflated bytes"));
 }

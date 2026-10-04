@@ -343,12 +343,12 @@ fn presentation_material(
     let Some(bytes) = bytes.get(..end) else {
         return Ok(None);
     };
-    let physical_marker = lp_utf16_bytes(PHYSICAL_MATERIAL_LIBRARY_ID)?;
-    let legacy_marker = lp_utf16_bytes(APPEARANCE_LIBRARY_ID)?;
-    let modern_marker = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[0])?;
-    let modern_trailer = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[1])?;
+    let physical_marker = lp_utf16_bytes(ctx, PHYSICAL_MATERIAL_LIBRARY_ID)?;
+    let legacy_marker = lp_utf16_bytes(ctx, APPEARANCE_LIBRARY_ID)?;
+    let modern_marker = lp_utf16_bytes(ctx, MODERN_APPEARANCE_LIBRARY_IDS[0])?;
+    let modern_trailer = lp_utf16_bytes(ctx, MODERN_APPEARANCE_LIBRARY_IDS[1])?;
     let mut candidate = None;
-    for physical_at in find_all(bytes, start, end, &physical_marker) {
+    for physical_at in find_all(bytes, start, end, &physical_marker.0) {
         let Some((physical_guid_at, physical_guid)) =
             preceding_lp_utf16(ctx, bytes, start, physical_at)?
         else {
@@ -370,7 +370,7 @@ fn presentation_material(
         {
             continue;
         }
-        let Some(token_at) = skip_zeros(bytes, physical_at + physical_marker.len(), end) else {
+        let Some(token_at) = skip_zeros(bytes, physical_at + physical_marker.0.len(), end) else {
             continue;
         };
         let Some((physical_token, after_token)) =
@@ -382,13 +382,13 @@ fn presentation_material(
             continue;
         }
         let mut reference_at = after_token;
-        let Some(brep_container_entity) = local_reference(bytes, &mut reference_at) else {
+        let Some(brep_container_entity) = local_reference(ctx, bytes, &mut reference_at)? else {
             continue;
         };
-        if local_reference_value(bytes, &mut reference_at) != Some(LocalReference::Null) {
+        if local_reference_value(ctx, bytes, &mut reference_at)? != Some(LocalReference::Null) {
             continue;
         }
-        let Some(scene_node_entity) = local_reference(bytes, &mut reference_at) else {
+        let Some(scene_node_entity) = local_reference(ctx, bytes, &mut reference_at)? else {
             continue;
         };
         if entity_types
@@ -428,23 +428,23 @@ fn presentation_material(
             continue;
         };
         let (after_visual_marker, legacy) = if bytes
-            .get(visual_marker_at..visual_marker_at + legacy_marker.len())
-            == Some(legacy_marker.as_slice())
+            .get(visual_marker_at..visual_marker_at + legacy_marker.0.len())
+            == Some(legacy_marker.0.as_slice())
         {
-            (visual_marker_at + legacy_marker.len(), true)
-        } else if bytes.get(visual_marker_at..visual_marker_at + modern_marker.len())
-            == Some(modern_marker.as_slice())
+            (visual_marker_at + legacy_marker.0.len(), true)
+        } else if bytes.get(visual_marker_at..visual_marker_at + modern_marker.0.len())
+            == Some(modern_marker.0.as_slice())
         {
-            let Some(trailer_at) = skip_zeros(bytes, visual_marker_at + modern_marker.len(), end)
+            let Some(trailer_at) = skip_zeros(bytes, visual_marker_at + modern_marker.0.len(), end)
             else {
                 continue;
             };
-            if bytes.get(trailer_at..trailer_at + modern_trailer.len())
-                != Some(modern_trailer.as_slice())
+            if bytes.get(trailer_at..trailer_at + modern_trailer.0.len())
+                != Some(modern_trailer.0.as_slice())
             {
                 continue;
             }
-            (trailer_at + modern_trailer.len(), false)
+            (trailer_at + modern_trailer.0.len(), false)
         } else {
             continue;
         };
@@ -488,12 +488,34 @@ fn bare_presentation_material(
     let Some(bytes) = bytes.get(..end) else {
         return Ok(None);
     };
-    let marker = lp_utf16_bytes(BODY_PRESENTATION_MATERIAL_ENVELOPE_ID)?
-        .into_iter()
-        .chain(lp_utf16_bytes(PHYSICAL_MATERIAL_LIBRARY_ID)?)
-        .collect::<Vec<_>>();
-    let modern_marker = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[0])?;
-    let modern_trailer = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[1])?;
+    let envelope_marker = lp_utf16_bytes(ctx, BODY_PRESENTATION_MATERIAL_ENVELOPE_ID)?;
+    let physical_marker = lp_utf16_bytes(ctx, PHYSICAL_MATERIAL_LIBRARY_ID)?;
+    let mut marker_storage = ctx.reserve_scoped(0, "combine F3D presentation marker")?;
+    let mut marker = Vec::new();
+    for byte in ctx.admit_iter(
+        &envelope_marker.0,
+        "copy F3D presentation marker bytes",
+    )? {
+        ctx.push_scoped_vec(
+            &mut marker_storage,
+            &mut marker,
+            *byte,
+            "combine F3D presentation marker",
+        )?;
+    }
+    for byte in ctx.admit_iter(
+        &physical_marker.0,
+        "copy F3D presentation marker bytes",
+    )? {
+        ctx.push_scoped_vec(
+            &mut marker_storage,
+            &mut marker,
+            *byte,
+            "combine F3D presentation marker",
+        )?;
+    }
+    let modern_marker = lp_utf16_bytes(ctx, MODERN_APPEARANCE_LIBRARY_IDS[0])?;
+    let modern_trailer = lp_utf16_bytes(ctx, MODERN_APPEARANCE_LIBRARY_IDS[1])?;
     let mut candidate = None;
     for marker_at in find_all(bytes, start, end, &marker) {
         let Some(token_at) = skip_zeros(bytes, marker_at + marker.len(), end) else {
@@ -509,7 +531,7 @@ fn bare_presentation_material(
         }
 
         let mut physical_reference_at = after_token;
-        if local_reference(bytes, &mut physical_reference_at).is_none() {
+        if local_reference(ctx, bytes, &mut physical_reference_at)?.is_none() {
             continue;
         }
         let Some(node_guid_at) = skip_zeros(bytes, physical_reference_at, end) else {
@@ -529,7 +551,7 @@ fn bare_presentation_material(
             continue;
         }
         let mut node_reference_at = after_node_guid;
-        let Some(node_entity) = local_reference(bytes, &mut node_reference_at) else {
+        let Some(node_entity) = local_reference(ctx, bytes, &mut node_reference_at)? else {
             continue;
         };
         if entity_suffix.checked_add(1) != Some(node_entity) {
@@ -566,14 +588,16 @@ fn bare_presentation_material(
         let Some(marker_at) = skip_zeros(bytes, after_visual, end) else {
             continue;
         };
-        if bytes.get(marker_at..marker_at + modern_marker.len()) != Some(modern_marker.as_slice()) {
+        if bytes.get(marker_at..marker_at + modern_marker.0.len())
+            != Some(modern_marker.0.as_slice())
+        {
             continue;
         }
-        let Some(trailer_at) = skip_zeros(bytes, marker_at + modern_marker.len(), end) else {
+        let Some(trailer_at) = skip_zeros(bytes, marker_at + modern_marker.0.len(), end) else {
             continue;
         };
-        if bytes.get(trailer_at..trailer_at + modern_trailer.len())
-            != Some(modern_trailer.as_slice())
+        if bytes.get(trailer_at..trailer_at + modern_trailer.0.len())
+            != Some(modern_trailer.0.as_slice())
         {
             continue;
         }
@@ -598,20 +622,30 @@ enum LocalReference {
     Target(u64),
 }
 
-fn local_reference_value(bytes: &[u8], at: &mut usize) -> Option<LocalReference> {
-    let reference = take_reference(bytes, at)?;
-    match reference {
+fn local_reference_value(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    at: &mut usize,
+) -> Result<Option<LocalReference>, CodecError> {
+    let Some(reference) = take_reference(ctx, bytes, at)? else {
+        return Ok(None);
+    };
+    Ok(match reference {
         crate::bytes::Reference::Null => Some(LocalReference::Null),
         crate::bytes::Reference::Local { target, .. } => Some(LocalReference::Target(target)),
         _ => None,
-    }
+    })
 }
 
-fn local_reference(bytes: &[u8], at: &mut usize) -> Option<u64> {
-    match local_reference_value(bytes, at)? {
-        LocalReference::Target(target) if target != 0 => Some(target),
-        LocalReference::Null | LocalReference::Target(_) => None,
-    }
+fn local_reference(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    at: &mut usize,
+) -> Result<Option<u64>, CodecError> {
+    Ok(match local_reference_value(ctx, bytes, at)? {
+        Some(LocalReference::Target(target)) if target != 0 => Some(target),
+        Some(LocalReference::Null | LocalReference::Target(_)) | None => None,
+    })
 }
 
 fn record_tail_visual_offset(bytes: &[u8], name_end: usize, end: usize) -> Option<usize> {
@@ -712,7 +746,7 @@ mod tests {
         body_presentations as body_presentations_with_context,
         browser_node_records as browser_node_records_with_context, BodyPresentationOwner,
     };
-    use crate::bytes::lp_utf16_bytes;
+    use crate::bytes::lp_utf16_fixture_bytes;
     use crate::design::presentation::{
         APPEARANCE_LIBRARY_ID, BODY_PRESENTATION_BASE_TYPE_GUID,
         BODY_PRESENTATION_MATERIAL_ENVELOPE_ID, BODY_PRESENTATION_TYPE_GUID,
@@ -1273,7 +1307,7 @@ mod tests {
 
         let node_start = bytes.len();
         assert!(bare_presentation_material(&bytes, 15, node_start, entity).is_some());
-        let trailer_len = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[1])
+        let trailer_len = lp_utf16_fixture_bytes(MODERN_APPEARANCE_LIBRARY_IDS[1])
             .expect("fixture UTF-16 code-unit count fits u32")
             .len();
         assert!(

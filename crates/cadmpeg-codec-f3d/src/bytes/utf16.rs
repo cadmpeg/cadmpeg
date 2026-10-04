@@ -12,16 +12,35 @@ pub(crate) struct Utf16View<'a> {
 }
 
 impl<'a> Utf16View<'a> {
-    pub(crate) fn new(raw: &'a [u8]) -> Option<Self> {
+    pub(crate) fn new(
+        ctx: &DecodeContext<'_>,
+        raw: &'a [u8],
+    ) -> Result<Option<Self>, CodecError> {
         if !raw.len().is_multiple_of(2) {
-            return None;
+            return Ok(None);
         }
         let mut view = View::over_retained(raw);
+        let mut admitted = ctx.admit_iter(raw, "validate F3D UTF-16 text")?;
+        let units = std::iter::from_fn(move || {
+            admitted.next()?;
+            admitted.next()?;
+            view.u16_le()
+        });
         let mut utf8_len = 0usize;
-        for character in char::decode_utf16(std::iter::from_fn(|| view.u16_le())) {
-            utf8_len = utf8_len.checked_add(character.ok()?.len_utf8())?;
+        for character in char::decode_utf16(units) {
+            let Some(length) = character.ok().map(char::len_utf8) else {
+                return Ok(None);
+            };
+            let Some(next_length) = utf8_len.checked_add(length) else {
+                return Err(ctx.refuse_codec_limit(
+                    "validate F3D UTF-16 text",
+                    u64::MAX - 1,
+                    u64::MAX,
+                ));
+            };
+            utf8_len = next_length;
         }
-        Some(Self { raw, utf8_len })
+        Ok(Some(Self { raw, utf8_len }))
     }
 
     pub(crate) fn chars(self) -> impl Iterator<Item = char> + 'a {
@@ -38,15 +57,22 @@ impl<'a> Utf16View<'a> {
     pub(crate) fn len(self) -> usize {
         self.utf8_len
     }
-    pub(crate) fn eq_str(self, text: &str) -> bool {
-        self.chars().eq(text.chars())
+    pub(crate) fn eq_str(
+        self,
+        ctx: &DecodeContext<'_>,
+        text: &str,
+    ) -> Result<bool, CodecError> {
+        let decoded = self.to_scoped(ctx, "compare F3D UTF-16 text")?;
+        ctx.equal(decoded.0.as_str(), text, "compare F3D UTF-16 text")
     }
-    pub(crate) fn eq_ignore_ascii_case(self, other: Self) -> bool {
-        self.chars()
-            .map(|character| character.to_ascii_lowercase())
-            .eq(other
-                .chars()
-                .map(|character| character.to_ascii_lowercase()))
+    pub(crate) fn eq_ignore_ascii_case(
+        self,
+        ctx: &DecodeContext<'_>,
+        other: Self,
+    ) -> Result<bool, CodecError> {
+        let left = self.to_scoped(ctx, "compare F3D UTF-16 text")?;
+        let right = other.to_scoped(ctx, "compare F3D UTF-16 text")?;
+        ctx.eq_ignore_ascii_case(&left.0, &right.0, "compare F3D UTF-16 text")
     }
     pub(crate) fn is_guid_relaxed(self) -> bool {
         matches!(self.len(), 36..=38)
@@ -115,8 +141,22 @@ mod tests {
     use cadmpeg_core::CodecError;
 
     #[test]
+    fn utf16_validation_propagates_work_refusal() {
+        let raw = [b'A', 0];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        assert!(matches!(Utf16View::new(&ctx, &raw), Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits));
+    }
+
+    #[test]
     fn borrowed_utf16_retained_copy_refuses_exact_utf8_budget() {
-        let view = Utf16View::new(&[0, 8]).unwrap();
+        let raw = [0, 8];
+        let view = crate::test_support::with_decode_context(|ctx| {
+            Utf16View::new(ctx, &raw).unwrap().unwrap()
+        });
         for retained in [2, 3] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();

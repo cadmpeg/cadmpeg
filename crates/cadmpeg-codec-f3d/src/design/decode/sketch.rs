@@ -557,8 +557,13 @@ fn decode_sketch_visibilities_in_stream(
                 format_args!("F3D sketch container {entity_suffix} has no typed Geometry member"),
             ));
         };
-        let Some((class_tag, after_tag)) =
-            lp_ascii_filtered_view(bytes, member_at, 3..=3, u8::is_ascii_digit)
+        let Some((class_tag, after_tag)) = lp_ascii_filtered_view(
+            ctx,
+            bytes,
+            member_at,
+            3..=3,
+            u8::is_ascii_digit,
+        )?
         else {
             return Err(crate::design::text::malformed_design(
                 ctx,
@@ -597,7 +602,7 @@ fn decode_sketch_visibilities_in_stream(
             ));
         }
         let Some(visibility) =
-            decode_sketch_visibility_member(&bytes[..frame.end], member_at, entity_suffix)
+            decode_sketch_visibility_member(ctx, &bytes[..frame.end], member_at, entity_suffix)?
         else {
             return Err(crate::design::text::malformed_design(
                 ctx,
@@ -614,45 +619,54 @@ fn decode_sketch_visibilities_in_stream(
 }
 
 fn decode_sketch_visibility_member(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     member_at: usize,
     entity_suffix: u64,
-) -> Option<DesignSketchVisibility> {
-    let record_index = View::u64_le_at(bytes, member_at + visibility_member::ENTITY_SUFFIX)?;
+) -> Result<Option<DesignSketchVisibility>, CodecError> {
+    let Some(record_index) = View::u64_le_at(bytes, member_at + visibility_member::ENTITY_SUFFIX)
+    else {
+        return Ok(None);
+    };
     if record_index != entity_suffix
         || bytes.get(
             member_at + visibility_member::ZERO_RUN..member_at + visibility_member::OWNER_REFERENCE,
         ) != Some(&[0; 4])
     {
-        return None;
+        return Ok(None);
     }
     let mut cursor = member_at + visibility_member::OWNER_REFERENCE;
-    let owner = take_reference(bytes, &mut cursor)?;
+    let Some(owner) = take_reference(ctx, bytes, &mut cursor)? else {
+        return Ok(None);
+    };
     if cursor != member_at + visibility_member::STREAM_ORDINAL
         || !matches!(owner.local(), Some((target, None)) if target != 0)
     {
-        return None;
+        return Ok(None);
     }
-    let stream_ordinal = std::num::NonZeroU32::new(View::u32_le_at(bytes, cursor)?)?;
+    let Some(stream_ordinal) = View::u32_le_at(bytes, cursor).and_then(std::num::NonZeroU32::new)
+    else {
+        return Ok(None);
+    };
     if bytes.get(member_at + visibility_member::RESERVED_ZERO) != Some(&0) {
-        return None;
+        return Ok(None);
     }
     let stream_ordinal_offset = cursor;
     let visible_offset = member_at + visibility_member::VISIBLE;
     let visible = match bytes.get(visible_offset) {
         Some(0) => false,
         Some(1) => true,
-        _ => return None,
+        _ => return Ok(None),
     };
     if bytes.get(member_at + visibility_member::TAIL_MARKER) != Some(&1) {
-        return None;
+        return Ok(None);
     }
-    DesignSketchVisibility::new(
+    Ok(DesignSketchVisibility::new(
         stream_ordinal,
         u64_from_index(stream_ordinal_offset),
         visible,
     )
-    .ok()
+    .ok())
 }
 
 /// Byte length of a member-run head carrying an explicit 4×4 transform.
@@ -671,12 +685,26 @@ fn parse_member_run_head_placement(
     records: &IndexedRecordOffsets,
 ) -> Result<Option<DesignSketchPlacement>, CodecError> {
     let parsed = (|| {
+        macro_rules! admitted_option {
+            ($result:expr) => {
+                match $result {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
         let start = usize::try_from(entity_byte_offset).ok()?;
         // Locate the paired same-index record after the entity header.
         let entity_index = u32::try_from(entity_id.suffix()).ok()?;
         let paired_at = records.first_at_or_after(start.checked_add(1)?, entity_index)?;
-        let (paired_class_tag, paired_after_tag) =
-            lp_ascii_filtered_view(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
+        let (paired_class_tag, paired_after_tag) = admitted_option!(lp_ascii_filtered_view(
+            ctx,
+            bytes,
+            paired_at,
+            0..=2000,
+            u8::is_ascii_graphic,
+        ));
         let paired_class_tag =
             crate::design::decode::text::class_tag_from_view(paired_class_tag).ok()?;
         // The paired record's prologue: the u32 index, zero bytes to offset 19,
@@ -693,8 +721,13 @@ fn parse_member_run_head_placement(
         }
         // Locate the head record and decode its transform.
         let head_at = records.offsets(head_index).first().copied()?;
-        let (class_tag, after_tag) =
-            lp_ascii_filtered_view(bytes, head_at, 0..=2000, u8::is_ascii_graphic)?;
+        let (class_tag, after_tag) = admitted_option!(lp_ascii_filtered_view(
+            ctx,
+            bytes,
+            head_at,
+            0..=2000,
+            u8::is_ascii_graphic,
+        ));
         let class_tag = crate::design::decode::text::class_tag_from_view(class_tag).ok()?;
         if after_tag != head_at + 7 {
             return None;
@@ -728,9 +761,9 @@ fn parse_member_run_head_placement(
             }
             _ => return None,
         };
-        Some((head_at, form, class_tag, paired_class_tag, head_index))
+        Some(Ok((head_at, form, class_tag, paired_class_tag, head_index)))
     })();
-    let Some((head_at, form, class_tag, paired_class_tag, head_index)) = parsed else {
+    let Some((head_at, form, class_tag, paired_class_tag, head_index)) = parsed.transpose()? else {
         return Ok(None);
     };
     let Ok(frame) = DesignSketchFrame::new(u64_from_index(head_at), form) else {
@@ -767,13 +800,23 @@ fn parse_sketch_placement_candidates(
         if !matches!(frame_length, 201 | 213 | 305 | 325 | 329 | 341) {
             continue;
         }
-        let Some((class_tag, after_tag)) =
-            lp_ascii_filtered_view(bytes, start, 0..=2000, u8::is_ascii_graphic)
+        let Some((class_tag, after_tag)) = lp_ascii_filtered_view(
+            ctx,
+            bytes,
+            start,
+            0..=2000,
+            u8::is_ascii_graphic,
+        )?
         else {
             continue;
         };
-        let Some((paired_class_tag, paired_after_tag)) =
-            lp_ascii_filtered_view(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)
+        let Some((paired_class_tag, paired_after_tag)) = lp_ascii_filtered_view(
+            ctx,
+            bytes,
+            paired_at,
+            0..=2000,
+            u8::is_ascii_graphic,
+        )?
         else {
             continue;
         };
@@ -1034,8 +1077,13 @@ fn decode_lost_edge_references_from_stream(
         let Some(header_offset) = offset.checked_sub(29) else {
             continue;
         };
-        let Some((class_tag, after_tag)) =
-            lp_ascii_filtered_view(bytes, header_offset, 0..=2000, u8::is_ascii_graphic)
+        let Some((class_tag, after_tag)) = lp_ascii_filtered_view(
+            ctx,
+            bytes,
+            header_offset,
+            0..=2000,
+            u8::is_ascii_graphic,
+        )?
         else {
             continue;
         };
@@ -1056,8 +1104,13 @@ fn decode_lost_edge_references_from_stream(
             continue;
         };
         let next_byte_offset = offset + marker.len();
-        let Some((next_class_tag, after_next_tag)) =
-            lp_ascii_filtered_view(bytes, next_byte_offset, 0..=2000, u8::is_ascii_graphic)
+        let Some((next_class_tag, after_next_tag)) = lp_ascii_filtered_view(
+            ctx,
+            bytes,
+            next_byte_offset,
+            0..=2000,
+            u8::is_ascii_graphic,
+        )?
         else {
             continue;
         };
@@ -1287,6 +1340,15 @@ fn parse_legacy_sketch_member_run(
     entity_suffix: u32,
 ) -> Result<Option<Vec<crate::records::identity::Located<u32>>>, CodecError> {
     let parsed = (|| {
+        macro_rules! admitted_option {
+            ($result:expr) => {
+                match $result {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
         let paired_at = next_indexed_record_offset(bytes, primary_at + 11)?;
         if View::u32_le_at(bytes, paired_at + 7) != Some(entity_suffix)
             || bytes.get(paired_at + 11..paired_at + 19) != Some(&[0u8; 8][..])
@@ -1295,8 +1357,13 @@ fn parse_legacy_sketch_member_run(
         {
             return None;
         }
-        let (paired_class_tag, after_tag) =
-            lp_ascii_filtered_view(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
+        let (paired_class_tag, after_tag) = admitted_option!(lp_ascii_filtered_view(
+            ctx,
+            bytes,
+            paired_at,
+            0..=2000,
+            u8::is_ascii_graphic,
+        ));
         if after_tag != paired_at + 7
             || paired_class_tag.len() != 3
             || !paired_class_tag.bytes().all(|byte| byte.is_ascii_digit())
@@ -1311,9 +1378,9 @@ fn parse_legacy_sketch_member_run(
         if run_end > bytes.len() {
             return None;
         }
-        Some((paired_at, count))
+        Some(Ok((paired_at, count)))
     })();
-    let Some((paired_at, count)) = parsed else {
+    let Some((paired_at, count)) = parsed.transpose()? else {
         return Ok(None);
     };
 
@@ -2031,16 +2098,17 @@ fn decode_sketch_points_from_stream(
         let payload = &bytes[frame.start..frame.end];
         let record_index = u32::try_from(frame.entity_id)
             .map_err(|_| CodecError::Malformed("F3D sketch-point entity ID exceeds u32".into()))?;
-        let decoded =
-            decode_sketch_point_record(payload, frame.design_type.version).ok_or_else(|| {
-                crate::design::text::malformed_design(
+        let Some(decoded) =
+            decode_sketch_point_record(ctx, payload, frame.design_type.version)?
+        else {
+            return Err(crate::design::text::malformed_design(
                     ctx,
                     format_args!(
                         "F3D sketch point {record_index} has an invalid version-{} member sequence",
                         frame.design_type.version
                     ),
-                )
-            })?;
+                ));
+        };
         let (u, v) = (decoded.coordinates[0] * 10.0, decoded.coordinates[1] * 10.0);
         if !point_target_has_guid(
             &types_by_entity,
@@ -2141,55 +2209,130 @@ struct SketchProperties<'a> {
 }
 
 impl SketchProperties<'_> {
-    fn find(&self, key: &str) -> Option<u64> {
+    fn find(
+        &self,
+        ctx: &DecodeContext<'_>,
+        key: &str,
+    ) -> Result<Option<u64>, CodecError> {
         let mut cursor = self.first;
         for _ in 0..self.count {
-            let (name, after_name) =
-                lp_ascii_filtered_view(self.payload, cursor, 0..=256, u8::is_ascii_graphic)?;
-            let (_, after_type) =
-                lp_ascii_filtered_view(self.payload, after_name, 0..=256, u8::is_ascii_graphic)?;
-            let value = View::u64_le_at(self.payload, after_type)?;
+            let Some((name, after_name)) = lp_ascii_filtered_view(
+                ctx,
+                self.payload,
+                cursor,
+                0..=256,
+                u8::is_ascii_graphic,
+            )? else {
+                return Ok(None);
+            };
+            let Some((_, after_type)) = lp_ascii_filtered_view(
+                ctx,
+                self.payload,
+                after_name,
+                0..=256,
+                u8::is_ascii_graphic,
+            )? else {
+                return Ok(None);
+            };
+            let Some(value) = View::u64_le_at(self.payload, after_type) else {
+                return Ok(None);
+            };
             if name == key {
-                return Some(value);
+                return Ok(Some(value));
             }
-            cursor = after_type.checked_add(8)?;
+            let Some(next) = after_type.checked_add(8) else {
+                return Ok(None);
+            };
+            cursor = next;
         }
-        None
+        Ok(None)
     }
 
-    fn first_two(&self) -> Option<(SketchProperty<'_>, Option<SketchProperty<'_>>)> {
+    fn first_two(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<(SketchProperty<'_>, Option<SketchProperty<'_>>)>, CodecError> {
         if !matches!(self.count, 1 | 2) {
-            return None;
+            return Ok(None);
         }
-        let (first_name, after_name) =
-            lp_ascii_filtered_view(self.payload, self.first, 0..=256, u8::is_ascii_graphic)?;
-        let (_, after_type) =
-            lp_ascii_filtered_view(self.payload, after_name, 0..=256, u8::is_ascii_graphic)?;
-        let first_value = View::u64_le_at(self.payload, after_type)?;
+        let Some((first_name, after_name)) = lp_ascii_filtered_view(
+            ctx,
+            self.payload,
+            self.first,
+            0..=256,
+            u8::is_ascii_graphic,
+        )? else {
+            return Ok(None);
+        };
+        let Some((_, after_type)) = lp_ascii_filtered_view(
+            ctx,
+            self.payload,
+            after_name,
+            0..=256,
+            u8::is_ascii_graphic,
+        )? else {
+            return Ok(None);
+        };
+        let Some(first_value) = View::u64_le_at(self.payload, after_type) else {
+            return Ok(None);
+        };
         let second = if self.count == 2 {
-            let at = after_type.checked_add(8)?;
-            let (name, after_name) =
-                lp_ascii_filtered_view(self.payload, at, 0..=256, u8::is_ascii_graphic)?;
-            let (_, after_type) =
-                lp_ascii_filtered_view(self.payload, after_name, 0..=256, u8::is_ascii_graphic)?;
+            let Some(at) = after_type.checked_add(8) else {
+                return Ok(None);
+            };
+            let Some((name, after_name)) = lp_ascii_filtered_view(
+                ctx,
+                self.payload,
+                at,
+                0..=256,
+                u8::is_ascii_graphic,
+            )? else {
+                return Ok(None);
+            };
+            let Some((_, after_type)) = lp_ascii_filtered_view(
+                ctx,
+                self.payload,
+                after_name,
+                0..=256,
+                u8::is_ascii_graphic,
+            )? else {
+                return Ok(None);
+            };
+            let Some(value) = View::u64_le_at(self.payload, after_type) else {
+                return Ok(None);
+            };
             Some(SketchProperty {
                 name,
-                value: View::u64_le_at(self.payload, after_type)?,
+                value,
             })
         } else {
             None
         };
-        Some((
+        Ok(Some((
             SketchProperty {
                 name: first_name,
                 value: first_value,
             },
             second,
-        ))
+        )))
     }
 }
 
-fn read_property_block<'a>(payload: &'a [u8], cursor: &mut usize) -> Option<SketchProperties<'a>> {
+fn read_property_block<'a>(
+    ctx: &DecodeContext<'_>,
+    payload: &'a [u8],
+    cursor: &mut usize,
+) -> Result<Option<SketchProperties<'a>>, CodecError> {
+    let parsed = (|| {
+        macro_rules! admitted_option {
+            ($result:expr) => {
+                match $result {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
     let mut count = 0;
     let mut first = *cursor;
     match payload.get(*cursor)? {
@@ -2203,10 +2346,20 @@ fn read_property_block<'a>(payload: &'a [u8], cursor: &mut usize) -> Option<Sket
             *cursor += 4;
             first = *cursor;
             for _ in 0..count {
-                let (_, after_key) =
-                    lp_ascii_filtered_view(payload, *cursor, 0..=256, u8::is_ascii_graphic)?;
-                let (type_name, after_type) =
-                    lp_ascii_filtered_view(payload, after_key, 0..=256, u8::is_ascii_graphic)?;
+                let (_, after_key) = admitted_option!(lp_ascii_filtered_view(
+                    ctx,
+                    payload,
+                    *cursor,
+                    0..=256,
+                    u8::is_ascii_graphic,
+                ));
+                let (type_name, after_type) = admitted_option!(lp_ascii_filtered_view(
+                    ctx,
+                    payload,
+                    after_key,
+                    0..=256,
+                    u8::is_ascii_graphic,
+                ));
                 if type_name != "IntrinsicMetaTypeuint64" {
                     return None;
                 }
@@ -2216,11 +2369,13 @@ fn read_property_block<'a>(payload: &'a [u8], cursor: &mut usize) -> Option<Sket
         }
         _ => return None,
     }
-    Some(SketchProperties {
+    Some(Ok(SketchProperties {
         payload,
         first,
         count,
-    })
+    }))
+    })();
+    parsed.transpose()
 }
 
 const SKETCH_TEXT_TYPE_GUIDS: [&str; 2] = [
@@ -2352,13 +2507,14 @@ enum SketchTextIdentity {
 /// Read one parameter-reference slot in the given form, advancing `cursor` by
 /// what that form occupies. An omitted member reads as a null reference.
 fn read_text_reference<'a>(
+    ctx: &DecodeContext<'_>,
     payload: &'a [u8],
     cursor: &mut usize,
     slot: TextReferenceSlot,
-) -> Option<Reference<&'a str, crate::bytes::utf16::Utf16View<'a>>> {
+) -> Result<Option<Reference<&'a str, crate::bytes::utf16::Utf16View<'a>>>, CodecError> {
     match slot {
-        TextReferenceSlot::Omitted => Some(Reference::Null),
-        TextReferenceSlot::Written => take_reference(payload, cursor),
+        TextReferenceSlot::Omitted => Ok(Some(Reference::Null)),
+        TextReferenceSlot::Written => take_reference(ctx, payload, cursor),
     }
 }
 
@@ -2447,25 +2603,47 @@ struct SketchTextTail {
 /// Read the class-defined leading block: the presence byte, and when it is
 /// `01`, a u32 count and that many `(reference, u32)` pairs. The `txt_tag` form
 /// writes such a block; the `textex_tag` form writes the `00` byte alone.
-fn read_sketch_text_leading_block(payload: &[u8], cursor: &mut usize) -> Option<()> {
-    match payload.get(*cursor)? {
+fn read_sketch_text_leading_block(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    cursor: &mut usize,
+) -> Result<Option<()>, CodecError> {
+    let Some(presence) = payload.get(*cursor) else {
+        return Ok(None);
+    };
+    match presence {
         0 => *cursor += 1,
         1 => {
             *cursor += 1;
-            let count = usize::try_from(View::u32_le_at(payload, *cursor)?).ok()?;
+            let Some(raw_count) = View::u32_le_at(payload, *cursor) else {
+                return Ok(None);
+            };
+            let Ok(count) = usize::try_from(raw_count) else {
+                return Ok(None);
+            };
             if count > MAX_RELATION_RUN {
-                return None;
+                return Ok(None);
             }
-            *cursor = cursor.checked_add(4)?;
+            let Some(after_count) = (*cursor).checked_add(4) else {
+                return Ok(None);
+            };
+            *cursor = after_count;
             for _ in 0..count {
-                take_reference(payload, cursor)?;
-                View::u32_le_at(payload, *cursor)?;
-                *cursor = cursor.checked_add(4)?;
+                let Some(_) = take_reference(ctx, payload, cursor)? else {
+                    return Ok(None);
+                };
+                let Some(_) = View::u32_le_at(payload, *cursor) else {
+                    return Ok(None);
+                };
+                let Some(next) = (*cursor).checked_add(4) else {
+                    return Ok(None);
+                };
+                *cursor = next;
             }
         }
-        _ => return None,
+        _ => return Ok(None),
     }
-    Some(())
+    Ok(Some(()))
 }
 
 /// Read the record prefix, property block, and the metrics up to the height.
@@ -2475,25 +2653,48 @@ fn decode_sketch_text_head(
     class_version: u32,
 ) -> Result<Option<(SketchTextHead, SketchTextIdentity)>, CodecError> {
     (|| {
+        macro_rules! admitted_option {
+            ($result:expr) => {
+                match $result {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
         // Record prefix: the LP-ASCII class tag, the u64 entity ID, and the
         // LP-ASCII record name.
-        let (_, after_tag) = lp_ascii_filtered_view(payload, 0, 3..=3, u8::is_ascii_digit)?;
-        let (_, mut cursor) = lp_ascii_filtered_view(
+        let (_, after_tag) = admitted_option!(lp_ascii_filtered_view(
+            ctx,
+            payload,
+            0,
+            3..=3,
+            u8::is_ascii_digit,
+        ));
+        let (_, mut cursor) = admitted_option!(lp_ascii_filtered_view(
+            ctx,
             payload,
             after_tag.checked_add(8)?,
             0..=256,
             u8::is_ascii_graphic,
-        )?;
-        read_sketch_text_leading_block(payload, &mut cursor)?;
+        ));
+        admitted_option!(read_sketch_text_leading_block(ctx, payload, &mut cursor));
         // The block carries the text identities under keys that vary by record, so
         // each is addressed by name. The identity key is `textex_tag` or `txt_tag`,
         // and which of the two the record carries selects the layout that follows.
         // A `txt_tag` record below TXT_TAG_IDENTITY_KEY_VERSION writes neither key
         // and carries no persistent identity, so its class version selects the
         // layout in place of a key.
-        let properties = read_property_block(payload, &mut cursor)?;
-        let property = |key: &str| properties.find(key);
-        let is_txt_tag = match (property("textex_tag"), property("txt_tag")) {
+        let properties = admitted_option!(read_property_block(ctx, payload, &mut cursor));
+        let textex_tag = match properties.find(ctx, "textex_tag") {
+            Ok(value) => value,
+            Err(error) => return Some(Err(error)),
+        };
+        let txt_tag = match properties.find(ctx, "txt_tag") {
+            Ok(value) => value,
+            Err(error) => return Some(Err(error)),
+        };
+        let is_txt_tag = match (textex_tag, txt_tag) {
             (Some(_), _) => false,
             (None, Some(_)) => true,
             (None, None) if class_version < TXT_TAG_IDENTITY_KEY_VERSION => true,
@@ -2508,7 +2709,10 @@ fn decode_sketch_text_head(
             (
                 SketchTextIdentity::TxtTag { rotation },
                 color,
-                property("txt_tag"),
+                match properties.find(ctx, "txt_tag") {
+                    Ok(value) => value,
+                    Err(error) => return Some(Err(error)),
+                },
             )
         } else {
             (payload.get(cursor)? == &1).then_some(())?;
@@ -2519,7 +2723,10 @@ fn decode_sketch_text_head(
             (
                 SketchTextIdentity::TextexTag { width_factor },
                 color,
-                property("textex_tag"),
+                match properties.find(ctx, "textex_tag") {
+                    Ok(value) => value,
+                    Err(error) => return Some(Err(error)),
+                },
             )
         };
         let font_count = usize::try_from(View::u32_le_at(payload, cursor)?).ok()?;
@@ -2538,11 +2745,19 @@ fn decode_sketch_text_head(
         }
         let height = PositiveLength::new(View::f64_le_at(payload, cursor)? * 10.0)?;
         cursor = cursor.checked_add(8)?;
+        let entity_genesis = match properties.find(ctx, "EntityGenesis") {
+            Ok(value) => value,
+            Err(error) => return Some(Err(error)),
+        };
+        let base_id = match properties.find(ctx, "txt_tag_base") {
+            Ok(value) => value,
+            Err(error) => return Some(Err(error)),
+        };
         Some(Ok((
             SketchTextHead {
-                entity_genesis: property("EntityGenesis"),
+                entity_genesis,
                 persistent_id,
-                base_id: property("txt_tag_base"),
+                base_id,
                 font_family,
                 height,
                 color,
@@ -2564,7 +2779,22 @@ fn decode_indexed_sketch_text_head(
     payload: &[u8],
 ) -> Result<Option<(SketchTextHead, NonNegativeReal)>, CodecError> {
     (|| {
-        let (_, after_tag) = lp_ascii_filtered_view(payload, 0, 3..=3, u8::is_ascii_digit)?;
+        macro_rules! admitted_option {
+            ($result:expr) => {
+                match $result {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
+        let (_, after_tag) = admitted_option!(lp_ascii_filtered_view(
+            ctx,
+            payload,
+            0,
+            3..=3,
+            u8::is_ascii_digit,
+        ));
         if after_tag != 7
             || View::u32_le_at(payload, after_tag).is_none()
             || payload.get(11..20)?.iter().any(|byte| *byte != 0)
@@ -2572,9 +2802,12 @@ fn decode_indexed_sketch_text_head(
             return None;
         }
         let mut cursor = 20;
-        let properties = read_property_block(payload, &mut cursor)?;
-        let property = |key: &str| properties.find(key);
-        let persistent_id = property("textex_tag")?;
+        let properties = admitted_option!(read_property_block(ctx, payload, &mut cursor));
+        let persistent_id = match properties.find(ctx, "textex_tag") {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         (payload.get(cursor)? == &0).then_some(())?;
         cursor += 1;
         let width_factor = NonNegativeReal::new(View::f64_le_at(payload, cursor)?)?;
@@ -2594,11 +2827,19 @@ fn decode_indexed_sketch_text_head(
         cursor += 1;
         let height = PositiveLength::new(View::f64_le_at(payload, cursor)? * 10.0)?;
         cursor = cursor.checked_add(8)?;
+        let entity_genesis = match properties.find(ctx, "EntityGenesis") {
+            Ok(value) => value,
+            Err(error) => return Some(Err(error)),
+        };
+        let base_id = match properties.find(ctx, "txt_tag_base") {
+            Ok(value) => value,
+            Err(error) => return Some(Err(error)),
+        };
         Some(Ok((
             SketchTextHead {
-                entity_genesis: property("EntityGenesis"),
+                entity_genesis,
                 persistent_id: Some(persistent_id),
-                base_id: property("txt_tag_base"),
+                base_id,
                 font_family,
                 height,
                 color,
@@ -2622,7 +2863,17 @@ fn decode_sketch_text_tail(
     width_factor: NonNegativeReal,
 ) -> Result<Option<SketchTextTail>, CodecError> {
     (|| {
-        let first_reference = read_text_reference(payload, &mut cursor, first_slot)?;
+        macro_rules! admitted_option {
+            ($result:expr) => {
+                match $result {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
+        let first_reference =
+            admitted_option!(read_text_reference(ctx, payload, &mut cursor, first_slot));
         // Horizontal alignment enum and three flag bytes.
         let horizontal_alignment = View::u32_le_at(payload, cursor)?;
         cursor = cursor.checked_add(7)?;
@@ -2636,7 +2887,8 @@ fn decode_sketch_text_tail(
             Err(error) => return Some(Err(error)),
         };
         cursor = after_text;
-        let second_reference = read_text_reference(payload, &mut cursor, second_slot)?;
+        let second_reference =
+            admitted_option!(read_text_reference(ctx, payload, &mut cursor, second_slot));
         // Vertical alignment enum, one flag byte, and the font weight.
         let vertical_alignment = View::u32_le_at(payload, cursor)?;
         let font_weight = i32::try_from(View::u32_le_at(payload, cursor.checked_add(5)?)?).ok()?;
@@ -2656,7 +2908,7 @@ fn decode_sketch_text_tail(
             _ => return None,
         };
         cursor = cursor.checked_add(SKETCH_TEXT_TRAILING_RUN)?;
-        let owner = take_reference(payload, &mut cursor)?;
+        let owner = admitted_option!(take_reference(ctx, payload, &mut cursor));
         (cursor == payload.len()).then_some(())?;
         Some(Ok(SketchTextTail {
             layout: SketchTextLayout::TextexTag {
@@ -2692,6 +2944,15 @@ fn decode_txt_tag_sketch_text_tail(
     rotation: Angle,
 ) -> Result<Option<SketchTextTail>, CodecError> {
     (|| {
+        macro_rules! admitted_option {
+            ($result:expr) => {
+                match $result {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
         cursor = cursor.checked_add(2)?;
         let anchor = Point2::new(
             View::f64_le_at(payload, cursor)? * 10.0,
@@ -2720,7 +2981,8 @@ fn decode_txt_tag_sketch_text_tail(
         }
         cursor = cursor.checked_add(4)?;
         for _ in 0..references {
-            take_reference(payload, &mut cursor)?;
+            // discarded-value: consume each format-defined reference slot.
+            let _ = admitted_option!(take_reference(ctx, payload, &mut cursor));
         }
         let font_weight = i32::try_from(View::u32_le_at(
             payload,
@@ -2729,7 +2991,7 @@ fn decode_txt_tag_sketch_text_tail(
         .ok()?;
         matches!(font_weight, 400 | 500 | 750).then_some(())?;
         cursor = cursor.checked_add(TXT_TAG_MEMBER_RUN + SKETCH_TEXT_TRAILING_RUN)?;
-        let owner = take_reference(payload, &mut cursor)?;
+        let owner = admitted_option!(take_reference(ctx, payload, &mut cursor));
         (cursor == payload.len()).then_some(())?;
         Some(Ok(SketchTextTail {
             layout: SketchTextLayout::TxtTag {
@@ -2759,7 +3021,17 @@ fn decode_indexed_sketch_text_tail(
     width_factor: NonNegativeReal,
 ) -> Result<Option<SketchTextTail>, CodecError> {
     (|| {
-        let first_reference = read_text_reference(payload, &mut cursor, first_slot)?;
+        macro_rules! admitted_option {
+            ($result:expr) => {
+                match $result {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
+        let first_reference =
+            admitted_option!(read_text_reference(ctx, payload, &mut cursor, first_slot));
         let horizontal_alignment = View::u32_le_at(payload, cursor)?;
         cursor = cursor.checked_add(7)?;
         let text_count = usize::try_from(View::u32_le_at(payload, cursor)?).ok()?;
@@ -2772,7 +3044,8 @@ fn decode_indexed_sketch_text_tail(
             Err(error) => return Some(Err(error)),
         };
         cursor = after_text;
-        let second_reference = read_text_reference(payload, &mut cursor, second_slot)?;
+        let second_reference =
+            admitted_option!(read_text_reference(ctx, payload, &mut cursor, second_slot));
         let vertical_alignment = View::u32_le_at(payload, cursor)?;
         let font_weight = i32::try_from(View::u32_le_at(payload, cursor.checked_add(5)?)?).ok()?;
         matches!(font_weight, 400 | 500 | 750).then_some(())?;
@@ -2802,7 +3075,7 @@ fn decode_indexed_sketch_text_tail(
             .all(|byte| *byte == 0))
         .then_some(())?;
         cursor = cursor.checked_add(35)?;
-        let owner = take_reference(payload, &mut cursor)?;
+        let owner = admitted_option!(take_reference(ctx, payload, &mut cursor));
         (cursor == payload.len()).then_some(())?;
         Some(Ok(SketchTextTail {
             layout: SketchTextLayout::TextexTag {
@@ -3030,79 +3303,139 @@ impl DecodedSketchPoint {
 }
 
 fn take_local_sketch_reference<'a>(
+    ctx: &DecodeContext<'_>,
     payload: &'a [u8],
     cursor: &mut usize,
-) -> Option<(u32, Option<&'a str>)> {
-    let reference = take_reference(payload, cursor)?;
-    let (target, inline_type_guid) = reference.into_local()?;
-    Some((u32::try_from(target).ok()?, inline_type_guid))
+) -> Result<Option<(u32, Option<&'a str>)>, CodecError> {
+    let Some(reference) = take_reference(ctx, payload, cursor)? else {
+        return Ok(None);
+    };
+    let Some((target, inline_type_guid)) = reference.into_local() else {
+        return Ok(None);
+    };
+    let Ok(target) = u32::try_from(target) else {
+        return Ok(None);
+    };
+    Ok(Some((target, inline_type_guid)))
 }
 
-fn take_same_segment_sketch_reference(payload: &[u8], cursor: &mut usize) -> Option<u32> {
-    let (target, inline_type_guid) = take_local_sketch_reference(payload, cursor)?;
-    inline_type_guid.is_none().then_some(target)
+fn take_same_segment_sketch_reference(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    cursor: &mut usize,
+) -> Result<Option<u32>, CodecError> {
+    let Some((target, inline_type_guid)) = take_local_sketch_reference(ctx, payload, cursor)? else {
+        return Ok(None);
+    };
+    Ok(inline_type_guid.is_none().then_some(target))
 }
 
 fn decode_version_zero_sketch_point(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     header_end: usize,
-) -> Option<DecodedSketchPoint> {
-    let mut cursor = header_end;
-    let prefix_end = cursor.checked_add(10)?;
-    if payload.get(cursor..prefix_end) != Some(&[0; 10][..]) {
-        return None;
+) -> Result<Option<DecodedSketchPoint>, CodecError> {
+    macro_rules! admitted_option {
+        ($result:expr) => {
+            match $result {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            }
+        };
     }
-    cursor = prefix_end;
-    let paired_reference = take_same_segment_sketch_reference(payload, &mut cursor)?;
-    let flag = *payload.get(cursor)?;
-    if flag > 1 {
-        return None;
-    }
-    cursor = cursor.checked_add(1)?;
-    let coordinate_offset = u32::try_from(cursor).ok()?;
-    let x = View::f64_le_at(payload, cursor)?;
-    let y = View::f64_le_at(payload, cursor.checked_add(8)?)?;
-    cursor = cursor.checked_add(16)?;
-    if payload.get(cursor..cursor.checked_add(20)?) != Some(&[0; 20][..])
-        || View::f32_le_at(payload, cursor + 20) != Some(1.0)
-        || payload.get(cursor + 24..cursor + 36) != Some(&[0; 12][..])
-        || View::f32_le_at(payload, cursor + 36) != Some(1.0)
-        || View::f32_le_at(payload, cursor + 40) != Some(1.0)
-        || payload.get(cursor + 44..cursor + 54) != Some(&[1, 1, 0, 0, 0, 0, 1, 0, 0, 0][..])
-    {
-        return None;
-    }
-    cursor = cursor.checked_add(54)?;
-    if take_same_segment_sketch_reference(payload, &mut cursor)? != paired_reference {
-        return None;
-    }
-    let owner_reference = take_same_segment_sketch_reference(payload, &mut cursor)?;
-    if cursor != payload.len() {
-        return None;
-    }
-    Some(DecodedSketchPoint {
-        owner_reference: Some(owner_reference),
-        coordinate_offset,
-        record_form: SketchPointRecordForm::Version0 { flag: flag == 1 },
-        paired_reference,
-        coordinates: [x, y],
-    })
+    let parsed = (|| {
+        let mut cursor = header_end;
+        let prefix_end = cursor.checked_add(10)?;
+        if payload.get(cursor..prefix_end) != Some(&[0; 10][..]) {
+            return None;
+        }
+        cursor = prefix_end;
+        let paired_reference =
+            admitted_option!(take_same_segment_sketch_reference(ctx, payload, &mut cursor));
+        let flag = *payload.get(cursor)?;
+        if flag > 1 {
+            return None;
+        }
+        cursor = cursor.checked_add(1)?;
+        let coordinate_offset = u32::try_from(cursor).ok()?;
+        let x = View::f64_le_at(payload, cursor)?;
+        let y = View::f64_le_at(payload, cursor.checked_add(8)?)?;
+        cursor = cursor.checked_add(16)?;
+        if payload.get(cursor..cursor.checked_add(20)?) != Some(&[0; 20][..])
+            || View::f32_le_at(payload, cursor + 20) != Some(1.0)
+            || payload.get(cursor + 24..cursor + 36) != Some(&[0; 12][..])
+            || View::f32_le_at(payload, cursor + 36) != Some(1.0)
+            || View::f32_le_at(payload, cursor + 40) != Some(1.0)
+            || payload.get(cursor + 44..cursor + 54)?
+                != [1, 1, 0, 0, 0, 0, 1, 0, 0, 0]
+        {
+            return None;
+        }
+        cursor = cursor.checked_add(54)?;
+        if admitted_option!(take_same_segment_sketch_reference(ctx, payload, &mut cursor))
+            != paired_reference
+        {
+            return None;
+        }
+        let owner_reference =
+            admitted_option!(take_same_segment_sketch_reference(ctx, payload, &mut cursor));
+        if cursor != payload.len() {
+            return None;
+        }
+        Some(Ok(DecodedSketchPoint {
+            owner_reference: Some(owner_reference),
+            coordinate_offset,
+            record_form: SketchPointRecordForm::Version0 { flag: flag == 1 },
+            paired_reference,
+            coordinates: [x, y],
+        }))
+    })();
+    parsed.transpose()
 }
 
-fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<DecodedSketchPoint> {
-    let (_, after_class_tag) = lp_ascii_filtered_view(payload, 0, 3..=3, u8::is_ascii_digit)?;
-    let header_end = after_class_tag.checked_add(4)?;
-    if class_version == 0 {
-        return decode_version_zero_sketch_point(payload, header_end);
+fn decode_sketch_point_record(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    class_version: u32,
+) -> Result<Option<DecodedSketchPoint>, CodecError> {
+    macro_rules! admitted_option {
+        ($result:expr) => {
+            match $result {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            }
+        };
     }
+    if class_version == 0 {
+    let Some((_, after_class_tag)) =
+            lp_ascii_filtered_view(ctx, payload, 0, 3..=3, u8::is_ascii_digit)?
+        else {
+            return Ok(None);
+        };
+        let Some(header_end) = after_class_tag.checked_add(4) else {
+            return Ok(None);
+        };
+        return decode_version_zero_sketch_point(ctx, payload, header_end);
+    }
+    let parsed = (|| {
+    let (_, after_class_tag) = admitted_option!(lp_ascii_filtered_view(
+        ctx,
+        payload,
+        0,
+        3..=3,
+        u8::is_ascii_digit,
+    ));
+    let header_end = after_class_tag.checked_add(4)?;
     if !matches!(class_version, 8 | 10 | 11)
         || payload.get(header_end..header_end.checked_add(9)?) != Some(&[0; 9][..])
     {
         return None;
     }
     let mut cursor = header_end.checked_add(9)?;
-    let properties = read_property_block(payload, &mut cursor)?;
-    let (entity_genesis, persistent_id) = match properties.first_two()? {
+    let properties = admitted_option!(read_property_block(ctx, payload, &mut cursor));
+    let (entity_genesis, persistent_id) = match admitted_option!(properties.first_two(ctx)) {
         (
             SketchProperty {
                 name: "pt_tag",
@@ -3123,7 +3456,8 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
         _ => return None,
     };
     let persistent_id = std::num::NonZeroU64::new(persistent_id)?;
-    let (paired_reference, paired_type_guid) = take_local_sketch_reference(payload, &mut cursor)?;
+    let (paired_reference, paired_type_guid) =
+        admitted_option!(take_local_sketch_reference(ctx, payload, &mut cursor));
     let inline_typed = match (class_version, paired_type_guid) {
         (8 | 10 | 11, None) => false,
         (10 | 11, Some(type_guid))
@@ -3165,7 +3499,7 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
     }
     cursor = floats_at.checked_add(13)?;
     let (repeated_reference, repeated_type_guid) =
-        take_local_sketch_reference(payload, &mut cursor)?;
+        admitted_option!(take_local_sketch_reference(ctx, payload, &mut cursor));
     let repeated_encoding_matches = match repeated_type_guid {
         None => !inline_typed,
         Some(type_guid) => {
@@ -3183,7 +3517,8 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
             if closure != SketchPointClosure::Selector0State0 {
                 return None;
             }
-            let owner = take_same_segment_sketch_reference(payload, &mut cursor)?;
+            let owner =
+                admitted_option!(take_same_segment_sketch_reference(ctx, payload, &mut cursor));
             (
                 SketchPointRecordForm::Version8 {
                     depth,
@@ -3194,7 +3529,8 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
             )
         }
         (10, false) => {
-            let owner = take_same_segment_sketch_reference(payload, &mut cursor)?;
+            let owner =
+                admitted_option!(take_same_segment_sketch_reference(ctx, payload, &mut cursor));
             (
                 SketchPointRecordForm::Version10 {
                     depth,
@@ -3209,7 +3545,7 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
         }
         (10, true) => {
             let (trailing_reference, type_guid) =
-                take_local_sketch_reference(payload, &mut cursor)?;
+                admitted_option!(take_local_sketch_reference(ctx, payload, &mut cursor));
             if type_guid
                 .is_none_or(|type_guid| !type_guid.eq_ignore_ascii_case(SKETCH_CONTAINER_TYPE_GUID))
             {
@@ -3231,7 +3567,7 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
         }
         (11, true) => {
             let (trailing_reference, type_guid) =
-                take_local_sketch_reference(payload, &mut cursor)?;
+                admitted_option!(take_local_sketch_reference(ctx, payload, &mut cursor));
             if type_guid
                 .is_none_or(|type_guid| !type_guid.eq_ignore_ascii_case(SKETCH_CONTAINER_TYPE_GUID))
             {
@@ -3259,7 +3595,8 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
                 }
                 _ => return None,
             };
-            let owner = take_same_segment_sketch_reference(payload, &mut cursor)?;
+            let owner =
+                admitted_option!(take_same_segment_sketch_reference(ctx, payload, &mut cursor));
             (
                 SketchPointRecordForm::Version11 {
                     depth,
@@ -3278,13 +3615,15 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
     if cursor != payload.len() {
         return None;
     }
-    Some(DecodedSketchPoint {
+    Some(Ok(DecodedSketchPoint {
         owner_reference,
         coordinate_offset,
         record_form,
         paired_reference,
         coordinates,
-    })
+    }))
+    })();
+    parsed.transpose()
 }
 
 fn point_target_has_guid(
@@ -3337,8 +3676,18 @@ fn decode_sketch_point_companion(
         "f3d sketch point incident curves",
     )?;
     let parsed = (|| {
+        macro_rules! admitted_option {
+            ($result:expr) => {
+                match $result {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
         for _ in 0..count {
-            let (target, type_guid) = take_local_sketch_reference(payload, &mut cursor)?;
+            let (target, type_guid) =
+                admitted_option!(take_local_sketch_reference(ctx, payload, &mut cursor));
             let registered_type = types_by_entity.get(&target)?;
             match reference_encoding {
                 SketchPointCompanionReferenceEncoding::SameSegment if type_guid.is_none() => {}
@@ -3354,7 +3703,8 @@ fn decode_sketch_point_companion(
             return None;
         }
         cursor = cursor.checked_add(1)?;
-        let (inverse, inverse_type_guid) = take_local_sketch_reference(payload, &mut cursor)?;
+        let (inverse, inverse_type_guid) =
+            admitted_option!(take_local_sketch_reference(ctx, payload, &mut cursor));
         let inverse_encoding_matches = match reference_encoding {
             SketchPointCompanionReferenceEncoding::SameSegment => inverse_type_guid.is_none(),
             SketchPointCompanionReferenceEncoding::InlineTyped => inverse_type_guid
@@ -3363,9 +3713,9 @@ fn decode_sketch_point_companion(
         if inverse != point_record_index || !inverse_encoding_matches || cursor != payload.len() {
             return None;
         }
-        Some((record_form, SketchPointCompanion { incident_curves }))
+        Some(Ok((record_form, SketchPointCompanion { incident_curves })))
     })();
-    Ok(parsed)
+    parsed.transpose()
 }
 
 const SKETCH_POINT_TYPE_GUID: &str = "C2CEDAE7-1716-47C1-B7B1-07B70081D0FB";
@@ -3727,8 +4077,13 @@ pub(crate) fn decode_sketch_surfaces(
         let mut at = 0usize;
         while let Some(record_at) = next_indexed_record_offset(bytes, at) {
             at = record_at + 1;
-            let Some((class_tag, after_tag)) =
-                lp_ascii_filtered_view(bytes, record_at, 0..=2000, u8::is_ascii_graphic)
+            let Some((class_tag, after_tag)) = lp_ascii_filtered_view(
+                ctx,
+                bytes,
+                record_at,
+                0..=2000,
+                u8::is_ascii_graphic,
+            )?
             else {
                 continue;
             };
@@ -4217,6 +4572,15 @@ fn decode_text_frame_line(
     record_at: usize,
 ) -> Result<Option<(SketchCurveGeometry, usize)>, CodecError> {
     let values_at = (|| {
+        macro_rules! admitted_option {
+            ($result:expr) => {
+                match $result {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
         let mut cursor = geometry_shift.checked_add(133)?;
         for zero_count in [7, 6] {
             let (_, end) = marked_u32(payload, cursor)?;
@@ -4229,8 +4593,13 @@ fn decode_text_frame_line(
             }
             cursor = end + zero_count;
         }
-        let (class_tag, after_tag) =
-            lp_ascii_filtered_view(payload, cursor, 0..=2000, u8::is_ascii_graphic)?;
+        let (class_tag, after_tag) = admitted_option!(lp_ascii_filtered_view(
+            ctx,
+            payload,
+            cursor,
+            0..=2000,
+            u8::is_ascii_graphic,
+        ));
         if class_tag.len() != 3
             || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
             || View::u32_le_at(payload, after_tag) != Some(record_index)
@@ -4238,9 +4607,9 @@ fn decode_text_frame_line(
         {
             return None;
         }
-        after_tag.checked_add(12)
+        Some(Ok(after_tag.checked_add(12)?))
     })();
-    let Some(values_at) = values_at else {
+    let Some(values_at) = values_at.transpose()? else {
         return Ok(None);
     };
     let Some(end) = values_at.checked_add(12 * 8) else {
@@ -4798,9 +5167,18 @@ impl SketchRelationMaskWidth {
 }
 
 /// Read the relation's mask width from its leading-block presence member.
-pub(crate) fn relation_mask_width(record: &[u8]) -> Option<SketchRelationMaskWidth> {
-    let (_, start) = lp_ascii_filtered_view(record, 15, 0..=256, u8::is_ascii_graphic)?;
-    SketchRelationMaskWidth::from_leading_block(*record.get(start)?)
+pub(crate) fn relation_mask_width(
+    ctx: &DecodeContext<'_>,
+    record: &[u8],
+) -> Result<Option<SketchRelationMaskWidth>, CodecError> {
+    let Some((_, start)) =
+        lp_ascii_filtered_view(ctx, record, 15, 0..=256, u8::is_ascii_graphic)?
+    else {
+        return Ok(None);
+    };
+    Ok(record
+        .get(start)
+        .and_then(|value| SketchRelationMaskWidth::from_leading_block(*value)))
 }
 
 /// Take one reference member at `cursor`, returning its 32-bit target and the
@@ -4808,15 +5186,24 @@ pub(crate) fn relation_mask_width(record: &[u8]) -> Option<SketchRelationMaskWid
 /// records in the relation's own segment, so a reference whose target does not
 /// fit a `u32` is a misparse.
 fn take_relation_reference(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     cursor: &mut usize,
-) -> Option<crate::records::identity::Located<u32, usize>> {
+) -> Result<Option<crate::records::identity::Located<u32, usize>>, CodecError> {
     let at = *cursor;
-    let reference = take_reference(payload, cursor)?;
-    Some(crate::records::identity::Located {
-        value: u32::try_from(reference.target()?).ok()?,
-        offset: at + 1,
-    })
+    let Some(reference) = take_reference(ctx, payload, cursor)? else {
+        return Ok(None);
+    };
+    let Some(target) = reference.target().and_then(|target| u32::try_from(target).ok()) else {
+        return Ok(None);
+    };
+    let Some(offset) = at.checked_add(1) else {
+        return Ok(None);
+    };
+    Ok(Some(crate::records::identity::Located {
+        value: target,
+        offset,
+    }))
 }
 
 #[derive(Clone, Copy)]
@@ -4835,7 +5222,7 @@ fn take_auxiliary_relation_reference(
     auxiliary_references: &mut Vec<crate::records::identity::Located<u32, usize>>,
 ) -> Result<Option<AuxiliaryRelationReference>, CodecError> {
     let at = *cursor;
-    let Some(reference) = take_reference(payload, cursor) else {
+    let Some(reference) = take_reference(ctx, payload, cursor)? else {
         return Ok(None);
     };
     let Some(target) = reference.target() else {
@@ -5032,9 +5419,24 @@ fn parse_classed_sketch_relation(
     class: SketchRelationClass,
 ) -> Result<Option<ParsedSketchRelation>, CodecError> {
     let parsed = (|| {
+        macro_rules! admitted_option {
+            ($result:expr) => {
+                match $result {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
         // The record header is the LP-ASCII class tag, the u64 entity id, and the
         // LP-ASCII record name; the member payload follows it.
-        let (_, start) = lp_ascii_filtered_view(payload, 15, 0..=256, u8::is_ascii_graphic)?;
+        let (_, start) = admitted_option!(lp_ascii_filtered_view(
+            ctx,
+            payload,
+            15,
+            0..=256,
+            u8::is_ascii_graphic,
+        ));
         let mask_width = SketchRelationMaskWidth::from_leading_block(*payload.get(start)?)?;
         let paired_run = mask_width.has_paired_member_run();
         let mut cursor = start + 1;
@@ -5054,7 +5456,7 @@ fn parse_classed_sketch_relation(
                 return Some(Err(error));
             }
             for _ in 0..member_count {
-                let reference = take_relation_reference(payload, &mut cursor)?;
+                let reference = admitted_option!(take_relation_reference(ctx, payload, &mut cursor));
                 members.push(ParsedSketchRelationMember {
                     reference,
                     relation_ordinal: View::u32_le_at(payload, cursor)?,
@@ -5065,7 +5467,11 @@ fn parse_classed_sketch_relation(
         // The base class level opens with its property-block presence byte. The
         // block is `u32 count` and that many `(key, type name, value)` triples;
         // `EntityGenesis` is one such key.
-        let entity_genesis = read_property_block(payload, &mut cursor)?.find("EntityGenesis");
+        let properties = admitted_option!(read_property_block(ctx, payload, &mut cursor));
+        let entity_genesis = match properties.find(ctx, "EntityGenesis") {
+            Ok(value) => value,
+            Err(error) => return Some(Err(error)),
+        };
         let mut auxiliary_references = Vec::new();
         let class_members = match parse_relation_class_members(
             ctx,
@@ -5078,7 +5484,7 @@ fn parse_classed_sketch_relation(
             Ok(None) => return None,
             Err(error) => return Some(Err(error)),
         };
-        let owner = take_relation_reference(payload, &mut cursor)?;
+        let owner = admitted_option!(take_relation_reference(ctx, payload, &mut cursor));
         let state_offset = cursor;
         // The constraint mask follows `ParentNode` directly. It is a u64 in the
         // paired-run form and a u32 at relation base-class version 0.
@@ -5106,7 +5512,11 @@ fn parse_classed_sketch_relation(
             return Some(Err(error));
         }
         for _ in 0..return_count {
-            return_members.push(take_relation_reference(payload, &mut cursor)?);
+            return_members.push(admitted_option!(take_relation_reference(
+                ctx,
+                payload,
+                &mut cursor,
+            )));
         }
         if payload.get(cursor) != Some(&0) {
             return None;

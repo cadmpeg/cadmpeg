@@ -3124,10 +3124,11 @@ impl<'a> F3dDecodeSession<'a> {
                         self.ir.model.occurrences =
                             crate::xref::project_occurrences(self.ctx, &table)?;
                         crate::xref::bind_component_insert_features(
+                            self.ctx,
                             &mut self.ir.model.features,
                             &self.native.design_parameter_scopes,
                             &table,
-                        );
+                        )?;
                         self.native.xref_designs = table.designs;
                         self.native.xref_references = table.references;
                     }
@@ -3169,10 +3170,11 @@ impl<'a> F3dDecodeSession<'a> {
                     report_xref_placement_overrides(self.ctx, &mut self.report, table)?;
                     self.ir.model.occurrences = crate::xref::project_occurrences(self.ctx, table)?;
                     crate::xref::bind_component_insert_features(
+                            self.ctx,
                         &mut self.ir.model.features,
                         &self.native.design_parameter_scopes,
                         table,
-                    );
+                    )?;
                 }
                 FinalizePath::Bodyless(DeferredBodylessInputs {
                     xref: xref_table,
@@ -4415,7 +4417,7 @@ fn apply_assembly_classification(
     )?;
     for reference in ctx.admit_iter(&table.references, "scan F3D table references")? {
         let property_note = XrefPropertyNote(reference);
-        match crate::xref::design_for(table, reference) {
+        match crate::xref::design_for(ctx, table, reference)? {
             Some(design) => ctx.push_formatted_retained(
                 &mut report.notes,
                 format_args!(

@@ -52,6 +52,7 @@ fn fixed_guid_scan_matches_decoded_relaxed_guid_validation() {
 
 #[test]
 fn named_solid_primitives_bind_ordered_parameter_owners() {
+    let bytes_decode_ctx = cadmpeg_test_support::service_decode_context();
     fn owner(
         scope_record_index: u32,
         record_index: u32,
@@ -107,7 +108,7 @@ fn named_solid_primitives_bind_ordered_parameter_owners() {
     ];
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     assert!(matches!(
-        exact_solid_primitive(&bytes, &records, &box_scope, &box_owners),
+        exact_solid_primitive(&bytes_decode_ctx, &bytes, &records, &box_scope, &box_owners).unwrap(),
         Some(DesignSolidPrimitive::Box(
             crate::records::feature::primitives::DesignBoxPrimitive {
                 length,
@@ -144,7 +145,7 @@ fn named_solid_primitives_bind_ordered_parameter_owners() {
         .unwrap();
     let cylinder_owners = vec![owner(13, 30, 0, 0.7), owner(13, 31, 1, 3.0)];
     assert!(matches!(
-        exact_solid_primitive(&bytes, &records, &cylinder_scope, &cylinder_owners,),
+        exact_solid_primitive(&bytes_decode_ctx, &bytes, &records, &cylinder_scope, &cylinder_owners,).unwrap(),
         Some(DesignSolidPrimitive::Cylinder(
             crate::records::feature::primitives::DesignCylinderPrimitive {
                 height,
@@ -159,6 +160,7 @@ fn named_solid_primitives_bind_ordered_parameter_owners() {
 
 #[test]
 fn shifted_cylinder_primitives_bind_exact_generation_frames() {
+    let bytes_decode_ctx = cadmpeg_test_support::service_decode_context();
     fn indexed_header(bytes: &mut [u8], class_tag: &[u8; 3], record_index: u32) {
         bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
         bytes[4..7].copy_from_slice(class_tag);
@@ -290,11 +292,12 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
     ];
     assert!(matches!(
         exact_solid_primitive(
+            &bytes_decode_ctx,
             &compact,
             &crate::design::test_support::indexed_record_offsets_for_test(&compact),
             &compact_scope,
             &compact_owners,
-        ),
+        ).unwrap(),
         Some(DesignSolidPrimitive::Cylinder(
             crate::records::feature::primitives::DesignCylinderPrimitive {
                 height,
@@ -339,11 +342,12 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
         ];
         assert!(matches!(
             exact_solid_primitive(
+                &bytes_decode_ctx,
                 &expanded,
                 &crate::design::test_support::indexed_record_offsets_for_test(&expanded),
                 &expanded_scope,
                 &expanded_owners,
-            ),
+            ).unwrap(),
             Some(DesignSolidPrimitive::Cylinder(
                 crate::records::feature::primitives::DesignCylinderPrimitive {
                     height,
@@ -359,11 +363,12 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
         let mut translated = expanded;
         translated[72 + 3 * 8..72 + 4 * 8].copy_from_slice(&1.0f64.to_le_bytes());
         assert!(exact_solid_primitive(
+            &bytes_decode_ctx,
             &translated,
             &crate::design::test_support::indexed_record_offsets_for_test(&translated),
             &expanded_scope,
             &expanded_owners,
-        )
+        ).unwrap()
         .is_none());
     }
 }

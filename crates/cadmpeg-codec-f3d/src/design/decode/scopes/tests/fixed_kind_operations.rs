@@ -114,6 +114,7 @@ fn fixed_kind_edge_and_revolve_operations(
     scope: DesignParameterScope,
     thicken_group: &DesignConstructionOperandGroup,
 ) -> (Vec<u8>, DesignParameterScope) {
+    let bytes_decode_ctx = cadmpeg_test_support::service_decode_context();
     let draft_start = bytes.len();
     for (record_index, ordinal, value) in [(175u32, 0u8, 0.4f64), (176, 1, 0.0)] {
         let mut scalar = vec![0; 104];
@@ -153,11 +154,12 @@ fn fixed_kind_edge_and_revolve_operations(
     });
     assert_eq!(
         exact_draft_operation_with_owners(
+            &bytes_decode_ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &draft_scope,
             &[],
-        ),
+        ).unwrap(),
         expected
     );
 
@@ -177,11 +179,12 @@ fn fixed_kind_edge_and_revolve_operations(
         .unwrap();
     assert_eq!(
         exact_draft_operation_with_owners(
+            &bytes_decode_ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &draft_scope,
             &[],
-        ),
+        ).unwrap(),
         expected
     );
 
@@ -199,11 +202,12 @@ fn fixed_kind_edge_and_revolve_operations(
         .unwrap();
     assert_eq!(
         exact_draft_operation_with_owners(
+            &bytes_decode_ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &draft_scope,
             &[],
-        ),
+        ).unwrap(),
         None
     );
 
@@ -219,11 +223,12 @@ fn fixed_kind_edge_and_revolve_operations(
         .unwrap();
     assert_eq!(
         exact_draft_operation_with_owners(
+            &bytes_decode_ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &draft_scope,
             &[],
-        ),
+        ).unwrap(),
         None
     );
     draft_scope
@@ -484,11 +489,12 @@ fn fixed_kind_edge_and_revolve_operations(
         .unwrap();
     assert_eq!(
         exact_fixed_chamfer_parameters(
+            &bytes_decode_ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &chamfer_scope,
             &[],
-        ),
+        ).unwrap(),
         Some(DesignFixedChamferParameters::EqualDistance {
             distance: crate::records::feature::fixed_parameters::DesignFixedChamferDistance {
                 value: cadmpeg_ir::scalar::PositiveReal::new(0.04).expect("checked fixture value"),
@@ -518,11 +524,12 @@ fn fixed_kind_edge_and_revolve_operations(
         .unwrap();
     assert_eq!(
         exact_fixed_chamfer_parameters(
+            &bytes_decode_ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &chamfer_scope,
             &[],
-        ),
+        ).unwrap(),
         Some(DesignFixedChamferParameters::TwoDistances {
             first: crate::records::feature::fixed_parameters::DesignFixedChamferDistance {
                 value: cadmpeg_ir::scalar::PositiveReal::new(0.04).expect("checked fixture value"),
@@ -558,11 +565,12 @@ fn fixed_kind_edge_and_revolve_operations(
     .unwrap();
     assert_eq!(
         exact_fixed_chamfer_parameters(
+            &bytes_decode_ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &chamfer_scope,
             std::slice::from_ref(&indexed_owner),
-        ),
+        ).unwrap(),
         None
     );
 
@@ -605,11 +613,12 @@ fn fixed_kind_edge_and_revolve_operations(
         })
         .unwrap();
     let revolve_construction = exact_path_feature_construction(
+        &bytes_decode_ctx,
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &revolve_scope,
         &[],
-    );
+    ).unwrap();
     assert_eq!(
         revolve_construction,
         Some(DesignPathFeatureConstruction::Revolve(
@@ -683,11 +692,12 @@ fn fixed_kind_edge_and_revolve_operations(
     )
     .unwrap();
     let indexed_revolve_construction = exact_path_feature_construction(
+        &bytes_decode_ctx,
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &indexed_revolve_scope,
         std::slice::from_ref(&indexed_angle),
-    );
+    ).unwrap();
     assert_eq!(
         indexed_revolve_construction,
         Some(DesignPathFeatureConstruction::Revolve(
@@ -749,11 +759,12 @@ fn fixed_kind_edge_and_revolve_operations(
     }
     assert_eq!(
         exact_path_feature_construction(
+            &bytes_decode_ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &class403_scope,
             std::slice::from_ref(&class403_angle),
-        ),
+        ).unwrap(),
         Some(DesignPathFeatureConstruction::Revolve(
             crate::records::feature::path_features::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::Cut,
@@ -768,11 +779,12 @@ fn fixed_kind_edge_and_revolve_operations(
     bytes[class403_start + 34] = 0;
     assert_eq!(
         exact_path_feature_construction(
+            &bytes_decode_ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &class403_scope,
             std::slice::from_ref(&class403_angle),
-        ),
+        ).unwrap(),
         None
     );
     bytes[class403_start + 34] = 1;
@@ -838,11 +850,12 @@ fn fixed_kind_edge_and_revolve_operations(
     .unwrap();
     assert_eq!(
         exact_path_feature_construction(
+            &bytes_decode_ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &legacy_revolve_scope,
             std::slice::from_ref(&legacy_angle),
-        ),
+        ).unwrap(),
         Some(DesignPathFeatureConstruction::Revolve(
             crate::records::feature::path_features::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::NewBody,
@@ -878,11 +891,12 @@ fn fixed_kind_edge_and_revolve_operations(
         .unwrap();
     assert_eq!(
         exact_path_feature_construction(
+            &bytes_decode_ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &legacy_revolve_scope,
             std::slice::from_ref(&legacy_angle),
-        ),
+        ).unwrap(),
         Some(DesignPathFeatureConstruction::Revolve(
             crate::records::feature::path_features::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::NewBody,
@@ -916,11 +930,12 @@ fn fixed_kind_edge_and_revolve_operations(
         .unwrap();
     assert_eq!(
         exact_path_feature_construction(
+            &bytes_decode_ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &legacy_revolve_scope,
             std::slice::from_ref(&legacy_angle),
-        ),
+        ).unwrap(),
         Some(DesignPathFeatureConstruction::Revolve(
             crate::records::feature::path_features::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::NewBody,

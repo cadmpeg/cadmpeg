@@ -176,7 +176,7 @@ pub(crate) fn decode_parameter_scopes(
                     }
                 }
             }
-            if let Some(construction) = exact_work_axis_construction(bytes, &records, &scope) {
+            if let Some(construction) = exact_work_axis_construction(ctx, bytes, &records, &scope)? {
                 if let scope::DesignScopePayloadMut::WorkAxis(slot) = scope.payload_mut() {
                     *slot = Some(construction);
                 }
@@ -224,9 +224,9 @@ pub(crate) fn decode_parameter_scopes(
                     slot.get_or_insert_with(Default::default).placement = Some(placement);
                 }
             }
-            if let Some(construction) =
-                exact_solid_primitive(bytes, &records, &scope, parameter_owners)
-            {
+            let solid_primitive =
+                exact_solid_primitive(ctx, bytes, &records, &scope, parameter_owners)?;
+            if let Some(construction) = solid_primitive {
                 match (scope.payload_mut(), construction) {
                     (
                         scope::DesignScopePayloadMut::SpherePrimitive(slot),
@@ -252,7 +252,7 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let construction = exact_direct_face_operation(bytes, &records, &scope);
+                let construction = exact_direct_face_operation(ctx, bytes, &records, &scope)?;
                 match (scope.payload_mut(), construction) {
                     (
                         scope::DesignScopePayloadMut::OffsetFaces(slot)
@@ -272,7 +272,7 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let construction = exact_move_operation(bytes, &records, &scope);
+                let construction = exact_move_operation(ctx, bytes, &records, &scope)?;
                 if let scope::DesignScopePayloadMut::Move(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
@@ -298,13 +298,15 @@ pub(crate) fn decode_parameter_scopes(
                     *slot = construction;
                 }
             }
-            if let Some(parameters) = exact_fixed_extrude_parameters(
+            let fixed_extrude_parameters = exact_fixed_extrude_parameters(
+                ctx,
                 bytes,
                 &records,
                 &scope,
                 parameters,
                 parameter_owners,
-            ) {
+            )?;
+            if let Some(parameters) = fixed_extrude_parameters {
                 {
                     let value = Some(parameters);
                     if let scope::DesignScopePayloadMut::Extrude(slot)
@@ -327,17 +329,27 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let construction =
-                    exact_fixed_chamfer_parameters(bytes, &records, &scope, parameter_owners);
+                let construction = exact_fixed_chamfer_parameters(
+                    ctx,
+                    bytes,
+                    &records,
+                    &scope,
+                    parameter_owners,
+                )?;
                 if let scope::DesignScopePayloadMut::Chamfer(slot)
                 | scope::DesignScopePayloadMut::Chanfrein(slot) = scope.payload_mut()
                 {
                     *slot = construction;
                 }
             }
-            if let Some(construction) =
-                exact_path_feature_construction(bytes, &records, &scope, parameter_owners)
-            {
+            let path_feature_construction = exact_path_feature_construction(
+                ctx,
+                bytes,
+                &records,
+                &scope,
+                parameter_owners,
+            )?;
+            if let Some(construction) = path_feature_construction {
                 match (scope.payload_mut(), construction) {
                     (
                         scope::DesignScopePayloadMut::Revolve(slot),
@@ -374,8 +386,13 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let construction =
-                    exact_draft_operation_with_owners(bytes, &records, &scope, parameter_owners);
+                let construction = exact_draft_operation_with_owners(
+                    ctx,
+                    bytes,
+                    &records,
+                    &scope,
+                    parameter_owners,
+                )?;
                 if let scope::DesignScopePayloadMut::Draft(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
@@ -875,7 +892,7 @@ pub(super) fn parameter_scope_candidate_headers(
     for (record_index, offsets) in records.records() {
         for at in offsets.windows(2).map(|pair| &pair[0]) {
             let Some((class_tag, _)) =
-                lp_ascii_filtered_view(bytes, *at, 3..=3, u8::is_ascii_digit)
+                lp_ascii_filtered_view(ctx, bytes, *at, 3..=3, u8::is_ascii_digit)?
             else {
                 continue;
             };
@@ -955,10 +972,24 @@ pub(in crate::design::decode) fn parse_parameter_scope(
     byte_offset: u64,
 ) -> Result<Option<DesignParameterScope>, CodecError> {
     (|| {
+        macro_rules! admitted_option {
+            ($result:expr) => {
+                match $result {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
         let start = usize::try_from(byte_offset).ok()?;
         let paired_at = records.first_at_or_after(start.checked_add(11)?, record_index)?;
-        let (paired_class_tag, _) =
-            lp_ascii_filtered_view(bytes, paired_at, 3..=3, u8::is_ascii_digit)?;
+        let (paired_class_tag, _) = admitted_option!(lp_ascii_filtered_view(
+            ctx,
+            bytes,
+            paired_at,
+            3..=3,
+            u8::is_ascii_digit
+        ));
         let mut fixed_candidate = None;
         let mut fixed_ambiguous = false;
         let mut named_candidate = None;
@@ -970,7 +1001,7 @@ pub(in crate::design::decode) fn parse_parameter_scope(
             .rev()
             .take_while(|at| *at < kind_scan_end)
         {
-            let (kind, kind_end, _reservation) = match lp_utf16_bounded_scoped(
+            let kind = match lp_utf16_bounded_scoped(
                 ctx,
                 bytes,
                 at,
@@ -981,7 +1012,8 @@ pub(in crate::design::decode) fn parse_parameter_scope(
                 Ok(None) => continue,
                 Err(error) => return Some(Err(error)),
             };
-            if !kind.chars().all(|character| !character.is_control()) {
+            let kind_end = kind.1;
+            if !kind.0.chars().all(|character| !character.is_control()) {
                 continue;
             }
             let Some(tail_length) = paired_at.checked_sub(kind_end) else {
@@ -989,7 +1021,7 @@ pub(in crate::design::decode) fn parse_parameter_scope(
             };
             let fixed_tail = matches!(tail_length, 72 | 76 | 77 | 78 | 82 | 87 | 88 | 104 | 110);
             if fixed_tail
-                && parameter_scope_tail_length_is_valid(&kind, tail_length)
+                && parameter_scope_tail_length_is_valid(&kind.0, tail_length)
                 && fixed_candidate
                     .replace((at, kind_end, tail_length, ScopeTailForm::Fixed))
                     .is_some()
@@ -998,7 +1030,7 @@ pub(in crate::design::decode) fn parse_parameter_scope(
             }
             let named_tail_possible = (78..=590).contains(&tail_length)
                 && tail_length.is_multiple_of(2)
-                && (parameter_scope_tail_length_is_valid(&kind, tail_length) || tail_length == 78);
+                && (parameter_scope_tail_length_is_valid(&kind.0, tail_length) || tail_length == 78);
             let named_tail = if named_tail_possible {
                 match named_parameter_scope_tail_is_valid(
                     ctx,
@@ -1121,7 +1153,10 @@ pub(in crate::design::decode) fn parse_parameter_scope(
         let reference_table = reference_table?;
         let (reference_count_at, reference_members, reference_member_offsets) = &reference_table;
         let surface_stitch_operation = if kind == scope::DesignFeatureKind::SurfaceStitch {
-            exact_surface_stitch_operation(bytes, records, record_index, reference_members)
+            match exact_surface_stitch_operation(ctx, bytes, records, record_index, reference_members) {
+                Ok(operation) => operation,
+                Err(error) => return Some(Err(error)),
+            }
         } else {
             None
         };
@@ -1375,7 +1410,7 @@ fn named_parameter_scope_tail_is_valid(
     let Some(label_at) = kind_end.checked_add(8) else {
         return Ok(None);
     };
-    let Some((label, label_end, _reservation)) = lp_utf16_bounded_scoped(
+    let Some(label) = lp_utf16_bounded_scoped(
         ctx,
         bytes,
         label_at,
@@ -1386,15 +1421,15 @@ fn named_parameter_scope_tail_is_valid(
         return Ok(None);
     };
     Ok((|| {
-        let label_code_units = label.encode_utf16().count();
+        let label_code_units = label.0.encode_utf16().count();
         if tail_length != 78usize.checked_add(label_code_units.checked_mul(2)?)?
-            || label_end.checked_add(7)? != kind_end.checked_add(19 + label_code_units * 2)?
-            || label.chars().any(char::is_control)
+            || label.1.checked_add(7)? != kind_end.checked_add(19 + label_code_units * 2)?
+            || label.0.chars().any(char::is_control)
         {
             return Some(false);
         }
         let marker = kind_end.checked_add(19 + label_code_units.checked_mul(2)?)?;
-        if marker.checked_add(59)? != paired_at || bytes.get(label_end..marker)? != [0; 7] {
+        if marker.checked_add(59)? != paired_at || bytes.get(label.1..marker)? != [0; 7] {
             return Some(false);
         }
         let first_lane_value = View::u64_le_at(bytes, marker + 2)?;

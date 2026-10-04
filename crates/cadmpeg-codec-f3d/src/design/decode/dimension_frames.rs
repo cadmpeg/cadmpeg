@@ -180,7 +180,7 @@ pub(crate) fn decode_dimension_recipe_records(
                 continue;
             };
             let Some((at, class_tag, record_index, record_end)) =
-                indexed_record_containing(bytes, start, end, recipe_offset)
+                indexed_record_containing(ctx, bytes, start, end, recipe_offset)?
             else {
                 continue;
             };
@@ -470,14 +470,17 @@ fn decode_grouped_recipe_references(
     }
 }
 
-pub(in crate::design) fn is_paired_recipe_reference_frame(prefix: &[u8]) -> bool {
+pub(in crate::design) fn is_paired_recipe_reference_frame(
+    ctx: &DecodeContext<'_>,
+    prefix: &[u8],
+) -> Result<bool, CodecError> {
     if !recipe_reference_header(prefix)
         || View::u32_le_at(prefix, grouped_recipe::GROUP_COUNT) != Some(2)
     {
-        return false;
+        return Ok(false);
     }
     let Some(pair_count) = View::u32_le_at(prefix, 18).map(index_from_u32) else {
-        return false;
+        return Ok(false);
     };
     if pair_count == 0
         || prefix
@@ -485,21 +488,22 @@ pub(in crate::design) fn is_paired_recipe_reference_frame(prefix: &[u8]) -> bool
             .checked_sub(22)
             .is_none_or(|remaining| pair_count > remaining / 42)
     {
-        return false;
+        return Ok(false);
     }
     let mut at = 22usize;
     for _ in 0..pair_count {
         let Some(packed) =
-            scan_recipe_reference_operand(prefix, at, RecipeReferenceTokenFrame::Packed)
+            scan_recipe_reference_operand(ctx, prefix, at, RecipeReferenceTokenFrame::Packed)?
         else {
-            return false;
+            return Ok(false);
         };
         let Some(length_prefixed) = scan_recipe_reference_operand(
+            ctx,
             prefix,
             packed.next,
             RecipeReferenceTokenFrame::LengthPrefixed,
-        ) else {
-            return false;
+        )? else {
+            return Ok(false);
         };
         if packed.selector != length_prefixed.selector
             || packed.reference_count != length_prefixed.reference_count
@@ -509,39 +513,42 @@ pub(in crate::design) fn is_paired_recipe_reference_frame(prefix: &[u8]) -> bool
                     != View::u32_le_at(prefix, length_prefixed.references_at + offset)
             })
         {
-            return false;
+            return Ok(false);
         }
         at = length_prefixed.next;
     }
-    at == prefix.len()
+    Ok(at == prefix.len())
 }
 
-pub(crate) fn is_grouped_recipe_reference_frame(prefix: &[u8]) -> bool {
+pub(crate) fn is_grouped_recipe_reference_frame(
+    ctx: &DecodeContext<'_>,
+    prefix: &[u8],
+) -> Result<bool, CodecError> {
     if !recipe_reference_header(prefix) {
-        return false;
+        return Ok(false);
     }
     let Some(group_count) = View::u32_le_at(prefix, grouped_recipe::GROUP_COUNT)
         .filter(|count| *count >= 4)
         .map(index_from_u32)
     else {
-        return false;
+        return Ok(false);
     };
     let Some(available) = prefix.len().checked_sub(grouped_recipe::LEN) else {
-        return false;
+        return Ok(false);
     };
     let Some(required) = group_count.checked_mul(21) else {
-        return false;
+        return Ok(false);
     };
     if required > available {
-        return false;
+        return Ok(false);
     }
     let mut at = grouped_recipe::LEN;
     for _ in 0..group_count {
         let Some(operand_count) = View::u32_le_at(prefix, at).map(index_from_u32) else {
-            return false;
+            return Ok(false);
         };
         let Some(next) = at.checked_add(4) else {
-            return false;
+            return Ok(false);
         };
         at = next;
         if operand_count == 0
@@ -550,18 +557,18 @@ pub(crate) fn is_grouped_recipe_reference_frame(prefix: &[u8]) -> bool {
                 .checked_sub(at)
                 .is_none_or(|remaining| operand_count > remaining / 17)
         {
-            return false;
+            return Ok(false);
         }
         for _ in 0..operand_count {
             let Some(operand) =
-                scan_recipe_reference_operand(prefix, at, RecipeReferenceTokenFrame::Packed)
+                scan_recipe_reference_operand(ctx, prefix, at, RecipeReferenceTokenFrame::Packed)?
             else {
-                return false;
+                return Ok(false);
             };
             at = operand.next;
         }
     }
-    prefix.get(at..) == Some(&[0, 0, 0, 0])
+    Ok(prefix.get(at..) == Some(&[0, 0, 0, 0]))
 }
 
 fn recipe_reference_header(prefix: &[u8]) -> bool {
@@ -588,23 +595,32 @@ struct ScannedRecipeReferenceOperand<'a> {
     next: usize,
 }
 
-fn scan_recipe_reference_operand(
-    prefix: &[u8],
+fn scan_recipe_reference_operand<'a>(
+    ctx: &DecodeContext<'_>,
+    prefix: &'a [u8],
     at: usize,
     token_frame: RecipeReferenceTokenFrame,
-) -> Option<ScannedRecipeReferenceOperand<'_>> {
+) -> Result<Option<ScannedRecipeReferenceOperand<'a>>, CodecError> {
+    let parsed = (|| {
     let selector = View::u32_le_at(prefix, at).filter(|value| *value != 0)?;
     let token_encoding_at = at.checked_add(4)?;
-    let length_prefixed = (!matches!(token_frame, RecipeReferenceTokenFrame::Packed))
-        .then(|| {
-            lp_ascii_filtered_view(prefix, token_encoding_at, 0..=2000, u8::is_ascii_graphic)
-                .and_then(|(token, marker_at)| {
-                    (is_decimal_integer_token(token.as_bytes())
-                        && View::u32_le_at(prefix, marker_at) == Some(0))
-                    .then_some((token, token_encoding_at + 4, marker_at + 4))
-                })
-        })
-        .flatten();
+    let length_prefixed = if matches!(token_frame, RecipeReferenceTokenFrame::Packed) {
+        None
+    } else {
+        match lp_ascii_filtered_view(
+            ctx,
+            prefix,
+            token_encoding_at,
+            0..=2000,
+            u8::is_ascii_graphic,
+        ) {
+            Ok(Some((token, marker_at))) => (is_decimal_integer_token(token.as_bytes())
+                && View::u32_le_at(prefix, marker_at) == Some(0))
+            .then_some((token, token_encoding_at + 4, marker_at + 4)),
+            Ok(None) => None,
+            Err(error) => return Some(Err(error)),
+        }
+    };
     let packed = (!matches!(token_frame, RecipeReferenceTokenFrame::LengthPrefixed))
         .then(|| {
             (1usize..=8).find_map(|length| {
@@ -641,14 +657,16 @@ fn scan_recipe_reference_operand(
         let design_reference_at = references_at.checked_add(reference_ordinal.checked_mul(4)?)?;
         View::u32_le_at(prefix, design_reference_at).filter(|value| *value != 0)?;
     }
-    Some(ScannedRecipeReferenceOperand {
+    Some(Ok(ScannedRecipeReferenceOperand {
         selector,
         token,
         token_at,
         references_at,
         reference_count,
         next,
-    })
+    }))
+    })();
+    parsed.transpose()
 }
 
 struct DecodedRecipeReferenceOperand {
@@ -663,7 +681,11 @@ fn decode_recipe_reference_operand(
     at: usize,
     token_frame: RecipeReferenceTokenFrame,
 ) -> Option<Result<DecodedRecipeReferenceOperand, CodecError>> {
-    let scanned = scan_recipe_reference_operand(prefix, at, token_frame)?;
+    let scanned = match scan_recipe_reference_operand(ctx, prefix, at, token_frame) {
+        Ok(Some(scanned)) => scanned,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     let selector_offset = prefix_offset.checked_add(u64::try_from(at).ok()?)?;
     let token_offset = prefix_offset.checked_add(u64::try_from(scanned.token_at).ok()?)?;
     let mut references = Vec::new();
@@ -918,14 +940,15 @@ pub(super) fn recipe_record_prefix(
     Some((prefix_offset, prefix))
 }
 
-fn indexed_record_containing(
-    bytes: &[u8],
+fn indexed_record_containing<'a>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'a [u8],
     start: usize,
     end: usize,
     member_offset: usize,
-) -> Option<(usize, &str, u32, usize)> {
+) -> Result<Option<(usize, &'a str, u32, usize)>, CodecError> {
     if start > member_offset || member_offset >= end || end > bytes.len() {
-        return None;
+        return Ok(None);
     }
     let mut cursor = start;
     let mut containing = None;
@@ -934,15 +957,21 @@ fn indexed_record_containing(
             break;
         }
         if at > member_offset {
-            return containing
-                .map(|(offset, class_tag, record_index)| (offset, class_tag, record_index, at));
+            return Ok(containing
+                .map(|(offset, class_tag, record_index)| (offset, class_tag, record_index, at)));
         }
-        let (class_tag, after_tag) =
-            lp_ascii_filtered_view(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
-        containing = Some((at, class_tag, View::u32_le_at(bytes, after_tag)?));
+        let Some((class_tag, after_tag)) =
+            lp_ascii_filtered_view(ctx, bytes, at, 0..=2000, u8::is_ascii_graphic)?
+        else {
+            return Ok(None);
+        };
+        let Some(record_index) = View::u32_le_at(bytes, after_tag) else {
+            return Ok(None);
+        };
+        containing = Some((at, class_tag, record_index));
         cursor = at + 11;
     }
-    containing.map(|(offset, class_tag, record_index)| (offset, class_tag, record_index, end))
+    Ok(containing.map(|(offset, class_tag, record_index)| (offset, class_tag, record_index, end)))
 }
 
 pub(super) fn contiguous_i32_program(
@@ -1014,12 +1043,13 @@ pub(crate) fn decode_dimension_locus_pairs(
             continue;
         };
         let Some(mut pair) = find_dimension_locus_pair(
+            ctx,
             bytes,
             start,
             end,
             companion.record_index(),
             &geometry_indices,
-        ) else {
+        )? else {
             continue;
         };
         pair.id = design_record_id_charged(
@@ -1083,41 +1113,66 @@ where
 }
 
 fn find_dimension_locus_pair(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     end: usize,
     companion_record_index: u32,
     geometry_indices: &HashSet<u32>,
-) -> Option<DesignDimensionLocusPair> {
-    let parse = |at| {
-        parse_dimension_locus_pair(bytes, at, companion_record_index, geometry_indices)
-            .filter(|pair| pair.paired_byte_offset() < u64_from_index(end))
+) -> Result<Option<DesignDimensionLocusPair>, CodecError> {
+    let parse = |at| -> Result<Option<DesignDimensionLocusPair>, CodecError> {
+        let Some(pair) = parse_dimension_locus_pair(
+            ctx,
+            bytes,
+            at,
+            companion_record_index,
+            geometry_indices,
+        )? else {
+            return Ok(None);
+        };
+        Ok((pair.paired_byte_offset() < u64_from_index(end)).then_some(pair))
     };
-    let mut candidate = parse(start);
+    let mut candidate = parse(start)?;
     let mut position = start.checked_add(1);
     while let Some(at) = position.and_then(|position| next_indexed_record_offset(bytes, position)) {
         if at >= end {
             break;
         }
-        if let Some(pair) = parse(at) {
+        if let Some(pair) = parse(at)? {
             if candidate.is_some() {
-                return None;
+                return Ok(None);
             }
             candidate = Some(pair);
         }
         position = at.checked_add(1);
     }
-    candidate
+    Ok(candidate)
 }
 
 fn parse_dimension_locus_pair(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     companion_record_index: u32,
     geometry_indices: &HashSet<u32>,
-) -> Option<DesignDimensionLocusPair> {
-    let (class_tag, after_tag) =
-        lp_ascii_filtered_view(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
+) -> Result<Option<DesignDimensionLocusPair>, CodecError> {
+    let parsed = (|| {
+    macro_rules! admitted_option {
+        ($result:expr) => {
+            match $result {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            }
+        };
+    }
+    let (class_tag, after_tag) = admitted_option!(lp_ascii_filtered_view(
+        ctx,
+        bytes,
+        start,
+        0..=2000,
+        u8::is_ascii_graphic
+    ));
     let record_index = View::u32_le_at(bytes, after_tag)?;
     if after_tag != start.checked_add(7)?
         || bytes.get(start + 11..start + 19) != Some(&[0; 8])
@@ -1143,8 +1198,13 @@ fn parse_dimension_locus_pair(
     let mut position = start.checked_add(69)?;
     let (paired_byte_offset, paired_class_tag) = loop {
         let at = next_indexed_record_offset(bytes, position)?;
-        let (candidate_tag, candidate_after_tag) =
-            lp_ascii_filtered_view(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
+        let (candidate_tag, candidate_after_tag) = admitted_option!(lp_ascii_filtered_view(
+            ctx,
+            bytes,
+            at,
+            0..=2000,
+            u8::is_ascii_graphic
+        ));
         if View::u32_le_at(bytes, candidate_after_tag) == Some(record_index) {
             break (at, candidate_tag);
         }
@@ -1181,6 +1241,9 @@ fn parse_dimension_locus_pair(
         paired_byte_offset: u64_from_index(paired_byte_offset),
     })
     .ok()
+    .map(Ok)
+    })();
+    parsed.transpose()
 }
 
 /// Decode dimension frames whose ordered operand run contains a null record
@@ -1244,12 +1307,13 @@ pub(crate) fn decode_dimension_null_locus_pairs(
             continue;
         };
         let Some(mut pair) = find_dimension_null_locus_pair(
+            ctx,
             bytes,
             start,
             end,
             companion.record_index(),
             &geometry_indices,
-        ) else {
+        )? else {
             continue;
         };
         pair.id = design_record_id_charged(
@@ -1282,41 +1346,66 @@ pub(crate) fn decode_dimension_null_locus_pairs(
 }
 
 fn find_dimension_null_locus_pair(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     end: usize,
     companion_record_index: u32,
     geometry_indices: &HashSet<u32>,
-) -> Option<DesignDimensionLocusPair> {
-    let parse = |at| {
-        parse_dimension_null_locus_pair(bytes, at, companion_record_index, geometry_indices)
-            .filter(|pair| pair.paired_byte_offset() < u64_from_index(end))
+) -> Result<Option<DesignDimensionLocusPair>, CodecError> {
+    let parse = |at| -> Result<Option<DesignDimensionLocusPair>, CodecError> {
+        let Some(pair) = parse_dimension_null_locus_pair(
+            ctx,
+            bytes,
+            at,
+            companion_record_index,
+            geometry_indices,
+        )? else {
+            return Ok(None);
+        };
+        Ok((pair.paired_byte_offset() < u64_from_index(end)).then_some(pair))
     };
-    let mut candidate = parse(start);
+    let mut candidate = parse(start)?;
     let mut position = start.checked_add(1);
     while let Some(at) = position.and_then(|position| next_indexed_record_offset(bytes, position)) {
         if at >= end {
             break;
         }
-        if let Some(pair) = parse(at) {
+        if let Some(pair) = parse(at)? {
             if candidate.is_some() {
-                return None;
+                return Ok(None);
             }
             candidate = Some(pair);
         }
         position = at.checked_add(1);
     }
-    candidate
+    Ok(candidate)
 }
 
 fn parse_dimension_null_locus_pair(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     companion_record_index: u32,
     geometry_indices: &HashSet<u32>,
-) -> Option<DesignDimensionLocusPair> {
-    let (class_tag, after_tag) =
-        lp_ascii_filtered_view(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
+) -> Result<Option<DesignDimensionLocusPair>, CodecError> {
+    let parsed = (|| {
+    macro_rules! admitted_option {
+        ($result:expr) => {
+            match $result {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            }
+        };
+    }
+    let (class_tag, after_tag) = admitted_option!(lp_ascii_filtered_view(
+        ctx,
+        bytes,
+        start,
+        0..=2000,
+        u8::is_ascii_graphic
+    ));
     let record_index = View::u32_le_at(bytes, after_tag)?;
     if after_tag != start.checked_add(7)?
         || bytes.get(start + 11..start + 19) != Some(&[0; 8])
@@ -1337,8 +1426,13 @@ fn parse_dimension_null_locus_pair(
     let mut position = start.checked_add(54)?;
     let (paired_byte_offset, paired_class_tag) = loop {
         let at = next_indexed_record_offset(bytes, position)?;
-        let (candidate_tag, candidate_after_tag) =
-            lp_ascii_filtered_view(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
+        let (candidate_tag, candidate_after_tag) = admitted_option!(lp_ascii_filtered_view(
+            ctx,
+            bytes,
+            at,
+            0..=2000,
+            u8::is_ascii_graphic
+        ));
         if View::u32_le_at(bytes, candidate_after_tag) == Some(record_index) {
             break (at, candidate_tag);
         }
@@ -1372,6 +1466,9 @@ fn parse_dimension_null_locus_pair(
         paired_byte_offset: u64_from_index(paired_byte_offset),
     })
     .ok()
+    .map(Ok)
+    })();
+    parsed.transpose()
 }
 
 /// Decode paired `EntityGenesis` dimensional frames carrying annotation data
@@ -1566,8 +1663,22 @@ fn parse_dimension_annotation_frame(
     geometry_indices: &HashSet<u32>,
     sketch_entities: &HashSet<u32>,
 ) -> Option<Result<DesignDimensionAnnotationFrame, CodecError>> {
-    let (class_tag, after_tag) =
-        lp_ascii_filtered_view(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
+    macro_rules! admitted_option {
+        ($result:expr) => {
+            match $result {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            }
+        };
+    }
+    let (class_tag, after_tag) = admitted_option!(lp_ascii_filtered_view(
+        ctx,
+        bytes,
+        start,
+        0..=2000,
+        u8::is_ascii_graphic
+    ));
     if after_tag != start.checked_add(7)?
         || bytes.get(start + 11..start + 19) != Some(&[0; 8])
         || bytes.get(start + 19) != Some(&1)
@@ -1607,10 +1718,20 @@ fn parse_dimension_annotation_frame(
     if bytes.get(position) != Some(&1) || View::u32_le_at(bytes, position + 1) != Some(1) {
         return None;
     }
-    let (key, after_key) =
-        lp_ascii_filtered_view(bytes, position + 5, 0..=2000, u8::is_ascii_graphic)?;
-    let (meta_type, after_type) =
-        lp_ascii_filtered_view(bytes, after_key, 0..=2000, u8::is_ascii_graphic)?;
+    let (key, after_key) = admitted_option!(lp_ascii_filtered_view(
+        ctx,
+        bytes,
+        position + 5,
+        0..=2000,
+        u8::is_ascii_graphic
+    ));
+    let (meta_type, after_type) = admitted_option!(lp_ascii_filtered_view(
+        ctx,
+        bytes,
+        after_key,
+        0..=2000,
+        u8::is_ascii_graphic
+    ));
     if key != "EntityGenesis" || meta_type != "IntrinsicMetaTypeuint64" {
         return None;
     }
@@ -1619,7 +1740,13 @@ fn parse_dimension_annotation_frame(
     let mut paired_search = annotation_byte_offset;
     let (paired_byte_offset, paired_class_tag) = loop {
         let at = next_indexed_record_offset(bytes, paired_search)?;
-        let (tag, after) = lp_ascii_filtered_view(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
+        let (tag, after) = admitted_option!(lp_ascii_filtered_view(
+            ctx,
+            bytes,
+            at,
+            0..=2000,
+            u8::is_ascii_graphic
+        ));
         if View::u32_le_at(bytes, after) == Some(record_index) {
             break (at, tag);
         }
@@ -1961,10 +2088,25 @@ fn parse_dimension_presentation_frame(
     sketch_entities: &HashSet<u32>,
     paired_classes: &HashSet<u64>,
 ) -> Option<Result<DesignDimensionPresentationFrame, CodecError>> {
+    macro_rules! admitted_option {
+        ($result:expr) => {
+            match $result {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            }
+        };
+    }
     if !is_dimension_presentation_type(primary_type_guid) {
         return None;
     }
-    let (class_tag, after_tag) = lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
+    let (class_tag, after_tag) = admitted_option!(lp_ascii_filtered_view(
+        ctx,
+        bytes,
+        start,
+        3..=3,
+        u8::is_ascii_digit
+    ));
     if after_tag != start.checked_add(7)?
         || bytes.get(start + 11..start + 19) != Some(&[0; 8])
         || bytes.get(start + 19) != Some(&1)
@@ -2006,7 +2148,13 @@ fn parse_dimension_presentation_frame(
     let mut paired_search = position;
     let (paired_byte_offset, paired_class_tag) = loop {
         let at = next_indexed_record_offset(bytes, paired_search)?;
-        let (tag, after) = lp_ascii_filtered_view(bytes, at, 3..=3, u8::is_ascii_digit)?;
+        let (tag, after) = admitted_option!(lp_ascii_filtered_view(
+            ctx,
+            bytes,
+            at,
+            3..=3,
+            u8::is_ascii_digit
+        ));
         if View::u32_le_at(bytes, after) == Some(record_index)
             && !tag.starts_with('0')
             && tag
@@ -2291,8 +2439,22 @@ fn parse_dimension_locus_group(
     geometry_indices: &HashSet<u32>,
     sketch_entities: &HashSet<u32>,
 ) -> Option<Result<DesignDimensionLocusGroup, CodecError>> {
-    let (class_tag, after_tag) =
-        lp_ascii_filtered_view(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
+    macro_rules! admitted_option {
+        ($result:expr) => {
+            match $result {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            }
+        };
+    }
+    let (class_tag, after_tag) = admitted_option!(lp_ascii_filtered_view(
+        ctx,
+        bytes,
+        start,
+        0..=2000,
+        u8::is_ascii_graphic
+    ));
     if after_tag != start.checked_add(7)?
         || bytes.get(start + 11..start + 19) != Some(&[0; 8])
         || bytes.get(start + 19) != Some(&1)
@@ -2384,8 +2546,13 @@ fn parse_dimension_locus_group(
         return None;
     }
     let next_byte_offset = position.checked_add(1)?;
-    let (next_class_tag, next_after_tag) =
-        lp_ascii_filtered_view(bytes, next_byte_offset, 0..=2000, u8::is_ascii_graphic)?;
+    let (next_class_tag, next_after_tag) = admitted_option!(lp_ascii_filtered_view(
+        ctx,
+        bytes,
+        next_byte_offset,
+        0..=2000,
+        u8::is_ascii_graphic
+    ));
     if next_after_tag != next_byte_offset.checked_add(7)? {
         return None;
     }

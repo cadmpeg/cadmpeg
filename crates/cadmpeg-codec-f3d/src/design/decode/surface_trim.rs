@@ -44,8 +44,16 @@ fn exact_surface_trim_operation(
         }
         let selection_record_index = *scope.reference_members().values().nth(3)?;
         let (selection_byte_offset, _) = records.frames(selection_record_index).next()?;
-        let selection_class_tag =
-            exact_indexed_header_at(bytes, selection_byte_offset, selection_record_index)?;
+        let selection_class_tag = match exact_indexed_header_at(
+            ctx,
+            bytes,
+            selection_byte_offset,
+            selection_record_index,
+        ) {
+            Ok(Some(class_tag)) => class_tag,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         let selection = match parse_entity_selection_frame(
             ctx,
             bytes,
@@ -83,8 +91,16 @@ fn exact_surface_trim_operation(
         let (primary, paired) = records
             .frames(cell_table_record_index)
             .find(|(primary, _)| *primary == cell_table_byte_offset)?;
-        let cell_table_paired_class_tag =
-            exact_indexed_header_at(bytes, paired, cell_table_record_index)?;
+        let cell_table_paired_class_tag = match exact_indexed_header_at(
+            ctx,
+            bytes,
+            paired,
+            cell_table_record_index,
+        ) {
+            Ok(Some(class_tag)) => class_tag,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         if bytes.get(cell_table_byte_offset + 11..cell_table_byte_offset + 21)? != [0; 10] {
             return None;
         }

@@ -59,6 +59,7 @@ pub(super) fn fixed_kind_tail_operations(
     boundary_probe: Option<fn(&[u8], &DesignParameterScope)>,
     face_group_probe: Option<fn(&[u8], &DesignParameterScope)>,
 ) {
+    let bytes_decode_ctx = cadmpeg_test_support::service_decode_context();
     let move_at = bytes.len();
     let mut move_frame = vec![0; 254];
     move_frame[0..4].copy_from_slice(&3u32.to_le_bytes());
@@ -90,10 +91,11 @@ pub(super) fn fixed_kind_tail_operations(
         })
         .unwrap();
     let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
+        &bytes_decode_ctx,
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &move_scope,
-    )
+    ).unwrap()
     .expect("class-368 Move frame");
     assert_eq!(decoded.transform, move_transform.try_into().unwrap());
     assert_eq!(decoded.transform_offset, u64_from_index(move_at + 48));
@@ -127,10 +129,11 @@ pub(super) fn fixed_kind_tail_operations(
         })
         .unwrap();
     let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
+        &bytes_decode_ctx,
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &compact_move_scope,
-    )
+    ).unwrap()
     .expect("class-296 Move frame");
     assert_eq!(decoded.transform, move_transform.try_into().unwrap());
     assert_eq!(
@@ -143,10 +146,11 @@ pub(super) fn fixed_kind_tail_operations(
     bytes[compact_move_at + 4..compact_move_at + 7].copy_from_slice(b"362");
     bytes[compact_move_at + 43..compact_move_at + 47].copy_from_slice(&5u32.to_le_bytes());
     let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
+        &bytes_decode_ctx,
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &compact_move_scope,
-    )
+    ).unwrap()
     .expect("class-362 Move frame");
     assert_eq!(decoded.transform, move_transform.try_into().unwrap());
     assert_eq!(u32::from(decoded.form), 5);
@@ -179,10 +183,11 @@ pub(super) fn fixed_kind_tail_operations(
         })
         .unwrap();
     let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
+        &bytes_decode_ctx,
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &class_433_move_scope,
-    )
+    ).unwrap()
     .expect("class-433 Move frame");
     assert_eq!(decoded.transform, move_transform.try_into().unwrap());
     assert_eq!(
@@ -281,11 +286,12 @@ pub(super) fn fixed_kind_tail_operations(
         .unwrap();
     assert!(matches!(
         exact_solid_primitive(
+            &bytes_decode_ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &sphere_scope,
             &[],
-        ),
+        ).unwrap(),
         Some(DesignSolidPrimitive::Sphere(
             crate::records::feature::primitives::DesignSpherePrimitive {
                 diameter,
@@ -341,11 +347,12 @@ pub(super) fn fixed_kind_tail_operations(
         .unwrap();
     assert!(matches!(
         exact_solid_primitive(
+            &bytes_decode_ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &torus_scope,
             &[],
-        ),
+        ).unwrap(),
         Some(DesignSolidPrimitive::Torus(
             crate::records::feature::primitives::DesignTorusPrimitive {
                 major_diameter,
@@ -387,7 +394,7 @@ pub(super) fn fixed_kind_tail_operations(
         })
         .unwrap();
     assert!(matches!(
-        exact_direct_face_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &offset_scope),
+        exact_direct_face_operation(&bytes_decode_ctx, &bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &offset_scope).unwrap(),
         Some(DesignDirectFaceOperation::OffsetFaces(
             crate::records::feature::direct_face::DesignOffsetFacesOperation {
                 distance,
@@ -426,7 +433,7 @@ pub(super) fn fixed_kind_tail_operations(
         })
         .unwrap();
     assert!(matches!(
-        exact_direct_face_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &offset_scope),
+        exact_direct_face_operation(&bytes_decode_ctx, &bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &offset_scope).unwrap(),
         Some(DesignDirectFaceOperation::OffsetFaces(
             crate::records::feature::direct_face::DesignOffsetFacesOperation {
                 distance,
@@ -467,7 +474,7 @@ pub(super) fn fixed_kind_tail_operations(
         })
         .unwrap();
     assert!(matches!(
-        exact_direct_face_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &thicken_scope),
+        exact_direct_face_operation(&bytes_decode_ctx, &bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &thicken_scope).unwrap(),
         Some(DesignDirectFaceOperation::Thicken(
             crate::records::feature::direct_face::DesignThickenOperation {
                 signed_thickness,
@@ -485,10 +492,11 @@ pub(super) fn fixed_kind_tail_operations(
         .unwrap();
     assert_eq!(
         exact_direct_face_operation(
+            &bytes_decode_ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &thicken_scope
-        ),
+        ).unwrap(),
         None
     );
     let compact_thicken_at = bytes.len();
@@ -509,7 +517,7 @@ pub(super) fn fixed_kind_tail_operations(
         })
         .unwrap();
     assert!(matches!(
-        exact_direct_face_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &thicken_scope),
+        exact_direct_face_operation(&bytes_decode_ctx, &bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &thicken_scope).unwrap(),
         Some(DesignDirectFaceOperation::Thicken(
             crate::records::feature::direct_face::DesignThickenOperation {
                 signed_thickness,
@@ -540,10 +548,11 @@ pub(super) fn fixed_kind_tail_operations(
     .unwrap();
     assert!(matches!(
         exact_direct_face_operation(
+            &bytes_decode_ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &shifted_thicken_scope,
-        ),
+        ).unwrap(),
         Some(DesignDirectFaceOperation::Thicken(
             crate::records::feature::direct_face::DesignThickenOperation {
                 signed_thickness,
@@ -554,10 +563,11 @@ pub(super) fn fixed_kind_tail_operations(
     ));
     {
         let construction = exact_direct_face_operation(
+            &bytes_decode_ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &thicken_scope,
-        );
+        ).unwrap();
         match (thicken_scope.payload_mut(), construction) {
             (
                 crate::records::feature::scope::DesignScopePayloadMut::OffsetFaces(slot)
@@ -686,10 +696,11 @@ pub(super) fn fixed_kind_tail_operations(
         .unwrap();
     {
         let construction = exact_direct_face_operation(
+            &bytes_decode_ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &shell_scope,
-        );
+        ).unwrap();
         match (shell_scope.payload_mut(), construction) {
             (
                 crate::records::feature::scope::DesignScopePayloadMut::OffsetFaces(slot)
@@ -783,7 +794,7 @@ pub(super) fn fixed_kind_tail_operations(
     )
     .unwrap();
     assert!(matches!(
-        exact_direct_face_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &compact_shell_scope),
+        exact_direct_face_operation(&bytes_decode_ctx, &bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &compact_shell_scope).unwrap(),
         Some(DesignDirectFaceOperation::Shell(crate::records::feature::direct_face::DesignShellOperation {
             thickness,
             thickness_record_index: 9_000,
@@ -817,10 +828,11 @@ pub(super) fn fixed_kind_tail_operations(
     .unwrap();
     assert!(matches!(
         exact_direct_face_operation(
+            &bytes_decode_ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &shifted_shell_scope,
-        ),
+        ).unwrap(),
         Some(DesignDirectFaceOperation::Shell(crate::records::feature::direct_face::DesignShellOperation {
             thickness,
             thickness_record_index: 9_000,
@@ -831,10 +843,11 @@ pub(super) fn fixed_kind_tail_operations(
     ));
     {
         let construction = exact_direct_face_operation(
+            &bytes_decode_ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &compact_shell_scope,
-        );
+        ).unwrap();
         match (compact_shell_scope.payload_mut(), construction) {
             (
                 crate::records::feature::scope::DesignScopePayloadMut::OffsetFaces(slot)
@@ -873,10 +886,11 @@ pub(super) fn fixed_kind_tail_operations(
     ));
     {
         let construction = exact_direct_face_operation(
+            &bytes_decode_ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &offset_scope,
-        );
+        ).unwrap();
         match (offset_scope.payload_mut(), construction) {
             (
                 crate::records::feature::scope::DesignScopePayloadMut::OffsetFaces(slot)
@@ -918,10 +932,11 @@ pub(super) fn fixed_kind_tail_operations(
     bytes[compact_thicken_at + 46] = 0;
     assert_eq!(
         exact_direct_face_operation(
+            &bytes_decode_ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &thicken_scope
-        ),
+        ).unwrap(),
         None
     );
 
@@ -983,12 +998,13 @@ pub(super) fn fixed_kind_tail_operations(
         .unwrap();
     assert_eq!(
         exact_fixed_extrude_parameters(
+            &bytes_decode_ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &extrude_scope,
             &[],
             &[],
-        ),
+        ).unwrap(),
         Some(DesignFixedExtrudeParameters {
             along_distance: Some(DesignFixedExtrudeDistance::FixedScalar(
                 DesignFixedExtrudeScalar {
@@ -1016,12 +1032,13 @@ pub(super) fn fixed_kind_tail_operations(
         .unwrap();
     assert_eq!(
         exact_fixed_extrude_parameters(
+            &bytes_decode_ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &extrude_scope,
             &[],
             &[],
-        ),
+        ).unwrap(),
         Some(DesignFixedExtrudeParameters {
             along_distance: Some(DesignFixedExtrudeDistance::FixedScalar(
                 DesignFixedExtrudeScalar {
@@ -1050,12 +1067,13 @@ pub(super) fn fixed_kind_tail_operations(
         .unwrap();
     assert_eq!(
         exact_fixed_extrude_parameters(
+            &bytes_decode_ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &extrude_scope,
             &[],
             &[],
-        ),
+        ).unwrap(),
         None
     );
 
@@ -1412,12 +1430,13 @@ pub(super) fn fixed_kind_tail_operations(
         .unwrap();
     assert_eq!(
         exact_fixed_extrude_parameters(
+            &bytes_decode_ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &extrude_scope,
             &[],
             &[],
-        ),
+        ).unwrap(),
         Some(DesignFixedExtrudeParameters {
             along_distance: Some(DesignFixedExtrudeDistance::DistanceConstruction(
                 DesignFixedExtrudeScalar {
@@ -1448,12 +1467,13 @@ pub(super) fn fixed_kind_tail_operations(
         .unwrap();
     assert_eq!(
         exact_fixed_extrude_parameters(
+            &bytes_decode_ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &extrude_scope,
             &[],
             &[],
-        ),
+        ).unwrap(),
         None
     );
 

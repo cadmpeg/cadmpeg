@@ -292,7 +292,7 @@ pub(crate) fn decode_component_naming_spaces(
         }
         for marker in 0..bytes.len() {
             let mut uuid_offset = marker;
-            let Some(reference) = take_reference(bytes, &mut uuid_offset) else {
+            let Some(reference) = take_reference(ctx, bytes, &mut uuid_offset)? else {
                 continue;
             };
             let Some((component_record_index, Some(inline_type_guid))) = reference.local() else {
@@ -409,12 +409,17 @@ fn dynamic_type<'a>(
 }
 
 fn record_header_class_tag(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     at: usize,
     end: usize,
     expected_entity_id: u64,
-) -> Option<crate::records::references::DesignClassTag> {
-    let (class_tag, after_tag) = lp_ascii_filtered_view(bytes, at, 3..=3, u8::is_ascii_digit)?;
+) -> Result<Option<crate::records::references::DesignClassTag>, CodecError> {
+    let Some((class_tag, after_tag)) =
+        lp_ascii_filtered_view(ctx, bytes, at, 3..=3, u8::is_ascii_digit)?
+    else {
+        return Ok(None);
+    };
     let indexed_matches = after_tag
         .checked_add(4)
         .filter(|entity_end| *entity_end <= end)
@@ -426,9 +431,9 @@ fn record_header_class_tag(
         .and_then(|_| View::u64_le_at(bytes, after_tag))
         == Some(expected_entity_id);
     if !indexed_matches && !named_matches {
-        return None;
+        return Ok(None);
     }
-    crate::design::decode::text::class_tag_from_view(class_tag).ok()
+    Ok(crate::design::decode::text::class_tag_from_view(class_tag).ok())
 }
 
 /// Resolve every live sibling record from the primary index. The primary
@@ -456,7 +461,7 @@ pub(super) fn design_primary_frames<'a>(
     ctx.reserve_vec(&mut frames, indexed.len(), "f3d design primary frames")?;
     for frame in indexed {
         let entity_id = frame.entity_id;
-        let Some(class_tag) = record_header_class_tag(bytes, frame.start, frame.end, entity_id)
+        let Some(class_tag) = record_header_class_tag(ctx, bytes, frame.start, frame.end, entity_id)?
         else {
             return Err(CodecError::Malformed(
                 "F3D primary record index points to an invalid record header".into(),
@@ -474,7 +479,7 @@ pub(super) fn design_primary_frames<'a>(
         }
         if frame.member_end < frame.end {
             let Some(nested_class_tag) =
-                record_header_class_tag(bytes, frame.member_end, frame.end, entity_id)
+                record_header_class_tag(ctx, bytes, frame.member_end, frame.end, entity_id)?
             else {
                 return Err(CodecError::Malformed(
                     "F3D secondary record index points to an invalid nested header".into(),
@@ -684,35 +689,39 @@ fn parse_feature_timeline_record(
     type_guids_by_entity: &HashMap<u64, Vec<&str>>,
 ) -> Result<Option<DesignFeatureTimeline>, CodecError> {
     let (expected_class_tag, expected_entity_id) = expected;
-    let Some((
-        class_tag,
-        mut at,
-        context_reference_offset,
-        context_record_index,
-        item_count_offset,
-        count,
-    )) = (|| {
+    macro_rules! admitted_option {
+        ($result:expr) => {
+            match $result {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            }
+        };
+    }
+    let parsed = (|| {
         let (start, end) = (frame.start, frame.end);
         let (class_tag, after_tag) =
-            lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
+            admitted_option!(lp_ascii_filtered_view(ctx, bytes, start, 3..=3, u8::is_ascii_digit));
         if class_tag != expected_class_tag
             || View::u64_le_at(bytes, after_tag)? != expected_entity_id
         {
             return None;
         }
-        let (_, payload) = lp_ascii_filtered_view(
+        let (_, payload) = admitted_option!(lp_ascii_filtered_view(
+            ctx,
             bytes,
             after_tag.checked_add(8)?,
             0..=2000,
             u8::is_ascii_graphic,
-        )?;
+        ));
         if bytes.get(payload..payload.checked_add(2)?)? != [0, 0] {
             return None;
         }
         let mut at = payload.checked_add(2)?;
         let context_reference_offset = at.checked_add(1)?;
+        let reference = admitted_option!(take_reference(ctx, bytes, &mut at));
         let context_record_index = std::num::NonZeroU64::new(local_reference(
-            &take_reference(bytes, &mut at)?,
+            &reference,
             type_guids_by_entity,
         )?)?;
         let item_count_offset = at;
@@ -721,15 +730,23 @@ fn parse_feature_timeline_record(
         if count > end.checked_sub(at)? / 11 {
             return None;
         }
-        Some((
+        Some(Ok((
             class_tag,
             at,
             context_reference_offset,
             context_record_index,
             item_count_offset,
             count,
-        ))
-    })()
+        )))
+    })();
+    let Some((
+        class_tag,
+        mut at,
+        context_reference_offset,
+        context_record_index,
+        item_count_offset,
+        count,
+    )) = parsed.transpose()?
     else {
         return Ok(None);
     };
@@ -747,7 +764,7 @@ fn parse_feature_timeline_record(
         let Some(target_offset) = at.checked_add(1) else {
             return Ok(None);
         };
-        let Some(reference) = take_reference(bytes, &mut at) else {
+        let Some(reference) = take_reference(ctx, bytes, &mut at)? else {
             return Ok(None);
         };
         let Some(target) = local_reference(&reference, type_guids_by_entity) else {

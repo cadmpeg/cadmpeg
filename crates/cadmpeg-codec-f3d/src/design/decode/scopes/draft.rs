@@ -9,14 +9,17 @@ use crate::ids::native_stream;
 use crate::records::feature::direct_face::DesignDraftOperation;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::parameters::DesignParameterOwner;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::decode::View;
+use cadmpeg_core::CodecError;
 
 pub(super) fn exact_draft_operation_with_owners(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     parameter_owners: &[DesignParameterOwner],
-) -> Option<DesignDraftOperation> {
+) -> Result<Option<DesignDraftOperation>, CodecError> {
     // The frame is variable-length and carries six or more references, so no
     // frame length or reference count identifies the record. The ordered
     // reference table is in record-index order, so the two scalar lanes hold no
@@ -27,40 +30,50 @@ pub(super) fn exact_draft_operation_with_owners(
     if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Draft)
         || scope.reference_members().len() < 6
     {
-        return None;
+        return Ok(None);
     }
     let scope_stream = native_stream(&scope.id);
-    let mut lanes = scope
-        .reference_members()
-        .values()
-        .filter_map(|record_index| {
-            if let Some(scalar) = exact_fixed_scalar(bytes, records, *record_index) {
-                return (scalar.owner_record_index == Some(scope.record_index)).then_some((
-                    *record_index,
-                    u32::from(scalar.ordinal),
-                    scalar.value,
-                    scalar.value_offset,
-                ));
-            }
-            let mut owners = parameter_owners.iter().filter(|owner| {
-                owner.record_index() == *record_index
-                    && owner.scope_record_index() == scope.record_index
-                    && scope_stream.is_none_or(|stream| native_stream(owner.id()) == Some(stream))
-            });
-            let owner = owners.next()?;
-            if owners.next().is_some() {
-                return None;
-            }
-            Some((
+    let mut lanes = [None; 2];
+    let mut lane_count = 0;
+    for record_index in scope.reference_members().values() {
+        let lane = match exact_fixed_scalar(ctx, bytes, records, *record_index)? {
+            Some(scalar) => (scalar.owner_record_index == Some(scope.record_index)).then_some((
                 *record_index,
-                owner.local_ordinal(),
-                owner.evaluated_value(),
-                owner.evaluated_value_offset(),
-            ))
-        });
-    let (Some(mut first), Some(mut second), None) = (lanes.next(), lanes.next(), lanes.next())
-    else {
-        return None;
+                u32::from(scalar.ordinal),
+                scalar.value,
+                scalar.value_offset,
+            )),
+            None => {
+                let mut owners = parameter_owners.iter().filter(|owner| {
+                    owner.record_index() == *record_index
+                        && owner.scope_record_index() == scope.record_index
+                        && scope_stream
+                            .is_none_or(|stream| native_stream(owner.id()) == Some(stream))
+                });
+                let Some(owner) = owners.next() else {
+                    continue;
+                };
+                if owners.next().is_some() {
+                    continue;
+                }
+                Some((
+                    *record_index,
+                    owner.local_ordinal(),
+                    owner.evaluated_value(),
+                    owner.evaluated_value_offset(),
+                ))
+            }
+        };
+        if let Some(lane) = lane {
+            if lane_count == lanes.len() {
+                return Ok(None);
+            }
+            lanes[lane_count] = Some(lane);
+            lane_count += 1;
+        }
+    }
+    let [Some(mut first), Some(mut second)] = lanes else {
+        return Ok(None);
     };
     if first.1 > second.1 {
         std::mem::swap(&mut first, &mut second);
@@ -68,15 +81,15 @@ pub(super) fn exact_draft_operation_with_owners(
     let (angle_record_index, angle_ordinal, angle, angle_offset) = first;
     let (opposite_angle_record_index, opposite_ordinal, opposite, opposite_offset) = second;
     if angle_ordinal != 0 || opposite_ordinal != 1 || opposite.get() != 0.0 {
-        return None;
+        return Ok(None);
     }
-    Some(DesignDraftOperation {
+    Ok(Some(DesignDraftOperation {
         angle: cadmpeg_ir::scalar::Angle::from_assigned_real(angle),
         angle_record_index,
         angle_offset,
         opposite_angle_record_index,
         opposite_angle_offset: opposite_offset,
-    })
+    }))
 }
 
 pub(super) fn contains_consecutive_guid_pair(bytes: &[u8]) -> bool {

@@ -82,8 +82,11 @@ fn legacy_loft_body_carrier_output_refuses_collection_and_id_limits() {
         class_tag: crate::records::references::DesignClassTag::try_from("322".to_owned()).unwrap(),
         byte_offset: 0,
     };
-    let carrier = parse_loft_legacy_body_carrier(&bytes, &scope, &header)
-        .expect("class-322 legacy Loft carrier");
+    let carrier = crate::test_support::with_decode_context(|ctx| {
+        parse_loft_legacy_body_carrier(ctx, &bytes, &scope, &header)
+    })
+    .unwrap()
+    .expect("class-322 legacy Loft carrier");
     let stream = "Design/BulkStream.dat";
     let native_scope_len = u64::try_from(crate::ids::native_scope(stream).len()).unwrap();
     for (collection_limit, retained_limit, dimension, operation) in [
@@ -229,8 +232,11 @@ fn construction_operand_trailing_transform_has_exact_affine_frame() {
         record_index,
     };
 
-    let parsed = parse_construction_operand_transform(&bytes, &header)
-        .expect("exact construction-operand transform");
+    let parsed = crate::test_support::with_decode_context(|ctx| {
+        parse_construction_operand_transform(ctx, &bytes, &header).transpose()
+    })
+    .unwrap()
+    .expect("exact construction-operand transform");
     assert_eq!(parsed.transform, transform.try_into().unwrap());
     assert_eq!(parsed.transform_offset(), 22);
     assert_eq!(parsed.following_record_index(), 301);
@@ -238,7 +244,11 @@ fn construction_operand_trailing_transform_has_exact_affine_frame() {
     assert_eq!(parsed.following_class_tag.as_str(), "432");
 
     bytes[150] = 0;
-    assert!(parse_construction_operand_transform(&bytes, &header).is_none());
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        parse_construction_operand_transform(ctx, &bytes, &header).transpose()
+    })
+    .unwrap()
+    .is_none());
 
     let secondary = [
         [1.0_f64, 0.0, 0.0, 2.0],
@@ -321,8 +331,11 @@ fn construction_operand_auxiliary_paths_decode_transform_and_compact_frames() {
         class_tag: crate::records::references::DesignClassTag::try_from("304".to_owned()).unwrap(),
         record_index,
     };
-    let expanded = parse_construction_operand_path(&expanded, scope_record_index, &expanded_header)
-        .expect("expanded selection path");
+    let expanded = crate::test_support::with_decode_context(|ctx| {
+        parse_construction_operand_path(ctx, &expanded, scope_record_index, &expanded_header)
+    })
+    .unwrap()
+    .expect("expanded selection path");
     assert_eq!(expanded.entity_ref, 174);
     assert_eq!(
         expanded.clone().into_draft().placement,
@@ -350,8 +363,11 @@ fn construction_operand_auxiliary_paths_decode_transform_and_compact_frames() {
     compact.extend_from_slice(&[0; 6]);
     let compact_following_at = compact.len();
     indexed_header(&mut compact, *b"390", record_index + 1);
-    let compact = parse_construction_operand_path(&compact, scope_record_index, &expanded_header)
-        .expect("compact selection path");
+    let compact = crate::test_support::with_decode_context(|ctx| {
+        parse_construction_operand_path(ctx, &compact, scope_record_index, &expanded_header)
+    })
+    .unwrap()
+    .expect("compact selection path");
     assert_eq!(compact.entity_ref, 18_064);
     assert_eq!(
         compact.clone().into_draft().placement,
@@ -398,12 +414,17 @@ fn construction_tracking_path_decodes_absent_and_present_related_identities() {
     }
 
     let absent = tracking_path(None, None);
-    let absent = parse_construction_tracking_path(
-        &absent,
-        0,
-        300,
-        &crate::records::references::DesignClassTag::try_from("361".to_owned()).unwrap(),
-    )
+    let absent = crate::test_support::with_decode_context(|ctx| {
+        parse_construction_tracking_path(
+            ctx,
+            &absent,
+            0,
+            300,
+            &crate::records::references::DesignClassTag::try_from("361".to_owned()).unwrap(),
+        )
+        .transpose()
+    })
+    .unwrap()
     .expect("tracking path without related identities");
     assert_eq!(absent.carrier_record_index(), 301);
     assert_eq!(absent.carrier_byte_offset(), 33);
@@ -417,12 +438,17 @@ fn construction_tracking_path_decodes_absent_and_present_related_identities() {
     assert_eq!(absent.following_byte_offset(), 114);
 
     let present = tracking_path(Some(113), Some(119));
-    let present = parse_construction_tracking_path(
-        &present,
-        0,
-        300,
-        &crate::records::references::DesignClassTag::try_from("361".to_owned()).unwrap(),
-    )
+    let present = crate::test_support::with_decode_context(|ctx| {
+        parse_construction_tracking_path(
+            ctx,
+            &present,
+            0,
+            300,
+            &crate::records::references::DesignClassTag::try_from("361".to_owned()).unwrap(),
+        )
+        .transpose()
+    })
+    .unwrap()
     .expect("tracking path with related identities");
     assert_eq!(
         present
@@ -511,17 +537,21 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
     }
 
     let class_322 = carrier(b"322", b"262", 12, 100, false);
-    let parsed_322 = parse_loft_legacy_body_carrier(
-        &class_322,
-        &scope,
-        &crate::records::decal::DesignRecordHeader {
-            id: "header-322".into(),
-            record_index: 100,
-            class_tag: crate::records::references::DesignClassTag::try_from("322".to_owned())
-                .unwrap(),
-            byte_offset: 0,
-        },
-    )
+    let parsed_322 = crate::test_support::with_decode_context(|ctx| {
+        parse_loft_legacy_body_carrier(
+            ctx,
+            &class_322,
+            &scope,
+            &crate::records::decal::DesignRecordHeader {
+                id: "header-322".into(),
+                record_index: 100,
+                class_tag: crate::records::references::DesignClassTag::try_from("322".to_owned())
+                    .unwrap(),
+                byte_offset: 0,
+            },
+        )
+    })
+    .unwrap()
     .expect("class-322 legacy Loft carrier");
     assert_eq!(parsed_322.paired_class_tag.as_str(), "262");
     assert_eq!(parsed_322.paired_byte_offset, 87);
@@ -539,17 +569,21 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
     );
 
     let class_322_tail = carrier(b"322", b"262", 12, 200, true);
-    let parsed_322_tail = parse_loft_legacy_body_carrier(
-        &class_322_tail,
-        &scope,
-        &crate::records::decal::DesignRecordHeader {
-            id: "header-322-tail".into(),
-            record_index: 200,
-            class_tag: crate::records::references::DesignClassTag::try_from("322".to_owned())
-                .unwrap(),
-            byte_offset: 0,
-        },
-    )
+    let parsed_322_tail = crate::test_support::with_decode_context(|ctx| {
+        parse_loft_legacy_body_carrier(
+            ctx,
+            &class_322_tail,
+            &scope,
+            &crate::records::decal::DesignRecordHeader {
+                id: "header-322-tail".into(),
+                record_index: 200,
+                class_tag: crate::records::references::DesignClassTag::try_from("322".to_owned())
+                    .unwrap(),
+                byte_offset: 0,
+            },
+        )
+    })
+    .unwrap()
     .expect("class-322 legacy Loft carrier with scope tail");
     assert_eq!(parsed_322_tail.paired_class_tag.as_str(), "262");
     assert_eq!(parsed_322_tail.paired_byte_offset, 99);
@@ -562,17 +596,21 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
     assert_eq!(parsed_322_tail.trailing_scope_reference_offset, Some(88));
 
     let class_411 = carrier(b"411", b"266", 12, 300, true);
-    let parsed_411 = parse_loft_legacy_body_carrier(
-        &class_411,
-        &scope,
-        &crate::records::decal::DesignRecordHeader {
-            id: "header-411".into(),
-            record_index: 300,
-            class_tag: crate::records::references::DesignClassTag::try_from("411".to_owned())
-                .unwrap(),
-            byte_offset: 0,
-        },
-    )
+    let parsed_411 = crate::test_support::with_decode_context(|ctx| {
+        parse_loft_legacy_body_carrier(
+            ctx,
+            &class_411,
+            &scope,
+            &crate::records::decal::DesignRecordHeader {
+                id: "header-411".into(),
+                record_index: 300,
+                class_tag: crate::records::references::DesignClassTag::try_from("411".to_owned())
+                    .unwrap(),
+                byte_offset: 0,
+            },
+        )
+    })
+    .unwrap()
     .expect("class-411 legacy Loft carrier");
     assert_eq!(parsed_411.paired_class_tag.as_str(), "266");
     assert_eq!(parsed_411.paired_byte_offset, 99);
@@ -586,30 +624,38 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
 
     let mut wrong_presence = class_322.clone();
     wrong_presence[21] = 0;
-    assert!(parse_loft_legacy_body_carrier(
-        &wrong_presence,
-        &scope,
-        &crate::records::decal::DesignRecordHeader {
-            id: "header-322".into(),
-            record_index: 100,
-            class_tag: crate::records::references::DesignClassTag::try_from("322".to_owned())
-                .unwrap(),
-            byte_offset: 0,
-        },
-    )
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        parse_loft_legacy_body_carrier(
+            ctx,
+            &wrong_presence,
+            &scope,
+            &crate::records::decal::DesignRecordHeader {
+                id: "header-322".into(),
+                record_index: 100,
+                class_tag: crate::records::references::DesignClassTag::try_from("322".to_owned())
+                    .unwrap(),
+                byte_offset: 0,
+            },
+        )
+    })
+    .unwrap()
     .is_none());
 
     let wrong_pair = carrier(b"322", b"266", 12, 400, false);
-    assert!(parse_loft_legacy_body_carrier(
-        &wrong_pair,
-        &scope,
-        &crate::records::decal::DesignRecordHeader {
-            id: "header-322".into(),
-            record_index: 400,
-            class_tag: crate::records::references::DesignClassTag::try_from("322".to_owned())
-                .unwrap(),
-            byte_offset: 0,
-        },
-    )
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        parse_loft_legacy_body_carrier(
+            ctx,
+            &wrong_pair,
+            &scope,
+            &crate::records::decal::DesignRecordHeader {
+                id: "header-322".into(),
+                record_index: 400,
+                class_tag: crate::records::references::DesignClassTag::try_from("322".to_owned())
+                    .unwrap(),
+                byte_offset: 0,
+            },
+        )
+    })
+    .unwrap()
     .is_none());
 }

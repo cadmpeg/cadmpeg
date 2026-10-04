@@ -12,15 +12,18 @@ use crate::layout::thicken_class_347_scope_frame as thicken_347;
 use crate::records::feature::direct_face;
 use crate::records::feature::direct_face::DesignDirectFaceOperation;
 use crate::records::feature::scope::DesignParameterScope;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 
 /// Decode class-347/258 Thicken, whose group precedes its scalar. The class
 /// pair and 291-byte frame are part of admission for this distinct grammar.
 pub(super) fn exact_legacy_thicken_class_347(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-) -> Option<DesignDirectFaceOperation> {
+) -> Result<Option<DesignDirectFaceOperation>, CodecError> {
+    let parsed = (|| {
     if scope.class_tag.as_str() != "347"
         || scope.paired_class_tag.as_str() != "258"
         || scope.frame_length() != u64::try_from(thicken_347::LEN).ok()?
@@ -76,21 +79,29 @@ pub(super) fn exact_legacy_thicken_class_347(
     if scope.reference_members().values().next_back().copied()? != thickness_record_index {
         return None;
     }
-    let scalar = exact_fixed_scalar(bytes, records, thickness_record_index)?;
-    (scalar.value.get() != 0.0).then_some(DesignDirectFaceOperation::Thicken(
+    let scalar = match exact_fixed_scalar(ctx, bytes, records, thickness_record_index) {
+        Ok(Some(scalar)) => scalar,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
+    (scalar.value.get() != 0.0).then_some(Ok(DesignDirectFaceOperation::Thicken(
         direct_face::DesignThickenOperation {
             signed_thickness: scalar.value,
             thickness_record_index,
             thickness_offset: scalar.value_offset,
         },
-    ))
+    )))
+    })();
+    parsed.transpose()
 }
 
 pub(super) fn exact_shell_class_369_261(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-) -> Option<DesignDirectFaceOperation> {
+) -> Result<Option<DesignDirectFaceOperation>, CodecError> {
+    let parsed = (|| {
     if scope.class_tag.as_str() != "369"
         || scope.paired_class_tag.as_str() != "261"
         || scope.frame_length() != u64_from_index(shell_369_261::LEN)
@@ -162,8 +173,12 @@ pub(super) fn exact_shell_class_369_261(
     {
         return None;
     }
-    let scalar = exact_fixed_scalar(bytes, records, thickness_record_index)?;
-    Some(DesignDirectFaceOperation::Shell(
+    let scalar = match exact_fixed_scalar(ctx, bytes, records, thickness_record_index) {
+        Ok(Some(scalar)) => scalar,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
+    Some(Ok(DesignDirectFaceOperation::Shell(
         direct_face::DesignShellOperation {
             thickness: cadmpeg_ir::scalar::PositiveReal::new(scalar.value.get())?,
             thickness_record_index,
@@ -171,5 +186,7 @@ pub(super) fn exact_shell_class_369_261(
             outward,
             outward_offset: u64::try_from(start + shell_369_261::OUTWARD).ok()?,
         },
-    ))
+    )))
+    })();
+    parsed.transpose()
 }

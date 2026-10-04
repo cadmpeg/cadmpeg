@@ -117,13 +117,18 @@ fn surface_stitch_tolerance_uses_its_fixed_scope_owned_frame() {
     bytes.extend_from_slice(&[0; 20]);
     indexed_header(&mut bytes, *b"258", 301);
 
-    assert_eq!(
+    let operation = crate::design::test_support::with_test_decode_context(|ctx| {
         exact_surface_stitch_operation(
+            ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             12,
             &[100, 200, 300, 301]
-        ),
+        )
+    })
+    .unwrap();
+    assert_eq!(
+        operation,
         Some(DesignSurfaceStitchOperation {
             gap_tolerance: cadmpeg_ir::scalar::PositiveReal::new(0.01).unwrap(),
             gap_tolerance_offset: 40,
@@ -372,7 +377,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     ];
     for guid in related_guids {
         let encoded =
-            crate::bytes::lp_utf16_bytes(guid).expect("fixture UTF-16 code-unit count fits u32");
+            crate::bytes::lp_utf16_fixture_bytes(guid).expect("fixture UTF-16 code-unit count fits u32");
         snapshot_bytes[cursor..cursor + encoded.len()].copy_from_slice(&encoded);
         cursor += encoded.len();
     }
@@ -398,7 +403,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     cursor += 4;
     let third_guid = "00000000-0000-0000-0000-000000000000";
     let encoded =
-        crate::bytes::lp_utf16_bytes(third_guid).expect("fixture UTF-16 code-unit count fits u32");
+        crate::bytes::lp_utf16_fixture_bytes(third_guid).expect("fixture UTF-16 code-unit count fits u32");
     snapshot_bytes[cursor..cursor + encoded.len()].copy_from_slice(&encoded);
     cursor += encoded.len();
     cursor += 3;
@@ -411,7 +416,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     cursor += 6;
     snapshot_bytes[cursor..cursor + 4].copy_from_slice(&7u32.to_le_bytes());
     cursor += 4;
-    let encoded = crate::bytes::lp_utf16_bytes("Base Feature")
+    let encoded = crate::bytes::lp_utf16_fixture_bytes("Base Feature")
         .expect("fixture UTF-16 code-unit count fits u32");
     snapshot_bytes[cursor..cursor + encoded.len()].copy_from_slice(&encoded);
     cursor += encoded.len();
@@ -1209,7 +1214,7 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
     bytes[class_377::AUXILIARY_REFERENCE_MARKER] = class_377::AUXILIARY_REFERENCE_MARKER_VALUE;
     bytes[class_377::AUXILIARY_RECORD..class_377::AUXILIARY_REFERENCE_FIELD]
         .copy_from_slice(&202u32.to_le_bytes());
-    let guid = crate::bytes::lp_utf16_bytes("fcec56e3-832f-4468-88a4-d710e62e629f")
+    let guid = crate::bytes::lp_utf16_fixture_bytes("fcec56e3-832f-4468-88a4-d710e62e629f")
         .expect("fixture UTF-16 code-unit count fits u32");
     bytes[class_377::ENVELOPE_GUID_CODE_UNIT_COUNT..class_377::ZERO_RUN_3].copy_from_slice(&guid);
     bytes[class_377::REFERENCE_COUNT..class_377::GENERIC_SCOPE_REFERENCE_MARKER]
@@ -1223,7 +1228,7 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
     bytes[class_377::KIND_LENGTH..class_377::KIND]
         .copy_from_slice(&class_377::KIND_LENGTH_VALUE.to_le_bytes());
     bytes[class_377::KIND..class_377::FEATURE_ORDINAL].copy_from_slice(
-        &crate::bytes::lp_utf16_bytes("Base Feature")
+        &crate::bytes::lp_utf16_fixture_bytes("Base Feature")
             .expect("fixture UTF-16 code-unit count fits u32")[4..],
     );
     bytes[class_377::FEATURE_ORDINAL..class_377::FEATURE_ORDINAL + 4]

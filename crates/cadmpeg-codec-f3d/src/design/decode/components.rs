@@ -65,8 +65,23 @@ fn exact_component_occurrence(
     const SUFFIX: &str = ":design-component-occurrence#";
 
     let parsed = (|| {
+        macro_rules! admitted_option {
+            ($result:expr) => {
+                match $result {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
         let (class_tag, after_tag) =
-            lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
+            admitted_option!(lp_ascii_filtered_view(
+                ctx,
+                bytes,
+                start,
+                3..=3,
+                u8::is_ascii_digit
+            ));
         if after_tag != start.checked_add(7)? {
             return None;
         }
@@ -126,15 +141,16 @@ fn exact_component_occurrence(
         };
         let class_tag = crate::design::decode::text::class_tag_from_view(class_tag).ok()?;
         let byte_offset = u64::try_from(start).ok()?;
-        Some((
+        Some(Ok((
             class_tag,
             record_index,
             byte_offset,
             component_record_index,
             placement,
-        ))
+        )))
     })();
-    let Some((class_tag, record_index, byte_offset, component_record_index, placement)) = parsed
+    let Some((class_tag, record_index, byte_offset, component_record_index, placement)) =
+        parsed.transpose()?
     else {
         return Ok(None);
     };

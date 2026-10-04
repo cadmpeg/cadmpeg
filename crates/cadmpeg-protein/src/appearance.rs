@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Neutral projection of Protein texture assets and material property names.
 
+use cadmpeg_core::decode::cost::DecodeCost;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{BumpMap, TextureMap2d, TextureRef};
@@ -16,6 +17,59 @@ pub struct TextureAsset {
     urn: Option<String>,
     mapping: TextureMap2d,
     bump: Option<BumpMap>,
+}
+
+impl DecodeCost for TextureAsset {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        let mut bytes = 0_u64;
+        let mut add_cost = |cost: u64| -> Result<(), CodecError> {
+            bytes = bytes
+                .checked_add(cost)
+                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+            Ok(())
+        };
+
+        add_cost(self.asset_guid.decode_cost(ctx, operation)?)?;
+        add_cost(self.schema.decode_cost(ctx, operation)?)?;
+        add_cost(self.paths.decode_cost(ctx, operation)?)?;
+        add_cost(self.urn.decode_cost(ctx, operation)?)?;
+        add_cost(
+            (
+                self.mapping.map_channel,
+                self.mapping.uvw_source,
+                self.mapping.u_offset.get(),
+                self.mapping.v_offset.get(),
+                self.mapping.u_scale.get(),
+                self.mapping.v_scale.get(),
+            )
+                .decode_cost(ctx, operation)?,
+        )?;
+        add_cost(
+            (
+                self.mapping.rotation.get(),
+                self.mapping.repeat_u,
+                self.mapping.repeat_v,
+                self.mapping.real_world_offset_x.get(),
+                self.mapping.real_world_offset_y.get(),
+                self.mapping.real_world_scale_x.get(),
+            )
+                .decode_cost(ctx, operation)?,
+        )?;
+        add_cost(self.mapping.real_world_scale_y.get().decode_cost(ctx, operation)?)?;
+        let bump = self.bump.as_ref().map(|bump| {
+            (
+                bump.normal_map,
+                bump.depth.get(),
+                bump.normal_scale.get(),
+            )
+        });
+        add_cost(bump.decode_cost(ctx, operation)?)?;
+        Ok(bytes)
+    }
 }
 
 impl TextureAsset {

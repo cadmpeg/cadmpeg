@@ -118,7 +118,7 @@ mod tests {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
         let value = "ABCDEF12-3456-7890-ABCD-EF1234567890";
-        let bytes = crate::bytes::lp_utf16_bytes(value).unwrap();
+        let bytes = crate::bytes::lp_utf16_fixture_bytes(value).unwrap();
         for retained in [0, 35, 36] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
@@ -142,7 +142,7 @@ mod tests {
     #[test]
     fn fixed_relaxed_guid_text_refuses_work_before_scanning() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        let bytes = crate::bytes::lp_utf16_bytes("ABCDEF12-3456-7890-ABCD-EF1234567890").unwrap();
+        let bytes = crate::bytes::lp_utf16_fixture_bytes("ABCDEF12-3456-7890-ABCD-EF1234567890").unwrap();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
@@ -261,12 +261,17 @@ mod tests {
                             .unwrap()
                     })
                     .filter(|(text, _)| text.as_bytes().iter().all(allowed));
-                    let borrowed = lp_ascii_filtered_view(&bytes, 0, bounds.clone(), allowed)
-                        .map(|(value, end)| (value.to_owned(), end));
+                    let borrowed = crate::test_support::with_decode_context(|ctx| {
+                        lp_ascii_filtered_view(ctx, &bytes, 0, bounds.clone(), allowed).unwrap()
+                    })
+                    .map(|(value, end)| (value.to_owned(), end));
                     assert_eq!(borrowed, original);
                     bytes.pop();
                     assert_eq!(
-                        lp_ascii_filtered_view(&bytes, 0, bounds.clone(), allowed),
+                        crate::test_support::with_decode_context(|ctx| {
+                            lp_ascii_filtered_view(ctx, &bytes, 0, bounds.clone(), allowed)
+                                .unwrap()
+                        }),
                         None
                     );
                     bytes.push(*field.last().unwrap_or(&0));

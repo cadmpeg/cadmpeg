@@ -26,6 +26,15 @@ pub(super) fn exact_copy_paste_bodies_operation(
     let mut operands = ctx.collection_vec(body_count, "f3d CopyPasteBodies operands")?;
     let mut bodies = ctx.collection_vec(body_count, "f3d CopyPasteBodies bodies")?;
     let parsed = (|| -> Option<Result<DesignCopyPasteBodiesOperation, CodecError>> {
+        macro_rules! admitted_option {
+            ($result:expr) => {
+                match $result {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
         let start = usize::try_from(scope.byte_offset()).ok()?;
         let body_group_record_index = marked_record_reference(bytes, start + 29)?;
         let relation_record_index = marked_record_reference(bytes, start + 40)?;
@@ -37,7 +46,13 @@ pub(super) fn exact_copy_paste_bodies_operation(
             .checked_add(1)?;
         let body_group_at = records.first_at_or_after(search_at, body_group_record_index)?;
         let (body_group_class_tag, body_group_after_tag) =
-            lp_ascii_filtered_view(bytes, body_group_at, 3..=3, u8::is_ascii_digit)?;
+            admitted_option!(lp_ascii_filtered_view(
+                ctx,
+                bytes,
+                body_group_at,
+                3..=3,
+                u8::is_ascii_digit
+            ));
         let body_group_after_index = body_group_after_tag.checked_add(4)?;
         if bytes.get(body_group_after_index..body_group_after_index + 10)? != [0; 10] {
             return None;
@@ -62,7 +77,13 @@ pub(super) fn exact_copy_paste_bodies_operation(
         }
         let relation_at = records.first_at_or_after(search_at, relation_record_index)?;
         let (relation_class_tag, after_tag) =
-            lp_ascii_filtered_view(bytes, relation_at, 3..=3, u8::is_ascii_digit)?;
+            admitted_option!(lp_ascii_filtered_view(
+                ctx,
+                bytes,
+                relation_at,
+                3..=3,
+                u8::is_ascii_digit
+            ));
         let after_index = after_tag.checked_add(4)?;
         if bytes.get(after_index..after_index + 8)? != [0; 8] {
             return None;

@@ -998,18 +998,18 @@ fn class_426_component_insert_joins_legacy_relation_and_class_369_carrier() {
     let external_role = "cccccccc-dddd-eeee-ffff-000000000000_urn:adsk.test:asset";
     let mut external_bytes = bytes[..155].to_vec();
     external_bytes.extend_from_slice(
-        &crate::bytes::lp_utf16_bytes(external_role)
+        &crate::bytes::lp_utf16_fixture_bytes(external_role)
             .expect("fixture UTF-16 code-unit count fits u32"),
     );
     external_bytes.extend_from_slice(&[0, 4, 0, 0, 0, 0, 1, 0, 0, 0]);
     external_bytes.extend_from_slice(&bytes[241..525]);
     external_bytes.extend_from_slice(
-        &crate::bytes::lp_utf16_bytes(external_role)
+        &crate::bytes::lp_utf16_fixture_bytes(external_role)
             .expect("fixture UTF-16 code-unit count fits u32"),
     );
     external_bytes.extend_from_slice(&bytes[601..607]);
     external_bytes.extend_from_slice(
-        &crate::bytes::lp_utf16_bytes(external_role)
+        &crate::bytes::lp_utf16_fixture_bytes(external_role)
             .expect("fixture UTF-16 code-unit count fits u32"),
     );
     external_bytes.extend_from_slice(&bytes[683..695]);
@@ -1076,21 +1076,21 @@ fn class_283_component_insert_admits_compact_and_transformed_scopes() {
                 + crate::layout::component_insert_carrier_334_prefix::COMPONENT_IDENTITY
                 + 76]
             .copy_from_slice(
-                &crate::bytes::lp_utf16_bytes(component_guid)
+                &crate::bytes::lp_utf16_fixture_bytes(component_guid)
                     .expect("fixture UTF-16 code-unit count fits u32"),
             );
         let role_at = carrier_at + crate::layout::component_insert_carrier_334_prefix::NEUTRON_ROLE;
         bytes.extend(role.encode_utf16().flat_map(u16::to_le_bytes));
         bytes.extend_from_slice(&[0, 0x21, 0, 0, 0, 0, 1, 0, 0, 0]);
         bytes.extend_from_slice(
-            &crate::bytes::lp_utf16_bytes(component_guid)
+            &crate::bytes::lp_utf16_fixture_bytes(component_guid)
                 .expect("fixture UTF-16 code-unit count fits u32"),
         );
         assert_eq!(
             role_at
                 + role.encode_utf16().count() * 2
                 + 10
-                + crate::bytes::lp_utf16_bytes(component_guid)
+                + crate::bytes::lp_utf16_fixture_bytes(component_guid)
                     .expect("fixture UTF-16 code-unit count fits u32")
                     .len(),
             bytes.len()
@@ -1116,7 +1116,7 @@ fn class_283_component_insert_admits_compact_and_transformed_scopes() {
         if frame_length == 257 {
             bytes[scope_at + 44..scope_at + 46].copy_from_slice(&[1, 1]);
             bytes[scope_at + 46..scope_at + 122].copy_from_slice(
-                &crate::bytes::lp_utf16_bytes(null_guid)
+                &crate::bytes::lp_utf16_fixture_bytes(null_guid)
                     .expect("fixture UTF-16 code-unit count fits u32"),
             );
             bytes[scope_at + 125..scope_at + 129].copy_from_slice(&1_u32.to_le_bytes());
@@ -1131,7 +1131,7 @@ fn class_283_component_insert_admits_compact_and_transformed_scopes() {
                 bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
             }
             bytes[scope_at + 174..scope_at + 250].copy_from_slice(
-                &crate::bytes::lp_utf16_bytes(null_guid)
+                &crate::bytes::lp_utf16_fixture_bytes(null_guid)
                     .expect("fixture UTF-16 code-unit count fits u32"),
             );
             bytes[scope_at + 253..scope_at + 257].copy_from_slice(&1_u32.to_le_bytes());
@@ -1235,7 +1235,7 @@ fn class_283_component_insert_admits_compact_and_transformed_scopes() {
 fn class_414_component_insert_admits_shifted_identity_and_matrix_prologues() {
     let relation_record_index = 20_u32;
     let occurrence_identity = 17_u64;
-    let null_guid = crate::bytes::lp_utf16_bytes("00000000-0000-0000-0000-000000000000")
+    let null_guid = crate::bytes::lp_utf16_fixture_bytes("00000000-0000-0000-0000-000000000000")
         .expect("fixture UTF-16 code-unit count fits u32");
 
     let mut identity = vec![0_u8; 267];

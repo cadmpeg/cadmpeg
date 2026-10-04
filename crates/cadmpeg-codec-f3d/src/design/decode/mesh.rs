@@ -513,15 +513,25 @@ fn nested_record_identity(
     .ok()
 }
 
-fn exact_local_record_index(record: &[u8], at: usize) -> Option<u32> {
+fn exact_local_record_index(
+    ctx: &DecodeContext<'_>,
+    record: &[u8],
+    at: usize,
+) -> Result<Option<u32>, CodecError> {
     let mut cursor = at;
-    let reference = take_reference(record, &mut cursor)?;
-    if cursor != at.checked_add(SAME_SEGMENT_REFERENCE_BYTES)? {
-        return None;
+    let Some(reference) = take_reference(ctx, record, &mut cursor)? else {
+        return Ok(None);
+    };
+    let Some(expected_end) = at.checked_add(SAME_SEGMENT_REFERENCE_BYTES) else {
+        return Ok(None);
+    };
+    if cursor != expected_end {
+        return Ok(None);
     }
-    u32::try_from(reference.local()?.0)
-        .ok()
-        .filter(|target| *target != 0)
+    Ok(reference
+        .local()
+        .and_then(|(target, _)| u32::try_from(target).ok())
+        .filter(|target| *target != 0))
 }
 
 fn counted_local_record_indices(
@@ -548,7 +558,7 @@ fn counted_local_record_indices(
     let mut references = Vec::new();
     ctx.reserve_vec(&mut references, count, "f3d mesh local record references")?;
     for _ in 0..count {
-        let Some(index) = exact_local_record_index(record, at) else {
+        let Some(index) = exact_local_record_index(ctx, record, at)? else {
             return Ok(None);
         };
         references.push(index);
@@ -580,9 +590,11 @@ fn parse_mesh_entry_name_record(
     {
         return Err(malformed_frame(ctx, "mesh-entry-name", frame.entity_id));
     }
-    let guid_record_index =
-        exact_local_record_index(record, entry_name_prefix::GUID_RECORD_REFERENCE)
-            .ok_or_else(|| malformed_frame(ctx, "mesh-entry-name", frame.entity_id))?;
+    let Some(guid_record_index) =
+        exact_local_record_index(ctx, record, entry_name_prefix::GUID_RECORD_REFERENCE)?
+    else {
+        return Err(malformed_frame(ctx, "mesh-entry-name", frame.entity_id));
+    };
     let (entry_name, _) = lp_utf16_bounded_charged(
         ctx,
         record,
@@ -614,17 +626,46 @@ fn parse_mesh_guid_record(
     let record = &bytes[frame.start..frame.end];
     let identity = record_identity(ctx, record, frame, "mesh-GUID")?;
     let parsed = (|| {
+        macro_rules! admitted {
+            ($result:expr) => {
+                match $result {
+                    Ok(value) => value,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
+        macro_rules! admitted_option {
+            ($result:expr) => {
+                match $result {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
         (record.get(guid_join::ZERO_RUN_21..guid_join::FUSION_UUID) == Some(&[0; 21]))
             .then_some(())?;
-        let (fusion_uuid, end) = lp_ascii_strict(record, guid_join::FUSION_UUID, 36..=36)?;
+        let Some((fusion_uuid, end)) = admitted!(lp_ascii_strict(
+            ctx,
+            record,
+            guid_join::FUSION_UUID,
+            36..=36
+        )) else {
+            return None;
+        };
         (end == guid_join::ENTRY_NAME_BACKLINK).then_some(())?;
         crate::bytes::is_guid_hyphenated(fusion_uuid).then_some(())?;
-        let entry_name_record_index =
-            exact_local_record_index(record, guid_join::ENTRY_NAME_BACKLINK)?;
-        Some((fusion_uuid, entry_name_record_index))
+        let entry_name_record_index = admitted_option!(exact_local_record_index(
+            ctx,
+            record,
+            guid_join::ENTRY_NAME_BACKLINK,
+        ));
+        Some(Ok((fusion_uuid, entry_name_record_index)))
     })();
     let (guid, entry_name_record_index) =
-        parsed.ok_or_else(|| malformed_frame(ctx, "mesh-GUID", frame.entity_id))?;
+        parsed
+            .transpose()?
+            .ok_or_else(|| malformed_frame(ctx, "mesh-GUID", frame.entity_id))?;
     ctx.charge_work(72, "retain F3D mesh GUID")?;
     let guid = DesignGuidText::try_from(ctx.copy_retained_text(guid, "retain F3D mesh GUID")?)
         .map_err(|_| malformed_frame(ctx, "mesh-GUID", frame.entity_id))?;
@@ -651,21 +692,45 @@ fn parse_mesh_body_record(
     let record = &bytes[frame.start..frame.end];
     let identity = record_identity(ctx, record, frame, "mesh-body")?;
     let parsed = (|| {
+        macro_rules! admitted_option {
+            ($result:expr) => {
+                match $result {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
         (record.get(mesh_body::ZERO_RUN_10..mesh_body::ZERO_RUN_10 + 10) == Some(&[0; 10]))
             .then_some(())?;
         let transform = mesh_body_transform(record)?;
         let placement = DesignMeshPlacement::new(identity, transform).ok()?;
-        let scope_record_index =
-            exact_local_record_index(record, mesh_body::FEATURE_SCOPE_REFERENCE)?;
-        let wrapper_record_index = exact_local_record_index(record, mesh_body::WRAPPER_REFERENCE)?;
-        let owner_record_index = exact_local_record_index(record, mesh_body::BODY_OWNER_REFERENCE)?;
-        let guid_record_index =
-            exact_local_record_index(record, mesh_body::CONTAINER_GUID_REFERENCE)?;
-        let scene_node_record_index =
-            exact_local_record_index(record, mesh_body::SCENE_NODE_REFERENCE)?;
+        let scope_record_index = admitted_option!(exact_local_record_index(
+            ctx,
+            record,
+            mesh_body::FEATURE_SCOPE_REFERENCE,
+        ));
+        let wrapper_record_index =
+            admitted_option!(exact_local_record_index(ctx, record, mesh_body::WRAPPER_REFERENCE));
+        let owner_record_index = admitted_option!(exact_local_record_index(
+            ctx,
+            record,
+            mesh_body::BODY_OWNER_REFERENCE,
+        ));
+        let guid_record_index = admitted_option!(exact_local_record_index(
+            ctx,
+            record,
+            mesh_body::CONTAINER_GUID_REFERENCE,
+        ));
+        let scene_node_record_index = admitted_option!(exact_local_record_index(
+            ctx,
+            record,
+            mesh_body::SCENE_NODE_REFERENCE,
+        ));
         let collection_reference_at = record.len().checked_sub(SAME_SEGMENT_REFERENCE_BYTES)?;
-        let collection_record_index = exact_local_record_index(record, collection_reference_at)?;
-        Some(MeshBodyRecord {
+        let collection_record_index =
+            admitted_option!(exact_local_record_index(ctx, record, collection_reference_at));
+        Some(Ok(MeshBodyRecord {
             placement,
             guid_record_index,
             scope_record_index,
@@ -673,9 +738,11 @@ fn parse_mesh_body_record(
             owner_record_index,
             scene_node_record_index,
             collection_record_index,
-        })
+        }))
     })();
-    parsed.ok_or_else(|| malformed_frame(ctx, "mesh-body", frame.entity_id))
+    parsed
+        .transpose()?
+        .ok_or_else(|| malformed_frame(ctx, "mesh-body", frame.entity_id))
 }
 
 fn parse_mesh_collection_record(
@@ -700,6 +767,15 @@ fn parse_mesh_collection_record(
         mesh_collection::LEN + mesh_collection_base::BODY_COUNT,
     )?;
     let parsed = (|| {
+        macro_rules! admitted_option {
+            ($result:expr) => {
+                match $result {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
         (record.get(mesh_collection::ZERO_RUN_10..mesh_collection::BODY_COUNT) == Some(&[0; 10]))
             .then_some(())?;
         (record.get(mesh_collection::CONSTANT_01_01..mesh_collection::TEXTURE_TABLE_REFERENCE)
@@ -707,8 +783,11 @@ fn parse_mesh_collection_record(
         .then_some(())?;
         let first_count =
             usize::try_from(View::u32_le_at(record, mesh_collection::BODY_COUNT)?).ok()?;
-        let texture_table_record_index =
-            exact_local_record_index(record, mesh_collection::TEXTURE_TABLE_REFERENCE)?;
+        let texture_table_record_index = admitted_option!(exact_local_record_index(
+            ctx,
+            record,
+            mesh_collection::TEXTURE_TABLE_REFERENCE,
+        ));
         let base_record = nested_record_identity(
             record,
             crate::design::decode::mesh::NestedMeshRecordFrame {
@@ -732,16 +811,18 @@ fn parse_mesh_collection_record(
         .then_some(())?;
         let (body_records, owner_at) = counted_bodies?;
         (first_count == body_records.len()).then_some(())?;
-        let owner_record_index = exact_local_record_index(record, owner_at)?;
+        let owner_record_index = admitted_option!(exact_local_record_index(ctx, record, owner_at));
         (owner_at.checked_add(SAME_SEGMENT_REFERENCE_BYTES)? == record.len()).then_some(())?;
-        Some(MeshCollectionRecord {
+        Some(Ok(MeshCollectionRecord {
             collection: DesignMeshCollection::new(identity, base_record).ok()?,
             texture_table_record_index,
             body_records,
             owner_record_index,
-        })
+        }))
     })();
-    parsed.ok_or_else(|| malformed_frame(ctx, "mesh-collection", frame.entity_id))
+    parsed
+        .transpose()?
+        .ok_or_else(|| malformed_frame(ctx, "mesh-collection", frame.entity_id))
 }
 
 fn parse_mesh_texture_table_record(
@@ -785,7 +866,7 @@ fn parse_mesh_texture_table_record(
         let mut flag_keys = HashSet::new();
         ctx.reserve_set(&mut flag_keys, flags_count, "f3d mesh texture flag keys")?;
         for ordinal in 0..flags_count {
-            let Some((resource_guid, end)) = lp_ascii_strict(record, at, 36..=36) else {
+            let Some((resource_guid, end)) = lp_ascii_strict(ctx, record, at, 36..=36)? else {
                 return Ok(None);
             };
             ctx.charge_work(144, "retain F3D mesh texture GUID")?;
@@ -846,7 +927,7 @@ fn parse_mesh_texture_table_record(
             "f3d mesh texture filename keys",
         )?;
         for ordinal in 0..filename_count {
-            let Some((resource_guid, end)) = lp_ascii_strict(record, at, 36..=36) else {
+            let Some((resource_guid, end)) = lp_ascii_strict(ctx, record, at, 36..=36)? else {
                 return Ok(None);
             };
             ctx.charge_work(144, "retain F3D mesh texture GUID")?;
@@ -866,7 +947,7 @@ fn parse_mesh_texture_table_record(
                 return Ok(None);
             }
             at = end;
-            let Some(filename_record_index) = exact_local_record_index(record, at) else {
+            let Some(filename_record_index) = exact_local_record_index(ctx, record, at)? else {
                 return Ok(None);
             };
             let Some(next_at) = at.checked_add(SAME_SEGMENT_REFERENCE_BYTES) else {
@@ -912,16 +993,28 @@ fn parse_mesh_wrapper_record(
         DesignMeshFixedRecord::try_from(record_identity(ctx, record, frame, "mesh-wrapper")?)
             .map_err(|_| malformed_frame(ctx, "mesh-wrapper", frame.entity_id))?;
     let parsed = (|| {
+        macro_rules! admitted_option {
+            ($result:expr) => {
+                match $result {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
         (record.get(body_wrapper::ZERO_RUN_10..body_wrapper::BODY_REFERENCE) == Some(&[0; 10]))
             .then_some(())?;
-        let body_record_index = exact_local_record_index(record, body_wrapper::BODY_REFERENCE)?;
+        let body_record_index =
+            admitted_option!(exact_local_record_index(ctx, record, body_wrapper::BODY_REFERENCE));
         (record.get(body_wrapper::ZERO_TAIL_8..body_wrapper::LEN) == Some(&[0; 8])).then_some(())?;
-        Some(MeshWrapperRecord {
+        Some(Ok(MeshWrapperRecord {
             identity,
             body_record_index,
-        })
+        }))
     })();
-    parsed.ok_or_else(|| malformed_frame(ctx, "mesh-wrapper", frame.entity_id))
+    parsed
+        .transpose()?
+        .ok_or_else(|| malformed_frame(ctx, "mesh-wrapper", frame.entity_id))
 }
 
 fn scene_state_mask_is_exact(mask: &[u8]) -> bool {
@@ -1031,6 +1124,15 @@ fn parse_scene_node_record(
     let record = &bytes[frame.start..frame.end];
     let identity = record_identity(ctx, record, frame, "mesh-scene-node")?;
     let parsed = (|| {
+        macro_rules! admitted_option {
+            ($result:expr) => {
+                match $result {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
         (record.get(scene_node::ZERO_RUN_14..scene_node::CONSTANT_TWO_A) == Some(&[0; 14])
             && View::u32_le_at(record, scene_node::CONSTANT_TWO_A) == Some(2)
             && View::u32_le_at(record, scene_node::CONSTANT_TWO_B) == Some(2)
@@ -1059,19 +1161,23 @@ fn parse_scene_node_record(
             SceneBoundsPayload::Absent => None,
             SceneBoundsPayload::Present(bounds) => Some(bounds),
         };
-        Some(MeshSceneNodeRecord {
+        Some(Ok(MeshSceneNodeRecord {
             node: DesignMeshSceneNode::new(identity, bounds, transform).ok()?,
-            state_record_index: exact_local_record_index(
+            state_record_index: admitted_option!(exact_local_record_index(
+                ctx,
                 record,
                 scene_node::SCENE_STATE_REFERENCE,
-            )?,
-            auxiliary_record_index: exact_local_record_index(
+            )),
+            auxiliary_record_index: admitted_option!(exact_local_record_index(
+                ctx,
                 record,
                 scene_node::AUXILIARY_RECORD_REFERENCE,
-            )?,
-        })
+            )),
+        }))
     })();
-    parsed.ok_or_else(|| malformed_frame(ctx, "mesh-scene-node", frame.entity_id))
+    parsed
+        .transpose()?
+        .ok_or_else(|| malformed_frame(ctx, "mesh-scene-node", frame.entity_id))
 }
 
 fn parse_typed_identity(
@@ -1113,6 +1219,15 @@ fn parse_mesh_scope_record(
     let identity = record_identity(ctx, record, frame, "mesh-feature-scope")?;
     let counted_bodies = counted_local_record_indices(ctx, record, feature_scope::BODY_COUNT)?;
     let parsed = (|| {
+        macro_rules! admitted_option {
+            ($result:expr) => {
+                match $result {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
         (record.get(feature_scope::ZERO_RUN_10..feature_scope::BODY_COUNT) == Some(&[0; 10]))
             .then_some(())?;
         let (body_records, body_list_end) = counted_bodies?;
@@ -1158,7 +1273,7 @@ fn parse_mesh_scope_record(
         ) == Some(&[0; 8]))
         .then_some(())?;
         let owner_at = paired_relative.checked_add(feature_scope_base::SCOPE_OWNER_REFERENCE)?;
-        let owner_record_index = exact_local_record_index(record, owner_at)?;
+        let owner_record_index = admitted_option!(exact_local_record_index(ctx, record, owner_at));
         Some(Ok(MeshScopeRecord {
             scope: DesignMeshScope::new(identity, base_record, owner_record_index).ok()?,
             body_records,
@@ -1200,7 +1315,7 @@ fn parse_mesh_collection_owner_record(
     }) else {
         return Ok(None);
     };
-    let Some(collection_record_index) = exact_local_record_index(record, backlink_at) else {
+    let Some(collection_record_index) = exact_local_record_index(ctx, record, backlink_at)? else {
         return Ok(None);
     };
     Ok(Some(MeshCollectionOwnerRecord {

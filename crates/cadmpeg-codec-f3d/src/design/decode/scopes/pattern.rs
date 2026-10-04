@@ -447,7 +447,8 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
             .zip(scope.reference_members().values().skip(1))
         {
             for (start, paired_at) in records.frames(*record_index) {
-                if let Some(axis) = exact_circular_pattern_axis(
+                let axis = match exact_circular_pattern_axis(
+                    ctx,
                     bytes,
                     start,
                     paired_at,
@@ -455,6 +456,10 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
                     *selection_record_index,
                     scope.record_index,
                 ) {
+                    Ok(axis) => axis,
+                    Err(error) => return Some(Err(error)),
+                };
+                if let Some(axis) = axis {
                     if let Err(error) = ctx.reserve_vec(
                         &mut axis_candidates,
                         1,
@@ -535,9 +540,12 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
         }
         if count_candidates.is_empty() {
             for record_index in scope.reference_members().values() {
-                if let Some((count, count_offset)) =
-                    exact_fixed_pattern_count(bytes, records, *record_index, scope.record_index)
-                {
+                let candidate =
+                    match exact_fixed_pattern_count(ctx, bytes, records, *record_index, scope.record_index) {
+                        Ok(candidate) => candidate,
+                        Err(error) => return Some(Err(error)),
+                    };
+                if let Some((count, count_offset)) = candidate {
                     if let Err(error) = ctx.reserve_vec(
                         &mut count_candidates,
                         1,
@@ -585,8 +593,10 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
         }
         if angle_candidates.is_empty() {
             for record_index in scope.reference_members().values() {
-                let Some(scalar) = exact_fixed_scalar(bytes, records, *record_index) else {
-                    continue;
+                let scalar = match exact_fixed_scalar(ctx, bytes, records, *record_index) {
+                    Ok(Some(scalar)) => scalar,
+                    Ok(None) => continue,
+                    Err(error) => return Some(Err(error)),
                 };
                 if scalar.owner_record_index != Some(scope.record_index) || scalar.ordinal != 1 {
                     continue;
@@ -672,10 +682,25 @@ fn exact_legacy_circular_pattern_axis(
     scope: &DesignParameterScope,
 ) -> Result<Option<(patterns::DesignCircularPatternAxis, u32)>, CodecError> {
     let parsed = (|| {
+        macro_rules! admitted_option {
+            ($result:expr) => {
+                match $result {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
         use patterns::DesignCircularPatternAxis;
 
         let (class_tag, after_tag) =
-            lp_ascii_filtered_view(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
+            admitted_option!(lp_ascii_filtered_view(
+                ctx,
+                bytes,
+                start,
+                0..=2000,
+                u8::is_ascii_graphic
+            ));
         if class_tag.len() != 3
             || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
             || after_tag != start + 7
@@ -755,7 +780,13 @@ fn exact_legacy_circular_pattern_axis(
             return None;
         }
         let (paired_class_tag, paired_after_tag) =
-            lp_ascii_filtered_view(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
+            admitted_option!(lp_ascii_filtered_view(
+                ctx,
+                bytes,
+                paired_at,
+                0..=2000,
+                u8::is_ascii_graphic
+            ));
         if paired_class_tag.len() != 3
             || !paired_class_tag.bytes().all(|byte| byte.is_ascii_digit())
             || paired_after_tag != paired_at + 7
@@ -770,7 +801,7 @@ fn exact_legacy_circular_pattern_axis(
         {
             let record_index = View::u32_le_at(bytes, offset)?;
             let (identity, identity_offset) =
-                exact_pattern_identity_wrapper(bytes, records, record_index)?;
+                admitted_option!(exact_pattern_identity_wrapper(ctx, bytes, records, record_index));
             *slot = Some((
                 identity,
                 patterns::DesignPatternAxisWrapper {
@@ -812,68 +843,120 @@ fn exact_legacy_circular_pattern_axis(
     parsed.transpose()
 }
 fn exact_pattern_identity_wrapper(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     record_index: u32,
-) -> Option<(u64, u64)> {
-    let [start] = records.offsets(record_index) else {
-        return None;
-    };
-    let start = *start;
-    let (_, after_tag) = lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
-    if after_tag != start + 7
-        || View::u32_le_at(bytes, after_tag) != Some(record_index)
-        || bytes.get(start + 11..start + 21) != Some(&[0; 10])
-        || View::u64_le_at(bytes, start + 21)? == 0
-    {
-        return None;
-    }
-    let after_asset_id = relaxed_guid_end(bytes, start + 29)?;
-    let after_context_id = relaxed_guid_end(bytes, after_asset_id)?;
-    if View::u32_le_at(bytes, after_context_id) != Some(2)
-        || bytes.get(after_context_id + 4..after_context_id + 8) != Some(&[0; 4])
-        || marked_record_reference(bytes, after_context_id + 8) != record_index.checked_add(1)
-        || bytes.get(after_context_id + 13..after_context_id + 19) != Some(&[0; 6])
-    {
-        return None;
-    }
-    let nested_one_at = next_indexed_record_offset(bytes, after_context_id + 19)?;
-    let (_, nested_one_tag) =
-        lp_ascii_filtered_view(bytes, nested_one_at, 3..=3, u8::is_ascii_digit)?;
-    if View::u32_le_at(bytes, nested_one_tag) != record_index.checked_add(1)
-        || bytes.get(nested_one_at + 11..nested_one_at + 21) != Some(&[0; 10])
-        || marked_record_reference(bytes, nested_one_at + 21) != record_index.checked_add(2)
-        || bytes.get(nested_one_at + 26..nested_one_at + 32) != Some(&[0; 6])
-    {
-        return None;
-    }
-    let identity_at = next_indexed_record_offset(bytes, nested_one_at + 32)?;
-    let (_, identity_tag) = lp_ascii_filtered_view(bytes, identity_at, 3..=3, u8::is_ascii_digit)?;
-    let next_at = next_indexed_record_offset(bytes, identity_at + 29)?;
-    let (_, next_tag) = lp_ascii_filtered_view(bytes, next_at, 3..=3, u8::is_ascii_digit)?;
-    if View::u32_le_at(bytes, identity_tag) != record_index.checked_add(2)
-        || bytes.get(identity_at + 11..identity_at + 21) != Some(&[0; 10])
-        || identity_at.checked_add(29) != Some(next_at)
-        || View::u32_le_at(bytes, next_tag) != record_index.checked_add(3)
-    {
-        return None;
-    }
-    Some((
-        View::u64_le_at(bytes, identity_at + 21)?,
-        u64::try_from(identity_at + 21).ok()?,
-    ))
+) -> Result<Option<(u64, u64)>, CodecError> {
+    let parsed = (|| -> Option<Result<(u64, u64), CodecError>> {
+        macro_rules! admitted_option {
+            ($result:expr) => {
+                match $result {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
+        let [start] = records.offsets(record_index) else {
+            return None;
+        };
+        let start = *start;
+        let (_, after_tag) = admitted_option!(lp_ascii_filtered_view(
+            ctx,
+            bytes,
+            start,
+            3..=3,
+            u8::is_ascii_digit
+        ));
+        if after_tag != start + 7
+            || View::u32_le_at(bytes, after_tag) != Some(record_index)
+            || bytes.get(start + 11..start + 21) != Some(&[0; 10])
+            || View::u64_le_at(bytes, start + 21)? == 0
+        {
+            return None;
+        }
+        let after_asset_id = relaxed_guid_end(bytes, start + 29)?;
+        let after_context_id = relaxed_guid_end(bytes, after_asset_id)?;
+        if View::u32_le_at(bytes, after_context_id) != Some(2)
+            || bytes.get(after_context_id + 4..after_context_id + 8) != Some(&[0; 4])
+            || marked_record_reference(bytes, after_context_id + 8) != record_index.checked_add(1)
+            || bytes.get(after_context_id + 13..after_context_id + 19) != Some(&[0; 6])
+        {
+            return None;
+        }
+        let nested_one_at = next_indexed_record_offset(bytes, after_context_id + 19)?;
+        let (_, nested_one_tag) = admitted_option!(lp_ascii_filtered_view(
+            ctx,
+            bytes,
+            nested_one_at,
+            3..=3,
+            u8::is_ascii_digit
+        ));
+        if View::u32_le_at(bytes, nested_one_tag) != record_index.checked_add(1)
+            || bytes.get(nested_one_at + 11..nested_one_at + 21) != Some(&[0; 10])
+            || marked_record_reference(bytes, nested_one_at + 21) != record_index.checked_add(2)
+            || bytes.get(nested_one_at + 26..nested_one_at + 32) != Some(&[0; 6])
+        {
+            return None;
+        }
+        let identity_at = next_indexed_record_offset(bytes, nested_one_at + 32)?;
+        let (_, identity_tag) = admitted_option!(lp_ascii_filtered_view(
+            ctx,
+            bytes,
+            identity_at,
+            3..=3,
+            u8::is_ascii_digit
+        ));
+        let next_at = next_indexed_record_offset(bytes, identity_at + 29)?;
+        let (_, next_tag) = admitted_option!(lp_ascii_filtered_view(
+            ctx,
+            bytes,
+            next_at,
+            3..=3,
+            u8::is_ascii_digit
+        ));
+        if View::u32_le_at(bytes, identity_tag) != record_index.checked_add(2)
+            || bytes.get(identity_at + 11..identity_at + 21) != Some(&[0; 10])
+            || identity_at.checked_add(29) != Some(next_at)
+            || View::u32_le_at(bytes, next_tag) != record_index.checked_add(3)
+        {
+            return None;
+        }
+        Some(Ok((
+            View::u64_le_at(bytes, identity_at + 21)?,
+            u64::try_from(identity_at + 21).ok()?,
+        )))
+    })();
+    parsed.transpose()
 }
 
 fn exact_circular_pattern_axis(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     paired_at: usize,
     record_index: u32,
     selection_record_index: u32,
     scope_record_index: u32,
-) -> Option<patterns::DesignCircularPatternAxis> {
-    let (class_tag, after_tag) =
-        lp_ascii_filtered_view(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
+) -> Result<Option<patterns::DesignCircularPatternAxis>, CodecError> {
+    let parsed = (|| -> Option<Result<patterns::DesignCircularPatternAxis, CodecError>> {
+        macro_rules! admitted_option {
+            ($result:expr) => {
+                match $result {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
+        let (class_tag, after_tag) = admitted_option!(lp_ascii_filtered_view(
+            ctx,
+            bytes,
+            start,
+            0..=2000,
+            u8::is_ascii_graphic
+        ));
     if class_tag.len() != 3
         || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
         || after_tag != start + 7
@@ -909,7 +992,13 @@ fn exact_circular_pattern_axis(
         return None;
     }
     let (paired_class_tag, paired_after_tag) =
-        lp_ascii_filtered_view(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
+        admitted_option!(lp_ascii_filtered_view(
+            ctx,
+            bytes,
+            paired_at,
+            0..=2000,
+            u8::is_ascii_graphic
+        ));
     if paired_class_tag.len() != 3
         || !paired_class_tag.bytes().all(|byte| byte.is_ascii_digit())
         || paired_after_tag != paired_at + 7
@@ -919,25 +1008,37 @@ fn exact_circular_pattern_axis(
     }
     let origin = finite_reals_at(bytes, start + 25)?;
     let displacement = finite_reals_at(bytes, start + 49)?.map(FiniteReal::get);
-    patterns::DesignCircularPatternAxis::inline(
+    Some(Ok(patterns::DesignCircularPatternAxis::inline(
         origin,
         u64::try_from(start.checked_add(25)?).ok()?,
         displacement,
         u64::try_from(start.checked_add(49)?).ok()?,
-    )
+    )?))
+    })();
+    parsed.transpose()
 }
 
 fn exact_fixed_pattern_count(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     record_index: u32,
     scope_record_index: u32,
-) -> Option<(u32, u64)> {
-    let mut candidates = records
-        .frames(record_index)
-        .filter_map(|(start, paired_at)| {
-            let (class_tag, after_tag) =
-                lp_ascii_filtered_view(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
+) -> Result<Option<(u32, u64)>, CodecError> {
+    let parsed = (|| -> Option<Result<(u32, u64), CodecError>> {
+        let mut candidate = None;
+        for (start, paired_at) in records.frames(record_index) {
+            let (class_tag, after_tag) = match lp_ascii_filtered_view(
+                ctx,
+                bytes,
+                start,
+                0..=2000,
+                u8::is_ascii_graphic,
+            ) {
+                Ok(Some(value)) => value,
+                Ok(None) => continue,
+                Err(error) => return Some(Err(error)),
+            };
             if class_tag.len() != 3
                 || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
                 || after_tag != start + 7
@@ -950,7 +1051,7 @@ fn exact_fixed_pattern_count(
                 || bytes.get(start + 29..start + 40) != Some(&[0; 11])
                 || marked_record_reference(bytes, start + 44) != record_index.checked_add(2)
                 || bytes.get(start + 49..start + 55) != Some(&[0; 6])
-                || View::u32_le_at(bytes, start + 55)? == 0
+                || View::u32_le_at(bytes, start + 55).is_none_or(|value| value == 0)
                 || bytes.get(start + 59..start + 63) != Some(&[0; 4])
                 || marked_record_reference(bytes, start + 63) != Some(scope_record_index)
                 || bytes.get(start + 68..start + 76) != Some(&[0; 8])
@@ -959,13 +1060,24 @@ fn exact_fixed_pattern_count(
                 || marked_record_reference(bytes, start + 88) != Some(scope_record_index)
                 || bytes.get(start + 93..start + 99) != Some(&[0; 6])
             {
+                continue;
+            }
+            let Some(count) = View::u32_le_at(bytes, start + 40) else {
+                continue;
+            };
+            if count == 0 {
+                continue;
+            }
+            if candidate
+                .replace((count, u64_from_index(start + 40)))
+                .is_some()
+            {
                 return None;
             }
-            let count = View::u32_le_at(bytes, start + 40)?;
-            (count > 0).then_some((count, u64_from_index(start + 40)))
-        });
-    let candidate = candidates.next()?;
-    candidates.next().is_none().then_some(candidate)
+        }
+        candidate.map(Ok)
+    })();
+    parsed.transpose()
 }
 
 #[cfg(test)]

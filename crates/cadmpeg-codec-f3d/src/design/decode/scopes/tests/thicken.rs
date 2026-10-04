@@ -8,6 +8,7 @@ use crate::test_support::write_marked_reference;
 
 #[test]
 fn class_347_thicken_frame_admits_group_before_scalar() {
+    let bytes_decode_ctx = cadmpeg_test_support::service_decode_context();
     let mut frame = vec![0; 291];
     frame[0..4].copy_from_slice(&3u32.to_le_bytes());
     frame[4..7].copy_from_slice(b"347");
@@ -64,7 +65,7 @@ fn class_347_thicken_frame_admits_group_before_scalar() {
         })
         .unwrap();
     assert!(matches!(
-        exact_direct_face_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope),
+        exact_direct_face_operation(&bytes_decode_ctx, &bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope).unwrap(),
         Some(DesignDirectFaceOperation::Thicken(
             crate::records::feature::direct_face::DesignThickenOperation {
                 signed_thickness,
@@ -78,10 +79,11 @@ fn class_347_thicken_frame_admits_group_before_scalar() {
         crate::records::references::DesignClassTag::try_from("259".to_owned()).unwrap();
     assert_eq!(
         exact_direct_face_operation(
+            &bytes_decode_ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &scope
-        ),
+        ).unwrap(),
         None
     );
 }

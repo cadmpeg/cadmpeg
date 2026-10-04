@@ -74,6 +74,15 @@ pub(super) fn exact_coil_placement(
     recipes: &[ConstructionRecipe],
 ) -> Result<Option<DesignCoilPlacement>, CodecError> {
     (|| {
+        macro_rules! admitted_option {
+            ($result:expr) => {
+                match $result {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
         if scope.kind() != scope::DesignFeatureKind::CoilPrimitive {
             return None;
         }
@@ -97,7 +106,13 @@ pub(super) fn exact_coil_placement(
             return None;
         }
         let (selection_class_tag, selection_after_tag) =
-            lp_ascii_filtered_view(bytes, selection_start, 3..=3, u8::is_ascii_digit)?;
+            admitted_option!(lp_ascii_filtered_view(
+                ctx,
+                bytes,
+                selection_start,
+                3..=3,
+                u8::is_ascii_digit
+            ));
         if selection_after_tag != selection_start.checked_add(7)?
             || View::u32_le_at(bytes, selection_after_tag)? != selection_record_index
         {
@@ -109,14 +124,24 @@ pub(super) fn exact_coil_placement(
             return None;
         }
         let (transform_class_tag, transform_after_tag) =
-            lp_ascii_filtered_view(bytes, transform_start, 3..=3, u8::is_ascii_digit)?;
+            admitted_option!(lp_ascii_filtered_view(
+                ctx,
+                bytes,
+                transform_start,
+                3..=3,
+                u8::is_ascii_digit
+            ));
         if transform_after_tag != transform_start.checked_add(7)?
             || View::u32_le_at(bytes, transform_after_tag)? != transform_record_index
         {
             return None;
         }
-        let transform_paired_class_tag =
-            exact_indexed_header_at(bytes, transform_paired, transform_record_index)?;
+        let transform_paired_class_tag = admitted_option!(exact_indexed_header_at(
+            ctx,
+            bytes,
+            transform_paired,
+            transform_record_index,
+        ));
         let frame_length = transform_paired.checked_sub(transform_start)?;
         let explicit_transform = match frame_length {
             coil_legacy_identity::LEN

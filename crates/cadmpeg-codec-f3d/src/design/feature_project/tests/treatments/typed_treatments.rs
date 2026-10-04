@@ -33,6 +33,7 @@ use cadmpeg_ir::math::Vector3;
 
 #[test]
 fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
+    let bytes_decode_ctx = cadmpeg_test_support::service_decode_context();
     use cadmpeg_ir::features::{
         edge_treatments::{ChamferGroup, ChamferSpec, RadiusSpec},
         EdgeSelection,
@@ -59,7 +60,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         parameter
     };
     let owner = |record_index, scope_record_index, parameter_record_index, local_ordinal| {
-        let mut owner = parse_parameter_owner(&parameter_owner_frame())
+        let mut owner = parse_parameter_owner(&bytes_decode_ctx, &parameter_owner_frame()).transpose().unwrap()
             .expect("generated parameter owner is canonical")
             .into_record("Design/BulkStream.dat", 0)
             .unwrap();

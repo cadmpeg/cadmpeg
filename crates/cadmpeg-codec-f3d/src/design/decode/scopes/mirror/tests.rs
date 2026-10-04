@@ -343,7 +343,7 @@ fn class_441_mirror_scope_decodes_the_inline_count_owner() {
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
 
     assert_eq!(
-        exact_legacy_mirror_scope_count(&bytes, &records, &scope),
+        crate::test_support::with_decode_context(|decode| exact_legacy_mirror_scope_count(decode, &bytes, &records, &scope)).transpose().unwrap(),
         Some((count_record_index, 40))
     );
 }

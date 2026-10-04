@@ -276,14 +276,14 @@ fn dimension_recipe_uses_its_immediate_indexed_record_boundary() {
     bytes.extend_from_slice(&[0; 9]);
 
     assert_eq!(
-        indexed_record_containing(&bytes, 5, bytes.len(), recipe_offset),
+        indexed_record_containing(&ctx, &bytes, 5, bytes.len(), recipe_offset).unwrap(),
         Some((5, "415", 40, next_offset))
     );
     assert_eq!(
-        indexed_record_containing(&bytes, 5, bytes.len(), next_offset + 11),
+        indexed_record_containing(&ctx, &bytes, 5, bytes.len(), next_offset + 11).unwrap(),
         Some((next_offset, "423", 41, bytes.len()))
     );
-    assert_eq!(indexed_record_containing(&bytes, 6, bytes.len(), 7), None);
+    assert_eq!(indexed_record_containing(&ctx, &bytes, 6, bytes.len(), 7).unwrap(), None);
     assert_eq!(
         contiguous_i32_program(&ctx, &[u8::MAX; 8], 0, 8)
             .transpose()
@@ -692,7 +692,10 @@ fn face_recipe_decodes_paired_packed_reference_runs() {
         )
         .expect("recipe references")
     });
-    assert!(crate::design::decode::dimension_frames::is_paired_recipe_reference_frame(&prefix));
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::dimension_frames::is_paired_recipe_reference_frame(ctx, &prefix)
+            .unwrap()
+    }));
     assert_eq!(references.len(), 4);
     assert_eq!(
         references
@@ -731,9 +734,13 @@ fn face_recipe_decodes_paired_packed_reference_runs() {
     .is_empty());
     let mut invalid_header = prefix.clone();
     invalid_header[0] = 1;
-    assert!(
-        !crate::design::decode::dimension_frames::is_paired_recipe_reference_frame(&invalid_header)
-    );
+    assert!(!crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::dimension_frames::is_paired_recipe_reference_frame(
+            ctx,
+            &invalid_header,
+        )
+        .unwrap()
+    }));
 
     let mut trailing = prefix.clone();
     trailing.extend_from_slice(&0u32.to_le_bytes());
@@ -744,7 +751,10 @@ fn face_recipe_decodes_paired_packed_reference_runs() {
         .expect("recipe references")
     })
     .is_empty());
-    assert!(!crate::design::decode::dimension_frames::is_paired_recipe_reference_frame(&trailing));
+    assert!(!crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::dimension_frames::is_paired_recipe_reference_frame(ctx, &trailing)
+            .unwrap()
+    }));
 
     let mut mismatched_selector = prefix.clone();
     mismatched_selector[second_operand_at..second_operand_at + 4]
@@ -768,7 +778,10 @@ fn face_recipe_decodes_paired_packed_reference_runs() {
         .expect("recipe references")
     })
     .is_empty());
-    assert!(!crate::design::decode::dimension_frames::is_paired_recipe_reference_frame(&prefix));
+    assert!(!crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::dimension_frames::is_paired_recipe_reference_frame(ctx, &prefix)
+            .unwrap()
+    }));
 }
 
 #[test]
@@ -811,7 +824,10 @@ fn face_recipe_decodes_five_group_reference_sequence() {
         )
         .expect("recipe references")
     });
-    assert!(crate::design::decode::dimension_frames::is_grouped_recipe_reference_frame(&prefix));
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::dimension_frames::is_grouped_recipe_reference_frame(ctx, &prefix)
+            .unwrap()
+    }));
     assert_eq!(
         references
             .iter()
@@ -904,7 +920,10 @@ fn face_recipe_decodes_five_group_reference_sequence() {
         .expect("recipe references")
     })
     .is_empty());
-    assert!(!crate::design::decode::dimension_frames::is_grouped_recipe_reference_frame(&trailing));
+    assert!(!crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::dimension_frames::is_grouped_recipe_reference_frame(ctx, &trailing)
+            .unwrap()
+    }));
 }
 
 #[test]
@@ -937,7 +956,10 @@ fn face_recipe_decodes_dynamic_group_reference_sequence() {
         )
         .expect("recipe references")
     });
-    assert!(crate::design::decode::dimension_frames::is_grouped_recipe_reference_frame(&prefix));
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::dimension_frames::is_grouped_recipe_reference_frame(ctx, &prefix)
+            .unwrap()
+    }));
     assert_eq!(
         references
             .iter()

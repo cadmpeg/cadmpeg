@@ -62,6 +62,14 @@ pub(super) fn exact_derived_instance_construction(
         ctx.charge_work(work, "scan F3D construction occurrences")?;
     }
     let parsed = (|| {
+        macro_rules! admitted {
+            ($result:expr) => {
+                match $result {
+                    Ok(value) => value,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
         if scope.kind() != scope::DesignFeatureKind::DerivedInstance
             || scope.class_tag.as_str() != "279"
             || scope.paired_class_tag.as_str() != "261"
@@ -96,8 +104,13 @@ pub(super) fn exact_derived_instance_construction(
 
         let relation_record_index = *scope.reference_members().values().next()?;
         let relation_at = records.first_at_or_after(0, relation_record_index)?;
-        let (relation_kind, _) =
-            lp_ascii_filtered_view(bytes, relation_at, 3..=3, u8::is_ascii_graphic)?;
+        let (relation_kind, _) = admitted!(lp_ascii_filtered_view(
+            ctx,
+            bytes,
+            relation_at,
+            3..=3,
+            u8::is_ascii_graphic
+        ))?;
         if relation_at >= start
             || relation_kind != "310"
             || next_indexed_record_offset(bytes, relation_at + 1)?
@@ -366,14 +379,15 @@ pub(super) fn exact_component_insert_construction(
             (carrier_record_index, placements)
         } else if scope.class_tag.as_str() == "426" && scope.paired_class_tag.as_str() == "258" {
             let (carrier_record_index, role, role_offset) =
-                exact_component_insert_class_426_relation(
+                admitted!(exact_component_insert_class_426_relation(
+                    ctx,
                     bytes,
                     records,
                     relation_at,
                     start,
                     relation_record_index,
                     scope.record_index,
-                )?;
+                ))?;
             let role = admitted!(role.to_retained(ctx, "retain F3D UTF-16 string"));
             (
                 carrier_record_index,
@@ -420,12 +434,13 @@ pub(super) fn exact_component_insert_construction(
                 )
             } else if scope.class_tag.as_str() == "296" && scope.paired_class_tag.as_str() == "263"
             {
-                let (role, role_offset) = crate::xref::grouped_component_insert_identity(
+                let (role, role_offset) = admitted!(crate::xref::grouped_component_insert_identity(
+                    ctx,
                     bytes,
                     carrier_at,
                     relation_at,
                     carrier_record_index,
-                )?;
+                ))?;
                 let role = admitted!(role.to_retained(ctx, "retain F3D UTF-16 string"));
                 (
                     carrier_record_index,
@@ -436,12 +451,13 @@ pub(super) fn exact_component_insert_construction(
                 )
             } else if scope.class_tag.as_str() == "410" && scope.paired_class_tag.as_str() == "261"
             {
-                let (role, role_offset) = crate::xref::grouped_component_insert_identity_class380(
+                let (role, role_offset) = admitted!(crate::xref::grouped_component_insert_identity_class380(
+                    ctx,
                     bytes,
                     carrier_at,
                     relation_at,
                     carrier_record_index,
-                )?;
+                ))?;
                 let role = admitted!(role.to_retained(ctx, "retain F3D UTF-16 string"));
                 (
                     carrier_record_index,
@@ -452,12 +468,13 @@ pub(super) fn exact_component_insert_construction(
                 )
             } else if scope.class_tag.as_str() == "434" && scope.paired_class_tag.as_str() == "266"
             {
-                let (role, role_offset) = crate::xref::grouped_component_insert_identity_class341(
+                let (role, role_offset) = admitted!(crate::xref::grouped_component_insert_identity_class341(
+                    ctx,
                     bytes,
                     carrier_at,
                     relation_at,
                     carrier_record_index,
-                )?;
+                ))?;
                 let role = admitted!(role.to_retained(ctx, "retain F3D UTF-16 string"));
                 (
                     carrier_record_index,
@@ -574,110 +591,127 @@ pub(super) fn exact_component_insert_construction(
 }
 
 fn exact_component_insert_class_426_relation<'a>(
+    ctx: &DecodeContext<'_>,
     bytes: &'a [u8],
     records: &IndexedRecordOffsets,
     relation_at: usize,
     scope_at: usize,
     relation_record_index: u32,
     scope_record_index: u32,
-) -> Option<(u32, crate::bytes::utf16::Utf16View<'a>, usize)> {
-    let relation_end = relation_at + component_insert_relation_345::LEN;
-    let (relation_class, relation_after_tag) =
-        lp_ascii_filtered_view(bytes, relation_at, 3..=3, u8::is_ascii_digit)?;
-    if relation_class != "345"
-        || relation_after_tag != relation_at + 7
-        || View::u32_le_at(bytes, relation_after_tag)? != relation_record_index
-        || relation_at >= scope_at
-        || next_indexed_record_offset(bytes, relation_at + 1)? != relation_end
-        || bytes.get(
-            relation_at + component_insert_relation_345::INDEXED_HEADER + 11
-                ..relation_at + component_insert_relation_345::FIRST_MARKER,
-        )? != [0; 10]
-        || bytes.get(relation_at + component_insert_relation_345::FIRST_MARKER)
-            != Some(&component_insert_relation_345::FIRST_MARKER_VALUE)
-        || bytes.get(
-            relation_at + component_insert_relation_345::FIRST_CARRIER_RECORD_INDEX + 4
-                ..relation_at + component_insert_relation_345::SECOND_MARKER,
-        )? != [0; 8]
-        || bytes.get(relation_at + component_insert_relation_345::SECOND_MARKER)
-            != Some(&component_insert_relation_345::SECOND_MARKER_VALUE)
-        || bytes.get(
-            relation_at + component_insert_relation_345::SECOND_CHILD_RECORD_INDEX + 4
-                ..relation_at + component_insert_relation_345::SCOPE_MARKER,
-        )? != [0; 7]
-        || bytes.get(relation_at + component_insert_relation_345::SCOPE_MARKER)
-            != Some(&component_insert_relation_345::SCOPE_MARKER_VALUE)
-        || View::u32_le_at(
-            bytes,
-            relation_at + component_insert_relation_345::SCOPE_RECORD_INDEX,
-        )? != scope_record_index
-        || bytes.get(
-            relation_at + component_insert_relation_345::SCOPE_RECORD_INDEX + 4..relation_end,
-        )? != [0; 6]
-    {
-        return None;
+) -> Result<Option<(u32, crate::bytes::utf16::Utf16View<'a>, usize)>, CodecError> {
+    macro_rules! admitted {
+        ($result:expr) => {
+            match $result {
+                Ok(value) => value,
+                Err(error) => return Some(Err(error)),
+            }
+        };
     }
+    let parsed = (|| {
+        let relation_end = relation_at + component_insert_relation_345::LEN;
+        let (relation_class, relation_after_tag) =
+            admitted!(lp_ascii_filtered_view(ctx, bytes, relation_at, 3..=3, u8::is_ascii_digit))?;
+        if relation_class != "345"
+            || relation_after_tag != relation_at + 7
+            || View::u32_le_at(bytes, relation_after_tag)? != relation_record_index
+            || relation_at >= scope_at
+            || next_indexed_record_offset(bytes, relation_at + 1)? != relation_end
+            || bytes.get(
+                relation_at + component_insert_relation_345::INDEXED_HEADER + 11
+                    ..relation_at + component_insert_relation_345::FIRST_MARKER,
+            )? != [0; 10]
+            || bytes.get(relation_at + component_insert_relation_345::FIRST_MARKER)
+                != Some(&component_insert_relation_345::FIRST_MARKER_VALUE)
+            || bytes.get(
+                relation_at + component_insert_relation_345::FIRST_CARRIER_RECORD_INDEX + 4
+                    ..relation_at + component_insert_relation_345::SECOND_MARKER,
+            )? != [0; 8]
+            || bytes.get(relation_at + component_insert_relation_345::SECOND_MARKER)
+                != Some(&component_insert_relation_345::SECOND_MARKER_VALUE)
+            || bytes.get(
+                relation_at + component_insert_relation_345::SECOND_CHILD_RECORD_INDEX + 4
+                    ..relation_at + component_insert_relation_345::SCOPE_MARKER,
+            )? != [0; 7]
+            || bytes.get(relation_at + component_insert_relation_345::SCOPE_MARKER)
+                != Some(&component_insert_relation_345::SCOPE_MARKER_VALUE)
+            || View::u32_le_at(
+                bytes,
+                relation_at + component_insert_relation_345::SCOPE_RECORD_INDEX,
+            )? != scope_record_index
+            || bytes.get(
+                relation_at + component_insert_relation_345::SCOPE_RECORD_INDEX + 4..relation_end,
+            )? != [0; 6]
+        {
+            return None;
+        }
 
-    let paired_at = relation_end;
-    let (paired_class, paired_after_tag) =
-        lp_ascii_filtered_view(bytes, paired_at, 3..=3, u8::is_ascii_digit)?;
-    if paired_class != "258"
-        || paired_after_tag != paired_at + 7
-        || View::u32_le_at(bytes, paired_after_tag)? != relation_record_index
-    {
-        return None;
-    }
+        let paired_at = relation_end;
+        let (paired_class, paired_after_tag) =
+            admitted!(lp_ascii_filtered_view(ctx, bytes, paired_at, 3..=3, u8::is_ascii_digit))?;
+        if paired_class != "258"
+            || paired_after_tag != paired_at + 7
+            || View::u32_le_at(bytes, paired_after_tag)? != relation_record_index
+        {
+            return None;
+        }
 
-    let carrier_record_index = View::u32_le_at(
-        bytes,
-        relation_at + component_insert_relation_345::FIRST_CARRIER_RECORD_INDEX,
-    )?;
-    let child_record_index = View::u32_le_at(
-        bytes,
-        relation_at + component_insert_relation_345::SECOND_CHILD_RECORD_INDEX,
-    )?;
-    let child_at = records.first_at_or_after(paired_at + 11, child_record_index)?;
-    let child_end = child_at + component_insert_relation_child_393::LEN;
-    let (child_class, child_after_tag) =
-        lp_ascii_filtered_view(bytes, child_at, 3..=3, u8::is_ascii_digit)?;
-    if child_class != "393"
-        || child_after_tag != child_at + 7
-        || View::u32_le_at(bytes, child_after_tag)? != child_record_index
-        || next_indexed_record_offset(bytes, paired_at + 1)? != child_at
-        || next_indexed_record_offset(bytes, child_at + 1)? != child_end
-        || child_end != scope_at
-        || bytes
-            .get(child_at + 11..child_at + component_insert_relation_child_393::RELATION_MARKER)?
-            != [0; 20]
-        || bytes.get(child_at + component_insert_relation_child_393::RELATION_MARKER)
-            != Some(&component_insert_relation_child_393::RELATION_MARKER_VALUE)
-        || View::u32_le_at(
+        let carrier_record_index = View::u32_le_at(
             bytes,
-            child_at + component_insert_relation_child_393::RELATION_RECORD_INDEX,
-        )? != relation_record_index
-        || bytes.get(
-            child_at + component_insert_relation_child_393::RELATION_RECORD_INDEX + 4
-                ..child_at + component_insert_relation_child_393::OPAQUE_TOKEN,
-        )? != [0; 6]
-        || View::u64_le_at(
+            relation_at + component_insert_relation_345::FIRST_CARRIER_RECORD_INDEX,
+        )?;
+        let child_record_index = View::u32_le_at(
             bytes,
-            child_at + component_insert_relation_child_393::OPAQUE_TOKEN,
-        )
-        .is_none()
-        || bytes.get(child_at + component_insert_relation_child_393::OPAQUE_TOKEN + 8..child_end)?
-            != [0; 8]
-    {
-        return None;
-    }
+            relation_at + component_insert_relation_345::SECOND_CHILD_RECORD_INDEX,
+        )?;
+        let child_at = records.first_at_or_after(paired_at + 11, child_record_index)?;
+        let child_end = child_at + component_insert_relation_child_393::LEN;
+        let (child_class, child_after_tag) =
+            admitted!(lp_ascii_filtered_view(ctx, bytes, child_at, 3..=3, u8::is_ascii_digit))?;
+        if child_class != "393"
+            || child_after_tag != child_at + 7
+            || View::u32_le_at(bytes, child_after_tag)? != child_record_index
+            || next_indexed_record_offset(bytes, paired_at + 1)? != child_at
+            || next_indexed_record_offset(bytes, child_at + 1)? != child_end
+            || child_end != scope_at
+            || bytes
+                .get(child_at + 11..child_at + component_insert_relation_child_393::RELATION_MARKER)?
+                != [0; 20]
+            || bytes.get(child_at + component_insert_relation_child_393::RELATION_MARKER)
+                != Some(&component_insert_relation_child_393::RELATION_MARKER_VALUE)
+            || View::u32_le_at(
+                bytes,
+                child_at + component_insert_relation_child_393::RELATION_RECORD_INDEX,
+            )? != relation_record_index
+            || bytes.get(
+                child_at + component_insert_relation_child_393::RELATION_RECORD_INDEX + 4
+                    ..child_at + component_insert_relation_child_393::OPAQUE_TOKEN,
+            )? != [0; 6]
+            || View::u64_le_at(
+                bytes,
+                child_at + component_insert_relation_child_393::OPAQUE_TOKEN,
+            )
+            .is_none()
+            || bytes.get(child_at + component_insert_relation_child_393::OPAQUE_TOKEN + 8..child_end)?
+                != [0; 8]
+        {
+            return None;
+        }
 
-    let carrier_at = unique_indexed_record_before(records, carrier_record_index, relation_at)?;
-    let (role, role_offset) = crate::xref::grouped_component_insert_identity_class369(
-        bytes,
-        carrier_at,
-        relation_at,
-        carrier_record_index,
-    )?;
-    Some((carrier_record_index, role, role_offset))
+        let carrier_at = unique_indexed_record_before(records, carrier_record_index, relation_at)?;
+        let Some((role, role_offset)) = admitted!(
+            crate::xref::grouped_component_insert_identity_class369(
+                ctx,
+                bytes,
+                carrier_at,
+                relation_at,
+                carrier_record_index,
+            )
+        ) else {
+            return None;
+        };
+        Some(Ok((carrier_record_index, role, role_offset)))
+    })();
+    parsed.transpose()
 }
 
 fn exact_component_insert_carrier_334(
@@ -688,8 +722,16 @@ fn exact_component_insert_carrier_334(
     carrier_record_index: u32,
 ) -> Result<Option<(String, usize)>, CodecError> {
     let parsed = (|| {
+        macro_rules! admitted {
+            ($result:expr) => {
+                match $result {
+                    Ok(value) => value,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
         let (class_tag, after_tag) =
-            lp_ascii_filtered_view(bytes, carrier_at, 3..=3, u8::is_ascii_digit)?;
+            admitted!(lp_ascii_filtered_view(ctx, bytes, carrier_at, 3..=3, u8::is_ascii_digit))?;
         if class_tag != "334"
             || after_tag != carrier_at + 7
             || View::u32_le_at(bytes, after_tag)? != carrier_record_index
@@ -702,9 +744,9 @@ fn exact_component_insert_carrier_334(
         )?;
 
         let role_start = carrier_at + component_carrier_334::NEUTRON_ROLE;
-        Some(role_start)
+        Some(Ok(role_start))
     })();
-    let Some(role_start) = parsed else {
+    let Some(role_start) = parsed.transpose()? else {
         return Ok(None);
     };
     let Some((role, role_end)) = direct_utf16_role_until_tail(ctx, bytes, role_start, relation_at)?
@@ -999,7 +1041,7 @@ fn legacy_component_insert_placements(
     transform: crate::records::sketch_placement::SketchPlacementMatrix,
 ) -> Result<Vec<(String, usize, Option<usize>)>, CodecError> {
     let Some((class_tag, after_tag)) =
-        lp_ascii_filtered_view(bytes, carrier_at, 3..=3, u8::is_ascii_digit)
+        lp_ascii_filtered_view(ctx, bytes, carrier_at, 3..=3, u8::is_ascii_digit)?
     else {
         return Ok(Vec::new());
     };
@@ -1026,8 +1068,7 @@ fn legacy_component_insert_placements(
         let Some(after_asset_guid) = fixed_guid_end(bytes, after_role + 14) else {
             continue;
         };
-        let Some((asset_identity, after_asset_identity, _asset_reservation)) =
-            lp_utf16_bounded_scoped(
+        let Some(asset_identity) = lp_utf16_bounded_scoped(
                 ctx,
                 bytes,
                 after_asset_guid + 1,
@@ -1037,7 +1078,8 @@ fn legacy_component_insert_placements(
         else {
             continue;
         };
-        if !asset_identity
+        let after_asset_identity = asset_identity.1;
+        if !asset_identity.0
             .split_once('_')
             .is_some_and(|(guid, locator)| {
                 crate::bytes::is_guid_relaxed(guid) && locator.starts_with("urn:")
@@ -1049,8 +1091,7 @@ fn legacy_component_insert_placements(
         }
         let carrier_transform_at = after_asset_identity + 1;
         let after_transform = carrier_transform_at + 16 * 8;
-        let Some((repeated_identity, after_repeated_identity, _repeated_reservation)) =
-            lp_utf16_bounded_scoped(
+        let Some(repeated_identity) = lp_utf16_bounded_scoped(
                 ctx,
                 bytes,
                 after_transform + 4,
@@ -1060,8 +1101,9 @@ fn legacy_component_insert_placements(
         else {
             continue;
         };
+        let after_repeated_identity = repeated_identity.1;
         if rigid_transform_at(bytes, carrier_transform_at) == Some(transform)
-            && repeated_identity == asset_identity
+            && repeated_identity.0 == asset_identity.0
             && bytes.get(after_transform..after_transform + 4) == Some(&[0; 4])
             && bytes.get(after_repeated_identity..relation_at)
                 == Some(&[0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0])

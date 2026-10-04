@@ -23,8 +23,11 @@ fn typed_dimension_companions_refuse_collection_limit() {
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"273");
     bytes.extend_from_slice(&1394u32.to_le_bytes());
-    let mut pair =
-        parse_dimension_null_locus_pair(&bytes, 0, 1290, &HashSet::from([1109])).unwrap();
+    let mut pair = crate::test_support::with_decode_context(|ctx| {
+        parse_dimension_null_locus_pair(ctx, &bytes, 0, 1290, &HashSet::from([1109]))
+    })
+    .unwrap()
+    .unwrap();
     pair.id = "f3d:Design/BulkStream.dat:design-dimension-null-locus-pair#0".into();
 
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));

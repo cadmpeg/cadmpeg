@@ -19,22 +19,38 @@ use crate::records::feature::direct_face::DesignDirectFaceOperation;
 use crate::records::feature::direct_face::DesignMoveOperation;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use std::collections::HashMap;
 
 pub(super) fn exact_direct_face_operation(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-) -> Option<DesignDirectFaceOperation> {
-    let start = usize::try_from(scope.byte_offset()).ok()?;
-    if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Shell)
-        && scope.class_tag.as_str() == "369"
-        && scope.paired_class_tag.as_str() == "261"
-    {
-        return exact_shell_class_369_261(bytes, records, scope);
-    }
-    match design_feature_family(&scope.kind())? {
+) -> Result<Option<DesignDirectFaceOperation>, CodecError> {
+    let parsed = (|| {
+        macro_rules! admitted_option {
+            ($result:expr) => {
+                match $result {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
+        let start = usize::try_from(scope.byte_offset()).ok()?;
+        if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Shell)
+            && scope.class_tag.as_str() == "369"
+            && scope.paired_class_tag.as_str() == "261"
+        {
+            let operation = match exact_shell_class_369_261(ctx, bytes, records, scope) {
+                Ok(operation) => operation,
+                Err(error) => return Some(Err(error)),
+            };
+            return operation.map(Ok);
+        }
+        match design_feature_family(&scope.kind())? {
         DesignFeatureFamily::OffsetFaces
             if matches!(
                 (
@@ -48,18 +64,22 @@ pub(super) fn exact_direct_face_operation(
             if scope.reference_members().values().next_back() != Some(&distance_record_index) {
                 return None;
             }
-            let scalar = exact_fixed_scalar(bytes, records, distance_record_index)?;
-            Some(DesignDirectFaceOperation::OffsetFaces(
+            let scalar = admitted_option!(exact_fixed_scalar(ctx, bytes, records, distance_record_index));
+            Some(Ok(DesignDirectFaceOperation::OffsetFaces(
                 direct_face::DesignOffsetFacesOperation {
                     distance: scalar.value,
                     distance_record_index,
                     distance_offset: scalar.value_offset,
                 },
-            ))
+            )))
         }
         DesignFeatureFamily::Thicken if scope.reference_members().len() >= 3 => {
-            if let Some(operation) = exact_legacy_thicken_class_347(bytes, records, scope) {
-                return Some(operation);
+            let legacy_operation = match exact_legacy_thicken_class_347(ctx, bytes, records, scope) {
+                Ok(operation) => operation,
+                Err(error) => return Some(Err(error)),
+            };
+            if let Some(operation) = legacy_operation {
+                return Some(Ok(operation));
             }
             let (reference_offset, thickness_is_first) = match parameter_scope_payload_length(scope)
             {
@@ -99,17 +119,17 @@ pub(super) fn exact_direct_face_operation(
             if expected_thickness != Some(&thickness_record_index) {
                 return None;
             }
-            let scalar = exact_fixed_scalar(bytes, records, thickness_record_index)?;
+            let scalar = admitted_option!(exact_fixed_scalar(ctx, bytes, records, thickness_record_index));
             if scalar.value.get() == 0.0 {
                 return None;
             }
-            Some(DesignDirectFaceOperation::Thicken(
+            Some(Ok(DesignDirectFaceOperation::Thicken(
                 direct_face::DesignThickenOperation {
                     signed_thickness: scalar.value,
                     thickness_record_index,
                     thickness_offset: scalar.value_offset,
                 },
-            ))
+            )))
         }
         DesignFeatureFamily::Shell if scope.reference_members().len() == 3 => {
             let (thickness_record_index, thickness_is_first, outward, outward_offset) =
@@ -179,8 +199,8 @@ pub(super) fn exact_direct_face_operation(
             if expected_thickness != Some(&thickness_record_index) {
                 return None;
             }
-            let scalar = exact_fixed_scalar(bytes, records, thickness_record_index)?;
-            Some(DesignDirectFaceOperation::Shell(
+            let scalar = admitted_option!(exact_fixed_scalar(ctx, bytes, records, thickness_record_index));
+            Some(Ok(DesignDirectFaceOperation::Shell(
                 direct_face::DesignShellOperation {
                     thickness: cadmpeg_ir::scalar::PositiveReal::new(scalar.value.get())?,
                     thickness_record_index,
@@ -188,22 +208,26 @@ pub(super) fn exact_direct_face_operation(
                     outward,
                     outward_offset: u64::try_from(outward_offset).ok()?,
                 },
-            ))
+            )))
         }
         _ => None,
-    }
+        }
+    })();
+    parsed.transpose()
 }
 
 pub(super) fn exact_move_operation(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-) -> Option<DesignMoveOperation> {
-    if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Move) {
-        return None;
-    }
-    let mut candidate = None;
-    for record_index in scope.reference_members().values() {
+) -> Result<Option<DesignMoveOperation>, CodecError> {
+    let parsed = (|| {
+        if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Move) {
+            return None;
+        }
+        let mut candidate = None;
+        for record_index in scope.reference_members().values() {
         for (start, paired) in records.frames(*record_index) {
             let class_tag_len = usize::try_from(View::u32_le_at(bytes, start)?).ok()?;
             if class_tag_len > 2000 {
@@ -230,11 +254,21 @@ pub(super) fn exact_move_operation(
                 "456" => Some("258"),
                 _ => None,
             };
-            if expected_paired_class.is_some_and(|expected| {
-                lp_ascii_filtered_view(bytes, paired, 3..=3, u8::is_ascii_digit)
-                    .is_none_or(|(paired_class_tag, _)| paired_class_tag != expected)
-            }) {
-                continue;
+            if let Some(expected) = expected_paired_class {
+                let paired_class = match lp_ascii_filtered_view(
+                    ctx,
+                    bytes,
+                    paired,
+                    3..=3,
+                    u8::is_ascii_digit,
+                ) {
+                    Ok(Some((paired_class_tag, _))) => Some(paired_class_tag),
+                    Ok(None) => None,
+                    Err(error) => return Some(Err(error)),
+                };
+                if paired_class != Some(expected) {
+                    continue;
+                }
             }
             if bytes.get(start + 47) != Some(&0) {
                 continue;
@@ -267,8 +301,10 @@ pub(super) fn exact_move_operation(
                 return None;
             }
         }
-    }
-    candidate
+        }
+        candidate.map(Ok)
+    })();
+    parsed.transpose()
 }
 
 /// Return the fixed envelope offsets admitted for one Move transform class.

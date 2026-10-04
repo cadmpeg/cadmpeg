@@ -25,6 +25,7 @@ pub(super) fn fixed_kind_path_operations(
     mut scope: DesignParameterScope,
     thicken_group: &DesignConstructionOperandGroup,
 ) {
+    let bytes_decode_ctx = cadmpeg_test_support::service_decode_context();
     let loft_start = bytes.len();
     let mut loft = vec![0; 376];
     loft[29..33].copy_from_slice(&1u32.to_le_bytes());
@@ -45,11 +46,12 @@ pub(super) fn fixed_kind_path_operations(
         .unwrap();
     assert_eq!(
         exact_path_feature_construction(
+            &bytes_decode_ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &loft_scope,
             &[],
-        ),
+        ).unwrap(),
         Some(DesignPathFeatureConstruction::Loft(
             crate::records::feature::path_features::DesignLoftConstruction {
                 operation: DesignExtrudeOperation::Join,
@@ -355,11 +357,12 @@ pub(super) fn fixed_kind_path_operations(
         .unwrap();
     assert_eq!(
         exact_path_feature_construction(
+            &bytes_decode_ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &sweep_scope,
             &[],
-        ),
+        ).unwrap(),
         Some(DesignPathFeatureConstruction::Sweep(
             crate::records::feature::path_features::DesignSweepConstruction {
                 operation: DesignExtrudeOperation::NewBody,
@@ -375,11 +378,12 @@ pub(super) fn fixed_kind_path_operations(
     sweep_scope.id = "stream:sweep-scope".into();
     {
         let value = exact_path_feature_construction(
+            &bytes_decode_ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &sweep_scope,
             &[],
-        );
+        ).unwrap();
         sweep_scope
             .try_edit(|draft| {
                 draft.payload =
@@ -668,11 +672,12 @@ pub(super) fn fixed_kind_path_operations(
         .unwrap();
     assert_eq!(
         exact_path_feature_construction(
+            &bytes_decode_ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &pipe_scope,
             &[],
-        ),
+        ).unwrap(),
         Some(DesignPathFeatureConstruction::Pipe(
             crate::records::feature::path_features::DesignPipeConstruction {
                 operation: DesignExtrudeOperation::NewBody,
@@ -762,11 +767,12 @@ pub(super) fn fixed_kind_path_operations(
         .unwrap();
     assert_eq!(
         exact_path_feature_construction(
+            &bytes_decode_ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &owner_pipe_scope,
             &owner_pipe_owners,
-        ),
+        ).unwrap(),
         Some(DesignPathFeatureConstruction::Pipe(
             crate::records::feature::path_features::DesignPipeConstruction {
                 operation: DesignExtrudeOperation::NewBody,
@@ -793,11 +799,12 @@ pub(super) fn fixed_kind_path_operations(
         crate::records::parameters::DesignParameterOwner::try_from(wire).unwrap();
     assert_eq!(
         exact_path_feature_construction(
+            &bytes_decode_ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &owner_pipe_scope,
             &wrong_owner_class,
-        ),
+        ).unwrap(),
         None
     );
 
@@ -870,11 +877,12 @@ pub(super) fn fixed_kind_path_operations(
             .unwrap();
         assert_eq!(
             exact_path_feature_construction(
+                &bytes_decode_ctx,
                 &bytes,
                 &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
                 &legacy_scope,
                 &[],
-            ),
+            ).unwrap(),
             Some(DesignPathFeatureConstruction::Pipe(
                 crate::records::feature::path_features::DesignPipeConstruction {
                     operation: DesignExtrudeOperation::NewBody,

@@ -341,9 +341,12 @@ fn top_level_manifest_rejects_trailing_bytes() {
 #[test]
 fn generated_asset_manifest_has_a_joinable_header() {
     let bytes = generated_design_asset().unwrap();
-    let header =
-        parse_asset_header(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
-    assert!(header.base_name.eq_str(GENERATED_DESIGN_ASSET_BASE));
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let header = parse_asset_header(&ctx, &bytes).unwrap();
+    assert!(header
+        .base_name
+        .eq_str(&ctx, GENERATED_DESIGN_ASSET_BASE)
+        .unwrap());
     assert_eq!(
         header.kind,
         AssetKind::Design {
@@ -373,9 +376,12 @@ fn revision_zero_design_asset_has_no_named_capability_registry() {
     push_ascii(&mut bytes, "Design").unwrap();
     push_ascii(&mut bytes, "Design").unwrap();
 
-    let header =
-        parse_asset_header(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
-    assert!(header.base_name.eq_str("Legacy Design"));
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let header = parse_asset_header(&ctx, &bytes).unwrap();
+    assert!(header
+        .base_name
+        .eq_str(&ctx, "Legacy Design")
+        .unwrap());
     assert_eq!(
         header.kind,
         AssetKind::Design {
@@ -410,9 +416,12 @@ fn revision_ten_design_asset_carries_linked_document_triples() {
     push_ascii(&mut bytes, "Design").unwrap();
     push_ascii(&mut bytes, "Design").unwrap();
 
-    let header =
-        parse_asset_header(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
-    assert!(header.base_name.eq_str("Linked Design"));
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let header = parse_asset_header(&ctx, &bytes).unwrap();
+    assert!(header
+        .base_name
+        .eq_str(&ctx, "Linked Design")
+        .unwrap());
     assert_eq!(
         header.kind,
         AssetKind::Design {
@@ -431,9 +440,12 @@ fn revision_fourteen_uses_the_ascii_subtype_header() {
     bytes.push(0);
     push_ascii(&mut bytes, "").unwrap();
 
-    let header =
-        parse_asset_header(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
-    assert!(header.base_name.eq_str("Design 14"));
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let header = parse_asset_header(&ctx, &bytes).unwrap();
+    assert!(header
+        .base_name
+        .eq_str(&ctx, "Design 14")
+        .unwrap());
     assert_eq!(
         header.kind,
         AssetKind::Design {
@@ -460,9 +472,12 @@ fn current_revisions_use_the_current_asset_header() {
         bytes.push(0);
         push_ascii(&mut bytes, "").unwrap();
 
-        let header =
-            parse_asset_header(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
-        assert!(header.base_name.eq_str("Intermediate Design"));
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let header = parse_asset_header(&ctx, &bytes).unwrap();
+        assert!(header
+            .base_name
+            .eq_str(&ctx, "Intermediate Design")
+            .unwrap());
         assert_eq!(
             header.kind,
             AssetKind::Design {
@@ -489,9 +504,12 @@ fn an_unknown_revision_uses_the_current_asset_header() {
     bytes.push(0);
     push_ascii(&mut bytes, "").unwrap();
 
-    let header =
-        parse_asset_header(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
-    assert!(header.base_name.eq_str("Future Design"));
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let header = parse_asset_header(&ctx, &bytes).unwrap();
+    assert!(header
+        .base_name
+        .eq_str(&ctx, "Future Design")
+        .unwrap());
     assert_eq!(
         header.kind,
         AssetKind::Design {
@@ -569,7 +587,10 @@ fn manifest_discarded_fields_and_failed_tails_do_not_retain_text() {
     policy.limits.max_retained_bytes = 0;
     crate::test_support::with_decode_policy(&policy, |ctx| {
         let header = parse_asset_header(ctx, &asset).unwrap();
-        assert!(header.base_name.eq_str(GENERATED_DESIGN_ASSET_BASE));
+        assert!(header
+            .base_name
+            .eq_str(ctx, GENERATED_DESIGN_ASSET_BASE)
+            .unwrap());
         assert_eq!(
             header.kind,
             AssetKind::Design {

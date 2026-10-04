@@ -29,7 +29,7 @@ use crate::records::parameters::DesignParameterOwner;
 use crate::records::recipes::ConstructionRecipe;
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use cadmpeg_core::container::ContainerRole;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::PositiveReal;
 use std::collections::HashMap;
@@ -41,10 +41,11 @@ use std::collections::HashMap;
 /// Its exact compact scalar envelope carries count two and has no decoded
 /// Design-parameter backlink.
 fn exact_legacy_mirror_scope_count(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-) -> Option<(u32, u64)> {
+) -> Option<Result<(u32, u64), CodecError>> {
     if (scope.class_tag.as_str(), scope.paired_class_tag.as_str()) != ("441", "267") {
         return None;
     }
@@ -63,7 +64,10 @@ fn exact_legacy_mirror_scope_count(
         return None;
     }
     let frame = bytes.get(*start..*paired)?;
-    let owner = crate::design::decode::parameters::parse_parameter_owner(frame)?;
+    let owner = match crate::design::decode::parameters::parse_parameter_owner(ctx, frame)? {
+        Ok(owner) => owner,
+        Err(error) => return Some(Err(error)),
+    };
     if owner.class_tag.as_str() != "426"
         || owner.record_index != count_record_index
         || owner.scope_record_index != scope.record_index
@@ -80,12 +84,12 @@ fn exact_legacy_mirror_scope_count(
     {
         return None;
     }
-    Some((
+    Some(Ok((
         count_record_index,
         owner
             .evaluated_value_offset
             .absolute(u64::try_from(*start).ok()?)?,
-    ))
+    )))
 }
 
 /// Parse a legacy Mirror scalar lane.
@@ -399,7 +403,8 @@ pub(crate) fn bind_mirror_constructions(
                 && owner.local_ordinal() == 0
                 && owner.evaluated_value().get() == 2.0
         }));
-        let inline_count = exact_legacy_mirror_scope_count(bytes, records, &scopes[index]);
+        let inline_count =
+            exact_legacy_mirror_scope_count(ctx, bytes, records, &scopes[index]).transpose()?;
         let inline_tolerance = exact_legacy_mirror_scope_tolerance(bytes, &scopes[index]);
         let tolerance = unique_match(
             owners

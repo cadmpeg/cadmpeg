@@ -57,6 +57,7 @@ fn tested_rectangular_pattern_instances(
 
 #[test]
 fn circular_pattern_identity_wrapper_closes_on_its_persistent_identity() {
+    let bytes_decode_ctx = cadmpeg_test_support::service_decode_context();
     let mut bytes = Vec::new();
     let record_index = 80;
     indexed_header(&mut bytes, *b"308", record_index);
@@ -78,19 +79,21 @@ fn circular_pattern_identity_wrapper_closes_on_its_persistent_identity() {
 
     assert_eq!(
         exact_pattern_identity_wrapper(
+            &bytes_decode_ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             record_index,
-        ),
+        ).unwrap(),
         Some((503, u64_from_index(identity_offset)))
     );
     bytes[identity_offset - 1] = 1;
     assert_eq!(
         exact_pattern_identity_wrapper(
+            &bytes_decode_ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             record_index,
-        ),
+        ).unwrap(),
         None
     );
 }

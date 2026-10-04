@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::bytes::lp_utf16_bytes;
+use crate::bytes::lp_utf16_fixture_bytes;
 
 #[test]
 fn browser_body_appearance_joins_through_browser_node_guid() {
@@ -29,9 +29,9 @@ fn browser_body_appearance_joins_through_browser_node_guid() {
             "BA5EE55E-9982-449B-9D66-9F036540E140",
             "Prism-090",
         ] {
-            bytes.extend(lp_utf16_bytes(value).expect("fixture UTF-16 code-unit count fits u32"));
+            bytes.extend(lp_utf16_fixture_bytes(value).expect("fixture UTF-16 code-unit count fits u32"));
         }
-        bytes.extend(lp_utf16_bytes(node_guid).expect("fixture UTF-16 code-unit count fits u32"));
+        bytes.extend(lp_utf16_fixture_bytes(node_guid).expect("fixture UTF-16 code-unit count fits u32"));
         bytes.push(0);
         bytes.extend([0x01, 0x01]);
         bytes.extend(entity_suffix.to_le_bytes());
@@ -136,10 +136,10 @@ fn face_appearance_assignment_rejects_entity_id_and_uppercase_targets() {
 fn legacy_face_appearance_assignment_rejects_partial_and_malformed_envelopes() {
     let face_guid = "cd92d0f6-5b31-4bbf-84ae-4611f435537e";
     let visual_guid = "F0EF16AD-4AD3-4D25-9AA8-ECF48936A48F_Post2015";
-    let mut partial = lp_utf16_bytes(face_guid).expect("fixture UTF-16 code-unit count fits u32");
-    partial.extend(lp_utf16_bytes(visual_guid).expect("fixture UTF-16 code-unit count fits u32"));
+    let mut partial = lp_utf16_fixture_bytes(face_guid).expect("fixture UTF-16 code-unit count fits u32");
+    partial.extend(lp_utf16_fixture_bytes(visual_guid).expect("fixture UTF-16 code-unit count fits u32"));
     partial.extend(
-        lp_utf16_bytes("BA5EE55E-9982-449B-9D66-9F036540E140")
+        lp_utf16_fixture_bytes("BA5EE55E-9982-449B-9D66-9F036540E140")
             .expect("fixture UTF-16 code-unit count fits u32"),
     );
     assert!(crate::materials::face_appearance_assignments(&partial).is_empty());
@@ -152,7 +152,7 @@ fn legacy_face_appearance_assignment_rejects_partial_and_malformed_envelopes() {
         None,
         "PrismOpaque",
     );
-    let carrier_at = lp_utf16_bytes(face_guid)
+    let carrier_at = lp_utf16_fixture_bytes(face_guid)
         .expect("fixture UTF-16 code-unit count fits u32")
         .len()
         + 4 * size_of::<f32>();
@@ -168,25 +168,25 @@ fn legacy_face_appearance_entry(
     display_name: Option<&str>,
     selector: &str,
 ) -> Vec<u8> {
-    let mut bytes = lp_utf16_bytes(face_guid).expect("fixture UTF-16 code-unit count fits u32");
+    let mut bytes = lp_utf16_fixture_bytes(face_guid).expect("fixture UTF-16 code-unit count fits u32");
     for component in color {
         bytes.extend(component.to_le_bytes());
     }
     bytes.extend([1, 1]);
     bytes.extend([0; 9]);
     bytes.push(selector_kind);
-    bytes.extend(lp_utf16_bytes(visual_guid).expect("fixture UTF-16 code-unit count fits u32"));
+    bytes.extend(lp_utf16_fixture_bytes(visual_guid).expect("fixture UTF-16 code-unit count fits u32"));
     bytes.extend(
-        lp_utf16_bytes("BA5EE55E-9982-449B-9D66-9F036540E140")
+        lp_utf16_fixture_bytes("BA5EE55E-9982-449B-9D66-9F036540E140")
             .expect("fixture UTF-16 code-unit count fits u32"),
     );
     if let Some(display_name) = display_name {
         bytes
-            .extend(lp_utf16_bytes(display_name).expect("fixture UTF-16 code-unit count fits u32"));
+            .extend(lp_utf16_fixture_bytes(display_name).expect("fixture UTF-16 code-unit count fits u32"));
     } else {
         bytes.extend(0_u32.to_le_bytes());
     }
-    bytes.extend(lp_utf16_bytes(selector).expect("fixture UTF-16 code-unit count fits u32"));
+    bytes.extend(lp_utf16_fixture_bytes(selector).expect("fixture UTF-16 code-unit count fits u32"));
     bytes.extend(0_f32.to_le_bytes());
     bytes.extend(1_f32.to_le_bytes());
     bytes
@@ -199,23 +199,23 @@ fn modern_face_appearance_assignment_uses_second_framed_lowercase_guid() {
     let face_guid = "33333333-3333-3333-3333-333333333333";
     let visual_guid = "F0EF16AD-4AD3-4D25-9AA8-ECF48936A48F_Post2015";
     let mut bytes =
-        lp_utf16_bytes(unrelated_guid).expect("fixture UTF-16 code-unit count fits u32");
-    bytes.extend(lp_utf16_bytes(first_guid).expect("fixture UTF-16 code-unit count fits u32"));
+        lp_utf16_fixture_bytes(unrelated_guid).expect("fixture UTF-16 code-unit count fits u32");
+    bytes.extend(lp_utf16_fixture_bytes(first_guid).expect("fixture UTF-16 code-unit count fits u32"));
     bytes.extend([0xa5; 8]);
     bytes.extend([0; 8]);
     bytes.extend(1_u32.to_le_bytes());
     bytes.extend([1, 1, 0, 0, 0]);
-    bytes.extend(lp_utf16_bytes(face_guid).expect("fixture UTF-16 code-unit count fits u32"));
+    bytes.extend(lp_utf16_fixture_bytes(face_guid).expect("fixture UTF-16 code-unit count fits u32"));
     bytes.extend([0; 12]);
     bytes.extend(1_f32.to_le_bytes());
     bytes.extend([1, 1]);
     bytes.extend([0; 10]);
     for value in [visual_guid, "08861000-1D69-CF2A-C082-CBD98E7E5D7F"] {
-        bytes.extend(lp_utf16_bytes(value).expect("fixture UTF-16 code-unit count fits u32"));
+        bytes.extend(lp_utf16_fixture_bytes(value).expect("fixture UTF-16 code-unit count fits u32"));
     }
     bytes.extend(0_u32.to_le_bytes());
     bytes.extend(
-        lp_utf16_bytes("005E1000-55CE-AFB6-81A1-36E3EF077C5F")
+        lp_utf16_fixture_bytes("005E1000-55CE-AFB6-81A1-36E3EF077C5F")
             .expect("fixture UTF-16 code-unit count fits u32"),
     );
     let out = crate::materials::face_appearance_assignments(&bytes);
@@ -225,10 +225,10 @@ fn modern_face_appearance_assignment_uses_second_framed_lowercase_guid() {
     assert_eq!(out[0].color, None);
 
     let mut malformed = bytes;
-    let first_gap_at = lp_utf16_bytes(unrelated_guid)
+    let first_gap_at = lp_utf16_fixture_bytes(unrelated_guid)
         .expect("fixture UTF-16 code-unit count fits u32")
         .len()
-        + lp_utf16_bytes(first_guid)
+        + lp_utf16_fixture_bytes(first_guid)
             .expect("fixture UTF-16 code-unit count fits u32")
             .len();
     malformed[first_gap_at + 8] = 1;
@@ -243,11 +243,11 @@ fn modern_face_appearance_assignment_requires_the_first_guid_carrier() {
         "F0EF16AD-4AD3-4D25-9AA8-ECF48936A48F_Post2015",
         "08861000-1D69-CF2A-C082-CBD98E7E5D7F",
     ] {
-        bytes.extend(lp_utf16_bytes(value).expect("fixture UTF-16 code-unit count fits u32"));
+        bytes.extend(lp_utf16_fixture_bytes(value).expect("fixture UTF-16 code-unit count fits u32"));
     }
     bytes.extend(0_u32.to_le_bytes());
     bytes.extend(
-        lp_utf16_bytes("005E1000-55CE-AFB6-81A1-36E3EF077C5F")
+        lp_utf16_fixture_bytes("005E1000-55CE-AFB6-81A1-36E3EF077C5F")
             .expect("fixture UTF-16 code-unit count fits u32"),
     );
     assert!(crate::materials::face_appearance_assignments(&bytes).is_empty());
@@ -262,11 +262,11 @@ fn modern_body_appearance_is_not_a_face_assignment() {
         "F0EF16AD-4AD3-4D25-9AA8-ECF48936A48F_Post2015",
         "08861000-1D69-CF2A-C082-CBD98E7E5D7F",
     ] {
-        bytes.extend(lp_utf16_bytes(value).expect("fixture UTF-16 code-unit count fits u32"));
+        bytes.extend(lp_utf16_fixture_bytes(value).expect("fixture UTF-16 code-unit count fits u32"));
     }
     bytes.extend(0_u32.to_le_bytes());
     bytes.extend(
-        lp_utf16_bytes("005E1000-55CE-AFB6-81A1-36E3EF077C5F")
+        lp_utf16_fixture_bytes("005E1000-55CE-AFB6-81A1-36E3EF077C5F")
             .expect("fixture UTF-16 code-unit count fits u32"),
     );
     assert!(crate::materials::face_appearance_assignments(&bytes).is_empty());
