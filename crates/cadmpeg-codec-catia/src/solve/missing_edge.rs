@@ -474,6 +474,7 @@ pub(crate) fn expand_deferred_edge_port_components(
     }
     let mut changed = true;
     while changed {
+        ctx.charge_work(1, "catia_missing_edge_iteration")?;
         changed = false;
         for (edge, ports) in edge_ports.iter().enumerate() {
             if !deferred_edges[edge] && !ports.iter().any(|port| deferred_ports.contains(port)) {
@@ -2980,6 +2981,9 @@ fn standard_mesh_missing_edge_assignment_domains(
             }
             let mut trails = Vec::<EndpointTrail>::new();
             while !unseen.is_empty() {
+                if let Err(error) = ctx.charge_work(1, "catia_missing_edge_iteration") {
+                    return Some(Err(error));
+                }
                 let first = unseen
                     .iter()
                     .copied()
@@ -2999,6 +3003,9 @@ fn standard_mesh_missing_edge_assignment_domains(
                 let mut edge = first;
                 let mut trail = Vec::new();
                 loop {
+                    if let Err(error) = ctx.charge_work(1, "catia_missing_edge_iteration") {
+                        return Some(Err(error));
+                    }
                     if !unseen.remove(&edge) {
                         break;
                     }
@@ -4095,6 +4102,7 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
     };
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     loop {
+        ctx.charge_work(1, "catia_missing_edge_iteration")?;
         let before = (
             faces.iter().map(Vec::len).sum::<usize>(),
             candidates.iter().map(Vec::len).sum::<usize>(),
@@ -4328,6 +4336,9 @@ fn standard_mesh_assignment_corner_points(
             }
         }
         loop {
+            if let Err(error) = ctx.charge_work(1, "catia_missing_edge_iteration") {
+                return Some(Err(error));
+            }
             let before = corner_points.values().map(HashSet::len).sum::<usize>();
             for &(left, right, pair) in &run_constraints {
                 let left_points = corner_points.get(&left)?;
@@ -4468,6 +4479,7 @@ fn standard_mesh_pruned_missing_edge_endpoint_assignments(
         return Ok(None);
     };
     loop {
+        ctx.charge_work(1, "catia_missing_edge_iteration")?;
         let before = (
             faces.iter().map(Vec::len).sum::<usize>(),
             faces
@@ -4809,6 +4821,9 @@ pub(crate) fn propagate_edge_port_points_with_ordered_seeds(
             Err(error) => return Some(Err(error)),
         };
         while let Some(edge) = queue.pop_front() {
+            if let Err(error) = ctx.charge_work(1, "catia_missing_edge_iteration") {
+                return Some(Err(error));
+            }
             queued[edge] = false;
             let ports = edge_ports[edge];
             let inserted = if let Some([left, right]) = resolved[edge] {
@@ -5128,6 +5143,7 @@ impl PortCandidateSearch<'_, '_> {
         }
         let mut propagated = Vec::new();
         let branch = loop {
+            self.ctx.charge_work(1, "catia_missing_edge_iteration")?;
             let mut best = None;
             let mut progress = false;
             let mut incomplete = false;
@@ -5482,6 +5498,7 @@ pub(crate) fn motif_port_points(
         at += 3;
     }
     while trims.get(at).is_some_and(|record| record.kind == 0x4a) {
+        ctx.charge_work(1, "catia_missing_edge_iteration")?;
         let Some((first, last)) = columns(&trims[at]) else {
             return Ok(None);
         };
@@ -5490,6 +5507,7 @@ pub(crate) fn motif_port_points(
         at += 1;
     }
     while at < trims.len() {
+        ctx.charge_work(1, "catia_missing_edge_iteration")?;
         if trims.get(at..at + 3).is_some_and(|records| {
             records[0].kind == 0x42 && records[1].kind == 0x4a && records[2].kind == 0x42
         }) {

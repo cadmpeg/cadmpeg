@@ -379,6 +379,7 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
             }
         }
         while let Some(face) = queue.pop_front() {
+            self.ctx.charge_work(1, "catia_selection_search_iteration")?;
             if !budget.charge() {
                 return Ok(true);
             }
@@ -1468,6 +1469,7 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
         }
         let mut index = 0;
         while index < options.len() {
+            self.ctx.charge_work(1, "catia_selection_search_iteration")?;
             if options[index].2.root_count(self.ctx)? < self.vertex_points.len() {
                 options.remove(index);
             } else {

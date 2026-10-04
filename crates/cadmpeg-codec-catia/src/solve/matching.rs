@@ -70,6 +70,7 @@ pub(crate) fn distinct_domain_matching_with_budget<'a>(
         required_domain = Some(domain);
     }
     while matched_count < domains.len() {
+        ctx.charge_work(1, "catia_matching_iteration")?;
         let mut distance = ctx.alloc_filled(domains.len(), None, "catia_match_distance")?;
         let mut queue = VecDeque::new();
         for root in 0..domains.len() {
@@ -80,6 +81,7 @@ pub(crate) fn distinct_domain_matching_with_budget<'a>(
         }
         let mut shortest = None;
         while let Some(root) = queue.pop_front() {
+            ctx.charge_work(1, "catia_matching_iteration")?;
             let Some(root_distance) = distance[root] else {
                 continue;
             };
@@ -118,12 +120,13 @@ pub(crate) fn distinct_domain_matching_with_budget<'a>(
             ctx.push_vec(&mut roots, start, "catia_match_augmenting_roots")?;
             let mut free_point = None;
             while let Some(&root) = roots.last() {
+                ctx.charge_work(1, "catia_matching_iteration")?;
                 let mut advanced = false;
                 let root_distance = distance[root];
                 while cursor[root] < domains[root].len() {
+                    charge_matching_work(ctx, budget)?;
                     let point = domains[root][cursor[root]];
                     cursor[root] += 1;
-                    charge_matching_work(ctx, budget)?;
                     if edge_constraint == Some(MatchingEdgeConstraint::Exclude(root, point)) {
                         continue;
                     }
@@ -233,6 +236,7 @@ pub(super) fn repair_distinct_domain_matching_with_budget<'a>(
         seen_domains[start] = true;
         let mut free_point = None;
         while let Some(domain) = queue.pop_front() {
+            ctx.charge_work(1, "catia_matching_iteration")?;
             for &point in domains[domain] {
                 charge_matching_work(ctx, budget)?;
                 if point >= point_count || seen_points[point] {
@@ -258,6 +262,7 @@ pub(super) fn repair_distinct_domain_matching_with_budget<'a>(
             return Ok(None);
         };
         loop {
+            ctx.charge_work(1, "catia_matching_iteration")?;
             let Some(domain) = via_domain[point] else {
                 return Ok(None);
             };
@@ -338,6 +343,7 @@ pub(crate) fn retain_distinct_matching_supports(
         let mut stack = Vec::new();
         ctx.push_vec(&mut stack, (start, 0usize), "catia_match_support_stack")?;
         while let Some((node, edge_index)) = stack.pop() {
+            ctx.charge_work(1, "catia_matching_iteration")?;
             if let Some(&next) = graph[node].get(edge_index) {
                 ctx.push_vec(
                     &mut stack,
@@ -365,6 +371,7 @@ pub(crate) fn retain_distinct_matching_supports(
         let mut stack = Vec::new();
         ctx.push_vec(&mut stack, start, "catia_match_support_component_stack")?;
         while let Some(node) = stack.pop() {
+            ctx.charge_work(1, "catia_matching_iteration")?;
             for &next in &reverse[node] {
                 charge_matching_work(ctx, budget)?;
                 if component[next].is_none() {
@@ -386,6 +393,7 @@ pub(crate) fn retain_distinct_matching_supports(
         }
     }
     while let Some(node) = queue.pop_front() {
+        ctx.charge_work(1, "catia_matching_iteration")?;
         for &previous in &reverse[node] {
             charge_matching_work(ctx, budget)?;
             if !reaches_free[previous] {
@@ -466,6 +474,7 @@ pub(crate) fn unique_coordinate_bijection(
             incoming_slot[start] = None;
             let mut free_slot = None;
             while let Some(vertex) = queue.pop_front() {
+                ctx.charge_work(1, "catia_matching_iteration")?;
                 let mut slots = Vec::new();
                 if let Some((_, class)) =
                     forced.filter(|(forced_vertex, _)| *forced_vertex == vertex)
@@ -722,9 +731,9 @@ mod tests {
     #[test]
     fn coordinate_bijection_refuses_unadmitted_matching_visits() {
         let domains = [HashSet::from([0_usize])];
-        // Domain and order sorts include both key operands; four initialized matching vectors precede visits.
+        // Domain/order sorts, four initialized matching vectors and the first queue step precede slot projection.
         let index_bytes = u64::try_from(std::mem::size_of::<usize>()).expect("index bytes");
-        let before_visits = 9 + 48 * index_bytes + 7 + 96 * index_bytes;
+        let before_visits = 9 + 48 * index_bytes + 7 + 96 * index_bytes + 1;
         crate::test_support::with_work_limit(before_visits, |ctx| {
             let cadmpeg_core::CodecError::ResourceLimit(limit) =
                 super::unique_coordinate_bijection(ctx, &domains, &[[0.0; 3]])
