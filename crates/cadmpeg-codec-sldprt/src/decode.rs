@@ -1933,7 +1933,7 @@ fn unprojected_sketch_relation_records(
         )?;
         let instances = ctx.admit_iter(&lane.relation_instances[..], "scan SLDPRT unprojected_sketch_relation_records values")?.try_fold(0_usize, |count, candidate| { let relation = &candidate; Ok::<_, cadmpeg_core::CodecError>(count + usize::from( {
                 ctx.contains_hash_set(&(sketch_feature_refs), relation.feature_ref.as_str(), "test SLDPRT hashed identity")?
-                    && owned_instances.contains_key(&relation.id)
+                    && ctx.contains_key_hash_map(&(owned_instances), &relation.id, "test SLDPRT map key")?
                     && !ctx.contains_hash_set(&(projected), relation.id.as_str(), "test SLDPRT hashed identity")?
             } )) })?;
         let bindings = ctx.admit_iter(&lane.relation_bindings[..], "scan SLDPRT unprojected_sketch_relation_records values")?.try_fold(0_usize, |count, candidate| { let binding = &candidate; Ok::<_, cadmpeg_core::CodecError>(count + usize::from( {
