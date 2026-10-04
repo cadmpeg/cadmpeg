@@ -333,14 +333,18 @@ fn run_design(policy: &DecodePolicy) -> Result<(), CodecError> {
     ir.model
         .configurations
         .push(design_configuration("design", 0, Some(0), None));
-    super::project_configuration_design_states(
+    let result = super::project_configuration_design_states(
         &ctx,
         &mut ir,
         &histories,
         &[feature_input_lane("lane", Some("0"))],
         &[],
         None,
-    )?;
+    );
+    if let Err(CodecError::ResourceLimit(refusal)) = &result {
+        assert_eq!(ctx.resource_refusal(), Some(*refusal));
+    }
+    result?;
     let configuration = &ir.model.configurations[0];
     assert_eq!(
         configuration.parameter_values,
@@ -380,6 +384,40 @@ fn configuration_design_projection_refuses_collection_limit() {
 #[test]
 fn configuration_design_projection_refuses_work_limit() {
     assert_projection_refusal(ResourceDimension::WorkUnits, run_design);
+}
+
+fn assert_configuration_values_refusal(dimension: ResourceDimension) {
+    const OPERATION: &str = "collect SLDPRT configuration values";
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        dimension,
+        OPERATION,
+        |limit| {
+            let mut policy = DecodePolicy::service();
+            set_limit(&mut policy, dimension, limit);
+            run_design(&policy)
+        },
+    );
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected configuration value resource refusal")
+    };
+    assert_eq!(limit.operation, OPERATION);
+    assert_eq!(limit.dimension, dimension);
+    assert!(limit.additional > 0);
+}
+
+#[test]
+fn configuration_design_projection_refuses_configuration_value_collection_items() {
+    assert_configuration_values_refusal(ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn configuration_design_projection_refuses_configuration_value_retained_bytes() {
+    assert_configuration_values_refusal(ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn configuration_design_projection_refuses_configuration_value_work_units() {
+    assert_configuration_values_refusal(ResourceDimension::WorkUnits);
 }
 
 fn run_unscoped_datum(policy: &DecodePolicy) -> Result<(), CodecError> {
