@@ -193,7 +193,7 @@ pub(crate) fn native_parameter_hash(
 ) -> Result<String, CodecError> {
     let views = ctx.with_scoped_storage("SLDPRT canonical hash views", || {
         let mut parameters = Vec::new();
-        for history in histories {
+        for history in ctx.admit_iter(histories, "scan SLDPRT native hash histories")? {
             ctx.charge_work(
                 u64_from_index(history.features.len()),
                 "scan SLDPRT hash features",
@@ -284,8 +284,7 @@ fn admit_feature_parents(
             cadmpeg_ir::features::FeatureOperation::TreeNode { children, .. },
         ) = feature.evaluation.definition()
         {
-            ctx.charge_work(u64_from_index(children.len()), OPERATION)?;
-            for child in children {
+            for child in ctx.admit_iter(&children[..], OPERATION)? {
                 key_bytes = key_bytes
                     .checked_add(u64_from_index(child.as_str().len()))
                     .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
@@ -306,7 +305,7 @@ fn admit_feature_parents(
 
 #[cfg(test)]
 mod tests {
-    use super::hash_records;
+    use super::{hash_records, native_parameter_hash};
     use crate::records::Configuration;
     use crate::records::FeatureHistory;
     use std::collections::BTreeMap;
@@ -331,6 +330,27 @@ mod tests {
             }],
             features: Vec::new(),
         }
+    }
+
+    #[test]
+    fn native_parameter_hash_refuses_history_traversal_work() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let histories = [history("Bracket")];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = native_parameter_hash(&ctx, &histories).unwrap_err();
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "scan SLDPRT native hash histories"));
+        let ctx = cadmpeg_test_support::service_decode_context();
+        assert_eq!(
+            native_parameter_hash(&ctx, &histories).unwrap(),
+            native_parameter_hash(&ctx, &[]).unwrap(),
+        );
     }
 
     /// The digest is over the record's canonical bytes, so a record rebuilt
