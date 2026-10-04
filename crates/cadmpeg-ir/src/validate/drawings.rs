@@ -2,9 +2,8 @@
 //! Drawing graph and numeric validation.
 
 use super::{orders::Orders, record_finding};
-use crate::index::identities::BorrowedIdentities;
-
 use crate::document::CadIr;
+use crate::index::ModelIndex;
 use crate::report::{
     check::{Check, Finding},
     Severity,
@@ -13,23 +12,23 @@ use crate::report::{
 pub(super) fn check_drawings(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
-    all_ids: &BorrowedIdentities<'_, '_>,
+    all_ids: &ModelIndex<'_>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut orders = Orders::new(ctx)?;
     for drawing in &ir.model.drawings {
         ctx.charge_work(1, "drawing row scan")?;
-        let mut refs_valid = all_ids.contains(ctx, &drawing.object)?
-            && all_ids.contains(ctx, &drawing.native_ref)?;
+        let mut refs_valid = all_ids.contains(drawing.object.as_str(), ctx)?
+            && all_ids.contains(drawing.native_ref.as_str(), ctx)?;
         if refs_valid {
             if let Some(id) = &drawing.template {
-                refs_valid = all_ids.contains(ctx, id.as_str())?;
+                refs_valid = all_ids.contains(id.as_str(), ctx)?;
             }
         }
         if refs_valid {
             for id in &drawing.assets {
                 ctx.charge_work(1, "drawing asset scan")?;
-                if !all_ids.contains(ctx, id)? {
+                if !all_ids.contains(id, ctx)? {
                     refs_valid = false;
                     break;
                 }
@@ -41,7 +40,7 @@ pub(super) fn check_drawings(
                 for target in targets {
                     ctx.charge_work(1, "drawing reference scan")?;
                     if let Some(id) = target.local_target() {
-                        if !all_ids.contains(ctx, id)? {
+                        if !all_ids.contains(id, ctx)? {
                             refs_valid = false;
                             break 'groups;
                         }
@@ -68,6 +67,7 @@ pub(super) fn check_drawings(
 mod tests {
     use super::check_drawings;
     use crate::document::CadIr;
+    use crate::index::ModelIndex;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
@@ -89,9 +89,12 @@ mod tests {
     fn drawings_preserve_scan_order_and_finding_resource_refusals() {
         let ir = fixture();
         let source = cadmpeg_test_support::service_decode_context();
-        let ids =
-            super::BorrowedIdentities::build(&source, |add| add("test:source:unknown#record", ()))
-                .unwrap();
+        let ids = ModelIndex::with_additional_native_identities(
+            &ir,
+            ["test:source:unknown#record"],
+            &source,
+        )
+        .unwrap();
         for dimension in [
             ResourceDimension::WorkUnits,
             ResourceDimension::MaterializedBytes,
@@ -126,9 +129,12 @@ mod tests {
     fn drawings_report_the_second_duplicate_order_and_release_storage() {
         let ir = fixture();
         let source = cadmpeg_test_support::service_decode_context();
-        let ids =
-            super::BorrowedIdentities::build(&source, |add| add("test:source:unknown#record", ()))
-                .unwrap();
+        let ids = ModelIndex::with_additional_native_identities(
+            &ir,
+            ["test:source:unknown#record"],
+            &source,
+        )
+        .unwrap();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = 4096;
