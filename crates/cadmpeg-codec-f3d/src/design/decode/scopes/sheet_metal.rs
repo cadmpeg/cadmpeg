@@ -417,7 +417,10 @@ fn legacy_edge_flange_operation_at(
     {
         return None;
     }
-    let mut unclaimed = references.to_vec();
+    let mut unclaimed = match ctx.copy_slice(references, "f3d legacy edge-flange reference copy") {
+        Ok(values) => values,
+        Err(error) => return Some(Err(error)),
+    };
     let mut wrapper_columns = match ctx.admit_iter(
         layout.edge_columns,
         "scan F3D legacy edge flange wrapper columns",
@@ -823,7 +826,10 @@ fn edge_flange_to_object_operation_at(
     if View::u32_le_at(bytes, common.checked_add(edge_flange::EDGE_COUNT)?)? != 1 {
         return None;
     }
-    let mut unclaimed = references.to_vec();
+    let mut unclaimed = match ctx.copy_slice(references, "f3d ToObject edge-flange reference copy") {
+        Ok(values) => values,
+        Err(error) => return Some(Err(error)),
+    };
     let mut cursor = common.checked_add(edge_flange::EDGE_WRAPPER_REFERENCE)?;
     let edge_wrapper_slot = marked_record_reference(bytes, cursor)?;
     let edge_wrapper_record_index = match claim(edge_wrapper_slot, &mut unclaimed) {

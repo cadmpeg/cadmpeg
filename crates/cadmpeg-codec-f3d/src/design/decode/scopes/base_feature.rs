@@ -835,12 +835,16 @@ pub(super) fn exact_base_feature_construction(
                 metadata_record,
                 metadata_record_offset: scope.byte_offset()
                     + u64::try_from(legacy_zero_body::SHARED_METADATA_RECORD).ok()?,
-                metadata_field: bytes
-                    .get(
+                metadata_field: match ctx.copy_slice(
+                    bytes.get(
                         start + legacy_zero_body::SHARED_METADATA_FIELD
                             ..start + legacy_zero_body::ZERO_PADDING_8,
-                    )?
-                    .to_vec(),
+                    )?,
+                    "f3d BaseFeature 409/262 metadata field",
+                ) {
+                    Ok(field) => field,
+                    Err(error) => return Some(Err(error)),
+                },
             }));
         }
         if legacy_444_263 && scope.frame_length() == 258 {
@@ -922,12 +926,16 @@ pub(super) fn exact_base_feature_construction(
                 metadata_record,
                 metadata_record_offset: scope.byte_offset()
                     + u64::try_from(legacy_444_zero_body::SHARED_METADATA_RECORD).ok()?,
-                metadata_field: bytes
-                    .get(
+                metadata_field: match ctx.copy_slice(
+                    bytes.get(
                         start + legacy_444_zero_body::SHARED_METADATA_ZERO_TAIL
                             ..start + legacy_444_zero_body::GUID_CODE_UNIT_COUNT,
-                    )?
-                    .to_vec(),
+                    )?,
+                    "f3d BaseFeature 444/263 metadata tail",
+                ) {
+                    Ok(field) => field,
+                    Err(error) => return Some(Err(error)),
+                },
             }));
         }
         if bytes.get(start + result_body::ZERO_RUN_8..start + result_body::BODY_COUNT_MARKER)?
@@ -1068,9 +1076,13 @@ pub(super) fn exact_base_feature_construction(
         } else {
             6
         };
-        let metadata_field = bytes
-            .get(cursor + 9..cursor + 9 + metadata_field_width)?
-            .to_vec();
+        let metadata_field = match ctx.copy_slice(
+            bytes.get(cursor + 9..cursor + 9 + metadata_field_width)?,
+            "f3d BaseFeature result-body metadata field",
+        ) {
+            Ok(field) => field,
+            Err(error) => return Some(Err(error)),
+        };
         cursor += 9 + metadata_field_width;
         if usize::try_from(View::u32_le_at(bytes, cursor)?).ok()? != body_count {
             return None;

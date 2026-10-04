@@ -966,6 +966,102 @@ fn edge_flange_unclaimed_reference_copy_charges_actual_source_length() {
     }
 }
 
+#[test]
+fn legacy_edge_flange_reference_copy_refuses_each_resource_limit() {
+    let references = [201, 204, 207, 218, 240, 243, 251, 254];
+    let frame = legacy_edge_flange_frame();
+    let operation = "f3d legacy edge-flange reference copy";
+    assert!(crate::design::decode::scopes::sheet_metal::exact_edge_flange_operation(
+        &cadmpeg_test_support::service_decode_context(),
+        &frame.bytes,
+        0,
+        frame.paired_at,
+        "325",
+        "258",
+        &references,
+    )
+    .unwrap()
+    .is_some());
+    for (dimension, additional) in [
+        (cadmpeg_core::decode::ResourceDimension::WorkUnits, 8),
+        (cadmpeg_core::decode::ResourceDimension::CollectionItems, 8),
+        (cadmpeg_core::decode::ResourceDimension::RetainedBytes, 32),
+    ] {
+        let refusal = crate::test_support::resource_refusal_at(
+            dimension,
+            operation,
+            0,
+            |ctx| {
+                crate::design::decode::scopes::sheet_metal::exact_edge_flange_operation(
+                    ctx,
+                    &frame.bytes,
+                    0,
+                    frame.paired_at,
+                    "325",
+                    "258",
+                    &references,
+                )
+                .map(|_| ())
+            },
+        );
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == dimension
+                    && limit.operation == operation
+                    && limit.additional == additional
+        ));
+    }
+}
+
+#[test]
+fn edge_flange_to_object_reference_copy_refuses_each_resource_limit() {
+    let references = [201, 204, 207, 218, 221, 224, 240, 243, 251, 254, 270];
+    let frame = edge_flange_to_object_frame(0);
+    let operation = "f3d ToObject edge-flange reference copy";
+    assert!(crate::design::decode::scopes::sheet_metal::exact_edge_flange_operation(
+        &cadmpeg_test_support::service_decode_context(),
+        &frame.bytes,
+        0,
+        frame.paired_at,
+        "414",
+        "258",
+        &references,
+    )
+    .unwrap()
+    .is_some());
+    for (dimension, additional) in [
+        (cadmpeg_core::decode::ResourceDimension::WorkUnits, 11),
+        (cadmpeg_core::decode::ResourceDimension::CollectionItems, 11),
+        (cadmpeg_core::decode::ResourceDimension::RetainedBytes, 44),
+    ] {
+        let refusal = crate::test_support::resource_refusal_at(
+            dimension,
+            operation,
+            0,
+            |ctx| {
+                crate::design::decode::scopes::sheet_metal::exact_edge_flange_operation(
+                    ctx,
+                    &frame.bytes,
+                    0,
+                    frame.paired_at,
+                    "414",
+                    "258",
+                    &references,
+                )
+                .map(|_| ())
+            },
+        );
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == dimension
+                    && limit.operation == operation
+                    && limit.additional == additional
+        ));
+    }
+}
+
 /// Build a single-edge `EdgeFlange` frame from the settled fixed-section layout.
 ///
 /// Every offset is computed from the layout rather than counted by hand, so the
