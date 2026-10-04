@@ -6,18 +6,23 @@ use cadmpeg_core::container::ContainerRole;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use std::fmt::Write;
 
-use crate::bytes::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
-use crate::design::decode::sketch::{native_scope_charged, next_indexed_record_offset};
+use crate::design::decode::byte_fields::{bytes_at, zeros_at};
+use crate::design::decode::sketch::{
+    native_scope_scoped, next_indexed_record_header, IndexedRecordHeader,
+};
 
-use crate::records::feature::assembly_features::DesignComponentOccurrence;
+use crate::records::feature::assembly_features::{
+    DesignComponentOccurrence, DesignComponentOccurrencePlacement,
+};
 
 const BASE_FRAME_LENGTH: usize = 229;
 const PLACED_FRAME_LENGTH: usize = 357;
 
 /// Decode exact local component-occurrence records from every Design bulk stream.
+/// Each stream is searched forward once; every indexed header found closes the
+/// frame of the header before it.
 pub(crate) fn decode_component_occurrences(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
@@ -28,21 +33,23 @@ pub(crate) fn decode_component_occurrences(
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        let scope = native_scope_charged(ctx, &entry.name)?;
-        let mut at = 0;
-        while let Some(start) = next_indexed_record_offset(ctx, bytes, at)? {
-            ctx.charge_work(1, "scan F3D component occurrence candidates")?;
-            if let Some(occurrence) = exact_component_occurrence(ctx, bytes, start, &scope)? {
-                ctx.push_vec(
-                    &mut occurrences,
-                    occurrence,
-                    "f3d decoded component occurrence",
-                )?;
+        let (_scope_reservation, scope) = native_scope_scoped(ctx, &entry.name)?;
+        let mut current = next_indexed_record_header(ctx, bytes, 0, |_| true)?;
+        while let Some(header) = current {
+            // A header offset indexes `bytes`, so the successor stays in range.
+            let next = next_indexed_record_header(ctx, bytes, header.offset + 1, |_| true)?;
+            if let Some(end) = next.map(|next| next.offset) {
+                if let Some(occurrence) =
+                    exact_component_occurrence(ctx, bytes, &header, end, &scope)?
+                {
+                    ctx.push_vec(
+                        &mut occurrences,
+                        occurrence,
+                        "f3d decoded component occurrence",
+                    )?;
+                }
             }
-            let Some(next_at) = start.checked_add(1) else {
-                break;
-            };
-            at = next_at;
+            current = next;
         }
     }
     ctx.stable_sort_by(
@@ -55,98 +62,90 @@ pub(crate) fn decode_component_occurrences(
     Ok(occurrences)
 }
 
-/// Decode one fixed component-occurrence carrier. The class tag is a per-file
-/// dynamic value, so the fixed frame identifies the carrier.
+/// The fixed members of a component-occurrence carrier whose indexed header
+/// is `header` and whose frame ends at `end`: the component-definition record
+/// index and the placement. The class tag is a per-file dynamic value, so the
+/// fixed frame identifies the carrier. The test reads a constant number of
+/// bytes.
+fn component_occurrence_layout(
+    bytes: &[u8],
+    header: &IndexedRecordHeader<'_>,
+    end: usize,
+) -> Option<(u64, DesignComponentOccurrencePlacement)> {
+    let start = header.offset;
+    let frame_length = end.checked_sub(start)?;
+    if !matches!(frame_length, BASE_FRAME_LENGTH | PLACED_FRAME_LENGTH)
+        || !zeros_at::<8>(bytes, start + 11)
+        || bytes.get(start + 19) != Some(&1)
+        || View::u32_le_at(bytes, start + 20)? != 1
+        || bytes.get(start + 24) != Some(&1)
+        || bytes.get(start + 196) != Some(&0)
+        || bytes.get(start + 197) != Some(&1)
+    {
+        return None;
+    }
+    let component_record_index = View::u64_le_at(bytes, start + 25)?;
+    if View::u64_le_at(bytes, start + 198)? != component_record_index {
+        return None;
+    }
+    let occurrence_ordinal = std::num::NonZeroU32::new(View::u32_le_at(bytes, start + 40)?)?;
+    if View::u32_le_at(bytes, start + 44) != Some(36)
+        || bytes.get(start + 48..start + 120).is_none()
+        || View::u32_le_at(bytes, start + 120) != Some(36)
+        || bytes.get(start + 124..start + 196).is_none()
+    {
+        return None;
+    }
+    let placement = match frame_length {
+        BASE_FRAME_LENGTH => {
+            if occurrence_ordinal.get() != 1
+                || bytes_at::<12>(bytes, start + 206) != Some(&[0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+                || bytes.get(start + 218) != Some(&1)
+                || !zeros_at::<2>(bytes, start + 227)
+            {
+                return None;
+            }
+            DesignComponentOccurrencePlacement::Base
+        }
+        PLACED_FRAME_LENGTH => {
+            if (header.class_tag == b"256" && occurrence_ordinal.get() < 2)
+                || !zeros_at::<3>(bytes, start + 206)
+                || !zeros_at::<9>(bytes, start + 337)
+                || bytes.get(start + 346) != Some(&1)
+                || !zeros_at::<2>(bytes, start + 355)
+            {
+                return None;
+            }
+            let transform = super::scopes::shared_frames::rigid_transform_at(bytes, start + 209)?;
+            DesignComponentOccurrencePlacement::Explicit {
+                ordinal: occurrence_ordinal,
+                transform,
+            }
+        }
+        _ => return None,
+    };
+    Some((component_record_index, placement))
+}
+
+/// Decode one fixed component-occurrence carrier whose indexed header is
+/// `header` and whose frame ends at `end`.
 fn exact_component_occurrence(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
-    start: usize,
+    header: &IndexedRecordHeader<'_>,
+    end: usize,
     stream: &str,
 ) -> Result<Option<DesignComponentOccurrence>, CodecError> {
     const SUFFIX: &str = ":design-component-occurrence#";
 
-    let parsed = (|| -> Option<Result<_, CodecError>> {
-        let (class_tag, after_tag) =
-            lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
-        if after_tag != start.checked_add(7)? {
-            return None;
-        }
-        let record_index = View::u32_le_at(bytes, after_tag)?;
-        let end = match next_indexed_record_offset(ctx, bytes, start.checked_add(1)?) {
-            Ok(Some(end)) => end,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
-        let frame_length = end.checked_sub(start)?;
-        if !matches!(frame_length, BASE_FRAME_LENGTH | PLACED_FRAME_LENGTH)
-            || bytes.get(start + 11..start + 19)? != [0; 8]
-            || bytes.get(start + 19) != Some(&1)
-            || View::u32_le_at(bytes, start + 20)? != 1
-            || bytes.get(start + 24) != Some(&1)
-            || bytes.get(start + 196) != Some(&0)
-            || bytes.get(start + 197) != Some(&1)
-        {
-            return None;
-        }
-        let component_record_index = View::u64_le_at(bytes, start + 25)?;
-        if View::u64_le_at(bytes, start + 198)? != component_record_index {
-            return None;
-        }
-        let occurrence_ordinal = std::num::NonZeroU32::new(View::u32_le_at(bytes, start + 40)?)?;
-        if View::u32_le_at(bytes, start + 44) != Some(36)
-            || bytes.get(start + 48..start + 120).is_none()
-            || View::u32_le_at(bytes, start + 120) != Some(36)
-            || bytes.get(start + 124..start + 196).is_none()
-        {
-            return None;
-        }
-        let placement = match frame_length {
-            BASE_FRAME_LENGTH => {
-                if occurrence_ordinal.get() != 1
-                    || bytes.get(start + 206..start + 218)? != [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-                    || bytes.get(start + 218) != Some(&1)
-                    || bytes.get(start + 227..start + 229)? != [0; 2]
-                {
-                    return None;
-                }
-                crate::records::feature::assembly_features::DesignComponentOccurrencePlacement::Base
-            }
-            PLACED_FRAME_LENGTH => {
-                if (class_tag == "256" && occurrence_ordinal.get() < 2)
-                    || bytes.get(start + 206..start + 209)? != [0; 3]
-                    || bytes.get(start + 337..start + 346)? != [0; 9]
-                    || bytes.get(start + 346) != Some(&1)
-                    || bytes.get(start + 355..start + 357)? != [0; 2]
-                {
-                    return None;
-                }
-                let transform =
-                    super::scopes::shared_frames::rigid_transform_at(bytes, start + 209)?;
-                crate::records::feature::assembly_features::DesignComponentOccurrencePlacement::Explicit {
-                ordinal: occurrence_ordinal,
-                transform,
-            }
-            }
-            _ => return None,
-        };
-        let class_tag = match crate::design::decode::text::class_tag_from_view(ctx, class_tag) {
-            Ok(Some(class_tag)) => class_tag,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
-        let byte_offset = u64::try_from(start).ok()?;
-        Some(Ok((
-            class_tag,
-            record_index,
-            byte_offset,
-            component_record_index,
-            placement,
-        )))
-    })();
-    let Some(parsed) = parsed else {
+    let start = header.offset;
+    let Some((component_record_index, placement)) = component_occurrence_layout(bytes, header, end)
+    else {
         return Ok(None);
     };
-    let (class_tag, record_index, byte_offset, component_record_index, placement) = parsed?;
+    let Ok(byte_offset) = u64::try_from(start) else {
+        return Ok(None);
+    };
     let Some((component_guid, after_component)) =
         lp_utf16_bounded_charged(ctx, bytes, start + 44, 36..=36, "f3d Design UTF-16 text")?
     else {
@@ -169,29 +168,16 @@ fn exact_component_occurrence(
     else {
         return Ok(None);
     };
-    let mut digits = 1usize;
-    let mut remaining = start;
-    while remaining >= 10 {
-        digits += 1;
-        remaining /= 10;
-    }
-
-    let id_bytes = stream
-        .len()
-        .checked_add(SUFFIX.len())
-        .and_then(|length| length.checked_add(digits))
-        .ok_or_else(|| ctx.refuse_codec_limit("f3d component occurrence id length", 0, 1))?;
-
-    let mut id = ctx.retained_string(id_bytes, "f3d component occurrence id")?;
-    id.push_str(stream);
-    id.push_str(SUFFIX);
-    write!(&mut id, "{start}")
-        .map_err(|_| ctx.refuse_codec_limit("f3d component occurrence id formatting", 0, 1))?;
+    let class_tag = header.retain_class_tag(ctx, "copy F3D class tag")?;
+    let id = ctx.format_retained(
+        format_args!("{stream}{SUFFIX}{start}"),
+        "f3d component occurrence id",
+    )?;
     Ok(DesignComponentOccurrence::try_new(
         crate::records::feature::assembly_features::DesignComponentOccurrenceDraft {
             id,
             class_tag,
-            record_index,
+            record_index: header.record_index,
             byte_offset,
             component_record_index,
             component_guid,
@@ -206,9 +192,10 @@ fn exact_component_occurrence(
 mod tests {
     #![allow(clippy::trivially_copy_pass_by_ref)]
 
-    use super::exact_component_occurrence;
+    use crate::records::feature::assembly_features::DesignComponentOccurrence;
     use crate::test_support::indexed_header;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
 
     const COMPONENT: &str = "a989beb9-467b-4afa-9e90-a9329a2ca258";
     const OCCURRENCE: &str = "f2371d14-7339-4f5c-82a1-50ec8fca5597";
@@ -218,6 +205,19 @@ mod tests {
         for (ordinal, unit) in value.encode_utf16().enumerate() {
             bytes[at + 4 + ordinal * 2..at + 6 + ordinal * 2].copy_from_slice(&unit.to_le_bytes());
         }
+    }
+
+    /// Parse the carrier at offset zero of a frame closed by the trailing
+    /// eleven-byte indexed header.
+    fn exact_component_occurrence(
+        ctx: &DecodeContext<'_>,
+        bytes: &[u8],
+        start: usize,
+        stream: &str,
+    ) -> Result<Option<DesignComponentOccurrence>, CodecError> {
+        let header =
+            crate::design::decode::sketch::indexed_record_header_at(bytes, start).expect("carrier");
+        super::exact_component_occurrence(ctx, bytes, &header, bytes.len() - 11, stream)
     }
 
     fn common(frame_length: usize, ordinal: u32) -> Vec<u8> {
@@ -383,28 +383,6 @@ mod tests {
     }
 
     #[test]
-    fn component_indexed_scanner_refuses_work_limit_through_optional_parse() {
-        let mut seed = common(229, 1);
-        seed[208] = 1;
-        seed[218] = 1;
-        indexed_header(&mut seed, *b"333", 21);
-        let error = crate::test_support::resource_refusal_at(
-            ResourceDimension::WorkUnits,
-            "find F3D indexed record header",
-            0,
-            |ctx| {
-                exact_component_occurrence(ctx, &seed, 0, "f3d:Design/BulkStream.dat").map(|_| ())
-            },
-        );
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(refusal)
-                if refusal.dimension == ResourceDimension::WorkUnits
-                    && refusal.operation == "find F3D indexed record header"
-        ));
-    }
-
-    #[test]
     fn decoded_component_occurrence_refuses_collection_limit() {
         let mut seed = common(229, 1);
         seed[208] = 1;
@@ -433,7 +411,7 @@ mod tests {
         );
     }
     #[test]
-    fn component_occurrence_candidate_loop_refuses_work_after_matching_output() {
+    fn component_occurrence_stream_search_charges_each_visited_byte() {
         use std::io::{Cursor, Write};
 
         let mut seed = common(229, 1);
@@ -474,20 +452,23 @@ mod tests {
             assert_eq!(occurrence.occurrence_guid.as_str(), OCCURRENCE);
             assert_eq!(occurrence.occurrence_ordinal(), 1);
             assert_eq!(occurrence.transform(), None);
-            let operation = "scan F3D component occurrence candidates";
-            let error = crate::test_support::resource_refusal_at(
-                ResourceDimension::WorkUnits,
-                operation,
-                0,
-                |ctx| super::decode_component_occurrences(ctx, scan).map(|_| ()),
-            );
-            assert!(matches!(
-                error,
-                cadmpeg_core::CodecError::ResourceLimit(refusal)
-                    if refusal.dimension == ResourceDimension::WorkUnits
-                        && refusal.operation == operation
-                        && refusal.additional == 1
-            ));
+            // The header searches visit each of the 240 stream bytes once.
+            let operation = "find F3D indexed record header";
+            for skip in [0, 239] {
+                let error = crate::test_support::resource_refusal_at(
+                    ResourceDimension::WorkUnits,
+                    operation,
+                    skip,
+                    |ctx| super::decode_component_occurrences(ctx, scan).map(|_| ()),
+                );
+                assert!(matches!(
+                    error,
+                    cadmpeg_core::CodecError::ResourceLimit(refusal)
+                        if refusal.dimension == ResourceDimension::WorkUnits
+                            && refusal.operation == operation
+                            && refusal.additional == 1
+                ));
+            }
         });
     }
 }
