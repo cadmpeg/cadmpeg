@@ -1647,3 +1647,22 @@ mod dynamic_angles;
 mod repeated_circle_dimensions;
 
 mod physical_loci;
+
+#[test]
+fn physical_locus_truncation_propagates_work_refusal() {
+    let first = SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#first-locus").unwrap());
+    let second = SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#second-locus").unwrap());
+    let input = vec![first.clone(), second];
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut loci = input.clone();
+    super::deduplicate_physical_loci(&ctx, &mut loci, |_| Ok(Some(Point2::new(0.0, 0.0))))
+        .unwrap();
+    assert_eq!(loci, vec![first]);
+    let error = crate::test_support::work_refusal_at("discard SLDPRT duplicate physical loci", |ctx| {
+        let mut loci = input.clone();
+        super::deduplicate_physical_loci(ctx, &mut loci, |_| Ok(Some(Point2::new(0.0, 0.0))))
+    });
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && limit.operation == "discard SLDPRT duplicate physical loci"));
+}

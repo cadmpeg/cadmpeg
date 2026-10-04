@@ -3131,7 +3131,7 @@ fn unique_dynamic_direct_point_roster_pair(
 
 const DYNAMIC_POINT_LOCUS_QUANTUM: f64 = 1.0e-8;
 
-fn deduplicate_physical_loci<T>(
+fn deduplicate_physical_loci<T: cadmpeg_core::decode::cost::DecodeCost>(
     ctx: &DecodeContext<'_>,
     candidates: &mut Vec<T>,
     point: impl Fn(&T) -> Result<Option<Point2>, cadmpeg_core::CodecError>,
@@ -3162,7 +3162,7 @@ fn deduplicate_physical_loci<T>(
             write += 1;
         }
     }
-    candidates.truncate(write);
+    ctx.truncate_vec(candidates, write, "discard SLDPRT duplicate physical loci")?;
     Ok(())
 }
 
@@ -3471,7 +3471,7 @@ fn dynamic_line_operand_candidates(
             write += 1;
         }
     }
-    entities.truncate(write);
+    ctx.truncate_vec(&mut entities, write, OPERATION)?;
     if entities.len() > 1 {
         ctx.sort_unstable_by(&mut entities, |value| value, Ord::cmp, OPERATION)?;
         entities.dedup();
@@ -3937,7 +3937,7 @@ fn resolve_profile_locus_positions(
             write += 1;
         }
     }
-    loci.truncate(write);
+    ctx.truncate_vec(loci, write, OPERATION)?;
     Ok(())
 }
 
@@ -4227,7 +4227,7 @@ fn canonicalize_physical_loci(
     }
     if coincident {
         loci.swap(0, minimum);
-        loci.truncate(1);
+        ctx.truncate_vec(loci, 1, OPERATION)?;
     }
     Ok(())
 }
@@ -4976,7 +4976,7 @@ fn single_marker_circular_entity(
         identities.swap(count, index);
         count += 1;
     }
-    identities.truncate(count);
+    ctx.truncate_vec(&mut identities, count, OPERATION)?;
     sort_marker_entity_ids(ctx, &mut identities, OPERATION)?;
     Ok(if identities.len() == 1 {
         identities.into_iter().next()

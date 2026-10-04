@@ -115,7 +115,7 @@ pub(super) fn component_path_input_features(
             }
         }
     }
-    producers.truncate(retained);
+    ctx.truncate_vec(&mut producers, retained, "discard SLDPRT component path inputs")?;
     Ok(producers)
 }
 
