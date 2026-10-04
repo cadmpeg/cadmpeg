@@ -43,6 +43,7 @@ fn standard_attached_circle_axes_refuse_before_vector_growth() {
     crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         crate::families::standard::decode::edge_geometry::attach_standard_circles(
+            ctx,
             &mut ir,
             &mut AnnotationBuilder::new(),
             &bindings,
@@ -56,6 +57,7 @@ fn standard_attached_circle_axes_refuse_before_vector_growth() {
     let limited = crate::test_support::with_collection_limit(0, |ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         crate::families::standard::decode::edge_geometry::attach_standard_circles(
+            ctx,
             &mut limited_ir,
             &mut AnnotationBuilder::new(),
             &bindings,

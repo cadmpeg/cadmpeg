@@ -31,24 +31,68 @@ use crate::test_support::test_b5::a8_elided_surface_stream_with_native_vertex_ch
 fn surface_tail_scans_continuation_without_materializing_a_lane() {
     let mut short = a5_surface_short_tail();
     assert_eq!(
-        super::parse_surface_tail(&short, 0, short.len()),
+        crate::test_support::with_service_context(|ctx| {
+            super::parse_surface_tail(ctx, &short, 0, short.len())
+        })
+        .expect("service work"),
         Some(short.len())
     );
     short[71..79].copy_from_slice(&1.0f64.to_le_bytes());
-    assert_eq!(super::parse_surface_tail(&short, 0, short.len()), None);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            super::parse_surface_tail(ctx, &short, 0, short.len())
+        })
+        .expect("service work"),
+        None
+    );
     let mut long = a5_surface_tail();
     long[71..79].copy_from_slice(&1.0f64.to_le_bytes());
     assert_eq!(
-        super::parse_surface_tail(&long, 0, long.len()),
+        crate::test_support::with_service_context(|ctx| {
+            super::parse_surface_tail(ctx, &long, 0, long.len())
+        })
+        .expect("service work"),
         Some(long.len())
     );
     long[71..79].copy_from_slice(&f64::NAN.to_le_bytes());
-    assert_eq!(super::parse_surface_tail(&long, 0, long.len()), None);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            super::parse_surface_tail(ctx, &long, 0, long.len())
+        })
+        .expect("service work"),
+        None
+    );
 }
+
 use crate::test_support::test_bytes::le_f64;
 use crate::test_support::test_container::object_main_catpart;
 use crate::variant::Variant;
 use crate::CatiaCodec;
+
+#[test]
+fn object_stream_frame_scan_resumes_at_parent_end() {
+    let mut bytes = vec![0xa8, 0x03, 0x32];
+    bytes.extend_from_slice(&8u32.to_le_bytes());
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.extend_from_slice(&[0xb5, 0x03, 0x5e, 0]);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    let following_frame = bytes.len();
+    bytes.extend_from_slice(&[0xa8, 0x03, 0x20]);
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+
+    let frames = crate::test_support::with_service_context(|ctx| {
+        Ok::<_, cadmpeg_core::CodecError>(
+            super::object_stream_frames(ctx, &bytes)?.collect::<Vec<_>>(),
+        )
+    })
+    .expect("service frame scan budget");
+
+    assert_eq!(
+        frames.iter().map(|frame| frame.payload).collect::<Vec<_>>(),
+        vec![11, 19, following_frame + 11]
+    );
+}
 
 fn parsed_a5_freeform_curves(data: &[u8]) -> Vec<crate::families::a5a8::records::A5FreeformCurve> {
     crate::test_support::with_service_context(|ctx| {

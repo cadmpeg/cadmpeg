@@ -1057,7 +1057,7 @@ fn incidence_component_schedules_partial_constraint_variables_first() {
     let edges = [0, 1];
     let active_edges = [true, true];
     let assignment_dependencies = [vec![1], Vec::new()];
-    let valid = |_: &[Option<[usize; 2]>]| true;
+    let valid = |_: &[Option<[usize; 2]>]| Ok(true);
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let search = crate::solve::incidence::IncidenceComponentSearch {
@@ -1118,7 +1118,7 @@ fn incidence_component_assigns_canonical_class_members_in_order() {
     let face_edges = vec![vec![0, 1, 2]];
     let active_edges = [false; 3];
     let assignment_predecessors = [None, Some(0), Some(0)];
-    let valid = |_: &[Option<[usize; 2]>]| true;
+    let valid = |_: &[Option<[usize; 2]>]| Ok(true);
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let search = crate::solve::incidence::IncidenceComponentSearch {

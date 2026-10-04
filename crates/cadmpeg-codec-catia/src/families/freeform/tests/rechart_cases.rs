@@ -25,6 +25,395 @@ fn planar_rechart_refuses_before_absent_chart_candidate() {
 }
 
 #[test]
+fn paired_surface_candidate_scan_propagates_work_refusal() {
+    let resolved = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("valid plane"),
+    ));
+    let matching = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.001),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("valid plane"),
+    ));
+    let pcurve = PcurveGeometry::Line(
+        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+        )
+        .expect("valid pcurve"),
+    );
+    let candidates = [(7, matching)];
+    let operation = "catia_freeform_paired_surface_candidates";
+    let refused = crate::test_support::with_work_refusal(operation, |ctx| {
+        let result = super::super::unique_paired_surface_lift_match(
+            ctx,
+            &pcurve,
+            &resolved,
+            &pcurve,
+            [0.0, 1.0],
+            &candidates,
+        )
+        .map(|_| ())
+        .map_err(cadmpeg_core::CodecError::ResourceLimit);
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+            assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+        }
+        result
+    });
+    assert!(matches!(
+        refused,
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == operation
+    ));
+}
+
+fn inferred_partner_work_refusal(operation: &'static str) {
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::geometry::{
+        Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
+        ProceduralCurveDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+        SurfaceGeometry,
+    };
+    use cadmpeg_ir::ids::{
+        CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, ProceduralCurveId, ShellId,
+        SurfaceId, VertexId,
+    };
+    use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, Point, Sense, Vertex};
+
+    let plane_stream = crate::test_support::test_b2::b2_plane_carrier_stream();
+    let plane_end = crate::families::b2::records::b2_plane_carriers(&plane_stream)[0].end;
+    let plane_bytes = &plane_stream[..plane_end];
+    let plane_record = crate::families::b2::records::b2_plane_carriers(plane_bytes)
+        .into_iter()
+        .next()
+        .expect("one B2 plane carrier");
+    let plane_geometry = crate::families::b2::records::b2_plane_geometry(&plane_record)
+        .expect("finite B2 plane");
+    let SurfaceGeometry::Solved(plane_solved) = &plane_geometry else {
+        panic!("B2 plane carrier is solved");
+    };
+    let on_plane = |u, v| {
+        cadmpeg_ir::eval::decode::surface_point_solved(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            plane_solved,
+            u,
+            v,
+        )
+        .expect("B2 plane evaluates")
+        .get()
+    };
+    let endpoints = [on_plane(0.0, 0.0), on_plane(1.0, 1.0)];
+    let carrier_geometry = crate::test_support::with_service_context(|ctx| {
+        cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+            ctx,
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                1,
+                vec![10.0, 10.0, 11.0, 11.0],
+                false,
+            ),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                1,
+                vec![20.0, 20.0, 21.0, 21.0],
+                false,
+            ),
+            cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::Polynomial {
+                rows: vec![
+                    vec![on_plane(0.0, 0.0), on_plane(0.0, 1.0)],
+                    vec![on_plane(1.0, 0.0), on_plane(1.0, 1.0)],
+                ],
+            },
+            false,
+        )
+        .expect("carrier surface admission")
+        .expect("valid planar NURBS carrier")
+    });
+    let carrier = crate::families::a5a8::records::FreeformSurface {
+        pos: 0,
+        identity: None,
+        geometry: carrier_geometry,
+    };
+    let carrier_ids = [SurfaceId::mint("catia:test:surface#inferred-carrier".to_owned())
+        .expect("identity grammar")];
+    let standard_surface_ids = [
+        SurfaceId::mint("catia:test:surface#resolved-plane".to_owned())
+            .expect("identity grammar"),
+        SurfaceId::mint("catia:test:surface#unknown-partner".to_owned())
+            .expect("identity grammar"),
+    ];
+    let curve_id = CurveId::mint("catia:test:curve#inferred-partner".to_owned())
+        .expect("identity grammar");
+    let edge_id = EdgeId::mint("catia:test:edge#inferred-partner".to_owned())
+        .expect("identity grammar");
+    let procedural_id = ProceduralCurveId::mint("catia:test:procedure#inferred-partner".to_owned())
+        .expect("identity grammar");
+
+    let mut bytes = plane_bytes.to_vec();
+    for point in endpoints {
+        bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+        for value in [point.x, point.y, point.z] {
+            bytes.extend_from_slice(
+                &(cadmpeg_core::convert::f32_from_f64(value).expect("fixture coordinate fits f32"))
+                    .to_le_bytes(),
+            );
+        }
+    }
+    bytes.extend_from_slice(
+        &crate::test_support::test_a5a8::a5_pcurve_stream_with_uv([0.0, 1.0], [0.0, 1.0]),
+    );
+    bytes.extend_from_slice(
+        &crate::test_support::test_a5a8::a5_pcurve_stream_with_uv([10.0, 11.0], [20.0, 21.0]),
+    );
+    bytes.extend_from_slice(
+        &crate::test_support::test_b2::b2_edge_parameter_stream_for(0.0, 1.0),
+    );
+    bytes.extend_from_slice(
+        &crate::test_support::test_a5a8::a5_native_edge_identity_stream(6, 139, 142),
+    );
+    let records = crate::wire::records::consolidated_records(&bytes);
+
+    let mut run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        let mut ir = CadIr::empty();
+        for (index, position) in endpoints.into_iter().enumerate() {
+            let point_id = PointId::mint(format!("catia:test:point#partner%23{index}"))
+                .expect("identity grammar");
+            ir.model.points.push(Point::new(
+                point_id.clone(),
+                cadmpeg_ir::features::FinitePoint3::new(position)
+                    .expect("finite fixture point"),
+                None,
+            ));
+            ir.model.vertices.push(Vertex {
+                id: VertexId::mint(format!("catia:test:vertex#partner%23{index}"))
+                    .expect("identity grammar"),
+                point: point_id,
+                tolerance: None,
+            });
+        }
+        ir.model.curves.push(Curve {
+            id: curve_id.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+            source_object: None,
+        });
+        ir.model.edges.push(Edge {
+            id: edge_id.clone(),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id.clone())),
+            start: VertexId::mint("catia:test:vertex#partner%230".to_owned())
+                .expect("identity grammar"),
+            end: VertexId::mint("catia:test:vertex#partner%231".to_owned())
+                .expect("identity grammar"),
+            tolerance: None,
+        });
+        ir.model.surfaces.push(Surface {
+            id: standard_surface_ids[0].clone(),
+            geometry: plane_geometry.clone(),
+            source_object: None,
+        });
+        ir.model.surfaces.push(Surface {
+            id: standard_surface_ids[1].clone(),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+            source_object: None,
+        });
+        ir.model.surfaces.push(Surface {
+            id: carrier_ids[0].clone(),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+                carrier.geometry.clone(),
+            )),
+            source_object: None,
+        });
+        for side in 0..2 {
+            let face_id = FaceId::mint(format!("catia:test:face#partner%23{side}"))
+                .expect("identity grammar");
+            let loop_id = LoopId::mint(format!("catia:test:loop#partner%23{side}"))
+                .expect("identity grammar");
+            let coedge_id = CoedgeId::mint(format!("catia:test:coedge#partner%23{side}"))
+                .expect("identity grammar");
+            let radial_next = CoedgeId::mint(format!("catia:test:coedge#partner%23{}", 1 - side))
+                .expect("identity grammar");
+            ir.model.faces.push(Face {
+                id: face_id.clone(),
+                shell: ShellId::mint("catia:test:shell#partner".to_owned())
+                    .expect("identity grammar"),
+                surface: standard_surface_ids[side].clone(),
+                sense: Sense::Forward,
+                loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![loop_id.clone()]),
+                name: None,
+                color: None,
+                tolerance: None,
+            });
+            let ring = cadmpeg_test_support::service_decode_context();
+            let boundary = cadmpeg_ir::topology::LoopRing::new(
+                &ring,
+                vec![coedge_id.clone()],
+                Vec::new(),
+            )
+            .expect("fixture ring admission")
+            .expect("valid fixture loop ring");
+            ir.model.loops.push(Loop {
+                id: loop_id,
+                face: face_id,
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring(boundary),
+            });
+            ir.model.coedges.push(Coedge {
+                id: coedge_id,
+                owner_loop: LoopId::mint(format!("catia:test:loop#partner%23{side}"))
+                    .expect("identity grammar"),
+                edge: edge_id.clone(),
+                radial_next,
+                sense: Sense::Forward,
+                pcurves: Vec::new(),
+                use_curve: None,
+            });
+        }
+        ir.model
+            .add_procedural_curve(
+                &cadmpeg_ir::document::admission::StandardAdmission,
+                &curve_id,
+                ProceduralCurve::new(
+                    procedural_id.clone(),
+                    ProceduralCurveDefinition::Intersection {
+                        context: IntcurveSupportContext::try_new(
+                            std::array::from_fn(|side| IntcurveSupportSide {
+                                surface: Some(standard_surface_ids[side].clone()),
+                                pcurve: None,
+                            }),
+                            [0.0, 1.0],
+                            std::array::from_fn(|_| Vec::new()),
+                        )
+                        .expect("valid intersection fixture"),
+                        discontinuity_flag: false,
+                        cache: None,
+                    },
+                ),
+            )
+        .expect("procedural curve admission")
+        .expect("procedural curve binds to its owner");
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        let aliases = std::collections::HashMap::new();
+        let result = super::super::append_resolved_consolidated_surface_curves(
+            &mut ir,
+            &mut super::AnnotationBuilder::new(),
+            &bytes,
+            &records,
+            super::FreeformSurfacePool {
+                surfaces: std::slice::from_ref(&carrier),
+                surface_ids: &carrier_ids,
+                surface_alias_tags: &aliases,
+            },
+            &mut crate::nurbs::LaneRefusals::new(),
+            &mut admission,
+        );
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+            assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+        }
+        result.map(|counts| (counts, ir))
+    };
+    let refused = crate::test_support::with_work_refusal(operation, &mut run);
+    assert!(matches!(
+        refused,
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == operation
+    ));
+    let (counts, ir) = crate::test_support::with_service_context(|ctx| run(ctx))
+        .expect("service profile infers and binds the partner carrier");
+    assert_eq!(counts.standard_face_surfaces, 1);
+    assert!(matches!(
+        &ir.model.surfaces[1].geometry,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
+    ));
+}
+
+#[test]
+fn inferred_bound_partner_surface_lookup_propagates_work_refusal() {
+    inferred_partner_work_refusal("catia_freeform_bound_partner_surface_lookup");
+}
+
+#[test]
+fn freeform_plane_owned_source_preserves_work_refusal() {
+    inferred_partner_work_refusal("catia_freeform_planes");
+}
+
+#[test]
+fn freeform_complete_run_owned_source_preserves_work_refusal() {
+    inferred_partner_work_refusal("catia_freeform_complete_runs");
+}
+
+fn cone_pole_work_refusal(rational: bool) {
+    let cone = |origin, radius| {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+            cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+                origin,
+                Vector3::new(-1.0, 0.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                radius,
+                1.0,
+                std::f64::consts::FRAC_PI_4,
+            )
+            .expect("valid ConeSurface fixture"),
+        ))
+    };
+    let source = cone(Point3::new(107.5, 0.0, 0.0), 3.5);
+    let target = cone(Point3::new(111.0, 0.0, 0.0), 0.0);
+    let nurbs = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
+        rational.then(|| vec![1.0, 2.0]),
+        false,
+    ).expect("pcurve construction admission").expect("valid pcurve fixture");
+    let pcurve = PcurveGeometry::Nurbs { nurbs };
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        super::super::rechart_equivalent_surface_pcurve(ctx, &pcurve, &source, &target)
+            .map_err(|failure| match failure {
+                super::super::RechartFailure::Resource(error) => error,
+                super::super::RechartFailure::NonFinite => cadmpeg_core::CodecError::malformed("finite rechart fixture overflowed"),
+            })
+    };
+    let shifted = crate::test_support::with_service_context(run).expect("service budget").expect("equivalent cone");
+    let PcurveGeometry::Nurbs { nurbs } = shifted else { panic!("NURBS rechart"); };
+    use cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles;
+    match nurbs.pole_rows() {
+        PcurveNurbsPoles::Polynomial { points } => {
+            assert!(!rational);
+            assert_eq!(points[0].get(), Point2::new(0.0, 3.5));
+            assert_eq!(points[1].get(), Point2::new(1.0, 4.5));
+        }
+        PcurveNurbsPoles::Rational { points } => {
+            assert!(rational);
+            assert_eq!(points[0].point.get(), Point2::new(0.0, 3.5));
+            assert_eq!(points[1].point.get(), Point2::new(1.0, 4.5));
+            assert_eq!(points[0].weight.get(), 1.0);
+            assert_eq!(points[1].weight.get(), 2.0);
+        }
+    }
+    const OPERATION: &str = "catia_freeform_rechart_pole_updates";
+    let refused = crate::test_support::with_work_refusal(OPERATION, |ctx| {
+        let result = run(ctx);
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+            assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+        }
+        result
+    });
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == OPERATION));
+}
+
+#[test]
+fn freeform_polynomial_pole_updates_preserve_work_refusal() {
+    cone_pole_work_refusal(false);
+}
+
+#[test]
+fn freeform_rational_pole_updates_preserve_work_refusal() {
+    cone_pole_work_refusal(true);
+}
+
+#[test]
 fn planar_rechart_recovers_a_foreign_consolidated_chart() {
     let angle = 0.7;
     let shift = [12.5, -4.25];
@@ -355,9 +744,11 @@ fn a_cone_record_is_refused_when_read_or_builds_its_freeform_carrier() {
         });
         assert!(carriers.is_empty());
         assert!(
-            crate::families::b2::records::b2_cones_from_records(&bytes, &records)
-                .next()
-                .is_none()
+            crate::test_support::with_service_context(|ctx| {
+                crate::families::b2::records::b2_cones_from_records(ctx, &bytes, &records)
+                    .map(|mut cones| cones.next().is_none())
+            })
+            .expect("service context admits cones")
         );
     }
 }

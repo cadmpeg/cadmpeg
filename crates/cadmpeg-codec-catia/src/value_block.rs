@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Framed CATIA `7C0B` value blocks.
 
+use cadmpeg_core::decode::cost::DecodeCost;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
@@ -15,6 +16,16 @@ pub(crate) struct ValueBlock {
     pub(crate) pos: usize,
     /// Value payload between the six-byte header and terminator.
     pub(crate) payload: Vec<u8>,
+}
+
+impl DecodeCost for ValueBlock {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (&self.pos, &self.payload).decode_cost(ctx, operation)
+    }
 }
 
 impl ValueBlock {

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Framed CATIA `7C02` UTF-8 string catalogs.
 
+use cadmpeg_core::decode::cost::DecodeCost;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
@@ -29,6 +30,26 @@ pub(crate) struct CatalogEntry {
     /// Decoded UTF-8 value. Schema expressions can contain line feeds and
     /// non-ASCII unit symbols.
     pub(crate) value: String,
+}
+
+impl DecodeCost for CatalogEntry {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (&self.ordinal, &self.pos, &self.value).decode_cost(ctx, operation)
+    }
+}
+
+impl DecodeCost for Catalog {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (&self.pos, &self.total_len, &self.entries).decode_cost(ctx, operation)
+    }
 }
 
 /// Parse every exact `7C02` catalog in a complete `CATPart` image.

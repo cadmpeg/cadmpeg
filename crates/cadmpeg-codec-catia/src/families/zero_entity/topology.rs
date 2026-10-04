@@ -104,12 +104,12 @@ fn zero_entity_oriented_occurrences(
     runs: &[ZeroEntitySupportRun],
 ) -> Result<Vec<ZeroEntityOrientedOccurrence>, CodecError> {
     let mut occurrences = Vec::new();
-    for run in runs {
+    for run in ctx.admit_iter(runs, "catia_zero_occurrence_run_visits")? {
         let Some(face) = run.face.as_ref() else {
             continue;
         };
         let mut midpoints = HashMap::new();
-        for support in &run.supports {
+        for support in ctx.admit_iter(&run.supports, "catia_zero_occurrence_support_visits")? {
             if let Some(midpoint) = support.model_midpoint {
                 ctx.insert_hash_map(
                     &mut midpoints,
@@ -119,12 +119,10 @@ fn zero_entity_oriented_occurrences(
                 )?;
             }
         }
-        for loop_record in face.loops.iter().flatten() {
-            for (support_record_ordinal, model_endpoints) in loop_record
-                .support_record_ordinals
-                .iter()
+        for loop_record in ctx.admit_iter(match face.loops.as_deref() { Some(loops) => loops, None => &[] }, "catia_zero_occurrence_loop_visits")? {
+            for (support_record_ordinal, model_endpoints) in ctx.admit_iter(&loop_record.support_record_ordinals, "catia_zero_occurrence_ordinal_visits")?
                 .copied()
-                .zip(loop_record.oriented_model_endpoints.iter().copied())
+                .zip(ctx.admit_iter(&loop_record.oriented_model_endpoints, "catia_zero_occurrence_endpoint_visits")?.copied())
             {
                 let Some(model_midpoint) = midpoints.get(&support_record_ordinal).copied() else {
                     continue;
@@ -181,7 +179,7 @@ fn endpoint_pair_candidates_with_budget(
     };
     let radial_matches = selected_radial_matches(ctx, occurrences, &endpoint_matches)?;
     let mut face_ordinals = HashSet::new();
-    for occurrence in occurrences {
+    for occurrence in ctx.admit_iter(occurrences, "catia_zero_pair_occurrence_visits")? {
         ctx.insert_hash_set(
             &mut face_ordinals,
             occurrence.face_record_ordinal,
@@ -189,11 +187,11 @@ fn endpoint_pair_candidates_with_budget(
         )?;
     }
     let mut face_indices = HashMap::new();
-    for (index, ordinal) in face_ordinals.into_iter().enumerate() {
+    for (index, &ordinal) in ctx.admit_iter(&face_ordinals, "catia_zero_pair_face_visits")?.enumerate() {
         ctx.insert_hash_map(&mut face_indices, ordinal, index, "catia_zero_face_indices")?;
     }
     let mut face_components = UnionFind::charged(ctx, face_indices.len(), "catia_zero_face_union")?;
-    for (index, neighbors) in radial_matches.iter().enumerate() {
+    for (index, neighbors) in ctx.admit_iter(&radial_matches, "catia_zero_pair_radial_visits")?.enumerate() {
         let [neighbor] = neighbors.as_slice() else {
             continue;
         };
@@ -211,7 +209,7 @@ fn endpoint_pair_candidates_with_budget(
     // Face components can contain several distinct edges with the same
     // endpoint locus. A reciprocal singleton radial match is still a
     // complete geometric relation and must not be merged with its siblings.
-    for (index, neighbors) in radial_matches.iter().enumerate() {
+    for (index, neighbors) in ctx.admit_iter(&radial_matches, "catia_zero_pair_radial_visits")?.enumerate() {
         let [neighbor] = neighbors.as_slice() else {
             continue;
         };
@@ -235,7 +233,7 @@ fn endpoint_pair_candidates_with_budget(
     }
 
     let mut visited = ctx.alloc_filled(occurrences.len(), false, "catia_zero_pair_visited")?;
-    for start in 0..occurrences.len() {
+    for (start, _) in ctx.admit_iter(occurrences, "catia_zero_pair_roots")?.enumerate() {
         if visited[start] {
             continue;
         }
@@ -245,7 +243,7 @@ fn endpoint_pair_candidates_with_budget(
         let mut group = Vec::new();
         while let Some(index) = stack.pop() {
             ctx.push_vec(&mut group, index, "catia_zero_pair_group")?;
-            for neighbor in &endpoint_matches[index] {
+            for neighbor in ctx.admit_iter(&endpoint_matches[index], "catia_zero_pair_neighbor_visits")? {
                 if !visited[*neighbor] {
                     visited[*neighbor] = true;
                     ctx.push_vec(&mut stack, *neighbor, "catia_zero_pair_stack")?;
@@ -253,7 +251,7 @@ fn endpoint_pair_candidates_with_budget(
             }
         }
         let mut by_face_component = HashMap::<usize, Vec<usize>>::new();
-        for index in group {
+        for &index in ctx.admit_iter(&group, "catia_zero_pair_group_visits")? {
             let component =
                 face_components.find(ctx, face_indices[&occurrences[index].face_record_ordinal])?;
             if let Some(group) = by_face_component.get_mut(&component) {
@@ -269,13 +267,14 @@ fn endpoint_pair_candidates_with_budget(
                 )?;
             }
         }
-        for mut pair in by_face_component.into_values() {
+        for (_, pair) in ctx.admit_iter(&by_face_component, "catia_zero_pair_component_visits")? {
             if pair.len() != 2 || !endpoint_matches[pair[0]].contains(&pair[1]) {
                 continue;
             }
             if radial_matches[pair[0]].len() == 1 && radial_matches[pair[1]].len() == 1 {
                 continue;
             }
+            let mut pair = [pair[0], pair[1]];
             ctx.stable_sort_by_key(
                 &mut pair,
                 |value| occurrences[*value].support_record_ordinal,
@@ -321,7 +320,7 @@ pub(super) fn endpoint_locus_candidates_with_budget(
     budget: &WorkBudget<'_>,
 ) -> Result<Option<Vec<ZeroEntityEndpointLocusCandidate>>, CodecError> {
     let mut endpoints = Vec::new();
-    for (endpoint_pair, candidate) in endpoint_pairs.iter().enumerate() {
+    for (endpoint_pair, candidate) in ctx.admit_iter(endpoint_pairs, "catia_zero_locus_pair_visits")?.enumerate() {
         for (endpoint, point) in [EdgeEnd::Start, EdgeEnd::End]
             .into_iter()
             .zip(candidate.model_endpoints)
@@ -334,7 +333,7 @@ pub(super) fn endpoint_locus_candidates_with_budget(
         }
     }
     let mut cells = HashMap::<[i64; 3], Vec<usize>>::new();
-    for (index, (_, _, point)) in endpoints.iter().enumerate() {
+    for (index, (_, _, point)) in ctx.admit_iter(&endpoints, "catia_zero_locus_endpoint_visits")?.enumerate() {
         let Some(cell) = endpoint_cell(*point) else {
             return Ok(None);
         };
@@ -350,7 +349,7 @@ pub(super) fn endpoint_locus_candidates_with_budget(
         ctx.collect_indexed_vec(endpoints.len(), "catia_zero_locus_neighbors", |_| {
             Ok(Vec::new())
         })?;
-    for (index, (_, _, point)) in endpoints.iter().enumerate() {
+    for (index, (_, _, point)) in ctx.admit_iter(&endpoints, "catia_zero_locus_endpoint_visits")?.enumerate() {
         let Some(cell) = endpoint_cell(*point) else {
             return Ok(None);
         };
@@ -365,7 +364,7 @@ pub(super) fn endpoint_locus_candidates_with_budget(
                         continue;
                     };
                     let neighbor_cell = [x, y, z];
-                    for other in cells.get(&neighbor_cell).into_iter().flatten() {
+                    for other in ctx.admit_iter(match cells.get(&neighbor_cell) { Some(indices) => indices.as_slice(), None => &[] }, "catia_zero_locus_cell_member_visits")? {
                         if *other <= index {
                             continue;
                         }
@@ -390,7 +389,7 @@ pub(super) fn endpoint_locus_candidates_with_budget(
 
     let mut visited = ctx.alloc_filled(endpoints.len(), false, "catia_zero_locus_visited")?;
     let mut candidates = Vec::new();
-    for start in 0..endpoints.len() {
+    for (start, _) in ctx.admit_iter(&endpoints, "catia_zero_locus_roots")?.enumerate() {
         if visited[start] {
             continue;
         }
@@ -400,7 +399,7 @@ pub(super) fn endpoint_locus_candidates_with_budget(
         visited[start] = true;
         while let Some(index) = stack.pop() {
             ctx.push_vec(&mut component, index, "catia_zero_locus_component")?;
-            for neighbor in &neighbors[index] {
+            for neighbor in ctx.admit_iter(&neighbors[index], "catia_zero_locus_neighbor_visits")? {
                 if !visited[*neighbor] {
                     visited[*neighbor] = true;
                     ctx.push_vec(&mut stack, *neighbor, "catia_zero_locus_stack")?;
@@ -416,8 +415,8 @@ pub(super) fn endpoint_locus_candidates_with_budget(
         let representative_point = endpoints[component[0]].2;
         let mut maximum_deviation = 0.0_f64;
         let mut complete = true;
-        for (position, left) in component.iter().enumerate() {
-            for right in &component[position + 1..] {
+        for (position, left) in ctx.admit_iter(&component, "catia_zero_locus_component_visits")?.enumerate() {
+            for right in ctx.admit_iter(&component[position + 1..], "catia_zero_locus_component_tail_visits")? {
                 charge_endpoint_work(ctx, budget)?;
                 let deviation = endpoints[*left].2.distance(endpoints[*right].2.get());
                 maximum_deviation = maximum_deviation.max(deviation);
@@ -428,7 +427,7 @@ pub(super) fn endpoint_locus_candidates_with_budget(
             continue;
         }
         let mut incident = Vec::new();
-        for index in component {
+        for &index in ctx.admit_iter(&component, "catia_zero_locus_incident_visits")? {
             ctx.push_vec(
                 &mut incident,
                 (endpoints[index].0, endpoints[index].1),
@@ -454,7 +453,7 @@ fn endpoint_match_graph(
     budget: &WorkBudget<'_>,
 ) -> Result<Option<Vec<Vec<usize>>>, CodecError> {
     let mut cells = HashMap::<[i64; 3], Vec<usize>>::new();
-    for (index, occurrence) in occurrences.iter().enumerate() {
+    for (index, occurrence) in ctx.admit_iter(occurrences, "catia_zero_match_occurrence_visits")?.enumerate() {
         for endpoint in occurrence.model_endpoints {
             let Some(cell) = endpoint_cell(endpoint) else {
                 return Ok(None);
@@ -472,7 +471,7 @@ fn endpoint_match_graph(
         ctx.collect_indexed_vec(occurrences.len(), "catia_zero_match_rows", |_| {
             Ok(Vec::new())
         })?;
-    for (index, occurrence) in occurrences.iter().enumerate() {
+    for (index, occurrence) in ctx.admit_iter(occurrences, "catia_zero_match_occurrence_visits")?.enumerate() {
         let mut possible = HashSet::new();
         for endpoint in occurrence.model_endpoints {
             let Some(cell) = endpoint_cell(endpoint) else {
@@ -490,7 +489,7 @@ fn endpoint_match_graph(
                         };
                         let neighbor = [x, y, z];
                         if let Some(indices) = cells.get(&neighbor) {
-                            for other in indices.iter().copied().filter(|other| *other > index) {
+                            for other in ctx.admit_iter(indices, "catia_zero_match_cell_member_visits")?.copied().filter(|other| *other > index) {
                                 if ctx.insert_hash_set(
                                     &mut possible,
                                     other,
@@ -504,7 +503,7 @@ fn endpoint_match_graph(
                 }
             }
         }
-        for other in possible {
+        for &other in ctx.admit_iter(&possible, "catia_zero_match_possible_visits")? {
             if unordered_endpoint_pairs_match(
                 occurrence.model_endpoints,
                 occurrences[other].model_endpoints,
@@ -514,7 +513,8 @@ fn endpoint_match_graph(
             }
         }
     }
-    for neighbors in &mut matches {
+    for (index, _) in ctx.admit_iter(occurrences, "catia_zero_match_sort_rows")?.enumerate() {
+        let neighbors = &mut matches[index];
         ctx.sort_unstable_by(
             neighbors,
             |value| value,
@@ -531,9 +531,9 @@ fn selected_radial_matches(
     endpoint_matches: &[Vec<usize>],
 ) -> Result<Vec<Vec<usize>>, CodecError> {
     let mut radial = Vec::new();
-    for (index, matches) in endpoint_matches.iter().enumerate() {
+    for (index, matches) in ctx.admit_iter(endpoint_matches, "catia_zero_radial_match_visits")?.enumerate() {
         let mut row = Vec::new();
-        for &other in matches {
+        for &other in ctx.admit_iter(matches, "catia_zero_radial_neighbor_visits")? {
             if occurrences[index]
                 .model_midpoint
                 .distance(occurrences[other].model_midpoint.get())
@@ -564,6 +564,7 @@ fn unordered_endpoint_pairs_match(left: [FinitePoint3; 2], right: [FinitePoint3;
 
 #[cfg(test)]
 mod tests {
+    mod work_admission;
     use super::{
         endpoint_locus_candidates, endpoint_pair_candidates, endpoint_pair_candidates_with_budget,
         ZeroEntityEndpointPairCandidate, ZeroEntityOrientedOccurrence,
@@ -734,6 +735,22 @@ mod tests {
                 .support_record_ordinals,
             [1, 2]
         );
+    }
+
+    #[test]
+    fn zero_entity_pair_component_source_propagates_caller_work_refusal() {
+        let endpoints = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)];
+        let midpoint = Point3::new(0.5, 0.0, 0.0);
+        let occurrences = [occurrence(10, 1, endpoints, midpoint), occurrence(11, 2, endpoints, midpoint)];
+        let operation = "catia_zero_pair_component_visits";
+        let result = crate::test_support::with_work_refusal(operation, |ctx| {
+            let result = endpoint_pair_candidates(ctx, &occurrences);
+            if let Err(CodecError::ResourceLimit(limit)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+            }
+            result
+        });
+        assert!(matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.operation == operation));
     }
 
     #[test]

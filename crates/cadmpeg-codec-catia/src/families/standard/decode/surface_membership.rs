@@ -2,6 +2,7 @@
 //! Surface point witnesses for standard NURBS membership.
 
 use cadmpeg_core::convert::f64_from_index;
+use std::num::NonZeroUsize;
 
 use super::{
     nurbs_surface_parameter_domain, NURBS_SURFACE_BACKTRACK_STEPS, NURBS_SURFACE_MAX_SEEDS,
@@ -104,14 +105,21 @@ pub(super) fn nurbs_surface_witness_distance(
     let Some(v_knots) = surface.v_knots().get(v_degree..=surface.v_count()) else {
         return Ok(None);
     };
+    let Some(knot_window_size) = NonZeroUsize::new(2) else {
+        return Ok(None);
+    };
     let mut u_spans = 0_usize;
-    for pair in u_knots.windows(2) {
-        ctx.charge_work_limit(1, "catia surface knot span count")?;
+    for pair in ctx
+        .admit_iter(u_knots, "catia surface knot span count")?
+        .windows(knot_window_size)
+    {
         u_spans += usize::from(pair[0] != pair[1]);
     }
     let mut v_spans = 0_usize;
-    for pair in v_knots.windows(2) {
-        ctx.charge_work_limit(1, "catia surface knot span count")?;
+    for pair in ctx
+        .admit_iter(v_knots, "catia surface knot span count")?
+        .windows(knot_window_size)
+    {
         v_spans += usize::from(pair[0] != pair[1]);
     }
     if u_spans == 0 || v_spans == 0 {
@@ -141,8 +149,10 @@ pub(super) fn nurbs_surface_witness_distance(
     if samples > NURBS_SURFACE_MAX_SEEDS {
         const SIDE: usize = 16;
         for knots in [u_knots, v_knots] {
-            for pair in knots.windows(2) {
-                ctx.charge_work_limit(1, "catia surface knot span visit")?;
+            for pair in ctx
+                .admit_iter(knots, "catia surface knot span visit")?
+                .windows(knot_window_size)
+            {
                 if pair[0] == pair[1] {
                     continue;
                 }
@@ -191,8 +201,10 @@ pub(super) fn nurbs_surface_witness_distance(
             }
         }
     } else {
-        for u_pair in u_knots.windows(2) {
-            ctx.charge_work_limit(1, "catia surface knot span visit")?;
+        for u_pair in ctx
+            .admit_iter(u_knots, "catia surface knot span visit")?
+            .windows(knot_window_size)
+        {
             if u_pair[0] == u_pair[1] {
                 continue;
             }
@@ -209,8 +221,10 @@ pub(super) fn nurbs_surface_witness_distance(
                 else {
                     return Ok(None);
                 };
-                for v_pair in v_knots.windows(2) {
-                    ctx.charge_work_limit(1, "catia surface knot span visit")?;
+                for v_pair in ctx
+                    .admit_iter(v_knots, "catia surface knot span visit")?
+                    .windows(knot_window_size)
+                {
                     if v_pair[0] == v_pair[1] {
                         continue;
                     }

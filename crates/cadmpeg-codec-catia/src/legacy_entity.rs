@@ -434,8 +434,16 @@ pub(crate) struct LegacyEntityRun {
 
 impl LegacyEntityRun {
     /// Stored identities in source order.
-    pub(crate) fn identities(&self) -> impl Iterator<Item = &LegacyEntityIdentity> {
-        std::iter::once(&self.first_identity).chain(&self.following_identities)
+    pub(crate) fn identities<'a>(
+        &'a self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<impl Iterator<Item = &'a LegacyEntityIdentity> + 'a, CodecError> {
+        let first = std::iter::once(&self.first_identity);
+        let following = ctx.admit_iter(
+            &self.following_identities,
+            "catia_legacy_identity_visits",
+        )?;
+        Ok(first.chain(following))
     }
 }
 

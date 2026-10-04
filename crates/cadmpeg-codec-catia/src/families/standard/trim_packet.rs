@@ -6,6 +6,7 @@ use std::sync::OnceLock;
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use std::num::NonZeroUsize;
 
 #[derive(Debug, Clone)]
 pub(crate) struct TrimPacket {
@@ -25,33 +26,38 @@ impl PartialEq for TrimPacket {
     }
 }
 
-impl TryFrom<(usize, Vec<usize>, Vec<usize>, Vec<u32>)> for TrimPacket {
-    type Error = &'static str;
-
-    fn try_from(
+impl TrimPacket {
+    pub(crate) fn try_from(
+        ctx: &DecodeContext<'_>,
         (independent_count, strip_lengths, fan_lengths, handles): (
             usize,
             Vec<usize>,
             Vec<usize>,
             Vec<u32>,
         ),
-    ) -> Result<Self, Self::Error> {
-        let expected = independent_count.checked_mul(3).and_then(|count| {
-            strip_lengths
-                .iter()
-                .chain(&fan_lengths)
-                .try_fold(count, |count, length| count.checked_add(*length))
-        });
-        if expected != Some(handles.len()) {
-            return Err("trim packet partition does not consume handles");
+    ) -> Result<Option<Self>, CodecError> {
+        let operation = "catia_trim_packet_partition";
+        let mut expected = independent_count.checked_mul(3).ok_or_else(|| {
+            ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX)
+        })?;
+        for length in ctx
+            .admit_iter(&strip_lengths, "catia_trim_packet_partition")?
+            .chain(ctx.admit_iter(&fan_lengths, "catia_trim_packet_partition")?)
+        {
+            expected = expected.checked_add(*length).ok_or_else(|| {
+                ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX)
+            })?;
         }
-        Ok(Self {
+        if expected != handles.len() {
+            return Ok(None);
+        }
+        Ok(Some(Self {
             independent_count,
             strip_lengths,
             fan_lengths,
             handles,
             triangles: OnceLock::new(),
-        })
+        }))
     }
 }
 
@@ -103,16 +109,9 @@ impl TrimPacket {
 
     fn expand_triangles(&self, ctx: &DecodeContext<'_>) -> Result<Vec<[u32; 3]>, CodecError> {
         let operation = "catia_trim_expansion_work";
-        let lengths = self
-            .strip_lengths
-            .len()
-            .checked_add(self.fan_lengths.len())
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-        ctx.charge_work(u64_from_index(lengths), operation)?;
-        let triangle_count = self
-            .strip_lengths
-            .iter()
-            .chain(&self.fan_lengths)
+        let triangle_count = ctx
+            .admit_iter(&self.strip_lengths, operation)?
+            .chain(ctx.admit_iter(&self.fan_lengths, operation)?)
             .try_fold(self.independent_count, |count, &length| {
                 count.checked_add(match length {
                     0 | 1 => 0,
@@ -122,26 +121,31 @@ impl TrimPacket {
             .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
         let work = u64_from_index(triangle_count)
             .checked_mul(3)
-            .and_then(|work| work.checked_add(u64_from_index(self.handles.len())))
             .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
         ctx.charge_work(work, operation)?;
         let mut triangles = Vec::new();
         let (independent, mut remaining) = self.handles.split_at(3 * self.independent_count);
-        for triple in independent.chunks_exact(3) {
+        let Some(triple_width) = NonZeroUsize::new(3) else {
+            return Err(ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX));
+        };
+        for triple in ctx.admit_iter(independent, operation)?.chunks(triple_width) {
+            let [first, second, third] = triple else {
+                return Err(ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX));
+            };
             ctx.charge_retained(
                 u64_from_index(std::mem::size_of::<[u32; 3]>()),
                 "catia_trim_triangles",
             )?;
             ctx.push_vec(
                 &mut triangles,
-                [triple[0], triple[1], triple[2]],
+                [*first, *second, *third],
                 "catia_trim_triangles",
             )?;
         }
-        for &length in &self.strip_lengths {
+        for &length in ctx.admit_iter(&self.strip_lengths, operation)? {
             let (strip, tail) = remaining.split_at(length);
             remaining = tail;
-            for (index, triple) in strip.windows(3).enumerate() {
+            for (index, triple) in ctx.admit_iter(strip, operation)?.windows(triple_width).enumerate() {
                 ctx.charge_retained(
                     u64_from_index(std::mem::size_of::<[u32; 3]>()),
                     "catia_trim_triangles",
@@ -157,13 +161,16 @@ impl TrimPacket {
                 )?;
             }
         }
-        for &length in &self.fan_lengths {
+        for &length in ctx.admit_iter(&self.fan_lengths, operation)? {
             let (fan, tail) = remaining.split_at(length);
             remaining = tail;
+            let Some(pair_width) = NonZeroUsize::new(2) else {
+                return Err(ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX));
+            };
             let Some((&center, rim)) = fan.split_first() else {
                 continue;
             };
-            for pair in rim.windows(2) {
+            for pair in ctx.admit_iter(rim, operation)?.windows(pair_width) {
                 ctx.charge_retained(
                     u64_from_index(std::mem::size_of::<[u32; 3]>()),
                     "catia_trim_triangles",
@@ -184,10 +191,15 @@ mod tests {
     use super::TrimPacket;
     use cadmpeg_core::CodecError;
 
+    fn packet(args: (usize, Vec<usize>, Vec<usize>, Vec<u32>)) -> TrimPacket {
+        crate::test_support::with_service_context(|ctx| TrimPacket::try_from(ctx, args))
+            .expect("service resource budget")
+            .expect("complete trim handle partition")
+    }
+
     #[test]
     fn trim_expansion_refuses_work_before_cache_installation() {
-        let packet =
-            TrimPacket::try_from((1, vec![], vec![], vec![0, 1, 2])).expect("complete partition");
+        let packet = packet((1, vec![], vec![], vec![0, 1, 2]));
         crate::test_support::with_work_limit(0, |ctx| {
             let CodecError::ResourceLimit(limit) = packet
                 .triangles(ctx)
@@ -203,16 +215,49 @@ mod tests {
 
     #[test]
     fn packet_rejects_overflow_and_incomplete_partitions() {
-        assert!(TrimPacket::try_from((usize::MAX, vec![], vec![], vec![])).is_err());
-        assert!(TrimPacket::try_from((0, vec![usize::MAX], vec![1], vec![])).is_err());
-        assert!(TrimPacket::try_from((1, vec![], vec![], vec![0, 1])).is_err());
-        assert!(TrimPacket::try_from((0, vec![1], vec![], vec![0, 1])).is_err());
+        for args in [
+            (usize::MAX, vec![], vec![], vec![]),
+            (0, vec![usize::MAX], vec![1], vec![]),
+        ] {
+            crate::test_support::with_service_context(|ctx| {
+                let CodecError::ResourceLimit(limit) = TrimPacket::try_from(ctx, args)
+                    .expect_err("overflow must refuse as a resource limit")
+                else {
+                    panic!("resource refusal required")
+                };
+                assert_eq!(limit.operation, "catia_trim_packet_partition");
+                assert_eq!(ctx.resource_refusal(), Some(limit));
+            });
+        }
+        for args in [
+            (1, vec![], vec![], vec![0, 1]),
+            (0, vec![1], vec![], vec![0, 1]),
+        ] {
+            let result = crate::test_support::with_service_context(|ctx| TrimPacket::try_from(ctx, args));
+            assert!(result.expect("service resource budget").is_none());
+        }
+    }
+
+    #[test]
+    fn trim_partition_sources_propagate_caller_work_refusals() {
+        // One strip-length visit precedes one fan-length visit.
+        for cap in [0, 1] {
+            crate::test_support::with_work_limit(cap, |ctx| {
+                let CodecError::ResourceLimit(limit) =
+                    TrimPacket::try_from(ctx, (0, vec![1], vec![1], vec![10, 11]))
+                        .expect_err("both partition sources require admission")
+                else {
+                    panic!("resource refusal required")
+                };
+                assert_eq!(limit.operation, "catia_trim_packet_partition");
+                assert_eq!(ctx.resource_refusal(), Some(limit));
+            });
+        }
     }
 
     #[test]
     fn packet_reuses_expansion_without_changing_equality() {
-        let packet = TrimPacket::try_from((1, vec![4], vec![4], (0..11).collect()))
-            .expect("complete trim handle partition");
+        let packet = packet((1, vec![4], vec![4], (0..11).collect()));
         let cold = packet.clone();
         assert!(packet.triangles.get().is_none());
         crate::test_support::with_service_context(|ctx| {
@@ -234,8 +279,7 @@ mod tests {
 
     #[test]
     fn packet_preserves_independent_strip_and_fan_order() {
-        let packet = TrimPacket::try_from((1, vec![4, 1], vec![4], (0..12).collect()))
-            .expect("complete trim handle partition");
+        let packet = packet((1, vec![4, 1], vec![4], (0..12).collect()));
         assert_eq!(
             crate::test_support::with_service_context(|ctx| packet
                 .triangles(ctx)
@@ -247,8 +291,7 @@ mod tests {
 
     #[test]
     fn lazy_trim_triangle_expansion_refuses_before_retained_growth() {
-        let packet = TrimPacket::try_from((1, vec![4], vec![4], (0..11).collect()))
-            .expect("complete trim handle partition");
+        let packet = packet((1, vec![4], vec![4], (0..11).collect()));
         let refusal = crate::test_support::with_collection_limit(4, |ctx| packet.triangles(ctx))
             .expect_err("five triangles exceed four admitted items");
         assert!(matches!(refusal, CodecError::ResourceLimit(limit)

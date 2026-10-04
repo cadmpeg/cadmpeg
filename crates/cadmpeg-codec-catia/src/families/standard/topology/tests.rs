@@ -1227,3 +1227,86 @@ fn edge_row_admission_couples_table_kind_and_boundary_shape() {
         EdgeBoundaryLayout::CompleteBoundaryRun
     );
 }
+
+#[test]
+fn standard_topology_copy_scans_propagate_caller_work_refusals() {
+    use super::{BoundaryDraft, CoedgeUse, FaceTopologyDraft};
+    let topology = StandardTopologyDraft {
+        faces: vec![FaceTopologyDraft {
+            boundaries: vec![BoundaryDraft {
+                coedges: NonEmptyMembers::one(CoedgeUse {
+                    edge_row: 0, reversed: false, start_vertex: 0, end_vertex: 0,
+                }),
+            }],
+        }],
+        edge_rows: Vec::new(), vertex_points: Vec::new(), logical_vertex_count: 0,
+    };
+    for (cap, operation) in [(0, "catia_standard_topology_copy_faces"), (1, "catia_standard_topology_copy_boundaries")] {
+        crate::test_support::with_work_limit(cap, |ctx| {
+            let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = topology.clone_charged(ctx) else {
+                panic!("topology source scan must refuse");
+            };
+            assert_eq!(limit.operation, operation);
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        });
+    }
+}
+
+#[test]
+fn standard_boundary_constraint_scan_propagates_caller_work_refusal() {
+    let uses = HashMap::from([(0, vec![(0, false), (1, true)])]);
+    // Two indexed constraint rows precede the admitted edge-use source.
+    crate::test_support::with_work_limit(2, |ctx| {
+        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = solve_boundary_orientation_constraints(ctx, 2, &uses, true) else {
+            panic!("constraint source scan must refuse");
+        };
+        assert_eq!(limit.operation, "catia_standard_boundary_constraint_sources");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
+}
+
+#[test]
+fn reconstructed_union_root_sources_propagate_caller_work_refusals() {
+    use super::{EdgeBoundaryLayout, EdgeRow};
+    use crate::solve::missing_edge::{MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment};
+    use cadmpeg_core::CodecError;
+
+    let row = EdgeRow::new(1, vec![7, 7], EdgeBoundaryLayout::CompleteBoundaryRun)
+        .expect("admitted edge row");
+    let selected = [MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![MeshBoundaryEdgeCandidate { edge: 0, start: 0, end: 1, reversed: Some(false) }]],
+    }];
+    let directions = [vec![vec![false]]];
+    for operation in [
+        "catia_reconstruct_root_edge_rows",
+        "catia_mesh_selection_root_edge_rows",
+        "catia_mesh_selection_root_faces",
+        "catia_mesh_selection_root_boundaries",
+        "catia_mesh_selection_root_coedges",
+    ] {
+        let result = crate::test_support::with_work_refusal(operation, |ctx| {
+            let result = if operation == "catia_reconstruct_root_edge_rows" {
+                super::reconstruct(ctx, vec![row.clone()], Vec::new(), &[])
+            } else {
+                super::reconstruct_mesh_selection(ctx, std::slice::from_ref(&row), &[], &selected, &directions)
+            };
+            if let Err(CodecError::ResourceLimit(limit)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+            }
+            result
+        });
+        assert!(matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.operation == operation));
+    }
+    crate::test_support::with_service_context(|ctx| {
+        let topology = super::reconstruct(ctx, vec![row.clone()], Vec::new(), &[])
+            .expect("service work budget").expect("untrimmed edge topology");
+        assert_eq!(topology.logical_vertex_count, 2);
+        let topology = super::reconstruct_mesh_selection(ctx, std::slice::from_ref(&row), &[], &selected, &directions)
+            .expect("service work budget").expect("single boundary topology");
+        assert_eq!(topology.logical_vertex_count, 1);
+        assert_eq!(topology.faces[0].boundaries[0].coedges.as_slice()[0].start_vertex, 0);
+        assert_eq!(topology.faces[0].boundaries[0].coedges.as_slice()[0].end_vertex, 0);
+    });
+}
+
+mod source_replay;

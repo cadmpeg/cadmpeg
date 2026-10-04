@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Outer `7C08` feature and object-ownership graph decoder.
 
+use cadmpeg_core::decode::cost::DecodeCost;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
@@ -23,6 +24,17 @@ pub(crate) struct ObjectGraph {
     pub(crate) records: Vec<ObjectRecord>,
 }
 
+impl DecodeCost for ObjectGraph {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (&self.pos, &self.total_len, &self.catalog_pos, &self.records)
+            .decode_cost(ctx, operation)
+    }
+}
+
 /// One `7C09` object record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "ObjectRecordWire", into = "ObjectRecordWire")]
@@ -35,6 +47,16 @@ pub(crate) struct ObjectRecord {
     pub(crate) lead: u8,
     /// Inline body or nested head and payload.
     body: ObjectRecordBody,
+}
+
+impl DecodeCost for ObjectRecord {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (&self.pos, &self.total_len, &self.lead, &self.body).decode_cost(ctx, operation)
+    }
 }
 
 // Serialized role fields are retained for wire compatibility and checked once on input.
@@ -112,6 +134,20 @@ enum ObjectRecordBody {
         /// Decoded nested payload.
         payload: ObjectPayload,
     },
+}
+
+impl DecodeCost for ObjectRecordBody {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        let payload = match self {
+            Self::Inline(bytes) => bytes.decode_cost(ctx, operation)?,
+            Self::Nested { head, payload } => (head, payload).decode_cost(ctx, operation)?,
+        };
+        tagged_decode_cost(payload, ctx, operation)
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -221,6 +257,21 @@ pub(crate) enum HeadToken {
     NullHandle,
 }
 
+impl DecodeCost for HeadToken {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        let payload = match self {
+            Self::Lead(value) | Self::Literal(value) => value.decode_cost(ctx, operation)?,
+            Self::Separator | Self::NullHandle => 0,
+            Self::Reference(value) => value.decode_cost(ctx, operation)?,
+        };
+        tagged_decode_cost(payload, ctx, operation)
+    }
+}
+
 /// Decoded `7C0A` tagged-atom payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct ObjectPayload {
@@ -228,6 +279,16 @@ pub(crate) struct ObjectPayload {
     pub(crate) size: usize,
     /// Decoded fields in serialization order.
     pub(crate) fields: Vec<PayloadField>,
+}
+
+impl DecodeCost for ObjectPayload {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (&self.size, &self.fields).decode_cost(ctx, operation)
+    }
 }
 
 impl ObjectPayload {
@@ -321,6 +382,21 @@ pub(crate) enum ListItem {
     },
 }
 
+impl DecodeCost for ListItem {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        let payload = match self {
+            Self::Reference { value, offset } | Self::Atom { value, offset } => {
+                (value, offset).decode_cost(ctx, operation)?
+            }
+        };
+        tagged_decode_cost(payload, ctx, operation)
+    }
+}
+
 /// One allocation row in a `0x3c` bulk table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct BulkTableRow {
@@ -330,6 +406,16 @@ pub(crate) struct BulkTableRow {
     handle: u32,
     /// Byte offset of the row's `0x81` tag within the payload.
     offset: usize,
+}
+
+impl DecodeCost for BulkTableRow {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (&self.row_id, &self.handle, &self.offset).decode_cost(ctx, operation)
+    }
 }
 
 /// One schema-free field in a `7C0A` payload.
@@ -392,6 +478,35 @@ pub(crate) enum PayloadField {
     },
     /// `0xfe` payload terminator.
     Terminator,
+}
+
+impl DecodeCost for PayloadField {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        let payload = match self {
+            Self::Atom { value, offset } | Self::Reference { value, offset } => {
+                (value, offset).decode_cost(ctx, operation)?
+            }
+            Self::Scalar { tag, value, offset } => {
+                (tag, value, offset).decode_cost(ctx, operation)?
+            }
+            Self::Blob { bytes, offset } => (bytes, offset).decode_cost(ctx, operation)?,
+            Self::BulkTable { count, rows, offset } => {
+                (count, rows, offset).decode_cost(ctx, operation)?
+            }
+            Self::List {
+                declared_count,
+                items,
+                offset,
+            } => (declared_count, items, offset).decode_cost(ctx, operation)?,
+            Self::Sentinel { offset } => offset.decode_cost(ctx, operation)?,
+            Self::Terminator => 0,
+        };
+        tagged_decode_cost(payload, ctx, operation)
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -667,6 +782,22 @@ pub(crate) struct AliasGroupMembership {
     /// Complete bounded storage prefix between the group header and alias marker.
     #[serde(with = "cadmpeg_ir::bytes")]
     pub(crate) storage_prefix: Vec<u8>,
+}
+
+impl DecodeCost for AliasGroupMembership {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (
+            &self.prototype,
+            &self.group_id,
+            &self.target_slot,
+            &self.storage_prefix,
+        )
+            .decode_cost(ctx, operation)
+    }
 }
 
 /// Fixed 20-byte core of an outer `01 00 04 00` surface-alias row.
@@ -1106,6 +1237,16 @@ fn parse_candidate(
         }))
     })()
     .transpose()
+}
+
+fn tagged_decode_cost(
+    payload: u64,
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<u64, CodecError> {
+    payload
+        .checked_add(1)
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))
 }
 
 /// Occupant of the object head owner slot.

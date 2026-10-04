@@ -4,6 +4,7 @@
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
 mod consolidated;
+mod collector_sources;
 mod constraint;
 mod design;
 mod embedded_cylinders;

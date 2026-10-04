@@ -966,6 +966,76 @@ fn native_namespace_rejects_alias_row_views_disagreeing_with_their_source_bytes(
     }
 }
 
+fn assert_native_work_refusal_at(
+    operation: &'static str,
+    mut run: impl FnMut(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<(), cadmpeg_core::CodecError>,
+) {
+    let result = crate::test_support::with_work_refusal(operation, |ctx| {
+        let result = run(ctx);
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+            assert_eq!(ctx.resource_refusal(), Some(*limit));
+        }
+        result
+    });
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == operation
+    ));
+}
+
+fn native_alias_row_for_overlap_test() -> super::super::CatiaAliasRow {
+    super::super::CatiaAliasRow {
+        id: String::new(),
+        byte_offset: u64_from_index(crate::layout::outer_alias_row::MARKER + 8),
+        lead_raw: 0,
+        tag_raw: 0,
+        flag: 0,
+        f1: [0; 3],
+        object_graph: None,
+        object_record: None,
+        design_object: None,
+        f2: 0,
+        f3: 0,
+        group: None,
+        canonical_surface_tag: None,
+    }
+}
+
+fn native_graph_for_overlap_test(
+    byte_offset: u64,
+    byte_len: u64,
+) -> super::super::CatiaObjectGraph {
+    super::super::CatiaObjectGraph {
+        id: String::new(),
+        byte_offset,
+        byte_len,
+        finjpl_segment: None,
+        outer_container: None,
+        catalog_byte_offset: None,
+        catalog: None,
+        records: Vec::new(),
+    }
+}
+
+fn native_value_block_for_overlap_test(pos: usize) -> crate::value_block::ValueBlock {
+    crate::value_block::ValueBlock {
+        pos,
+        payload: Vec::new(),
+    }
+}
+
+fn native_catalog_for_overlap_test(
+    byte_offset: u64,
+    byte_len: u64,
+) -> super::super::CatiaCatalog {
+    super::super::CatiaCatalog {
+        id: String::new(),
+        byte_offset,
+        byte_len,
+        entries: Vec::new(),
+    }
+}
+
 #[test]
 fn native_overlap_filter_refuses_before_inventory_mutation() {
     let mut graphs = vec![crate::object_graph::ObjectGraph {
@@ -986,9 +1056,148 @@ fn native_overlap_filter_refuses_before_inventory_mutation() {
         else {
             panic!("resource refusal required")
         };
-        assert_eq!(limit.operation, "catia_native_inventory_overlap");
+        // The block retain charges one source slot before any overlap scan.
+        assert_eq!(limit.operation, "catia_native_inventory_blocks_retain");
         assert_eq!(ctx.resource_refusal(), Some(limit));
     });
     assert_eq!(graphs.len(), 1);
     assert_eq!(blocks.len(), 1);
+}
+
+#[test]
+fn native_overlap_block_graph_scan_propagates_work_refusal() {
+    let operation = "catia_native_inventory_block_graph_overlap_scan";
+    assert_native_work_refusal_at(operation, |ctx| {
+        let mut graphs = vec![crate::object_graph::ObjectGraph {
+            pos: 0,
+            total_len: 100,
+            catalog_pos: None,
+            records: Vec::new(),
+        }];
+        let mut blocks = vec![crate::value_block::ValueBlock {
+            pos: 200,
+            payload: Vec::new(),
+        }];
+        super::super::filter_nested_inventory(ctx, &mut graphs, &mut blocks, &mut Vec::new())
+    });
+}
+
+#[test]
+fn native_overlap_graph_retain_propagates_work_refusal() {
+    let operation = "catia_native_inventory_graphs_retain";
+    assert_native_work_refusal_at(operation, |ctx| {
+        let mut graphs = vec![crate::object_graph::ObjectGraph {
+            pos: 0,
+            total_len: 100,
+            catalog_pos: None,
+            records: Vec::new(),
+        }];
+        super::super::filter_nested_inventory(ctx, &mut graphs, &mut Vec::new(), &mut Vec::new())
+    });
+}
+
+#[test]
+fn native_overlap_graph_block_scan_propagates_work_refusal() {
+    let operation = "catia_native_inventory_graph_block_overlap_scan";
+    assert_native_work_refusal_at(operation, |ctx| {
+        let mut graphs = vec![crate::object_graph::ObjectGraph {
+            pos: 0,
+            total_len: 100,
+            catalog_pos: None,
+            records: Vec::new(),
+        }];
+        let mut blocks = vec![crate::value_block::ValueBlock {
+            pos: 200,
+            payload: Vec::new(),
+        }];
+        super::super::filter_nested_inventory(ctx, &mut graphs, &mut blocks, &mut Vec::new())
+    });
+}
+
+#[test]
+fn native_overlap_catalog_retain_propagates_work_refusal() {
+    let operation = "catia_native_inventory_catalogs_retain";
+    assert_native_work_refusal_at(operation, |ctx| {
+        let mut catalogs = vec![crate::catalog::Catalog {
+            pos: 400,
+            total_len: 8,
+            entries: Vec::new(),
+        }];
+        super::super::filter_nested_inventory(ctx, &mut Vec::new(), &mut Vec::new(), &mut catalogs)
+    });
+}
+
+#[test]
+fn native_overlap_catalog_graph_scan_propagates_work_refusal() {
+    let operation = "catia_native_inventory_catalog_graph_overlap_scan";
+    assert_native_work_refusal_at(operation, |ctx| {
+        let mut graphs = vec![crate::object_graph::ObjectGraph {
+            pos: 0,
+            total_len: 100,
+            catalog_pos: None,
+            records: Vec::new(),
+        }];
+        let mut catalogs = vec![crate::catalog::Catalog {
+            pos: 400,
+            total_len: 8,
+            entries: Vec::new(),
+        }];
+        super::super::filter_nested_inventory(ctx, &mut graphs, &mut Vec::new(), &mut catalogs)
+    });
+}
+
+#[test]
+fn native_overlap_catalog_block_scan_propagates_work_refusal() {
+    let operation = "catia_native_inventory_catalog_block_overlap_scan";
+    assert_native_work_refusal_at(operation, |ctx| {
+        let mut blocks = vec![crate::value_block::ValueBlock {
+            pos: 200,
+            payload: Vec::new(),
+        }];
+        let mut catalogs = vec![crate::catalog::Catalog {
+            pos: 400,
+            total_len: 8,
+            entries: Vec::new(),
+        }];
+        super::super::filter_nested_inventory(ctx, &mut Vec::new(), &mut blocks, &mut catalogs)
+    });
+}
+
+#[test]
+fn native_alias_rows_retain_propagates_work_refusal() {
+    let operation = "catia_native_alias_rows_retain";
+    assert_native_work_refusal_at(operation, |ctx| {
+        let mut rows = vec![native_alias_row_for_overlap_test()];
+        super::super::filter_nested_alias_rows(ctx, &mut rows, &[], &[], &[])
+    });
+}
+
+#[test]
+fn native_alias_graph_overlap_scan_propagates_work_refusal() {
+    let operation = "catia_native_alias_graph_overlap_scan";
+    assert_native_work_refusal_at(operation, |ctx| {
+        let mut rows = vec![native_alias_row_for_overlap_test()];
+        let graphs = vec![native_graph_for_overlap_test(200, 8)];
+        super::super::filter_nested_alias_rows(ctx, &mut rows, &graphs, &[], &[])
+    });
+}
+
+#[test]
+fn native_alias_value_block_overlap_scan_propagates_work_refusal() {
+    let operation = "catia_native_alias_value_block_overlap_scan";
+    assert_native_work_refusal_at(operation, |ctx| {
+        let mut rows = vec![native_alias_row_for_overlap_test()];
+        let blocks = vec![native_value_block_for_overlap_test(200)];
+        super::super::filter_nested_alias_rows(ctx, &mut rows, &[], &blocks, &[])
+    });
+}
+
+#[test]
+fn native_alias_catalog_overlap_scan_propagates_work_refusal() {
+    let operation = "catia_native_alias_catalog_overlap_scan";
+    assert_native_work_refusal_at(operation, |ctx| {
+        let mut rows = vec![native_alias_row_for_overlap_test()];
+        let catalogs = vec![native_catalog_for_overlap_test(200, 8)];
+        super::super::filter_nested_alias_rows(ctx, &mut rows, &[], &[], &catalogs)
+    });
 }

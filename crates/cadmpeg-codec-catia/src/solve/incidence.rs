@@ -3639,11 +3639,21 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
             assigned.push((edge, pair, undo));
             affected_faces.extend(self.edge_faces[edge]);
         }
-        if assigned.is_empty()
-            || self
-                .partial_solution_filter
-                .is_some_and(|constraint| !(constraint.valid)(&self.assignment))
-        {
+        if assigned.is_empty() {
+            self.rollback_face_configuration(assigned);
+            return Ok(None);
+        }
+        let partial_constraint_valid = match self.partial_solution_filter {
+            Some(constraint) => match (constraint.valid)(&self.assignment) {
+                Ok(valid) => valid,
+                Err(error) => {
+                    self.rollback_face_configuration(assigned);
+                    return Err(error);
+                }
+            },
+            None => true,
+        };
+        if !partial_constraint_valid {
             self.rollback_face_configuration(assigned);
             return Ok(None);
         }
@@ -3941,10 +3951,21 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
                 },
                 None => None,
             };
-            if self
-                .partial_solution_filter
-                .is_none_or(|constraint| (constraint.valid)(&self.assignment))
-            {
+            let partial_constraint_valid = match self.partial_solution_filter {
+                Some(constraint) => match (constraint.valid)(&self.assignment) {
+                    Ok(valid) => valid,
+                    Err(error) => {
+                        self.assignment[edge] = None;
+                        self.restore_adjustment(undo);
+                        if let Some(factors) = &mut self.face_configuration_domains {
+                            factors.restore(factor_checkpoint);
+                        }
+                        return Err(error);
+                    }
+                },
+                None => true,
+            };
+            if partial_constraint_valid {
                 if let Some(next_states) = self.advance_ordered_faces(
                     self.edge_faces[edge],
                     copy_quotient_states(self.ctx, quotient_states)?,
@@ -5114,8 +5135,10 @@ where
             if !orientable {
                 return Ok(false);
             }
-            if partial_solution_valid.is_some_and(|constraint| !(constraint.valid)(&completed)) {
-                return Ok(false);
+            if let Some(constraint) = partial_solution_valid {
+                if !(constraint.valid)(&completed)? {
+                    return Ok(false);
+                }
             }
             Ok(true)
         };

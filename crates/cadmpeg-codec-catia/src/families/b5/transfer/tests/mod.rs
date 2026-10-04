@@ -682,3 +682,47 @@ fn b5_topology_entity_limit_refuses_before_first_model_append() {
         assert_eq!(ir.model.entity_count(), 0);
     });
 }
+
+fn assert_b5_incomplete_face_refusal(operation: &'static str) {
+    let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
+    let mut graph = crate::test_support::with_service_context(|ctx| {
+        crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+    }).expect("service fixture admission").expect("closed triangle graph");
+    graph.complete = false;
+    assert!(!graph.faces.is_empty());
+    let payload = cadmpeg_ir::ids::UnknownId::mint("catia:payload:unknown#test".to_string())
+        .expect("identity grammar");
+    let refusal = crate::test_support::with_work_refusal(operation, |ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        let result = super::transfer(
+            &mut cadmpeg_ir::CadIr::empty(), &mut cadmpeg_ir::AnnotationBuilder::new(),
+            graph.clone(), &payload, &mut crate::nurbs::LaneRefusals::new(), &mut admission,
+        );
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+            assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+        }
+        result
+    });
+    assert!(matches!(refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == operation));
+}
+
+#[test]
+fn b5_incomplete_face_retain_preserves_saved_refusal() {
+    assert_b5_incomplete_face_refusal("catia_b5_incomplete_face_retain");
+}
+
+#[test]
+fn b5_incomplete_face_loop_visits_preserves_saved_refusal() {
+    assert_b5_incomplete_face_refusal("catia_b5_incomplete_face_loop_visits");
+}
+
+#[test]
+fn b5_unique_face_loop_owner_retain_preserves_saved_refusal() {
+    assert_b5_incomplete_face_refusal("catia_b5_unique_face_loop_owner_retain");
+}
+
+#[test]
+fn b5_unique_face_loop_owner_visits_preserves_saved_refusal() {
+    assert_b5_incomplete_face_refusal("catia_b5_unique_face_loop_owner_visits");
+}

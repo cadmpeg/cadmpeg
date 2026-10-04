@@ -937,8 +937,13 @@ fn width_coded_endpoint_distances_resolve_forward_class18_records() {
             .collect::<Vec<_>>(),
         [0x5e, 0x05, 0x18, 0x18]
     );
-    let nodes = crate::families::b2::records::b2_edge_nodes_from_records(&bytes, &records)
-        .collect::<Vec<_>>();
+    let nodes = crate::test_support::with_service_context(|ctx| {
+        ctx.collect_vec(
+            crate::families::b2::records::b2_edge_nodes_from_records(ctx, &bytes, &records)?,
+            "catia_test_b2_edge_nodes",
+        )
+    })
+    .expect("service context admits edge nodes");
     assert_eq!(nodes.len(), 1);
     assert_eq!([nodes[0].start_vertex_ref, nodes[0].end_vertex_ref], [2, 3]);
     let endpoints = parsed_compact_edge_endpoints(&bytes, &records);
@@ -1634,3 +1639,5 @@ fn unsegmented_scalar_deserialization_rejects_arity_outside_its_grammar() {
         }
     }
 }
+
+mod work_admission;

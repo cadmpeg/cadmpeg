@@ -1,6 +1,6 @@
 //! Immutable standard topology with closed cycles and owned-table references.
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, NonEmptyMembers};
 
@@ -16,15 +16,14 @@ impl Boundary {
         ctx: &DecodeContext<'_>,
         coedges: NonEmptyMembers<CoedgeUse>,
     ) -> Result<Option<Self>, CodecError> {
-        ctx.charge_work(
-            u64_from_index(coedges.len()),
-            "catia_closed_boundary_admission",
-        )?;
         let Some(first) = coedges.first() else {
             return Ok(None);
         };
         let mut next_start = first.start_vertex;
-        for coedge in &coedges {
+        for coedge in ctx.admit_iter(
+            coedges.as_slice(),
+            "catia_closed_boundary_admission",
+        )? {
             if coedge.start_vertex != next_start {
                 return Ok(None);
             }
@@ -88,11 +87,12 @@ impl StandardTopology {
                 let Some(boundary) = Boundary::new(ctx, boundary.coedges)? else {
                     return Ok(None);
                 };
-                ctx.charge_work(
-                    u64_from_index(boundary.coedges().len()),
-                    "catia_topology_reference_admission",
-                )?;
-                if boundary.coedges().iter().any(|coedge| {
+                if ctx
+                    .admit_iter(
+                        boundary.coedges(),
+                        "catia_topology_reference_admission",
+                    )?
+                    .any(|coedge| {
                     coedge.edge_row >= edge_rows.len()
                         || coedge.start_vertex >= logical_vertex_count
                         || coedge.end_vertex >= logical_vertex_count

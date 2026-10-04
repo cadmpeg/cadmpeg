@@ -71,6 +71,7 @@ fn terminal_directrix_accepts_matching_wide_finite_spans() {
 }
 
 mod analytic;
+mod collector_sources;
 mod loops;
 mod typed;
 mod walk;
