@@ -4,7 +4,7 @@
 
 ### Scoring rules
 
-1. **A score attaches to declared coverage.** A score states the highest level whose requirements pass for the coverage its profile declares, and the profile names that coverage — concretely, the format's `scored` list in `docs/dialect-support.toml`. Surplus capability in a subset of versions, layouts, or files shows as extras. Refusing a band the codec recognizes is a stated, visible fact in the profile, never an exclusion that raises a score.
+1. **A score attaches to declared coverage.** A score states the highest level whose requirements pass for the coverage its profile declares, and the profile names that coverage — concretely, the format's `scored` list in `crates/cadmpeg-registry/docs/dialect-support.toml`. Surplus capability in a subset of versions, layouts, or files shows as extras. Refusing a band the codec recognizes is a stated, visible fact in the profile, never an exclusion that raises a score.
 2. **Full pass.** A level passes when its requirements and the proof criteria hold across mainstream files in the declared envelope. One fixture, an entity census, or an opaque record capture does not pass a level.
 3. **Inapplicable levels.** A format definition may mark a level inapplicable when its document kind cannot contain that category. Inapplicable levels pass. Missing fixtures do not establish inapplicability.
 4. **Integer levels only.** Scores are whole levels such as L4. Do not use fractional levels, evidence-grade suffixes, or other score variants. A recorded level already means the proof criteria pass for the codec. The published headline for a format is the single integer level and nothing else.
@@ -24,7 +24,7 @@ A level passes only when every criterion holds for the declared envelope:
 
 The score tables in this document are not a criterion, because they are not
 written by hand. `scripts/render-format-support.py` renders every one of them
-from `docs/dialects.toml` and `docs/dialect-support.toml`, and its `--check`
+from `crates/cadmpeg-registry/docs/dialects.toml` and `crates/cadmpeg-registry/docs/dialect-support.toml`, and its `--check`
 mode compares the committed file to a fresh render byte for byte. A registry
 edit without a re-render fails the gate.
 
@@ -538,4 +538,4 @@ Part 28 XML, Part 26 binary/HDF5, and AP242 BO-Model sidecars are outside the de
 
 Per-format specifications in [`formats/`](formats/) define byte semantics. Adjacent `*-open-items.md` files contain unresolved fields and structures. Every **Partial** domain names its remaining work here or in the linked open-items document.
 
-The generated cells and the profile prose answer different questions. A cell is the row's disposition after fixture gating: `detected` means the codec classifies the dialect but no fixture in the repository backs a score for it, so it can state capability the prose describes and the cell still reads `detected`. A level named in profile prose names the ladder rung that capability text describes. Edit a cell only through `docs/dialect-support.toml`; edit prose only outside a generated region.
+The generated cells and the profile prose answer different questions. A cell is the row's disposition after fixture gating: `detected` means the codec classifies the dialect but no fixture in the repository backs a score for it, so it can state capability the prose describes and the cell still reads `detected`. A level named in profile prose names the ladder rung that capability text describes. Edit a cell only through `crates/cadmpeg-registry/docs/dialect-support.toml`; edit prose only outside a generated region.

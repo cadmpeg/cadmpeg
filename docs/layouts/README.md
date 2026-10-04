@@ -55,7 +55,7 @@ The mapping from table to generated file is the explicit list `GENERATED_LAYOUT_
 - **`parsed_by` names a parser.** The path must exist and must not be a test
   file. It is a locator, not a substring check.
 - **Every `dialects` id is a declared row.** A record may key on
-  `docs/dialects.toml` ids; each must exist there. A table cannot key on a
+  `crates/cadmpeg-registry/docs/dialects.toml` ids; each must exist there. A table cannot key on a
   dialect that does not exist, and a row deleted from the registry breaks
   every table that named it.
 
@@ -128,7 +128,7 @@ decoder for a stateless reader. It does not verify a substring.
 - `column` — 1-based inclusive character columns, for fixed-column text records
   such as the IGES card. Columns must tile `1..=size`.
 
-`dialects` names the `docs/dialects.toml` rows whose grammar reads this record
+`dialects` names the `crates/cadmpeg-registry/docs/dialects.toml` rows whose grammar reads this record
 at these offsets. It is a positive claim about those rows and only those rows:
 an empty list says the table has not scoped the record, never that the record
 is dialect-invariant. A version word carried *inside* a record is not a

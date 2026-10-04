@@ -31,8 +31,8 @@ fn formats_separates_reading_from_writing() {
 /// `dialects` renders the identity registry crossed with the capability
 /// registry, and marks the rows this build's encoder can write.
 ///
-/// The three columns come from three sources — `docs/dialects.toml`,
-/// `docs/dialect-support.toml`, and the compiled `Encoder::targets()` catalog
+/// The three columns come from three sources — `crates/cadmpeg-registry/docs/dialects.toml`,
+/// `crates/cadmpeg-registry/docs/dialect-support.toml`, and the compiled `Encoder::targets()` catalog
 /// — so a row that reads correctly and writes correctly proves the join, not
 /// just the rendering.
 #[test]
