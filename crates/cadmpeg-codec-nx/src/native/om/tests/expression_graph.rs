@@ -1198,7 +1198,7 @@ fn nx_expression_substitution_refuses_named_work() {
         &[],
         ResourceDimension::WorkUnits,
         "NX expression substitution",
-        |ctx| crate::native::om::evaluate_parameterized_expression(ctx, "1", |_| None),
+        |ctx| crate::native::om::evaluate_parameterized_expression(ctx, "1", |_| Ok(None)),
     );
     assert!(matches!(
         error,

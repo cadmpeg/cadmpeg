@@ -177,7 +177,7 @@ fn audit_trail_route_refuses_work_limit() {
 fn state_projection_limit_error(
     payload: Vec<u8>,
     configure: impl FnOnce(&mut DecodePolicy),
-    project: impl FnOnce(&DecodeContext<'_>, &container::Container) -> Result<(), CodecError>,
+    project: impl Fn(&DecodeContext<'_>, &container::Container) -> Result<(), CodecError>,
 ) -> CodecError {
     let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
 
@@ -753,4 +753,82 @@ fn state_slot_lane_derives_ordinals_and_preserves_null_tokens() {
         .unwrap_err()
         .to_string()
         .contains("slots.ordinal"));
+}
+
+fn matching_section_refusal(
+    payload: Vec<u8>,
+    project: impl Fn(&DecodeContext<'_>, &container::Container) -> Result<(), CodecError>,
+) {
+    let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        let container = container::scan_bytes(ctx, file)?;
+        // Build the section cache once so every walk step charges the same route.
+        container.om_sections(ctx)?;
+        Ok::<_, CodecError>(container)
+    })
+    .expect("section search container");
+    let operation = "NX matching OM sections";
+    let error = crate::test_support::resource_refusal_at(
+        container.data.as_ref(),
+        ResourceDimension::WorkUnits,
+        operation,
+        |ctx| project(ctx, &container),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits && limit.operation == operation));
+}
+
+#[test]
+fn audit_trail_matching_section_preserves_work_refusal() {
+    matching_section_refusal(audit_trail_test_payload(), |ctx, container| {
+        audit_trail_rows(ctx, container).map(|_| ())
+    });
+}
+
+#[test]
+fn operation_state_counters_matching_section_preserves_work_refusal() {
+    matching_section_refusal(
+        segment_om_record_area_with_state_counter_map(),
+        |ctx, container| operation_state_counters(ctx, container).map(|_| ()),
+    );
+}
+
+#[test]
+fn operation_state_journal_groups_matching_section_preserves_work_refusal() {
+    matching_section_refusal(
+        composed_feature_history_payload_with_state_journal(),
+        |ctx, container| operation_state_journal_groups(ctx, container).map(|_| ()),
+    );
+}
+
+#[test]
+fn operation_state_groups_matching_section_preserves_work_refusal() {
+    matching_section_refusal(
+        segment_om_record_area_with_state_groups_and_counter_map(),
+        |ctx, container| operation_state_groups(ctx, container).map(|_| ()),
+    );
+}
+
+#[test]
+fn operation_state_messages_matching_section_preserves_work_refusal() {
+    matching_section_refusal(
+        segment_om_record_area_with_state_groups_and_counter_map(),
+        |ctx, container| operation_state_messages(ctx, container).map(|_| ()),
+    );
+}
+
+#[test]
+fn operation_state_statuses_matching_section_preserves_work_refusal() {
+    matching_section_refusal(
+        composed_feature_history_payload_with_operation_state_statuses(),
+        |ctx, container| operation_state_statuses(ctx, container).map(|_| ()),
+    );
+}
+
+#[test]
+fn operation_state_slot_lanes_matching_section_preserves_work_refusal() {
+    matching_section_refusal(
+        composed_feature_history_payload_with_operation_state_statuses(),
+        |ctx, container| operation_state_slot_lanes(ctx, container).map(|_| ()),
+    );
 }
