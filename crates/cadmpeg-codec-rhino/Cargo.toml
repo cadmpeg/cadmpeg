@@ -33,6 +33,7 @@ tempfile.workspace = true
 roxmltree.workspace = true
 
 [dev-dependencies]
+cadmpeg-ir = { workspace = true, features = ["examples"] }
 # Test-only golden harness and round-trip helpers.
 cadmpeg-test-support = { workspace = true }
 

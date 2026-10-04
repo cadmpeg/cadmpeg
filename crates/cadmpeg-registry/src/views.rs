@@ -6,7 +6,9 @@ use cadmpeg_core::target::{TargetCatalog, TargetDescriptor};
 use cadmpeg_ir::codec::FormatId;
 
 use crate::disposition::ReadDisposition;
-use crate::registry::{canonical_format_name, catalog_of, registries, support, DialectEntry};
+use crate::registry::{
+    canonical_format_name, catalog_of, registries, support, DialectEntry, RegistryLoadError,
+};
 use crate::{Format, InputCatalog};
 
 /// What `cadmpeg inspect` knows about the dialect it matched.
@@ -26,14 +28,15 @@ pub struct DialectProvenance {
 }
 
 /// The provenance of the primary dialect the codec matched.
-#[must_use]
-pub fn dialect_provenance(dialects: &DialectLayers) -> DialectProvenance {
+pub fn dialect_provenance(
+    dialects: &DialectLayers,
+) -> Result<DialectProvenance, RegistryLoadError> {
     let entry = dialects.primary();
-    DialectProvenance {
+    Ok(DialectProvenance {
         id: entry.dialect().clone(),
-        read: support(entry.dialect()).map(|disposition| disposition.read),
-        write_targets: catalog_of(entry.format()).map_or(&[], TargetCatalog::targets),
-    }
+        read: support(entry.dialect())?.map(|disposition| disposition.read),
+        write_targets: catalog_of(entry.format())?.map_or(&[], TargetCatalog::targets),
+    })
 }
 
 /// One row of the format table: what this build does with one readable format.
@@ -47,9 +50,8 @@ pub struct FormatRow {
 
 impl FormatRow {
     /// Whether this build writes the row's format.
-    #[must_use]
-    pub fn write(&self) -> bool {
-        Format::from_name(self.id.as_str()).is_some()
+    pub fn write(&self) -> Result<bool, RegistryLoadError> {
+        Ok(Format::from_name(self.id.as_str())?.is_some())
     }
 }
 
@@ -81,6 +83,17 @@ pub struct UnknownFormat {
     known: String,
 }
 
+/// Failure to load the table or select a declared format.
+#[derive(Debug, thiserror::Error)]
+pub enum DialectTableError {
+    #[error(transparent)]
+    /// Embedded table loading failed.
+    Registry(#[from] RegistryLoadError),
+    #[error(transparent)]
+    /// The requested word has no format section.
+    Unknown(#[from] UnknownFormat),
+}
+
 /// Every declared dialect of one format, with this build's write catalog.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FormatDialects {
@@ -96,51 +109,52 @@ pub struct FormatDialects {
 /// The identity registry crossed with the capability registry.
 ///
 /// `format` selects one section; `None` returns every one. The word is
-/// resolved through [`Format::from_name`] first, so an output-format spelling
-/// and a registry section name reach the same rows.
-pub fn dialect_table(format: Option<&str>) -> Result<Vec<FormatDialects>, UnknownFormat> {
-    let registries = registries();
+/// resolved through the identity registry.
+pub fn dialect_table(format: Option<&str>) -> Result<Vec<FormatDialects>, DialectTableError> {
+    let registries = registries()?;
     let formats = match format {
         None => registries.formats.clone(),
         Some(name) => {
-            let name = Format::from_name(name)
-                .map(|format| format.name().as_str())
-                .or_else(|| canonical_format_name(name))
-                .unwrap_or(name)
-                .to_owned();
+            let name = canonical_format_name(name)?.unwrap_or(name).to_owned();
             if !registries.formats.contains(&name) {
                 return Err(UnknownFormat {
                     name,
                     known: registries.formats.join(", "),
-                });
+                }
+                .into());
             }
             vec![name]
         }
     };
 
-    Ok(formats
+    formats
         .into_iter()
-        .map(|name| FormatDialects {
-            catalog: catalog_of(&name),
-            rows: registries.rows_of(&name).cloned().collect(),
-            format: name,
+        .map(|name| {
+            Ok(FormatDialects {
+                catalog: catalog_of(&name)?,
+                rows: registries.rows_of(&name).cloned().collect(),
+                format: name,
+            })
         })
-        .collect())
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     #[cfg(feature = "rhino")]
-    use cadmpeg_core::dialect::DialectMatch;
+    use cadmpeg_core::dialect::{DialectLayers, DialectMatch};
+
+    #[cfg(feature = "rhino")]
+    use super::dialect_provenance;
+    use super::dialect_table;
 
     #[cfg(feature = "rhino")]
     #[test]
     fn the_provenance_joins_the_match_the_registry_and_the_catalog() {
-        let dialects = DialectLayers::of(DialectMatch::admitted(DialectId::pinned(
-            "rhino:archive-50",
+        let dialects = DialectLayers::of(DialectMatch::admitted(cadmpeg_core::dialect_id!(
+            "rhino:archive-50"
         )));
-        let provenance = dialect_provenance(&dialects);
+        let provenance = dialect_provenance(&dialects).expect("embedded registry loads");
         assert_eq!(provenance.id.as_str(), "rhino:archive-50");
         assert!(provenance.read.is_some());
         assert!(provenance
@@ -165,15 +179,6 @@ mod tests {
 
     #[test]
     fn format_aliases_reach_the_same_dialect_rows() {
-        let canonical = crate::dialects("rhino")
-            .into_iter()
-            .map(|row| row.id.as_str())
-            .collect::<Vec<_>>();
-        let alias = crate::dialects("3dm")
-            .into_iter()
-            .map(|row| row.id.as_str())
-            .collect::<Vec<_>>();
-        assert_eq!(alias, canonical);
         assert_eq!(
             dialect_table(Some("3dm")).expect("Rhino alias"),
             dialect_table(Some("rhino")).expect("Rhino format")

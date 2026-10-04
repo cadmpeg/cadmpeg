@@ -10,14 +10,14 @@
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    Consumption, EncodeInput, ExportBody, PatchConsumption, ResolvedWrite, WritePath,
+    target::ResolvedWrite, Consumption, EncodeInput, ExportBody, PatchConsumption, WritePath,
 };
 use cadmpeg_ir::document::CadIr;
 
 use super::write;
 use crate::native::DocumentFacts;
 
-/// What resolving a [`cadmpeg_ir::codec::write::TargetRequest`] against the source decided.
+/// What resolving a [`cadmpeg_ir::codec::write::target::TargetRequest`] against the source decided.
 ///
 /// This writer has one capability. It patches the retained
 /// `Document.xml` and regenerates none, so the only dialect it can deliver is
@@ -28,10 +28,11 @@ use crate::native::DocumentFacts;
 /// [`write_seekable`] takes that proof instead of raw options, which is why it
 /// needs no target gate of its own.
 #[derive(Debug)]
-pub(crate) struct Resolution<'a> {
+pub(super) struct Resolution<'a> {
     ir: &'a CadIr,
     namespace: &'a cadmpeg_ir::native::NativeNamespace,
     document: DocumentFacts,
+    schema_version: String,
     target: DialectId,
 }
 
@@ -46,6 +47,10 @@ impl<'a> Resolution<'a> {
 
     pub(super) const fn document(&self) -> &DocumentFacts {
         &self.document
+    }
+
+    pub(super) fn schema_version(&self) -> &str {
+        &self.schema_version
     }
 
     pub(super) const fn target(&self) -> &DialectId {
@@ -107,10 +112,7 @@ fn finish(resolution: &Resolution<'_>) -> Result<ExportBody, CodecError> {
 }
 
 /// Decide what to write, from the request and the source.
-pub(in crate::writer) fn resolve<'a>(
-    ir: &'a CadIr,
-    resolved: &ResolvedWrite<'_>,
-) -> Result<Resolution<'a>, CodecError> {
+fn resolve<'a>(ir: &'a CadIr, resolved: &ResolvedWrite<'_>) -> Result<Resolution<'a>, CodecError> {
     if !resolved.source_preservation_eligible() {
         return Err(resolved.unavailable(TRANSCODE_UNAVAILABLE));
     }
@@ -128,19 +130,24 @@ pub(in crate::writer) fn resolve<'a>(
 /// document record is present. `target` is the dialect witness resolved from
 /// the source declaration; this adapter does not derive a second identity from
 /// the retained graph.
-pub(in crate::writer) fn retained_baseline<'a>(
-    ir: &'a CadIr,
-    target: &DialectId,
-) -> Option<Resolution<'a>> {
+pub(super) fn retained_baseline<'a>(ir: &'a CadIr, target: &DialectId) -> Option<Resolution<'a>> {
     let namespace = ir.native.namespace("fcstd")?;
     let documents = namespace.arena_as::<DocumentFacts>("document").ok()?;
     let [document] = documents.as_slice() else {
         return None;
     };
+    let schema_version = ir
+        .source
+        .as_ref()?
+        .dialect()?
+        .declared()
+        .get(crate::dialect::DECLARED_SCHEMA_VERSION)?
+        .clone();
     Some(Resolution {
         ir,
         namespace,
         document: document.clone(),
+        schema_version,
         target: target.clone(),
     })
 }

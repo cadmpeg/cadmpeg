@@ -4,23 +4,25 @@
 use super::super::uniqueness::unique_feature_definition_for_transform;
 use crate::container::ContainerScan;
 use crate::feature::schema::SchemaClass;
-use cadmpeg_ir::features::{Angle, AngularTermination, RevolveExtent};
-use std::collections::{BTreeMap, BTreeSet};
+use cadmpeg_ir::features::{AngularTermination, RevolveExtent};
+#[cfg(test)]
+use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 
 pub(in super::super) fn feature_recipe(
     scan: &ContainerScan,
     feature_id: u32,
-) -> Option<crate::feature::FeatureRecipeKind> {
+) -> Option<crate::feature::operations::FeatureRecipeKind> {
     current_feature_recipe(&scan.features.operations, feature_id)
-        .map(crate::feature::FeatureRecipe::kind)
+        .map(crate::feature::operations::FeatureRecipe::kind)
 }
 
 pub(in super::super) fn feature_recipe_effect(
     scan: &ContainerScan,
     feature_id: u32,
-) -> Option<crate::feature::FeatureRecipeEffect> {
+) -> Option<crate::feature::operations::FeatureRecipeEffect> {
     current_feature_recipe(&scan.features.operations, feature_id)
-        .map(crate::feature::FeatureRecipe::effect)
+        .map(crate::feature::operations::FeatureRecipe::effect)
 }
 
 pub(in super::super) fn feature_section_sweep_semantics_conflict(
@@ -30,19 +32,24 @@ pub(in super::super) fn feature_section_sweep_semantics_conflict(
     current_feature_operation(&scan.features.operations, feature_id).is_some_and(|operation| {
         operation.recipe.is_conflicting()
             || (operation.display_state_conflict
-                && matches!(operation.recipe, crate::feature::RecipeResolution::None)
-                && operation.kind == crate::feature::OperationKind::Native)
+                && matches!(
+                    operation.recipe,
+                    crate::feature::operations::RecipeResolution::None
+                )
+                && operation.kind == crate::feature::operations::OperationKind::Native)
     })
 }
 
 pub(in super::super) fn current_additive_feature_recipe(
-    operations: &[crate::feature::FeatureOperation],
+    operations: &[crate::feature::operations::FeatureOperation],
     feature_id: u32,
-) -> Option<crate::feature::FeatureRecipeKind> {
+) -> Option<crate::feature::operations::FeatureRecipeKind> {
     let recipe = current_feature_recipe(operations, feature_id)?;
-    (recipe.effect() == crate::feature::FeatureRecipeEffect::Protrude).then(|| recipe.kind())
+    (recipe.effect() == crate::feature::operations::FeatureRecipeEffect::Protrude)
+        .then(|| recipe.kind())
 }
 
+#[cfg(test)]
 pub(in super::super) fn first_material_feature_by_definition_order(
     target_feature_id: u32,
     material_definition_offsets: &[(u32, usize)],
@@ -63,18 +70,14 @@ pub(in super::super) fn first_material_feature_by_definition_order(
 }
 
 pub(in super::super) fn feature_is_first_material_operation(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     feature_id: u32,
-) -> bool {
-    let candidate_feature_ids = scan
-        .features
-        .operations
-        .iter()
-        .map(|operation| operation.feature_id)
-        .collect::<BTreeSet<_>>()
-        .into_iter();
-    let mut material_definition_offsets = Vec::new();
-    for candidate in candidate_feature_ids {
+) -> Result<bool, cadmpeg_core::CodecError> {
+    let mut target_offset = None;
+    let mut earliest_other_offset: Option<usize> = None;
+    for operation in &scan.features.operations {
+        let candidate = operation.feature_id;
         let Some(operation) = current_feature_operation(&scan.features.operations, candidate)
         else {
             continue;
@@ -82,8 +85,8 @@ pub(in super::super) fn feature_is_first_material_operation(
         let recipe_is_material = operation.recipe.resolved().is_some_and(|recipe| {
             matches!(
                 recipe.effect(),
-                crate::feature::FeatureRecipeEffect::Protrude
-                    | crate::feature::FeatureRecipeEffect::Cut
+                crate::feature::operations::FeatureRecipeEffect::Protrude
+                    | crate::feature::operations::FeatureRecipeEffect::Cut
             )
         });
         if !recipe_is_material
@@ -94,36 +97,48 @@ pub(in super::super) fn feature_is_first_material_operation(
         {
             continue;
         }
-        let transforms = scan
+        let mut transforms = scan
             .features
             .section_transforms
             .iter()
-            .filter(|transform| transform.feature_id == Some(candidate))
-            .collect::<Vec<_>>();
-        let [transform] = transforms.as_slice() else {
+            .filter(|transform| transform.feature_id == Some(candidate));
+        let Some(transform) = transforms.next() else {
             continue;
         };
+        if transforms.next().is_some() {
+            continue;
+        }
         let Some(definition) =
-            unique_feature_definition_for_transform(&scan.features.definitions, transform)
+            unique_feature_definition_for_transform(ctx, &scan.features.definitions, transform)?
         else {
             continue;
         };
-        material_definition_offsets.push((candidate, definition.offset));
+        if candidate == feature_id {
+            target_offset = Some(definition.offset);
+        } else {
+            earliest_other_offset =
+                Some(earliest_other_offset.map_or(definition.offset, |previous| {
+                    previous.min(definition.offset)
+                }));
+        }
     }
-    first_material_feature_by_definition_order(feature_id, &material_definition_offsets)
+    Ok(
+        target_offset
+            .is_some_and(|target| earliest_other_offset.is_none_or(|other| other > target)),
+    )
 }
 
 pub(in super::super) fn current_feature_recipe(
-    operations: &[crate::feature::FeatureOperation],
+    operations: &[crate::feature::operations::FeatureOperation],
     feature_id: u32,
-) -> Option<crate::feature::FeatureRecipe> {
+) -> Option<crate::feature::operations::FeatureRecipe> {
     current_feature_operation(operations, feature_id)?
         .recipe
         .resolved()
 }
 
 pub(in super::super) fn current_feature_recipe_parent(
-    operations: &[crate::feature::FeatureOperation],
+    operations: &[crate::feature::operations::FeatureOperation],
     feature_id: u32,
 ) -> Option<u32> {
     let operation = current_feature_operation(operations, feature_id)?;
@@ -132,9 +147,9 @@ pub(in super::super) fn current_feature_recipe_parent(
 }
 
 pub(in super::super) fn current_feature_operation(
-    operations: &[crate::feature::FeatureOperation],
+    operations: &[crate::feature::operations::FeatureOperation],
     feature_id: u32,
-) -> Option<&crate::feature::FeatureOperation> {
+) -> Option<&crate::feature::operations::FeatureOperation> {
     let mut matches = operations
         .iter()
         .filter(|operation| operation.feature_id == feature_id);
@@ -148,7 +163,12 @@ pub(in super::super) fn feature_schema_class(
 ) -> Option<SchemaClass> {
     resolved_feature_schema_class_from_classes(
         &scan.features.operations,
-        feature_row_schema_classes(scan, feature_id),
+        scan.features
+            .rows
+            .iter()
+            .chain(scan.features.depdb_recipe_rows.iter())
+            .filter(|row| row.feature_id == feature_id)
+            .filter_map(|row| row.root_schema_class),
         feature_id,
     )
     .or_else(|| {
@@ -161,44 +181,62 @@ pub(in super::super) fn feature_schema_class(
 }
 
 pub(in super::super) fn resolved_feature_schema_class_from_classes(
-    operations: &[crate::feature::FeatureOperation],
-    classes: BTreeSet<SchemaClass>,
+    operations: &[crate::feature::operations::FeatureOperation],
+    classes: impl IntoIterator<Item = SchemaClass>,
     feature_id: u32,
 ) -> Option<SchemaClass> {
     if let Some(schema_class) = current_feature_operation(operations, feature_id)
-        .and_then(crate::feature::FeatureOperation::root_schema_class)
+        .and_then(crate::feature::operations::FeatureOperation::root_schema_class)
     {
         return Some(schema_class);
     }
-    if !classes.is_empty() {
-        let mut classes = classes.into_iter();
-        let schema_class = classes.next()?;
-        return classes.next().is_none().then_some(schema_class);
+    let mut selected = None;
+    for schema_class in classes {
+        if selected.is_some_and(|previous| previous != schema_class) {
+            return None;
+        }
+        selected = Some(schema_class);
     }
-    None
+    selected
 }
 
 pub(in super::super) fn feature_row_schema_classes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     feature_id: u32,
-) -> BTreeSet<SchemaClass> {
-    row_feature_schema_classes(&scan.features.rows, feature_id)
-        .into_iter()
-        .chain(row_feature_schema_classes(
-            &scan.features.depdb_recipe_rows,
-            feature_id,
-        ))
-        .collect()
+) -> Result<BTreeSet<SchemaClass>, cadmpeg_core::CodecError> {
+    let mut classes = BTreeSet::new();
+    for row in scan
+        .features
+        .rows
+        .iter()
+        .chain(scan.features.depdb_recipe_rows.iter())
+    {
+        if row.feature_id == feature_id {
+            if let Some(schema_class) = row.root_schema_class {
+                ctx.insert_btree_set(
+                    &mut classes,
+                    schema_class,
+                    "creo feature schema class nodes",
+                )?;
+            }
+        }
+    }
+    Ok(classes)
 }
 
 pub(in super::super) fn row_feature_schema_classes(
-    rows: &[crate::feature::FeatureRow],
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    rows: &[crate::feature::rows::FeatureRow],
     feature_id: u32,
-) -> BTreeSet<SchemaClass> {
-    rows.iter()
-        .filter(|row| row.feature_id == feature_id)
-        .filter_map(|row| row.root_schema_class)
-        .collect()
+) -> Result<BTreeSet<SchemaClass>, cadmpeg_core::CodecError> {
+    let mut classes = BTreeSet::new();
+    for row in rows.iter().filter(|row| row.feature_id == feature_id) {
+        if let Some(schema_class) = row.root_schema_class {
+            ctx.insert_btree_set(&mut classes, schema_class, "creo row schema class nodes")?;
+        }
+    }
+    Ok(classes)
 }
 
 pub(in super::super) fn feature_revolution_extent(
@@ -208,17 +246,20 @@ pub(in super::super) fn feature_revolution_extent(
     unique_feature_revolution_extent(&scan.features.revolution_extents, feature_id).map(|_| {
         RevolveExtent::OneSided {
             termination: AngularTermination::Angle {
-                angle: Angle(std::f64::consts::TAU),
+                angle: cadmpeg_ir::scalar::PositiveAngle::FULL_TURN,
             },
         }
     })
 }
 
 pub(in super::super) fn unique_feature_revolution_extent(
-    records: &[crate::feature::FeatureRevolutionExtent],
+    records: &[crate::feature::rows::FeatureRevolutionExtent],
     feature_id: u32,
-) -> Option<&crate::feature::FeatureRevolutionExtent> {
+) -> Option<&crate::feature::rows::FeatureRevolutionExtent> {
     records
         .iter()
         .find(|record| record.feature_id == feature_id)
 }
+
+#[cfg(test)]
+mod tests;

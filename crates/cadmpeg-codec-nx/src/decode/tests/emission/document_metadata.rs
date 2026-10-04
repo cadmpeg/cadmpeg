@@ -1,8 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::decode::jpeg::jpeg_dimensions;
-
-use super::*;
+use crate::test_support::test_bytes::zlib_compress;
+use crate::test_support::test_prt::prt_with_indexed_om_section;
+use crate::test_support::test_prt::prt_with_named_payloads;
+use crate::test_support::test_streams::partition_stream;
+use crate::test_support::test_streams::topology_partition_stream;
+use crate::NxCodec;
+use cadmpeg_core::decode::InspectOptions;
+use cadmpeg_ir::codec::Codec;
+use cadmpeg_ir::codec::DecodeOptions;
+use cadmpeg_ir::report::loss::LossKind;
+use cadmpeg_ir::report::loss::LossTaxonomy;
+use std::io::Cursor;
 
 #[test]
 fn inspect_reports_bounded_nx_object_model_entities() {
@@ -42,7 +52,11 @@ fn decode_projects_part_attributes_to_document_attributes() {
             "Steel".to_string()
         )]
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -71,15 +85,27 @@ fn decode_exposes_strict_nx_jpeg_preview_metadata() {
     );
     assert_eq!(result.ir().model.assets.len(), 1);
     let asset = &result.ir().model.assets[0];
-    assert_eq!(asset.name.as_deref(), Some("preview.jpg"));
-    assert_eq!(asset.media_type.as_deref(), Some("image/jpeg"));
+    assert_eq!(
+        asset
+            .name
+            .as_ref()
+            .map(cadmpeg_core::text::NonBlankString::as_str),
+        Some("preview.jpg")
+    );
+    assert_eq!(
+        asset
+            .media_type
+            .as_ref()
+            .map(cadmpeg_core::text::NonBlankString::as_str),
+        Some("image/jpeg")
+    );
     assert_eq!(
         asset.native_ref.as_deref(),
         Some("nx:container:jpeg-preview#0")
     );
     assert!(matches!(
         &asset.content,
-        cadmpeg_ir::assets::AssetContent::Embedded { data } if data == &preview
+        cadmpeg_ir::assets::AssetContent::Embedded { data } if data == &cadmpeg_ir::assets::AssetData::new(preview.to_vec()).unwrap()
     ));
     let container_only_result = NxCodec
         .decode(
@@ -145,12 +171,24 @@ fn retained_material_library_assets_do_not_imply_an_assignment_loss() {
 
     assert_eq!(result.ir().model.assets.len(), 1);
     let asset = &result.ir().model.assets[0];
-    assert_eq!(asset.name.as_deref(), Some("Steel"));
-    assert_eq!(asset.media_type.as_deref(), Some("image/tiff"));
+    assert_eq!(
+        asset
+            .name
+            .as_ref()
+            .map(cadmpeg_core::text::NonBlankString::as_str),
+        Some("Steel")
+    );
+    assert_eq!(
+        asset
+            .media_type
+            .as_ref()
+            .map(cadmpeg_core::text::NonBlankString::as_str),
+        Some("image/tiff")
+    );
     assert!(matches!(
         &asset.content,
         cadmpeg_ir::assets::AssetContent::Embedded { data }
-            if data == &[b'M', b'M', 0, 42, 0, 0, 0, 8, 0, 0]
+            if data == &cadmpeg_ir::assets::AssetData::new(vec![b'M', b'M', 0, 42, 0, 0, 0, 8, 0, 0]).unwrap()
     ));
     assert_eq!(
         asset.native_ref.as_deref(),

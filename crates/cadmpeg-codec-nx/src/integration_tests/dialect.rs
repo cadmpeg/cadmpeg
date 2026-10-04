@@ -8,14 +8,16 @@
 //! `SourceMeta` mirrors the same primary layer. Embedded kernel matches can
 //! accompany it.
 
+use crate::test_support::test_prt::prt_with_indexed_om_section;
+use crate::test_support::test_prt::single_part_prt;
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_core::dialect::{Admission, DialectLayers, DialectMatch};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use super::{decode, legacy_cfb_with_ug_part};
-use crate::test_support::*;
+use super::decode;
+use crate::test_support::test_cfb::legacy_cfb_with_ug_part;
 use crate::NxCodec;
 
 /// The one match naming the reporting format.

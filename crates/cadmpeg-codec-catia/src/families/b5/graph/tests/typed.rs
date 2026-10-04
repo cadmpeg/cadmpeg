@@ -3,11 +3,19 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+use cadmpeg_test_support::wire;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::test_b2::b2_sphere_stream;
+use crate::test_support::test_b5::{
+    append_b5_record, b5_closed_triangle_stream, b5_linear_pcurve_payload, b5_object_ref,
+    b5_plane_payload,
+};
+use crate::test_support::test_bytes::le_f64;
+use crate::test_support::test_container::object_main_catpart;
 use crate::CatiaCodec;
 
 #[test]
@@ -20,7 +28,11 @@ fn decode_reports_structurally_typed_unresolved_b5_faces() {
         &[0x82, 0x18, 100, 0, 0x18, 0xe7, 0x03, 0x03],
     );
     append_b5_record(&mut stream, 0x5e, 903, &[]);
-    let graph = crate::families::b5::graph::parse(&stream).expect("typed unresolved face graph");
+    let graph = crate::test_support::with_service_context(|ctx| {
+        crate::families::b5::graph::parse(ctx, &stream, &mut crate::nurbs::LaneRefusals::new())
+    })
+    .expect("service resource budget")
+    .expect("typed unresolved face graph");
     assert_eq!(graph.face_records.len(), 2);
     assert_eq!(graph.faces.len(), 1);
     let result = CatiaCodec
@@ -31,27 +43,31 @@ fn decode_reports_structurally_typed_unresolved_b5_faces() {
         .expect("decode typed unresolved face");
 
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TYPED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TYPED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TYPED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_05_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TYPED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_05_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::RESOLVED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::RESOLVED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TYPED_UNRESOLVED_OBJECT_STREAM_FACE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TYPED_UNRESOLVED_OBJECT_STREAM_FACE_COUNT.as_str()
+        ),
         1
     );
 }
@@ -67,7 +83,11 @@ fn decode_reports_typed_distinct_surface_b5_faces() {
     face_payload.push(0x05);
     append_b5_record(&mut stream, 0x5f, 902, &face_payload);
 
-    let graph = crate::families::b5::graph::parse(&stream).expect("typed multi-surface graph");
+    let graph = crate::test_support::with_service_context(|ctx| {
+        crate::families::b5::graph::parse(ctx, &stream, &mut crate::nurbs::LaneRefusals::new())
+    })
+    .expect("service resource budget")
+    .expect("typed multi-surface graph");
     assert_eq!(graph.face_records.len(), 2);
     assert_eq!(graph.faces.len(), 1);
 
@@ -78,9 +98,10 @@ fn decode_reports_typed_distinct_surface_b5_faces() {
         )
         .expect("decode typed multi-surface face");
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TYPED_MULTI_SURFACE_OBJECT_STREAM_FACE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TYPED_MULTI_SURFACE_OBJECT_STREAM_FACE_COUNT.as_str()
+        ),
         1
     );
 }
@@ -123,7 +144,15 @@ fn decode_reports_typed_b5_faces_without_a_resolved_topology_graph() {
     incidence_payload.push(0x81);
     append_b5_record(&mut stream, 0x06, 4, &incidence_payload);
     append_b5_record(&mut stream, 0x05, 6, &[0x81, 0x84]);
-    assert!(crate::families::b5::graph::parse(&stream).is_none());
+    assert!(
+        crate::test_support::with_service_context(|ctx| crate::families::b5::graph::parse(
+            ctx,
+            &stream,
+            &mut crate::nurbs::LaneRefusals::new()
+        ))
+        .expect("service resource budget")
+        .is_none()
+    );
     assert_eq!(
         crate::families::b5::graph::typed_face_records(&stream).len(),
         1
@@ -160,68 +189,80 @@ fn decode_reports_typed_b5_faces_without_a_resolved_topology_graph() {
         )
         .expect("decode typed face without resolved topology");
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TYPED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT),
-        1
-    );
-    assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TYPED_UNRESOLVED_OBJECT_STREAM_FACE_COUNT),
-        1
-    );
-    assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TYPED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_05_COUNT),
-        1
-    );
-    assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TYPED_UNRESOLVED_OBJECT_STREAM_LOOP_COUNT),
-        1
-    );
-    assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_21_COUNT),
-        1
-    );
-    assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_TERMINAL_CONTROL_04_COUNT
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TYPED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::TYPED_OBJECT_STREAM_CLASS_21_PCURVE_SUFFIX_SCALAR_COUNT
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TYPED_UNRESOLVED_OBJECT_STREAM_FACE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TYPED_OBJECT_STREAM_PARAMETER_INCIDENCE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TYPED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_05_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TYPED_OBJECT_STREAM_PARAMETER_INCIDENCE_MEMBER_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TYPED_UNRESOLVED_OBJECT_STREAM_LOOP_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_ROSTER_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_21_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_ROSTER_MEMBER_COUNT
+        wire::coverage_count(
+            result.report(),
+            (crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_TERMINAL_CONTROL_04_COUNT)
+                .as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TYPED_OBJECT_STREAM_CLASS_21_PCURVE_SUFFIX_SCALAR_COUNT.as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TYPED_OBJECT_STREAM_PARAMETER_INCIDENCE_COUNT.as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TYPED_OBJECT_STREAM_PARAMETER_INCIDENCE_MEMBER_COUNT.as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_ROSTER_COUNT.as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_ROSTER_MEMBER_COUNT.as_str()
         ),
         1
     );

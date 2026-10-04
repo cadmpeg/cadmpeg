@@ -5,24 +5,29 @@
 use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::eval::curve_point;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralCurveDefinition,
+    nurbs::{NurbsCurve, NurbsSurface},
+    pcurve::{Pcurve, PcurveGeometry},
+    CurveGeometry, ProceduralCurveDefinition, SolvedCurveGeometry,
 };
 use cadmpeg_ir::ids::PcurveId;
-use cadmpeg_ir::math::{Point2, Vector3};
+use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::scalar::{FiniteReal, PositiveLength, PositiveReal};
+use cadmpeg_ir::units::{FiniteVector, OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use super::super::graph::{
     edge_pcurve_parameters, evaluate_pcurve, pcurve_nurbs_knots, B5Graph, B5Pcurve,
     B5SphereGreatCirclePcurve, B5Surface,
 };
-use super::super::vecmath::{add, cross, scale};
+use super::super::vecmath::{add, components, coordinates, cross, scale};
 use super::edges::ordered_subrange;
 use super::{
-    annotate, distance, dot, point3, subtract, unit, vector, CurvePlan, HelixPlan, TransferPlan,
-    POINT_TOLERANCE,
+    annotate, dot, point3, subtract, vector, CurvePlan, HelixPlan, TransferPlan, POINT_TOLERANCE,
 };
+use crate::analytic::signed_reference_frame;
+use crate::math::{distance, unit_vector};
 
 const EPS_PCURVE_RESIDUAL: f64 = 1.0e-9;
 const EPS_PCURVE_PARAMETER: f64 = 1.0e-12;
@@ -33,9 +38,8 @@ pub(super) fn sphere_great_circle_geometry(
 ) -> Option<CurveGeometry> {
     let B5Surface::Sphere {
         center,
-        direction_x,
+        frame,
         direction_y,
-        axis: sphere_axis,
         radius,
         construction_radius,
         ..
@@ -43,50 +47,50 @@ pub(super) fn sphere_great_circle_geometry(
     else {
         return None;
     };
-    if pcurve.chart_scale != *construction_radius {
+    let chart_scale = pcurve.chart_scale.get();
+    if chart_scale != construction_radius.get() {
         return None;
     }
-    let phase = pcurve.chart_shift / pcurve.chart_scale + pcurve.phase;
-    let plane_axis = unit(add(
-        scale(*sphere_axis, 1.0),
+    let (sphere_axis, direction_x, direction_y) = (
+        components(frame.axis()),
+        components(frame.reference()),
+        components(direction_y),
+    );
+    let phase = pcurve.chart_shift.get() / chart_scale + pcurve.phase.get();
+    let slope = pcurve.slope.get();
+    let plane_axis = unit_vector(add(
+        scale(sphere_axis, 1.0),
         add(
-            scale(*direction_x, -pcurve.slope * phase.cos()),
-            scale(*direction_y, -pcurve.slope * phase.sin()),
+            scale(direction_x, -slope * phase.cos()),
+            scale(direction_y, -slope * phase.sin()),
         ),
     ))?;
     let ref_direction = add(
-        scale(*direction_x, -phase.sin()),
-        scale(*direction_y, phase.cos()),
+        scale(direction_x, -phase.sin()),
+        scale(direction_y, phase.cos()),
     );
-    Some(CurveGeometry::Circle {
-        center: point3(*center),
-        axis: vector(plane_axis),
-        ref_direction: vector(ref_direction),
-        radius: *radius,
-    })
+    let frame =
+        OrthonormalFrame3::from_units(plane_axis, UnitVector3::new(vector(ref_direction))?)?;
+    Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+        cadmpeg_ir::geometry::analytic::CircleCurve::new(*center, frame, *radius),
+    )))
 }
 
 pub(super) fn sphere_great_circle_pcurve(
     pcurve: &B5SphereGreatCirclePcurve,
-) -> Option<(PcurveGeometry, [f64; 2])> {
-    let parameter_range = pcurve.chart_bounds[0];
-    let azimuth_rate = pcurve.chart_scale.recip();
-    let plane_phase = pcurve.chart_shift / pcurve.chart_scale + pcurve.phase;
-    (pcurve.chart_scale.is_finite()
-        && pcurve.chart_scale > 0.0
-        && parameter_range.into_iter().all(f64::is_finite)
-        && parameter_range[0] < parameter_range[1]
-        && azimuth_rate.is_finite()
-        && plane_phase.is_finite()
-        && pcurve.slope.is_finite())
-    .then_some((
-        PcurveGeometry::SphericalGreatCircle {
-            azimuth_origin: 0.0,
-            azimuth_rate,
-            plane_phase,
-            plane_slope: pcurve.slope,
-        },
-        parameter_range,
+) -> Option<(PcurveGeometry, [FiniteReal; 2])> {
+    let chart_scale = pcurve.chart_scale.get();
+    Some((
+        PcurveGeometry::SphericalGreatCircle(
+            cadmpeg_ir::geometry::pcurve::SphericalGreatCirclePcurve::try_new(
+                0.0,
+                chart_scale.recip(),
+                pcurve.chart_shift.get() / chart_scale + pcurve.phase.get(),
+                pcurve.slope.get(),
+            )
+            .ok()?,
+        ),
+        pcurve.u_bounds.finite_endpoints(),
     ))
 }
 
@@ -95,16 +99,13 @@ pub(super) fn oriented_line_plan(
     edge_start: [f64; 3],
     edge_end: [f64; 3],
 ) -> Option<CurvePlan> {
-    let CurveGeometry::Line { origin, direction } = geometry else {
+    let CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) = geometry else {
         return None;
     };
-    let origin = [origin.x, origin.y, origin.z];
-    let mut direction = [direction.x, direction.y, direction.z];
-    let direction_length = direction[0].hypot(direction[1]).hypot(direction[2]);
-    if !direction_length.is_finite() || direction_length == 0.0 {
-        return None;
-    }
-    direction = scale(direction, 1.0 / direction_length);
+    let line_origin = line_curve.origin();
+    let mut line_direction = line_curve.direction();
+    let origin = coordinates(line_origin);
+    let direction = components(&line_direction);
     let parameter = |point| dot(subtract(point, origin), direction);
     let mut range = [parameter(edge_start), parameter(edge_end)];
     if !range.into_iter().all(f64::is_finite) || range[0] == range[1] {
@@ -116,114 +117,134 @@ pub(super) fn oriented_line_plan(
         return None;
     }
     if range[0] > range[1] {
-        direction = scale(direction, -1.0);
+        line_direction = line_direction.reversed();
         range = [-range[0], -range[1]];
     }
     Some(CurvePlan {
-        geometry: CurveGeometry::Line {
-            origin: point3(origin),
-            direction: vector(direction),
-        },
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            cadmpeg_ir::geometry::analytic::LineCurve::new(line_origin, line_direction),
+        )),
         parameter_range: Some(range),
-        edge_tolerance: (residual > EPS_PCURVE_RESIDUAL).then_some(residual + EPS_PCURVE_RESIDUAL),
+        edge_tolerance: if residual > EPS_PCURVE_RESIDUAL {
+            Some(cadmpeg_ir::scalar::PositiveReal::new(
+                residual + EPS_PCURVE_RESIDUAL,
+            )?)
+        } else {
+            None
+        },
         cache_fit_tolerance: None,
     })
 }
 
 pub(super) fn oriented_circle_plan(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     pcurve: &B5Pcurve,
     surface: &B5Surface,
     geometry: &CurveGeometry,
     endpoint_parameters: [f64; 2],
     edge_start: [f64; 3],
     edge_end: [f64; 3],
-) -> Option<CurvePlan> {
-    let (dimension, scale) = isoparametric_angle_coordinate(pcurve, surface)?;
-    if !scale.is_finite() || scale == 0.0 {
-        return None;
+) -> Result<Option<CurvePlan>, cadmpeg_core::CodecError> {
+    let Some((dimension, scale)) = isoparametric_angle_coordinate(pcurve, surface) else {
+        return Ok(None);
+    };
+    let scale = scale.get();
+    if scale == 0.0 {
+        return Ok(None);
     }
-    if let Some(weights) = &pcurve.weights {
-        if weights.len() != pcurve.control_points.len()
-            || weights
-                .iter()
-                .any(|weight| !weight.is_finite() || *weight <= 0.0)
+    if pcurve
+        .weights
+        .as_ref()
+        .is_some_and(|weights| weights.len() != pcurve.control_points.len())
+    {
+        return Ok(None);
+    }
+    let Some(start_uv) = evaluate_pcurve(ctx, pcurve, endpoint_parameters[0])? else {
+        return Ok(None);
+    };
+    let Some(end_uv) = evaluate_pcurve(ctx, pcurve, endpoint_parameters[1])? else {
+        return Ok(None);
+    };
+    (|| -> Option<Result<CurvePlan, cadmpeg_core::CodecError>> {
+        let angles = [start_uv[dimension] / scale, end_uv[dimension] / scale];
+        let delta = angles[1] - angles[0];
+        if !delta.is_finite()
+            || delta == 0.0
+            || delta.abs() > std::f64::consts::TAU + EPS_PCURVE_RESIDUAL
         {
             return None;
         }
-    }
-    let endpoints = endpoint_parameters.map(|parameter| evaluate_pcurve(pcurve, parameter));
-    let [Some(start_uv), Some(end_uv)] = endpoints else {
-        return None;
-    };
-    let angles = [start_uv[dimension] / scale, end_uv[dimension] / scale];
-    let delta = angles[1] - angles[0];
-    if !delta.is_finite()
-        || delta == 0.0
-        || delta.abs() > std::f64::consts::TAU + EPS_PCURVE_RESIDUAL
-    {
-        return None;
-    }
-    let direction = delta.signum();
-    if pcurve.control_points.windows(2).any(|points| {
-        direction * (points[1][dimension] - points[0][dimension]) / scale < -EPS_PCURVE_PARAMETER
-    }) {
-        return None;
-    }
+        let direction = delta.signum();
+        if pcurve.control_points.windows(2).any(|points| {
+            direction * (points[1][dimension] - points[0][dimension]) / scale
+                < -EPS_PCURVE_PARAMETER
+        }) {
+            return None;
+        }
 
-    let CurveGeometry::Circle {
-        center,
-        axis,
-        ref_direction,
-        radius,
-    } = geometry
-    else {
-        return None;
-    };
-    if !radius.is_finite() || *radius == 0.0 {
-        return None;
-    }
-    let mut axis = *axis;
-    let mut ref_direction = *ref_direction;
-    let radius = if *radius < 0.0 {
-        ref_direction = Vector3::new(-ref_direction.x, -ref_direction.y, -ref_direction.z);
-        -*radius
-    } else {
-        *radius
-    };
-    let oriented_angles = if delta < 0.0 {
-        axis = Vector3::new(-axis.x, -axis.y, -axis.z);
-        [-angles[0], -angles[1]]
-    } else {
-        angles
-    };
-    let parameter_range = crate::nurbs::canonical_periodic_range(oriented_angles)?;
-    let geometry = CurveGeometry::Circle {
-        center: *center,
-        axis,
-        ref_direction,
-        radius,
-    };
-    let evaluated = parameter_range.map(|parameter| curve_point(&geometry, parameter));
-    let [Some(start), Some(end)] = evaluated else {
-        return None;
-    };
-    let residual = distance([start.x, start.y, start.z], edge_start)
-        .max(distance([end.x, end.y, end.z], edge_end));
-    if residual > POINT_TOLERANCE {
-        return None;
-    }
-    Some(CurvePlan {
-        geometry,
-        parameter_range: Some(parameter_range),
-        edge_tolerance: (residual > EPS_PCURVE_RESIDUAL).then_some(residual + EPS_PCURVE_RESIDUAL),
-        cache_fit_tolerance: None,
-    })
+        let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) = geometry else {
+            return None;
+        };
+        let mut circle_curve = *circle_curve;
+        let oriented_angles = if delta < 0.0 {
+            circle_curve.reverse_parameterization();
+            [-angles[0], -angles[1]]
+        } else {
+            angles
+        };
+        let parameter_range = crate::nurbs::canonical_periodic_range(oriented_angles)?;
+        let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve));
+        let start =
+            match cadmpeg_ir::eval::finite_or_refusal(
+                match cadmpeg_ir::eval::decode::outer_refusal(
+                    cadmpeg_ir::eval::decode::curve_point(ctx, &geometry, parameter_range[0]),
+                ) {
+                    Ok(value) => value,
+                    Err(error) => return Some(Err(error.into())),
+                },
+            ) {
+                Ok(Some(point)) => point,
+                Ok(None) => return None,
+                Err(limit) => return Some(Err(limit.into())),
+            };
+        let end =
+            match cadmpeg_ir::eval::finite_or_refusal(
+                match cadmpeg_ir::eval::decode::outer_refusal(
+                    cadmpeg_ir::eval::decode::curve_point(ctx, &geometry, parameter_range[1]),
+                ) {
+                    Ok(value) => value,
+                    Err(error) => return Some(Err(error.into())),
+                },
+            ) {
+                Ok(Some(point)) => point,
+                Ok(None) => return None,
+                Err(limit) => return Some(Err(limit.into())),
+            };
+        let residual = distance([start.x, start.y, start.z], edge_start)
+            .max(distance([end.x, end.y, end.z], edge_end));
+        if residual > POINT_TOLERANCE {
+            return None;
+        }
+        Some(Ok(CurvePlan {
+            geometry,
+            parameter_range: Some(parameter_range),
+            edge_tolerance: if residual > EPS_PCURVE_RESIDUAL {
+                Some(cadmpeg_ir::scalar::PositiveReal::new(
+                    residual + EPS_PCURVE_RESIDUAL,
+                )?)
+            } else {
+                None
+            },
+            cache_fit_tolerance: None,
+        }))
+    })()
+    .transpose()
 }
 
-pub(super) fn isoparametric_angle_coordinate(
+fn isoparametric_angle_coordinate(
     pcurve: &B5Pcurve,
     surface: &B5Surface,
-) -> Option<(usize, f64)> {
+) -> Option<(usize, FiniteReal)> {
     match surface {
         B5Surface::Cylinder { angular_scale, .. }
             if constant_coordinate(&pcurve.control_points, 1).is_some() =>
@@ -233,316 +254,398 @@ pub(super) fn isoparametric_angle_coordinate(
         B5Surface::Cone { angular_scale, .. }
             if constant_coordinate(&pcurve.control_points, 1).is_some() =>
         {
-            Some((0, *angular_scale))
+            Some((0, (*angular_scale).into()))
         }
         B5Surface::Torus { minor_scale, .. }
             if constant_coordinate(&pcurve.control_points, 0).is_some() =>
         {
-            Some((1, *minor_scale))
+            Some((1, (*minor_scale).into()))
         }
         B5Surface::Torus { major_scale, .. }
             if constant_coordinate(&pcurve.control_points, 1).is_some() =>
         {
-            Some((0, *major_scale))
+            Some((0, (*major_scale).into()))
         }
         _ => None,
     }
 }
 
 pub(super) fn oriented_nurbs_range(
-    geometry: CurveGeometry,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    geometry: &CurveGeometry,
     endpoint_parameters: [f64; 2],
     edge_start: [f64; 3],
     edge_end: [f64; 3],
-) -> Option<CurvePlan> {
-    let CurveGeometry::Nurbs(mut curve) = geometry else {
-        return None;
+) -> Result<Option<CurvePlan>, cadmpeg_core::CodecError> {
+    let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) = geometry else {
+        return Ok(None);
     };
-    let degree = usize::try_from(curve.degree()).ok()?;
-    let domain_start = *curve.knots().get(degree)?;
-    let domain_end = *curve
-        .knots()
-        .len()
-        .checked_sub(degree + 1)
-        .and_then(|index| curve.knots().get(index))?;
-    let mut range = endpoint_parameters;
-    if range[0] > range[1] {
-        let sum = domain_start + domain_end;
-        curve.reverse_parameterization();
-        curve
-            .edit_knots(|knots| {
+    let mut curve = curve.try_clone_for_decode(ctx, "catia_b5_oriented_nurbs_curve")?;
+    (|| -> Option<Result<CurvePlan, cadmpeg_core::CodecError>> {
+        let degree = usize::try_from(curve.degree()).ok()?;
+        let domain_start = *curve.knots().get(degree)?;
+        let domain_end = *curve
+            .knots()
+            .len()
+            .checked_sub(degree + 1)
+            .and_then(|index| curve.knots().get(index))?;
+        let mut range = endpoint_parameters;
+        if range[0] > range[1] {
+            let sum = domain_start + domain_end;
+            if let Err(error) = curve.reverse_parameterization(ctx) {
+                return Some(Err(error));
+            }
+            match curve.edit_knots(ctx, |knots| {
                 for knot in knots {
                     *knot += sum;
                 }
-            })
-            .ok()?;
-        range = [sum - range[0], sum - range[1]];
-    }
-    if !range[0].is_finite()
-        || !range[1].is_finite()
-        || range[0] >= range[1]
-        || range[0] < domain_start
-        || range[1] > domain_end
-    {
-        return None;
-    }
-    let geometry = CurveGeometry::Nurbs(curve);
-    let start = curve_point(&geometry, range[0])?;
-    let end = curve_point(&geometry, range[1])?;
-    let residual = distance([start.x, start.y, start.z], edge_start)
-        .max(distance([end.x, end.y, end.z], edge_end));
-    if residual > POINT_TOLERANCE {
-        return None;
-    }
-    Some(CurvePlan {
-        geometry,
-        parameter_range: Some(range),
-        edge_tolerance: (residual > EPS_PCURVE_RESIDUAL).then_some(residual + EPS_PCURVE_RESIDUAL),
-        cache_fit_tolerance: None,
-    })
+            }) {
+                Err(error) => return Some(Err(error)),
+                Ok(result) => result.ok()?,
+            }
+            range = [sum - range[0], sum - range[1]];
+        }
+        if !range[0].is_finite()
+            || !range[1].is_finite()
+            || range[0] >= range[1]
+            || range[0] < domain_start
+            || range[1] > domain_end
+        {
+            return None;
+        }
+        let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve));
+        let start = match cadmpeg_ir::eval::finite_or_refusal(
+            match cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(
+                ctx, &geometry, range[0],
+            )) {
+                Ok(value) => value,
+                Err(error) => return Some(Err(error.into())),
+            },
+        ) {
+            Ok(Some(point)) => point,
+            Ok(None) => return None,
+            Err(limit) => return Some(Err(limit.into())),
+        };
+        let end = match cadmpeg_ir::eval::finite_or_refusal(
+            match cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(
+                ctx, &geometry, range[1],
+            )) {
+                Ok(value) => value,
+                Err(error) => return Some(Err(error.into())),
+            },
+        ) {
+            Ok(Some(point)) => point,
+            Ok(None) => return None,
+            Err(limit) => return Some(Err(limit.into())),
+        };
+        let residual = distance([start.x, start.y, start.z], edge_start)
+            .max(distance([end.x, end.y, end.z], edge_end));
+        if residual > POINT_TOLERANCE {
+            return None;
+        }
+        Some(Ok(CurvePlan {
+            geometry,
+            parameter_range: Some(range),
+            edge_tolerance: if residual > EPS_PCURVE_RESIDUAL {
+                Some(cadmpeg_ir::scalar::PositiveReal::new(
+                    residual + EPS_PCURVE_RESIDUAL,
+                )?)
+            } else {
+                None
+            },
+            cache_fit_tolerance: None,
+        }))
+    })()
+    .transpose()
 }
 
 pub(super) fn isocurve_endpoint_parameters(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     pcurve: &B5Pcurve,
     endpoint_parameters: [f64; 2],
-) -> Option<[f64; 2]> {
+) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
     let varying_dimension = if constant_coordinate(&pcurve.control_points, 0).is_some() {
         1
     } else if constant_coordinate(&pcurve.control_points, 1).is_some() {
         0
     } else {
-        return None;
+        return Ok(None);
     };
-    if let Some(weights) = &pcurve.weights {
-        if weights.len() != pcurve.control_points.len()
-            || weights
-                .iter()
-                .any(|weight| !weight.is_finite() || *weight <= 0.0)
-        {
-            return None;
-        }
-    }
     if pcurve
+        .weights
+        .as_ref()
+        .is_some_and(|weights| weights.len() != pcurve.control_points.len())
+    {
+        return Ok(None);
+    }
+    if !pcurve
         .control_points
-        .iter()
-        .any(|point| !point[varying_dimension].is_finite())
-        || (!pcurve
+        .windows(2)
+        .all(|pair| pair[0][varying_dimension] <= pair[1][varying_dimension])
+        && !pcurve
             .control_points
             .windows(2)
-            .all(|pair| pair[0][varying_dimension] <= pair[1][varying_dimension])
-            && !pcurve
-                .control_points
-                .windows(2)
-                .all(|pair| pair[0][varying_dimension] >= pair[1][varying_dimension]))
+            .all(|pair| pair[0][varying_dimension] >= pair[1][varying_dimension])
     {
-        return None;
+        return Ok(None);
     }
-    let values = endpoint_parameters
-        .map(|parameter| evaluate_pcurve(pcurve, parameter))
-        .map(|uv| uv.map(|point| point[varying_dimension]));
-    let [Some(start), Some(end)] = values else {
-        return None;
+    let Some(start) = evaluate_pcurve(ctx, pcurve, endpoint_parameters[0])? else {
+        return Ok(None);
     };
-    Some([start, end])
+    let Some(end) = evaluate_pcurve(ctx, pcurve, endpoint_parameters[1])? else {
+        return Ok(None);
+    };
+    Ok(Some([start[varying_dimension], end[varying_dimension]]))
 }
 
 pub(super) fn neutral_pcurve_point(point: [f64; 2], surface: &B5Surface) -> Point2 {
     match surface {
         B5Surface::Cylinder { angular_scale, .. } => {
-            Point2::new(point[0] / angular_scale, point[1])
+            Point2::new(point[0] / angular_scale.get(), point[1])
         }
         B5Surface::Cone {
-            direction_x,
+            frame,
             direction_y,
-            axis,
             half_angle,
             slant_range,
             angular_scale,
             ..
         } => Point2::new(
-            dot(cross(*direction_x, *direction_y), *axis).signum() * point[0] / angular_scale,
-            (point[1] - slant_range[0]) * half_angle.cos(),
+            dot(
+                cross(components(frame.reference()), components(direction_y)),
+                components(frame.axis()),
+            )
+            .signum()
+                * point[0]
+                / angular_scale.get(),
+            (point[1] - slant_range.lower()) * half_angle.get().cos(),
         ),
         B5Surface::Torus {
             major_scale,
             minor_scale,
             ..
-        } => Point2::new(point[0] / major_scale, point[1] / minor_scale),
+        } => Point2::new(point[0] / major_scale.get(), point[1] / minor_scale.get()),
         _ => Point2::new(point[0], point[1]),
     }
 }
 
 pub(super) fn lifted_curve_geometry(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     pcurve: &B5Pcurve,
     surface: &B5Surface,
-) -> Option<CurveGeometry> {
-    let knots = pcurve_nurbs_knots(pcurve)?;
-    match surface {
-        B5Surface::UnresolvedNurbs { .. }
-        | B5Surface::Unknown { .. }
-        | B5Surface::RollingBall { .. }
-        | B5Surface::Sphere { .. } => None,
-        B5Surface::Plane {
-            origin,
-            direction_u,
-            direction_v,
-            ..
-        } => Some(CurveGeometry::Nurbs(
-            NurbsCurve::new(
-                pcurve.degree,
-                knots,
-                pcurve
-                    .control_points
-                    .iter()
-                    .map(|uv| {
-                        point3(add(
-                            *origin,
-                            add(scale(*direction_u, uv[0]), scale(*direction_v, uv[1])),
-                        ))
-                    })
-                    .collect(),
-                pcurve.weights.clone(),
-                false,
-            )
-            .ok()?,
-        )),
-        B5Surface::Cylinder {
-            origin,
-            reference_x,
-            axis,
-            radius,
-            angular_scale,
-            ..
-        } if constant_coordinate(&pcurve.control_points, 0).is_some() => {
-            let first = pcurve.control_points.first()?;
-            let line_origin = cylinder_point(
-                *origin,
-                *reference_x,
-                *axis,
-                *radius,
-                *angular_scale,
-                *first,
-            );
-            Some(CurveGeometry::Line {
-                origin: point3(line_origin),
-                direction: vector(*axis),
+) -> Result<Option<CurveGeometry>, cadmpeg_core::CodecError> {
+    let Some(native_knots) = pcurve_nurbs_knots(ctx, pcurve)? else {
+        return Ok(None);
+    };
+    if let B5Surface::Plane {
+        origin,
+        frame,
+        direction_v,
+        ..
+    } = surface
+    {
+        let knots = ctx.collect_vec(
+            native_knots.into_iter().map(FiniteReal::get),
+            "catia_b5_lifted_plane_knots",
+        )?;
+        let (origin, direction_u) = (coordinates(*origin), components(frame.reference()));
+        let points = ctx.collect_vec(
+            pcurve.control_points.iter().map(|uv| {
+                point3(add(
+                    origin,
+                    add(scale(direction_u, uv[0]), scale(direction_v.get(), uv[1])),
+                ))
+            }),
+            "catia_b5_lifted_plane_points",
+        )?;
+        let weights = pcurve
+            .weights
+            .as_ref()
+            .map(|weights| {
+                ctx.collect_vec(
+                    weights.iter().copied().map(PositiveReal::get),
+                    "catia_b5_lifted_plane_weights",
+                )
             })
-        }
-        B5Surface::Cone {
-            apex,
-            direction_x,
-            direction_y,
-            axis,
-            half_angle,
-            angular_scale,
-            ..
-        } if constant_coordinate(&pcurve.control_points, 0).is_some() => {
-            let [u, _] = *pcurve.control_points.first()?;
-            let angle = u / angular_scale;
-            let radial = add(
-                scale(*direction_x, angle.cos()),
-                scale(*direction_y, angle.sin()),
-            );
-            Some(CurveGeometry::Line {
-                origin: point3(*apex),
-                direction: vector(add(
-                    scale(*axis, half_angle.cos()),
-                    scale(radial, half_angle.sin()),
-                )),
-            })
-        }
-        B5Surface::Torus {
-            center,
-            direction_x,
-            direction_y,
-            axis,
-            major_radius,
-            minor_radius,
-            major_scale,
-            minor_scale,
-            ..
-        } if constant_coordinate(&pcurve.control_points, 0).is_some() => {
-            let u = pcurve.control_points.first()?[0];
-            let angle = u / major_scale;
-            let radial = add(
-                scale(*direction_x, angle.cos()),
-                scale(*direction_y, angle.sin()),
-            );
-            Some(CurveGeometry::Circle {
-                center: point3(add(*center, scale(radial, *major_radius))),
-                axis: vector(cross(radial, *axis)),
-                ref_direction: vector(radial),
-                radius: *minor_radius,
-            })
-        }
-        B5Surface::Torus {
-            center,
-            direction_x,
-            axis,
-            major_radius,
-            minor_radius,
-            minor_scale,
-            ..
-        } => {
-            let v = constant_coordinate(&pcurve.control_points, 1)?;
-            let angle = v / minor_scale;
-            let signed_radius = major_radius + minor_radius * angle.cos();
-            (signed_radius.is_finite() && signed_radius != 0.0).then_some(())?;
-            Some(CurveGeometry::Circle {
-                center: point3(add(*center, scale(*axis, minor_radius * angle.sin()))),
-                axis: vector(*axis),
-                ref_direction: vector(scale(*direction_x, signed_radius.signum())),
-                radius: signed_radius.abs(),
-            })
-        }
-        B5Surface::Cone {
-            apex,
-            direction_x,
-            axis,
-            half_angle,
-            ..
-        } => {
-            let slant = constant_coordinate(&pcurve.control_points, 1)?;
-            let radius = slant * half_angle.sin();
-            (radius.is_finite() && radius != 0.0).then_some(())?;
-            Some(CurveGeometry::Circle {
-                center: point3(add(*apex, scale(*axis, slant * half_angle.cos()))),
-                axis: vector(*axis),
-                ref_direction: vector(*direction_x),
+            .transpose()?;
+        return Ok(cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+            ctx,
+            pcurve.degree,
+            knots,
+            points,
+            weights,
+            false,
+        )?
+        .ok()
+        .map(SolvedCurveGeometry::Nurbs)
+        .map(CurveGeometry::Solved));
+    }
+    if let B5Surface::Nurbs(surface) = surface {
+        return Ok(nurbs_isocurve(ctx, pcurve, surface)?
+            .map(SolvedCurveGeometry::Nurbs)
+            .map(CurveGeometry::Solved));
+    }
+    Ok((|| -> Option<CurveGeometry> {
+        match surface {
+            B5Surface::UnresolvedNurbs { .. }
+            | B5Surface::Unknown { .. }
+            | B5Surface::RollingBall { .. }
+            | B5Surface::Sphere { .. }
+            | B5Surface::Nurbs(_) => None,
+            B5Surface::Plane { .. } => None,
+            B5Surface::Cylinder {
+                origin,
+                frame,
                 radius,
-            })
+                angular_scale,
+                ..
+            } if constant_coordinate(&pcurve.control_points, 0).is_some() => {
+                let first = pcurve.control_points.first()?;
+                let line_origin = cylinder_point(
+                    coordinates(*origin),
+                    components(frame.reference()),
+                    components(frame.axis()),
+                    radius.get(),
+                    angular_scale.get(),
+                    first.get(),
+                );
+                Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                    cadmpeg_ir::geometry::analytic::LineCurve::new(
+                        FinitePoint3::new(point3(line_origin))?,
+                        *frame.axis(),
+                    ),
+                )))
+            }
+            B5Surface::Cone {
+                apex,
+                frame,
+                direction_y,
+                half_angle,
+                angular_scale,
+                ..
+            } if constant_coordinate(&pcurve.control_points, 0).is_some() => {
+                let [u, _] = pcurve.control_points.first()?.get();
+                let angle = u / angular_scale.get();
+                let radial = add(
+                    scale(components(frame.reference()), angle.cos()),
+                    scale(components(direction_y), angle.sin()),
+                );
+                Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                    cadmpeg_ir::geometry::analytic::LineCurve::new(
+                        *apex,
+                        UnitVector3::new(vector(add(
+                            scale(components(frame.axis()), half_angle.get().cos()),
+                            scale(radial, half_angle.get().sin()),
+                        )))?,
+                    ),
+                )))
+            }
+            B5Surface::Torus {
+                center,
+                frame,
+                direction_y,
+                major_radius,
+                minor_radius,
+                major_scale,
+                ..
+            } if constant_coordinate(&pcurve.control_points, 0).is_some() => {
+                let u = pcurve.control_points.first()?[0];
+                let angle = u / major_scale.get();
+                let radial = add(
+                    scale(components(frame.reference()), angle.cos()),
+                    scale(direction_y.get(), angle.sin()),
+                );
+                Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                        point3(add(coordinates(*center), scale(radial, major_radius.get()))),
+                        vector(cross(radial, components(frame.axis()))),
+                        vector(radial),
+                        minor_radius.get(),
+                    )
+                    .ok()?,
+                )))
+            }
+            B5Surface::Torus {
+                center,
+                frame,
+                major_radius,
+                minor_radius,
+                minor_scale,
+                ..
+            } => {
+                let v = constant_coordinate(&pcurve.control_points, 1)?;
+                let angle = v / minor_scale.get();
+                let signed_radius = major_radius.get() + minor_radius.get() * angle.cos();
+                Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                    cadmpeg_ir::geometry::analytic::CircleCurve::new(
+                        FinitePoint3::new(point3(add(
+                            coordinates(*center),
+                            scale(components(frame.axis()), minor_radius.get() * angle.sin()),
+                        )))?,
+                        signed_reference_frame(*frame, signed_radius),
+                        PositiveLength::new(signed_radius.abs())?,
+                    ),
+                )))
+            }
+            B5Surface::Cone {
+                apex,
+                frame,
+                half_angle,
+                ..
+            } => {
+                let slant = constant_coordinate(&pcurve.control_points, 1)?;
+                let radius = slant * half_angle.get().sin();
+                Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                    cadmpeg_ir::geometry::analytic::CircleCurve::new(
+                        FinitePoint3::new(point3(add(
+                            coordinates(*apex),
+                            scale(components(frame.axis()), slant * half_angle.get().cos()),
+                        )))?,
+                        signed_reference_frame(*frame, radius),
+                        PositiveLength::new(radius.abs())?,
+                    ),
+                )))
+            }
+            B5Surface::Cylinder {
+                origin,
+                frame,
+                radius,
+                ..
+            } => {
+                let v = constant_coordinate(&pcurve.control_points, 1)?;
+                Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                    cadmpeg_ir::geometry::analytic::CircleCurve::new(
+                        FinitePoint3::new(point3(add(
+                            coordinates(*origin),
+                            scale(components(frame.axis()), v),
+                        )))?,
+                        *frame,
+                        *radius,
+                    ),
+                )))
+            }
+            B5Surface::Revolution { .. } => None,
         }
-        B5Surface::Cylinder {
-            origin,
-            reference_x,
-            axis,
-            radius,
-            ..
-        } => {
-            let v = constant_coordinate(&pcurve.control_points, 1)?;
-            Some(CurveGeometry::Circle {
-                center: point3(add(*origin, scale(*axis, v))),
-                axis: vector(*axis),
-                ref_direction: vector(*reference_x),
-                radius: *radius,
-            })
-        }
-        B5Surface::Nurbs(surface) => nurbs_isocurve(pcurve, surface).map(CurveGeometry::Nurbs),
-        B5Surface::Revolution { .. } => None,
-    }
+    })())
 }
 
-pub(super) fn nurbs_isocurve(pcurve: &B5Pcurve, surface: &NurbsSurface) -> Option<NurbsCurve> {
-    if let Some(u) = constant_coordinate(&pcurve.control_points, 0) {
-        crate::nurbs::nurbs_surface_isocurve(surface, u, true)
+pub(super) fn nurbs_isocurve(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    pcurve: &B5Pcurve,
+    surface: &NurbsSurface,
+) -> Result<Option<NurbsCurve>, cadmpeg_core::CodecError> {
+    use cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis;
+    let fixed = if let Some(u) = constant_coordinate(&pcurve.control_points, 0) {
+        (SurfaceParameterAxis::U, u)
     } else if let Some(v) = constant_coordinate(&pcurve.control_points, 1) {
-        crate::nurbs::nurbs_surface_isocurve(surface, v, false)
+        (SurfaceParameterAxis::V, v)
     } else {
-        None
-    }
+        return Ok(None);
+    };
+    cadmpeg_ir::eval::nurbs_surface_isocurve(ctx, surface, fixed.0, fixed.1).map_err(Into::into)
 }
 
-pub(super) fn constant_coordinate(points: &[[f64; 2]], dimension: usize) -> Option<f64> {
+fn constant_coordinate(points: &[FiniteVector<2>], dimension: usize) -> Option<f64> {
     let value = points.first()?[dimension];
     points
         .iter()
@@ -576,91 +679,136 @@ pub(super) fn cylinder_point(
 }
 
 pub(super) fn cylinder_helix(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     pcurve: &B5Pcurve,
     surface: &B5Surface,
     endpoint_parameters: [f64; 2],
     edge_start: [f64; 3],
     edge_end: [f64; 3],
-) -> Option<HelixPlan> {
-    const FIT_TOLERANCE: f64 = 1e-4;
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Result<Option<HelixPlan>, cadmpeg_core::CodecError> {
+    const FIT_TOLERANCE: PositiveReal = match PositiveReal::new(1e-4) {
+        Some(tolerance) => tolerance,
+        None => panic!("the helix cache fit tolerance must be positive and finite"),
+    };
 
     let B5Surface::Cylinder {
         origin,
-        reference_x,
-        axis,
+        frame,
         radius,
         angular_scale,
         ..
     } = surface
     else {
-        return None;
+        return Ok(None);
     };
-    if pcurve.degree != 1 || pcurve.control_points.len() != 2 {
-        return None;
-    }
-    let endpoints = endpoint_parameters.map(|parameter| evaluate_pcurve(pcurve, parameter));
-    let [Some(first), Some(second)] = endpoints else {
-        return None;
-    };
-    let endpoints = [first, second];
-    let lifted = endpoints
-        .map(|uv| cylinder_point(*origin, *reference_x, *axis, *radius, *angular_scale, uv));
-    let forward_error = distance(lifted[0], edge_start).max(distance(lifted[1], edge_end));
-    if !forward_error.is_finite() || forward_error > POINT_TOLERANCE {
-        return None;
-    }
-    let angles = endpoints.map(|point| point[0] / angular_scale);
-    let delta_angle = angles[1] - angles[0];
-    let delta_height = endpoints[1][1] - endpoints[0][1];
-    if delta_angle == 0.0 || delta_height == 0.0 {
-        return None;
-    }
-    let reference_y = cross(*axis, *reference_x);
-    let radial = add(
-        scale(*reference_x, angles[0].cos()),
-        scale(reference_y, angles[0].sin()),
+    let (origin, reference_x, axis, radius) = (
+        coordinates(*origin),
+        components(frame.reference()),
+        components(frame.axis()),
+        radius.get(),
     );
-    let tangent = cross(*axis, radial);
-    let sweep = delta_angle.abs();
-    let definition = ProceduralCurveDefinition::Helix {
-        angle_range: [0.0, sweep],
-        center: point3(add(*origin, scale(*axis, endpoints[0][1]))),
-        major: vector(scale(radial, *radius)),
-        minor: vector(scale(tangent, radius * delta_angle.signum())),
-        pitch: vector(scale(
-            *axis,
-            delta_height / sweep * 2.0 * std::f64::consts::PI,
-        )),
-        apex_factor: 0.0,
-        axis: vector(*axis),
+    if pcurve.degree != 1 || pcurve.control_points.len() != 2 {
+        return Ok(None);
+    }
+    let Some(first) = evaluate_pcurve(ctx, pcurve, endpoint_parameters[0])? else {
+        return Ok(None);
     };
-    let cache = crate::nurbs::circular_helix_cache(&definition, FIT_TOLERANCE)?;
-    let cache_start = cache.curve.control_points().first()?;
-    let cache_end = cache.curve.control_points().last()?;
+    let Some(second) = evaluate_pcurve(ctx, pcurve, endpoint_parameters[1])? else {
+        return Ok(None);
+    };
+    let Some((definition, sweep)) = (|| -> Option<_> {
+        let endpoints = [first, second];
+        let lifted = endpoints
+            .map(|uv| cylinder_point(origin, reference_x, axis, radius, angular_scale.get(), uv));
+        let forward_error = distance(lifted[0], edge_start).max(distance(lifted[1], edge_end));
+        if !forward_error.is_finite() || forward_error > POINT_TOLERANCE {
+            return None;
+        }
+        let angles = endpoints.map(|point| point[0] / angular_scale.get());
+        let delta_angle = angles[1] - angles[0];
+        let delta_height = endpoints[1][1] - endpoints[0][1];
+        if delta_angle == 0.0 || delta_height == 0.0 {
+            return None;
+        }
+        let reference_y = cross(axis, reference_x);
+        let radial = add(
+            scale(reference_x, angles[0].cos()),
+            scale(reference_y, angles[0].sin()),
+        );
+        let tangent = cross(axis, radial);
+        let sweep = delta_angle.abs();
+        let definition = ProceduralCurveDefinition::Helix(
+            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+                [0.0, sweep],
+                cadmpeg_ir::geometry::HelixFrame {
+                    center: point3(add(origin, scale(axis, endpoints[0][1]))),
+                    major: vector(scale(radial, radius)),
+                    minor: vector(scale(tangent, radius * delta_angle.signum())),
+                    pitch: vector(scale(
+                        axis,
+                        delta_height / sweep * 2.0 * std::f64::consts::PI,
+                    )),
+                    axis: vector(axis),
+                },
+                0.0,
+                None,
+            )
+            .ok()?,
+        );
+        Some((definition, sweep))
+    })() else {
+        return Ok(None);
+    };
+    let Some(cache) = crate::nurbs::circular_helix_cache(
+        ctx,
+        &definition,
+        FIT_TOLERANCE,
+        refusal,
+        "b5 helix edge construction",
+    )?
+    else {
+        return Ok(None);
+    };
+    let poles = cache.curve.pole_rows();
+    let Some(cache_start) = poles.point_at(0) else {
+        return Ok(None);
+    };
+    let Some(last) = poles.count().checked_sub(1) else {
+        return Ok(None);
+    };
+    let Some(cache_end) = poles.point_at(last) else {
+        return Ok(None);
+    };
     if distance([cache_start.x, cache_start.y, cache_start.z], edge_start) > POINT_TOLERANCE
         || distance([cache_end.x, cache_end.y, cache_end.z], edge_end) > POINT_TOLERANCE
     {
-        return None;
+        return Ok(None);
     }
-    Some(HelixPlan {
+    Ok(Some(HelixPlan {
         definition,
         cache: cache.curve,
         parameter_range: [0.0, sweep],
         fit_tolerance: cache.fit_tolerance,
-    })
+    }))
 }
+
+/// Emitted pcurve carriers and intervals indexed by native loop and member.
+pub(super) type PcurveUses = HashMap<(u32, usize), (PcurveId, [FiniteReal; 2])>;
 
 /// Emit distinct pcurve occurrences grouped by native parameter range,
 /// returning each emitted carrier and its forward interval by
 /// `(loop_id, member_index)`.
 pub(super) fn emit_pcurves(
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     graph: &B5Graph,
     plan: &TransferPlan,
-) -> HashMap<(u32, usize), (PcurveId, [f64; 2])> {
+    admission: &mut crate::families::FamilyEntityAdmission<'_, '_>,
+) -> Result<PcurveUses, cadmpeg_core::CodecError> {
     let pcurve_plan = &plan.pcurve_plan;
-    let mut occurrence_groups = BTreeMap::<u32, BTreeMap<[u64; 2], Vec<(u32, usize)>>>::new();
+    let mut occurrence_groups =
+        BTreeMap::<u32, BTreeMap<[u64; 2], ([FiniteReal; 2], Vec<(u32, usize)>)>>::new();
     for loop_ in graph.loops.values() {
         for (index, member) in loop_.members.iter().enumerate() {
             let object_id = member.pcurve;
@@ -670,64 +818,108 @@ pub(super) fn emit_pcurves(
             };
             let parameter_range = edge_pcurve_parameters(graph, edge_id, object_id)
                 .and_then(|parameters| ordered_subrange(parameters, *native_range))
-                .unwrap_or(*native_range);
-            occurrence_groups
-                .entry(object_id)
-                .or_default()
-                .entry(parameter_range.map(|parameter| {
-                    if parameter == 0.0 {
-                        0.0f64.to_bits()
+                .unwrap_or(*native_range)
+                .map(|parameter| {
+                    if parameter.get() == 0.0 {
+                        FiniteReal::ZERO
                     } else {
-                        parameter.to_bits()
+                        parameter
                     }
-                }))
-                .or_default()
-                .push((loop_.object_id, index));
+                });
+            admission.context().admit_btree_entry(
+                &occurrence_groups,
+                &object_id,
+                "catia_b5_pcurve_occurrence_objects",
+            )?;
+            let ranges = occurrence_groups.entry(object_id).or_default();
+            let key = parameter_range.map(|parameter| parameter.get().to_bits());
+            admission.context().admit_btree_entry(
+                ranges,
+                &key,
+                "catia_b5_pcurve_occurrence_ranges",
+            )?;
+            let occurrences = &mut ranges
+                .entry(key)
+                .or_insert_with(|| (parameter_range, Vec::new()))
+                .1;
+            admission.context().push_vec(
+                occurrences,
+                (loop_.object_id, index),
+                "catia_b5_pcurve_occurrences",
+            )?;
         }
     }
     let mut pcurve_uses = HashMap::new();
     for (object_id, ranges) in occurrence_groups {
         let (geometry, cylinder_reparameterized, _) = &pcurve_plan[&object_id];
         let range_count = ranges.len();
-        for (rank, (range_bits, occurrences)) in ranges.into_iter().enumerate() {
+        for (rank, (parameter_range, occurrences)) in ranges.into_values().enumerate() {
             let id = if range_count == 1 {
-                PcurveId::mint(format!("catia:b5:pcurve#{object_id}")).expect("identity grammar")
+                admission.context().format_retained(
+                    format_args!("catia:b5:pcurve#{object_id}"),
+                    "catia_b5_emitted_pcurve_id",
+                )?
             } else {
-                PcurveId::mint(format!("catia:b5:pcurve#{object_id}@{rank}"))
-                    .expect("identity grammar")
+                admission.context().format_retained(
+                    format_args!("catia:b5:pcurve#{object_id}@{rank}"),
+                    "catia_b5_emitted_pcurve_id",
+                )?
             };
+            let id = PcurveId::mint(id).map_err(cadmpeg_core::CodecError::malformed)?;
             annotate(
+                admission.context(),
                 annotations,
                 &id,
                 "object_stream_b5_03",
                 "21_pcurve",
                 Exactness::ByteExact,
-            );
+            )?;
             if *cylinder_reparameterized {
-                annotations.derived(&id, "geometry.control_points");
+                crate::resource::derived_annotation(
+                    admission.context(),
+                    annotations,
+                    id.as_str(),
+                    "geometry.control_points",
+                    "catia_b5_pcurve_annotation",
+                )?;
             }
-            let parameter_range = range_bits.map(f64::from_bits);
             if graph
                 .pcurves
                 .get(&object_id)
                 .and_then(|pcurve| pcurve.parameter_range)
                 != Some(parameter_range)
             {
-                annotations.derived(&id, "parameter_range");
+                crate::resource::derived_annotation(
+                    admission.context(),
+                    annotations,
+                    id.as_str(),
+                    "parameter_range",
+                    "catia_b5_pcurve_annotation",
+                )?;
             }
             for occurrence in occurrences {
-                pcurve_uses.insert(occurrence, (id.clone(), parameter_range));
+                let use_id =
+                    id.try_clone_for_decode(admission.context(), "catia_b5_pcurve_use_id")?;
+                admission.context().insert_hash_map(
+                    &mut pcurve_uses,
+                    occurrence,
+                    (use_id, parameter_range),
+                    "catia_b5_pcurve_uses",
+                )?;
             }
+            let geometry = geometry
+                .try_clone_for_decode(admission.context(), "catia_b5_emitted_pcurve_geometry")?;
+            admission.reserve_entity(&mut ir.model.pcurves, "catia_b5_emit_pcurves")?;
             ir.model.pcurves.push(Pcurve {
                 id,
-                geometry: geometry.clone(),
-                metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                geometry,
+                metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                     None,
-                    Some(parameter_range),
+                    Some(cadmpeg_ir::units::FiniteVector::from(parameter_range)),
                     None,
                 ),
             });
         }
     }
-    pcurve_uses
+    Ok(pcurve_uses)
 }

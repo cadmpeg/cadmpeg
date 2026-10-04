@@ -7,18 +7,19 @@ use std::collections::BTreeSet;
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    CurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
+    ProceduralCurveDefinition, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+    SolvedSurfaceGeometry,
 };
-use cadmpeg_ir::sketches::SketchGeometry;
+use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
 use crate::container::{self, ContainerScan};
 use crate::loss::CreoLossCode;
 
-use super::super::surfaces::BrepTransferDiagnostics;
+use super::super::surfaces::brep::BrepTransferDiagnostics;
 use super::report_coverage::push_coverage_drop_losses;
 use super::report_losses::{
     push_brep_transfer_note, push_carrier_transfer_notes, push_legacy_value_losses,
-    push_structural_layer_notes,
+    push_report_loss, push_structural_layer_notes,
 };
 use crate::decode::analytic::planes::is_axis_aligned;
 use cadmpeg_ir::codec::DecodeBody;
@@ -34,14 +35,18 @@ pub(in super::super) fn has_transferred_geometry(ir: &CadIr) -> bool {
         || !model.shells.is_empty()
         || !model.regions.is_empty()
         || !model.bodies.is_empty()
-        || model
-            .surfaces
-            .iter()
-            .any(|surface| !matches!(&surface.geometry, SurfaceGeometry::Unknown { .. }))
-        || model
-            .curves
-            .iter()
-            .any(|curve| !matches!(&curve.geometry, CurveGeometry::Unknown { .. }))
+        || model.surfaces.iter().any(|surface| {
+            !matches!(
+                surface.geometry.solved(),
+                Some(SolvedSurfaceGeometry::Unknown { .. })
+            )
+        })
+        || model.curves.iter().any(|curve| {
+            !matches!(
+                curve.geometry.solved(),
+                Some(SolvedCurveGeometry::Unknown { .. })
+            )
+        })
         || !model.subds.is_empty()
         || !model.pcurves.is_empty()
         || model.procedural_surfaces.iter().any(|surface| {
@@ -56,29 +61,42 @@ pub(in super::super) fn has_transferred_geometry(ir: &CadIr) -> bool {
                 ProceduralCurveDefinition::Unknown { .. }
             )
         })
-        || model
-            .sketch_entities
-            .iter()
-            .any(|entity| !matches!(&entity.geometry, SketchGeometry::Native { .. }))
+        || model.sketch_entities.iter().any(|entity| {
+            !matches!(
+                entity.geometry.definition(),
+                SketchGeometryDefinition::Native { .. }
+            )
+        })
         || !model.tessellations.is_empty()
 }
 
 /// Build the decode body from the entry point's one dialect classification.
 pub(in super::super) fn build_report(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     classification: &crate::dialect::DialectClassification,
     ir: &CadIr,
-    coverage: cadmpeg_ir::Coverage,
+    coverage: cadmpeg_ir::report::decode::Coverage,
     brep_diagnostics: &BrepTransferDiagnostics,
     container_only: bool,
-) -> DecodeBody {
+) -> Result<DecodeBody, cadmpeg_core::CodecError> {
+    struct OptionalCount<T>(Option<T>);
+    impl<T: std::fmt::Display> std::fmt::Display for OptionalCount<T> {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match &self.0 {
+                Some(value) => write!(f, "{value}"),
+                None => f.write_str("n/a"),
+            }
+        }
+    }
+
     let geom_sections = scan
         .framing
         .sections
         .iter()
-        .filter(|s| s.role == SectionRole::PsbGeometry)
+        .filter(|s| s.role() == SectionRole::PsbGeometry)
         .count();
-    let mut placed_plane_ids = scan
+    let placed_frames = scan
         .planes
         .local_systems
         .iter()
@@ -86,37 +104,43 @@ pub(in super::super) fn build_report(
             let frame = frame.frame();
             frame.origin.is_some()
                 && frame.u_axis.is_some()
-                && frame.normal.is_some_and(|normal| !is_axis_aligned(normal))
+                && frame
+                    .normal()
+                    .is_some_and(|normal| !is_axis_aligned(normal))
         })
-        .map(|frame| frame.surface_id)
-        .collect::<BTreeSet<_>>();
-    placed_plane_ids.extend(scan.planes.outlines.iter().map(|plane| plane.surface_id));
-    placed_plane_ids.extend(
-        scan.planes
-            .positional_frames
-            .iter()
-            .map(|plane| plane.surface_id),
-    );
+        .map(|frame| frame.surface_id);
+    let mut placed_plane_ids = BTreeSet::new();
+    for id in placed_frames
+        .chain(scan.planes.outlines.iter().map(|plane| plane.surface_id))
+        .chain(
+            scan.planes
+                .positional_frames
+                .iter()
+                .map(|plane| plane.surface_id),
+        )
+    {
+        ctx.insert_btree_set(
+            &mut placed_plane_ids,
+            id,
+            "creo report placed plane ID nodes",
+        )?;
+    }
     let placed_plane_count = placed_plane_ids.len();
     let mut losses = Vec::new();
 
     // The admission charge, first: it describes how the whole document was
     // read, not what any one record cost. Identity itself is authored once, in
     // `ir.source`; the report body carries only the charge.
-    losses.extend(classification.loss());
+    if let Some(loss) = classification.loss(ctx)? {
+        ctx.reserve_vec(&mut losses, 1, "creo dialect report losses")?;
+        losses.push(loss);
+    }
 
     // The namespace census: what is byte-backed and readable.
-    let srf = scan
-        .framing
-        .census
-        .srf_array_count
-        .map_or_else(|| "n/a".to_string(), |c| c.to_string());
-    let crv = scan
-        .framing
-        .census
-        .crv_array_count
-        .map_or_else(|| "n/a".to_string(), |c| c.to_string());
-    losses.push(CreoLossCode::ContainerCensus.note(format!(
+
+    let srf = OptionalCount(scan.framing.census.srf_array_count);
+    let crv = OptionalCount(scan.framing.census.crv_array_count);
+    push_report_loss(ctx, &mut losses, CreoLossCode::ContainerCensus, format_args!(
         "PSB container decoded structurally: {} section(s), {} layout, VisibGeom namespace \
          census srf_array={srf} / crv_array={crv}; {} typed surface rows, {} labeled curve \
          prototypes, {} canonical curve-topology rows, and {} closed native loops were decoded. \
@@ -139,27 +163,77 @@ pub(in super::super) fn build_report(
         scan.curves.prototypes.len(),
         scan.curves.topology_rows.len(),
         scan.topology.loops.len(),
-    )));
+    ))?;
 
-    push_legacy_value_losses(&mut losses, &coverage);
+    push_legacy_value_losses(ctx, &mut losses, &coverage)?;
 
-    push_brep_transfer_note(&mut losses, brep_diagnostics, geom_sections);
+    push_brep_transfer_note(ctx, &mut losses, brep_diagnostics, geom_sections)?;
 
     push_carrier_transfer_notes(
+        ctx,
         &mut losses,
         scan,
         &coverage,
         container_only,
         placed_plane_count,
-    );
-    push_structural_layer_notes(&mut losses, scan);
-    push_coverage_drop_losses(&mut losses, &coverage);
+    )?;
+    push_structural_layer_notes(ctx, &mut losses, scan)?;
+    push_coverage_drop_losses(ctx, &mut losses, &coverage)?;
 
-    DecodeBody {
-        geometry_transferred: has_transferred_geometry(ir),
+    Ok(DecodeBody {
+        transfer: if container_only {
+            cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {}
+        } else {
+            cadmpeg_ir::report::decode::DecodeTransfer::full(has_transferred_geometry(ir))
+        },
         coverage,
         losses,
-        notes: container::notes(scan),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+        notes: container::notes(ctx, scan)?,
+        transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_report;
+    use crate::decode::surfaces::brep::BrepTransferDiagnostics;
+    use crate::surface::OutlinePlane;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::units::UnitVector3;
+
+    #[test]
+    fn placed_plane_id_nodes_refuse_collection_limit() {
+        let mut scan =
+            crate::container::scan_bytes_ok(crate::test_support::build_prt("report", &[]));
+        scan.planes.outlines.push(OutlinePlane {
+            surface_id: 17,
+            origin: [0.0; 3],
+            normal: UnitVector3::Z_AXIS,
+            u_axis: UnitVector3::X_AXIS,
+            offset: 0,
+        });
+        let classification = crate::decode::with_test_decode_ctx(|ctx| {
+            crate::dialect::classify(ctx, &scan).expect("service classification admitted")
+        });
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
+        let error = build_report(
+            &ctx,
+            &scan,
+            &classification,
+            &CadIr::empty(),
+            cadmpeg_ir::report::decode::Coverage::default(),
+            &BrepTransferDiagnostics::default(),
+            false,
+        )
+        .expect_err("placed plane node refused");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo report placed plane ID nodes"));
     }
 }

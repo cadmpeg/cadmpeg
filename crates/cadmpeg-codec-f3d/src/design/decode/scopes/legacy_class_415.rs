@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse the legacy class-415 Extrude grammar variants.
 
+use cadmpeg_core::decode::{index_from_u32, u64_from_index};
+
 use crate::bytes::f64s_at;
 use crate::layout::legacy_class_415_one_sided_distance_extrude_prefix as distance;
 use crate::layout::legacy_class_415_one_sided_to_face_extrude_prefix as to_face;
 use crate::layout::legacy_class_415_symmetric_extrude_prefix as symmetric;
-use crate::records::feature::{DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeStart};
+use crate::records::feature::extrude::{
+    DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeStart,
+};
 use cadmpeg_core::decode::View;
 
 #[derive(Clone, Copy)]
@@ -23,7 +27,7 @@ pub(crate) fn is_symmetric_distance_layout(
 ) -> bool {
     class_tag == "415"
         && paired_class_tag == "265"
-        && reference_count_delta == symmetric::REFERENCE_COUNT as u64
+        && reference_count_delta == u64_from_index(symmetric::REFERENCE_COUNT)
         && matches!((frame_length, reference_member_count), (447, 5) | (469, 7))
 }
 
@@ -61,7 +65,7 @@ pub(crate) fn is_one_sided_layout(
     .is_some()
 }
 
-pub(crate) fn exact_one_sided_extrude_prologue(
+pub(super) fn exact_one_sided_extrude_prologue(
     bytes: &[u8],
     start: usize,
     paired_at: usize,
@@ -92,7 +96,7 @@ pub(crate) fn exact_one_sided_extrude_prologue(
         OneSidedVariant::ToFace => (
             481,
             to_face::REFERENCE_COUNT,
-            to_face::REFERENCE_COUNT_VALUE as usize,
+            index_from_u32(to_face::REFERENCE_COUNT_VALUE),
             to_face::FIRST_SIDE_EXTENT,
             to_face::FIRST_SIDE_EXTENT_VALUE,
             to_face::FACE_EXTEND_VALUE,
@@ -101,7 +105,7 @@ pub(crate) fn exact_one_sided_extrude_prologue(
         OneSidedVariant::Distance => (
             449,
             distance::REFERENCE_COUNT,
-            distance::REFERENCE_COUNT_VALUE as usize,
+            index_from_u32(distance::REFERENCE_COUNT_VALUE),
             distance::FIRST_SIDE_EXTENT,
             distance::FIRST_SIDE_EXTENT_VALUE,
             distance::FACE_EXTEND_VALUE,
@@ -163,7 +167,7 @@ pub(crate) fn exact_one_sided_extrude_prologue(
         _ => return None,
     };
     let profile_normal_offset = start.checked_add(to_face::PROFILE_NORMAL)?;
-    let profile_normal = f64s_at(bytes, profile_normal_offset, 3)?;
+    let profile_normal = f64s_at::<3>(bytes, profile_normal_offset)?;
     let profile_normal_squared = profile_normal
         .iter()
         .map(|component| component * component)
@@ -186,12 +190,13 @@ pub(crate) fn exact_one_sided_extrude_prologue(
     {
         return None;
     }
-    let extent = super::extrude_sheet_metal::exact_extrude_extent(
+    let extent = super::extrude::exact_extrude_extent(
         direction_face_extend_values[0],
         side_extent_discriminators,
     )?;
     if let Some(offset) = first_side_offset_reference {
-        let record_index = super::marked_record_reference(bytes, start.checked_add(offset)?)?;
+        let record_index =
+            super::shared_frames::marked_record_reference(bytes, start.checked_add(offset)?)?;
         if !reference_members.contains(&record_index) {
             return None;
         }
@@ -202,7 +207,7 @@ pub(crate) fn exact_one_sided_extrude_prologue(
     let first_reference_marker = reference_count_at.checked_add(4)?;
     for (ordinal, record_index) in reference_members.iter().enumerate() {
         let marker = first_reference_marker.checked_add(ordinal.checked_mul(11)?)?;
-        if super::marked_record_reference(bytes, marker)? != *record_index {
+        if super::shared_frames::marked_record_reference(bytes, marker)? != *record_index {
             return None;
         }
     }

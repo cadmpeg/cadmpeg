@@ -1,24 +1,31 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_test_support::EditableDecodeResult;
+
+use cadmpeg_ir::subd;
+use cadmpeg_test_support::wire;
+
+const EPS_TOPOLOGY_TOLERANCE: f64 = 1.0e-12;
 
 use std::fmt::Write;
 use std::io::Cursor;
 
 use cadmpeg_core::decode::DecodeMode;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::report::Severity;
 use sha2::{Digest, Sha256};
 
 use crate::layout::compressed_buffer_prologue as compressed;
 use crate::layout::long_chunk_header_wide as long_wide;
-use crate::test_support::{
+use crate::test_support::test_archive::{
     arc_payload, archive, archive_unit, archive_version, archive_writer, brep_payload,
     line_payload, mesh_payload, object_record, point_cloud_payload, point_payload,
     polycurve_payload, polyline_payload, singular_seam_brep_payload, ARC_CLASS, BREP_CLASS,
-    EXTRUSION_CLASS, LINE_CLASS, MESH_CLASS, POINT_CLASS, POINT_CLOUD_CLASS, POLYCURVE_CLASS,
-    POLYLINE_CLASS, SUBD_CLASS,
+    EXTRUSION_CLASS, LINE_CLASS, POINT_CLOUD_CLASS, POLYCURVE_CLASS, POLYLINE_CLASS,
 };
+use crate::test_support::test_dump::{MESH_CLASS, POINT_CLASS, SUBD_CLASS};
 use crate::RhinoCodec;
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
 fn decode(bytes: &[u8]) -> cadmpeg_ir::codec::DecodeResult {
     RhinoCodec
@@ -65,15 +72,16 @@ fn complete_point_and_bounded_line_archive_decodes_semantics_and_links() {
 
     assert_eq!(result.ir().model.points.len(), 1, "{:?}", result.report());
     assert_eq!(
-        result.ir().model.points[0].position,
+        result.ir().model.points[0].position().get(),
         cadmpeg_ir::math::Point3::new(1.25, -2.5, 3.75)
     );
     assert_eq!(result.ir().model.curves.len(), 1);
-    let CurveGeometry::Nurbs(curve) = &result.ir().model.curves[0].geometry else {
+    let Some(SolvedCurveGeometry::Nurbs(curve)) = result.ir().model.curves[0].geometry.solved()
+    else {
         panic!("bounded line must decode to an exact NURBS carrier");
     };
     assert_eq!(curve.degree(), 1);
-    assert_eq!(curve.knots(), [3.0, 3.0, 7.0, 7.0]);
+    assert_eq!(curve.knots().as_slice(), [3.0, 3.0, 7.0, 7.0]);
     assert_eq!(
         curve.control_points(),
         vec![
@@ -94,16 +102,20 @@ fn complete_point_and_bounded_line_archive_decodes_semantics_and_links() {
         .native_unknowns("rhino")
         .expect("required invariant")[0]
         .links
-        .contains(&result.ir().model.bodies[0].id.to_string()));
+        .iter()
+        .any(|link| link.as_str() == result.ir().model.bodies[0].id.as_str()));
     assert!(result
         .ir()
         .native_unknowns("rhino")
         .expect("required invariant")[1]
         .links
-        .contains(&result.ir().model.curves[0].id.to_string()));
+        .iter()
+        .any(|link| link.as_str() == result.ir().model.curves[0].id.as_str()));
     assert!(result.report().geometry_transferred());
     assert!(
-        cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone()).is_ok()
+        cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
     );
 }
 
@@ -118,7 +130,7 @@ fn future_and_semantically_invalid_objects_are_atomic_and_later_point_recovers()
 
         assert_eq!(result.ir().model.points.len(), 1, "{:?}", result.report());
         assert_eq!(
-            result.ir().model.points[0].position,
+            result.ir().model.points[0].position().get(),
             cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0)
         );
         assert!(result
@@ -142,6 +154,7 @@ fn future_and_semantically_invalid_objects_are_atomic_and_later_point_recovers()
             result.ir(),
             result.report().losses.clone()
         )
+        .expect("resource allocation did not fail")
         .is_ok());
     }
 }
@@ -152,32 +165,79 @@ fn retention_caps_store_only_complete_records_with_exact_hashes() {
     let point = object_record(1, POINT_CLASS, &point_payload([1.0, 2.0, 3.0]));
     let bytes = archive(&[large.clone(), point.clone()]);
     let scan = crate::container::scan_owned(bytes).expect("complete archive scan");
-    let result = crate::decode::with_expand(&scan, |expand| {
-        let mut context = crate::decode::DecodeContext::new(&scan, expand);
-        context.set_retention_limits(point.len(), point.len());
-        crate::decode::seal_for_test(context.commit(), false)
-    });
+    let result = EditableDecodeResult::from(crate::decode::with_expand(&scan, |expand| {
+        let mut context =
+            crate::decode::DecodeContext::new(&scan, expand).expect("test transaction");
+        context
+            .set_retention_limits(point.len(), point.len())
+            .expect("test retention limits");
+        crate::decode::seal_for_test(context.commit().expect("test decode commit"), false)
+    }));
 
-    let retained = &result.source_fidelity().retained_records;
-    assert_eq!(retained[0].byte_len(), large.len() as u64);
-    assert_eq!(retained[0].sha256(), sha256_hex(&large));
-    assert_eq!(retained[0].data(), None);
-    assert_eq!(retained[1].byte_len(), point.len() as u64);
-    assert_eq!(retained[1].sha256(), sha256_hex(&point));
-    assert_eq!(retained[1].data(), Some(point.as_slice()));
+    let retained = &result.source_fidelity().retained_records();
+    assert_eq!(
+        retained
+            .values()
+            .next()
+            .expect("retained record")
+            .byte_len(),
+        cadmpeg_core::decode::u64_from_index(large.len())
+    );
+    assert_eq!(
+        retained.values().next().expect("retained record").sha256(),
+        sha256_hex(&large)
+    );
+    assert_eq!(
+        retained.values().next().expect("retained record").data(),
+        None
+    );
+    assert_eq!(
+        retained
+            .values()
+            .nth(1)
+            .expect("retained record")
+            .byte_len(),
+        cadmpeg_core::decode::u64_from_index(point.len())
+    );
+    assert_eq!(
+        retained.values().nth(1).expect("retained record").sha256(),
+        sha256_hex(&point)
+    );
+    assert_eq!(
+        retained.values().nth(1).expect("retained record").data(),
+        Some(point.as_slice())
+    );
 
     let two_points = archive(&[point.clone(), point.clone()]);
     let scan = crate::container::scan_owned(two_points).expect("complete archive scan");
-    let result = crate::decode::with_expand(&scan, |expand| {
-        let mut context = crate::decode::DecodeContext::new(&scan, expand);
-        context.set_retention_limits(point.len(), point.len());
-        crate::decode::seal_for_test(context.commit(), false)
-    });
+    let result = EditableDecodeResult::from(crate::decode::with_expand(&scan, |expand| {
+        let mut context =
+            crate::decode::DecodeContext::new(&scan, expand).expect("test transaction");
+        context
+            .set_retention_limits(point.len(), point.len())
+            .expect("test retention limits");
+        crate::decode::seal_for_test(context.commit().expect("test decode commit"), false)
+    }));
     assert_eq!(
-        result.source_fidelity().retained_records[0].data(),
+        result
+            .source_fidelity()
+            .retained_records()
+            .values()
+            .next()
+            .expect("retained record")
+            .data(),
         Some(point.as_slice())
     );
-    assert_eq!(result.source_fidelity().retained_records[1].data(), None);
+    assert_eq!(
+        result
+            .source_fidelity()
+            .retained_records()
+            .values()
+            .nth(1)
+            .expect("retained record")
+            .data(),
+        None
+    );
 }
 
 #[test]
@@ -226,7 +286,15 @@ fn subd_complete_object_commits_across_supported_archive_bands() {
         );
         let result = decode(&archive_version(version, &[object]));
         assert_eq!(result.ir().model.subds.len(), 1, "archive {version}");
-        assert_eq!(result.ir().model.subds[0].faces[0].edges.len(), 4);
+        assert_eq!(
+            wire::field::<Vec<subd::SubdEdgeUse>>(
+                &(wire::field::<Vec<subd::SubdFace>>(&(result.ir().model.subds[0].cage), "faces")
+                    [0]),
+                "edges"
+            )
+            .len(),
+            4
+        );
         assert!(!result
             .ir()
             .native_unknowns("rhino")
@@ -237,6 +305,7 @@ fn subd_complete_object_commits_across_supported_archive_bands() {
             result.ir(),
             result.report().losses.clone()
         )
+        .expect("resource allocation did not fail")
         .is_ok());
     }
 }
@@ -290,11 +359,11 @@ fn complete_simple_geometry_archive_preserves_coordinates_knots_and_compound_ord
 
     assert_eq!(result.ir().model.points.len(), 3);
     assert_eq!(
-        result.ir().model.points[0].position,
+        result.ir().model.points[0].position().get(),
         cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
     );
     assert_eq!(
-        result.ir().model.points[2].position,
+        result.ir().model.points[2].position().get(),
         cadmpeg_ir::math::Point3::new(7.0, 8.0, 9.0)
     );
     assert_eq!(result.ir().model.curves.len(), 7);
@@ -306,15 +375,15 @@ fn complete_simple_geometry_archive_preserves_coordinates_knots_and_compound_ord
         .find(|curve| {
             matches!(
                 &curve.geometry,
-                CurveGeometry::Nurbs(nurbs)
-                    if nurbs.knots() == [-1.0, -1.0, 3.0, 3.0]
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
+                    if nurbs.knots().as_slice() == [-1.0, -1.0, 3.0, 3.0]
             )
         })
         .expect("bounded line");
-    let CurveGeometry::Nurbs(line) = &line.geometry else {
+    let Some(SolvedCurveGeometry::Nurbs(line)) = line.geometry.solved() else {
         panic!("line carrier");
     };
-    assert_eq!(line.knots(), [-1.0, -1.0, 3.0, 3.0]);
+    assert_eq!(line.knots().as_slice(), [-1.0, -1.0, 3.0, 3.0]);
     let polyline = result
         .ir()
         .model
@@ -323,15 +392,15 @@ fn complete_simple_geometry_archive_preserves_coordinates_knots_and_compound_ord
         .find(|curve| {
             matches!(
                 &curve.geometry,
-                CurveGeometry::Nurbs(nurbs)
-                    if nurbs.knots() == [2.0, 2.0, 3.5, 9.0, 9.0]
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
+                    if nurbs.knots().as_slice() == [2.0, 2.0, 3.5, 9.0, 9.0]
             )
         })
         .expect("polyline");
-    let CurveGeometry::Nurbs(polyline) = &polyline.geometry else {
+    let Some(SolvedCurveGeometry::Nurbs(polyline)) = polyline.geometry.solved() else {
         panic!("polyline carrier");
     };
-    assert_eq!(polyline.knots(), [2.0, 2.0, 3.5, 9.0, 9.0]);
+    assert_eq!(polyline.knots().as_slice(), [2.0, 2.0, 3.5, 9.0, 9.0]);
     assert_eq!(result.ir().model.procedural_curves.len(), 2);
     let root = result
         .ir()
@@ -340,15 +409,20 @@ fn complete_simple_geometry_archive_preserves_coordinates_knots_and_compound_ord
         .iter()
         .find(|curve| !curve.id.as_str().contains("component"))
         .expect("root compound");
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound {
-        parameters,
-        components,
-        ..
-    } = root.definition()
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(compound) = root.definition()
     else {
         panic!("compound definition");
     };
-    assert_eq!(parameters, &vec![0.0, 2.0, 5.0]);
+    let parameters = compound.parameters();
+    let components = compound.components();
+
+    assert_eq!(
+        parameters
+            .iter()
+            .map(|value| value.get())
+            .collect::<Vec<_>>(),
+        vec![0.0, 2.0, 5.0]
+    );
     assert_eq!(components.len(), 2);
     assert!(components[0].component.as_str().contains("component-0"));
     assert!(components[1].component.as_str().contains("component-1"));
@@ -367,7 +441,9 @@ fn complete_simple_geometry_archive_preserves_coordinates_knots_and_compound_ord
         .iter()
         .all(|record| !record.links.is_empty()));
     assert!(
-        cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone()).is_ok()
+        cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
     );
 }
 
@@ -397,7 +473,7 @@ fn serialized_mesh_major_and_minor_matrix_reaches_object_dispatch() {
             let mesh = &result.ir().model.tessellations[0];
             assert_eq!(mesh.vertices().len(), 4);
             assert_eq!(mesh.triangles(), vec![[0, 1, 2], [0, 2, 3], [0, 3, 1]]);
-            assert_eq!(mesh.normals().len(), 4);
+            assert_eq!(mesh.vertex_normals().len(), 4);
             assert!(mesh
                 .channels()
                 .iter()
@@ -420,6 +496,7 @@ fn serialized_mesh_major_and_minor_matrix_reaches_object_dispatch() {
                 result.ir(),
                 result.report().losses.clone()
             )
+            .expect("resource allocation did not fail")
             .is_ok());
         }
     }
@@ -458,7 +535,7 @@ fn required_mesh_channel_failure_is_atomic_and_optional_crc_is_recoverable() {
         "1 framed object record(s) for class 4ed7d4e4-e947-11d3-bfe5-0010830122f0 could not be decoded"
     ));
     let provenance = failure.provenance.as_ref().expect("failure provenance");
-    assert_eq!(provenance.format(), "rhino");
+    assert_eq!(wire::field::<String>(&provenance, "format"), "rhino");
     assert!(provenance
         .tag
         .as_deref()
@@ -476,7 +553,9 @@ fn required_mesh_channel_failure_is_atomic_and_optional_crc_is_recoverable() {
         "{:?}",
         result.report()
     );
-    assert!(result.ir().model.tessellations[0].normals().is_empty());
+    assert!(result.ir().model.tessellations[0]
+        .vertex_normals()
+        .is_empty());
     assert!(result
         .report()
         .losses
@@ -549,6 +628,7 @@ fn serialized_extrusion_versions_caps_holes_and_cache_dispatch_atomically() {
             result.ir(),
             result.report().losses.clone()
         )
+        .expect("resource allocation did not fail")
         .is_ok());
     }
 
@@ -559,7 +639,9 @@ fn serialized_extrusion_versions_caps_holes_and_cache_dispatch_atomically() {
     assert_eq!(result.ir().model.loops.len(), 4);
     assert_eq!(result.ir().model.pcurves.len(), 4);
     assert!(
-        cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone()).is_ok()
+        cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
     );
 }
 
@@ -588,14 +670,18 @@ fn invalid_extrusion_profile_is_one_unknown_surface_and_later_point_recovers() {
             .iter()
             .filter(|surface| matches!(
                 surface.geometry,
-                cadmpeg_ir::geometry::SurfaceGeometry::Unknown { .. }
+                cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+                    SolvedSurfaceGeometry::Unknown { .. }
+                )
             ))
             .count(),
         1
     );
     assert_eq!(result.ir().model.points.len(), 1);
     assert!(
-        cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone()).is_ok()
+        cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
     );
 }
 
@@ -603,7 +689,12 @@ fn invalid_extrusion_profile_is_one_unknown_surface_and_later_point_recovers() {
 fn serialized_brep_l3_commits_connected_topology_pcurves_and_scaled_tolerances() {
     let payload = brep_payload(false);
     assert_eq!(payload[13], 0x10);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
+        .expect("Brep fixture fits service profile");
     crate::brep::parse(
+        &ctx,
         &payload,
         0..payload.len(),
         crate::chunks::ArchiveVersion::V5,
@@ -636,23 +727,23 @@ fn serialized_brep_l3_commits_connected_topology_pcurves_and_scaled_tolerances()
     assert_eq!(region.body, body.id);
     assert_eq!(region.shells, vec![shell.id.clone()]);
     assert_eq!(shell.region, region.id);
-    assert_eq!(shell.faces, vec![face.id.clone()]);
+    assert_eq!(shell.faces(), vec![face.id.clone()]);
     assert_eq!(face.shell, shell.id);
     assert_eq!(face.loops, vec![loop_record.id.clone()]);
     assert_eq!(loop_record.face, face.id);
     assert!(model.coedges.iter().all(|coedge| !coedge.pcurves.is_empty()
         && model.edges.iter().any(|edge| edge.id == coedge.edge)));
-    assert!(model.edges.iter().all(|edge| edge.curve.is_some()
+    assert!(model.edges.iter().all(|edge| edge.curve().is_some()
         && edge
             .tolerance
-            .is_some_and(|tolerance| (tolerance - 0.3).abs() < 1.0e-12)));
+            .is_some_and(|tolerance| (tolerance.get() - 0.3).abs() < EPS_TOPOLOGY_TOLERANCE)));
     assert!(model.vertices.iter().all(|vertex| vertex
         .tolerance
-        .is_some_and(|tolerance| (tolerance - 0.2).abs() < 1.0e-12)));
-    assert!(model
-        .pcurves
-        .iter()
-        .all(|pcurve| pcurve.fit_tolerance() == Some(0.04)));
+        .is_some_and(|tolerance| (tolerance.get() - 0.2).abs() < EPS_TOPOLOGY_TOLERANCE)));
+    assert!(model.pcurves.iter().all(|pcurve| pcurve
+        .fit_tolerance()
+        .map(cadmpeg_ir::geometry::FitTolerance::get)
+        == Some(0.04)));
     assert_eq!(
         result
             .ir()
@@ -666,13 +757,16 @@ fn serialized_brep_l3_commits_connected_topology_pcurves_and_scaled_tolerances()
         .native_unknowns("rhino")
         .expect("required invariant")[0]
         .links
-        .contains(&body.id.to_string()));
+        .iter()
+        .any(|link| link.as_str() == body.id.as_str()));
     assert!(result.report().geometry_transferred());
     assert!(result.report().losses.iter().any(|loss| loss.code
         == crate::loss::RhinoLossCode::ObjectRecordCensus.kind()
         && loss.message.contains("decoded 1/1 Rhino object records")));
     assert!(
-        cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone()).is_ok()
+        cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
     );
 }
 
@@ -696,7 +790,9 @@ fn serialized_singular_seam_ring_uses_directed_trim_vertices() {
         cadmpeg_ir::topology::Sense::Reversed
     );
     assert!(
-        cadmpeg_ir::validate::validate_neutral(valid.ir(), valid.report().losses.clone()).is_ok()
+        cadmpeg_ir::validate::validate_neutral(valid.ir(), valid.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
     );
 
     let malformed = decode(&archive(&[object_record(
@@ -716,6 +812,7 @@ fn serialized_singular_seam_ring_uses_directed_trim_vertices() {
         malformed.ir(),
         malformed.report().losses.clone()
     )
+    .expect("resource allocation did not fail")
     .is_ok());
 }
 
@@ -755,7 +852,9 @@ fn semantic_invalid_brep_keeps_only_free_c3_surface_and_later_point() {
         result.report()
     );
     assert!(
-        cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone()).is_ok()
+        cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
     );
 }
 
@@ -782,7 +881,7 @@ fn archive_failure_recovery_matrix_preserves_exact_unknown_records() {
     ];
     for failure in failures {
         let point = object_record(1, POINT_CLASS, &point_payload([6.0, 7.0, 8.0]));
-        let result = decode(&archive(&[failure.clone(), point]));
+        let result = EditableDecodeResult::from(decode(&archive(&[failure.clone(), point])));
         assert_eq!(result.ir().model.points.len(), 1, "{:?}", result.report());
         assert_eq!(
             result
@@ -796,8 +895,16 @@ fn archive_failure_recovery_matrix_preserves_exact_unknown_records() {
             .ir()
             .native_unknowns("rhino")
             .expect("required invariant")[0];
-        let retained = &result.source_fidelity().retained_records[0];
-        assert_eq!(retained.byte_len(), failure.len() as u64);
+        let retained = &result
+            .source_fidelity()
+            .retained_records()
+            .values()
+            .next()
+            .expect("retained record");
+        assert_eq!(
+            retained.byte_len(),
+            cadmpeg_core::decode::u64_from_index(failure.len())
+        );
         assert_eq!(retained.sha256(), sha256_hex(&failure));
         assert_eq!(retained.data(), Some(failure.as_slice()));
         assert!(unknown.links.is_empty());
@@ -816,6 +923,7 @@ fn archive_failure_recovery_matrix_preserves_exact_unknown_records() {
             result.ir(),
             result.report().losses.clone()
         )
+        .expect("resource allocation did not fail")
         .is_ok());
     }
 }
@@ -823,11 +931,12 @@ fn archive_failure_recovery_matrix_preserves_exact_unknown_records() {
 #[test]
 fn nested_brep_crc_warns_without_blocking_object_or_later_point() {
     let mut payload = brep_payload(false);
-    let nested_length = i64::from_le_bytes(
+    let nested_length = usize::try_from(i64::from_le_bytes(
         payload[(1 + long_wide::DECLARED_LENGTH)..=long_wide::LEN]
             .try_into()
             .expect("required invariant"),
-    ) as usize;
+    ))
+    .expect("fixture value fits usize");
     let nested_end = 1 + long_wide::LEN + nested_length;
     payload[nested_end - 1] ^= 1;
     let brep = object_record(0x10, BREP_CLASS, &payload);
@@ -842,7 +951,9 @@ fn nested_brep_crc_warns_without_blocking_object_or_later_point() {
             && loss.provenance.is_none()
     }));
     assert!(
-        cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone()).is_ok()
+        cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
     );
 }
 

@@ -24,7 +24,7 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch, Grammar, LayerInstance};
 
-use crate::kernel_header::KernelHeader;
+use crate::kernel_header::{BinaryHeader, KernelHeader};
 
 include!("dialect/registry_ids.rs");
 
@@ -43,9 +43,9 @@ pub const DECLARED_CARRIER: &str = "carrier";
 #[derive(Debug, Clone, Copy)]
 pub enum KernelHeaderRef<'a> {
     /// A Spatial ACIS binary header.
-    Acis(&'a KernelHeader),
+    Acis(&'a BinaryHeader),
     /// An Autodesk Shape Manager binary header.
-    Asm(&'a KernelHeader),
+    Asm(&'a BinaryHeader),
     /// A text stream terminated by `End-of-ASM-data`.
     TextAsm(&'a KernelHeader),
     /// A text stream terminated by `End-of-ACIS-data`.
@@ -58,37 +58,46 @@ pub enum KernelHeaderRef<'a> {
 #[must_use]
 pub fn classify(header: KernelHeaderRef<'_>) -> DialectMatch {
     let mut declared = BTreeMap::new();
-    let parsed = match header {
-        KernelHeaderRef::Acis(header)
-        | KernelHeaderRef::Asm(header)
-        | KernelHeaderRef::TextAsm(header)
-        | KernelHeaderRef::TextAcis(header) => Some(header),
-        KernelHeaderRef::Unknown => None,
-    };
-    if let Some(parsed) = parsed {
-        if let Some(major) = parsed.save_format_major() {
-            declared.insert(DECLARED_SAVE_FORMAT_MAJOR.to_owned(), major.to_string());
-        }
-        if let Some(minor) = parsed.save_format_minor() {
-            declared.insert(DECLARED_SAVE_FORMAT_MINOR.to_owned(), minor.to_string());
+    for (key, value) in declaration_fields(header) {
+        if let Some(value) = value {
+            if let Some(key) = cadmpeg_core::text::NonBlankString::new(key) {
+                declared.insert(key, value.to_string());
+            }
         }
     }
+    match_header(header).with_declared(declared)
+}
 
-    let matched = match header {
-        KernelHeaderRef::Acis(header) => {
-            declared.insert(
-                DECLARED_REFERENCE_WIDTH.to_owned(),
-                header.width.to_string(),
-            );
-            acis_match(header.save_format_major())
-        }
-        KernelHeaderRef::Asm(header) => {
-            declared.insert(
-                DECLARED_REFERENCE_WIDTH.to_owned(),
-                header.width.to_string(),
-            );
-            DialectMatch::admitted(asm_binary_row(header.width))
-        }
+fn declaration_fields(header: KernelHeaderRef<'_>) -> [(&'static str, Option<u32>); 3] {
+    let parsed = match header {
+        KernelHeaderRef::Acis(header) | KernelHeaderRef::Asm(header) => Some(&header.metadata),
+        KernelHeaderRef::TextAsm(header) | KernelHeaderRef::TextAcis(header) => Some(header),
+        KernelHeaderRef::Unknown => None,
+    };
+    let width = match header {
+        KernelHeaderRef::Acis(header) | KernelHeaderRef::Asm(header) => Some(match header.width {
+            RefWidth::Four => 4,
+            RefWidth::Eight => 8,
+        }),
+        _ => None,
+    };
+    [
+        (
+            DECLARED_SAVE_FORMAT_MAJOR,
+            parsed.and_then(KernelHeader::save_format_major),
+        ),
+        (
+            DECLARED_SAVE_FORMAT_MINOR,
+            parsed.and_then(KernelHeader::save_format_minor),
+        ),
+        (DECLARED_REFERENCE_WIDTH, width),
+    ]
+}
+
+fn match_header(header: KernelHeaderRef<'_>) -> DialectMatch {
+    match header {
+        KernelHeaderRef::Acis(header) => acis_match(header.metadata.save_format_major()),
+        KernelHeaderRef::Asm(header) => DialectMatch::admitted(asm_binary_row(header.width)),
         KernelHeaderRef::TextAsm(_) => DialectMatch::admitted(ACIS_TEXT_ASM),
         KernelHeaderRef::TextAcis(header) => {
             if acis_band_verified(header.save_format_major()) {
@@ -98,28 +107,57 @@ pub fn classify(header: KernelHeaderRef<'_>) -> DialectMatch {
             }
         }
         KernelHeaderRef::Unknown => DialectMatch::refused(ACIS_UNKNOWN),
-    };
-    matched.with_declared(declared)
+    }
 }
 
-/// Classify one kernel stream and retain its host carrier.
-///
-/// `instance` identifies the carrier when a host reports several ACIS
-/// layers. The kernel declaration and carrier stay attached to the same match,
-/// independent of whether the header selects a verified row.
-#[must_use]
+/// Classify one kernel stream after admitting its declarations and host identity.
 pub fn classify_layer(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     header: KernelHeaderRef<'_>,
     carrier: &str,
     instance: LayerInstance,
-) -> DialectMatch {
-    let matched = classify(header);
-    let mut declared = matched.declared().clone();
-    declared.insert(DECLARED_CARRIER.to_owned(), carrier.to_owned());
-    let matched = matched.with_declared(declared);
+) -> Result<DialectMatch, cadmpeg_core::CodecError> {
+    let operation = "retain kernel dialect declarations";
+    let mut declared = BTreeMap::new();
+    for (key, value) in declaration_fields(header) {
+        if let Some(value) = value {
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(key.len()) + 10,
+                operation,
+            )?;
+            let key =
+                cadmpeg_core::text::NonBlankString::new(ctx.copy_retained_text(key, operation)?)
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("empty kernel declaration key")
+                    })?;
+            let value = ctx.format_retained(format_args!("{value}"), operation)?;
+            ctx.insert_btree_map(&mut declared, key, value, operation)?;
+        }
+    }
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(DECLARED_CARRIER.len()),
+        operation,
+    )?;
+    let key = cadmpeg_core::text::NonBlankString::new(
+        ctx.copy_retained_text(DECLARED_CARRIER, operation)?,
+    )
+    .ok_or_else(|| cadmpeg_core::CodecError::malformed("empty kernel carrier key"))?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(carrier.len()),
+        operation,
+    )?;
+    let value = ctx.copy_retained_text(carrier, operation)?;
+    ctx.insert_btree_map(&mut declared, key, value, operation)?;
+    let matched = match_header(header).with_declared(declared);
     match instance {
-        LayerInstance::Sole => matched,
-        LayerInstance::Tagged => matched.with_instance(carrier),
+        LayerInstance::Sole => Ok(matched),
+        LayerInstance::Tagged => {
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(carrier.len()),
+                operation,
+            )?;
+            Ok(matched.with_instance(ctx.copy_retained_text(carrier, operation)?))
+        }
     }
 }
 
@@ -230,23 +268,25 @@ mod tests {
         ACIS_SAVE_FORMAT_217, ACIS_SAVE_FORMAT_218, ACIS_SAVE_FORMAT_BINARY_OTHER, ACIS_TEXT_ACIS,
         ACIS_TEXT_ASM, ACIS_UNKNOWN, DECLARED_CARRIER, FORMAT,
     };
-    use crate::kernel_header::KernelHeader;
     use crate::kernel_header::RefWidth;
-    use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch, LayerInstance};
+    use crate::kernel_header::{BinaryHeader, KernelHeader};
+    use cadmpeg_core::dialect::{Admission, DialectMatch, LayerInstance};
     use std::collections::BTreeSet;
 
-    fn header(width: RefWidth, save_format_version: Option<u32>) -> KernelHeader {
-        KernelHeader {
+    fn header(width: RefWidth, save_format_version: Option<u32>) -> BinaryHeader {
+        BinaryHeader {
             width,
-            save_format_version,
-            entity_count: None,
-            flags: None,
-            product_family: None,
-            product_version: None,
-            save_date: None,
-            scale: None,
-            linear: None,
-            angular: None,
+            metadata: KernelHeader {
+                save_format_version,
+                entity_count: None,
+                flags: None,
+                product_family: None,
+                product_version: None,
+                save_date: None,
+                scale: None,
+                linear: None,
+                angular: None,
+            },
         }
     }
 
@@ -282,10 +322,9 @@ mod tests {
         assert_eq!(unverified.dialect(), &ACIS_SAVE_FORMAT_BINARY_OTHER);
         assert_eq!(unverified.using(), Some(ACIS_SAVE_FORMAT_218));
         assert_eq!(
-            classify(KernelHeaderRef::TextAcis(&header(
-                RefWidth::Four,
-                Some(70_000)
-            )))
+            classify(KernelHeaderRef::TextAcis(
+                &header(RefWidth::Four, Some(70_000)).metadata
+            ))
             .admission(),
             &Admission::Residual
         );
@@ -301,7 +340,9 @@ mod tests {
             )
         );
 
-        let text = classify(KernelHeaderRef::TextAcis(&header(RefWidth::Four, None)));
+        let text = classify(KernelHeaderRef::TextAcis(
+            &header(RefWidth::Four, None).metadata,
+        ));
         assert_eq!(
             unverified_message("the stream", &text).as_deref(),
             Some(
@@ -315,7 +356,7 @@ mod tests {
         .is_none());
         assert!(unverified_message(
             "the carrier",
-            &DialectMatch::admitted(DialectId::pinned("test:text"))
+            &DialectMatch::admitted(cadmpeg_core::dialect_id!("test:text"))
         )
         .is_none());
     }
@@ -323,11 +364,14 @@ mod tests {
     #[test]
     fn layer_classification_owns_carrier_identity() {
         let header = header(RefWidth::Four, Some(21_804));
+        let ctx = cadmpeg_test_support::service_decode_context();
         let matched = classify_layer(
+            &ctx,
             KernelHeaderRef::Acis(&header),
             "stream@12",
             LayerInstance::Tagged,
-        );
+        )
+        .unwrap();
         assert_eq!(matched.declared()[DECLARED_CARRIER], "stream@12");
         assert_eq!(matched.instance(), Some("stream@12"));
     }
@@ -342,9 +386,18 @@ mod tests {
         assert_eq!(
             matched.declared().clone().into_iter().collect::<Vec<_>>(),
             [
-                ("reference_width".to_owned(), "4".to_owned()),
-                ("save_format_major".to_owned(), "217".to_owned()),
-                ("save_format_minor".to_owned(), "3".to_owned()),
+                (
+                    cadmpeg_core::nonblank_literal!("reference_width"),
+                    "4".to_owned()
+                ),
+                (
+                    cadmpeg_core::nonblank_literal!("save_format_major"),
+                    "217".to_owned()
+                ),
+                (
+                    cadmpeg_core::nonblank_literal!("save_format_minor"),
+                    "3".to_owned()
+                ),
             ]
         );
 
@@ -353,9 +406,18 @@ mod tests {
             classify(KernelHeaderRef::Asm(&asm)),
             DialectMatch::admitted(ACIS_ASM_BINARYFILE_8).with_declared(
                 [
-                    ("reference_width".to_owned(), "8".to_owned()),
-                    ("save_format_major".to_owned(), "700".to_owned()),
-                    ("save_format_minor".to_owned(), "1".to_owned()),
+                    (
+                        cadmpeg_core::nonblank_literal!("reference_width"),
+                        "8".to_owned()
+                    ),
+                    (
+                        cadmpeg_core::nonblank_literal!("save_format_major"),
+                        "700".to_owned()
+                    ),
+                    (
+                        cadmpeg_core::nonblank_literal!("save_format_minor"),
+                        "1".to_owned()
+                    ),
                 ]
                 .into_iter()
                 .collect(),
@@ -363,11 +425,11 @@ mod tests {
         );
 
         assert_eq!(
-            classify(KernelHeaderRef::TextAsm(&asm)).dialect(),
+            classify(KernelHeaderRef::TextAsm(&asm.metadata)).dialect(),
             &ACIS_TEXT_ASM
         );
         assert_eq!(
-            classify(KernelHeaderRef::TextAcis(&acis)).dialect(),
+            classify(KernelHeaderRef::TextAcis(&acis.metadata)).dialect(),
             &ACIS_TEXT_ACIS
         );
         let unknown = classify(KernelHeaderRef::Unknown);
@@ -387,13 +449,59 @@ mod tests {
             classify(KernelHeaderRef::Acis(&header(RefWidth::Four, Some(23_200)))),
             classify(KernelHeaderRef::Asm(&asm4)),
             classify(KernelHeaderRef::Asm(&asm8)),
-            classify(KernelHeaderRef::TextAsm(&asm8)),
-            classify(KernelHeaderRef::TextAcis(&acis)),
+            classify(KernelHeaderRef::TextAsm(&asm8.metadata)),
+            classify(KernelHeaderRef::TextAcis(&acis.metadata)),
             classify(KernelHeaderRef::Unknown),
         ]
         .into_iter()
         .map(|matched| matched.dialect().to_string())
         .collect();
-        assert_eq!(ids, cadmpeg_test_support::registry_ids(FORMAT));
+        assert_eq!(
+            ids,
+            cadmpeg_test_support::registry_ids(FORMAT).expect("identity registry parses")
+        );
+    }
+    #[test]
+    fn kernel_layer_preserves_declaration_and_carrier_refusals() {
+        for (retained, collections, expected) in [
+            (
+                0,
+                u64::MAX,
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            ),
+            (
+                u64::MAX,
+                0,
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            ),
+            (
+                7,
+                u64::MAX,
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            ),
+            (
+                16,
+                u64::MAX,
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            ),
+        ] {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_retained_bytes = retained;
+            policy.limits.max_collection_items = collections;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let error = classify_layer(
+                &ctx,
+                KernelHeaderRef::Unknown,
+                "stream@12",
+                LayerInstance::Tagged,
+            )
+            .unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+                if failure.dimension == expected && failure.operation == "retain kernel dialect declarations")
+            );
+        }
     }
 }

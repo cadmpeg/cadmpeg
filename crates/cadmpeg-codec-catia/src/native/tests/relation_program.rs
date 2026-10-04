@@ -3,13 +3,20 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+use cadmpeg_test_support::wire;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::Annotations;
 
-use crate::test_support::*;
+use crate::test_support::test_formula::{
+    standard_catpart_with_formula_relation, standard_catpart_with_lead54_relation_program_instance,
+    standard_catpart_with_lead54_relation_program_instance_class,
+    standard_catpart_with_relation_program_instance,
+    standard_catpart_with_relation_program_instance_class,
+};
 use crate::CatiaCodec;
 
 #[test]
@@ -158,27 +165,31 @@ fn relation_program_output_selects_only_the_framing_specific_paramout_slot() {
         )
         .expect("decode lead-12 paramout relation-program instance");
     assert_eq!(
-        lead12_decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_RELATION_PROGRAM_OUTPUT_COUNT),
+        wire::coverage_count(
+            lead12_decoded.report(),
+            crate::coverage::DECODED_RELATION_PROGRAM_OUTPUT_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        lead12_decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_OUTPUT_COUNT),
+        wire::coverage_count(
+            lead12_decoded.report(),
+            crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_OUTPUT_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        lead12_decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_NULL_RELATION_PROGRAM_OUTPUT_COUNT),
+        wire::coverage_count(
+            lead12_decoded.report(),
+            crate::coverage::DECODED_NULL_RELATION_PROGRAM_OUTPUT_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        lead12_decoded
-            .report()
-            .coverage_count(crate::coverage::UNRESOLVED_RELATION_PROGRAM_OUTPUT_COUNT),
+        wire::coverage_count(
+            lead12_decoded.report(),
+            crate::coverage::UNRESOLVED_RELATION_PROGRAM_OUTPUT_COUNT.as_str()
+        ),
         0
     );
 
@@ -220,7 +231,39 @@ fn relation_program_output_selects_only_the_framing_specific_paramout_slot() {
 }
 
 #[test]
+fn relation_program_output_wire_refuses_retained_copy() {
+    let native = crate::native::CatiaNative::decode(
+        &standard_catpart_with_relation_program_instance_class(1, 1, 1, 2, "paramout"),
+    );
+    let record = &native.entity_records[1];
+    let refused = crate::test_support::with_retained_limit(0, |ctx| {
+        super::super::CatiaEntityRecordWire::from_charged(ctx, record.clone())
+    });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_reference_entity")
+    );
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        super::super::CatiaEntityRecordWire::from_charged(ctx, record.clone())
+    })
+    .expect("service profile admits the output reference");
+    let wire = serde_json::to_value(admitted).expect("serialize admitted wire");
+    assert_eq!(
+        wire["relation_program_instance"]["output_entity"]["class_name"],
+        "paramout"
+    );
+}
+
+#[test]
 fn relation_program_inputs_require_complete_unique_signature_bindings() {
+    let resolve =
+        |signature: &crate::native::CatiaRelationTypeSignature,
+         dependencies: &[crate::native::CatiaRelationParameterDependency]| {
+            crate::test_support::with_service_context(|ctx| {
+                crate::native::resolved_relation_program_inputs(ctx, signature, dependencies)
+            })
+            .expect("service profile admits input resolution")
+        };
     let signature = crate::native::CatiaRelationTypeSignature {
         inputs: vec![
             crate::native::CatiaRelationTypeInput {
@@ -235,9 +278,8 @@ fn relation_program_inputs_require_complete_unique_signature_bindings() {
         result_type: "Real".to_string(),
     };
     let reference = |entity_id: u32| {
-        crate::native::CatiaEntityReference::from_parts(
+        crate::native::CatiaEntityReference::resolved_or_unresolved(
             entity_id,
-            false,
             Some(format!("entity-{entity_id}")),
             Some("param".to_string()),
         )
@@ -253,8 +295,7 @@ fn relation_program_inputs_require_complete_unique_signature_bindings() {
         dependency("#1_ /2", vec![reference(10)]),
         dependency("#2_", vec![reference(11)]),
     ];
-    let inputs = crate::native::resolved_relation_program_inputs(&signature, &complete)
-        .expect("complete ordered input bindings");
+    let inputs = resolve(&signature, &complete).expect("complete ordered input bindings");
     assert_eq!(
         inputs
             .iter()
@@ -268,24 +309,15 @@ fn relation_program_inputs_require_complete_unique_signature_bindings() {
         dependency("#1_/2", vec![reference(10)]),
         dependency("#2_", vec![reference(11)]),
     ];
-    assert!(
-        crate::native::resolved_relation_program_inputs(&signature, &compact_ordinal).is_some()
-    );
+    assert!(resolve(&signature, &compact_ordinal).is_some());
 
     let zero = crate::native::CatiaRelationTypeSignature {
         inputs: Vec::new(),
         result_type: "Real".to_string(),
     };
-    assert_eq!(
-        crate::native::resolved_relation_program_inputs(&zero, &[]),
-        Some(Vec::new())
-    );
-    assert!(crate::native::resolved_relation_program_inputs(
-        &signature,
-        &[dependency("#1_", vec![reference(10)])]
-    )
-    .is_none());
-    assert!(crate::native::resolved_relation_program_inputs(
+    assert_eq!(resolve(&zero, &[]), Some(Vec::new()));
+    assert!(resolve(&signature, &[dependency("#1_", vec![reference(10)])]).is_none());
+    assert!(resolve(
         &signature,
         &[
             dependency("#1_", vec![reference(10)]),
@@ -293,7 +325,7 @@ fn relation_program_inputs_require_complete_unique_signature_bindings() {
         ]
     )
     .is_none());
-    assert!(crate::native::resolved_relation_program_inputs(
+    assert!(resolve(
         &signature,
         &[
             dependency("#1_", vec![reference(10)]),
@@ -302,7 +334,7 @@ fn relation_program_inputs_require_complete_unique_signature_bindings() {
         ]
     )
     .is_none());
-    assert!(crate::native::resolved_relation_program_inputs(
+    assert!(resolve(
         &signature,
         &[
             dependency("#1_", vec![reference(10)]),
@@ -311,7 +343,7 @@ fn relation_program_inputs_require_complete_unique_signature_bindings() {
         ]
     )
     .is_none());
-    assert!(crate::native::resolved_relation_program_inputs(
+    assert!(resolve(
         &signature,
         &[
             dependency("#1_", vec![reference(10), reference(12)]),
@@ -319,7 +351,7 @@ fn relation_program_inputs_require_complete_unique_signature_bindings() {
         ]
     )
     .is_none());
-    assert!(crate::native::resolved_relation_program_inputs(
+    assert!(resolve(
         &signature,
         &[
             dependency("#1_", vec![reference(10)]),
@@ -331,8 +363,116 @@ fn relation_program_inputs_require_complete_unique_signature_bindings() {
 }
 
 #[test]
+fn native_relation_symbols_and_candidates_refuse_nested_limits() {
+    let symbols = crate::test_support::with_collection_limit(0, |ctx| {
+        crate::native::relation_symbols(ctx, "#1_ + #2_")
+    });
+    assert!(
+        matches!(symbols, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_symbols")
+    );
+    let service_symbols = crate::test_support::with_service_context(|ctx| {
+        crate::native::relation_symbols(ctx, "#1_ + #2_")
+    })
+    .expect("service profile admits relation symbols");
+    assert_eq!(
+        service_symbols,
+        [(0, "#1_".to_string()), (6, "#2_".to_string())]
+    );
+
+    let candidate = crate::native::CatiaEntityReference::resolved_or_unresolved(
+        10,
+        Some("entity-10".to_string()),
+        Some("param".to_string()),
+    );
+    let bindings = std::collections::HashMap::from([(
+        "graph".to_string(),
+        std::collections::HashMap::from([("#1_".to_string(), vec![candidate])]),
+    )]);
+    let refused = crate::test_support::with_collection_limit(1, |ctx| {
+        crate::native::relation_parameter_dependencies(ctx, "#1_", "graph", &bindings)
+    });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_dependency_candidates")
+    );
+    let dependencies = crate::test_support::with_service_context(|ctx| {
+        crate::native::relation_parameter_dependencies(ctx, "#1_", "graph", &bindings)
+    })
+    .expect("service profile admits relation dependency");
+    assert_eq!(dependencies.len(), 1);
+    assert_eq!(dependencies[0].candidates[0].entity(), Some("entity-10"));
+}
+
+#[test]
+fn native_resolved_input_refuses_entity_set_limit() {
+    let signature = crate::native::CatiaRelationTypeSignature {
+        inputs: vec![crate::native::CatiaRelationTypeInput {
+            parameter: "#1_".to_string(),
+            input_type: "Real".to_string(),
+        }],
+        result_type: "Real".to_string(),
+    };
+    let dependencies = vec![crate::native::CatiaRelationParameterDependency {
+        source_offset: 0,
+        symbol: "#1_".to_string(),
+        candidates: vec![crate::native::CatiaEntityReference::resolved_or_unresolved(
+            10,
+            Some("entity-10".to_string()),
+            Some("param".to_string()),
+        )],
+    }];
+    let refused = crate::test_support::with_collection_limit(0, |ctx| {
+        crate::native::resolved_relation_program_inputs(ctx, &signature, &dependencies)
+    });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_input_entity_ids")
+    );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root fits work limit");
+    let work_refusal =
+        crate::native::resolved_relation_program_inputs(&ctx, &signature, &dependencies);
+    assert!(
+        matches!(work_refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_input_matching")
+    );
+    let service = crate::test_support::with_service_context(|ctx| {
+        crate::native::resolved_relation_program_inputs(ctx, &signature, &dependencies)
+    })
+    .expect("service profile admits resolved input")
+    .expect("one resolved input");
+    assert_eq!(service[0].entity.entity(), Some("entity-10"));
+}
+
+#[test]
+fn native_entity_reference_refuses_retained_copy() {
+    let entities =
+        std::collections::HashMap::from([(("graph".to_string(), 10_u32), "entity-10".to_string())]);
+    let classes =
+        std::collections::HashMap::from([(("graph".to_string(), 10_u32), "param".to_string())]);
+    let terminal_nulls = std::collections::HashMap::new();
+    let refused = crate::test_support::with_retained_limit(0, |ctx| {
+        crate::native::entity_reference(ctx, "graph", 10, &entities, &classes, &terminal_nulls)
+    });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_reference_entity")
+    );
+    let service = crate::test_support::with_service_context(|ctx| {
+        crate::native::entity_reference(ctx, "graph", 10, &entities, &classes, &terminal_nulls)
+    })
+    .expect("service profile admits entity reference");
+    assert_eq!(service.entity(), Some("entity-10"));
+    assert_eq!(service.class_name(), Some("param"));
+}
+
+#[test]
 fn complete_relation_program_inputs_transfer_typed_parameters() {
-    use cadmpeg_ir::features::{Length, ParameterValue};
+    use cadmpeg_ir::{features::ParameterValue, scalar::Length};
 
     let mut native =
         crate::native::CatiaNative::decode(&standard_catpart_with_formula_relation(0x63, false));
@@ -353,9 +493,8 @@ fn complete_relation_program_inputs_transfer_typed_parameters() {
                 inputs: Some(vec![crate::native::CatiaRelationProgramInput {
                     parameter: "#1_".to_string(),
                     value_type: "LENGTH".to_string(),
-                    entity: crate::native::CatiaEntityReference::from_parts(
+                    entity: crate::native::CatiaEntityReference::resolved_or_unresolved(
                         parameter_entity.entity_id,
-                        false,
                         Some(parameter_entity.id.clone()),
                         Some("param".to_string()),
                     ),
@@ -366,14 +505,26 @@ fn complete_relation_program_inputs_transfer_typed_parameters() {
 
     let mut ir = CadIr::empty();
     let mut annotations = Annotations::default();
-    let transfer = crate::formula::transfer_parameters(&mut ir, &native, &mut annotations, None);
+    let transfer = crate::test_support::with_service_context(|ctx| {
+        crate::formula::transfer_parameters(
+            ctx,
+            &mut ir,
+            &native,
+            &mut annotations,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
+    .expect("valid exactness fields");
     let [parameter] = ir.model.parameters.as_slice() else {
         panic!("one relation-program input parameter")
     };
     assert_eq!(transfer.relation_program_parameter_count, 1);
     assert_eq!(parameter.name, "Thickness");
     assert_eq!(parameter.expression, "35 mm");
-    assert_eq!(parameter.value, Some(ParameterValue::Length(Length(35.0))));
+    assert_eq!(
+        parameter.value,
+        Some(ParameterValue::Length(Length::new(35.0).unwrap()))
+    );
     assert_eq!(
         parameter.properties.get("value_type").map(String::as_str),
         Some("LENGTH")
@@ -395,12 +546,16 @@ fn complete_relation_program_inputs_transfer_typed_parameters() {
         .value
         .clear();
     let mut empty_binding_ir = CadIr::empty();
-    let empty_binding_transfer = crate::formula::transfer_parameters(
-        &mut empty_binding_ir,
-        &empty_binding_native,
-        &mut Annotations::default(),
-        None,
-    );
+    let empty_binding_transfer = crate::test_support::with_service_context(|ctx| {
+        crate::formula::transfer_parameters(
+            ctx,
+            &mut empty_binding_ir,
+            &empty_binding_native,
+            &mut Annotations::default(),
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
+    .expect("valid exactness fields");
     let [empty_binding_parameter] = empty_binding_ir.model.parameters.as_slice() else {
         panic!("one empty-binding input parameter")
     };
@@ -429,19 +584,23 @@ fn complete_relation_program_inputs_transfer_typed_parameters() {
         ),
     );
     let mut conflicting_ir = CadIr::empty();
-    let conflicting_transfer = crate::formula::transfer_parameters(
-        &mut conflicting_ir,
-        &conflicting_native,
-        &mut Annotations::default(),
-        None,
-    );
+    let conflicting_transfer = crate::test_support::with_service_context(|ctx| {
+        crate::formula::transfer_parameters(
+            ctx,
+            &mut conflicting_ir,
+            &conflicting_native,
+            &mut Annotations::default(),
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
+    .expect("valid exactness fields");
     assert_eq!(conflicting_transfer.relation_program_parameter_count, 0);
     assert!(conflicting_ir.model.parameters.is_empty());
 }
 
 #[test]
 fn complete_relation_program_output_transfers_a_typed_result() {
-    use cadmpeg_ir::features::{Length, ParameterValue};
+    use cadmpeg_ir::{features::ParameterValue, scalar::Length};
 
     let mut native =
         crate::native::CatiaNative::decode(&standard_catpart_with_formula_relation(0x63, false));
@@ -452,9 +611,8 @@ fn complete_relation_program_output_transfers_a_typed_result() {
         crate::native::entity_record::CatiaEntityObjectProduction::RelationProgramInstance(
             crate::native::CatiaRelationProgramInstance {
                 framing: crate::native::CatiaRelationProgramInstanceFraming::Lead12 {
-                    context_entity: crate::native::CatiaEntityReference::from_parts(
+                    context_entity: crate::native::CatiaEntityReference::resolved_or_unresolved(
                         output_entity.entity_id,
-                        false,
                         Some(output_entity.id.clone()),
                         Some("paramout".to_string()),
                     ),
@@ -467,9 +625,8 @@ fn complete_relation_program_output_transfers_a_typed_result() {
                 inputs: Some(vec![crate::native::CatiaRelationProgramInput {
                     parameter: "#1_".to_string(),
                     value_type: "LENGTH".to_string(),
-                    entity: crate::native::CatiaEntityReference::from_parts(
+                    entity: crate::native::CatiaEntityReference::resolved_or_unresolved(
                         input_entity.entity_id,
-                        false,
                         Some(input_entity.id.clone()),
                         Some("param".to_string()),
                     ),
@@ -480,20 +637,38 @@ fn complete_relation_program_output_transfers_a_typed_result() {
 
     let mut ir = CadIr::empty();
     let mut annotations = Annotations::default();
-    let transfer = crate::formula::transfer_parameters(&mut ir, &native, &mut annotations, None);
+    let transfer = crate::test_support::with_service_context(|ctx| {
+        crate::formula::transfer_parameters(
+            ctx,
+            &mut ir,
+            &native,
+            &mut annotations,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
+    .expect("valid exactness fields");
     let [input, output] = ir.model.parameters.as_slice() else {
         panic!("typed relation-program input and output")
     };
     assert_eq!(transfer.relation_program_parameter_count, 1);
     assert_eq!(input.name, "Thickness");
     assert_eq!(input.expression, "35 mm");
-    assert_eq!(input.value, Some(ParameterValue::Length(Length(35.0))));
+    assert_eq!(
+        input.value,
+        Some(ParameterValue::Length(Length::new(35.0).unwrap()))
+    );
     assert_eq!(output.name, "Result");
     assert_eq!(output.expression, "#1_ /2-2mm");
-    assert_eq!(output.value, Some(ParameterValue::Length(Length(33.0))));
+    assert_eq!(
+        output.value,
+        Some(ParameterValue::Length(Length::new(33.0).unwrap()))
+    );
     assert_eq!(output.properties["value_type"], "LENGTH");
     assert_eq!(output.properties["catia_binding"], "#result_ /1");
-    assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
+    assert_eq!(
+        output.dependencies.as_slice(),
+        std::slice::from_ref(&input.id)
+    );
     assert_eq!(output.native_ref, Some(output_entity.id));
 
     let mut ambiguous_native = native;
@@ -507,17 +682,87 @@ fn complete_relation_program_output_transfers_a_typed_result() {
         ),
     );
     let mut ambiguous_ir = CadIr::empty();
-    let ambiguous_transfer = crate::formula::transfer_parameters(
-        &mut ambiguous_ir,
-        &ambiguous_native,
-        &mut Annotations::default(),
-        None,
-    );
+    let ambiguous_transfer = crate::test_support::with_service_context(|ctx| {
+        crate::formula::transfer_parameters(
+            ctx,
+            &mut ambiguous_ir,
+            &ambiguous_native,
+            &mut Annotations::default(),
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
+    .expect("valid exactness fields");
     let [ambiguous_input] = ambiguous_ir.model.parameters.as_slice() else {
         panic!("ambiguous compound output keeps its typed input")
     };
     assert_eq!(ambiguous_transfer.relation_program_parameter_count, 1);
     assert_eq!(ambiguous_input.name, "Thickness");
+}
+
+#[test]
+fn relation_program_output_refuses_unadmitted_input_and_output_rows() {
+    let mut native =
+        crate::native::CatiaNative::decode(&standard_catpart_with_formula_relation(0x63, false));
+    let expression_entity = native.entity_records[1].clone();
+    let input_entity = native.entity_records[2].clone();
+    let output_entity = native.entity_records[3].clone();
+    native.entity_records[0].object_production = Some(
+        crate::native::entity_record::CatiaEntityObjectProduction::RelationProgramInstance(
+            crate::native::CatiaRelationProgramInstance {
+                framing: crate::native::CatiaRelationProgramInstanceFraming::Lead12 {
+                    context_entity: crate::native::CatiaEntityReference::resolved_or_unresolved(
+                        output_entity.entity_id,
+                        Some(output_entity.id.clone()),
+                        Some("paramout".to_string()),
+                    ),
+                },
+                program_entity: crate::native::CatiaEntityReference::Unresolved { entity_id: 0 },
+                repeated_entity: crate::native::CatiaEntityReference::Unresolved { entity_id: 0 },
+                reference_incidences: Vec::new(),
+                relation_expression: Some(expression_entity.id.clone()),
+                parameter_dependencies: Vec::new(),
+                inputs: Some(vec![crate::native::CatiaRelationProgramInput {
+                    parameter: "#1_".to_string(),
+                    value_type: "LENGTH".to_string(),
+                    entity: crate::native::CatiaEntityReference::resolved_or_unresolved(
+                        input_entity.entity_id,
+                        Some(input_entity.id.clone()),
+                        Some("param".to_string()),
+                    ),
+                }]),
+            },
+        ),
+    );
+    let mut refused = std::collections::HashSet::new();
+    for cap in 0..=512 {
+        let result = crate::test_support::with_collection_limit(cap, |ctx| {
+            crate::formula::transfer_parameters(
+                ctx,
+                &mut CadIr::empty(),
+                &native,
+                &mut Annotations::default(),
+                &crate::decode::ModelingGraphScope::Unscoped,
+            )
+        });
+        match result {
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
+                refused.insert(limit.operation);
+            }
+            Ok(_) => {}
+            Err(error) => panic!("unexpected relation-program transfer error: {error}"),
+        }
+    }
+    for operation in [
+        "catia_relation_program_dependencies",
+        "catia_relation_program_type_bindings",
+        "catia_relation_program_input_parameters",
+        "catia_relation_program_output_dependencies",
+    ] {
+        assert!(
+            refused.contains(operation),
+            "no low-limit refusal at {operation}"
+        );
+    }
 }
 
 #[test]
@@ -586,110 +831,131 @@ fn lead54_relation_program_instance_requires_its_complete_identity_frame() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode lead-54 relation-program instance");
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_RELATION_PROGRAM_INSTANCE_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_RELATION_PROGRAM_INSTANCE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT),
-        3
-    );
-    assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::UNRESOLVED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT.as_str()
         ),
         3
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_TYPED_RELATION_PROGRAM_INSTANCE_COUNT),
-        1
-    );
-    assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_INPUT_INSTANCE_COUNT
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNRESOLVED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT.as_str()
         ),
-        0
+        3
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::UNRESOLVED_RELATION_PROGRAM_INPUT_INSTANCE_COUNT),
-        1
-    );
-    assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_INPUT_COUNT),
-        0
-    );
-    assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_DISTINCT_RELATION_PROGRAM_INPUT_ENTITY_COUNT),
-        0
-    );
-    assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_RELATION_PROGRAM_INPUT_PARAMETER_COUNT),
-        0
-    );
-    assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_LEAD12_RELATION_PROGRAM_INSTANCE_COUNT),
-        0
-    );
-    assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_LEAD54_RELATION_PROGRAM_INSTANCE_COUNT),
-        1
-    );
-    assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::DECODED_RESOLVED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT
-        ),
-        0
-    );
-    assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::UNRESOLVED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT
-        ),
-        0
-    );
-    assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::DECODED_LEAD12_RELATION_PROGRAM_PARAMOUT_CONTEXT_ENTITY_COUNT
-        ),
-        0
-    );
-    assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::DECODED_OTHER_LEAD12_RELATION_PROGRAM_CONTEXT_CLASS_COUNT
-        ),
-        0
-    );
-    assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::UNCLASSIFIED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT
-        ),
-        0
-    );
-    assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::DECODED_RESOLVED_LEAD54_RELATION_PROGRAM_TRAILING_ENTITY_COUNT
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_TYPED_RELATION_PROGRAM_INSTANCE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::UNRESOLVED_LEAD54_RELATION_PROGRAM_TRAILING_ENTITY_COUNT
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_INPUT_INSTANCE_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNRESOLVED_RELATION_PROGRAM_INPUT_INSTANCE_COUNT.as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_INPUT_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_DISTINCT_RELATION_PROGRAM_INPUT_ENTITY_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_RELATION_PROGRAM_INPUT_PARAMETER_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_LEAD12_RELATION_PROGRAM_INSTANCE_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_LEAD54_RELATION_PROGRAM_INSTANCE_COUNT.as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        wire::coverage_count(
+            decoded.report(),
+            (crate::coverage::DECODED_RESOLVED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT)
+                .as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNRESOLVED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            decoded.report(),
+            (crate::coverage::DECODED_LEAD12_RELATION_PROGRAM_PARAMOUT_CONTEXT_ENTITY_COUNT)
+                .as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_OTHER_LEAD12_RELATION_PROGRAM_CONTEXT_CLASS_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNCLASSIFIED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            decoded.report(),
+            (crate::coverage::DECODED_RESOLVED_LEAD54_RELATION_PROGRAM_TRAILING_ENTITY_COUNT)
+                .as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNRESOLVED_LEAD54_RELATION_PROGRAM_TRAILING_ENTITY_COUNT.as_str()
         ),
         0
     );
@@ -745,206 +1011,247 @@ fn decode_reports_exact_relation_program_instances() {
             )
             .expect("decode relation-program instance");
         assert_eq!(
-            decoded
-                .report()
-                .coverage_count(crate::coverage::DECODED_RELATION_PROGRAM_INSTANCE_COUNT),
+            wire::coverage_count(
+                decoded.report(),
+                crate::coverage::DECODED_RELATION_PROGRAM_INSTANCE_COUNT.as_str()
+            ),
             1
         );
         assert_eq!(
-            decoded.report().coverage_count(
-                crate::coverage::DECODED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT
+            wire::coverage_count(
+                decoded.report(),
+                crate::coverage::DECODED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT.as_str()
             ),
             8
         );
         let resolved_reference_incidences = 1 + usize::from(repeated_reference_entity_id == 1);
         let null_reference_incidences = usize::from(repeated_reference_entity_id == 3);
         assert_eq!(
-            decoded.report().coverage_count(
-                crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT
+            wire::coverage_count(
+                decoded.report(),
+                (crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT)
+                    .as_str()
             ),
             resolved_reference_incidences
         );
         assert_eq!(
-            decoded.report().coverage_count(
-                crate::coverage::DECODED_NULL_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT
+            wire::coverage_count(
+                decoded.report(),
+                crate::coverage::DECODED_NULL_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT.as_str()
             ),
             null_reference_incidences
         );
         assert_eq!(
-            decoded.report().coverage_count(
-                crate::coverage::UNRESOLVED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT
+            wire::coverage_count(
+                decoded.report(),
+                crate::coverage::UNRESOLVED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT.as_str()
             ),
             8 - resolved_reference_incidences - null_reference_incidences
         );
         assert_eq!(
-            decoded.report().coverage_count(
-                crate::coverage::DECODED_CLASSIFIED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT
+            wire::coverage_count(
+                decoded.report(),
+                (crate::coverage::DECODED_CLASSIFIED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT)
+                    .as_str()
             ),
             resolved_reference_incidences
         );
         assert_eq!(
-            decoded
-                .report()
-                .coverage_count(crate::coverage::DECODED_LEAD12_RELATION_PROGRAM_INSTANCE_COUNT),
-            1
-        );
-        assert_eq!(
-            decoded
-                .report()
-                .coverage_count(crate::coverage::DECODED_LEAD54_RELATION_PROGRAM_INSTANCE_COUNT),
-            0
-        );
-        assert_eq!(
-            decoded.report().coverage_count(
-                crate::coverage::DECODED_RESOLVED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT
+            wire::coverage_count(
+                decoded.report(),
+                crate::coverage::DECODED_LEAD12_RELATION_PROGRAM_INSTANCE_COUNT.as_str()
             ),
             1
         );
         assert_eq!(
-            decoded.report().coverage_count(
-                crate::coverage::UNRESOLVED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT
+            wire::coverage_count(
+                decoded.report(),
+                crate::coverage::DECODED_LEAD54_RELATION_PROGRAM_INSTANCE_COUNT.as_str()
             ),
             0
         );
         assert_eq!(
-            decoded.report().coverage_count(
-                crate::coverage::DECODED_LEAD12_RELATION_PROGRAM_PARAMOUT_CONTEXT_ENTITY_COUNT
-            ),
-            0
-        );
-        assert_eq!(
-            decoded.report().coverage_count(
-                crate::coverage::DECODED_OTHER_LEAD12_RELATION_PROGRAM_CONTEXT_CLASS_COUNT
+            wire::coverage_count(
+                decoded.report(),
+                (crate::coverage::DECODED_RESOLVED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT)
+                    .as_str()
             ),
             1
         );
         assert_eq!(
-            decoded.report().coverage_count(
-                crate::coverage::UNCLASSIFIED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT
+            wire::coverage_count(
+                decoded.report(),
+                crate::coverage::UNRESOLVED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT.as_str()
             ),
             0
         );
         assert_eq!(
-            decoded
-                .report()
-                .coverage_count(crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_INSTANCE_COUNT),
+            wire::coverage_count(
+                decoded.report(),
+                (crate::coverage::DECODED_LEAD12_RELATION_PROGRAM_PARAMOUT_CONTEXT_ENTITY_COUNT)
+                    .as_str()
+            ),
+            0
+        );
+        assert_eq!(
+            wire::coverage_count(
+                decoded.report(),
+                (crate::coverage::DECODED_OTHER_LEAD12_RELATION_PROGRAM_CONTEXT_CLASS_COUNT)
+                    .as_str()
+            ),
+            1
+        );
+        assert_eq!(
+            wire::coverage_count(
+                decoded.report(),
+                (crate::coverage::UNCLASSIFIED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT)
+                    .as_str()
+            ),
+            0
+        );
+        assert_eq!(
+            wire::coverage_count(
+                decoded.report(),
+                crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_INSTANCE_COUNT.as_str()
+            ),
             resolved
         );
         assert_eq!(
-            decoded.report().coverage_count(
-                crate::coverage::DECODED_RELATION_EXPRESSION_PROGRAM_INSTANCE_COUNT
+            wire::coverage_count(
+                decoded.report(),
+                crate::coverage::DECODED_RELATION_EXPRESSION_PROGRAM_INSTANCE_COUNT.as_str()
             ),
             expression
         );
         assert_eq!(
-            decoded
-                .report()
-                .coverage_count(crate::coverage::DECODED_OTHER_RELATION_PROGRAM_INSTANCE_COUNT),
+            wire::coverage_count(
+                decoded.report(),
+                crate::coverage::DECODED_OTHER_RELATION_PROGRAM_INSTANCE_COUNT.as_str()
+            ),
             other
         );
         assert_eq!(
-            decoded
-                .report()
-                .coverage_count(crate::coverage::UNRESOLVED_RELATION_PROGRAM_INSTANCE_COUNT),
+            wire::coverage_count(
+                decoded.report(),
+                crate::coverage::UNRESOLVED_RELATION_PROGRAM_INSTANCE_COUNT.as_str()
+            ),
             unresolved,
             "program entity {program_entity_id}"
         );
         assert_eq!(
-            decoded
-                .report()
-                .coverage_count(crate::coverage::DECODED_NULL_RELATION_PROGRAM_INSTANCE_COUNT),
+            wire::coverage_count(
+                decoded.report(),
+                crate::coverage::DECODED_NULL_RELATION_PROGRAM_INSTANCE_COUNT.as_str()
+            ),
             usize::from(program_entity_id == 3)
         );
         assert_eq!(
-            decoded.report().coverage_count(
-                crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_REPEATED_REFERENCE_COUNT
+            wire::coverage_count(
+                decoded.report(),
+                (crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_REPEATED_REFERENCE_COUNT)
+                    .as_str()
             ),
             resolved_repeated
         );
         assert_eq!(
-            decoded.report().coverage_count(
-                crate::coverage::UNRESOLVED_RELATION_PROGRAM_REPEATED_REFERENCE_COUNT
+            wire::coverage_count(
+                decoded.report(),
+                crate::coverage::UNRESOLVED_RELATION_PROGRAM_REPEATED_REFERENCE_COUNT.as_str()
             ),
             usize::from(repeated_reference_entity_id > 3)
         );
         assert_eq!(
-            decoded.report().coverage_count(
-                crate::coverage::DECODED_NULL_RELATION_PROGRAM_REPEATED_REFERENCE_COUNT
+            wire::coverage_count(
+                decoded.report(),
+                crate::coverage::DECODED_NULL_RELATION_PROGRAM_REPEATED_REFERENCE_COUNT.as_str()
             ),
             usize::from(repeated_reference_entity_id == 3)
         );
         let classified_program = usize::from(program_entity_id <= 2);
         assert_eq!(
-            decoded
-                .report()
-                .coverage_count(crate::coverage::DECODED_CLASSIFIED_RELATION_PROGRAM_ENTITY_COUNT),
+            wire::coverage_count(
+                decoded.report(),
+                crate::coverage::DECODED_CLASSIFIED_RELATION_PROGRAM_ENTITY_COUNT.as_str()
+            ),
             classified_program
         );
         assert_eq!(
-            decoded
-                .report()
-                .coverage_count(crate::coverage::UNCLASSIFIED_RELATION_PROGRAM_ENTITY_COUNT),
+            wire::coverage_count(
+                decoded.report(),
+                crate::coverage::UNCLASSIFIED_RELATION_PROGRAM_ENTITY_COUNT.as_str()
+            ),
             1 - classified_program
         );
         let classified_repeated = usize::from(repeated_reference_entity_id == 1);
         assert_eq!(
-            decoded.report().coverage_count(
-                crate::coverage::DECODED_CLASSIFIED_RELATION_PROGRAM_REPEATED_ENTITY_COUNT
+            wire::coverage_count(
+                decoded.report(),
+                (crate::coverage::DECODED_CLASSIFIED_RELATION_PROGRAM_REPEATED_ENTITY_COUNT)
+                    .as_str()
             ),
             classified_repeated
         );
         assert_eq!(
-            decoded.report().coverage_count(
-                crate::coverage::UNCLASSIFIED_RELATION_PROGRAM_REPEATED_ENTITY_COUNT
+            wire::coverage_count(
+                decoded.report(),
+                crate::coverage::UNCLASSIFIED_RELATION_PROGRAM_REPEATED_ENTITY_COUNT.as_str()
             ),
             1 - classified_repeated
         );
         assert_eq!(
-            decoded
-                .report()
-                .coverage_count(crate::coverage::DECODED_INSTANCED_RELATION_EXPRESSION_COUNT),
+            wire::coverage_count(
+                decoded.report(),
+                crate::coverage::DECODED_INSTANCED_RELATION_EXPRESSION_COUNT.as_str()
+            ),
             expression
         );
         assert_eq!(
-            decoded
-                .report()
-                .coverage_count(crate::coverage::DECODED_REFERENCED_RELATION_EXPRESSION_COUNT),
+            wire::coverage_count(
+                decoded.report(),
+                crate::coverage::DECODED_REFERENCED_RELATION_EXPRESSION_COUNT.as_str()
+            ),
             expression
         );
         assert_eq!(
-            decoded.report().coverage_count(
-                crate::coverage::DECODED_FORMULA_REFERENCED_RELATION_EXPRESSION_COUNT
+            wire::coverage_count(
+                decoded.report(),
+                crate::coverage::DECODED_FORMULA_REFERENCED_RELATION_EXPRESSION_COUNT.as_str()
             ),
             0
         );
         assert_eq!(
-            decoded.report().coverage_count(
-                crate::coverage::DECODED_PROGRAM_REFERENCED_RELATION_EXPRESSION_COUNT
+            wire::coverage_count(
+                decoded.report(),
+                crate::coverage::DECODED_PROGRAM_REFERENCED_RELATION_EXPRESSION_COUNT.as_str()
             ),
             expression
         );
         assert_eq!(
-            decoded
-                .report()
-                .coverage_count(crate::coverage::UNRESOLVED_UNREFERENCED_RELATION_EXPRESSION_COUNT),
+            wire::coverage_count(
+                decoded.report(),
+                crate::coverage::UNRESOLVED_UNREFERENCED_RELATION_EXPRESSION_COUNT.as_str()
+            ),
             1 - expression
         );
         assert_eq!(
-            decoded.report().coverage_count(
-                crate::coverage::DECODED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT
+            wire::coverage_count(
+                decoded.report(),
+                crate::coverage::DECODED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT.as_str()
             ),
             expression * 3
         );
         assert_eq!(
-            decoded.report().coverage_count(
-                crate::coverage::UNRESOLVED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT
+            wire::coverage_count(
+                decoded.report(),
+                crate::coverage::UNRESOLVED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT.as_str()
             ),
             expression * 3
         );
         assert_eq!(
-            decoded
-                .report()
-                .coverage_count(crate::coverage::DECODED_FORMULA_RELATION_COUNT),
+            wire::coverage_count(
+                decoded.report(),
+                crate::coverage::DECODED_FORMULA_RELATION_COUNT.as_str()
+            ),
             0
         );
         assert!(decoded.ir().model.parameters.is_empty());

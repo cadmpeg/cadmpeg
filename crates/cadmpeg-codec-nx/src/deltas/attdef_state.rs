@@ -2,22 +2,36 @@
 //! `ATTDEF_LIST` active references followed by null slots.
 
 use crate::framing::xmt_reference::NonNullXmt;
+use crate::iter_wire::IterWire;
+use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "StateWire", into = "StateWire")]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "StateWire")]
 pub(crate) struct AttdefState {
     xmt: NonNullXmt,
     slots: AttdefSlots,
 }
 
+impl Serialize for AttdefState {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut wire = serializer.serialize_struct("StateWire", 4)?;
+        wire.serialize_field("xmt", &self.xmt())?;
+        wire.serialize_field("slot_count", &self.slot_count())?;
+        wire.serialize_field("active_count", &self.active_count())?;
+        wire.serialize_field("references", &IterWire(self.references()))?;
+        wire.end()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct AttdefSlots {
-    active: Vec<NonNullXmt>,
-    null_count: u32,
+    references: Vec<u32>,
+    active_count: u32,
+    slot_count: u32,
 }
 impl AttdefState {
-    pub(crate) fn new(
+    pub(super) fn new(
         xmt: u32,
         slot_count: u32,
         active_count: u32,
@@ -28,19 +42,19 @@ impl AttdefState {
             slots: AttdefSlots::new(slot_count, active_count, references)?,
         })
     }
-    pub(crate) fn xmt(&self) -> u32 {
+    pub(super) fn xmt(&self) -> u32 {
         self.xmt.into()
     }
-    pub(crate) fn active_count(&self) -> u32 {
+    pub(super) fn active_count(&self) -> u32 {
         self.slots.active_count()
     }
-    pub(crate) fn slot_count(&self) -> u32 {
+    pub(super) fn slot_count(&self) -> u32 {
         self.slots.slot_count()
     }
-    pub(crate) fn references(&self) -> impl Iterator<Item = u32> + '_ {
+    pub(super) fn references(&self) -> impl Iterator<Item = u32> + Clone + '_ {
         self.slots.references()
     }
-    pub(crate) fn into_slots(self) -> AttdefSlots {
+    pub(super) fn into_slots(self) -> AttdefSlots {
         self.slots
     }
 }
@@ -53,52 +67,51 @@ impl AttdefSlots {
         if active_count > slot_count {
             return Err("active_count: exceeds slot_count");
         }
-        let active_len = active_count as usize;
+        let active_len = cadmpeg_core::decode::index_from_u32(active_count);
         if references[active_len..]
             .iter()
             .any(|reference| *reference != 1)
         {
             return Err("references: inactive slots must be null");
         }
-        let active = references
-            .into_iter()
-            .take(active_len)
-            .map(NonNullXmt::try_from)
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|_| "references: active slots must be non-null")?;
+        if references[..active_len]
+            .iter()
+            .any(|reference| NonNullXmt::try_from(*reference).is_err())
+        {
+            return Err("references: active slots must be non-null");
+        }
         Ok(Self {
-            active,
-            null_count: slot_count - active_count,
+            references,
+            active_count,
+            slot_count,
         })
     }
-    pub(crate) fn from_delta_references(references: Vec<u32>) -> Result<Self, &'static str> {
-        let mut references = references.into_iter();
-        if references.next() != Some(1) {
+    pub(super) fn from_delta_references(references: Vec<u32>) -> Result<Self, &'static str> {
+        if references.first() != Some(&1) {
             return Err("references: ATTDEF_LIST must start with null");
         }
-        let references: Vec<_> = references.collect();
+        let mut references = references;
+        references.remove(0);
         let slot_count =
             u32::try_from(references.len()).map_err(|_| "references: too many slots")?;
-        let active_count = references
-            .iter()
-            .take_while(|reference| **reference != 1)
-            .count() as u32;
+        let active_count = u32::try_from(
+            references
+                .iter()
+                .take_while(|reference| **reference != 1)
+                .count(),
+        )
+        .map_err(|_| "references: too many slots")?;
         Self::new(slot_count, active_count, references)
     }
     fn active_count(&self) -> u32 {
-        self.active.len() as u32
+        self.active_count
     }
     fn slot_count(&self) -> u32 {
-        self.active_count() + self.null_count
+        self.slot_count
     }
-    // This iterator emits null references lazily; it performs no count-sized allocation.
-    #[allow(clippy::disallowed_methods)]
-    pub(crate) fn references(&self) -> impl Iterator<Item = u32> + '_ {
-        self.active
-            .iter()
-            .copied()
-            .map(u32::from)
-            .chain(std::iter::repeat_n(1, self.null_count as usize))
+    // The validated slots stay in their original order.
+    pub(super) fn references(&self) -> impl Iterator<Item = u32> + Clone + '_ {
+        self.references.iter().copied()
     }
 }
 #[derive(Serialize, Deserialize)]
@@ -108,6 +121,7 @@ struct StateWire {
     active_count: u32,
     references: Vec<u32>,
 }
+#[cfg(test)]
 impl From<AttdefState> for StateWire {
     fn from(state: AttdefState) -> Self {
         Self {
@@ -131,7 +145,7 @@ impl TryFrom<StateWire> for AttdefState {
 }
 #[cfg(test)]
 mod tests {
-    use super::AttdefState;
+    use super::{AttdefState, StateWire};
     #[test]
     fn wire_derives_counts_and_rejects_invalid_slot_partitions() {
         for json in [
@@ -153,5 +167,35 @@ mod tests {
                 .unwrap_err()
                 .contains(field));
         }
+    }
+
+    #[test]
+    fn attdef_borrowed_wire_matches_owned_bytes() {
+        let json = r#"{"xmt":43,"slot_count":4,"active_count":2,"references":[143,155,1,1]}"#;
+        let state: AttdefState = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_vec(&state).unwrap(), json.as_bytes());
+        assert_eq!(
+            serde_json::to_vec(&state).unwrap(),
+            serde_json::to_vec(&StateWire::from(state.clone())).unwrap()
+        );
+    }
+
+    #[test]
+    fn attdef_retained_limit_refuses_before_reference_collection() {
+        #[derive(serde::Serialize)]
+        struct Record<'a> {
+            id: &'a str,
+            state: &'a AttdefState,
+        }
+        let json = r#"{"xmt":43,"slot_count":4,"active_count":2,"references":[143,155,1,1]}"#;
+        let state: AttdefState = serde_json::from_str(json).unwrap();
+        let record = Record {
+            id: "nx:deltas:attdef#0",
+            state: &state,
+        };
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::json!({"id":"nx:deltas:attdef#0","state":serde_json::from_str::<serde_json::Value>(json).unwrap()}),
+        );
     }
 }

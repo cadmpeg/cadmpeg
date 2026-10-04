@@ -1,19 +1,93 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use super::{format_identity, is_valid_identity, IdentityError};
+use super::{is_valid_identity, IdentityComponent, IdentityError, IdentityKey, IdentityNamespace};
+
+#[test]
+fn source_key_encoding_preserves_reserved_and_separator_distinctions() {
+    let mut seen = std::collections::BTreeSet::new();
+    for (source, expected) in [
+        ("", "%EMPTY"),
+        ("%EMPTY", "%25EMPTY"),
+        ("a:b", "a%3Ab"),
+        ("a%3Ab", "a%253Ab"),
+        ("a#b", "a%23b"),
+        ("a/b", "a/b"),
+        ("\0", "%00"),
+        ("\u{b}", "%0B"),
+        ("é", "%C3%A9"),
+        ("部", "%E9%83%A8"),
+    ] {
+        let key = IdentityKey::encode_segment(source);
+        assert_eq!(key.as_str(), expected);
+        assert_eq!(IdentityKey::try_new(key.as_str().to_owned()).unwrap(), key);
+        assert!(seen.insert(key));
+    }
+}
+
+#[cfg(feature = "schema")]
+#[test]
+fn identity_schemas_constrain_strings_and_map_keys() {
+    use std::collections::BTreeMap;
+    macro_rules! check {
+        ($identity:ty) => {{
+            let schema = serde_json::to_value(schemars::schema_for!($identity)).unwrap();
+            let string_schema = match schema["$ref"].as_str() {
+                Some(reference) => schema.pointer(reference.strip_prefix('#').unwrap()).unwrap(),
+                None => &schema,
+            };
+            assert_eq!(string_schema["type"], "string");
+            let pattern = string_schema["pattern"].as_str().unwrap();
+            let map = serde_json::to_value(schemars::schema_for!(BTreeMap<$identity, u8>)).unwrap();
+            assert_eq!(map["additionalProperties"], false);
+            assert!(map["patternProperties"].get(pattern).is_some());
+        }};
+    }
+    check!(super::Identity);
+    check!(super::BodyId);
+    check!(super::HistoricalBodyId);
+}
+
+#[test]
+fn decimal_key_padding_preserves_the_complete_unsigned_value() {
+    for (value, width, expected) in [
+        (0, 0, "0"),
+        (0, 10, "0000000000"),
+        (42, 10, "0000000042"),
+        (123, 2, "123"),
+        (u64::MAX, 10, "18446744073709551615"),
+    ] {
+        let key = IdentityKey::zero_padded(value, width);
+        assert_eq!(key.as_str(), expected);
+        assert!(is_valid_identity(
+            super::Identity::compose(&crate::identity_namespace!("test", "model", "key"), key)
+                .as_str()
+        ));
+    }
+}
+
+#[test]
+fn kind_replacement_preserves_admitted_namespace_and_key() {
+    for key in ["0", "owner:child", "é:部", ":"] {
+        let source = super::Identity::new(format!("catia:graph:object#{key}")).unwrap();
+        let feature = source.with_kind(&crate::identity_component!("feature"));
+        assert_eq!(feature.as_str(), format!("catia:graph:feature#{key}"));
+        assert_eq!(source.as_str(), format!("catia:graph:object#{key}"));
+        assert!(is_valid_identity(feature.as_str()));
+    }
+}
 
 #[test]
 fn three_component_ids_are_valid() {
     assert!(is_valid_identity("step:file:signature#0"));
-    assert!(format_identity("step", "file", "signature", 0u8).is_ok());
+    assert!(IdentityNamespace::new("step", "file", "signature").is_ok());
 }
 
 #[test]
 fn two_component_ids_are_rejected() {
     assert!(!is_valid_identity("step:signature#0"));
     assert!(matches!(
-        format_identity("step", "", "signature", 0u8),
+        IdentityNamespace::new("step", "", "signature"),
         Err(IdentityError::InvalidComponent { label: "scope", .. })
     ));
 }
@@ -80,23 +154,45 @@ fn local_identity_conversions_reject_empty_or_whitespace_keys() {
     let id = HistoricalBodyId::try_from("member-1").unwrap();
     assert_eq!(id.as_str(), "member-1");
     assert_eq!(serde_json::to_string(&id).unwrap(), "\"member-1\"");
-    assert_eq!(id.into_string(), "member-1");
 }
 
 #[test]
-fn string_backed_reference_ids_enforce_the_local_identity_rule() {
+fn arena_identity_types_enforce_the_entity_identity_grammar() {
     macro_rules! check {
         ($type:ty, $valid:literal) => {{
-            for invalid in ["", " ", "a b", "a\tb", "a\nb"] {
+            for invalid in [
+                "",
+                " ",
+                "a b",
+                "a\tb",
+                "a\nb",
+                "x",
+                "test:entity#0",
+                "test::entity#0",
+                "test:model:entity#",
+                "test:model:entity#a#b",
+                "test:model:extra:entity#0",
+            ] {
                 assert!(<$type>::mint(invalid).is_err(), "{invalid:?}");
+                assert!(<$type>::try_from(invalid).is_err(), "{invalid:?}");
+                assert!(
+                    <$type>::try_from(invalid.to_owned()).is_err(),
+                    "{invalid:?}"
+                );
+                let wire = serde_json::to_string(invalid).unwrap();
+                assert!(serde_json::from_str::<$type>(&wire).is_err(), "{invalid:?}");
             }
             let id = <$type>::mint($valid).expect("identity grammar");
+            assert_eq!(
+                serde_json::from_str::<$type>(&serde_json::to_string($valid).unwrap()).unwrap(),
+                id
+            );
             assert_eq!(id.as_str(), $valid);
             assert_eq!(
                 serde_json::to_string(&id).unwrap(),
                 serde_json::to_string($valid).unwrap()
             );
-            assert_eq!(id.into_string(), $valid);
+            assert_eq!(crate::ids::Identity::from(id).into_string(), $valid);
         }};
     }
 
@@ -121,4 +217,370 @@ fn string_backed_reference_ids_enforce_the_local_identity_rule() {
         "rhino:dimension:annotation#4"
     );
     check!(crate::drawings::DrawingId, "fcstd:drawing:page#Page");
+}
+
+#[test]
+fn checked_identity_admission_and_typed_conversion() {
+    use super::{BodyId, Identity};
+    let text = "test:model:body#1";
+    let identity = super::Identity::compose(
+        &IdentityNamespace::new("test", "model", "body").unwrap(),
+        IdentityKey::try_new("1".to_owned()).unwrap(),
+    );
+    assert_eq!(identity.as_str(), text);
+    assert_eq!(
+        serde_json::to_string(&identity).unwrap(),
+        "\"test:model:body#1\""
+    );
+    assert_eq!(
+        serde_json::from_str::<Identity>("\"test:model:body#1\"").unwrap(),
+        identity
+    );
+    assert_eq!(BodyId::from(identity).as_str(), text);
+    for invalid in [
+        "",
+        "test:body#1",
+        "test::body#1",
+        "test:model:body#",
+        "test:model:body#a#b",
+        "test:model:body#a b",
+    ] {
+        assert!(Identity::new(invalid).is_err());
+        assert!(
+            serde_json::from_str::<Identity>(&serde_json::to_string(invalid).unwrap()).is_err()
+        );
+    }
+}
+
+#[test]
+fn typed_namespace_composition_preserves_the_wire_identity() {
+    let namespace = crate::identity_namespace!("step", "file", "signature");
+    let identity = super::Identity::compose(&namespace, 7u64);
+    assert_eq!(identity.as_str(), "step:file:signature#7");
+
+    let body = crate::ids::BodyId::compose(&namespace, IdentityKey::from(7u64));
+    assert_eq!(body.as_str(), "step:file:signature#7");
+    assert_eq!(namespace.format(), "step");
+    assert_eq!(namespace.scope(), "file");
+    assert_eq!(namespace.kind(), "signature");
+}
+
+#[test]
+fn encoded_components_preserve_empty_prefixes_and_unicode_bytes() {
+    use super::IdentityKeyTail;
+    let encoded = IdentityKeyTail::percent_encode("A B:#%\u{2003}é");
+    assert_eq!(encoded.as_str(), "A%20B%3A%23%25%E2%80%83é");
+    let suffix = crate::identity_key!("@7");
+    assert_eq!(
+        suffix
+            .clone()
+            .with_prefix(&IdentityKeyTail::percent_encode("")),
+        suffix
+    );
+    let key = suffix.with_prefix(&encoded);
+    assert_eq!(key.as_str(), "A%20B%3A%23%25%E2%80%83é@7");
+    assert_eq!(
+        crate::identity_key!("Aa:É/9").to_ascii_lowercase().as_str(),
+        "aa:É/9"
+    );
+}
+
+#[test]
+fn local_identity_composition_uses_the_admitted_wire_shape() {
+    let namespace = crate::identity_namespace!("f3d", "history-input", "edge");
+    let id = crate::ids::HistoricalEdgeId::compose(&namespace, 7u64);
+    assert_eq!(id.as_str(), "f3d:history-input:edge#7");
+    assert_eq!(crate::loss_namespace!("f3d").as_str(), "f3d");
+}
+
+#[test]
+// Standard formatting is an independent oracle for the complete byte alphabet.
+fn hexadecimal_identity_keys_encode_every_byte_without_collisions() {
+    use std::fmt::Write;
+    let bytes = (u8::MIN..=u8::MAX).collect::<Vec<_>>();
+    let mut distinct = std::collections::HashSet::new();
+    for &byte in &bytes {
+        let key = IdentityKey::hex_byte(byte);
+        assert_eq!(key.as_str(), format!("{byte:02x}"));
+        assert!(distinct.insert(key));
+    }
+    let prefix = crate::identity_key!("source-");
+    assert_eq!(prefix.clone().with_hex_bytes(&[]), prefix);
+    let encoded = prefix.with_hex_bytes(&bytes);
+    let mut expected = String::new();
+    for byte in &bytes {
+        write!(&mut expected, "{byte:02x}").expect("writing to a String succeeds");
+    }
+    assert_eq!(encoded.as_str(), format!("source-{expected}"));
+    assert_eq!(
+        crate::identity_key!("source-")
+            .with_hex_bytes("é:# \n".as_bytes())
+            .as_str(),
+        "source-c3a93a23200a"
+    );
+}
+
+#[test]
+fn identity_key_projection_and_tails_preserve_namespace_and_key_separators() {
+    let namespace = crate::identity_namespace!("format", "scope", "kind");
+    for key in ["key", ":", "left:right", "é:端"] {
+        let key = IdentityKey::try_new(key).unwrap();
+        let identity = super::Identity::compose(&namespace, key.clone());
+        assert_eq!(identity.key(), key);
+        let curve = crate::ids::CurveId::from(identity.clone());
+        assert_eq!(curve.key(), key);
+        assert_eq!(
+            identity
+                .clone()
+                .with_key_tail(&super::IdentityKeyTail::empty()),
+            identity
+        );
+        let extended = identity.with_key_tail(
+            &super::IdentityKeyTail::empty().dash(crate::identity_key!("construction")),
+        );
+        assert_eq!(
+            extended.as_str(),
+            format!("format:scope:kind#{key}-construction")
+        );
+        assert_eq!(extended.key().as_str(), format!("{key}-construction"));
+        assert!(is_valid_identity(extended.as_str()));
+    }
+}
+
+#[test]
+fn signed_record_identity_keys_preserve_decimal_text_at_the_integer_bounds() {
+    let namespace = crate::identity_namespace!("f3d", "brep", "attribute");
+    for (value, text) in [
+        (i64::MIN, "-9223372036854775808"),
+        (-1, "-1"),
+        (0, "0"),
+        (1, "1"),
+        (i64::MAX, "9223372036854775807"),
+    ] {
+        let key = IdentityKey::from(value);
+        assert_eq!(key.as_str(), text);
+        assert_eq!(IdentityKey::from(&value), key);
+        assert_eq!(IdentityKey::from(&&value), key);
+        let identity = super::Identity::compose(&namespace, key);
+        assert_eq!(identity.as_str(), format!("f3d:brep:attribute#{text}"));
+        assert!(is_valid_identity(identity.as_str()));
+    }
+    assert_eq!(
+        IdentityKey::from(i128::MIN).as_str(),
+        "-170141183460469231731687303715884105728"
+    );
+    assert_eq!(
+        IdentityKey::from(i128::MAX).as_str(),
+        "170141183460469231731687303715884105727"
+    );
+}
+
+#[test]
+fn runtime_namespace_and_key_admission_reports_the_rejected_value() {
+    assert!(matches!(
+        IdentityNamespace::new("step", "bad scope", "signature"),
+        Err(IdentityError::InvalidComponent { label: "scope", .. })
+    ));
+    assert!(matches!(
+        IdentityKey::try_from("a b"),
+        Err(IdentityError::InvalidKey { .. })
+    ));
+    assert!(matches!(
+        IdentityKey::try_from("a#b"),
+        Err(IdentityError::InvalidKey { .. })
+    ));
+    assert!(matches!(
+        IdentityKey::try_from("a\u{00a0}b"),
+        Err(IdentityError::InvalidKey { .. })
+    ));
+    assert!(matches!(
+        IdentityComponent::try_from("a:b"),
+        Err(IdentityError::InvalidComponent {
+            label: "component",
+            ..
+        })
+    ));
+}
+
+#[test]
+fn literal_helpers_reject_unicode_whitespace_without_a_runtime_panic() {
+    assert!(super::StaticIdentityKey::new("a\u{2003}b").is_none());
+    assert!(super::StaticIdentityComponent::new("a\u{3000}b").is_none());
+    assert!(super::StaticIdentityNamespace::new("step", "file", "signature").is_some());
+    assert!(super::StaticIdentityNamespace::new("step", "bad#scope", "signature").is_none());
+}
+
+#[test]
+fn const_whitespace_grammar_matches_runtime_identity_grammar_for_every_scalar() {
+    let mut component = String::with_capacity(8);
+    let mut identity = String::with_capacity(16);
+    let mut key = String::with_capacity(8);
+
+    for scalar in 0..=0x10_ffff {
+        let Some(character) = char::from_u32(scalar) else {
+            continue;
+        };
+        let is_whitespace = character.is_whitespace();
+
+        component.clear();
+        component.push('a');
+        component.push(character);
+        component.push('b');
+        assert_eq!(
+            super::contains_unicode_whitespace(&component),
+            is_whitespace,
+            "const whitespace parser disagrees for U+{scalar:04X}"
+        );
+
+        identity.clear();
+        identity.push('a');
+        identity.push(character);
+        identity.push_str("b:c:d#key");
+        assert_eq!(
+            super::valid_component_text(&component),
+            super::is_valid_identity(&identity),
+            "namespace grammar disagrees with identity grammar for U+{scalar:04X}"
+        );
+
+        key.clear();
+        key.push('k');
+        key.push(character);
+        key.push('z');
+        identity.clear();
+        identity.push_str("a:b:c#");
+        identity.push_str(&key);
+        assert_eq!(
+            super::valid_key_text(&key),
+            super::is_valid_identity(&identity),
+            "key grammar disagrees with identity grammar for U+{scalar:04X}"
+        );
+    }
+}
+
+#[test]
+fn typed_identity_copy_refuses_retained_bytes_before_duplication() {
+    let id = crate::sketches::SketchId::mint("synthetic:test:sketch#42").expect("valid fixture ID");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes =
+        u64::try_from(id.as_str().len()).expect("identity length fits u64") - 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    let error = id
+        .try_clone_for_decode(&ctx, "typed identity copy")
+        .expect_err("copy exceeds cap");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && resource.operation == "typed identity copy")
+    );
+    let service = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &service)
+        .expect("empty root");
+    assert_eq!(
+        id.try_clone_for_decode(&ctx, "typed identity copy")
+            .expect("service copy"),
+        id
+    );
+}
+
+#[test]
+fn local_identity_copy_refuses_one_below_retained_need() {
+    let id = super::HistoricalFaceId::mint("synthetic-face-42").expect("valid local identity");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(id.as_str().len()).expect("length") - 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    let error = id
+        .try_clone_for_decode(&ctx, "local identity copy")
+        .expect_err("one below need");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && resource.operation == "local identity copy")
+    );
+}
+
+#[test]
+fn local_identity_copy_succeeds_under_service_profile() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    macro_rules! check_copy {
+        ($id:ty) => {{
+            let id = <$id>::mint("synthetic-local-42").expect("valid local identity");
+            assert_eq!(
+                id.try_clone_for_decode(&ctx, "local identity copy")
+                    .expect("service copy"),
+                id
+            );
+        }};
+    }
+    check_copy!(super::HistoricalBodyId);
+    check_copy!(super::HistoricalFaceId);
+    check_copy!(super::HistoricalEdgeId);
+    check_copy!(super::HistoricalVertexId);
+}
+
+#[test]
+fn identity_grammar_admits_only_the_scalars_inspected() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    for (text, visits, valid) in [
+        ("", 0, false),
+        (":unread", 1, false),
+        ("a::unread", 3, false),
+        ("a:b:c:d#unread", 6, false),
+        ("a:b:c#", 6, false),
+        ("a:b:c#é", 7, true),
+        ("a:b:c#:", 7, true),
+        ("a:b:c#\u{2003}unread", 7, false),
+        ("a:b:c##unread", 7, false),
+        ("abc", 3, false),
+    ] {
+        for allowance in 0..=visits {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = allowance;
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_materialized_bytes = 0;
+            policy.limits.max_collection_items = 0;
+            policy.limits.max_recursion_depth = 0;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = super::Identity::admit_text(text.to_owned(), |work| {
+                ctx.charge_work_limit(work, "identity grammar visit")
+            });
+            if allowance < visits {
+                let original = result.unwrap_err();
+                assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+                assert_eq!(original.operation, "identity grammar visit");
+                assert_eq!(original.additional, 1);
+                assert!(
+                    matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == original)
+                );
+            } else {
+                let result = result.unwrap();
+                assert_eq!(result.is_ok(), valid, "{text:?}");
+                assert_eq!(
+                    result.map_or_else(|text| text, super::Identity::into_string),
+                    text
+                );
+                ctx.finish_session().unwrap();
+            }
+        }
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let original = ctx
+        .charge_work_limit(1, "original grammar refusal")
+        .unwrap_err();
+    assert_eq!(
+        super::Identity::admit_text(String::new(), |work| ctx
+            .charge_work_limit(work, "empty grammar"))
+        .unwrap_err(),
+        original
+    );
 }

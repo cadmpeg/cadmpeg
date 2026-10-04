@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The write-target request reaching this encoder's `plan`.
 
-use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
+use cadmpeg_test_support::wire;
+
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::{FidelityResolution, RetainedSourceRecord, SourceFidelity};
+use cadmpeg_ir::{report::export::FidelityResolution, RetainedSourceRecord, SourceFidelity};
 use std::io::Cursor;
 
-use crate::test_support::{make_block, sldprt_with_body_and_history, triangle_body};
+use crate::test_support::container::make_block;
+use crate::test_support::history::sldprt_with_body_and_history;
+use crate::test_support::parasolid::triangle_body;
 use crate::{dialect::SldprtDialect, loss::SldprtLossCode, SldprtCodec};
 
 #[test]
@@ -55,19 +59,19 @@ fn semantic_writer_reclassifies_the_final_retained_envelope() {
 }
 
 fn sourced_ir(dialect: &'static str) -> CadIr {
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.model.bodies[0].name = None;
     ir.model.faces.iter_mut().for_each(|face| face.name = None);
     ir.model
         .edges
         .iter_mut()
-        .for_each(|edge| edge.param_range = None);
+        .for_each(|edge| edge.set_param_range(None));
     let matched = if dialect == "sldprt:unknown" {
         crate::dialect::SldprtDialect::classify(None)
     } else {
-        cadmpeg_core::dialect::DialectMatch::admitted(cadmpeg_core::dialect::DialectId::pinned(
-            dialect,
-        ))
+        cadmpeg_core::dialect::DialectMatch::admitted(
+            cadmpeg_core::dialect::DialectId::parse(dialect).expect("test id has dialect grammar"),
+        )
     };
     ir.source = Some(SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(matched),
@@ -81,14 +85,19 @@ fn explicit_transcode_declines_present_image_without_claiming_it_is_unavailable(
     let ir = sourced_ir("sldprt:sw-version-12000-plus");
     let data = b"present retained image".to_vec();
     let mut fidelity = SourceFidelity::default();
+    let source_image_id: cadmpeg_ir::ids::UnknownId = crate::SOURCE_IMAGE_ID
+        .to_owned()
+        .try_into()
+        .expect("source image identity");
+    let record = RetainedSourceRecord::from_bytes(
+        "sldprt",
+        0,
+        cadmpeg_ir::source_fidelity::RetainedBytes::Inline { data },
+    )
+    .expect("source image extent");
     fidelity
-        .retained_records
-        .push(RetainedSourceRecord::retained(
-            crate::SOURCE_IMAGE_ID,
-            "sldprt",
-            0,
-            data,
-        ));
+        .insert_retained_record(source_image_id, record)
+        .expect("source image identity is unique");
     let plan = Encoder::plan(
         &SldprtCodec,
         EncodeInput::new(&ir, Some(&fidelity)),
@@ -96,11 +105,17 @@ fn explicit_transcode_declines_present_image_without_claiming_it_is_unavailable(
     )
     .expect("explicit transcode plans");
 
-    assert_eq!(&plan.report().fidelity(), &FidelityResolution::NotConsumed);
     assert_eq!(
-        plan.report().write_path(),
-        cadmpeg_ir::WritePath::Synthesized
+        &wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
+        &FidelityResolution::NotConsumed {}
     );
+    assert!(matches!(
+        plan.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
     let displacement = plan
         .report()
         .losses
@@ -135,7 +150,13 @@ fn inherit_with_missing_image_charges_preserved_image_unavailable() {
 
     // No fidelity was provided, so the sealed wrapper resolves the report to
     // `NotProvided`; the image-missing reason survives as the typed loss below.
-    assert_eq!(&plan.report().fidelity(), &FidelityResolution::NotProvided);
+    assert_eq!(
+        &wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
+        &FidelityResolution::NotProvided {}
+    );
     let unavailable = plan
         .report()
         .losses

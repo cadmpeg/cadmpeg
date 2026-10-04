@@ -1,53 +1,71 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Nonempty counted attribute values with finite floating-point lanes.
 
-use std::marker::PhantomData;
-
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use serde::{Deserialize, Deserializer, Serialize};
 
 pub(crate) trait CountedValue: Sized {
+    type Checked: Serialize;
     const WIDTH: usize;
     fn read(bytes: &[u8]) -> Option<Self>;
-    fn is_finite(&self) -> bool;
+    fn admit(self) -> Option<Self::Checked>;
+    #[cfg(test)]
+    fn raw(value: &Self::Checked) -> Self;
 }
 
 impl CountedValue for u32 {
+    type Checked = u32;
     const WIDTH: usize = 4;
 
     fn read(bytes: &[u8]) -> Option<Self> {
         View::u32_be_at(bytes, 0)
     }
-    fn is_finite(&self) -> bool {
-        true
+    fn admit(self) -> Option<Self::Checked> {
+        Some(self)
+    }
+    #[cfg(test)]
+    fn raw(value: &Self::Checked) -> Self {
+        *value
     }
 }
 
 impl CountedValue for f64 {
+    type Checked = cadmpeg_ir::scalar::FiniteReal;
     const WIDTH: usize = 8;
 
     fn read(bytes: &[u8]) -> Option<Self> {
         View::f64_be_at(bytes, 0)
     }
 
-    fn is_finite(&self) -> bool {
-        f64::is_finite(*self)
+    fn admit(self) -> Option<Self::Checked> {
+        Self::Checked::new(self)
+    }
+    #[cfg(test)]
+    fn raw(value: &Self::Checked) -> Self {
+        value.get()
     }
 }
 
 impl CountedValue for [f64; 3] {
+    type Checked = cadmpeg_ir::units::FiniteVector<3>;
     const WIDTH: usize = 24;
 
     fn read(bytes: &[u8]) -> Option<Self> {
         crate::vec3_at::vec3_be_at(bytes, 0)
     }
 
-    fn is_finite(&self) -> bool {
-        self.iter().all(CountedValue::is_finite)
+    fn admit(self) -> Option<Self::Checked> {
+        Self::Checked::new(self)
+    }
+    #[cfg(test)]
+    fn raw(value: &Self::Checked) -> Self {
+        value.get()
     }
 }
 
 impl CountedValue for [[f64; 3]; 2] {
+    type Checked = [cadmpeg_ir::units::FiniteVector<3>; 2];
     const WIDTH: usize = 48;
 
     fn read(bytes: &[u8]) -> Option<Self> {
@@ -57,25 +75,101 @@ impl CountedValue for [[f64; 3]; 2] {
         ])
     }
 
-    fn is_finite(&self) -> bool {
-        self.iter().all(CountedValue::is_finite)
+    fn admit(self) -> Option<Self::Checked> {
+        let [first, second] = self;
+        Some([
+            cadmpeg_ir::units::FiniteVector::new(first)?,
+            cadmpeg_ir::units::FiniteVector::new(second)?,
+        ])
+    }
+    #[cfg(test)]
+    fn raw(value: &Self::Checked) -> Self {
+        value.map(cadmpeg_ir::units::FiniteVector::get)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(transparent)]
-pub(crate) struct CountedValues<T>(Vec<T>);
+pub(crate) struct CountedValues<T: CountedValue>(Vec<T::Checked>);
 
 impl<T: CountedValue> CountedValues<T> {
     pub(crate) fn new(values: Vec<T>) -> Result<Self, &'static str> {
-        if values.is_empty() || !values.iter().all(CountedValue::is_finite) {
+        if values.is_empty() {
             return Err("values must be nonempty and finite");
         }
+        let values = values
+            .into_iter()
+            .map(T::admit)
+            .collect::<Option<Vec<_>>>()
+            .ok_or("values must be nonempty and finite")?;
         Ok(Self(values))
     }
 
-    pub(crate) fn as_slice(&self) -> &[T] {
+    pub(crate) fn as_slice(&self) -> &[T::Checked] {
         &self.0
+    }
+
+    #[cfg(test)]
+    pub(super) fn read_be_lane(
+        ctx: &DecodeContext<'_>,
+        bytes: &[u8],
+    ) -> Result<Option<Self>, CodecError> {
+        BorrowedValues::<T>::new(ctx, bytes)?
+            .map(|lane| lane.materialize(ctx))
+            .transpose()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn raw_values(&self) -> Vec<T> {
+        self.0.iter().map(T::raw).collect()
+    }
+}
+
+/// A nonempty numeric lane whose scalar invariants have been checked without allocation.
+pub(super) struct BorrowedValues<'a, T: CountedValue> {
+    bytes: &'a [u8],
+    marker: std::marker::PhantomData<T>,
+}
+impl<'a, T: CountedValue> BorrowedValues<'a, T> {
+    pub(super) fn new(
+        ctx: &DecodeContext<'_>,
+        bytes: &'a [u8],
+    ) -> Result<Option<Self>, CodecError> {
+        if bytes.is_empty() || !bytes.len().is_multiple_of(T::WIDTH) {
+            return Ok(None);
+        }
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(bytes.len() / T::WIDTH),
+            "validate NX numeric value lane",
+        )?;
+        if bytes
+            .chunks_exact(T::WIDTH)
+            .any(|bytes| T::read(bytes).and_then(T::admit).is_none())
+        {
+            return Ok(None);
+        }
+        Ok(Some(Self {
+            bytes,
+            marker: std::marker::PhantomData,
+        }))
+    }
+    pub(super) fn materialize(
+        self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<CountedValues<T>, CodecError> {
+        let count = self.bytes.len() / T::WIDTH;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(count),
+            "materialize NX numeric value lane",
+        )?;
+        let mut values = ctx.collection_vec(count, "NX numeric value payload")?;
+        for bytes in self.bytes.chunks_exact(T::WIDTH) {
+            let value = T::read(bytes)
+                .and_then(T::admit)
+                .ok_or_else(|| CodecError::malformed("invalid admitted NX numeric lane"))?;
+            values.push(value);
+        }
+        Ok(CountedValues(values))
     }
 }
 
@@ -85,48 +179,24 @@ impl<'de, T: CountedValue + Deserialize<'de>> Deserialize<'de> for CountedValues
     }
 }
 
-#[derive(Clone, Copy)]
-pub(crate) struct CountedLane<'a, T> {
-    bytes: &'a [u8],
-    value: PhantomData<T>,
-}
-
-impl<'a, T: CountedValue> CountedLane<'a, T> {
-    pub(crate) fn new(bytes: &'a [u8]) -> Option<Self> {
-        if bytes.is_empty() || !bytes.len().is_multiple_of(T::WIDTH) {
-            return None;
-        }
-        for bytes in bytes.chunks_exact(T::WIDTH) {
-            T::read(bytes)?.is_finite().then_some(())?;
-        }
-        Some(Self {
-            bytes,
-            value: PhantomData,
-        })
-    }
-
-    pub(crate) fn materialize(self) -> Option<CountedValues<T>> {
-        self.bytes
-            .chunks_exact(T::WIDTH)
-            .map(T::read)
-            .collect::<Option<Vec<_>>>()
-            .map(CountedValues)
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{CountedLane, CountedValues};
+    use super::CountedValues;
 
     #[test]
     fn counted_integer_values_preserve_unsigned_values_and_reject_empty_lanes() {
-        let lane = CountedLane::<u32>::new(&[255; 4]).unwrap();
-        let values = lane.materialize().unwrap();
-        assert_eq!(values.as_slice(), &[u32::MAX]);
-        assert_eq!(serde_json::to_string(&values).unwrap(), "[4294967295]");
-        assert!(CountedLane::<u32>::new(&[]).is_none());
-        assert!(CountedValues::new(Vec::<u32>::new()).is_err());
-        assert!(serde_json::from_str::<CountedValues<u32>>("[]").is_err());
+        crate::test_support::with_decode_context(|ctx| {
+            let values = CountedValues::<u32>::read_be_lane(ctx, &[255; 4])
+                .unwrap()
+                .unwrap();
+            assert_eq!(values.as_slice(), &[u32::MAX]);
+            assert_eq!(serde_json::to_string(&values).unwrap(), "[4294967295]");
+            assert!(CountedValues::<u32>::read_be_lane(ctx, &[])
+                .unwrap()
+                .is_none());
+            assert!(CountedValues::new(Vec::<u32>::new()).is_err());
+            assert!(serde_json::from_str::<CountedValues<u32>>("[]").is_err());
+        });
     }
 
     #[test]
@@ -152,20 +222,34 @@ mod tests {
 
     #[test]
     fn finite_lanes_require_whole_values_and_materialize_exactly() {
-        let bytes = 1.0_f64.to_be_bytes();
-        let lane = CountedLane::<f64>::new(&bytes).unwrap();
-        assert_eq!(lane.materialize().unwrap().as_slice(), &[1.0]);
-        assert!(CountedLane::<f64>::new(&[]).is_none());
-        assert!(CountedLane::<f64>::new(&bytes[..7]).is_none());
-        assert!(CountedLane::<f64>::new(&f64::NAN.to_be_bytes()).is_none());
-        assert!(CountedLane::<[[f64; 3]; 2]>::new(&[0; 24]).is_none());
-        assert_eq!(
-            CountedLane::<[[f64; 3]; 2]>::new(&[0; 48])
+        crate::test_support::with_decode_context(|ctx| {
+            let bytes = 1.0_f64.to_be_bytes();
+            let lane = CountedValues::<f64>::read_be_lane(ctx, &bytes)
                 .unwrap()
-                .materialize()
+                .unwrap();
+            assert_eq!(lane.raw_values().as_slice(), &[1.0]);
+            assert!(CountedValues::<f64>::read_be_lane(ctx, &[])
                 .unwrap()
-                .as_slice(),
-            &[[[0.0; 3]; 2]]
-        );
+                .is_none());
+            assert!(CountedValues::<f64>::read_be_lane(ctx, &bytes[..7])
+                .unwrap()
+                .is_none());
+            assert!(
+                CountedValues::<f64>::read_be_lane(ctx, &f64::NAN.to_be_bytes())
+                    .unwrap()
+                    .is_none()
+            );
+            assert!(CountedValues::<[[f64; 3]; 2]>::read_be_lane(ctx, &[0; 24])
+                .unwrap()
+                .is_none());
+            assert_eq!(
+                CountedValues::<[[f64; 3]; 2]>::read_be_lane(ctx, &[0; 48])
+                    .unwrap()
+                    .unwrap()
+                    .raw_values()
+                    .as_slice(),
+                &[[[0.0; 3]; 2]]
+            );
+        });
     }
 }

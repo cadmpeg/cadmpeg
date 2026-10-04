@@ -3,14 +3,72 @@
 
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
-use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::CadIr;
 
 use crate::export::Builder;
-use crate::test_support::{decode_inline, export};
+use crate::test_support::exchange::{decode_inline, export};
 use crate::StepSchema;
+
+#[test]
+fn explicit_knot_expansion_retains_admitted_bits_and_refusal() {
+    use crate::parse::Value;
+
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
+    let counts = Value::List(vec![Value::Integer(2), Value::Integer(1)]);
+    let values = Value::List(vec![
+        Value::Real(cadmpeg_ir::scalar::FiniteReal::new(-0.0).expect("finite fixture")),
+        Value::Real(cadmpeg_ir::scalar::FiniteReal::new(0.5).expect("finite fixture")),
+    ]);
+    let knots: cadmpeg_ir::geometry::nurbs::KnotVector =
+        super::super::expand_knots(&counts, &values, 3, &ctx)
+            .expect("no resource refusal")
+            .expect("finite ordered knots");
+    assert_eq!(knots.as_slice().len(), 3);
+    assert_eq!(knots.as_slice()[0].to_bits(), (-0.0_f64).to_bits());
+    assert_eq!(knots.as_slice()[1].to_bits(), (-0.0_f64).to_bits());
+    assert_eq!(knots.as_slice()[2].to_bits(), 0.5_f64.to_bits());
+
+    assert!(cadmpeg_ir::scalar::FiniteReal::new(f64::NAN).is_none());
+    let decreasing = Value::List(vec![
+        Value::Real(cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite fixture")),
+        Value::Real(cadmpeg_ir::scalar::FiniteReal::new(0.5).expect("finite fixture")),
+    ]);
+    assert!(super::super::expand_knots(&counts, &decreasing, 3, &ctx)
+        .expect("no resource refusal")
+        .is_none());
+}
+
+#[test]
+fn explicit_knot_expansion_refuses_caller_collection_limit() {
+    use crate::parse::Value;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let counts = Value::List(vec![Value::Integer(2), Value::Integer(1)]);
+    let values = Value::List(vec![
+        Value::Real(cadmpeg_ir::scalar::FiniteReal::new(0.0).expect("finite fixture")),
+        Value::Real(cadmpeg_ir::scalar::FiniteReal::new(0.5).expect("finite fixture")),
+    ]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
+    assert!(matches!(
+        super::super::expand_knots(&counts, &values, 3, &ctx),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_expanded_nurbs_knots"
+    ));
+}
 
 #[test]
 fn defaulted_spline_curve_subtypes_derive_knot_vectors() {
@@ -34,30 +92,29 @@ fn defaulted_spline_curve_subtypes_derive_knot_vectors() {
             .curves
             .iter()
             .find(|curve| curve.id.as_str() == id)
-            .and_then(
-                |curve| match curve.geometry.solved_cache().unwrap_or(&curve.geometry) {
-                    CurveGeometry::Nurbs(nurbs) => Some(nurbs),
-                    _ => None,
-                },
-            )
+            .and_then(|curve| match curve.geometry.solved() {
+                Some(SolvedCurveGeometry::Nurbs(nurbs)) => Some(nurbs),
+                _ => None,
+            })
             .unwrap_or_else(|| panic!("missing NURBS curve {id}"))
     };
     assert_eq!(
-        nurbs("step:data:curve#4").knots(),
+        nurbs("step:data:curve#4").knots().as_slice(),
         [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
     );
     assert_eq!(
-        nurbs("step:data:curve#5").knots(),
+        nurbs("step:data:curve#5").knots().as_slice(),
         [-1.0, 0.0, 1.0, 2.0, 3.0]
     );
     assert_eq!(
-        nurbs("step:data:curve#6").knots(),
+        nurbs("step:data:curve#6").knots().as_slice(),
         [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
     );
     let rational = nurbs("step:data:curve#7");
-    assert_eq!(rational.knots(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
-    assert_eq!(rational.weights(), Some(&[1.0, 0.5, 1.0][..]));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    assert_eq!(rational.knots().as_slice(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+    assert_eq!(rational.pole_rows().weights(), Some(vec![1.0, 0.5, 1.0]));
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -85,39 +142,38 @@ fn defaulted_spline_surface_subtypes_derive_axis_knot_vectors() {
             .surfaces
             .iter()
             .find(|surface| surface.id.as_str() == id)
-            .and_then(|surface| {
-                match surface.geometry.solved_cache().unwrap_or(&surface.geometry) {
-                    SurfaceGeometry::Nurbs(nurbs) => Some(nurbs),
-                    _ => None,
-                }
+            .and_then(|surface| match surface.geometry.solved() {
+                Some(SolvedSurfaceGeometry::Nurbs(nurbs)) => Some(nurbs),
+                _ => None,
             })
             .unwrap_or_else(|| panic!("missing NURBS surface {id}"))
     };
     assert_eq!(
-        nurbs("step:data:surface#10").u_knots(),
+        nurbs("step:data:surface#10").u_knots().as_slice(),
         [0.0, 0.0, 1.0, 1.0]
     );
     assert_eq!(
-        nurbs("step:data:surface#10").v_knots(),
+        nurbs("step:data:surface#10").v_knots().as_slice(),
         [0.0, 0.0, 1.0, 2.0, 2.0]
     );
     assert_eq!(
-        nurbs("step:data:surface#11").u_knots(),
+        nurbs("step:data:surface#11").u_knots().as_slice(),
         [-1.0, 0.0, 1.0, 2.0]
     );
     assert_eq!(
-        nurbs("step:data:surface#11").v_knots(),
+        nurbs("step:data:surface#11").v_knots().as_slice(),
         [-2.0, -1.0, 0.0, 1.0, 2.0, 3.0]
     );
     assert_eq!(
-        nurbs("step:data:surface#12").u_knots(),
+        nurbs("step:data:surface#12").u_knots().as_slice(),
         [0.0, 0.0, 1.0, 1.0]
     );
     assert_eq!(
-        nurbs("step:data:surface#12").v_knots(),
+        nurbs("step:data:surface#12").v_knots().as_slice(),
         [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -142,15 +198,17 @@ fn complex_rational_quasi_uniform_surface_decodes_with_weight_grid() {
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#7")
         .expect("complex rational surface");
-    let SurfaceGeometry::Nurbs(nurbs) =
-        surface.geometry.solved_cache().unwrap_or(&surface.geometry)
-    else {
+    let Some(SolvedSurfaceGeometry::Nurbs(nurbs)) = surface.geometry.solved() else {
         panic!("complex rational surface is not NURBS")
     };
-    assert_eq!(nurbs.u_knots(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
-    assert_eq!(nurbs.v_knots(), [0.0, 0.0, 1.0, 1.0]);
-    assert_eq!(nurbs.weights(), Some(&[1.0, 0.5, 1.0, 0.5, 1.0, 1.0][..]));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    assert_eq!(nurbs.u_knots().as_slice(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+    assert_eq!(nurbs.v_knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(
+        nurbs.pole_grid().weights().map(|rows| rows.concat()),
+        Some(vec![1.0, 0.5, 1.0, 0.5, 1.0, 1.0])
+    );
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -225,32 +283,36 @@ fn deferred_surface_dependencies_resolve_independent_of_record_order() {
         .iter()
         .any(|surface| surface.id.as_str() == "step:data:surface#7"));
     assert_eq!(result.ir().model.bodies.len(), 1);
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
 #[test]
 fn unknown_recursive_curve_dependency_is_refused_without_panicking() {
     use cadmpeg_ir::geometry::{
-        CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry,
+        CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry, SolvedCurveGeometry,
     };
 
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: CurveId::mint("test:model:curve#unknown").expect("identity grammar"),
-        geometry: CurveGeometry::Unknown { record: None },
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
         source_object: None,
     });
     ir.model.curves.push(Curve {
         id: CurveId::mint("test:model:curve#composite").expect("identity grammar"),
-        geometry: CurveGeometry::Composite {
-            segments: vec![CompositeCurveSegment {
-                curve: CurveId::mint("test:model:curve#unknown").expect("identity grammar"),
-                same_sense: true,
-                transition: CompositeCurveTransition::Continuous,
-            }],
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
+            segments: cadmpeg_ir::geometry::CompositeCurveSegments::try_from(vec![
+                CompositeCurveSegment {
+                    curve: CurveId::mint("test:model:curve#unknown").expect("identity grammar"),
+                    same_sense: true,
+                    transition: CompositeCurveTransition::Continuous,
+                },
+            ])
+            .unwrap(),
             self_intersect: Some(false),
-        },
+        }),
         source_object: None,
     });
     let output = export(&ir);
@@ -260,4 +322,36 @@ fn unknown_recursive_curve_dependency_is_refused_without_panicking() {
     assert!(builder.active_curves.is_empty());
     assert!(builder.emit_curve("composite").is_none());
     assert!(builder.active_curves.is_empty());
+}
+
+#[test]
+fn a_weight_lane_shorter_than_its_pole_lane_is_stated_as_a_loss() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=CARTESIAN_POINT('',(1.,1.,0.));
+#3=CARTESIAN_POINT('',(2.,0.,0.));
+#7=(BOUNDED_CURVE() B_SPLINE_CURVE(2,(#1,#2,#3),.UNSPECIFIED.,.F.,.F.) QUASI_UNIFORM_CURVE() RATIONAL_B_SPLINE_CURVE((1.,.5)) CURVE() GEOMETRIC_REPRESENTATION_ITEM() REPRESENTATION_ITEM('short'));
+#8=GEOMETRIC_SET('',(#7));
+#9=GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION('',(#8),#10);
+#10=(GEOMETRIC_REPRESENTATION_CONTEXT(3)REPRESENTATION_CONTEXT('',''));",
+    );
+    assert!(
+        result
+            .ir()
+            .model
+            .curves
+            .iter()
+            .all(|curve| curve.id.as_str() != "step:data:curve#7"),
+        "a refused carrier states no curve"
+    );
+    assert!(
+        result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("B_SPLINE_CURVE #7")
+                && loss.message.contains("pole(s) against")),
+        "the refusal names the record and both lane counts: {:#?}",
+        result.report().losses
+    );
 }

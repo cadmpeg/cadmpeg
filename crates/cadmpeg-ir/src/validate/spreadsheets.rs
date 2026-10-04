@@ -1,119 +1,170 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Spreadsheet reference and layout validation.
 
-use std::collections::{HashMap, HashSet};
+use super::{record_finding, CadIr, Finding};
+use crate::index::identities::BorrowedIdentities;
+use crate::report::check::Check;
 
-use super::{CadIr, Check, Finding, Severity};
-
-pub(super) fn check_spreadsheets(ir: &CadIr, findings: &mut Vec<Finding>) {
-    let features = ir
-        .model
-        .features
-        .iter()
-        .map(|feature| &feature.id)
-        .collect::<HashSet<_>>();
-    let parameters = ir
-        .model
-        .parameters
-        .iter()
-        .map(|parameter| (&parameter.id, parameter))
-        .collect::<HashMap<_, _>>();
-    for sheet in &ir.model.spreadsheets {
-        if !features.contains(&sheet.feature) {
-            spreadsheet_finding(
-                findings,
-                sheet.id.as_str(),
-                "spreadsheet feature does not resolve",
-            );
+pub(super) fn check_spreadsheets(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ir: &CadIr,
+    findings: &mut Vec<Finding>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let features = BorrowedIdentities::build(ctx, |add| {
+        for feature in &ir.model.features {
+            add(feature.id.as_str(), ())?;
         }
-        let mut cells = HashSet::new();
-        let mut addresses = HashSet::new();
-        for cell in &sheet.cells {
-            let Some(parameter) = parameters.get(&cell.parameter) else {
-                spreadsheet_finding(
+        Ok(())
+    })?;
+    let parameters = BorrowedIdentities::build(ctx, |add| {
+        for parameter in &ir.model.parameters {
+            add(parameter.id.as_str(), parameter)?;
+        }
+        Ok(())
+    })?;
+    for sheet in &ir.model.spreadsheets {
+        ctx.charge_work(1, "spreadsheet row scan")?;
+        if !features.contains(ctx, sheet.feature.as_str())? {
+            record_finding(
+                ctx,
+                findings,
+                Check::ReferentialIntegrity,
+                crate::report::Severity::Error,
+                Some(sheet.id.as_str()),
+                format_args!("{}", "spreadsheet feature does not resolve"),
+            )?;
+        }
+        for cell in sheet.cells() {
+            ctx.charge_work(1, "spreadsheet cell scan")?;
+            let Some(parameter) = parameters.get(ctx, cell.parameter.as_str())? else {
+                record_finding(
+                    ctx,
                     findings,
-                    sheet.id.as_str(),
-                    "spreadsheet cell does not resolve",
-                );
+                    Check::ReferentialIntegrity,
+                    crate::report::Severity::Error,
+                    Some(sheet.id.as_str()),
+                    format_args!("{}", "spreadsheet cell does not resolve"),
+                )?;
                 continue;
             };
-            if !cells.insert(&cell.parameter) {
-                spreadsheet_finding(
-                    findings,
-                    sheet.id.as_str(),
-                    "spreadsheet repeats a cell identity",
-                );
-            }
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(sheet.feature.as_str().len()),
+                "compare spreadsheet parameter owner",
+            )?;
             if parameter.owner.as_ref() != Some(&sheet.feature) {
-                spreadsheet_finding(
+                record_finding(
+                    ctx,
                     findings,
-                    sheet.id.as_str(),
-                    "spreadsheet cell has a different owner",
-                );
+                    Check::ReferentialIntegrity,
+                    crate::report::Severity::Error,
+                    Some(sheet.id.as_str()),
+                    format_args!("{}", "spreadsheet cell has a different owner"),
+                )?;
             }
-            if !addresses.insert(cell.address) {
-                spreadsheet_finding(
-                    findings,
-                    sheet.id.as_str(),
-                    "spreadsheet cell address is invalid or repeated",
-                );
-            }
-        }
-        check_dimensions(findings, sheet.id.as_str(), &sheet.column_widths);
-        check_dimensions(findings, sheet.id.as_str(), &sheet.row_heights);
-        let mut ranges = Vec::new();
-        for range in &sheet.merged_ranges {
-            if !addresses.contains(&range.start()) {
-                spreadsheet_finding(findings, sheet.id.as_str(), "merged range is invalid");
-                continue;
-            }
-            let span = (range.start(), range.end());
-            if ranges.iter().any(|other| overlaps(*other, span)) {
-                spreadsheet_finding(findings, sheet.id.as_str(), "merged ranges overlap");
-            }
-            ranges.push(span);
         }
     }
+    Ok(())
 }
 
-fn check_dimensions(
-    findings: &mut Vec<Finding>,
-    sheet: &str,
-    dimensions: &[crate::spreadsheets::SpreadsheetDimension],
-) {
-    let mut names = HashSet::new();
-    for dimension in dimensions {
-        if dimension.index == 0 || !names.insert(dimension.index) {
-            spreadsheet_finding(
-                findings,
-                sheet,
-                "spreadsheet dimension is invalid or repeated",
+#[cfg(test)]
+mod tests {
+    use super::check_spreadsheets;
+    use crate::document::CadIr;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    fn parameter_fixture() -> CadIr {
+        let mut ir = CadIr::empty();
+        ir.model.parameters.push(
+            serde_json::from_value(serde_json::json!({
+                "id": "test:model:parameter#cell", "name": "cell", "expression": "7"
+            }))
+            .unwrap(),
+        );
+        ir
+    }
+
+    #[test]
+    fn spreadsheet_indexes_preserve_resource_refusals_and_release_storage() {
+        let ir = parameter_fixture();
+        for dimension in [
+            ResourceDimension::MaterializedBytes,
+            ResourceDimension::CollectionItems,
+            ResourceDimension::WorkUnits,
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+                _ => unreachable!(),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut findings = Vec::new();
+            let Err(CodecError::ResourceLimit(limit)) =
+                check_spreadsheets(&ctx, &ir, &mut findings)
+            else {
+                panic!("spreadsheet index must refuse");
+            };
+            assert_eq!(limit.dimension, dimension);
+            assert!(findings.is_empty());
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
             );
         }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 8192;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut findings = Vec::new();
+        check_spreadsheets(&ctx, &ir, &mut findings).unwrap();
+        assert!(findings.is_empty());
+        drop(
+            ctx.reserve_scoped(8192, "spreadsheet indexes released")
+                .unwrap(),
+        );
+        ctx.finish_session().unwrap();
     }
-}
 
-fn overlaps(
-    left: (
-        crate::spreadsheets::CellAddress,
-        crate::spreadsheets::CellAddress,
-    ),
-    right: (
-        crate::spreadsheets::CellAddress,
-        crate::spreadsheets::CellAddress,
-    ),
-) -> bool {
-    left.0.row() <= right.1.row()
-        && right.0.row() <= left.1.row()
-        && left.0.col() <= right.1.col()
-        && right.0.col() <= left.1.col()
-}
-
-fn spreadsheet_finding(findings: &mut Vec<Finding>, entity: &str, message: &str) {
-    findings.push(Finding {
-        check: Check::ReferentialIntegrity,
-        severity: Severity::Error,
-        message: message.into(),
-        entity: Some(entity.into()),
-    });
+    #[test]
+    fn spreadsheet_reference_findings_keep_row_order_and_missing_owner_semantics() {
+        let mut ir = parameter_fixture();
+        ir.model.spreadsheets.push(
+            serde_json::from_value(serde_json::json!({
+                "id": "test:model:spreadsheet#sheet", "feature": "test:model:feature#missing",
+                "cells": [
+                    {"address": "A1", "parameter": "test:model:parameter#cell"},
+                    {"address": "A2", "parameter": "test:model:parameter#missing"}
+                ]
+            }))
+            .unwrap(),
+        );
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut findings = Vec::new();
+        check_spreadsheets(&ctx, &ir, &mut findings).unwrap();
+        assert_eq!(
+            findings
+                .iter()
+                .map(|finding| finding.message.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "spreadsheet feature does not resolve",
+                "spreadsheet cell has a different owner",
+                "spreadsheet cell does not resolve"
+            ]
+        );
+        for finding in findings {
+            assert_eq!(
+                finding.check,
+                crate::report::check::Check::ReferentialIntegrity
+            );
+            assert_eq!(
+                finding.entity.as_deref(),
+                Some("test:model:spreadsheet#sheet")
+            );
+        }
+        ctx.finish_session().unwrap();
+    }
 }

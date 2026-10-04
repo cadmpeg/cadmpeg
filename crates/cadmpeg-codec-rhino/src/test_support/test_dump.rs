@@ -4,6 +4,7 @@
 //! Dump-test byte builders shared by owner suites.
 
 use crate::chunks::{parse_header, ArchiveVersion, TCODE_CRC, TCODE_ENDOFFILE, TCODE_SHORT};
+use crate::loss::Diagnostics;
 use crate::settings;
 use crate::wire::Uuid;
 use crate::MAGIC;
@@ -20,9 +21,9 @@ pub(crate) fn header(version: &str) -> Vec<u8> {
 pub(crate) fn long_chunk(archive: ArchiveVersion, typecode: u32, body: &[u8]) -> Vec<u8> {
     let mut bytes = typecode.to_le_bytes().to_vec();
     if archive.uses_eight_byte_values() {
-        bytes.extend((body.len() as i64).to_le_bytes());
+        bytes.extend((i64::try_from(body.len()).expect("fixture value fits i64")).to_le_bytes());
     } else {
-        bytes.extend((body.len() as i32).to_le_bytes());
+        bytes.extend((i32::try_from(body.len()).expect("fixture value fits i32")).to_le_bytes());
     }
     bytes.extend(body);
     bytes
@@ -40,11 +41,17 @@ pub(crate) fn crc_chunk_excluding(
     body: &[u8],
     children: &[std::ops::Range<usize>],
 ) -> Vec<u8> {
-    let direct = crate::chunks::direct_checksum_ranges(&(0..body.len()), children)
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let ctx = cadmpeg_core::decode::DecodeContext::new(
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+        false,
+    );
+    let direct = crate::chunks::direct_checksum_ranges(&ctx, &(0..body.len()), children)
         .expect("valid test child ranges");
     let mut hasher = crc32fast::Hasher::new();
-    for range in direct {
-        hasher.update(&body[range]);
+    for range in &direct {
+        hasher.update(&body[range.expect("admitted fixture checksum traversal")]);
     }
     let mut payload = body.to_vec();
     payload.extend(hasher.finalize().to_le_bytes());
@@ -56,9 +63,13 @@ pub(crate) fn eof(archive: ArchiveVersion, file_size: usize) -> Vec<u8> {
         archive,
         TCODE_ENDOFFILE,
         &if archive.uses_eight_byte_values() {
-            (file_size as u64).to_le_bytes().to_vec()
+            (cadmpeg_core::decode::u64_from_index(file_size))
+                .to_le_bytes()
+                .to_vec()
         } else {
-            (file_size as u32).to_le_bytes().to_vec()
+            (u32::try_from(file_size).expect("fixture value fits u32"))
+                .to_le_bytes()
+                .to_vec()
         },
     )
 }
@@ -70,7 +81,9 @@ pub(crate) fn uuid_bytes() -> Vec<u8> {
 pub(crate) fn utf16_bytes(value: &str) -> Vec<u8> {
     let mut units: Vec<u16> = value.encode_utf16().collect();
     units.push(0);
-    let mut bytes = (units.len() as u32).to_le_bytes().to_vec();
+    let mut bytes = (u32::try_from(units.len()).expect("fixture value fits u32"))
+        .to_le_bytes()
+        .to_vec();
     for unit in units {
         bytes.extend(unit.to_le_bytes());
     }
@@ -157,8 +170,8 @@ pub(crate) fn descriptor(
         userdata: Vec::new(),
         history: None,
         unknown_trailer: Vec::new(),
-        checksum_warnings: Vec::new(),
-        warnings: Vec::new(),
+        checksum_warnings: crate::loss::Diagnostics::new(),
+        warnings: Diagnostics::new(),
     }
 }
 
@@ -167,7 +180,7 @@ pub(crate) fn short_chunk(archive: ArchiveVersion, typecode: u32, value: i64) ->
     if archive.uses_eight_byte_values() {
         bytes.extend(value.to_le_bytes());
     } else {
-        bytes.extend((value as i32).to_le_bytes());
+        bytes.extend((i32::try_from(value).expect("fixture value fits i32")).to_le_bytes());
     }
     bytes
 }
@@ -226,6 +239,23 @@ fn versioned_anonymous_chunk(
     crc_chunk(archive, 0x4000_8000, &payload)
 }
 
+fn anonymous_chunk_excluding(
+    archive: ArchiveVersion,
+    minor: i32,
+    body: &[u8],
+    children: &[std::ops::Range<usize>],
+) -> Vec<u8> {
+    let mut payload = 1_i32.to_le_bytes().to_vec();
+    payload.extend(minor.to_le_bytes());
+    let version_len = payload.len();
+    payload.extend(body);
+    let children: Vec<_> = children
+        .iter()
+        .map(|range| range.start + version_len..range.end + version_len)
+        .collect();
+    crc_chunk_excluding(archive, 0x4000_8000, &payload, &children)
+}
+
 pub(crate) fn unit_detail(archive: ArchiveVersion, unit: u32, meters_per_unit: f64) -> Vec<u8> {
     let mut body = unit.to_le_bytes().to_vec();
     body.extend(meters_per_unit.to_le_bytes());
@@ -233,22 +263,86 @@ pub(crate) fn unit_detail(archive: ArchiveVersion, unit: u32, meters_per_unit: f
     anonymous_chunk(archive, 0, &body)
 }
 
-pub(crate) fn content_hash(archive: ArchiveVersion) -> Vec<u8> {
+/// Builds a complete document settings units record for archive-level tests.
+pub(crate) fn units_record(archive: ArchiveVersion, unit: i32) -> Vec<u8> {
+    let mut body = 100_i32.to_le_bytes().to_vec();
+    body.extend(unit.to_le_bytes());
+    body.extend(0.01_f64.to_le_bytes());
+    body.extend(0.1_f64.to_le_bytes());
+    body.extend(0.001_f64.to_le_bytes());
+    crc_chunk(archive, 0x2000_8031, &body)
+}
+
+fn content_hash(archive: ArchiveVersion) -> Vec<u8> {
     let mut body = 123_u64.to_le_bytes().to_vec();
     body.extend(456_u64.to_le_bytes());
     body.extend(789_u64.to_le_bytes());
+    let children_start = body.len();
     body.extend(anonymous_chunk(archive, 0, &[0x11; 20]));
     body.extend(anonymous_chunk(archive, 0, &[0x22; 20]));
-    anonymous_chunk(archive, 0, &body)
+    let children = children_start..body.len();
+    anonymous_chunk_excluding(archive, 0, &body, std::slice::from_ref(&children))
 }
 
 pub(crate) fn file_reference(archive: ArchiveVersion, full: &str, relative: &str) -> Vec<u8> {
     let mut body = utf16_bytes(full);
     body.extend(utf16_bytes(relative));
+    let child_start = body.len();
     body.extend(content_hash(archive));
+    let child = child_start..body.len();
     body.extend(7_u32.to_le_bytes());
     body.extend([0x44; 16]);
-    anonymous_chunk(archive, 1, &body)
+    anonymous_chunk_excluding(archive, 1, &body, std::slice::from_ref(&child))
+}
+
+/// Builds a file reference whose first digest emits a checksum warning before
+/// the second required digest is absent. Parent checksums exclude the nested
+/// digest and hash chunks, so the later parse failure remains independently
+/// attributable to the missing second digest.
+pub(crate) fn file_reference_with_digest_warning_and_missing_second_digest(
+    archive: ArchiveVersion,
+    full: &str,
+    relative: &str,
+) -> Vec<u8> {
+    let mut hash_body = 123_u64.to_le_bytes().to_vec();
+    hash_body.extend(456_u64.to_le_bytes());
+    hash_body.extend(789_u64.to_le_bytes());
+    let first_digest_start = hash_body.len();
+    let first_digest = anonymous_chunk(archive, 0, &[0x11; 20]);
+    hash_body.extend(&first_digest);
+    let first_digest_range = first_digest_start..hash_body.len();
+    let hash = anonymous_chunk_excluding(
+        archive,
+        0,
+        &hash_body,
+        std::slice::from_ref(&first_digest_range),
+    );
+
+    let mut body = utf16_bytes(full);
+    body.extend(utf16_bytes(relative));
+    let hash_start = body.len();
+    body.extend(&hash);
+    let hash_range = hash_start..body.len();
+    body.extend(7_u32.to_le_bytes());
+    body.extend([0x44; 16]);
+    let mut reference =
+        anonymous_chunk_excluding(archive, 1, &body, std::slice::from_ref(&hash_range));
+
+    let chunk_header_len = if archive.uses_eight_byte_values() {
+        12
+    } else {
+        8
+    };
+    let digest_crc = chunk_header_len
+        + 8
+        + hash_start
+        + chunk_header_len
+        + 8
+        + first_digest_start
+        + first_digest.len()
+        - 1;
+    reference[digest_crc] ^= 1;
+    reference
 }
 
 pub(crate) fn model_component_attributes(
@@ -274,36 +368,73 @@ pub(crate) fn model_component_attributes(
     crc_chunk(archive, 0x4000_8002, &payload)
 }
 
-pub(crate) fn reference_settings(archive: ArchiveVersion) -> Vec<u8> {
+fn reference_settings(archive: ArchiveVersion) -> Vec<u8> {
     let mut implementation_body = 0_i32.to_le_bytes().to_vec();
     implementation_body.extend(0_i32.to_le_bytes());
     implementation_body.push(0);
     let implementation = anonymous_chunk(archive, 0, &implementation_body);
     let mut body = vec![1];
+    let child_start = body.len();
     body.extend(implementation);
-    anonymous_chunk(archive, 0, &body)
+    let child = child_start..body.len();
+    anonymous_chunk_excluding(archive, 0, &body, std::slice::from_ref(&child))
 }
 
-pub(crate) fn definition_record(archive: ArchiveVersion, payload: &[u8]) -> Vec<u8> {
+/// Fixture class bytes and their nested checksum boundaries. `DerefMut` permits
+/// the owner tests to make deliberate wire mutations before record framing.
+#[derive(Clone)]
+pub(crate) struct DefinitionPayload {
+    bytes: Vec<u8>,
+    form: DefinitionPayloadForm,
+}
+
+#[derive(Clone)]
+enum DefinitionPayloadForm {
+    Legacy {
+        children: Vec<std::ops::Range<usize>>,
+    },
+    Anonymous,
+}
+
+impl std::ops::Deref for DefinitionPayload {
+    type Target = Vec<u8>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.bytes
+    }
+}
+
+impl std::ops::DerefMut for DefinitionPayload {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.bytes
+    }
+}
+
+pub(crate) fn definition_record(archive: ArchiveVersion, payload: &DefinitionPayload) -> Vec<u8> {
     definition_record_with_userdata(archive, payload, &[])
 }
 
 pub(crate) fn definition_record_with_userdata(
     archive: ArchiveVersion,
-    payload: &[u8],
+    payload: &DefinitionPayload,
     userdata: &[u8],
 ) -> Vec<u8> {
     let mut uuid_body = INSTANCE_DEFINITION_CLASS.to_vec();
     uuid_body.extend(crc32fast::hash(&INSTANCE_DEFINITION_CLASS).to_le_bytes());
     let uuid = long_chunk(archive, 0x0002_fffb, &uuid_body);
-    let class_data = crc_chunk(archive, 0x0002_fffc, payload);
+    let anonymous = 0..payload.len();
+    let children = match &payload.form {
+        DefinitionPayloadForm::Legacy { children } => children.as_slice(),
+        DefinitionPayloadForm::Anonymous => std::slice::from_ref(&anonymous),
+    };
+    let class_data = crc_chunk_excluding(archive, 0x0002_fffc, payload, children);
     let class_end = short_chunk(archive, 0x8002_7fff, 0);
     let class = long_chunk(
         archive,
         0x0002_7ffa,
         &[uuid, class_data, userdata.to_vec(), class_end].concat(),
     );
-    crc_chunk(archive, 0x2000_8076, &class)
+    nested_crc_chunk(archive, 0x2000_8076, &class)
 }
 
 pub(crate) fn v5_definition_payload(
@@ -312,7 +443,7 @@ pub(crate) fn v5_definition_payload(
     id: [u8; 16],
     members: &[[u8; 16]],
     linked: bool,
-) -> Vec<u8> {
+) -> DefinitionPayload {
     v5_definition_payload_with_paths(
         archive,
         minor,
@@ -332,10 +463,10 @@ pub(crate) fn v5_definition_payload_with_paths(
     linked: bool,
     linked_path: &str,
     relative_path: bool,
-) -> Vec<u8> {
+) -> DefinitionPayload {
     let mut payload = vec![0x10 | minor];
     payload.extend(id);
-    payload.extend((members.len() as i32).to_le_bytes());
+    payload.extend((i32::try_from(members.len()).expect("fixture value fits i32")).to_le_bytes());
     for member in members {
         payload.extend(member);
     }
@@ -356,17 +487,25 @@ pub(crate) fn v5_definition_payload_with_paths(
     payload.extend(2_u32.to_le_bytes());
     payload.extend(0.001_f64.to_le_bytes());
     payload.push(u8::from(relative_path));
+    let child_start = payload.len();
     payload.extend(unit_detail(archive, 2, 0.001));
+    let mut children = Vec::new();
+    children.push(child_start..payload.len());
     payload.extend(1_i32.to_le_bytes());
     payload.extend(0_u32.to_le_bytes());
     if minor >= 7 {
         payload.push(u8::from(linked));
         if linked {
+            let child_start = payload.len();
             payload.extend(file_reference(archive, "/full/source.3dm", "source.3dm"));
+            children.push(child_start..payload.len());
         }
         payload.push(0);
     }
-    payload
+    DefinitionPayload {
+        bytes: payload,
+        form: DefinitionPayloadForm::Legacy { children },
+    }
 }
 
 pub(crate) fn v6_definition_payload(
@@ -376,10 +515,14 @@ pub(crate) fn v6_definition_payload(
     kind: u32,
     linked: bool,
     settings: bool,
-) -> Vec<u8> {
+) -> DefinitionPayload {
     let mut body = model_component_attributes(archive, id, 17, "modern definition");
+    let mut children = Vec::new();
+    children.push(0..body.len());
     body.extend(kind.to_le_bytes());
+    let child_start = body.len();
     body.extend(unit_detail(archive, 8, 0.0254));
+    children.push(child_start..body.len());
     body.extend(utf16_bytes("description"));
     body.extend(utf16_bytes("https://example.test"));
     body.extend(utf16_bytes("tag"));
@@ -389,7 +532,7 @@ pub(crate) fn v6_definition_payload(
     let members_present = kind != 3;
     body.push(u8::from(members_present));
     if members_present {
-        body.extend((members.len() as i32).to_le_bytes());
+        body.extend((i32::try_from(members.len()).expect("fixture value fits i32")).to_le_bytes());
         for member in members {
             body.extend(member);
         }
@@ -397,15 +540,29 @@ pub(crate) fn v6_definition_payload(
     body.push(u8::from(linked));
     if linked {
         let mut linked_body = file_reference(archive, "/full/source.3dm", "source.3dm");
+        let mut linked_children = Vec::new();
+        linked_children.push(0..linked_body.len());
         linked_body.extend(2_i32.to_le_bytes());
         linked_body.extend(2_u32.to_le_bytes());
         linked_body.push(u8::from(settings));
         if settings {
+            let child_start = linked_body.len();
             linked_body.extend(reference_settings(archive));
+            linked_children.push(child_start..linked_body.len());
         }
-        body.extend(anonymous_chunk(archive, 0, &linked_body));
+        let child_start = body.len();
+        body.extend(anonymous_chunk_excluding(
+            archive,
+            0,
+            &linked_body,
+            &linked_children,
+        ));
+        children.push(child_start..body.len());
     }
-    anonymous_chunk(archive, 0, &body)
+    DefinitionPayload {
+        bytes: anonymous_chunk_excluding(archive, 0, &body, &children),
+        form: DefinitionPayloadForm::Anonymous,
+    }
 }
 
 pub(crate) fn document_with_definitions(
@@ -783,9 +940,12 @@ pub(crate) fn object_record_with_unknown_trailer(
 }
 
 pub(crate) fn minimal_document(version: &str, tables: &[Vec<u8>]) -> Vec<u8> {
-    let archive = parse_header(&header(version))
-        .expect("required invariant")
-        .archive_version;
+    let archive = parse_header(
+        &cadmpeg_test_support::service_decode_context(),
+        &header(version),
+    )
+    .expect("required invariant")
+    .archive_version;
     let mut bytes = header(version);
     bytes.extend(long_chunk(archive, 1, b"comment"));
     for table in tables {
@@ -815,9 +975,10 @@ pub(crate) fn set_test_units(scan: &mut crate::container::Scan<'_>, scale: f64) 
     };
     scan.metadata.settings.units = Some(settings::UnitsAndTolerances {
         unit,
-        absolute_tolerance: 0.01,
-        angular_tolerance: 0.1,
-        relative_tolerance: 0.01,
+        absolute_tolerance: crate::test_support::positive(0.01),
+        absolute_tolerance_millimeters: cadmpeg_ir::scalar::PositiveLength::new(0.01 * scale),
+        angular_tolerance: crate::test_support::positive_angle(0.1),
+        relative_tolerance: crate::test_support::positive(0.01),
         distance_display: None,
     });
 }
@@ -948,31 +1109,6 @@ pub(crate) fn transform(scale_x: f64, translation: [f64; 3]) -> [[f64; 4]; 4] {
     ]
 }
 
-pub(crate) fn static_definition(
-    id: [u8; 16],
-    members: &[[u8; 16]],
-) -> crate::instances::InstanceDefinition {
-    crate::instances::InstanceDefinition {
-        source_range: 0..0,
-        id: Uuid::from_wire(id),
-        members: members.iter().copied().map(Uuid::from_wire).collect(),
-        index: None,
-        name: String::new(),
-        description: String::new(),
-        url: String::new(),
-        url_tag: String::new(),
-        kind: crate::instances::DefinitionKind::Static,
-        units: crate::instances::UnitDetail {
-            unit: 2,
-            meters_per_unit: 0.001,
-            custom_name: String::new(),
-        },
-        linked_depth: 0,
-        linked_appearance: 0,
-        link: crate::instances::LinkSource::None,
-    }
-}
-
 pub(crate) fn set_identity(
     scan: &mut crate::container::Scan<'_>,
     source_order: usize,
@@ -1016,19 +1152,6 @@ pub(crate) fn scan_with_objects(objects: &[Vec<u8>]) -> crate::container::Scan<'
     scan
 }
 
-pub(crate) fn install_definitions(
-    scan: &mut crate::container::Scan<'_>,
-    definitions: Vec<crate::instances::InstanceDefinition>,
-) {
-    scan.definitions.definitions = definitions;
-    scan.definitions.member_object_ids = scan
-        .definitions
-        .definitions
-        .iter()
-        .flat_map(|definition| definition.members.iter().copied())
-        .collect();
-}
-
 /// Wire form of the object UUID that `polyedge::tests::polyedge_payload`
 /// references from its single segment.
 pub(crate) const POLYEDGE_SEGMENT_TARGET: [u8; 16] = {
@@ -1050,7 +1173,7 @@ pub(crate) fn polyedge_scan_objects() -> Vec<Vec<u8>> {
     ]
 }
 
-pub(crate) fn polyedge_class_wire() -> [u8; 16] {
+fn polyedge_class_wire() -> [u8; 16] {
     crate::polyedge::CURVE_CLASS.to_wire()
 }
 
@@ -1063,9 +1186,28 @@ pub(crate) fn polyedge_segment_parameter(
         .features
         .iter()
         .find(|feature| feature.source_tag.as_deref() == Some("RhinoPolyEdgeReference"))?;
-    let cadmpeg_ir::features::FeatureDefinition::Native { parameters, .. } = &feature.definition
+    let cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::Native { parameters, .. },
+    ) = feature.evaluation.definition()
     else {
         return None;
     };
     parameters.get("segment_0_object").cloned()
+}
+
+/// Append a little-endian `i32`.
+pub(crate) fn push_i32(bytes: &mut Vec<u8>, value: i32) {
+    bytes.extend(value.to_le_bytes());
+}
+
+/// Append a little-endian `f64`.
+pub(crate) fn push_f64(bytes: &mut Vec<u8>, value: f64) {
+    bytes.extend(value.to_le_bytes());
+}
+
+/// Append the three little-endian coordinates of a point.
+pub(crate) fn point(bytes: &mut Vec<u8>, value: [f64; 3]) {
+    for coordinate in value {
+        bytes.extend(coordinate.to_le_bytes());
+    }
 }

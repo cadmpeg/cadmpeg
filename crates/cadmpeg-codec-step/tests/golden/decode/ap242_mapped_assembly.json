@@ -29,32 +29,6 @@
             "definition": "step:product:product#8",
             "scope": "local"
           },
-          "prototype_transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
-            ]
-          ],
           "scale": [
             1.0,
             1.0,
@@ -78,12 +52,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
@@ -97,32 +65,6 @@
             "definition": "step:product:product#3",
             "scope": "local"
           },
-          "prototype_transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
-            ]
-          ],
           "scale": [
             1.0,
             1.0,
@@ -146,12 +88,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         }
@@ -197,11 +133,7 @@
       "vertices": [],
       "view_presentations": []
     },
-    "native": {
-      "step": {
-        "unknowns": []
-      }
-    },
+    "native": {},
     "source": {
       "attributes": {
         "bytes_named_opaque": "0",
@@ -212,19 +144,20 @@
         "entity_instances": "26",
         "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
       },
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": "admitted",
-          "declared": {
-            "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
-            "implementation_level": "2;1"
-          },
-          "dialect": "step:ap242",
-          "format": "step"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
+              "implementation_level": "2;1"
+            },
+            "dialect": "step:ap242"
+          }
         }
-      },
-      "format": "step"
+      }
     },
     "tolerances": {
       "angular": 1e-10,
@@ -235,27 +168,27 @@
     }
   },
   "report": {
-    "container_only": false,
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "admitted",
-        "declared": {
-          "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
-          "implementation_level": "2;1"
-        },
-        "dialect": "step:ap242",
-        "format": "step"
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
+            "implementation_level": "2;1"
+          },
+          "dialect": "step:ap242"
+        }
       }
     },
-    "format": "step",
-    "geometry_transferred": false,
     "losses": [
       {
         "code": {
           "code": "decode.warning",
           "kind": "decode_diagnostic",
-          "namespace": "step"
+          "namespace": "step",
+          "scope": "namespaced"
         },
         "message": "PRODUCT_DEFINITION #6 has a shape representation with no committed topology body",
         "severity": "warning"
@@ -264,7 +197,8 @@
         "code": {
           "code": "decode.warning",
           "kind": "decode_diagnostic",
-          "namespace": "step"
+          "namespace": "step",
+          "scope": "namespaced"
         },
         "message": "PRODUCT_DEFINITION #10 has a shape representation with no committed topology body",
         "severity": "warning"
@@ -273,7 +207,9 @@
         "code": {
           "code": "geometry.document-angle-unit-unresolved",
           "kind": "geometry_not_transferred",
-          "namespace": "step"
+          "namespace": "step",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
         "severity": "error"
@@ -281,7 +217,11 @@
     ],
     "notes": [
       "byte accounting: 301 structural, 1201 typed, 0 named opaque, 0 unclassified"
-    ]
+    ],
+    "transfer": {
+      "geometry_transferred": false,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {}

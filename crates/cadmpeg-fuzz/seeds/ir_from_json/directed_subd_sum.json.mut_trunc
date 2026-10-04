@@ -78,39 +78,42 @@
       {
         "id": "synthetic:v2:subd#directed",
         "scheme": "catmull_clark",
-        "vertices": [
-          {
-            "point": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
+        "cage": {
+          "vertices": [
+            {
+              "point": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "tag": "crease"
             },
-            "tag": "crease"
-          },
-          {
-            "point": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            {
+              "point": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "tag": "smooth"
             },
-            "tag": "smooth"
-          },
-          {
-            "point": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "tag": "corner"
-          }
-        ],
-        "edges": [
-          {
-            "vertices": [
-              0,
-              1
-            ],
-            "sharpness": [
-              0.25,
-              0.75
-            ],
+            {
+              "point": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "tag": "corner"
+            }
+          ],
+          "edges": [
+            {
+              "vertices": [
+                0,
+                1
+              ],
+              "sharpness": [
+                0.25,
+                0.75
+              ],
+              "tag": "crease",
+              "sector_coefficients

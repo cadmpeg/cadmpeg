@@ -11,7 +11,7 @@
 use std::io::Cursor;
 
 use cadmpeg_codec_step::{StepCodec, StepSchema};
-use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::CadIr;
 use libfuzzer_sys::fuzz_target;
 
@@ -22,7 +22,7 @@ fuzz_target!(|data: &[u8]| {
             let _ = StepCodec::default()
                 .plan(
                     EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(StepSchema::Ap214.descriptor().id.as_str()),
+                    TargetRequest::Explicit(StepSchema::Ap214.descriptor().id.as_str()),
                 )
                 .and_then(|plan| plan.write_to(&mut out));
         }

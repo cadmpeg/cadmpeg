@@ -2,8 +2,64 @@
 
 use super::super::names::object_names;
 use super::super::{COMPACT_SCALAR_HEADER, NAME_MARKER, SCALAR_HEADER, VALUE_ONLY_SCALAR_HEADER};
-use super::named_scalars;
+use super::named_scalars_charged;
+use crate::records::operand_tag::NativeOperandTag;
 use crate::records::FeatureInputOperandKind;
+
+fn decoded_names(payload: &[u8]) -> Vec<crate::records::FeatureInputName> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(payload, &arena, &policy)
+        .expect("test context");
+    object_names(&ctx, payload, "lane").expect("service profile admits names")
+}
+
+#[test]
+fn named_scalar_identity_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let mut payload = Vec::new();
+    payload.extend_from_slice(NAME_MARKER);
+    payload.push(2);
+    for unit in "D1".encode_utf16() {
+        payload.extend_from_slice(&unit.to_le_bytes());
+    }
+    payload.extend_from_slice(SCALAR_HEADER);
+    payload.extend_from_slice(&0.025f64.to_le_bytes());
+    let trailer = payload.len();
+    payload.resize(trailer + 7, 0);
+    payload[trailer + 3..trailer + 7].copy_from_slice(&42u32.to_le_bytes());
+    let names = decoded_names(&payload);
+    assert_eq!(names.len(), 1);
+
+    let arena = DecodeArena::new();
+    let mut limited_policy = DecodePolicy::service();
+    limited_policy.limits.max_retained_bytes = 0;
+    let (limited, _) = DecodeContext::from_root_bytes(&payload, &arena, &limited_policy).unwrap();
+    let error = named_scalars_charged(&limited, &payload, "lane", &names).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "retain SLDPRT scalar identity"));
+
+    let (service, _) =
+        DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service()).unwrap();
+    assert_eq!(
+        named_scalars_charged(&service, &payload, "lane", &names).unwrap(),
+        vec![crate::records::FeatureInputScalar {
+            id: "sldprt:feature-input:scalar#lane:32".into(),
+            parent: "lane".into(),
+            feature_ref: None,
+            ordinal: 0,
+            offset: 32,
+            object_id: 42,
+            name: names[0].id.clone(),
+            value: cadmpeg_ir::scalar::FiniteReal::new(0.025).unwrap(),
+            role: crate::records::FeatureInputScalarRole::Native,
+            operands: Vec::new(),
+        }]
+    );
+}
 
 #[test]
 fn scalar_trailer_is_relative_to_variable_length_name() {
@@ -25,8 +81,14 @@ fn scalar_trailer_is_relative_to_variable_length_name() {
             .copy_from_slice(&index.to_le_bytes());
         payload[trailer + relative + 4..trailer + relative + 8].fill(0xff);
     }
-    let names = object_names(&payload, "lane");
-    let scalars = named_scalars(&payload, "lane", &names);
+    let names = decoded_names(&payload);
+    let scalars = named_scalars_charged(
+        &cadmpeg_test_support::service_decode_context(),
+        &payload,
+        "lane",
+        &names,
+    )
+    .unwrap();
     let [scalar] = scalars.as_slice() else {
         panic!("expected one scalar");
     };
@@ -57,12 +119,18 @@ fn compact_scalar_header_ends_at_the_value() {
     payload[trailer + 45..trailer + 47].copy_from_slice(&9u16.to_le_bytes());
     payload[trailer + 47..trailer + 51].fill(0xff);
 
-    let names = object_names(&payload, "lane");
-    let scalars = named_scalars(&payload, "lane", &names);
+    let names = decoded_names(&payload);
+    let scalars = named_scalars_charged(
+        &cadmpeg_test_support::service_decode_context(),
+        &payload,
+        "lane",
+        &names,
+    )
+    .unwrap();
     let [scalar] = scalars.as_slice() else {
         panic!("expected one scalar");
     };
-    assert_eq!(scalar.value, 0.0);
+    assert_eq!(scalar.value.get(), 0.0);
     assert_eq!(scalar.object_id, 115);
     assert_eq!(scalar.role, crate::records::FeatureInputScalarRole::Driving);
     assert!(scalar.entity_indices().is_empty());
@@ -73,8 +141,14 @@ fn compact_scalar_header_ends_at_the_value() {
             .map(|operand| (operand.kind, operand.entity_index))
             .collect::<Vec<_>>(),
         [
-            (FeatureInputOperandKind::Native(0x8152), 7),
-            (FeatureInputOperandKind::Native(0x8152), 9),
+            (
+                FeatureInputOperandKind::Native(NativeOperandTag::TAG_8152),
+                7
+            ),
+            (
+                FeatureInputOperandKind::Native(NativeOperandTag::TAG_8152),
+                9
+            ),
         ]
     );
 }
@@ -93,12 +167,18 @@ fn value_only_scalar_header_ends_at_the_value() {
     payload.resize(trailer + 24, 0);
     payload[trailer + 3..trailer + 7].copy_from_slice(&132u32.to_le_bytes());
 
-    let names = object_names(&payload, "lane");
-    let scalars = named_scalars(&payload, "lane", &names);
+    let names = decoded_names(&payload);
+    let scalars = named_scalars_charged(
+        &cadmpeg_test_support::service_decode_context(),
+        &payload,
+        "lane",
+        &names,
+    )
+    .unwrap();
     let [scalar] = scalars.as_slice() else {
         panic!("expected one scalar");
     };
-    assert_eq!(scalar.value, 0.0);
+    assert_eq!(scalar.value.get(), 0.0);
     assert_eq!(scalar.object_id, 132);
     assert_eq!(scalar.role, crate::records::FeatureInputScalarRole::Native);
     assert!(scalar.operands.is_empty());
@@ -123,17 +203,26 @@ fn legacy_scalar_layout_carries_shifted_role_and_operand() {
     payload[trailer + 38..trailer + 40].copy_from_slice(&0u16.to_le_bytes());
     payload[trailer + 40..trailer + 44].fill(0xff);
 
-    let names = object_names(&payload, "lane");
-    let scalars = named_scalars(&payload, "lane", &names);
+    let names = decoded_names(&payload);
+    let scalars = named_scalars_charged(
+        &cadmpeg_test_support::service_decode_context(),
+        &payload,
+        "lane",
+        &names,
+    )
+    .unwrap();
     let [scalar] = scalars.as_slice() else {
         panic!("expected one scalar");
     };
     assert_eq!(scalar.role, crate::records::FeatureInputScalarRole::Driving);
     assert_eq!(scalar.operands.len(), 1);
-    assert_eq!(scalar.operands[0].offset, (trailer + 36) as u64);
+    assert_eq!(
+        scalar.operands[0].offset,
+        cadmpeg_core::decode::u64_from_index(trailer + 36)
+    );
     assert_eq!(
         scalar.operands[0].kind,
-        crate::records::FeatureInputOperandKind::Native(0x80cc)
+        crate::records::FeatureInputOperandKind::Native(NativeOperandTag::TAG_80CC)
     );
     assert_eq!(scalar.operands[0].entity_index, 0);
 }
@@ -163,12 +252,21 @@ fn shifted_value_only_scalar_carries_standard_operand_cells() {
         payload[trailer + relative + 4..trailer + relative + 8].fill(0xff);
     }
 
-    let names = object_names(&payload, "lane");
-    let scalars = named_scalars(&payload, "lane", &names);
+    let names = decoded_names(&payload);
+    let scalars = named_scalars_charged(
+        &cadmpeg_test_support::service_decode_context(),
+        &payload,
+        "lane",
+        &names,
+    )
+    .unwrap();
     let [scalar] = scalars.as_slice() else {
         panic!("expected one scalar");
     };
-    assert_eq!(scalar.offset, value_offset as u64);
+    assert_eq!(
+        scalar.offset,
+        cadmpeg_core::decode::u64_from_index(value_offset)
+    );
     assert_eq!(scalar.object_id, 70);
     assert_eq!(scalar.role, crate::records::FeatureInputScalarRole::Driving);
     assert!(scalar.entity_indices().is_empty());
@@ -179,8 +277,14 @@ fn shifted_value_only_scalar_carries_standard_operand_cells() {
             .map(|operand| (operand.kind, operand.entity_index))
             .collect::<Vec<_>>(),
         [
-            (FeatureInputOperandKind::Native(0x81b2), 0),
-            (FeatureInputOperandKind::Native(0x81b2), 1),
+            (
+                FeatureInputOperandKind::Native(NativeOperandTag::TAG_81B2),
+                0
+            ),
+            (
+                FeatureInputOperandKind::Native(NativeOperandTag::TAG_81B2),
+                1
+            ),
         ]
     );
 }

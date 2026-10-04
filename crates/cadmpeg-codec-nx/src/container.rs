@@ -19,13 +19,14 @@ pub(crate) mod membership;
 use entry_ref::EntryRef;
 use membership::ObjectIdMembers;
 
-use std::borrow::Cow;
+pub(crate) mod source_image;
+use source_image::SourceImage;
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
 use cadmpeg_container::compound::{CompoundEntry, CompoundPrefixProbe, CompoundSnapshot};
 use cadmpeg_core::bytes::find;
-use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
+use cadmpeg_core::decode::{bounded_len, u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 
 use crate::layout::directory_entry as dir_entry;
@@ -36,24 +37,38 @@ use crate::layout::splmsstr_header as splmsstr;
 use crate::layout::ug_part_segment_index_row as index_row;
 
 /// The eight-byte signature used to identify an SPLMSSTR container.
-pub const MAGIC: &[u8; 8] = &splmsstr::MAGIC_VALUE;
+pub(crate) const MAGIC: &[u8; 8] = &splmsstr::MAGIC_VALUE;
 
 const LEGACY_UGII_PREFIX: &[u8; legacy_ugii_payload_prefix::VERSION] = b"\x0d\x01UGII  ";
 
 /// A directory entry from the `HEADER` or `FOOTER` region.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DirEntry {
+pub(crate) struct DirEntry {
     /// The `/Root/...` path name.
-    pub name: String,
+    pub(crate) name: String,
     /// Which region the entry was read from.
-    pub region: Region,
-    /// An in-bounds byte offset and length, or `None` for non-file entries.
-    pub file_span: Option<(u64, u64)>,
+    pub(crate) region: Region,
+    /// Directory or file payload.
+    pub(crate) body: DirEntryBody,
+}
+
+/// Payload of a directory entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DirEntryBody {
+    /// A directory without a file payload.
+    Directory,
+    /// A file payload at an offset and length.
+    File {
+        /// Payload byte offset.
+        offset: u64,
+        /// Payload byte length.
+        len: u64,
+    },
 }
 
 /// Directory region containing an entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Region {
+pub(crate) enum Region {
     /// The `HEADER` region near the start of the file.
     Header,
     /// The `FOOTER` region near EOF.
@@ -81,7 +96,7 @@ pub(crate) enum EntryContent {
 
 impl EntryContent {
     /// Stable inspection label for this content family.
-    pub fn role(self) -> ContainerRole {
+    pub(crate) fn role(self) -> ContainerRole {
         match self {
             Self::Directory => ContainerRole::Directory,
             Self::PartPayload => ContainerRole::PartPayload,
@@ -101,7 +116,7 @@ impl EntryContent {
     }
 
     /// Whether the codec retains the complete payload as named opaque content.
-    pub fn retains_opaque_payload(self) -> bool {
+    pub(crate) fn retains_opaque_payload(self) -> bool {
         matches!(
             self,
             Self::FastLoadStructure
@@ -110,95 +125,120 @@ impl EntryContent {
                 | Self::NamedOpaqueStream
         )
     }
-    pub fn label(self) -> &'static str {
+    pub(crate) fn label(self) -> &'static str {
         self.role().as_str()
     }
 }
 
 impl DirEntry {
+    pub(crate) fn file_span(&self) -> Option<(u64, u64)> {
+        match self.body {
+            DirEntryBody::Directory => None,
+            DirEntryBody::File { offset, len } => Some((offset, len)),
+        }
+    }
+
     /// Classify this entry by its canonical storage path.
     pub(crate) fn content(&self) -> EntryContent {
-        if self.file_span.is_none() {
-            return EntryContent::Directory;
-        }
-        match self.name.as_str() {
-            "/Root/UG_PART/UG_PART" => EntryContent::PartPayload,
-            "/Root/FastLoad/RMFastLoad" => EntryContent::ActiveBodyIndex,
-            "/Root/FastLoad/Structure" => EntryContent::FastLoadStructure,
-            "/Root/FastLoad/JT" => EntryContent::FastLoadJt,
-            "/Root/UG_PART/DisplayJT" => EntryContent::DisplayJt,
-            "/Root/UG_PART/LastSavedToggleInfoStream" => EntryContent::SaveToggleInfo,
-            "/Root/images/preview" => EntryContent::PreviewImage,
-            "/Root/part/arrangements" => EntryContent::Arrangements,
-            "/Root/part/attrs" => EntryContent::PartAttributes,
-            "/Root/qafmetadata" => EntryContent::AssetCatalog,
-            name if name.ends_with("/ExternalReferences") => EntryContent::ExternalReferences,
-            name if name.starts_with("/Root/materialsTif/") => EntryContent::MaterialTexture,
-            _ => EntryContent::NamedOpaqueStream,
+        match self.body {
+            DirEntryBody::Directory => EntryContent::Directory,
+            DirEntryBody::File { .. } => match self.name.as_str() {
+                "/Root/UG_PART/UG_PART" => EntryContent::PartPayload,
+                "/Root/FastLoad/RMFastLoad" => EntryContent::ActiveBodyIndex,
+                "/Root/FastLoad/Structure" => EntryContent::FastLoadStructure,
+                "/Root/FastLoad/JT" => EntryContent::FastLoadJt,
+                "/Root/UG_PART/DisplayJT" => EntryContent::DisplayJt,
+                "/Root/UG_PART/LastSavedToggleInfoStream" => EntryContent::SaveToggleInfo,
+                "/Root/images/preview" => EntryContent::PreviewImage,
+                "/Root/part/arrangements" => EntryContent::Arrangements,
+                "/Root/part/attrs" => EntryContent::PartAttributes,
+                "/Root/qafmetadata" => EntryContent::AssetCatalog,
+                name if name.ends_with("/ExternalReferences") => EntryContent::ExternalReferences,
+                name if name.starts_with("/Root/materialsTif/") => EntryContent::MaterialTexture,
+                _ => EntryContent::NamedOpaqueStream,
+            },
         }
     }
 }
 
 /// One 12-byte row in the canonical `UG_PART` segment index.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SegmentIndexRow {
+pub(crate) struct SegmentIndexRow {
     /// First little-endian row word.
-    pub type_code: u32,
+    pub(crate) type_code: u32,
     /// Second little-endian row word.
-    pub subtype_code: u32,
+    pub(crate) subtype_code: u32,
     /// Third little-endian row word.
-    pub value: u32,
+    pub(crate) value: u32,
 }
 
 /// Self-bounded segment index at the start of the canonical `UG_PART` payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SegmentIndex<'a> {
+pub(crate) struct SegmentIndex<'a> {
     /// Complete 12-byte rows before the declared table end.
-    pub rows: Vec<SegmentIndexRow>,
+    rows: &'a [u8],
     /// Zero to eleven trailing bytes after the last complete row.
-    pub padding: &'a [u8],
-    /// Declared payload-relative end of the index.
-    pub byte_len: usize,
+    padding: &'a [u8],
+}
+
+impl<'a> SegmentIndex<'a> {
+    pub(crate) fn row(&self, ordinal: usize) -> Option<SegmentIndexRow> {
+        let start = ordinal.checked_mul(index_row::LEN)?;
+        let end = start.checked_add(index_row::LEN)?;
+        let bytes = self.rows.get(start..end)?;
+        Self::parse_row(bytes)
+    }
+
+    pub(crate) fn rows(&self) -> impl Iterator<Item = SegmentIndexRow> + 'a {
+        self.rows
+            .chunks_exact(index_row::LEN)
+            .filter_map(Self::parse_row)
+    }
+
+    fn parse_row(bytes: &[u8]) -> Option<SegmentIndexRow> {
+        Some(SegmentIndexRow {
+            type_code: View::u32_le_at(bytes, index_row::TYPE_CODE)?,
+            subtype_code: View::u32_le_at(bytes, index_row::SUBTYPE_CODE)?,
+            value: View::u32_le_at(bytes, index_row::VALUE)?,
+        })
+    }
 }
 
 /// One segment-index word whose target frames a compressed stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SegmentStreamWrapper {
     /// Zero-based segment-index row ordinal.
-    pub row_ordinal: usize,
+    pub(crate) row_ordinal: usize,
     /// Zero-based word ordinal within the row.
-    pub word_ordinal: usize,
+    pub(crate) word_ordinal: usize,
     /// Absolute file offset of the wrapper.
-    pub wrapper_offset: usize,
+    pub(crate) wrapper_offset: usize,
     /// Bytes from the wrapper start through its extension.
-    pub wrapper_byte_len: usize,
+    pub(crate) wrapper_byte_len: usize,
     /// Absolute file offset of the candidate zlib member.
-    pub zlib_offset: usize,
-}
-
-/// One fixed-width member of the `RMFastLoad` object-id table.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RmFastLoadObjectId {
-    /// Decoded little-endian object identifier.
-    pub value: u32,
-    /// Payload-relative offset of the four-byte table word.
-    pub offset: usize,
+    pub(crate) zlib_offset: usize,
 }
 
 /// Counted object-id table in `/Root/FastLoad/RMFastLoad`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RmFastLoadObjectIdTable {
+pub(crate) struct RmFastLoadObjectIdTable {
     /// Payload-relative offset of the `UGS::Solid::Topol` registry marker.
-    pub registry_offset: usize,
+    pub(crate) registry_offset: usize,
     /// Payload-relative offset of the four-byte count word.
-    pub count_offset: usize,
+    pub(crate) count_offset: usize,
     /// Ordered fixed-width object-id members.
-    pub object_ids: ObjectIdMembers<RmFastLoadObjectId>,
+    pub(crate) object_ids: ObjectIdMembers<u32>,
+}
+
+impl RmFastLoadObjectIdTable {
+    pub(crate) fn member_offset(&self, ordinal: usize) -> usize {
+        self.count_offset + 4 + ordinal * 4
+    }
 }
 
 impl Region {
     /// Return the directory-region label used in summaries.
-    pub fn label(self) -> &'static str {
+    pub(crate) fn label(self) -> &'static str {
         match self {
             Region::Header => "HEADER",
             Region::Footer => "FOOTER",
@@ -207,53 +247,110 @@ impl Region {
 }
 
 impl<'a> Container<'a> {
-    /// Return an absolute source span only when it is wholly owned by one
-    /// catalogued directory entry.
-    pub(crate) fn bounded_entry_bytes(&self, offset: u64, byte_len: u64) -> Option<&[u8]> {
-        let offset = usize::try_from(offset).ok()?;
-        let byte_len = usize::try_from(byte_len).ok()?;
-        let end = offset.checked_add(byte_len)?;
-        let owner_end = self
+    /// Number of directory entries in a region.
+    pub(crate) fn entry_count(
+        &self,
+        ctx: &DecodeContext<'_>,
+        region: Region,
+    ) -> Result<usize, CodecError> {
+        ctx.charge_work(
+            u64_from_index(self.entries.len()),
+            "count NX directory entries",
+        )?;
+        Ok(self
             .entries
             .iter()
-            .filter_map(|entry| {
-                let (start, entry_byte_len) = entry.file_span?;
-                let start = usize::try_from(start).ok()?;
-                let entry_byte_len = usize::try_from(entry_byte_len).ok()?;
-                let entry_end = start.checked_add(entry_byte_len)?;
-                (start <= offset && end <= entry_end).then_some(entry_end)
-            })
-            .min()?;
-        (end <= owner_end)
-            .then(|| self.data.get(offset..end))
-            .flatten()
+            .filter(|entry| entry.region == region)
+            .count())
+    }
+
+    pub(crate) fn has_external_references(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<bool, CodecError> {
+        for entry in &self.entries {
+            ctx.charge_work(1, "scan NX external reference entries")?;
+            ctx.charge_work(
+                u64_from_index(entry.name.len()),
+                "scan NX external reference names",
+            )?;
+            if entry.name.contains("ExternalReferences") {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// Return an absolute source span only when it is wholly owned by one
+    /// catalogued directory entry.
+    pub(crate) fn bounded_entry_bytes(
+        &self,
+        ctx: &DecodeContext<'_>,
+        offset: u64,
+        byte_len: u64,
+    ) -> Result<Option<&[u8]>, CodecError> {
+        ctx.charge_work(
+            u64_from_index(self.entries.len()),
+            "bound NX directory entry",
+        )?;
+        let bytes = (|| {
+            let offset = usize::try_from(offset).ok()?;
+            let byte_len = usize::try_from(byte_len).ok()?;
+            let end = offset.checked_add(byte_len)?;
+            let owner_end = self
+                .entries
+                .iter()
+                .filter_map(|entry| {
+                    let (start, entry_byte_len) = entry.file_span()?;
+                    let start = usize::try_from(start).ok()?;
+                    let entry_byte_len = usize::try_from(entry_byte_len).ok()?;
+                    let entry_end = start.checked_add(entry_byte_len)?;
+                    (start <= offset && end <= entry_end).then_some(entry_end)
+                })
+                .min()?;
+            (end <= owner_end)
+                .then(|| self.data.get(offset..end))
+                .flatten()
+        })();
+        Ok(bytes)
     }
 
     /// Return bytes from an absolute offset through the end of its bounded
     /// directory-entry span.
-    pub(crate) fn bounded_entry_tail(&self, offset: u64) -> Option<&[u8]> {
-        let offset = usize::try_from(offset).ok()?;
-        let end = self
-            .entries
-            .iter()
-            .filter_map(|entry| {
-                let (start, byte_len) = entry.file_span?;
-                let start = usize::try_from(start).ok()?;
-                let byte_len = usize::try_from(byte_len).ok()?;
-                let end = start.checked_add(byte_len)?;
-                (start <= offset && offset < end).then_some(end)
-            })
-            .min()?;
-        self.data.get(offset..end)
+    pub(crate) fn bounded_entry_tail(
+        &self,
+        ctx: &DecodeContext<'_>,
+        offset: u64,
+    ) -> Result<Option<&[u8]>, CodecError> {
+        ctx.charge_work(
+            u64_from_index(self.entries.len()),
+            "bound NX directory entry",
+        )?;
+        let bytes = (|| {
+            let offset = usize::try_from(offset).ok()?;
+            let end = self
+                .entries
+                .iter()
+                .filter_map(|entry| {
+                    let (start, byte_len) = entry.file_span()?;
+                    let start = usize::try_from(start).ok()?;
+                    let byte_len = usize::try_from(byte_len).ok()?;
+                    let end = start.checked_add(byte_len)?;
+                    (start <= offset && offset < end).then_some(end)
+                })
+                .min()?;
+            self.data.get(offset..end)
+        })();
+        Ok(bytes)
     }
 
     /// Decode the self-bounded segment index in `/Root/UG_PART/UG_PART`.
-    pub fn segment_index(&self) -> Option<(&DirEntry, SegmentIndex<'_>)> {
+    pub(crate) fn segment_index(&self) -> Option<(&DirEntry, SegmentIndex<'_>)> {
         let entry = self
             .entries
             .iter()
-            .find(|entry| entry.name == "/Root/UG_PART/UG_PART" && entry.file_span.is_some())?;
-        let (offset, size) = entry.file_span?;
+            .find(|entry| entry.name == "/Root/UG_PART/UG_PART" && entry.file_span().is_some())?;
+        let (offset, size) = entry.file_span()?;
         let (offset, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
         let payload = self.data.get(offset..offset.checked_add(size)?)?;
         let row_one = payload.get(index_row::LEN..index_row::LEN * 2)?;
@@ -267,125 +364,130 @@ impl<'a> Container<'a> {
             return None;
         }
         let complete_len = byte_len / index_row::LEN * index_row::LEN;
-        let rows = payload[..complete_len]
-            .chunks_exact(index_row::LEN)
-            .map(|row| SegmentIndexRow {
-                type_code: View::u32_le_at(row, index_row::TYPE_CODE)
-                    .expect("complete segment-index row"),
-                subtype_code: View::u32_le_at(row, index_row::SUBTYPE_CODE)
-                    .expect("complete segment-index row"),
-                value: View::u32_le_at(row, index_row::VALUE).expect("complete segment-index row"),
-            })
-            .collect();
+        let rows = &payload[..complete_len];
+        rows.chunks_exact(index_row::LEN)
+            .try_for_each(|row| SegmentIndex::parse_row(row).map(|_| ()))?;
         Some((
             entry,
             SegmentIndex {
                 rows,
                 padding: &payload[complete_len..byte_len],
-                byte_len,
             },
         ))
     }
 
     /// Resolve every in-bounds compressed-stream wrapper addressed by the
     /// canonical segment index, preserving row and word order.
-    pub(crate) fn segment_stream_wrappers(&self) -> Vec<SegmentStreamWrapper> {
-        let Some((entry, index)) = self.segment_index() else {
-            return Vec::new();
-        };
-        let Some((entry_offset, entry_size)) = entry.file_span else {
-            return Vec::new();
-        };
-        let (Ok(entry_start), Ok(entry_size)) =
-            (usize::try_from(entry_offset), usize::try_from(entry_size))
-        else {
-            return Vec::new();
-        };
-        let Some(entry_end) = entry_start.checked_add(entry_size) else {
-            return Vec::new();
-        };
-        let Some(payload) = self.data.get(entry_start..entry_end) else {
-            return Vec::new();
-        };
-        let mut wrappers = Vec::new();
-        for (row_ordinal, row) in index.rows.iter().enumerate() {
-            for (word_ordinal, relative) in [row.type_code, row.subtype_code, row.value]
-                .into_iter()
-                .enumerate()
-            {
-                let relative = relative as usize;
-                let Some(wrapper) = payload.get(relative..) else {
-                    continue;
-                };
-                let Some(wrapper_word) = View::u32_le_at(wrapper, 0) else {
-                    continue;
-                };
-                let extension = (wrapper_word & 0x3fff_ffff) as usize;
-                let wrapper_byte_len = match wrapper_word & 0xc000_0000 {
-                    0x8000_0000 => 8usize.checked_add(extension),
-                    0xc000_0000 => 33usize.checked_add(extension),
-                    _ => continue,
-                };
-                let Some(wrapper_byte_len) = wrapper_byte_len else {
-                    continue;
-                };
-                let Some(zlib_relative) = relative.checked_add(wrapper_byte_len) else {
-                    continue;
-                };
-                if zlib_relative >= payload.len() {
-                    continue;
-                }
-                wrappers.push(SegmentStreamWrapper {
-                    row_ordinal,
-                    word_ordinal,
-                    wrapper_offset: entry_start + relative,
-                    wrapper_byte_len,
-                    zlib_offset: entry_start + zlib_relative,
-                });
-            }
-        }
-        wrappers
+    pub(crate) fn segment_stream_wrappers(
+        &self,
+    ) -> impl Iterator<Item = SegmentStreamWrapper> + '_ {
+        let source = (|| {
+            let (entry, index) = self.segment_index()?;
+            let (entry_offset, entry_size) = entry.file_span()?;
+            let entry_start = usize::try_from(entry_offset).ok()?;
+            let entry_size = usize::try_from(entry_size).ok()?;
+            let entry_end = entry_start.checked_add(entry_size)?;
+            let payload = self.data.get(entry_start..entry_end)?;
+            Some((index, payload, entry_start))
+        })();
+        source
+            .into_iter()
+            .flat_map(|(index, payload, entry_start)| {
+                index
+                    .rows()
+                    .enumerate()
+                    .flat_map(move |(row_ordinal, row)| {
+                        [row.type_code, row.subtype_code, row.value]
+                            .into_iter()
+                            .enumerate()
+                            .filter_map(move |(word_ordinal, relative)| {
+                                let relative = usize::try_from(relative).ok()?;
+                                let wrapper = payload.get(relative..)?;
+                                let wrapper_word = View::u32_le_at(wrapper, 0)?;
+                                let extension = usize::try_from(wrapper_word & 0x3fff_ffff).ok()?;
+                                let wrapper_byte_len = match wrapper_word & 0xc000_0000 {
+                                    0x8000_0000 => 8usize.checked_add(extension),
+                                    0xc000_0000 => 33usize.checked_add(extension),
+                                    _ => None,
+                                }?;
+                                let zlib_relative = relative.checked_add(wrapper_byte_len)?;
+                                (zlib_relative < payload.len()).then_some(SegmentStreamWrapper {
+                                    row_ordinal,
+                                    word_ordinal,
+                                    wrapper_offset: entry_start.checked_add(relative)?,
+                                    wrapper_byte_len,
+                                    zlib_offset: entry_start.checked_add(zlib_relative)?,
+                                })
+                            })
+                    })
+            })
     }
 
     /// Locate independently size-framed NX object-model sections.
-    pub fn om_sections(&self) -> Vec<(EntryRef<'_>, crate::om::Section<'_>)> {
-        let framed_cache = self.om_section_cache.get_or_init(|| match &self.data {
-            Cow::Borrowed(bytes) => {
-                let bytes: &'a [u8] = bytes;
-                let (sections, _) = parse_framed_section_cache(bytes, &self.entries, false);
-                FramedSectionCache::Borrowed { sections }
-            }
-            Cow::Owned(bytes) => {
-                let (sections, layouts) = parse_framed_section_cache(bytes, &self.entries, true);
-                drop(sections);
-                FramedSectionCache::Owned { layouts }
-            }
-        });
-        match framed_cache {
-            FramedSectionCache::Borrowed { sections } => sections
-                .iter()
-                .filter_map(|(entry_index, section)| {
-                    EntryRef::new(&self.entries, *entry_index).map(|entry| (entry, section.clone()))
-                })
-                .collect(),
-            FramedSectionCache::Owned { layouts } => layouts
-                .iter()
-                .filter_map(|(entry_index, layout)| {
-                    EntryRef::new(&self.entries, *entry_index)
-                        .map(|entry| (entry, layout.materialize()))
-                })
-                .collect(),
+    pub(crate) fn om_sections(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Vec<(EntryRef<'_>, crate::om::Section<'_>)>, CodecError> {
+        if self.om_section_cache.get().is_none() {
+            let cache = match &self.data {
+                SourceImage::Borrowed(view) => {
+                    let bytes = view.window();
+                    let bytes: &'a [u8] = bytes;
+                    let (sections, _) =
+                        parse_framed_section_cache(ctx, bytes, &self.entries, false)?;
+                    FramedSectionCache::Borrowed { sections }
+                }
+                SourceImage::Owned(bytes) => {
+                    let (sections, layouts) =
+                        parse_framed_section_cache(ctx, bytes, &self.entries, true)?;
+                    drop(sections);
+                    FramedSectionCache::Owned { layouts }
+                }
+            };
+            drop(self.om_section_cache.set(cache));
         }
+        let framed_cache = self
+            .om_section_cache
+            .get()
+            .ok_or_else(|| ctx.refuse_codec_limit("nx framed OM cache", 0, 1))?;
+        let mut result = ctx.collection_vec(
+            match framed_cache {
+                FramedSectionCache::Borrowed { sections } => sections.len(),
+                FramedSectionCache::Owned { layouts } => layouts.len(),
+            },
+            "NX framed section readers",
+        )?;
+        match framed_cache {
+            FramedSectionCache::Borrowed { sections } => {
+                for (entry_index, section) in sections {
+                    if let Some(entry) = EntryRef::new(&self.entries, *entry_index) {
+                        result.push((entry, section.clone()));
+                    }
+                }
+            }
+            FramedSectionCache::Owned { layouts } => {
+                for (entry_index, layout) in layouts {
+                    if let Some(entry) = EntryRef::new(&self.entries, *entry_index) {
+                        result.push((entry, layout.materialize(ctx)?));
+                    }
+                }
+            }
+        }
+        Ok(result)
     }
 
     /// Locate indexed NX object-model sections in catalogued file entries.
-    pub fn indexed_om_sections(&self) -> Vec<(EntryRef<'_>, crate::om::IndexedSection<'_>)> {
-        let cache = self
-            .indexed_section_layouts
-            .get_or_init(|| match &self.data {
-                Cow::Borrowed(bytes) => {
+    pub(crate) fn indexed_om_sections(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Vec<(EntryRef<'_>, crate::om::IndexedSection<'_>)>, CodecError> {
+        if self.indexed_section_layouts.get().is_none() {
+            let cache = match &self.data {
+                SourceImage::Borrowed(view) => {
+                    let bytes = view.window();
                     let bytes: &'a [u8] = bytes;
-                    let (sections, _) = parse_indexed_section_cache(bytes, &self.entries, false);
+                    let (sections, _) =
+                        parse_indexed_section_cache(ctx, bytes, &self.entries, false)?;
                     let mut blocks = BTreeMap::new();
                     for (section_ordinal, (entry_index, section)) in sections.iter().enumerate() {
                         let Some((control, _, records)) = section.as_offset_only() else {
@@ -394,44 +496,83 @@ impl<'a> Container<'a> {
                         let entry_offset = self
                             .entries
                             .get(*entry_index)
-                            .and_then(|entry| entry.file_span)
+                            .and_then(crate::container::DirEntry::file_span)
                             .map_or(0, |(offset, _)| offset);
-                        blocks.insert(
-                            format!("nx:om-data-blocks-{section_ordinal}:block#0"),
-                            (control.bytes, entry_offset + control.offset as u64),
-                        );
+                        ctx.charge_retained(
+                            u64_from_index(std::mem::size_of::<(String, (&[u8], u64))>()),
+                            "NX cached offset blocks",
+                        )?;
+                        ctx.insert_btree_map(
+                            &mut blocks,
+                            offset_block_key(ctx, section_ordinal, 0)?,
+                            (
+                                control.bytes,
+                                entry_offset + cadmpeg_core::decode::u64_from_index(control.offset),
+                            ),
+                            "NX cached offset blocks",
+                        )?;
                         for (record_ordinal, block) in records.iter().enumerate() {
-                            blocks.insert(
-                                format!(
-                                    "nx:om-data-blocks-{section_ordinal}:block#{}",
-                                    record_ordinal + 1
+                            let ordinal = record_ordinal.checked_add(1).ok_or_else(|| {
+                                ctx.refuse_codec_limit(
+                                    "NX offset block ordinal",
+                                    u64::MAX,
+                                    u64::MAX,
+                                )
+                            })?;
+                            ctx.charge_retained(
+                                u64_from_index(std::mem::size_of::<(String, (&[u8], u64))>()),
+                                "NX cached offset blocks",
+                            )?;
+                            ctx.insert_btree_map(
+                                &mut blocks,
+                                offset_block_key(ctx, section_ordinal, ordinal)?,
+                                (
+                                    block.bytes,
+                                    entry_offset
+                                        + cadmpeg_core::decode::u64_from_index(block.offset),
                                 ),
-                                (block.bytes, entry_offset + block.offset as u64),
-                            );
+                                "NX cached offset blocks",
+                            )?;
                         }
                     }
                     IndexedSectionCache::Borrowed { sections, blocks }
                 }
-                Cow::Owned(bytes) => {
-                    let (_, layouts) = parse_indexed_section_cache(bytes, &self.entries, true);
+                SourceImage::Owned(bytes) => {
+                    let (_, layouts) =
+                        parse_indexed_section_cache(ctx, bytes, &self.entries, true)?;
                     IndexedSectionCache::Owned { layouts }
                 }
-            });
-        match cache {
-            IndexedSectionCache::Borrowed { sections, .. } => sections
-                .iter()
-                .filter_map(|(entry_index, section)| {
-                    EntryRef::new(&self.entries, *entry_index).map(|entry| (entry, section.clone()))
-                })
-                .collect(),
-            IndexedSectionCache::Owned { layouts } => layouts
-                .iter()
-                .filter_map(|(entry_index, layout)| {
-                    EntryRef::new(&self.entries, *entry_index)
-                        .map(|entry| (entry, layout.materialize()))
-                })
-                .collect(),
+            };
+            drop(self.indexed_section_layouts.set(cache));
         }
+        let cache = self
+            .indexed_section_layouts
+            .get()
+            .ok_or_else(|| ctx.refuse_codec_limit("nx indexed OM cache", 0, 1))?;
+        let mut result = ctx.collection_vec(
+            match cache {
+                IndexedSectionCache::Borrowed { sections, .. } => sections.len(),
+                IndexedSectionCache::Owned { layouts } => layouts.len(),
+            },
+            "NX indexed section readers",
+        )?;
+        match cache {
+            IndexedSectionCache::Borrowed { sections, .. } => {
+                for (entry_index, section) in sections {
+                    if let Some(entry) = EntryRef::new(&self.entries, *entry_index) {
+                        result.push((entry, section.clone()));
+                    }
+                }
+            }
+            IndexedSectionCache::Owned { layouts } => {
+                for (entry_index, layout) in layouts {
+                    if let Some(entry) = EntryRef::new(&self.entries, *entry_index) {
+                        result.push((entry, layout.materialize(ctx)?));
+                    }
+                }
+            }
+        }
+        Ok(result)
     }
 
     /// Return the cached bytes and source offsets of every borrowed offset-store block.
@@ -450,97 +591,169 @@ impl<'a> Container<'a> {
     }
 
     /// Extract child-part paths from catalogued external-reference payloads.
-    pub fn external_reference_paths(&self) -> Vec<String> {
-        self.external_reference_strings()
-            .into_iter()
-            .map(|(_, _, path)| path)
-            .collect()
+    pub(crate) fn external_reference_paths(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Vec<String>, CodecError> {
+        let strings = self.external_reference_strings(ctx)?;
+        let count = strings.len();
+        let mut paths = ctx.collection_vec(count, "nx external reference paths")?;
+        for (_, _, path) in strings {
+            let mut copy = ctx.retained_string(path.len(), "nx external reference path")?;
+            copy.push_str(&path);
+            paths.push(copy);
+        }
+        Ok(paths)
     }
 
     /// Extract child-part strings with their owning entry and payload offset.
-    pub(crate) fn external_reference_strings(&self) -> Vec<(&DirEntry, usize, String)> {
-        self.entries
-            .iter()
-            .filter(|entry| entry.name.contains("ExternalReferences"))
-            .filter_map(|entry| entry.file_span.map(|span| (entry, span)))
-            .flat_map(|(entry, (offset, size))| {
-                let Ok(offset) = usize::try_from(offset) else {
-                    return Vec::new();
-                };
-                let Ok(size) = usize::try_from(size) else {
-                    return Vec::new();
-                };
-                self.data
-                    .get(offset..offset.saturating_add(size))
-                    .and_then(parse_extref_string_table)
-                    .map(|(_, strings)| {
-                        strings
-                            .into_iter()
-                            .map(|(relative, value)| (entry, relative, value))
-                            .collect()
-                    })
-                    .unwrap_or_default()
-            })
-            .collect()
+    pub(crate) fn external_reference_strings(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Vec<(&DirEntry, usize, String)>, CodecError> {
+        let mut out = Vec::new();
+        for entry in &self.entries {
+            ctx.charge_work(1, "scan NX external reference entries")?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(entry.name.len()),
+                "scan NX external reference names",
+            )?;
+            if !entry.name.contains("ExternalReferences") {
+                continue;
+            }
+            let Some((offset, size)) = entry.file_span() else {
+                continue;
+            };
+            let (Ok(offset), Ok(size)) = (usize::try_from(offset), usize::try_from(size)) else {
+                continue;
+            };
+            let Some(end) = offset.checked_add(size) else {
+                continue;
+            };
+            let Some(payload) = self.data.get(offset..end) else {
+                continue;
+            };
+            let Some((_, strings)) = parse_extref_string_table(ctx, payload)? else {
+                continue;
+            };
+            let count = strings.len();
+            ctx.reserve_vec(&mut out, count, "nx external reference strings")?;
+            out.extend(
+                strings
+                    .into_iter()
+                    .map(|(relative, value)| (entry, relative, value)),
+            );
+        }
+        Ok(out)
     }
 
     /// Decode indexed EXTREFSTREAM record prefixes and sorted handle lanes.
-    pub(crate) fn external_reference_records(&self) -> Vec<(&DirEntry, ExtrefRecord)> {
-        self.entries
-            .iter()
-            .filter(|entry| entry.name.contains("ExternalReferences"))
-            .filter_map(|entry| {
-                let (offset, size) = entry.file_span?;
-                let (offset, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
-                let payload = self.data.get(offset..offset.checked_add(size)?)?;
-                Some(
-                    parse_extref_records(payload)
-                        .into_iter()
-                        .map(move |record| (entry, record)),
-                )
-            })
-            .flatten()
-            .collect()
+    pub(crate) fn external_reference_records(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Vec<(&DirEntry, ExtrefRecord)>, CodecError> {
+        let mut out = Vec::new();
+        for entry in &self.entries {
+            ctx.charge_work(1, "scan NX external reference entries")?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(entry.name.len()),
+                "scan NX external reference names",
+            )?;
+            if !entry.name.contains("ExternalReferences") {
+                continue;
+            }
+            let Some((offset, size)) = entry.file_span() else {
+                continue;
+            };
+            let (Ok(offset), Ok(size)) = (usize::try_from(offset), usize::try_from(size)) else {
+                continue;
+            };
+            let Some(end) = offset.checked_add(size) else {
+                continue;
+            };
+            let Some(payload) = self.data.get(offset..end) else {
+                continue;
+            };
+            let records = parse_extref_records(ctx, payload)?;
+            let count = records.len();
+            ctx.reserve_vec(&mut out, count, "nx external reference record entries")?;
+            out.extend(records.into_iter().map(|record| (entry, record)));
+        }
+        Ok(out)
     }
 
     /// Retain every record boundary from each valid EXTREFSTREAM index.
     pub(crate) fn external_reference_indexed_records(
         &self,
-    ) -> Vec<(&DirEntry, ExtrefIndexedRecord)> {
-        self.entries
-            .iter()
-            .filter(|entry| entry.name.contains("ExternalReferences"))
-            .filter_map(|entry| {
-                let (offset, size) = entry.file_span?;
-                let (offset, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
-                let payload = self.data.get(offset..offset.checked_add(size)?)?;
-                Some(
-                    parse_extref_record_index(payload)?
-                        .into_iter()
-                        .map(move |record| (entry, record)),
-                )
-            })
-            .flatten()
-            .collect()
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Vec<(&DirEntry, ExtrefIndexedRecord)>, CodecError> {
+        let mut out = Vec::new();
+        for entry in &self.entries {
+            ctx.charge_work(1, "scan NX external reference entries")?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(entry.name.len()),
+                "scan NX external reference names",
+            )?;
+            if !entry.name.contains("ExternalReferences") {
+                continue;
+            }
+            let Some((offset, size)) = entry.file_span() else {
+                continue;
+            };
+            let (Ok(offset), Ok(size)) = (usize::try_from(offset), usize::try_from(size)) else {
+                continue;
+            };
+            let Some(end) = offset.checked_add(size) else {
+                continue;
+            };
+            let Some(payload) = self.data.get(offset..end) else {
+                continue;
+            };
+            let Some(records) = parse_extref_record_index(ctx, payload)? else {
+                continue;
+            };
+            let count = records.len();
+            ctx.reserve_vec(&mut out, count, "nx external reference indexed entries")?;
+            out.extend(records.into_iter().map(|record| (entry, record)));
+        }
+        Ok(out)
     }
 
-    /// Decode the counted object-id table from `/Root/FastLoad/RMFastLoad`.
-    pub fn rmfastload_object_id_table(&self) -> Option<(&DirEntry, RmFastLoadObjectIdTable)> {
+    /// Borrow the admitted object-id table from `/Root/FastLoad/RMFastLoad`.
+    pub(crate) fn rmfastload_object_id_table(
+        &self,
+    ) -> Option<(&DirEntry, &RmFastLoadObjectIdTable)> {
+        let (entry_index, table) = self.fastload_table.as_ref()?;
+        Some((self.entries.get(*entry_index)?, table))
+    }
+
+    fn parse_rmfastload_object_id_table(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<(usize, RmFastLoadObjectIdTable)>, CodecError> {
         const REGISTRY_MARKER: &[u8] = b"UGS::Solid::Topol";
-        let entry = self
-            .entries
-            .iter()
-            .find(|entry| entry.name == "/Root/FastLoad/RMFastLoad")
-            .filter(|entry| entry.file_span.is_some())?;
-        let (offset, size) = entry.file_span?;
-        let (offset, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
-        let bytes = self.data.get(offset..offset.checked_add(size)?)?;
-        let registry_offset = find(bytes, REGISTRY_MARKER)?;
-        let search_start = registry_offset.checked_add(REGISTRY_MARKER.len())?;
-        // A suffix of the table can form a smaller span ending at the same
-        // product record. The first complete span is the table boundary.
-        let (count_offset, count, ids_start) = (search_start..bytes.len().saturating_sub(3))
-            .find_map(|count_offset| {
+        let Some((entry_index, bytes, registry_offset, search_start)) = (|| {
+            let entry_index = self.entries.iter().position(|entry| {
+                entry.name == "/Root/FastLoad/RMFastLoad" && entry.file_span().is_some()
+            })?;
+            let (offset, size) = self.entries[entry_index].file_span()?;
+            let (offset, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
+            let bytes = self.data.get(offset..offset.checked_add(size)?)?;
+            let registry_offset = find(bytes, REGISTRY_MARKER)?;
+            let search_start = registry_offset.checked_add(REGISTRY_MARKER.len())?;
+            Some((entry_index, bytes, registry_offset, search_start))
+        })() else {
+            return Ok(None);
+        };
+        // Search candidates in byte order and use the first span whose suffix
+        // parses as a modern product record.
+        let mut candidate = None;
+        let Some(search_end) = bytes.len().checked_sub(3) else {
+            return Ok(None);
+        };
+        for count_offset in search_start..search_end {
+            ctx.charge_work(1, "scan NX FastLoad table candidates")?;
+            let Some((count, ids_start, id_bytes)) = (|| {
                 let count = usize::try_from(View::u32_le_at(bytes, count_offset)?).ok()?;
                 let id_bytes = count.checked_mul(4)?;
                 let ids_start = count_offset.checked_add(4)?;
@@ -550,159 +763,323 @@ impl<'a> Container<'a> {
                     crate::om::product::ProductRecordForm::Modern,
                 )
                 .is_some()
-                .then_some((count_offset, count, ids_start))
+                .then_some((count, ids_start, id_bytes))
+            })() else {
+                continue;
+            };
+            candidate = Some((count_offset, count, ids_start, id_bytes));
+            break;
+        }
+        let Some((count_offset, count, ids_start, _id_bytes)) = candidate else {
+            return Ok(None);
+        };
+        let count_u64 = u64::try_from(count)
+            .map_err(|_| CodecError::NotImplemented("FastLoad ID count exceeds u64".into()))?;
+        ctx.charge_collection_items(count_u64, "admit NX FastLoad object IDs")?;
+        let mut object_ids = Vec::new();
+        ctx.reserve_capacity(&mut object_ids, count, "retain NX FastLoad object IDs")?;
+        for ordinal in 0..count {
+            let offset = ids_start + ordinal * 4;
+            let object_id = View::u32_le_at(bytes, offset).ok_or_else(|| {
+                CodecError::Malformed("FastLoad object ID span is inconsistent".into())
             })?;
-        let object_ids = (0..count)
-            .map(|ordinal| {
-                let offset = ids_start + ordinal * 4;
-                Some(RmFastLoadObjectId {
-                    value: View::u32_le_at(bytes, offset)?,
-                    offset,
-                })
-            })
-            .collect::<Option<Vec<_>>>()?;
-        let object_ids = ObjectIdMembers::new(object_ids).ok()?;
-        Some((
-            entry,
+            object_ids.push(object_id);
+        }
+        let object_ids = ObjectIdMembers::new(object_ids)
+            .map_err(|message| CodecError::Malformed(message.into()))?;
+        Ok(Some((
+            entry_index,
             RmFastLoadObjectIdTable {
                 registry_offset,
                 count_offset,
                 object_ids,
             },
-        ))
+        )))
     }
 }
 
 /// Decoded prefix of one indexed EXTREFSTREAM record.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ExtrefRecord {
-    pub record_id: u32,
-    pub offset: usize,
-    pub declared_count: u16,
-    pub id_slots: [u32; 4],
-    pub handles: ExtrefHandles,
-    pub tail_byte_len: usize,
+    pub(crate) record_id: u32,
+    pub(crate) offset: usize,
+    pub(crate) declared_count: u16,
+    pub(crate) id_slots: [u32; 4],
+    pub(crate) handles: ExtrefHandles,
+    pub(crate) tail_byte_len: usize,
 }
 
 /// One externally bounded record from a validated EXTREFSTREAM index.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ExtrefIndexedRecord {
-    pub record_id: u32,
-    pub offset: usize,
-    pub byte_len: usize,
+    pub(crate) record_id: u32,
+    pub(crate) offset: usize,
+    pub(crate) byte_len: usize,
 }
 
-pub(crate) fn parse_extref_string_table(payload: &[u8]) -> Option<(usize, Vec<(usize, String)>)> {
-    (0..payload.len().saturating_sub(4))
-        .rev()
-        .find_map(|marker| {
-            (payload[marker] == 1).then_some(())?;
-            let count = View::u32_le_at(payload, marker + 1)? as usize;
-            let mut pos = marker + 5;
-            // Each entry is a 2-byte length prefix plus at least one non-empty string byte.
-            let count = bounded_len(count as u64, 3, payload.len().saturating_sub(pos))?;
-            let mut out = Vec::with_capacity(count);
-            for _ in 0..count {
-                let length = usize::from(View::u16_le_at(payload, pos)?);
-                let string_offset = pos + 2;
-                pos = string_offset.checked_add(length)?;
-                let raw = payload.get(string_offset..pos)?;
-                let value = std::str::from_utf8(raw).ok()?;
-                (!value.is_empty() && value.chars().all(|character| !character.is_control()))
-                    .then_some(())?;
-                out.push((string_offset, value.to_string()));
-            }
-            (pos == payload.len()).then_some((marker, out))
-        })
-}
-
-pub(crate) fn parse_extref_records(payload: &[u8]) -> Vec<ExtrefRecord> {
-    let Some(index) = parse_extref_record_index(payload) else {
-        return Vec::new();
+fn locate_extref_string_table(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Option<(usize, usize, usize)>, CodecError> {
+    let Some(last_marker) = payload.len().checked_sub(4) else {
+        return Ok(None);
     };
-    let parse_record = |record_id, offset, end| -> Option<ExtrefRecord> {
-        let bytes = payload.get(offset..end)?;
-        (bytes.get(..handle_set::N) == Some(&[1, 0, 0, 0])
-            && bytes.get(handle_set::MARKER_A) == Some(&1))
-        .then_some(())?;
-        let declared_count = View::u16_be_at(bytes, handle_set::N)?;
+    for marker in (0..last_marker).rev() {
+        ctx.charge_work(1, "nx external reference string table scan")?;
+        if payload[marker] != 1 {
+            continue;
+        }
+        let Some(count) = View::u32_le_at(payload, marker + 1) else {
+            continue;
+        };
+        let Some(start) = marker.checked_add(5) else {
+            continue;
+        };
+        // Each entry is a 2-byte length prefix plus at least one non-empty string byte.
+        let Some(remaining) = payload.len().checked_sub(start) else {
+            continue;
+        };
+        let Some(count) = bounded_len(u64::from(count), 3, remaining) else {
+            continue;
+        };
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(count),
+            "nx external reference string table entries",
+        )?;
+        let valid = (|| -> Result<Option<usize>, CodecError> {
+            let mut pos = start;
+            for _ in 0..count {
+                let Some(length) = View::u16_le_at(payload, pos).map(usize::from) else {
+                    return Ok(None);
+                };
+                let Some(string_offset) = pos.checked_add(2) else {
+                    return Ok(None);
+                };
+                let Some(end) = string_offset.checked_add(length) else {
+                    return Ok(None);
+                };
+                let Some(raw) = payload.get(string_offset..end) else {
+                    return Ok(None);
+                };
+                ctx.charge_work(
+                    u64_from_index(raw.len()),
+                    "validate NX external reference UTF-8",
+                )?;
+                let Ok(value) = std::str::from_utf8(raw) else {
+                    return Ok(None);
+                };
+                ctx.charge_work(
+                    u64_from_index(raw.len()),
+                    "validate NX external reference controls",
+                )?;
+                if value.is_empty() || value.chars().any(char::is_control) {
+                    return Ok(None);
+                }
+                pos = end;
+            }
+            Ok(Some(pos))
+        })()?;
+        if valid != Some(payload.len()) {
+            continue;
+        }
+        return Ok(Some((marker, count, start)));
+    }
+    Ok(None)
+}
+
+type ExtrefStringTable = (usize, Vec<(usize, String)>);
+
+fn parse_extref_string_table(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Option<ExtrefStringTable>, CodecError> {
+    let Some((marker, count, start)) = locate_extref_string_table(ctx, payload)? else {
+        return Ok(None);
+    };
+    let mut out = ctx.collection_vec(count, "nx external reference string table")?;
+    let mut pos = start;
+    for _ in 0..count {
+        let Some(length) = View::u16_le_at(payload, pos).map(usize::from) else {
+            return Ok(None);
+        };
+        let Some(string_offset) = pos.checked_add(2) else {
+            return Ok(None);
+        };
+        let Some(end) = string_offset.checked_add(length) else {
+            return Ok(None);
+        };
+        let Some(raw) = payload.get(string_offset..end) else {
+            return Ok(None);
+        };
+        ctx.charge_work(
+            u64_from_index(raw.len()),
+            "read NX external reference UTF-8",
+        )?;
+        let Ok(value) = std::str::from_utf8(raw) else {
+            return Ok(None);
+        };
+        let copy = ctx.copy_retained_text(value, "nx external reference string")?;
+        out.push((string_offset, copy));
+        pos = end;
+    }
+    Ok(Some((marker, out)))
+}
+
+fn parse_extref_records(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<ExtrefRecord>, CodecError> {
+    let Some(index) = parse_extref_record_index(ctx, payload)? else {
+        return Ok(Vec::new());
+    };
+    let parse_record = |record_id, offset, end| -> Result<Option<ExtrefRecord>, CodecError> {
+        let Some(bytes) = payload.get(offset..end) else {
+            return Ok(None);
+        };
+        if bytes.get(..handle_set::N) != Some(&[1, 0, 0, 0])
+            || bytes.get(handle_set::MARKER_A) != Some(&1)
+        {
+            return Ok(None);
+        }
+        let Some(declared_count) = View::u16_be_at(bytes, handle_set::N) else {
+            return Ok(None);
+        };
         let mut id_slots = [0; 4];
         for (slot, value) in id_slots.iter_mut().enumerate() {
-            *value = View::u32_le_at(bytes, handle_set::ID_SLOTS + slot * 4)?;
+            let Some(id) = View::u32_le_at(bytes, handle_set::ID_SLOTS + slot * 4) else {
+                return Ok(None);
+            };
+            *value = id;
         }
-        (bytes.get(handle_set::MARKER_B) == Some(&1)).then_some(())?;
-        let count = usize::from(*bytes.get(handle_set::COUNT)?);
-        (count >= 2).then_some(())?;
+        if bytes.get(handle_set::MARKER_B) != Some(&1) {
+            return Ok(None);
+        }
+        let Some(count) = bytes
+            .get(handle_set::COUNT)
+            .map(|value| usize::from(*value))
+        else {
+            return Ok(None);
+        };
+        if count < 2 {
+            return Ok(None);
+        }
         let handle_token_count = count - 1;
-        let mut handles = Vec::with_capacity(handle_token_count);
         for handle_index in 0..handle_token_count {
             let token = handle_set::LEN + handle_index * 5;
-            (bytes.get(token) == Some(&0xe0)).then_some(())?;
-            handles.push(View::u32_be_at(bytes, token + 1)?);
+            if bytes.get(token) != Some(&0xe0) || View::u32_be_at(bytes, token + 1).is_none() {
+                return Ok(None);
+            }
         }
-        let handles = ExtrefHandles::new(handles).ok()?;
+        let mut handles =
+            ctx.collection_vec(handle_token_count, "nx external reference handles")?;
+        for handle_index in 0..handle_token_count {
+            let token = handle_set::LEN + handle_index * 5;
+            let Some(handle) = View::u32_be_at(bytes, token + 1) else {
+                return Ok(None);
+            };
+            handles.push(handle);
+        }
+        let Ok(handles) = ExtrefHandles::new(handles) else {
+            return Ok(None);
+        };
         let prefix_byte_len = handles.prefix_byte_len();
-        (bytes.get(prefix_byte_len - 1) == Some(&(count as u8))).then_some(())?;
-        Some(ExtrefRecord {
+        let Ok(count) = u8::try_from(count) else {
+            return Ok(None);
+        };
+        if bytes.get(prefix_byte_len - 1) != Some(&count) {
+            return Ok(None);
+        }
+        Ok(Some(ExtrefRecord {
             record_id,
             offset,
             declared_count,
             id_slots,
             handles,
             tail_byte_len: bytes.len() - prefix_byte_len,
-        })
+        }))
     };
-
-    index
-        .into_iter()
-        .filter_map(|record| {
-            let end = record.offset.checked_add(record.byte_len)?;
-            parse_record(record.record_id, record.offset, end)
-        })
-        .collect()
+    let mut records = Vec::new();
+    for record in index {
+        let Some(end) = record.offset.checked_add(record.byte_len) else {
+            continue;
+        };
+        let Some(parsed) = parse_record(record.record_id, record.offset, end)? else {
+            continue;
+        };
+        ctx.reserve_vec(&mut records, 1, "nx external reference records")?;
+        records.push(parsed);
+    }
+    Ok(records)
 }
 
-pub(crate) fn parse_extref_record_index(payload: &[u8]) -> Option<Vec<ExtrefIndexedRecord>> {
+fn parse_extref_record_index(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Option<Vec<ExtrefIndexedRecord>>, CodecError> {
     if !payload.starts_with(b"EXTREFSTREAM") || payload.get(24) != Some(&0) {
-        return None;
+        return Ok(None);
     }
-    let (string_table, _) = parse_extref_string_table(payload)?;
+    let Some((string_table, _, _)) = locate_extref_string_table(ctx, payload)? else {
+        return Ok(None);
+    };
     let mut directory = Vec::new();
     let mut record_ids = std::collections::BTreeSet::new();
     let mut at = 25usize;
     loop {
-        let record_id = View::u32_le_at(payload, at)?;
+        let Some(record_id) = View::u32_le_at(payload, at) else {
+            return Ok(None);
+        };
         at += 4;
         if record_id == 0 {
             break;
         }
-        record_ids.insert(record_id).then_some(())?;
-        let offset = View::u32_le_at(payload, at)?;
-        at += 4;
-        let offset = offset as usize;
-        if offset >= string_table {
-            return None;
+        if record_ids.contains(&record_id) {
+            return Ok(None);
         }
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>()),
+            "nx external reference record ids",
+        )?;
+        ctx.insert_btree_set(
+            &mut record_ids,
+            record_id,
+            "nx external reference record ids",
+        )?;
+        let Some(offset) = View::u32_le_at(payload, at) else {
+            return Ok(None);
+        };
+        at += 4;
+        let Ok(offset) = usize::try_from(offset) else {
+            return Ok(None);
+        };
+        if offset >= string_table {
+            return Ok(None);
+        }
+        ctx.reserve_vec(&mut directory, 1, "nx external reference directory")?;
         directory.push((record_id, offset));
     }
     if directory.is_empty()
         || !directory.windows(2).all(|pair| pair[0].1 < pair[1].1)
         || at > directory[0].1
     {
-        return None;
+        return Ok(None);
     }
-    let mut records = Vec::with_capacity(directory.len());
+    let count = directory.len();
+    let mut records = ctx.collection_vec(count, "nx external reference index")?;
     for (index, (record_id, offset)) in directory.iter().copied().enumerate() {
         let end = directory
             .get(index + 1)
             .map_or(string_table, |(_, offset)| *offset);
+        let Some(byte_len) = end.checked_sub(offset) else {
+            return Ok(None);
+        };
         records.push(ExtrefIndexedRecord {
             record_id,
             offset,
-            byte_len: end.checked_sub(offset)?,
+            byte_len,
         });
     }
-    Some(records)
+    Ok(Some(records))
 }
 
 /// Decode the two exact empty indexed-record forms.
@@ -716,11 +1093,13 @@ pub(crate) fn parse_extref_empty_record(bytes: &[u8]) -> Option<bool> {
 
 /// Decode exact adjacent persistent-handle and tagged-reference pairs.
 pub(crate) fn parse_extref_reference_pairs(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
-) -> Vec<(usize, u32, crate::om::reference_value::Tagged28)> {
+) -> Result<Vec<(usize, u32, crate::om::reference_value::Tagged28)>, CodecError> {
     let mut pairs = Vec::new();
     let mut at = 0usize;
     while at < bytes.len() {
+        ctx.charge_work(1, "nx external reference tail scan")?;
         let pair = (|| {
             let bytes = bytes.get(at..)?;
             if bytes.first() != Some(&0xe0) || *bytes.get(5)? & 0xf0 != 0xc0 {
@@ -732,30 +1111,27 @@ pub(crate) fn parse_extref_reference_pairs(
             ))
         })();
         if let Some((handle, tagged_reference)) = pair {
+            ctx.reserve_vec(&mut pairs, 1, "nx external reference tail pairs")?;
             pairs.push((at, handle, tagged_reference));
             at += 9;
         } else {
             at += 1;
         }
     }
-    pairs
+    Ok(pairs)
 }
 
 /// Layout-specific facts of a parsed NX container.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ContainerLayout {
+pub(crate) enum ContainerLayout {
     /// Modern SPLMSSTR framing and its footer metadata.
     Modern {
         /// Version byte at file offset 8.
         version: u8,
-        /// Declared HEADER directory entry count.
-        header_entry_count: u32,
         /// File-specific 24-bit little-endian value at offset 9.
         file_tag: u32,
         /// `FOOTER` region offset.
         footer_offset: u64,
-        /// Declared FOOTER directory entry count.
-        footer_entry_count: u32,
         /// Exact four-byte value following the counted FOOTER directory.
         footer_fingerprint: [u8; 4],
     },
@@ -763,8 +1139,6 @@ pub enum ContainerLayout {
     LegacyCfb {
         /// Version byte in the UGII payload.
         version: u8,
-        /// Number of entries in the CFB directory.
-        entry_count: u32,
     },
 }
 
@@ -778,29 +1152,29 @@ impl ContainerLayout {
 }
 
 #[cfg(test)]
-pub(crate) fn test_modern_layout(version: u8, header_entry_count: u32) -> ContainerLayout {
+pub(crate) fn test_modern_layout(version: u8) -> ContainerLayout {
     ContainerLayout::Modern {
         version,
-        header_entry_count,
         file_tag: 0,
         footer_offset: 0,
-        footer_entry_count: 0,
         footer_fingerprint: [0; 4],
     }
 }
 
 /// A parsed NX container and its directory entries.
 #[derive(Debug, Clone)]
-pub struct Container<'a> {
+pub(crate) struct Container<'a> {
     /// The source image, or the materialized logical stream image for legacy CFB.
-    pub data: Cow<'a, [u8]>,
+    pub(crate) data: SourceImage<'a>,
     /// Physical source-image length before legacy CFB stream materialization.
-    pub physical_size: u64,
+    pub(crate) physical_size: u64,
     /// Facts owned by the container grammar that parsed the source.
-    pub layout: ContainerLayout,
+    pub(crate) layout: ContainerLayout,
     /// Modern entries from both regions or legacy CFB paths, in serialized
     /// order.
-    pub entries: Vec<DirEntry>,
+    pub(crate) entries: Vec<DirEntry>,
+    /// Admitted active-object table, shared by selection and native extraction.
+    pub(crate) fastload_table: Option<(usize, RmFastLoadObjectIdTable)>,
     /// Cached source ranges for indexed object-model sections.
     pub(crate) indexed_section_layouts: OnceLock<IndexedSectionCache<'a>>,
     /// Cached size-framed object-model sections when the container borrows its input.
@@ -836,88 +1210,151 @@ pub(crate) enum FramedSectionCache<'a> {
 type FramedSections<'a> = Vec<(usize, crate::om::Section<'a>)>;
 type FramedSectionLayouts = Vec<(usize, crate::om::cache::SectionLayout)>;
 
+fn decimal_len(mut value: usize) -> usize {
+    let mut length = 1;
+    while value >= 10 {
+        value /= 10;
+        length += 1;
+    }
+    length
+}
+
+fn offset_block_key(
+    ctx: &DecodeContext<'_>,
+    section: usize,
+    block: usize,
+) -> Result<String, CodecError> {
+    use std::fmt::Write;
+    let length = "nx:om-data-blocks-"
+        .len()
+        .checked_add(decimal_len(section))
+        .and_then(|length| length.checked_add(":block#".len()))
+        .and_then(|length| length.checked_add(decimal_len(block)))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX offset block key", u64::MAX, u64::MAX))?;
+    let mut key = ctx.retained_string(length, "NX offset block key")?;
+    write!(&mut key, "nx:om-data-blocks-{section}:block#{block}").map_err(|_| {
+        ctx.refuse_codec_limit(
+            "NX offset block key",
+            u64_from_index(length),
+            u64_from_index(length),
+        )
+    })?;
+    Ok(key)
+}
+
 fn parse_framed_section_cache<'bytes>(
+    ctx: &DecodeContext<'_>,
     bytes: &'bytes [u8],
     entries: &[DirEntry],
     retain_layouts: bool,
-) -> (FramedSections<'bytes>, FramedSectionLayouts) {
+) -> Result<(FramedSections<'bytes>, FramedSectionLayouts), CodecError> {
     let mut sections = Vec::new();
     let mut layouts = Vec::new();
     for (entry_index, entry) in entries.iter().enumerate() {
-        let Some((offset, size)) = entry.file_span else {
+        let Some((offset, size)) = entry.file_span() else {
             continue;
         };
         let (Ok(offset), Ok(size)) = (usize::try_from(offset), usize::try_from(size)) else {
             continue;
         };
-        let Some(payload) = bytes.get(offset..offset.saturating_add(size)) else {
+        let Some(end) = offset.checked_add(size) else {
             continue;
         };
-        let parsed = crate::om::sections(payload);
+        let Some(payload) = bytes.get(offset..end) else {
+            continue;
+        };
+        let parsed = crate::om::sections(ctx, payload)?;
         if parsed.is_empty() {
             continue;
         }
-        let source = retain_layouts.then(|| std::sync::Arc::<[u8]>::from(payload));
+        let source = if retain_layouts {
+            ctx.charge_retained(u64_from_index(payload.len()), "NX framed cache source")?;
+            Some(std::sync::Arc::<[u8]>::from(payload))
+        } else {
+            None
+        };
         for section in parsed {
             if let Some(source) = &source {
-                let Some(layout) = crate::om::cache::SectionLayout::from_section(&section, source)
+                let Some(layout) =
+                    crate::om::cache::SectionLayout::from_section(ctx, &section, source)?
                 else {
                     continue;
                 };
+                ctx.reserve_vec(&mut layouts, 1, "NX framed cache layouts")?;
                 layouts.push((entry_index, layout));
             }
+            ctx.reserve_vec(&mut sections, 1, "NX framed cache sections")?;
             sections.push((entry_index, section));
         }
     }
-    (sections, layouts)
+    Ok((sections, layouts))
 }
 
 type IndexedSections<'a> = Vec<(usize, crate::om::IndexedSection<'a>)>;
 type IndexedSectionLayouts = Vec<(usize, crate::om::cache::IndexedSectionLayout)>;
 
 fn parse_indexed_section_cache<'bytes>(
+    ctx: &DecodeContext<'_>,
     bytes: &'bytes [u8],
     entries: &[DirEntry],
     retain_layouts: bool,
-) -> (IndexedSections<'bytes>, IndexedSectionLayouts) {
+) -> Result<(IndexedSections<'bytes>, IndexedSectionLayouts), CodecError> {
     let mut sections = Vec::new();
     let mut layouts = Vec::new();
     let mut seen = std::collections::BTreeSet::new();
     for (entry_index, entry) in entries.iter().enumerate() {
-        let Some((offset, size)) = entry.file_span else {
+        let Some((offset, size)) = entry.file_span() else {
             continue;
         };
         let (Ok(offset), Ok(size)) = (usize::try_from(offset), usize::try_from(size)) else {
             continue;
         };
-        let Some(payload) = bytes.get(offset..offset.saturating_add(size)) else {
+        let Some(end) = offset.checked_add(size) else {
             continue;
         };
-        let parsed = crate::om::indexed_sections(payload);
+        let Some(payload) = bytes.get(offset..end) else {
+            continue;
+        };
+        let parsed = crate::om::indexed_sections(ctx, payload)?;
         if parsed.is_empty() {
             continue;
         }
-        let source = retain_layouts.then(|| std::sync::Arc::<[u8]>::from(payload));
+        let source = if retain_layouts {
+            ctx.charge_retained(u64_from_index(payload.len()), "NX indexed cache source")?;
+            Some(std::sync::Arc::<[u8]>::from(payload))
+        } else {
+            None
+        };
         for section in parsed {
-            if !seen.insert((offset, section.object_id_table_offset)) {
+            ctx.charge_retained(
+                u64_from_index(std::mem::size_of::<(usize, usize)>()),
+                "NX indexed cache seen sections",
+            )?;
+            if !ctx.insert_btree_set(
+                &mut seen,
+                (offset, section.object_id_table_offset),
+                "NX indexed cache seen sections",
+            )? {
                 continue;
             }
             if let Some(source) = &source {
                 let Some(layout) =
-                    crate::om::cache::IndexedSectionLayout::from_section(&section, source)
+                    crate::om::cache::IndexedSectionLayout::from_section(ctx, &section, source)?
                 else {
                     continue;
                 };
+                ctx.reserve_vec(&mut layouts, 1, "NX indexed cache layouts")?;
                 layouts.push((entry_index, layout));
             }
+            ctx.reserve_vec(&mut sections, 1, "NX indexed cache sections")?;
             sections.push((entry_index, section));
         }
     }
-    (sections, layouts)
+    Ok((sections, layouts))
 }
 
 /// Return whether `prefix` starts with [`MAGIC`].
-pub fn looks_like_nx(prefix: &[u8]) -> bool {
+pub(crate) fn looks_like_nx(prefix: &[u8]) -> bool {
     prefix.starts_with(MAGIC)
 }
 
@@ -927,13 +1364,22 @@ pub fn looks_like_nx(prefix: &[u8]) -> bool {
 /// The CFB signature alone is not sufficient: Inventor and other CAD formats
 /// use the same envelope. Requiring the canonical `UG_PART/UG_PART` path keeps
 /// detection tied to the NX payload namespace.
-pub fn looks_like_legacy_nx(prefix: &[u8]) -> bool {
-    let CompoundPrefixProbe::DirectoryEvidence(paths) = CompoundPrefixProbe::inspect(prefix) else {
-        return false;
+pub(crate) fn looks_like_legacy_nx(
+    ctx: &DecodeContext<'_>,
+    prefix: &[u8],
+) -> Result<bool, CodecError> {
+    let (probe, _storage) =
+        CompoundPrefixProbe::inspect_with_context(ctx, View::over_retained(prefix))?;
+    let CompoundPrefixProbe::DirectoryEvidence(paths) = probe else {
+        return Ok(false);
     };
-    paths
-        .iter()
-        .any(|path| path.eq_ignore_ascii_case("UG_PART/UG_PART"))
+    for path in &paths {
+        ctx.charge_work(u64_from_index(path.len()), "compare NX directory evidence")?;
+        if path.eq_ignore_ascii_case("UG_PART/UG_PART") {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn u24_le(d: &[u8], at: usize) -> u32 {
@@ -954,7 +1400,10 @@ fn u48_le(d: &[u8], at: usize) -> u64 {
 }
 
 /// Parse an SPLMSSTR file image.
-pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container<'a>, CodecError> {
+pub(crate) fn scan_bytes<'a>(
+    ctx: &DecodeContext<'_>,
+    data: impl Into<SourceImage<'a>>,
+) -> Result<Container<'a>, CodecError> {
     let data = data.into();
     if !data.starts_with(MAGIC) {
         return Err(CodecError::WrongFormat(
@@ -965,6 +1414,11 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container<'a>, C
         .get(splmsstr::VERSION_TAG)
         .copied()
         .ok_or_else(|| CodecError::Malformed("SPLMSSTR header has no version byte".to_string()))?;
+    if version != 0x06 {
+        return Err(CodecError::malformed(format_args!(
+            "SPLMSSTR version byte must be 0x06, found 0x{version:02x}"
+        )));
+    }
     let file_tag = u24_le(&data, splmsstr::FILE_TAG);
     let footer_offset = u48_le(&data, splmsstr::FOOTER_OFFSET);
     let fo = usize::try_from(footer_offset)
@@ -979,15 +1433,27 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container<'a>, C
         .checked_sub(4)
         .ok_or_else(|| CodecError::Malformed("truncated FOOTER fingerprint".to_string()))?;
 
-    let (header_entry_count, mut entries, header_end) = directory_region(
+    let (mut entries, header_end) = directory_region(
+        ctx,
         &data,
         splmsstr::HEADER_MARKER,
         *b"HEADER",
         Region::Header,
         fo,
     )?;
-    let (footer_entry_count, footer_entries, footer_end) =
-        directory_region(&data, fo, *b"FOOTER", Region::Footer, footer_directory_end)?;
+    let (footer_entries, footer_end) = directory_region(
+        ctx,
+        &data,
+        fo,
+        *b"FOOTER",
+        Region::Footer,
+        footer_directory_end,
+    )?;
+    ctx.reserve_capacity(
+        &mut entries,
+        footer_entries.len(),
+        "join NX directory regions",
+    )?;
     entries.extend(footer_entries);
     if header_end > fo {
         return Err(CodecError::Malformed(
@@ -996,7 +1462,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container<'a>, C
     }
     if entries
         .iter()
-        .filter_map(|entry| entry.file_span)
+        .filter_map(crate::container::DirEntry::file_span)
         .any(|(offset, size)| {
             offset
                 .checked_add(size)
@@ -1010,35 +1476,39 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container<'a>, C
     let fingerprint_end = footer_end
         .checked_add(4)
         .ok_or_else(|| CodecError::Malformed("FOOTER fingerprint offset overflow".to_string()))?;
-    if fingerprint_end != data.len() {
+    // The fingerprint is the last four bytes, which is what makes it an array
+    // here rather than a slice that a later read has to measure again.
+    let Some(footer_fingerprint) = data
+        .last_chunk::<4>()
+        .copied()
+        .filter(|_| fingerprint_end == data.len())
+    else {
         return Err(CodecError::Malformed(
             "counted FOOTER directory is not followed by exactly four bytes".to_string(),
         ));
-    }
-    let footer_fingerprint = data[footer_end..fingerprint_end]
-        .try_into()
-        .expect("checked four-byte footer fingerprint");
-    let physical_size = data.len() as u64;
+    };
+    let physical_size = cadmpeg_core::decode::u64_from_index(data.len());
 
-    Ok(Container {
+    let mut container = Container {
         data,
         physical_size,
         layout: ContainerLayout::Modern {
             version,
-            header_entry_count,
             file_tag,
             footer_offset,
-            footer_entry_count,
             footer_fingerprint,
         },
         entries,
+        fastload_table: None,
         indexed_section_layouts: OnceLock::new(),
         om_section_cache: OnceLock::new(),
-    })
+    };
+    container.fastload_table = container.parse_rmfastload_object_id_table(ctx)?;
+    Ok(container)
 }
 
 /// Open the legacy NX `UG_PART/UG_PART` stream from a validated CFB source.
-pub fn scan_legacy<'a>(
+pub(crate) fn scan_legacy<'a>(
     ctx: &DecodeContext<'a>,
     root: View<'a>,
 ) -> Result<(Container<'a>, View<'a>), CodecError> {
@@ -1059,10 +1529,12 @@ pub fn scan_legacy<'a>(
         ));
     }
     let part_id = part.id();
+    let mut workspace = ctx.reserve_scoped(0, "legacy NX stream index")?;
     let mut stream_views = Vec::new();
     let mut stream_spans = BTreeMap::new();
     let mut logical_offset = 0_u64;
     for entry in snapshot.entries() {
+        ctx.charge_work(1, "scan legacy NX directory")?;
         let CompoundEntry::Stream(stream) = entry else {
             continue;
         };
@@ -1077,57 +1549,69 @@ pub fn scan_legacy<'a>(
         logical_offset = logical_offset
             .checked_add(byte_len)
             .ok_or_else(|| CodecError::Malformed("legacy CFB logical image overflows".into()))?;
-        stream_spans.insert(stream.id(), span);
+
+        workspace.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut stream_spans,
+                stream.id(),
+                span,
+                "legacy NX stream spans",
+            )
+        })?;
+        workspace
+            .with_storage(|| ctx.reserve_vec(&mut stream_views, 1, "legacy NX stream views"))?;
         stream_views.push(view);
     }
     let logical_data = ctx.concat_views(&stream_views)?;
     let mut entries = Vec::new();
     for entry in snapshot.entries() {
         ctx.charge_collection_items(1, "retain legacy NX directory entry")?;
-        let retained = "/Root/"
+
+        let body = match entry {
+            CompoundEntry::Stream(stream) => stream_spans
+                .get(&stream.id())
+                .map_or(DirEntryBody::Directory, |&(offset, len)| {
+                    DirEntryBody::File { offset, len }
+                }),
+            CompoundEntry::Storage(_) => DirEntryBody::Directory,
+        };
+        ctx.reserve_capacity(&mut entries, 1, "retain legacy NX directory entry")?;
+        let name_len = "/Root/"
             .len()
             .checked_add(entry.path().len())
-            .and_then(|length| length.checked_add(std::mem::size_of::<DirEntry>()))
-            .ok_or_else(|| CodecError::Malformed("legacy CFB entry size overflow".into()))?;
-        ctx.charge_retained(
-            retained as u64,
-            "retain legacy NX directory entry",
-            Some(root.location()),
-        )?;
-        let file_span = match entry {
-            CompoundEntry::Stream(stream) => stream_spans.get(&stream.id()).copied(),
-            CompoundEntry::Storage(_) => None,
-        };
+            .ok_or_else(|| ctx.refuse_codec_limit("retain legacy NX directory entry", 0, 1))?;
+        let mut name = String::new();
+        ctx.try_reserve_retained_text(&mut name, name_len, "retain legacy NX directory entry")?;
+        name.push_str("/Root/");
+        name.push_str(entry.path());
         entries.push(DirEntry {
-            name: format!("/Root/{}", entry.path()),
+            name,
             region: Region::Header,
-            file_span,
+            body,
         });
     }
     let version = payload_prefix[legacy_ugii_payload_prefix::VERSION];
-    let header_entry_count = u32::try_from(entries.len())
-        .map_err(|_| CodecError::Malformed("legacy CFB entry count exceeds u32".into()))?;
-    let container = Container {
-        data: Cow::Borrowed(logical_data.window()),
-        physical_size: root.window().len() as u64,
-        layout: ContainerLayout::LegacyCfb {
-            version,
-            entry_count: header_entry_count,
-        },
+    let mut container = Container {
+        data: SourceImage::Borrowed(logical_data),
+        physical_size: cadmpeg_core::decode::u64_from_index(root.window().len()),
+        layout: ContainerLayout::LegacyCfb { version },
         entries,
+        fastload_table: None,
         indexed_section_layouts: OnceLock::new(),
         om_section_cache: OnceLock::new(),
     };
+    container.fastload_table = container.parse_rmfastload_object_id_table(ctx)?;
     Ok((container, part_view))
 }
 
 fn directory_region(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     marker_offset: usize,
     marker: [u8; 6],
     region: Region,
     region_end: usize,
-) -> Result<(u32, Vec<DirEntry>, usize), CodecError> {
+) -> Result<(Vec<DirEntry>, usize), CodecError> {
     let count_offset = marker_offset
         .checked_add(marker.len())
         .ok_or_else(|| CodecError::Malformed("directory marker offset overflow".to_string()))?;
@@ -1152,63 +1636,92 @@ fn directory_region(
             "directory entry count exceeds its bounded region".to_string(),
         ));
     }
-    let mut entries = Vec::with_capacity(capacity);
+    ctx.charge_collection_items(u64::from(count), "admit NX directory entries")?;
+    let mut entries = Vec::new();
+    ctx.reserve_capacity(&mut entries, capacity, "retain NX directory entries")?;
     let mut at = entries_offset;
     for ordinal in 0..count {
-        let Some((entry, next)) = try_entry(data, at, region) else {
+        let Some((entry, next)) = try_entry(ctx, data, at, region, region_end, ordinal)? else {
             return Err(CodecError::malformed(format_args!(
                 "directory entry {ordinal} is truncated or malformed"
             )));
         };
-        if next > region_end {
-            return Err(CodecError::malformed(format_args!(
-                "directory entry {ordinal} extends beyond its bounded region"
-            )));
-        }
         entries.push(entry);
         at = next;
     }
-    Ok((count, entries, at))
+    Ok((entries, at))
 }
 
 /// Try to read one directory entry at `o`: `name_len:u32 LE`, then that many bytes
 /// of printable ASCII beginning `/Root`, then a 16-byte payload. Returns the entry
 /// and the offset just past its payload.
-fn try_entry(data: &[u8], o: usize, region: Region) -> Option<(DirEntry, usize)> {
-    let name_len = View::u32_le_at(data, o)? as usize;
+fn try_entry(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    o: usize,
+    region: Region,
+    region_end: usize,
+    ordinal: u32,
+) -> Result<Option<(DirEntry, usize)>, CodecError> {
+    let Some(name_len) = View::u32_le_at(data, o).and_then(|value| usize::try_from(value).ok())
+    else {
+        return Ok(None);
+    };
     if !(6..=128).contains(&name_len) {
-        return None;
+        return Ok(None);
     }
-    let name_start = o + dir_entry::LEN;
-    let name_end = name_start + name_len;
-    let raw = data.get(name_start..name_end)?;
+    let Some(name_start) = o.checked_add(dir_entry::LEN) else {
+        return Ok(None);
+    };
+    let Some(name_end) = name_start.checked_add(name_len) else {
+        return Ok(None);
+    };
+    let Some(raw) = data.get(name_start..name_end) else {
+        return Ok(None);
+    };
     if !raw.starts_with(b"/Root") || !raw.iter().all(|&b| (0x20..0x7f).contains(&b)) {
-        return None;
+        return Ok(None);
     }
-    let name = String::from_utf8_lossy(raw).into_owned();
     let payload = name_end;
+    let Some(next) = payload.checked_add(file_payload::LEN) else {
+        return Ok(None);
+    };
+    if next > region_end {
+        return Err(CodecError::malformed(format_args!(
+            "directory entry {ordinal} extends beyond its bounded region"
+        )));
+    }
+
+    let Ok(value) = std::str::from_utf8(raw) else {
+        return Ok(None);
+    };
+    let mut name = String::new();
+    ctx.try_reserve_retained_text(&mut name, name_len, "retain NX directory name")?;
+    name.push_str(value);
     // Interpret the 16-byte payload as a file span when it lands within the file.
-    let file_span = match (
+    let body = match (
         View::u64_le_at(data, payload),
         View::u64_le_at(data, payload + file_payload::SIZE),
     ) {
         (Some(off), Some(size)) => {
             let end = off.checked_add(size);
             match end {
-                Some(e) if size > 0 && e <= data.len() as u64 && off >= 8 => Some((off, size)),
-                _ => None,
+                Some(e)
+                    if size > 0
+                        && e <= cadmpeg_core::decode::u64_from_index(data.len())
+                        && off >= 8 =>
+                {
+                    DirEntryBody::File {
+                        offset: off,
+                        len: size,
+                    }
+                }
+                _ => DirEntryBody::Directory,
             }
         }
-        _ => None,
+        _ => DirEntryBody::Directory,
     };
-    Some((
-        DirEntry {
-            name,
-            region,
-            file_span,
-        },
-        payload + file_payload::LEN,
-    ))
+    Ok(Some((DirEntry { name, region, body }, next)))
 }
 
 #[cfg(test)]

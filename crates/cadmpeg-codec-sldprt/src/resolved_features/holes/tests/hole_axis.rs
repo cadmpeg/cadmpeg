@@ -1,20 +1,157 @@
 //! Hole-axis topology and cylinder-span tests.
 
 use super::{cylinder, lane, model_hole, native_history, profile_reference_plane_payload};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use std::collections::HashMap;
 
 use cadmpeg_ir::features::{
-    Angle, FeatureDefinition, FeatureId, HoleBottom, HoleKind, HolePlacement, Length,
-    LinearTermination,
+    holes::{HoleBottom, HoleKind, HolePlacement},
+    FeatureDefinition, FeatureId, FeatureOperation, LinearTermination,
 };
-use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{CoedgeId, EdgeId, FaceId, LoopId, PointId, ShellId, SurfaceId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, Point, Sense, Vertex};
 
 use super::super::super::compact_reference_planes::CompactReferencePlaneIndex;
 use super::super::super::curves::{SketchPlaneFrame, SketchPlaneUAxisSource};
-use super::super::*;
+use crate::resolved_features::holes::bore_carrier_placements;
+use crate::resolved_features::holes::cylindrical_support_normal;
+use crate::resolved_features::holes::feature_input_sketch_frame;
+use crate::resolved_features::holes::hole_axis_key;
+use crate::resolved_features::holes::partition_seeded_hole_axes;
+use crate::resolved_features::holes::plane_owned_bore_placements;
+use crate::resolved_features::holes::project_generated_hole_axes;
+
+fn plane_index(payload: &[u8]) -> CompactReferencePlaneIndex {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &DecodePolicy::service())
+        .expect("reference plane fixture fits service policy");
+    CompactReferencePlaneIndex::new(&ctx, payload)
+        .expect("reference plane index fits service policy")
+}
+use crate::resolved_features::holes::project_hole_topology_axes;
+use crate::resolved_features::holes::project_topological_hole_constructions;
+use crate::resolved_features::holes::seeded_drilled_bore_candidates;
+use crate::resolved_features::holes::unclaimed_seeded_hole_candidates;
+use crate::resolved_features::holes::HoleTopology;
+
+#[test]
+fn generated_hole_axis_route_refuses_feature_index_collection() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = project_generated_hole_axes(&ctx, &mut [], &[native_history()], &[], &[], &[], &[])
+        .expect_err("native feature index requires collection admission");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "index SLDPRT generated hole features"));
+}
+
+#[test]
+fn generated_hole_axis_route_refuses_feature_index_work() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = project_generated_hole_axes(&ctx, &mut [], &[native_history()], &[], &[], &[], &[])
+        .expect_err("native feature index requires work admission");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "index SLDPRT generated hole features"));
+}
+
+#[test]
+fn hole_topology_axes_refuse_unresolved_collection_growth() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
+    let topology = HoleTopology {
+        surfaces: &[],
+        faces: &[],
+        loops: &[],
+        coedges: &[],
+        edges: &[],
+        vertices: &[],
+        points: &[],
+    };
+    let error = project_hole_topology_axes(&ctx, &mut [model_hole()], &topology)
+        .expect_err("hole lookup and unresolved record require two collection items");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "collect SLDPRT unresolved holes"));
+}
+
+#[test]
+fn hole_topology_axes_refuse_lookup_work() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
+    let topology = HoleTopology {
+        surfaces: &[],
+        faces: &[],
+        loops: &[],
+        coedges: &[],
+        edges: &[],
+        vertices: &[],
+        points: &[],
+    };
+    let error = project_hole_topology_axes(&ctx, &mut [model_hole()], &topology)
+        .expect_err("one hole lookup requires work admission");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "index SLDPRT hole diameters"));
+}
+
+#[test]
+fn topological_hole_constructions_refuse_topology_index_collection() {
+    let surfaces = [cylinder(0, 0.0)];
+    let topology = HoleTopology {
+        surfaces: &surfaces,
+        faces: &[],
+        loops: &[],
+        coedges: &[],
+        edges: &[],
+        vertices: &[],
+        points: &[],
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
+    let error = project_topological_hole_constructions(&ctx, &mut [model_hole()], &topology)
+        .expect_err("one surface index entry requires collection admission");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "index SLDPRT hole topology records"));
+}
+
+#[test]
+fn topological_hole_constructions_refuse_topology_index_work() {
+    let surfaces = [cylinder(0, 0.0)];
+    let topology = HoleTopology {
+        surfaces: &surfaces,
+        faces: &[],
+        loops: &[],
+        coedges: &[],
+        edges: &[],
+        vertices: &[],
+        points: &[],
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
+    let error = project_topological_hole_constructions(&ctx, &mut [model_hole()], &topology)
+        .expect_err("one surface index entry requires work admission");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "index SLDPRT hole topology records"));
+}
 
 #[test]
 fn midplane_sketch_uses_component_basis_and_never_arbitrary_datum_axis() {
@@ -28,10 +165,21 @@ fn midplane_sketch_uses_component_basis_and_never_arbitrary_datum_axis() {
     );
     let frames = HashMap::from([(2, plane_frame)]);
 
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let with_component = profile_reference_plane_payload(true);
-    let index = CompactReferencePlaneIndex::new(&with_component);
+    let index = plane_index(&with_component);
     assert_eq!(
-        feature_input_sketch_frame(&with_component, &frames, &index, 0, 0, with_component.len(),),
+        feature_input_sketch_frame(
+            &ctx,
+            &with_component,
+            &frames,
+            &index,
+            0,
+            0,
+            with_component.len()
+        )
+        .unwrap(),
         Some((
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 1.0, 0.0),
@@ -40,16 +188,18 @@ fn midplane_sketch_uses_component_basis_and_never_arbitrary_datum_axis() {
     );
 
     let without_component = profile_reference_plane_payload(false);
-    let index = CompactReferencePlaneIndex::new(&without_component);
+    let index = plane_index(&without_component);
     assert_eq!(
         feature_input_sketch_frame(
+            &ctx,
             &without_component,
             &frames,
             &index,
             0,
             0,
             without_component.len(),
-        ),
+        )
+        .unwrap(),
         None
     );
 }
@@ -58,12 +208,15 @@ fn midplane_sketch_uses_component_basis_and_never_arbitrary_datum_axis() {
 fn cylindrical_support_point_defines_its_radial_axis() {
     let surface = Surface {
         id: SurfaceId::mint("test:model:entity#support").expect("identity grammar"),
-        geometry: SurfaceGeometry::Cylinder {
-            origin: Point3::new(0.0, 0.0, 10.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 13.0,
-        },
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                Point3::new(0.0, 0.0, 10.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                13.0,
+            )
+            .unwrap(),
+        )),
         source_object: None,
     };
 
@@ -76,18 +229,34 @@ fn cylindrical_support_point_defines_its_radial_axis() {
 
 #[test]
 fn position_plane_owns_only_reversed_normal_cylinders() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let mut surfaces = [cylinder(0, -5.0), cylinder(1, 5.0), cylinder(2, -5.0)];
-    let SurfaceGeometry::Cylinder { origin, .. } = &mut surfaces[2].geometry else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
+        &mut surfaces[2].geometry
+    else {
         unreachable!();
     };
+    let origin = cylinder_surface.origin();
+    let axis = cylinder_surface.frame().axis().as_raw();
+    let ref_direction = cylinder_surface.frame().reference().as_raw();
+    let radius = cylinder_surface.radius().get();
+    let mut origin = *origin;
     origin.z = 20.0;
+    *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+        origin,
+        *axis,
+        *ref_direction,
+        radius,
+    )
+    .unwrap();
     let mut faces = [
         Face {
             id: FaceId::mint("test:model:entity#bore").expect("identity grammar"),
             shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
             surface: surfaces[0].id.clone(),
             sense: Sense::Reversed,
-            loops: Vec::new().into(),
+            loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
             name: None,
             color: None,
             tolerance: None,
@@ -97,7 +266,7 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
             shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
             surface: surfaces[1].id.clone(),
             sense: Sense::Forward,
-            loops: Vec::new().into(),
+            loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
             name: None,
             color: None,
             tolerance: None,
@@ -107,7 +276,7 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
             shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
             surface: surfaces[2].id.clone(),
             sense: Sense::Reversed,
-            loops: Vec::new().into(),
+            loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
             name: None,
             color: None,
             tolerance: None,
@@ -116,6 +285,7 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
 
     assert_eq!(
         plane_owned_bore_placements(
+            &ctx,
             Point3::new(0.0, 0.0, 10.0),
             Vector3::new(0.0, 0.0, 1.0),
             2.0,
@@ -128,14 +298,17 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
                 vertices: &[],
                 points: &[],
             },
-        ),
-        Some(vec![cadmpeg_ir::features::HolePlacement::Axis {
-            origin: Point3::new(-5.0, 0.0, 10.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
+        )
+        .unwrap(),
+        Some(vec![cadmpeg_ir::features::holes::HolePlacement::Axis {
+            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(-5.0, 0.0, 10.0)).unwrap(),
+            axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                .unwrap(),
         }])
     );
     assert_eq!(
         bore_carrier_placements(
+            &ctx,
             2.0,
             &HoleTopology {
                 surfaces: &surfaces,
@@ -146,15 +319,18 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
                 vertices: &[],
                 points: &[],
             },
-        ),
-        Some(vec![cadmpeg_ir::features::HolePlacement::Axis {
-            origin: Point3::new(-5.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
+        )
+        .unwrap(),
+        Some(vec![cadmpeg_ir::features::holes::HolePlacement::Axis {
+            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(-5.0, 0.0, 0.0)).unwrap(),
+            axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                .unwrap(),
         }])
     );
     faces[1].sense = Sense::Reversed;
     assert_eq!(
         bore_carrier_placements(
+            &ctx,
             2.0,
             &HoleTopology {
                 surfaces: &surfaces,
@@ -165,15 +341,20 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
                 vertices: &[],
                 points: &[],
             },
-        ),
+        )
+        .unwrap(),
         Some(vec![
-            cadmpeg_ir::features::HolePlacement::Axis {
-                origin: Point3::new(-5.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
+            cadmpeg_ir::features::holes::HolePlacement::Axis {
+                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(-5.0, 0.0, 0.0))
+                    .unwrap(),
+                axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                    .unwrap(),
             },
-            cadmpeg_ir::features::HolePlacement::Axis {
-                origin: Point3::new(5.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
+            cadmpeg_ir::features::holes::HolePlacement::Axis {
+                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(5.0, 0.0, 0.0))
+                    .unwrap(),
+                axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                    .unwrap(),
             },
         ])
     );
@@ -187,10 +368,23 @@ fn generated_face_identities_resolve_primary_bore_axes() {
         cylinder(2, 20.0),
         cylinder(3, 30.0),
     ];
-    let SurfaceGeometry::Cylinder { radius, .. } = &mut surfaces[3].geometry else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
+        &mut surfaces[3].geometry
+    else {
         unreachable!();
     };
-    *radius = 3.0;
+    let origin = cylinder_surface.origin();
+    let axis = cylinder_surface.frame().axis().as_raw();
+    let ref_direction = cylinder_surface.frame().reference().as_raw();
+
+    let radius = 3.0;
+    *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+        *origin,
+        *axis,
+        *ref_direction,
+        radius,
+    )
+    .unwrap();
     let faces = surfaces
         .iter()
         .enumerate()
@@ -199,7 +393,7 @@ fn generated_face_identities_resolve_primary_bore_axes() {
             shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
             surface: surface.id.clone(),
             sense: Sense::Forward,
-            loops: Vec::new().into(),
+            loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
             name: None,
             color: None,
             tolerance: None,
@@ -209,7 +403,7 @@ fn generated_face_identities_resolve_primary_bore_axes() {
         (
             faces[0].id.clone(),
             crate::brep::PersistentFaceIdentity {
-                feature_source_id: 7,
+                feature_source_id: 7_u32.try_into().unwrap(),
                 local_id: 2,
                 trailing_fields: Vec::new(),
             },
@@ -217,7 +411,7 @@ fn generated_face_identities_resolve_primary_bore_axes() {
         (
             faces[1].id.clone(),
             crate::brep::PersistentFaceIdentity {
-                feature_source_id: 7,
+                feature_source_id: 7_u32.try_into().unwrap(),
                 local_id: 2,
                 trailing_fields: Vec::new(),
             },
@@ -225,7 +419,7 @@ fn generated_face_identities_resolve_primary_bore_axes() {
         (
             faces[2].id.clone(),
             crate::brep::PersistentFaceIdentity {
-                feature_source_id: 7,
+                feature_source_id: 7_u32.try_into().unwrap(),
                 local_id: 3,
                 trailing_fields: Vec::new(),
             },
@@ -233,22 +427,30 @@ fn generated_face_identities_resolve_primary_bore_axes() {
         (
             faces[3].id.clone(),
             crate::brep::PersistentFaceIdentity {
-                feature_source_id: 7,
+                feature_source_id: 7_u32.try_into().unwrap(),
                 local_id: 2,
                 trailing_fields: Vec::new(),
             },
         ),
     ];
     let mut hole = model_hole();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     project_generated_hole_axes(
+        &ctx,
         std::slice::from_mut(&mut hole),
         &[native_history()],
         &[lane()],
         &identities,
         &faces,
         &surfaces,
-    );
-    let FeatureDefinition::Hole { placements, .. } = &mut hole.definition else {
+    )
+    .unwrap();
+    let updated_hole_evaluation = &mut hole.evaluation;
+    let mut updated_hole_definition = updated_hole_evaluation.definition().clone();
+    let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
+        &mut updated_hole_definition
+    else {
         unreachable!();
     };
     assert_eq!(placements.as_deref().map(<[_]>::len), Some(2));
@@ -258,15 +460,20 @@ fn generated_face_identities_resolve_primary_bore_axes() {
     for identity in &mut conflicting_lane.generated_surface_identities {
         identity.local_identity = 3;
     }
+    updated_hole_evaluation.set_definition(updated_hole_definition);
     project_generated_hole_axes(
+        &ctx,
         std::slice::from_mut(&mut hole),
         &[native_history()],
         &[lane(), conflicting_lane],
         &identities,
         &faces,
         &surfaces,
-    );
-    let FeatureDefinition::Hole { placements, .. } = &hole.definition else {
+    )
+    .unwrap();
+    let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
+        hole.evaluation.definition()
+    else {
         unreachable!();
     };
     assert!(placements.is_none());
@@ -274,6 +481,8 @@ fn generated_face_identities_resolve_primary_bore_axes() {
 
 #[test]
 fn counterbore_topology_assigns_unique_and_partitions_siblings() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let mut surfaces = [
         cylinder(0, -5.0),
         cylinder(1, 5.0),
@@ -283,10 +492,23 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
         cylinder(5, 20.0),
     ];
     for surface in &mut surfaces[3..] {
-        let SurfaceGeometry::Cylinder { radius, .. } = &mut surface.geometry else {
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
+            &mut surface.geometry
+        else {
             unreachable!();
         };
-        *radius = 3.0;
+        let origin = cylinder_surface.origin();
+        let axis = cylinder_surface.frame().axis().as_raw();
+        let ref_direction = cylinder_surface.frame().reference().as_raw();
+
+        let radius = 3.0;
+        *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+            *origin,
+            *axis,
+            *ref_direction,
+            radius,
+        )
+        .unwrap();
     }
     let faces = surfaces
         .iter()
@@ -296,7 +518,7 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
             shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
             surface: surface.id.clone(),
             sense: Sense::Forward,
-            loops: Vec::new().into(),
+            loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
             name: None,
             color: None,
             tolerance: None,
@@ -312,51 +534,78 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
         points: &[],
     };
     let mut placed = model_hole();
-    placed.id = FeatureId::mint("placed").expect("identity grammar");
-    let FeatureDefinition::Hole {
-        placements,
-        construction,
-        ..
-    } = &mut placed.definition
+    placed.id = FeatureId::mint("synthetic:test:id#placed").expect("identity grammar");
+    let updated_placed_evaluation = &mut placed.evaluation;
+    let mut updated_placed_definition = updated_placed_evaluation.definition().clone();
+    let FeatureDefinition::Operation(FeatureOperation::Hole {
+        placements, shape, ..
+    }) = &mut updated_placed_definition
     else {
         unreachable!();
     };
-    let cadmpeg_ir::features::HoleConstruction::Form { kind, .. } = construction else {
+    let mut edited_construction = shape.construction().clone();
+    let construction = &mut edited_construction;
+    let cadmpeg_ir::features::holes::HoleConstruction::Form { kind, .. } = construction else {
         panic!("ordinary hole form");
     };
     *kind = HoleKind::Counterbore {
-        diameter: Length(6.0),
-        depth: Length(1.0),
+        diameter: cadmpeg_ir::scalar::PositiveLength::new(6.0).unwrap(),
+        depth: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
     };
     placements
         .get_or_insert_default()
         .push(HolePlacement::Axis {
-            origin: Point3::new(-5.0, 0.0, 100.0),
-            axis: Vector3::new(0.0, 0.0, -1.0),
+            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(-5.0, 0.0, 100.0)).unwrap(),
+            axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, -1.0))
+                .unwrap(),
         });
+    *shape = cadmpeg_ir::features::holes::HoleShape::new(
+        edited_construction,
+        *shape.exit_kind(),
+        shape.diameter(),
+    )
+    .unwrap();
+    updated_placed_evaluation.set_definition(updated_placed_definition);
     let mut unplaced = model_hole();
-    unplaced.id = FeatureId::mint("unplaced").expect("identity grammar");
-    let FeatureDefinition::Hole { construction, .. } = &mut unplaced.definition else {
+    unplaced.id = FeatureId::mint("synthetic:test:id#unplaced").expect("identity grammar");
+    let updated_unplaced_evaluation = &mut unplaced.evaluation;
+    let mut updated_unplaced_definition = updated_unplaced_evaluation.definition().clone();
+    let FeatureDefinition::Operation(FeatureOperation::Hole { shape, .. }) =
+        &mut updated_unplaced_definition
+    else {
         unreachable!();
     };
-    let cadmpeg_ir::features::HoleConstruction::Form { kind, .. } = construction else {
+    let mut edited_construction = shape.construction().clone();
+    let construction = &mut edited_construction;
+    let cadmpeg_ir::features::holes::HoleConstruction::Form { kind, .. } = construction else {
         panic!("ordinary hole form");
     };
     *kind = HoleKind::Counterbore {
-        diameter: Length(6.0),
-        depth: Length(1.0),
+        diameter: cadmpeg_ir::scalar::PositiveLength::new(6.0).unwrap(),
+        depth: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
     };
 
+    *shape = cadmpeg_ir::features::holes::HoleShape::new(
+        edited_construction,
+        *shape.exit_kind(),
+        shape.diameter(),
+    )
+    .unwrap();
+    updated_unplaced_evaluation.set_definition(updated_unplaced_definition);
     let mut unique = [unplaced.clone()];
-    project_hole_topology_axes(&mut unique, &topology);
-    let FeatureDefinition::Hole { placements, .. } = &unique[0].definition else {
+    project_hole_topology_axes(&ctx, &mut unique, &topology).unwrap();
+    let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
+        unique[0].evaluation.definition()
+    else {
         unreachable!();
     };
     assert_eq!(placements.as_deref().map(<[_]>::len), Some(3));
 
     let mut features = [placed.clone(), unplaced.clone()];
-    project_hole_topology_axes(&mut features, &topology);
-    let FeatureDefinition::Hole { placements, .. } = &features[1].definition else {
+    project_hole_topology_axes(&ctx, &mut features, &topology).unwrap();
+    let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
+        features[1].evaluation.definition()
+    else {
         unreachable!();
     };
     assert_eq!(
@@ -364,30 +613,49 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
         Some(
             &[
                 HolePlacement::Axis {
-                    origin: Point3::new(5.0, 0.0, 0.0),
-                    axis: Vector3::new(0.0, 0.0, 1.0),
+                    origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(5.0, 0.0, 0.0))
+                        .unwrap(),
+                    axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                        .unwrap(),
                 },
                 HolePlacement::Axis {
-                    origin: Point3::new(20.0, 0.0, 0.0),
-                    axis: Vector3::new(0.0, 0.0, 1.0),
+                    origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(20.0, 0.0, 0.0))
+                        .unwrap(),
+                    axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                        .unwrap(),
                 },
             ][..]
         )
     );
 
     let mut ambiguous = [placed.clone(), unplaced.clone(), unplaced.clone()];
-    ambiguous[2].id = FeatureId::mint("also-unplaced").expect("identity grammar");
-    project_hole_topology_axes(&mut ambiguous, &topology);
-    let FeatureDefinition::Hole { placements, .. } = &ambiguous[1].definition else {
+    ambiguous[2].id = FeatureId::mint("synthetic:test:id#also-unplaced").expect("identity grammar");
+    project_hole_topology_axes(&ctx, &mut ambiguous, &topology).unwrap();
+    let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
+        ambiguous[1].evaluation.definition()
+    else {
         unreachable!();
     };
     assert!(placements.is_none());
 
     let mut unmatched_surfaces = surfaces.clone();
-    let SurfaceGeometry::Cylinder { radius, .. } = &mut unmatched_surfaces[5].geometry else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
+        &mut unmatched_surfaces[5].geometry
+    else {
         unreachable!();
     };
-    *radius = 4.0;
+    let origin = cylinder_surface.origin();
+    let axis = cylinder_surface.frame().axis().as_raw();
+    let ref_direction = cylinder_surface.frame().reference().as_raw();
+
+    let radius = 4.0;
+    *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+        *origin,
+        *axis,
+        *ref_direction,
+        radius,
+    )
+    .unwrap();
     let unmatched_topology = HoleTopology {
         surfaces: &unmatched_surfaces,
         faces: &faces,
@@ -398,22 +666,30 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
         points: &[],
     };
     let mut unmatched_signature = [placed.clone(), unplaced.clone()];
-    project_hole_topology_axes(&mut unmatched_signature, &unmatched_topology);
-    let FeatureDefinition::Hole { placements, .. } = &unmatched_signature[1].definition else {
+    project_hole_topology_axes(&ctx, &mut unmatched_signature, &unmatched_topology).unwrap();
+    let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
+        unmatched_signature[1].evaluation.definition()
+    else {
         unreachable!();
     };
     assert!(placements.is_none());
 
-    let FeatureDefinition::Hole { placements, .. } = &mut placed.definition else {
-        unreachable!();
-    };
-    placements.as_mut().expect("seeded placement")[0] = HolePlacement::Axis {
-        origin: Point3::new(-50.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-    };
+    placed.evaluation.edit(|definition, _| {
+        let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) = definition
+        else {
+            unreachable!();
+        };
+        placements.as_mut().expect("seeded placement")[0] = HolePlacement::Axis {
+            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(-50.0, 0.0, 0.0)).unwrap(),
+            axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                .unwrap(),
+        };
+    });
     let mut incomplete_topology = [placed, unplaced];
-    project_hole_topology_axes(&mut incomplete_topology, &topology);
-    let FeatureDefinition::Hole { placements, .. } = &incomplete_topology[1].definition else {
+    project_hole_topology_axes(&ctx, &mut incomplete_topology, &topology).unwrap();
+    let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
+        incomplete_topology[1].evaluation.definition()
+    else {
         unreachable!();
     };
     assert!(placements.is_none());
@@ -421,26 +697,34 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
 
 #[test]
 fn hole_topology_uses_exact_cylinder_spans() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let surface = Surface {
         id: SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
-        geometry: SurfaceGeometry::Cylinder {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 2.0,
-        },
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                2.0,
+            )
+            .unwrap(),
+        )),
         source_object: None,
     };
     let cone = Surface {
         id: SurfaceId::mint("test:model:entity#cone").expect("identity grammar"),
-        geometry: SurfaceGeometry::Cone {
-            origin: Point3::new(0.0, 0.0, -10.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 2.0,
-            ratio: 1.0,
-            half_angle: 1.0,
-        },
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+            cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+                Point3::new(0.0, 0.0, -10.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                2.0,
+                1.0,
+                1.0,
+            )
+            .unwrap(),
+        )),
         source_object: None,
     };
     let face = Face {
@@ -448,7 +732,10 @@ fn hole_topology_uses_exact_cylinder_spans() {
         shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
         surface: surface.id.clone(),
         sense: Sense::Forward,
-        loops: vec![LoopId::mint("test:model:entity#loop").expect("identity grammar")].into(),
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![LoopId::mint(
+            "test:model:entity#loop",
+        )
+        .expect("identity grammar")]),
         name: None,
         color: None,
         tolerance: None,
@@ -458,9 +745,11 @@ fn hole_topology_uses_exact_cylinder_spans() {
         face: face.id.clone(),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
             cadmpeg_ir::topology::LoopRing::new(
+                &cadmpeg_test_support::service_decode_context(),
                 vec![CoedgeId::mint("test:model:entity#coedge").expect("identity grammar")],
                 Vec::new(),
             )
+            .expect("fixture ring admission")
             .expect("valid loop ring"),
         ),
     };
@@ -475,10 +764,9 @@ fn hole_topology_uses_exact_cylinder_spans() {
     };
     let edge = Edge {
         id: EdgeId::mint("test:model:entity#edge").expect("identity grammar"),
-        curve: None,
+        carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
         start: VertexId::mint("test:model:entity#start").expect("identity grammar"),
         end: VertexId::mint("test:model:entity#end").expect("identity grammar"),
-        param_range: None,
         tolerance: None,
     };
     let vertices = [
@@ -494,16 +782,18 @@ fn hole_topology_uses_exact_cylinder_spans() {
         },
     ];
     let points = [
-        Point {
-            id: PointId::mint("test:model:entity#start-point").expect("identity grammar"),
-            position: Point3::new(2.0, 0.0, 0.0),
-            source_object: None,
-        },
-        Point {
-            id: PointId::mint("test:model:entity#end-point").expect("identity grammar"),
-            position: Point3::new(2.0, 0.0, -10.0),
-            source_object: None,
-        },
+        Point::new(
+            PointId::mint("test:model:entity#start-point").expect("identity grammar"),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
+                .expect("a finite position is a point"),
+            None,
+        ),
+        Point::new(
+            PointId::mint("test:model:entity#end-point").expect("identity grammar"),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 0.0, -10.0))
+                .expect("a finite position is a point"),
+            None,
+        ),
     ];
 
     let mut bore_face = face;
@@ -524,74 +814,117 @@ fn hole_topology_uses_exact_cylinder_spans() {
     };
 
     let mut unplaced = model_hole();
-    let FeatureDefinition::Hole { extent, bottom, .. } = &mut unplaced.definition else {
-        unreachable!();
-    };
-    *extent = Some(LinearTermination::Blind {
-        length: Length(10.0),
+    unplaced.evaluation.edit(|definition, _| {
+        let FeatureDefinition::Operation(FeatureOperation::Hole { extent, bottom, .. }) =
+            definition
+        else {
+            unreachable!();
+        };
+        *extent = Some(LinearTermination::Blind {
+            length: cadmpeg_ir::scalar::NonZeroLength::new(10.0).unwrap(),
+        });
+        *bottom = Some(HoleBottom::Flat);
     });
-    *bottom = Some(HoleBottom::Flat);
     let mut exact = [unplaced.clone()];
-    project_hole_topology_axes(&mut exact, &topology);
-    let FeatureDefinition::Hole { placements, .. } = &exact[0].definition else {
+    project_hole_topology_axes(&ctx, &mut exact, &topology).unwrap();
+    let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
+        exact[0].evaluation.definition()
+    else {
         unreachable!();
     };
     assert_eq!(placements.as_deref().map(<[_]>::len), Some(1));
 
     let mut ambiguous = [unplaced.clone(), unplaced.clone()];
-    ambiguous[1].id = FeatureId::mint("second-hole").expect("identity grammar");
-    project_hole_topology_axes(&mut ambiguous, &topology);
-    let FeatureDefinition::Hole { placements, .. } = &ambiguous[0].definition else {
+    ambiguous[1].id = FeatureId::mint("synthetic:test:id#second-hole").expect("identity grammar");
+    project_hole_topology_axes(&ctx, &mut ambiguous, &topology).unwrap();
+    let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
+        ambiguous[0].evaluation.definition()
+    else {
         unreachable!();
     };
     assert!(placements.is_none());
 
-    let FeatureDefinition::Hole { extent, .. } = &mut unplaced.definition else {
-        unreachable!();
-    };
-    *extent = Some(LinearTermination::Blind {
-        length: Length(9.0),
+    unplaced.evaluation.edit(|definition, _| {
+        let FeatureDefinition::Operation(FeatureOperation::Hole { extent, .. }) = definition else {
+            unreachable!();
+        };
+        *extent = Some(LinearTermination::Blind {
+            length: cadmpeg_ir::scalar::NonZeroLength::new(9.0).unwrap(),
+        });
     });
-    project_hole_topology_axes(std::slice::from_mut(&mut unplaced), &topology);
-    let FeatureDefinition::Hole { placements, .. } = &unplaced.definition else {
+    project_hole_topology_axes(&ctx, std::slice::from_mut(&mut unplaced), &topology).unwrap();
+    let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
+        unplaced.evaluation.definition()
+    else {
         unreachable!();
     };
     assert!(placements.is_none());
 
     let mut drilled = model_hole();
-    let FeatureDefinition::Hole {
-        construction,
+    let updated_drilled_evaluation = &mut drilled.evaluation;
+    let mut updated_drilled_definition = updated_drilled_evaluation.definition().clone();
+    let FeatureDefinition::Operation(FeatureOperation::Hole {
+        shape,
         extent,
         bottom,
         ..
-    } = &mut drilled.definition
+    }) = &mut updated_drilled_definition
     else {
         unreachable!();
     };
-    let cadmpeg_ir::features::HoleConstruction::Form { kind, .. } = construction else {
+    let mut edited_construction = shape.construction().clone();
+    let construction = &mut edited_construction;
+    let cadmpeg_ir::features::holes::HoleConstruction::Form { kind, .. } = construction else {
         panic!("ordinary hole form");
     };
     *kind = HoleKind::SimpleDrilled {
-        drill_point_angle: Angle(2.0),
+        drill_point_angle: cadmpeg_ir::scalar::InteriorAngle::new(2.0).unwrap(),
     };
     *extent = Some(LinearTermination::Blind {
-        length: Length(10.0),
+        length: cadmpeg_ir::scalar::NonZeroLength::new(10.0).unwrap(),
     });
     *bottom = Some(HoleBottom::Angled {
-        included_angle: Angle(2.0),
+        included_angle: cadmpeg_ir::scalar::InteriorAngle::new(2.0).unwrap(),
         depth_to_tip: false,
     });
-    project_hole_topology_axes(std::slice::from_mut(&mut drilled), &topology);
-    let FeatureDefinition::Hole { placements, .. } = &drilled.definition else {
+
+    *shape = cadmpeg_ir::features::holes::HoleShape::new(
+        edited_construction,
+        *shape.exit_kind(),
+        shape.diameter(),
+    )
+    .unwrap();
+    updated_drilled_evaluation.set_definition(updated_drilled_definition);
+    project_hole_topology_axes(&ctx, std::slice::from_mut(&mut drilled), &topology).unwrap();
+    let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
+        drilled.evaluation.definition()
+    else {
         unreachable!();
     };
     assert_eq!(placements.as_deref().map(<[_]>::len), Some(1));
 
     let mut wrong_surfaces = surfaces.clone();
-    let SurfaceGeometry::Cone { half_angle, .. } = &mut wrong_surfaces[1].geometry else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) =
+        &mut wrong_surfaces[1].geometry
+    else {
         unreachable!();
     };
-    *half_angle = 0.5;
+    let origin = cone_surface.origin();
+    let axis = cone_surface.frame().axis().as_raw();
+    let ref_direction = cone_surface.frame().reference().as_raw();
+    let radius = cone_surface.radius().get();
+    let ratio = cone_surface.ratio().get();
+
+    let half_angle = 0.5;
+    *cone_surface = cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+        *origin,
+        *axis,
+        *ref_direction,
+        radius,
+        ratio,
+        half_angle,
+    )
+    .unwrap();
     let wrong_topology = HoleTopology {
         surfaces: &wrong_surfaces,
         faces: &faces,
@@ -601,90 +934,128 @@ fn hole_topology_uses_exact_cylinder_spans() {
         vertices: &vertices,
         points: &points,
     };
-    let FeatureDefinition::Hole { placements, .. } = &mut drilled.definition else {
-        unreachable!();
-    };
-    *placements = None;
-    project_hole_topology_axes(std::slice::from_mut(&mut drilled), &wrong_topology);
-    let FeatureDefinition::Hole { placements, .. } = &drilled.definition else {
+    drilled.evaluation.edit(|definition, _| {
+        let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) = definition
+        else {
+            unreachable!();
+        };
+        *placements = None;
+    });
+    project_hole_topology_axes(&ctx, std::slice::from_mut(&mut drilled), &wrong_topology).unwrap();
+    let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
+        drilled.evaluation.definition()
+    else {
         unreachable!();
     };
     assert!(placements.is_none());
 
     let mut hole = model_hole();
-    let FeatureDefinition::Hole {
-        placements,
-        diameter,
-        ..
-    } = &mut hole.definition
+    let updated_hole_evaluation = &mut hole.evaluation;
+    let mut updated_hole_definition = updated_hole_evaluation.definition().clone();
+    let FeatureDefinition::Operation(FeatureOperation::Hole {
+        placements, shape, ..
+    }) = &mut updated_hole_definition
     else {
         unreachable!();
     };
+    let mut edited_diameter = shape.diameter();
+    let diameter = &mut edited_diameter;
     placements
         .get_or_insert_default()
         .push(HolePlacement::Axis {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
+            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+            axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                .unwrap(),
         });
     *diameter = None;
-    project_topological_hole_constructions(std::slice::from_mut(&mut hole), &topology);
-    let FeatureDefinition::Hole {
-        diameter, extent, ..
-    } = hole.definition
+
+    *shape = cadmpeg_ir::features::holes::HoleShape::new(
+        shape.construction().clone(),
+        *shape.exit_kind(),
+        edited_diameter,
+    )
+    .unwrap();
+    updated_hole_evaluation.set_definition(updated_hole_definition);
+    project_topological_hole_constructions(&ctx, std::slice::from_mut(&mut hole), &topology)
+        .unwrap();
+    let FeatureDefinition::Operation(FeatureOperation::Hole { shape, extent, .. }) =
+        hole.evaluation.definition()
     else {
         unreachable!();
     };
-    assert_eq!(diameter, Some(Length(4.0)));
+    let diameter = shape.diameter();
     assert_eq!(
-        extent,
+        diameter,
+        Some(cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap())
+    );
+    assert_eq!(
+        *extent,
         Some(LinearTermination::Blind {
-            length: Length(10.0)
+            length: cadmpeg_ir::scalar::NonZeroLength::new(10.0).unwrap()
         })
     );
 }
 
 #[test]
 fn seeded_hole_axes_partition_complete_topology_by_distinct_directions() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let placement = |x, y, axis| HolePlacement::Axis {
-        origin: Point3::new(x, y, 0.0),
-        axis,
+        origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(x, y, 0.0)).unwrap(),
+        axis: cadmpeg_ir::features::FeatureDirection3::new(axis)
+            .expect("each seeded axis is a unit coordinate direction"),
     };
     let x_axis = Vector3::new(1.0, 0.0, 0.0);
     let y_axis = Vector3::new(0.0, 1.0, 0.0);
     let mut horizontal = model_hole();
-    horizontal.id = FeatureId::mint("horizontal").expect("identity grammar");
-    let FeatureDefinition::Hole {
+    horizontal.id = FeatureId::mint("synthetic:test:id#horizontal").expect("identity grammar");
+    let updated_horizontal_evaluation = &mut horizontal.evaluation;
+    let mut updated_horizontal_definition = updated_horizontal_evaluation.definition().clone();
+    let FeatureDefinition::Operation(FeatureOperation::Hole {
         placements,
-        construction,
+        shape,
         extent,
         bottom,
         ..
-    } = &mut horizontal.definition
+    }) = &mut updated_horizontal_definition
     else {
         unreachable!();
     };
-    let cadmpeg_ir::features::HoleConstruction::Form { kind, .. } = construction else {
+    let mut edited_construction = shape.construction().clone();
+    let construction = &mut edited_construction;
+    let cadmpeg_ir::features::holes::HoleConstruction::Form { kind, .. } = construction else {
         panic!("ordinary hole form");
     };
     *kind = HoleKind::SimpleDrilled {
-        drill_point_angle: Angle(2.0),
+        drill_point_angle: cadmpeg_ir::scalar::InteriorAngle::new(2.0).unwrap(),
     };
     *extent = Some(LinearTermination::Blind {
-        length: Length(10.0),
+        length: cadmpeg_ir::scalar::NonZeroLength::new(10.0).unwrap(),
     });
     *bottom = Some(HoleBottom::Angled {
-        included_angle: Angle(2.0),
+        included_angle: cadmpeg_ir::scalar::InteriorAngle::new(2.0).unwrap(),
         depth_to_tip: false,
     });
     placements
         .get_or_insert_default()
         .push(placement(0.0, 30.0, x_axis));
+
+    *shape = cadmpeg_ir::features::holes::HoleShape::new(
+        edited_construction,
+        *shape.exit_kind(),
+        shape.diameter(),
+    )
+    .unwrap();
+    updated_horizontal_evaluation.set_definition(updated_horizontal_definition);
     let mut vertical = horizontal.clone();
-    vertical.id = FeatureId::mint("vertical").expect("identity grammar");
-    let FeatureDefinition::Hole { placements, .. } = &mut vertical.definition else {
-        unreachable!();
-    };
-    *placements = Some(vec![placement(-20.0, 0.0, y_axis)]);
+    vertical.id = FeatureId::mint("synthetic:test:id#vertical").expect("identity grammar");
+    vertical.evaluation.edit(|definition, _| {
+        let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) = definition
+        else {
+            unreachable!();
+        };
+        *placements = Some(vec![placement(-20.0, 0.0, y_axis)]);
+    });
     let candidates = vec![
         placement(0.0, -10.0, x_axis),
         placement(0.0, 30.0, x_axis),
@@ -694,19 +1065,19 @@ fn seeded_hole_axes_partition_complete_topology_by_distinct_directions() {
     ];
     let mut features = [horizontal.clone(), vertical.clone()];
 
-    partition_seeded_hole_axes(&mut features, &[0, 1], &candidates);
+    partition_seeded_hole_axes(&ctx, &mut features, &[0, 1], &candidates).unwrap();
 
-    let FeatureDefinition::Hole {
+    let FeatureDefinition::Operation(FeatureOperation::Hole {
         placements: horizontal_placements,
         ..
-    } = &features[0].definition
+    }) = features[0].evaluation.definition()
     else {
         unreachable!();
     };
-    let FeatureDefinition::Hole {
+    let FeatureDefinition::Operation(FeatureOperation::Hole {
         placements: vertical_placements,
         ..
-    } = &features[1].definition
+    }) = features[1].evaluation.definition()
     else {
         unreachable!();
     };
@@ -716,22 +1087,79 @@ fn seeded_hole_axes_partition_complete_topology_by_distinct_directions() {
     let mut incomplete = [horizontal.clone(), vertical.clone()];
     let mut candidates_with_unowned_direction = candidates;
     candidates_with_unowned_direction.push(placement(0.0, 0.0, Vector3::new(0.0, 0.0, 1.0)));
-    partition_seeded_hole_axes(&mut incomplete, &[0, 1], &candidates_with_unowned_direction);
-    let FeatureDefinition::Hole { placements, .. } = &incomplete[0].definition else {
+    partition_seeded_hole_axes(
+        &ctx,
+        &mut incomplete,
+        &[0, 1],
+        &candidates_with_unowned_direction,
+    )
+    .unwrap();
+    let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
+        incomplete[0].evaluation.definition()
+    else {
         unreachable!();
     };
     assert_eq!(placements.as_deref().map(<[_]>::len), Some(1));
 
-    let FeatureDefinition::Hole { placements, .. } = &mut vertical.definition else {
-        unreachable!();
-    };
-    *placements = Some(vec![placement(20.0, 0.0, x_axis)]);
+    vertical.evaluation.edit(|definition, _| {
+        let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) = definition
+        else {
+            unreachable!();
+        };
+        *placements = Some(vec![placement(20.0, 0.0, x_axis)]);
+    });
     let mut ambiguous = [horizontal, vertical];
-    partition_seeded_hole_axes(&mut ambiguous, &[0, 1], &candidates_with_unowned_direction);
-    let FeatureDefinition::Hole { placements, .. } = &ambiguous[0].definition else {
+    partition_seeded_hole_axes(
+        &ctx,
+        &mut ambiguous,
+        &[0, 1],
+        &candidates_with_unowned_direction,
+    )
+    .unwrap();
+    let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
+        ambiguous[0].evaluation.definition()
+    else {
         unreachable!();
     };
     assert_eq!(placements.as_deref().map(<[_]>::len), Some(1));
+}
+
+#[test]
+fn seeded_hole_axis_partitions_report_collection_limit() {
+    let placement = |axis: Vector3| HolePlacement::Axis {
+        origin: cadmpeg_ir::features::FinitePoint3::ZERO,
+        axis: cadmpeg_ir::features::FeatureDirection3::new(axis).unwrap(),
+    };
+    let x = placement(Vector3::new(1.0, 0.0, 0.0));
+    let y = placement(Vector3::new(0.0, 1.0, 0.0));
+    let mut first = model_hole();
+    first.evaluation.edit(|definition, _| {
+        let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) = definition
+        else {
+            unreachable!()
+        };
+        *placements = Some(vec![x.clone()]);
+    });
+    let mut second = first.clone();
+    second.id = FeatureId::mint("synthetic:test:id#second-partition").unwrap();
+    second.evaluation.edit(|definition, _| {
+        let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) = definition
+        else {
+            unreachable!()
+        };
+        *placements = Some(vec![y.clone()]);
+    });
+    let mut features = [first, second];
+    let candidates = [x, y];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 5;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
+    let error = partition_seeded_hole_axes(&ctx, &mut features, &[0, 1], &candidates)
+        .expect_err("two partitions exceed the remaining collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "SLDPRT seeded hole-axis partitions"));
 }
 
 #[test]
@@ -748,16 +1176,19 @@ fn seeded_drilled_bore_candidates_exclude_claimed_axes_and_unresolved_competitor
         .map(|(index, (origin, axis))| Surface {
             id: SurfaceId::mint(format!("test:model:entity#seed-surface-{index}"))
                 .expect("identity grammar"),
-            geometry: SurfaceGeometry::Cylinder {
-                origin: *origin,
-                axis: *axis,
-                ref_direction: if axis.z.abs() == 1.0 {
-                    Vector3::new(1.0, 0.0, 0.0)
-                } else {
-                    Vector3::new(0.0, 0.0, 1.0)
-                },
-                radius: 2.0,
-            },
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                    *origin,
+                    *axis,
+                    if axis.z.abs() == 1.0 {
+                        Vector3::new(1.0, 0.0, 0.0)
+                    } else {
+                        Vector3::new(0.0, 0.0, 1.0)
+                    },
+                    2.0,
+                )
+                .unwrap(),
+            )),
             source_object: None,
         })
         .collect::<Vec<_>>();
@@ -770,7 +1201,7 @@ fn seeded_drilled_bore_candidates_exclude_claimed_axes_and_unresolved_competitor
             shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
             surface: surface.id.clone(),
             sense: Sense::Reversed,
-            loops: Vec::new().into(),
+            loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
             name: None,
             color: None,
             tolerance: None,
@@ -785,34 +1216,56 @@ fn seeded_drilled_bore_candidates_exclude_claimed_axes_and_unresolved_competitor
         vertices: &[],
         points: &[],
     };
-    let placement = |origin, axis| HolePlacement::Axis { origin, axis };
+    let placement = |origin, axis| HolePlacement::Axis {
+        origin: cadmpeg_ir::features::FinitePoint3::new(origin).unwrap(),
+        axis: cadmpeg_ir::features::FeatureDirection3::new(axis)
+            .expect("each candidate axis is a unit coordinate direction"),
+    };
     let mut horizontal = model_hole();
-    horizontal.id = FeatureId::mint("horizontal").expect("identity grammar");
-    let FeatureDefinition::Hole { placements, .. } = &mut horizontal.definition else {
+    horizontal.id = FeatureId::mint("synthetic:test:id#horizontal").expect("identity grammar");
+    let updated_horizontal_evaluation = &mut horizontal.evaluation;
+    let mut updated_horizontal_definition = updated_horizontal_evaluation.definition().clone();
+    let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
+        &mut updated_horizontal_definition
+    else {
         unreachable!();
     };
     placements
         .get_or_insert_default()
         .push(placement(axes[0].0, axes[0].1));
     let mut vertical = model_hole();
-    vertical.id = FeatureId::mint("vertical").expect("identity grammar");
-    let FeatureDefinition::Hole { placements, .. } = &mut vertical.definition else {
+    vertical.id = FeatureId::mint("synthetic:test:id#vertical").expect("identity grammar");
+    let updated_vertical_evaluation = &mut vertical.evaluation;
+    let mut updated_vertical_definition = updated_vertical_evaluation.definition().clone();
+    let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
+        &mut updated_vertical_definition
+    else {
         unreachable!();
     };
     placements
         .get_or_insert_default()
         .push(placement(axes[2].0, axes[2].1));
     let mut other = model_hole();
-    other.id = FeatureId::mint("other").expect("identity grammar");
-    let FeatureDefinition::Hole { placements, .. } = &mut other.definition else {
+    other.id = FeatureId::mint("synthetic:test:id#other").expect("identity grammar");
+    let updated_other_evaluation = &mut other.evaluation;
+    let mut updated_other_definition = updated_other_evaluation.definition().clone();
+    let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
+        &mut updated_other_definition
+    else {
         unreachable!();
     };
     placements
         .get_or_insert_default()
         .push(placement(axes[3].0, axes[3].1));
+    updated_horizontal_evaluation.set_definition(updated_horizontal_definition);
+    updated_other_evaluation.set_definition(updated_other_definition);
+    updated_vertical_evaluation.set_definition(updated_vertical_definition);
     let mut features = [horizontal, vertical, other];
 
-    let candidates = seeded_drilled_bore_candidates(&features, &[0, 1], 4.0, &topology)
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &DecodePolicy::service()).unwrap();
+    let candidates = seeded_drilled_bore_candidates(&ctx, &features, &[0, 1], 4.0, &topology)
+        .unwrap()
         .expect("complete competing ownership");
 
     assert_eq!(candidates.len(), 3);
@@ -821,9 +1274,56 @@ fn seeded_drilled_bore_candidates_exclude_claimed_axes_and_unresolved_competitor
         .iter()
         .all(|candidate| hole_axis_key(candidate) != Some(claimed)));
 
-    let FeatureDefinition::Hole { placements, .. } = &mut features[2].definition else {
-        unreachable!();
+    features[2].evaluation.edit(|definition, _| {
+        let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) = definition
+        else {
+            unreachable!();
+        };
+        *placements = None;
+    });
+    assert!(
+        seeded_drilled_bore_candidates(&ctx, &features, &[0, 1], 4.0, &topology)
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[test]
+fn unclaimed_seeded_bore_axes_refuse_collection_growth() {
+    let placement = HolePlacement::Axis {
+        origin: cadmpeg_ir::features::FinitePoint3::ZERO,
+        axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
     };
-    *placements = None;
-    assert!(seeded_drilled_bore_candidates(&features, &[0, 1], 4.0, &topology).is_none());
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
+    let error = unclaimed_seeded_hole_candidates(&ctx, &[model_hole()], &[0], 4.0, vec![placement])
+        .expect_err("one available bore axis requires collection admission");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "collect SLDPRT unclaimed bore axes"));
+}
+
+#[test]
+fn numerical_audit_hole_carriers_keep_distinct_large_coordinate_axes() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let axis = Vector3::new(0.0, 0.0, 1.0);
+    for positions in [[1.0e12, 2.0e12], [-2.0e12, -1.0e12], [1.0e300, 2.0e300]] {
+        let placements = crate::resolved_features::holes::carrier_placements(
+            &ctx,
+            positions.map(|x| {
+                (
+                    Point3::new(x, 0.0, 0.0),
+                    cadmpeg_ir::features::FeatureDirection3::new(axis)
+                        .expect("unit +Z axis is an admitted feature direction"),
+                )
+            }),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(placements.len(), 2);
+        assert_ne!(hole_axis_key(&placements[0]), hole_axis_key(&placements[1]));
+    }
 }

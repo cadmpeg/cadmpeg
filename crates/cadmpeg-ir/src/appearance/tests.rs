@@ -10,8 +10,11 @@ fn appearance_asset_and_binding_round_trip() {
         Appearance, AppearanceBinding, AppearanceTarget, BumpMap, TextureMap2d, TextureRef,
     };
     use crate::ids::AppearanceId;
+    use crate::scalar::{Angle, FiniteReal, Length};
 
-    let mut ir = unit_cube();
+    let real = |value| FiniteReal::new(value).unwrap();
+    let length = |value| Length::new(value).unwrap();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let body = ir.model.bodies[0].id.clone();
     ir.model.appearances.push(Appearance {
         id: AppearanceId::mint("synthetic:test:appearance#prism-001").expect("valid identity"),
@@ -22,12 +25,7 @@ fn appearance_asset_and_binding_round_trip() {
         physical_token: Some("physical-token".into()),
         schema: Some("GenericSchema".into()),
         category: None,
-        base_color: Some(crate::topology::Color {
-            r: 0.1,
-            g: 0.2,
-            b: 0.3,
-            a: 1.0,
-        }),
+        base_color: Some(crate::topology::Color::new(0.1, 0.2, 0.3, 1.0).expect("valid color")),
         properties: std::collections::BTreeMap::new(),
         textures: vec![TextureRef {
             asset_guid: "texture-guid".into(),
@@ -38,22 +36,22 @@ fn appearance_asset_and_binding_round_trip() {
             mapping: TextureMap2d {
                 map_channel: 1,
                 uvw_source: 0,
-                u_offset: 0.25,
-                v_offset: -0.5,
-                u_scale: 2.0,
-                v_scale: 3.0,
-                rotation: std::f64::consts::FRAC_PI_2,
+                u_offset: real(0.25),
+                v_offset: real(-0.5),
+                u_scale: real(2.0),
+                v_scale: real(3.0),
+                rotation: Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
                 repeat_u: true,
                 repeat_v: false,
-                real_world_offset_x: 12.7,
-                real_world_offset_y: 25.4,
-                real_world_scale_x: 304.8,
-                real_world_scale_y: 609.6,
+                real_world_offset_x: length(12.7),
+                real_world_offset_y: length(25.4),
+                real_world_scale_x: length(304.8),
+                real_world_scale_y: length(609.6),
             },
             bump: Some(BumpMap {
                 normal_map: true,
-                depth: 2.54,
-                normal_scale: 0.75,
+                depth: length(2.54),
+                normal_scale: real(0.75),
             }),
         }],
     });

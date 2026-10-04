@@ -18,7 +18,10 @@
 //! and the categories this codec spans (decode, entity, graph, presentation,
 //! geometry, writer) have no honest common default.
 
-use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::{
+    loss::{LossKind, LossNote, LossTaxonomy},
+    Severity,
+};
 macro_rules! loss_codes {
     ($( $(#[$meta:meta])* $variant:ident => $code:literal ),+ $(,)?) => {
         /// A stable identifier for one IGES transfer loss.
@@ -30,7 +33,7 @@ macro_rules! loss_codes {
         impl IgesLossCode {
             /// Every code in declaration order.
             #[cfg(test)]
-            pub(crate) const ALL: &'static [Self] = &[$(Self::$variant),+];
+            const ALL: &'static [Self] = &[$(Self::$variant),+];
 
             /// The stable string identifier.
             #[must_use]
@@ -42,10 +45,6 @@ macro_rules! loss_codes {
 }
 
 loss_codes! {
-    /// Product-occurrence expansion stopped at the configured output limit.
-    OccurrenceExpansionOutputTruncated => "occurrence.expansion-output-truncated",
-    /// Product-occurrence expansion stopped at the configured nesting-depth limit.
-    OccurrenceExpansionDepthTruncated => "occurrence.expansion-depth-truncated",
     /// Product-occurrence root inference was suppressed by a malformed member list.
     OccurrenceRootInferenceBlocked => "occurrence.root-inference-blocked",
     /// Product-occurrence expansion omitted an instance or member with malformed placement data.
@@ -66,6 +65,8 @@ loss_codes! {
     ParameterBoundaryAmbiguous => "parameter.boundary-ambiguous",
     /// A counted list declares more items than its Parameter Data record holds.
     ParameterCountOverdeclared => "parameter.count-overdeclared",
+    /// A Type 422 attribute table states a count no row grid can be read from.
+    AttributeTableCountUnstatable => "parameter.attribute-table-count-unstatable",
     /// One Directory Entry record kept its raw cards because its typed fields were not recovered.
     DirectoryRecordQuarantined => "directory.record-quarantined",
     /// One entity's Parameter Data kept its raw cards because its tokens were not recovered.
@@ -76,6 +77,8 @@ loss_codes! {
     DisplayDataNotProjected => "presentation.display-data-not-projected",
     /// A drawing has conflicting valid properties of the same form.
     DrawingPropertyAmbiguous => "presentation.drawing-property-ambiguous",
+    /// A body owner has conflicting valid Type 406 Form 15 names.
+    BodyNameAmbiguous => "presentation.body-name-ambiguous",
     /// The Global line-weight scale is unavailable, so no entity has a width.
     LineWeightScaleUnavailable => "presentation.line-weight-scale-unavailable",
     /// A Type 118 developability flag was not transferred to neutral geometry.
@@ -106,20 +109,26 @@ loss_codes! {
     PassthroughRecordOmitted => "writer.passthrough-omitted",
     /// The emitted Global minimum resolution exceeds the neutral declaration.
     WriterMinimumResolutionAdjusted => "writer.minimum-resolution-adjusted",
+    /// A body name cannot be encoded as a Type 406 Form 15 name.
+    WriterBodyNameNotRepresented => "writer.body-name-not-represented",
+    /// A body has no owning Directory Entry for its color.
+    WriterBodyColorNotRepresented => "writer.body-color-not-represented",
+    /// IGES Directory color cannot carry a body opacity value.
+    WriterBodyOpacityNotRepresented => "writer.body-opacity-not-represented",
+    /// A free-geometry body has no single Directory Entry for visibility.
+    WriterBodyVisibilityNotRepresented => "writer.body-visibility-not-represented",
 }
 
 impl IgesLossCode {
     /// The severity of this loss.
     #[must_use]
-    pub(crate) const fn severity(self) -> Severity {
+    const fn severity(self) -> Severity {
         match self {
             Self::PreservedSourceUnavailable | Self::GlobalLengthUnitUnresolved => {
                 Severity::Blocking
             }
             Self::ProceduralReduced => Severity::Info,
-            Self::OccurrenceExpansionOutputTruncated
-            | Self::OccurrenceExpansionDepthTruncated
-            | Self::OccurrenceRootInferenceBlocked
+            Self::OccurrenceRootInferenceBlocked
             | Self::OccurrencePlacementMalformed
             | Self::EntityRetainedUnprojected
             | Self::EntityOutsideEnvelope
@@ -129,11 +138,13 @@ impl IgesLossCode {
             | Self::PointerUnresolved
             | Self::ParameterBoundaryAmbiguous
             | Self::ParameterCountOverdeclared
+            | Self::AttributeTableCountUnstatable
             | Self::DirectoryRecordQuarantined
             | Self::ParameterDataQuarantined
             | Self::CardFramingRecovered
             | Self::DisplayDataNotProjected
             | Self::DrawingPropertyAmbiguous
+            | Self::BodyNameAmbiguous
             | Self::LineWeightScaleUnavailable
             | Self::RuledDevelopabilityNotTransferred
             | Self::SplineHeaderNotTransferred
@@ -145,17 +156,20 @@ impl IgesLossCode {
             | Self::SourceDialectUnverified
             | Self::SourceDialectDisplaced
             | Self::PassthroughRecordOmitted
-            | Self::WriterMinimumResolutionAdjusted => Severity::Warning,
+            | Self::WriterMinimumResolutionAdjusted
+            | Self::WriterBodyNameNotRepresented
+            | Self::WriterBodyColorNotRepresented
+            | Self::WriterBodyOpacityNotRepresented
+            | Self::WriterBodyVisibilityNotRepresented => Severity::Warning,
         }
     }
 
     /// The shared cross-codec category this loss reports under.
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
-            Self::OccurrenceExpansionOutputTruncated
-            | Self::OccurrenceExpansionDepthTruncated
-            | Self::OccurrenceRootInferenceBlocked
-            | Self::OccurrencePlacementMalformed => LossTaxonomy::DecodeDiagnostic,
+            Self::OccurrenceRootInferenceBlocked | Self::OccurrencePlacementMalformed => {
+                LossTaxonomy::DecodeDiagnostic
+            }
             Self::EntityRetainedUnprojected
             | Self::EntityOutsideEnvelope
             | Self::EntityNotProjected => LossTaxonomy::RecordNotTyped,
@@ -166,6 +180,7 @@ impl IgesLossCode {
                 LossTaxonomy::MaterialNotTransferred
             }
             Self::DrawingPropertyAmbiguous
+            | Self::BodyNameAmbiguous
             | Self::RuledDevelopabilityNotTransferred
             | Self::SplineHeaderNotTransferred
             | Self::GlobalMetadataFieldUnusable => LossTaxonomy::MetadataNotTransferred,
@@ -176,6 +191,7 @@ impl IgesLossCode {
             | Self::GlobalNumericSyntaxRecovered
             | Self::GlobalNoncanonicalFraming
             | Self::ParameterCountOverdeclared
+            | Self::AttributeTableCountUnstatable
             | Self::DirectoryRecordQuarantined
             | Self::ParameterDataQuarantined
             | Self::CardFramingRecovered => LossTaxonomy::NoncanonicalSourceSyntax,
@@ -184,14 +200,29 @@ impl IgesLossCode {
             Self::PreservedSourceUnavailable => LossTaxonomy::PreservedSourceUnavailable,
             Self::ProceduralReduced => LossTaxonomy::ProceduralReduced,
             Self::PassthroughRecordOmitted => LossTaxonomy::PassthroughRecordOmitted,
-            Self::WriterMinimumResolutionAdjusted => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterMinimumResolutionAdjusted | Self::WriterBodyNameNotRepresented => {
+                LossTaxonomy::MetadataNotTransferred
+            }
+            Self::WriterBodyColorNotRepresented | Self::WriterBodyOpacityNotRepresented => {
+                LossTaxonomy::MaterialNotTransferred
+            }
+            Self::WriterBodyVisibilityNotRepresented => LossTaxonomy::MetadataNotTransferred,
         }
     }
 
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
     pub(crate) fn kind(self) -> LossKind {
-        LossKind::namespaced("iges", self.code(), self.shared_taxonomy())
+        LossKind::namespaced(
+            const {
+                match cadmpeg_ir::report::loss::LossNamespace::new("iges") {
+                    Ok(namespace) => namespace,
+                    Err(_) => panic!("reserved codec namespace"),
+                }
+            },
+            self.code(),
+            self.shared_taxonomy(),
+        )
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
@@ -217,8 +248,6 @@ mod tests {
         assert_eq!(
             codes,
             [
-                "occurrence.expansion-output-truncated",
-                "occurrence.expansion-depth-truncated",
                 "occurrence.root-inference-blocked",
                 "occurrence.placement-malformed",
                 "entity.retained-unprojected",
@@ -229,11 +258,13 @@ mod tests {
                 "graph.pointer-unresolved",
                 "parameter.boundary-ambiguous",
                 "parameter.count-overdeclared",
+                "parameter.attribute-table-count-unstatable",
                 "directory.record-quarantined",
                 "parameter.data-quarantined",
                 "card.framing-recovered",
                 "presentation.display-data-not-projected",
                 "presentation.drawing-property-ambiguous",
+                "presentation.body-name-ambiguous",
                 "presentation.line-weight-scale-unavailable",
                 "geometry.ruled-developability-not-transferred",
                 "geometry.spline-header-not-transferred",
@@ -249,6 +280,10 @@ mod tests {
                 "geometry.procedural-reduced",
                 "writer.passthrough-omitted",
                 "writer.minimum-resolution-adjusted",
+                "writer.body-name-not-represented",
+                "writer.body-color-not-represented",
+                "writer.body-opacity-not-represented",
+                "writer.body-visibility-not-represented",
             ]
         );
     }

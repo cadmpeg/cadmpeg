@@ -5,29 +5,52 @@ use crate::om::scalar::ShiftedBinary64;
 use serde::{Deserialize, Serialize};
 
 /// Exact cross-block scalar lane selected by a point-construction header.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeaturePointConstructionScalarLaneWire",
-    into = "FeaturePointConstructionScalarLaneWire"
-)]
-pub struct FeaturePointConstructionScalarLane {
-    pub id: String,
-    pub operation_label: String,
-    pub construction_header: String,
-    pub data_blocks: [String; 2],
-    pub scalars: [ShiftedBinary64; 6],
-    pub positions: PointScalarPositions,
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "FeaturePointConstructionScalarLaneWire")]
+pub(in crate::native) struct FeaturePointConstructionScalarLane {
+    pub(in crate::native) id: String,
+    pub(in crate::native) operation_label: String,
+    pub(super) construction_header: String,
+    pub(super) data_blocks: [String; 2],
+    pub(super) scalars: [ShiftedBinary64; 6],
+    pub(super) positions: PointScalarPositions,
+}
+
+#[derive(Serialize)]
+struct FeaturePointConstructionScalarLaneRef<'a> {
+    id: &'a str,
+    operation_label: &'a str,
+    construction_header: &'a str,
+    data_blocks: &'a [String; 2],
+    values: [f64; 6],
+    raw_values: [[u8; 8]; 6],
+    source_offsets: [u64; 6],
+}
+
+impl Serialize for FeaturePointConstructionScalarLane {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        FeaturePointConstructionScalarLaneRef {
+            id: &self.id,
+            operation_label: &self.operation_label,
+            construction_header: &self.construction_header,
+            data_blocks: &self.data_blocks,
+            values: self.scalars.map(|scalar| scalar.value().get()),
+            raw_values: self.scalars.map(ShiftedBinary64::raw),
+            source_offsets: self.positions.source_offsets(),
+        }
+        .serialize(serializer)
+    }
 }
 
 /// Physical positions of the preceding block tail and the target block.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PointScalarPositions {
+pub(super) struct PointScalarPositions {
     first_source_offset: u64,
     target_source_offset: u64,
 }
 
 impl PointScalarPositions {
-    pub fn new(first_source_offset: u64, target_source_offset: u64) -> Result<Self, String> {
+    pub(super) fn new(first_source_offset: u64, target_source_offset: u64) -> Result<Self, String> {
         first_source_offset
             .checked_add(3)
             .ok_or("source_offsets[0]: span overflow")?;
@@ -45,7 +68,7 @@ impl PointScalarPositions {
             if slot == 0 {
                 self.first_source_offset
             } else {
-                self.target_source_offset + 5 + (slot as u64 - 1) * 8
+                self.target_source_offset + 5 + (cadmpeg_core::decode::u64_from_index(slot) - 1) * 8
             }
         })
     }
@@ -69,6 +92,7 @@ struct FeaturePointConstructionScalarLaneWire {
     source_offsets: [u64; 6],
 }
 
+#[cfg(test)]
 impl From<FeaturePointConstructionScalarLane> for FeaturePointConstructionScalarLaneWire {
     fn from(lane: FeaturePointConstructionScalarLane) -> Self {
         let source_offsets = lane.positions.source_offsets();
@@ -77,7 +101,7 @@ impl From<FeaturePointConstructionScalarLane> for FeaturePointConstructionScalar
             operation_label: lane.operation_label,
             construction_header: lane.construction_header,
             data_blocks: lane.data_blocks,
-            values: lane.scalars.map(ShiftedBinary64::value),
+            values: lane.scalars.map(|scalar| scalar.value().get()),
             raw_values: lane.scalars.map(ShiftedBinary64::raw),
             source_offsets,
         }
@@ -87,14 +111,12 @@ impl From<FeaturePointConstructionScalarLane> for FeaturePointConstructionScalar
 impl TryFrom<FeaturePointConstructionScalarLaneWire> for FeaturePointConstructionScalarLane {
     type Error = String;
 
-    // Names follow the ordered source slots in this fixed-width lane.
-    #[allow(clippy::many_single_char_names)]
     fn try_from(wire: FeaturePointConstructionScalarLaneWire) -> Result<Self, Self::Error> {
-        let [a, b, c, d, e, f] = std::array::from_fn::<_, 6, _>(|i| {
+        let [first, second, third, fourth, fifth, sixth] = std::array::from_fn::<_, 6, _>(|i| {
             ShiftedBinary64::from_wire(wire.values[i], wire.raw_values[i])
                 .map_err(|error| format!("values/raw_values[{i}]: {error}"))
         });
-        let scalars = [a?, b?, c?, d?, e?, f?];
+        let scalars = [first?, second?, third?, fourth?, fifth?, sixth?];
         let target_source_offset = wire.source_offsets[1]
             .checked_sub(5)
             .ok_or("source_offsets[1]: target prefix underflow")?;
@@ -116,7 +138,31 @@ impl TryFrom<FeaturePointConstructionScalarLaneWire> for FeaturePointConstructio
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{FeaturePointConstructionScalarLane, FeaturePointConstructionScalarLaneWire};
+
+    const WIRE: &str = r#"{"id":"nx:feature:point-scalar#0","operation_label":"operation","construction_header":"header","data_blocks":["first","second"],"values":[1.0,2.0,3.0,4.0,5.0,6.0],"raw_values":[[47,240,0,0,0,0,0,0],[48,0,0,0,0,0,0,0],[48,8,0,0,0,0,0,0],[48,16,0,0,0,0,0,0],[48,20,0,0,0,0,0,0],[48,24,0,0,0,0,0,0]],"source_offsets":[100,110,118,126,134,142]}"#;
+
+    #[test]
+    fn point_scalar_borrowed_wire_preserves_bytes() {
+        let record: FeaturePointConstructionScalarLane = serde_json::from_str(WIRE).unwrap();
+        assert_eq!(serde_json::to_vec(&record).unwrap(), WIRE.as_bytes());
+        assert_eq!(
+            serde_json::to_vec(&record).unwrap(),
+            serde_json::to_vec(&FeaturePointConstructionScalarLaneWire::from(
+                record.clone()
+            ))
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn point_scalar_native_limit_refuses_before_clone() {
+        let record: FeaturePointConstructionScalarLane = serde_json::from_str(WIRE).unwrap();
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::from_str::<serde_json::Value>(WIRE).unwrap(),
+        );
+    }
 
     #[test]
     fn point_scalar_lane_requires_derived_positions_and_complete_physical_spans() {

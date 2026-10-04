@@ -1,52 +1,151 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
-use super::{has_root_marker, resolve_uri, ReferenceTarget, ROOT_NAME};
+use cadmpeg_test_support::EditableDecodeResult;
+
+use super::{resolve_uri, root_reference_notes, ReferenceTarget, ROOT_NAME};
+
+fn resolve_uri_for_test<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    base_member: &'a str,
+    uri: &'a str,
+) -> Result<ReferenceTarget<'a>, cadmpeg_core::CodecError> {
+    let mut member_bytes = ctx.reserve_scoped(0, "step_zip_uri_member_temp")?;
+    resolve_uri(ctx, &mut member_bytes, base_member, uri)
+}
 
 #[test]
 fn resolves_archive_relative_uris_and_fragments() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("test context");
     assert_eq!(
-        resolve_uri(ROOT_NAME, "parts/child.p21#target").unwrap(),
+        resolve_uri_for_test(&ctx, ROOT_NAME, "parts/child.p21#target").unwrap(),
         ReferenceTarget::Internal {
             member: "parts/child.p21".into(),
             query: None,
-            fragment: Some("target".into()),
+            fragment: Some("target"),
         }
     );
     assert_eq!(
-        resolve_uri("parts/child.p21", "../shared.p21#value").unwrap(),
+        resolve_uri_for_test(&ctx, "parts/child.p21", "../shared.p21#value").unwrap(),
         ReferenceTarget::Internal {
             member: "shared.p21".into(),
             query: None,
-            fragment: Some("value".into()),
+            fragment: Some("value"),
         }
     );
     assert_eq!(
-        resolve_uri(ROOT_NAME, "https://example.invalid/part.p21#root").unwrap(),
+        resolve_uri_for_test(&ctx, ROOT_NAME, "https://example.invalid/part.p21#root").unwrap(),
         ReferenceTarget::External
     );
     assert_eq!(
-        resolve_uri("parts/sub/child.p21", "./../shared.p21#value").unwrap(),
+        resolve_uri_for_test(&ctx, "parts/sub/child.p21", "./../shared.p21#value").unwrap(),
         ReferenceTarget::Internal {
             member: "parts/shared.p21".into(),
             query: None,
-            fragment: Some("value".into()),
+            fragment: Some("value"),
         }
     );
     assert_eq!(
-        resolve_uri(ROOT_NAME, "parts/child.p21?query=../outside#target").unwrap(),
+        resolve_uri_for_test(&ctx, ROOT_NAME, "parts/child.p21?query=../outside#target").unwrap(),
         ReferenceTarget::Internal {
             member: "parts/child.p21".into(),
-            query: Some("query=../outside".into()),
-            fragment: Some("target".into()),
+            query: Some("query=../outside"),
+            fragment: Some("target"),
         }
     );
 }
 
 #[test]
 fn rejects_archive_relative_traversal() {
-    assert!(resolve_uri(ROOT_NAME, "../outside.p21").is_err());
-    assert!(resolve_uri(ROOT_NAME, "parts//child.p21").is_err());
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("test context");
+    assert!(resolve_uri_for_test(&ctx, ROOT_NAME, "../outside.p21").is_err());
+    assert!(resolve_uri_for_test(&ctx, ROOT_NAME, "parts//child.p21").is_err());
+}
+
+#[test]
+fn uri_components_refuse_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("test context");
+    let error = resolve_uri_for_test(&ctx, ROOT_NAME, "parts/child.p21")
+        .expect_err("two URI components exceed one item");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "step_zip_uri_components"
+    ));
+}
+
+#[test]
+fn uri_member_refuses_temporary_byte_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_materialized_bytes =
+        u64::try_from(4 * std::mem::size_of::<&str>()).expect("pointer size fits u64");
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("test context");
+    let error = resolve_uri_for_test(&ctx, ROOT_NAME, "a")
+        .expect_err("one URI component leaves no temporary byte for its member");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+                && limit.operation == "step_zip_uri_member"
+    ));
+}
+
+#[test]
+fn uri_base_member_refuses_temporary_byte_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_materialized_bytes =
+        u64::try_from(ROOT_NAME.len() - 1).expect("member and component slots fit u64");
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("test context");
+    let error = resolve_uri_for_test(&ctx, ROOT_NAME, "#target")
+        .expect_err("base member needs one more temporary byte");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+                && limit.operation == "step_zip_uri_member"
+    ));
+}
+
+#[test]
+fn root_reference_note_refuses_retained_byte_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes =
+        4 + cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<String>());
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("test context");
+    let mut notes = Vec::new();
+    let error = super::push_reference_note(
+        &ctx,
+        &mut notes,
+        "internal resource ",
+        crate::parse::ReferenceName::Entity(1),
+        "part.p21",
+        None,
+        None,
+    )
+    .expect_err("the note requires more than four retained bytes");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.operation == "step_zip_reference_note"
+    ));
 }
 
 use std::io::{Cursor, Read as _};
@@ -92,22 +191,24 @@ fn duplicate_first_central_record(mut bytes: Vec<u8>) -> Vec<u8> {
         .windows(4)
         .rposition(|signature| signature == b"PK\x05\x06")
         .expect("ZIP end record");
-    let central_start = u32::from_le_bytes(bytes[end + 16..end + 20].try_into().unwrap()) as usize;
-    let name_len = u16::from_le_bytes(
+    let central_start = cadmpeg_core::decode::index_from_u32(u32::from_le_bytes(
+        bytes[end + 16..end + 20].try_into().unwrap(),
+    ));
+    let name_len = usize::from(u16::from_le_bytes(
         bytes[central_start + 28..central_start + 30]
             .try_into()
             .unwrap(),
-    ) as usize;
-    let extra_len = u16::from_le_bytes(
+    ));
+    let extra_len = usize::from(u16::from_le_bytes(
         bytes[central_start + 30..central_start + 32]
             .try_into()
             .unwrap(),
-    ) as usize;
-    let comment_len = u16::from_le_bytes(
+    ));
+    let comment_len = usize::from(u16::from_le_bytes(
         bytes[central_start + 32..central_start + 34]
             .try_into()
             .unwrap(),
-    ) as usize;
+    ));
     let record_len = 46 + name_len + extra_len + comment_len;
     let record = bytes[central_start..central_start + record_len].to_vec();
     let central_end = end;
@@ -117,7 +218,9 @@ fn duplicate_first_central_record(mut bytes: Vec<u8>) -> Vec<u8> {
     bytes[new_end + 8..new_end + 10].copy_from_slice(&(count + 1).to_le_bytes());
     bytes[new_end + 10..new_end + 12].copy_from_slice(&(count + 1).to_le_bytes());
     let size = u32::from_le_bytes(bytes[new_end + 12..new_end + 16].try_into().unwrap());
-    bytes[new_end + 12..new_end + 16].copy_from_slice(&(size + record_len as u32).to_le_bytes());
+    bytes[new_end + 12..new_end + 16].copy_from_slice(
+        &(size + u32::try_from(record_len).expect("test record length fits u32")).to_le_bytes(),
+    );
     bytes
 }
 
@@ -128,8 +231,9 @@ fn mark_entries_encrypted(mut bytes: Vec<u8>) -> Vec<u8> {
             .map(|index| {
                 let file = archive.by_index(index).unwrap();
                 (
-                    file.header_start() as usize,
-                    file.central_header_start() as usize,
+                    usize::try_from(file.header_start()).expect("test header offset fits memory"),
+                    usize::try_from(file.central_header_start())
+                        .expect("test central offset fits memory"),
                 )
             })
             .collect::<Vec<_>>()
@@ -146,7 +250,8 @@ fn mark_entries_encrypted(mut bytes: Vec<u8>) -> Vec<u8> {
 
 fn corrupt_first_payload(mut bytes: Vec<u8>) -> Vec<u8> {
     let mut archive = ZipArchive::new(Cursor::new(&bytes)).unwrap();
-    let data_start = archive.by_index(0).unwrap().data_start().unwrap() as usize;
+    let data_start = usize::try_from(archive.by_index(0).unwrap().data_start().unwrap())
+        .expect("test data offset fits memory");
     bytes[data_start] ^= 1;
     bytes
 }
@@ -156,8 +261,14 @@ pub(crate) fn codec_detects_and_inspects_ap242_exchange_structure() {
     let bytes = include_bytes!("../../tests/fixtures/ap242_minimal.p21");
     let codec = StepCodec::default();
 
-    assert_eq!(codec.detect(bytes), Confidence::High);
-    assert_eq!(codec.detect(b"PK\x03\x04"), Confidence::Low);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&codec, bytes),
+        Confidence::High
+    );
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&codec, b"PK\x03\x04"),
+        Confidence::Low
+    );
 
     let summary = codec
         .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
@@ -183,7 +294,10 @@ fn codec_detection_matches_part21_trivia_and_keyword_rules() {
     let source = b"/* preamble */\n  iso-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;ENDSEC;END-ISO-10303-21;";
     let codec = StepCodec::default();
 
-    assert_eq!(codec.detect(source), Confidence::High);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&codec, source),
+        Confidence::High
+    );
     codec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("Part 21 leading trivia and case-insensitive magic");
@@ -191,6 +305,7 @@ fn codec_detection_matches_part21_trivia_and_keyword_rules() {
 
 #[test]
 fn zip_root_detection_uses_structured_entry_names() {
+    let ctx = cadmpeg_test_support::service_decode_context();
     let root = include_bytes!("../../tests/fixtures/ap242_minimal.p21");
     let marker_payload = b"payload contains ISO-10303.p21 but has no such entry";
     let codec = StepCodec::default();
@@ -199,27 +314,55 @@ fn zip_root_detection_uses_structured_entry_names() {
         ("preview.bin", marker_payload, CompressionMethod::Stored),
         (ROOT_NAME, root, CompressionMethod::Stored),
     ]);
-    assert!(has_root_marker(&root_after_payload));
-    assert_eq!(codec.detect(&root_after_payload), Confidence::Medium);
+    assert!(super::has_root_marker(
+        &ctx,
+        cadmpeg_core::decode::View::over_retained(&root_after_payload)
+    )
+    .expect("admitted ZIP detection"));
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&codec, &root_after_payload),
+        Confidence::Medium
+    );
 
     let marker_in_payload = step_zip(&[("preview.bin", marker_payload, CompressionMethod::Stored)]);
-    assert!(!has_root_marker(&marker_in_payload));
-    assert_eq!(codec.detect(&marker_in_payload), Confidence::Low);
+    assert!(!super::has_root_marker(
+        &ctx,
+        cadmpeg_core::decode::View::over_retained(&marker_in_payload)
+    )
+    .expect("admitted ZIP detection"));
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&codec, &marker_in_payload),
+        Confidence::Low
+    );
 
     let marker_in_filename = step_zip(&[(
         "parts/ISO-10303.p21.preview",
         b"ancillary",
         CompressionMethod::Stored,
     )]);
-    assert!(!has_root_marker(&marker_in_filename));
-    assert_eq!(codec.detect(&marker_in_filename), Confidence::Low);
+    assert!(!super::has_root_marker(
+        &ctx,
+        cadmpeg_core::decode::View::over_retained(&marker_in_filename)
+    )
+    .expect("admitted ZIP detection"));
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&codec, &marker_in_filename),
+        Confidence::Low
+    );
 
     let marker_in_comment = step_zip_with_comment(
         &[("preview.bin", b"ancillary", CompressionMethod::Stored)],
         ROOT_NAME,
     );
-    assert!(!has_root_marker(&marker_in_comment));
-    assert_eq!(codec.detect(&marker_in_comment), Confidence::Low);
+    assert!(!super::has_root_marker(
+        &ctx,
+        cadmpeg_core::decode::View::over_retained(&marker_in_comment)
+    )
+    .expect("admitted ZIP detection"));
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&codec, &marker_in_comment),
+        Confidence::Low
+    );
 }
 
 #[test]
@@ -232,7 +375,10 @@ fn codec_decodes_step_zip_root_and_reports_archive_members() {
     ]);
     let codec = StepCodec::default();
 
-    assert_eq!(codec.detect(&bytes), Confidence::Medium);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&codec, &bytes),
+        Confidence::Medium
+    );
     let summary = codec
         .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
         .expect("inspect STEP ZIP");
@@ -246,7 +392,12 @@ fn codec_decodes_step_zip_root_and_reports_archive_members() {
         ["ISO-10303.p21", "parts/child.p21", "preview.bin"]
     );
     assert_eq!(summary.entries[0].role.as_str(), "root-exchange");
-    assert_eq!(summary.entries[0].compression.as_str(), "deflate");
+    let cadmpeg_core::container::EntryStorage::Compressed { method, .. } =
+        &summary.entries[0].storage
+    else {
+        panic!("a deflated zip entry stores compressed bytes");
+    };
+    assert_eq!(method.as_str(), "deflate");
     assert_eq!(summary.entries[1].role.as_str(), "subsidiary-exchange");
     assert!(summary.entries[0].attributes["logical_sections"].contains("HEADER"));
 
@@ -333,6 +484,55 @@ fn codec_checks_forwarded_root_references_without_decoding_the_subsidiary() {
 }
 
 #[test]
+fn root_reference_notes_use_the_contextually_parsed_exchange() {
+    let root = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('zip references'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;REFERENCE;#10=<parts/child.p21#target>;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let bytes = step_zip(&[
+        (ROOT_NAME, root, CompressionMethod::Stored),
+        ("parts/child.p21", b"child", CompressionMethod::Stored),
+    ]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, view) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("ZIP fits the service profile");
+    let opened = super::open_root(&ctx, view).expect("open ZIP root");
+    let (exchange, _) = crate::parse::parse_with_context(opened.view.window(), &ctx)
+        .expect("parse root under the active context");
+    assert_eq!(
+        root_reference_notes(&ctx, &opened.archive, &exchange).expect("resolve parsed references"),
+        vec!["internal resource #10 -> parts/child.p21#target"]
+    );
+}
+
+#[test]
+fn root_reference_note_refuses_collection_limit() {
+    let root = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('zip references'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;REFERENCE;#10=<parts/child.p21#target>;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let bytes = step_zip(&[
+        (ROOT_NAME, root, CompressionMethod::Stored),
+        ("parts/child.p21", b"child", CompressionMethod::Stored),
+    ]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let service = cadmpeg_core::decode::DecodePolicy::service();
+    let (service_ctx, view) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &service)
+            .expect("ZIP fits the service profile");
+    let opened = super::open_root(&service_ctx, view).expect("open ZIP root");
+    let (exchange, _) = crate::parse::parse_with_context(opened.view.window(), &service_ctx)
+        .expect("parse root under the service context");
+    let mut limited = service;
+    limited.limits.max_collection_items = 2;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &limited)
+        .expect("ZIP fits the limited profile");
+    let error = root_reference_notes(&ctx, &opened.archive, &exchange)
+        .expect_err("two URI components leave no item for the note");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "step_zip_reference_notes"
+    ));
+}
+
+#[test]
 fn caller_composition_resolves_forwarded_zip_target_without_root_import() {
     let root = include_bytes!("tests/data/ce02_composition_root.p21");
     let subsidiary = include_bytes!("tests/data/ce02_composition_subsidiary.p21");
@@ -345,38 +545,46 @@ fn caller_composition_resolves_forwarded_zip_target_without_root_import() {
         ),
     ]);
 
-    let (root_exchange, root_diagnostics) = crate::parse::parse(root).expect("parse ZIP root");
+    let (root_exchange, root_diagnostics) =
+        crate::test_support::with_service_context(root, crate::parse::parse_inner)
+            .expect("parse ZIP root");
     let (subsidiary_exchange, subsidiary_diagnostics) =
-        crate::parse::parse(subsidiary).expect("parse ZIP subsidiary");
+        crate::test_support::with_service_context(subsidiary, crate::parse::parse_inner)
+            .expect("parse ZIP subsidiary");
     assert!(root_diagnostics.is_empty());
     assert!(subsidiary_diagnostics.is_empty());
-    assert_eq!(root_exchange.references[0].name, "#10");
-    assert_eq!(root_exchange.references[0].uri, "#target");
+    assert_eq!(root_exchange.references()[0].name.to_string(), "#10");
+    assert_eq!(root_exchange.references()[0].uri, "#target");
     assert_eq!(
-        root_exchange.anchors[0].value,
+        root_exchange.anchors()[0].value,
         crate::parse::Value::Resource("parts/ce02_composition_subsidiary.p21#remote_point".into())
     );
     assert_eq!(
-        root_exchange.schema_identifiers(),
-        subsidiary_exchange.schema_identifiers()
+        root_exchange.schema_identifiers().collect::<Vec<_>>(),
+        subsidiary_exchange.schema_identifiers().collect::<Vec<_>>()
     );
 
-    let crate::parse::Value::Resource(resource_uri) = &root_exchange.anchors[0].value else {
+    let crate::parse::Value::Resource(resource_uri) = &root_exchange.anchors()[0].value else {
         panic!("root forwarding anchor");
     };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(root, &arena, &policy)
+        .expect("test context");
     let ReferenceTarget::Internal {
         member,
         query,
         fragment,
-    } = resolve_uri(ROOT_NAME, resource_uri).expect("resolve forwarded ZIP resource")
+    } = resolve_uri_for_test(&ctx, ROOT_NAME, resource_uri)
+        .expect("resolve forwarded ZIP resource")
     else {
         panic!("forwarded ZIP resource became external");
     };
     assert_eq!(member, "parts/ce02_composition_subsidiary.p21");
     assert_eq!(query, None);
-    assert_eq!(fragment.as_deref(), Some("remote_point"));
+    assert_eq!(fragment, Some("remote_point"));
     let anchor = subsidiary_exchange
-        .anchors
+        .anchors()
         .iter()
         .find(|anchor| anchor.name == "remote_point")
         .expect("subsidiary target anchor");
@@ -384,7 +592,7 @@ fn caller_composition_resolves_forwarded_zip_target_without_root_import() {
         panic!("subsidiary anchor is not an entity");
     };
     let target = subsidiary_exchange
-        .records
+        .records()
         .get(&target_id)
         .expect("subsidiary target entity");
     assert!(target
@@ -439,13 +647,15 @@ fn caller_composition_resolves_forwarded_zip_target_without_root_import() {
 fn forwarded_reference_retains_unparsed_subsidiary_as_a_resource() {
     let root = include_bytes!("tests/data/ce02_root_forwarded_unparsed.p21");
     let subsidiary = include_bytes!("tests/data/ce02_subsidiary_unparsed.p21");
-    let (root_exchange, root_diagnostics) = crate::parse::parse(root).expect("parse CE-02 root");
+    let (root_exchange, root_diagnostics) =
+        crate::test_support::with_service_context(root, crate::parse::parse_inner)
+            .expect("parse CE-02 root");
     assert!(root_diagnostics.is_empty());
     assert_eq!(
-        root_exchange.anchors[0].value,
+        root_exchange.anchors()[0].value,
         crate::parse::Value::Resource("parts/ce02_subsidiary_unparsed.p21#remote_item".into())
     );
-    assert_eq!(root_exchange.references[0].uri, "#target");
+    assert_eq!(root_exchange.references()[0].uri, "#target");
 
     let bytes = step_zip(&[
         (ROOT_NAME, root, CompressionMethod::Stored),
@@ -547,26 +757,29 @@ fn codec_keeps_external_reference_graph_resource_local() {
 fn valid_resource_pair_keeps_target_anchor_and_root_graph_separate() {
     let root = include_bytes!("tests/data/er03_root_valid.p21");
     let subsidiary = include_bytes!("tests/data/er03_subsidiary_valid.p21");
-    let (root_exchange, root_diagnostics) = crate::parse::parse(root).expect("parse valid root");
+    let (root_exchange, root_diagnostics) =
+        crate::test_support::with_service_context(root, crate::parse::parse_inner)
+            .expect("parse valid root");
     assert!(root_diagnostics.is_empty());
     assert_eq!(
-        root_exchange.references[0].uri,
+        root_exchange.references()[0].uri,
         "parts/er03_subsidiary_valid.p21#remote_item"
     );
     assert_eq!(
-        root_exchange.records[&1].partials[0].parameters,
+        root_exchange.records()[&1].partials[0].parameters,
         vec![crate::parse::Value::Reference(10)]
     );
 
     let (subsidiary_exchange, subsidiary_diagnostics) =
-        crate::parse::parse(subsidiary).expect("parse valid subsidiary");
+        crate::test_support::with_service_context(subsidiary, crate::parse::parse_inner)
+            .expect("parse valid subsidiary");
     assert!(subsidiary_diagnostics.is_empty());
     assert_eq!(
-        subsidiary_exchange.anchors[0].value,
+        subsidiary_exchange.anchors()[0].value,
         crate::parse::Value::Reference(1)
     );
     assert_eq!(
-        subsidiary_exchange.records[&1].partials[0].parameters,
+        subsidiary_exchange.records()[&1].partials[0].parameters,
         vec![crate::parse::Value::String(b"remote".to_vec())]
     );
 
@@ -606,19 +819,21 @@ fn distinct_external_resources_keep_reused_numeric_targets_separate() {
     let root = include_bytes!("tests/data/er03_root_distinct_resources.p21");
     let alpha = include_bytes!("tests/data/er03_subsidiary_alpha.p21");
     let beta = include_bytes!("tests/data/er03_subsidiary_beta.p21");
-    let (root_exchange, root_diagnostics) = crate::parse::parse(root).expect("parse identity root");
+    let (root_exchange, root_diagnostics) =
+        crate::test_support::with_service_context(root, crate::parse::parse_inner)
+            .expect("parse identity root");
     assert!(root_diagnostics.is_empty());
-    assert_eq!(root_exchange.references.len(), 2);
+    assert_eq!(root_exchange.references().len(), 2);
     assert_eq!(
-        root_exchange.references[0].uri,
+        root_exchange.references()[0].uri,
         "parts/er03_subsidiary_alpha.p21#remote_item"
     );
     assert_eq!(
-        root_exchange.references[1].uri,
+        root_exchange.references()[1].uri,
         "parts/er03_subsidiary_beta.p21#remote_item"
     );
     assert_eq!(
-        root_exchange.records[&1].partials[0].parameters,
+        root_exchange.records()[&1].partials[0].parameters,
         vec![
             crate::parse::Value::Reference(10),
             crate::parse::Value::Reference(11)
@@ -629,12 +844,17 @@ fn distinct_external_resources_keep_reused_numeric_targets_separate() {
         (alpha.as_slice(), b"alpha".as_slice()),
         (beta.as_slice(), b"beta".as_slice()),
     ] {
-        let (exchange, diagnostics) = crate::parse::parse(bytes).expect("parse subsidiary");
+        let (exchange, diagnostics) =
+            crate::test_support::with_service_context(bytes, crate::parse::parse_inner)
+                .expect("parse subsidiary");
         assert!(diagnostics.is_empty());
-        assert_eq!(exchange.anchors[0].name, "remote_item");
-        assert_eq!(exchange.anchors[0].value, crate::parse::Value::Reference(1));
+        assert_eq!(exchange.anchors()[0].name, "remote_item");
         assert_eq!(
-            exchange.records[&1].partials[0].parameters,
+            exchange.anchors()[0].value,
+            crate::parse::Value::Reference(1)
+        );
+        assert_eq!(
+            exchange.records()[&1].partials[0].parameters,
             vec![crate::parse::Value::String(value.to_vec())]
         );
     }
@@ -664,9 +884,11 @@ fn distinct_external_resources_keep_reused_numeric_targets_separate() {
         assert!(summary.notes.iter().any(|candidate| candidate == note));
     }
 
-    let result = codec
-        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
-        .expect("decode root without composing subsidiaries");
+    let result = EditableDecodeResult::from(
+        codec
+            .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+            .expect("decode root without composing subsidiaries"),
+    );
     let source = result.ir().source.as_ref().expect("STEP source metadata");
     assert_eq!(source.attributes["entity_instances"], "1");
     let unknown = result
@@ -701,23 +923,26 @@ fn distinct_external_resources_keep_reused_numeric_targets_separate() {
 fn valid_forwarded_root_anchor_keeps_archive_target_resource_qualified() {
     let root = include_bytes!("tests/data/ce02_root_anchor_valid.p21");
     let subsidiary = include_bytes!("tests/data/ce02_subsidiary_valid.p21");
-    let (root_exchange, root_diagnostics) = crate::parse::parse(root).expect("parse CE-02 root");
+    let (root_exchange, root_diagnostics) =
+        crate::test_support::with_service_context(root, crate::parse::parse_inner)
+            .expect("parse CE-02 root");
     assert!(root_diagnostics.is_empty());
     assert_eq!(
-        root_exchange.anchors[0].value,
+        root_exchange.anchors()[0].value,
         crate::parse::Value::Resource("parts/ce02_subsidiary_valid.p21#remote_item".into())
     );
-    assert_eq!(root_exchange.references[0].uri, "#target");
+    assert_eq!(root_exchange.references()[0].uri, "#target");
 
     let (subsidiary_exchange, subsidiary_diagnostics) =
-        crate::parse::parse(subsidiary).expect("parse CE-02 subsidiary");
+        crate::test_support::with_service_context(subsidiary, crate::parse::parse_inner)
+            .expect("parse CE-02 subsidiary");
     assert!(subsidiary_diagnostics.is_empty());
     assert_eq!(
-        subsidiary_exchange.anchors[0].value,
+        subsidiary_exchange.anchors()[0].value,
         crate::parse::Value::Reference(1)
     );
     assert_eq!(
-        subsidiary_exchange.records[&1].partials[0].parameters,
+        subsidiary_exchange.records()[&1].partials[0].parameters,
         vec![crate::parse::Value::String(b"remote".to_vec())]
     );
 
@@ -881,16 +1106,19 @@ pub(crate) fn codec_inspects_edition3_sections_and_external_references() {
         "EXAMPLE_RECORD:1"
     );
     let (exchange, diagnostics) =
-        crate::parse::parse(bytes).expect("parse opaque signature payload");
+        crate::test_support::with_service_context(bytes, crate::parse::parse_inner)
+            .expect("parse opaque signature payload");
     assert!(diagnostics.is_empty());
-    assert_eq!(exchange.signatures.len(), 1);
-    let signature = exchange.signatures[0].clone();
+    assert_eq!(exchange.signatures().len(), 1);
+    let signature = exchange.signatures()[0].clone();
     assert!(bytes[signature.clone()]
         .windows(b"MFoGCSqGSIb3DQEHAqBNMEsCAQExDTALBglghkgBZQMEAgEwCwYJKoZIhvcNAQcBMSowKAIBATAFMAACAQEwCwYJYIZIAWUDBAIBMA0GCSqGSIb3DQEBAQUABAA=".len())
         .any(|bytes| bytes == b"MFoGCSqGSIb3DQEHAqBNMEsCAQExDTALBglghkgBZQMEAgEwCwYJKoZIhvcNAQcBMSowKAIBATAFMAACAQEwCwYJYIZIAWUDBAIBMA0GCSqGSIb3DQEBAQUABAA="));
-    let decoded = StepCodec::default()
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("decode signature fixture");
+    let decoded = EditableDecodeResult::from(
+        StepCodec::default()
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode signature fixture"),
+    );
     let unknowns = decoded
         .ir()
         .native_unknowns("step")
@@ -907,7 +1135,82 @@ pub(crate) fn codec_inspects_edition3_sections_and_external_references() {
         Some(&bytes[signature.clone()])
     );
     assert_eq!(
-        exchange.records[&2].partials[0].parameters,
+        exchange.records()[&2].partials[0].parameters,
         vec![crate::parse::Value::Reference(1)]
     );
+}
+
+#[test]
+fn forwarded_anchor_lookup_refuses_caller_work_limit() {
+    const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<aa>=<https://example.invalid/a>;<ab>=<https://example.invalid/b>;<ac>=<https://example.invalid/c>;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) =
+        crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
+            .expect("valid anchor exchange");
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 5;
+    crate::test_support::with_policy_context(SOURCE, &policy, |_, ctx| {
+        let error = super::forwarded_reference_uri(&exchange, "#ac", ctx)
+            .expect_err("late anchor comparison exceeds work allowance");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.operation == "step_zip_anchor_lookup"
+                && refusal.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+        );
+    });
+    crate::test_support::with_service_context(SOURCE, |_, ctx| {
+        assert_eq!(
+            super::forwarded_reference_uri(&exchange, "#ac", ctx).unwrap(),
+            "https://example.invalid/c"
+        );
+        assert_eq!(
+            super::forwarded_reference_uri(&exchange, "#missing", ctx).unwrap(),
+            "#missing"
+        );
+    });
+}
+
+#[test]
+fn zip_detection_resource_refusals_reach_the_caller() {
+    let bytes = step_zip(&[(ROOT_NAME, b"root", CompressionMethod::Stored)]);
+    for dimension in [
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+    ] {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        match dimension {
+            cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                policy.limits.max_collection_items = 0;
+            }
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                policy.limits.max_materialized_bytes = 0;
+            }
+            cadmpeg_core::decode::ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+            _ => panic!("test dimension"),
+        }
+        let (ctx, root) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("root");
+        assert!(
+            matches!(super::has_root_marker(&ctx, root), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
+        );
+    }
+}
+
+#[test]
+fn zip_detection_reads_names_without_payload_admission() {
+    for (local_offset, central_offset, value) in [(6, 8, 1), (8, 10, 12)] {
+        let mut bytes = step_zip(&[(ROOT_NAME, b"root", CompressionMethod::Stored)]);
+        let central = bytes
+            .windows(4)
+            .position(|bytes| bytes == b"PK\x01\x02")
+            .expect("central directory");
+        cadmpeg_test_support::bytes::put_u16(&mut bytes, local_offset, value);
+        cadmpeg_test_support::bytes::put_u16(&mut bytes, central + central_offset, value);
+        assert_eq!(
+            cadmpeg_test_support::detection::confidence(&StepCodec::default(), &bytes),
+            Confidence::Medium
+        );
+    }
 }

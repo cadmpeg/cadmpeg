@@ -9,6 +9,7 @@
 //! <!-- /generated: capability inventor -->
 
 mod assembly;
+mod compact_matrix;
 mod container;
 mod coverage;
 mod database;
@@ -21,8 +22,7 @@ mod feature;
 pub mod fuzz;
 mod kernel;
 /// Byte-offset constants generated from `docs/layouts/inventor.toml`.
-pub(crate) mod layout;
-#[allow(dead_code)] // Loss catalog is consumed by tests and the writer.
+mod layout;
 mod loss;
 mod materials;
 mod native;
@@ -30,6 +30,7 @@ mod pmdc;
 mod presentation;
 mod property_set;
 mod protein;
+mod reader;
 mod record_identity;
 mod record_issue;
 mod records;
@@ -42,9 +43,9 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::ContainerSummary;
-use cadmpeg_ir::{CadIr, Finding};
+use cadmpeg_ir::{report::check::Finding, CadIr};
 
-pub(crate) fn issue_detail(error: CodecError) -> Result<String, CodecError> {
+fn issue_detail(error: CodecError) -> Result<String, CodecError> {
     if matches!(&error, CodecError::ResourceLimit(_)) {
         Err(error)
     } else {
@@ -59,19 +60,25 @@ pub struct InventorCodec;
 impl CodecBackend for InventorCodec {
     const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
 
-    fn validate_native(ir: &CadIr) -> Vec<Finding> {
-        validate::validate_native(ir)
+    fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, CodecError> {
+        validate::validate_native(ctx, ir)
     }
 
-    fn detect_impl(&self, prefix: &[u8]) -> Confidence {
-        let CompoundPrefixProbe::DirectoryEvidence(paths) = CompoundPrefixProbe::inspect(prefix)
-        else {
-            return Confidence::No;
+    fn detect_impl(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        prefix: cadmpeg_core::decode::View<'_>,
+    ) -> Result<Confidence, cadmpeg_core::CodecError> {
+        let prefix = prefix.window();
+        let (probe, _storage) =
+            CompoundPrefixProbe::inspect_with_context(ctx, View::over_retained(prefix))?;
+        let CompoundPrefixProbe::DirectoryEvidence(paths) = probe else {
+            return Ok(Confidence::No);
         };
-        if container::has_inventor_evidence(&paths) {
-            Confidence::High
+        if container::has_inventor_evidence(ctx, &paths)? {
+            Ok(Confidence::High)
         } else {
-            Confidence::No
+            Ok(Confidence::No)
         }
     }
 
@@ -80,7 +87,7 @@ impl CodecBackend for InventorCodec {
         ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        Ok(container::InventorContainer::open(ctx, root)?.summary())
+        container::InventorContainer::open(ctx, root)?.summary(ctx)
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
@@ -91,4 +98,4 @@ impl CodecBackend for InventorCodec {
 #[cfg(test)]
 mod golden_tests;
 #[cfg(test)]
-pub(crate) mod test_support;
+mod test_support;

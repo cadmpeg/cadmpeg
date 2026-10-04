@@ -11,24 +11,25 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
-use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::native_test::{f3d_native, f3d_native_mut};
+use crate::test_support::smbh_geometry_test::synthetic_geometry_with_history_smbh;
+use crate::test_support::zip_test::f3d_with_smbh;
 use crate::F3dCodec;
 
 #[test]
 fn generated_source_less_unit_cube_writes_body_transform() {
-    let mut source_less = cadmpeg_ir::examples::unit_cube();
-    let expected = cadmpeg_ir::transform::Transform::from_rows([
+    let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    let expected = cadmpeg_ir::transform::Transform::affine([
         [0.0, -1.0, 0.0, 20.0],
         [1.0, 0.0, 0.0, -30.0],
         [0.0, 0.0, 1.0, 40.0],
-        [0.0, 0.0, 0.0, 1.0],
     ])
     .expect("affine transform");
     source_less.model.bodies[0].transform = Some(expected);
@@ -51,19 +52,9 @@ fn generated_source_less_unit_cube_writes_body_transform() {
 fn generated_source_less_unit_cube_writes_body_and_face_colors() {
     use cadmpeg_ir::topology::Color;
 
-    let mut source_less = cadmpeg_ir::examples::unit_cube();
-    let body_color = Color {
-        r: 0.1,
-        g: 0.2,
-        b: 0.3,
-        a: 1.0,
-    };
-    let face_color = Color {
-        r: 0.65,
-        g: 0.45,
-        b: 0.25,
-        a: 1.0,
-    };
+    let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    let body_color = Color::new(0.1, 0.2, 0.3, 1.0).expect("valid color");
+    let face_color = Color::new(0.65, 0.45, 0.25, 1.0).expect("valid color");
     source_less.model.bodies[0].color = Some(body_color);
     source_less.model.faces[2].color = Some(face_color);
 
@@ -88,13 +79,9 @@ fn generated_source_less_unit_cube_writes_body_and_face_colors() {
 
 #[test]
 fn generated_source_less_rejects_translucent_direct_color() {
-    let mut source_less = cadmpeg_ir::examples::unit_cube();
-    source_less.model.bodies[0].color = Some(cadmpeg_ir::topology::Color {
-        r: 0.1,
-        g: 0.2,
-        b: 0.3,
-        a: 0.5,
-    });
+    let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    source_less.model.bodies[0].color =
+        Some(cadmpeg_ir::topology::Color::new(0.1, 0.2, 0.3, 0.5).expect("valid color"));
 
     let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -104,26 +91,31 @@ fn generated_source_less_rejects_translucent_direct_color() {
 }
 
 #[test]
+fn generated_source_less_rejects_empty_display_name_as_not_implemented() {
+    let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    source_less.model.bodies[0].name = Some(String::new());
+
+    let error = F3dCodec
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
+        .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("display name"))
+    );
+}
+
+#[test]
 fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes() {
     use crate::records::{
-        CreationTimestamp, PersistentDesignLink, PersistentSubentityTag, SketchCurveLink,
+        recipes::CreationTimestamp,
+        sketch_links::{PersistentDesignLink, PersistentSubentityTag, SketchCurveLink},
     };
     use cadmpeg_ir::attributes::AttributeTarget;
     use cadmpeg_ir::topology::Color;
 
-    let mut source_less = cadmpeg_ir::examples::unit_cube();
-    source_less.model.bodies[0].color = Some(Color {
-        r: 0.2,
-        g: 0.4,
-        b: 0.6,
-        a: 1.0,
-    });
-    source_less.model.faces[0].color = Some(Color {
-        r: 0.7,
-        g: 0.3,
-        b: 0.1,
-        a: 1.0,
-    });
+    let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    source_less.model.bodies[0].color = Some(Color::new(0.2, 0.4, 0.6, 1.0).expect("valid color"));
+    source_less.model.faces[0].color = Some(Color::new(0.7, 0.3, 0.1, 1.0).expect("valid color"));
     let body_id = source_less.model.bodies[0].id.clone();
     let face_id = source_less.model.faces[0].id.clone();
     let edge_id = source_less.model.edges[0].id.clone();
@@ -134,20 +126,18 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
         PersistentDesignLink {
             id: "f3d:generated:persistent-design-link#0".into(),
             target: AttributeTarget::Body(body_id.clone()),
-            design_id: "311".into(),
+            design_id: "311".to_owned().try_into().unwrap(),
 
             design_reference: 7,
             ordinal: 0,
-            is_current: false,
         },
         PersistentDesignLink {
             id: "f3d:generated:persistent-design-link#1".into(),
             target: AttributeTarget::Body(body_id.clone()),
-            design_id: "322".into(),
+            design_id: "322".to_owned().try_into().unwrap(),
 
             design_reference: 8,
             ordinal: 1,
-            is_current: true,
         },
     ];
     native.persistent_subentity_tags = vec![
@@ -155,7 +145,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
             id: "f3d:generated:persistent-subentity-tag#0".into(),
             target: AttributeTarget::Face(face_id.clone()),
             selector: 1,
-            token: "8".into(),
+            token: cadmpeg_core::text::NonBlankString::new("8").unwrap(),
             design_references: vec![301, -314, 411],
             ordinal: 0,
         },
@@ -163,7 +153,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
             id: "f3d:generated:persistent-subentity-tag#1".into(),
             target: AttributeTarget::Edge(edge_id.clone()),
             selector: 2,
-            token: "-1".into(),
+            token: cadmpeg_core::text::NonBlankString::new("-1").unwrap(),
             design_references: vec![511],
             ordinal: 0,
         },
@@ -171,7 +161,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
             id: "f3d:generated:persistent-subentity-tag#2".into(),
             target: AttributeTarget::Face(face_id.clone()),
             selector: 3,
-            token: "42".into(),
+            token: cadmpeg_core::text::NonBlankString::new("42").unwrap(),
             design_references: Vec::new(),
             ordinal: 1,
         },
@@ -181,7 +171,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
         target: AttributeTarget::Coedge(coedge_id.clone()),
         sketch_curve_id: 113,
         ref_b: 0,
-        sense: Some(1),
+        sense: Some(crate::records::sketch_links::SketchLinkSense::try_from(1).unwrap()),
         role: 2,
         closure: 3,
     }];
@@ -198,7 +188,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
         id: format!("f3d:generated:creation-timestamp#{ordinal}"),
         target,
         record_index: 0,
-        unix_microseconds,
+        unix_microseconds: cadmpeg_ir::scalar::FiniteReal::new(unix_microseconds).unwrap(),
     })
     .collect();
 
@@ -296,16 +286,28 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     }
     let native = f3d_native(round_trip.ir());
     assert_eq!(native.persistent_design_links.len(), 2);
-    assert_eq!(native.persistent_design_links[0].design_id, "311");
+    assert_eq!(native.persistent_design_links[0].design_id.as_str(), "311");
     assert_eq!(native.persistent_design_links[0].design_reference, 7);
-    assert_eq!(native.persistent_design_links[1].design_id, "322");
+    assert_eq!(native.persistent_design_links[1].design_id.as_str(), "322");
     assert_eq!(native.persistent_design_links[1].design_reference, 8);
-    assert!(native.persistent_design_links[1].is_current);
+    assert_eq!(
+        crate::records::sketch_links::current_persistent_design_links(
+            &native.persistent_design_links
+        )
+        .values()
+        .map(|link| link.design_id.as_str())
+        .collect::<Vec<_>>(),
+        ["322"]
+    );
     assert_eq!(native.persistent_subentity_tags.len(), 3);
     assert!(native.persistent_subentity_tags.iter().any(|tag| {
         tag.design_references == [301, -314, 411] && matches!(tag.target, AttributeTarget::Face(_))
     }));
-    assert!(crate::validate::validate_native(round_trip.ir()).is_empty());
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native_charged(ctx, round_trip.ir())
+            .expect("service native validation")
+    })
+    .is_empty());
     assert!(native.persistent_subentity_tags.iter().any(|tag| {
         tag.token == "-1"
             && tag.design_references == [511]
@@ -318,13 +320,13 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     }));
     assert_eq!(native.sketch_curve_links.len(), 1);
     assert_eq!(native.sketch_curve_links[0].sketch_curve_id, 113);
-    assert_eq!(native.sketch_curve_links[0].sense, Some(1));
+    assert_eq!(native.sketch_curve_links[0].sense.map(i64::from), Some(1));
     assert_eq!(native.sketch_curve_links[0].role, 2);
     assert_eq!(native.sketch_curve_links[0].closure, 3);
     assert_eq!(native.creation_timestamps.len(), 5);
     assert!(native.creation_timestamps.iter().any(|timestamp| {
         matches!(timestamp.target, AttributeTarget::Vertex(_))
-            && timestamp.unix_microseconds == 1_579_392_000_000_005.0
+            && timestamp.unix_microseconds.get() == 1_579_392_000_000_005.0
     }));
     assert_eq!(
         round_trip.ir().model.bodies[0].color,
@@ -350,21 +352,20 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
 
 #[test]
 fn generated_source_less_rejects_lossy_design_link_metadata() {
-    use crate::records::{PersistentDesignLink, SketchCurveLink};
+    use crate::records::sketch_links::{PersistentDesignLink, SketchCurveLink};
     use cadmpeg_ir::attributes::AttributeTarget;
 
-    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let body = source_less.model.bodies[0].id.clone();
     let coedge = source_less.model.coedges[0].id.clone();
     let mut native = f3d_native_mut(&mut source_less);
     native.persistent_design_links = vec![PersistentDesignLink {
         id: "f3d:generated:persistent-design-link#0".into(),
         target: AttributeTarget::Body(body),
-        design_id: "311".into(),
+        design_id: "311".to_owned().try_into().unwrap(),
 
         design_reference: 7,
         ordinal: 1,
-        is_current: false,
     }];
     native.sketch_curve_links = [0, 1]
         .map(|ordinal| SketchCurveLink {
@@ -372,7 +373,7 @@ fn generated_source_less_rejects_lossy_design_link_metadata() {
             target: AttributeTarget::Coedge(coedge.clone()),
             sketch_curve_id: 113 + ordinal,
             ref_b: 0,
-            sense: Some(1),
+            sense: Some(crate::records::sketch_links::SketchLinkSense::try_from(1).unwrap()),
             role: 2,
             closure: 3,
         })
@@ -392,16 +393,14 @@ fn generated_source_less_rejects_lossy_design_link_metadata() {
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("noncanonical persistent link order must not be rewritten");
-    assert!(error
-        .to_string()
-        .contains("contiguous ordinals and only the final link current"));
+    assert!(error.to_string().contains("contiguous ordinals"));
 }
 
 #[test]
 fn generated_source_less_rejects_collapsed_native_topology_metadata() {
     use cadmpeg_asm::brep::records::{EdgeContinuity, TolerantVertexTail};
 
-    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let edge = source_less.model.edges[0].id.clone();
     let vertex = source_less.model.vertices[0].id.clone();
     {
@@ -435,9 +434,13 @@ fn generated_source_less_rejects_collapsed_native_topology_metadata() {
             ),
             vertex,
             record_index: 0,
-            leading_tolerances: [1.0, 2.0],
-            trailing_field: Some(0),
-            evaluated_unset: false,
+            leading_tolerances: [
+                cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
+                cadmpeg_ir::scalar::FiniteReal::new(2.0).unwrap(),
+            ],
+            evaluated_slot: cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Evaluated {
+                trailing: Some(0),
+            },
         }];
     }
     let error = F3dCodec
@@ -451,7 +454,7 @@ fn generated_source_less_rejects_collapsed_native_topology_metadata() {
 
 #[test]
 fn generated_source_less_writes_two_independent_cube_bodies() {
-    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let second_json = source_less
         .to_canonical_json()
         .expect("canonical cube JSON")
@@ -459,11 +462,10 @@ fn generated_source_less_writes_two_independent_cube_bodies() {
     let mut second =
         cadmpeg_ir::document::CadIr::from_json(&second_json).expect("renamed second cube IR");
     second.model.bodies[0].transform = Some(
-        cadmpeg_ir::transform::Transform::from_rows([
+        cadmpeg_ir::transform::Transform::affine([
             [1.0, 0.0, 0.0, 30.0],
             [0.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
         ])
         .expect("affine transform"),
     );
@@ -506,7 +508,8 @@ fn generated_source_less_writes_two_independent_cube_bodies() {
             .rows()[0][3],
         30.0
     );
-    let report = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
 }
 
@@ -518,7 +521,9 @@ fn generated_source_less_writes_typed_asm_history_graph() {
         .expect("generated history decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let expected = f3d_native(&source_less).asm_histories[0].clone();
 
     let mut encoded = Vec::new();
@@ -588,17 +593,22 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
         .expect("generated history decode");
     let mut orphaned = decoded.ir().clone();
     orphaned.source = None;
-    orphaned.set_native_unknowns("f3d", &[]).unwrap();
+    orphaned
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let orphan = &mut orphaned
         .native
         .namespace_mut("f3d")
         .arenas_mut()
         .get_mut("asm_history_records")
         .expect("history-record arena")[0];
-    let mut orphan_fields = orphan.fields();
+    let mut orphan_fields = orphan.fields().clone();
     orphan_fields.insert("parent".into(), serde_json::json!("missing-state"));
-    *orphan = cadmpeg_ir::NativeRecord::new(orphan.id().to_string(), orphan_fields)
-        .expect("valid native identity");
+    *orphan = cadmpeg_ir::NativeRecord::new(
+        cadmpeg_ir::ids::Identity::new(orphan.id()).expect("valid identity"),
+        orphan_fields,
+    )
+    .expect("valid native identity");
     let error = F3dCodec
         .plan(EncodeInput::new(&orphaned, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
@@ -609,7 +619,9 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
 
     let mut duplicate = decoded.ir().clone();
     duplicate.source = None;
-    duplicate.set_native_unknowns("f3d", &[]).unwrap();
+    duplicate
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let states = duplicate
         .native
         .namespace_mut("f3d")
@@ -627,7 +639,9 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
 
     let (mut broken_chain, _, _) = decoded.into_parts();
     broken_chain.source = None;
-    broken_chain.set_native_unknowns("f3d", &[]).unwrap();
+    broken_chain
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     f3d_native_mut(&mut broken_chain).asm_histories[0].states[0].next_ref = Some(99);
     let error = F3dCodec
         .plan(

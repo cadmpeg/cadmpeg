@@ -5,17 +5,22 @@
 #![allow(clippy::redundant_closure_for_method_calls)]
 #![allow(clippy::ignored_unit_patterns)]
 
-use proptest::prelude::*;
+use proptest::prelude::{ProptestConfig, Strategy};
 use proptest::string::string_regex;
+use proptest::{prop_assert, prop_assert_eq, proptest};
 
 use crate::document::CadIr;
 use crate::draft::{DraftError, ModelDraft};
-use crate::ids::{BodyId, PointId, RegionId, ShellId, VertexId};
+use crate::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
+use crate::ids::{BodyId, CurveId, PointId, RegionId, ShellId, VertexId};
 use crate::math::Point3;
 use crate::provenance::SourceObjectAssociation;
-use crate::report::{Check, Severity, ValidationReport};
+use crate::report::{
+    check::{Check, ValidationReport},
+    Severity,
+};
 use crate::topology::{Body, BodyKind, Point, Region, Shell, Vertex};
-use crate::validate::{entity_census, validate_neutral};
+use crate::validate::validate_neutral;
 
 const SEG: &str = "[a-z][a-z0-9_-]{0,7}";
 
@@ -36,7 +41,8 @@ fn id_strategy() -> impl Strategy<Value = String> {
 fn free_carrier(object_id: &str) -> SourceObjectAssociation {
     SourceObjectAssociation {
         format: crate::CodecFormat::Step,
-        object_id: object_id.into(),
+        object_id: cadmpeg_core::text::NonBlankString::new(object_id)
+            .expect("nonempty source identity"),
         name: None,
         color: None,
         visible: None,
@@ -45,17 +51,43 @@ fn free_carrier(object_id: &str) -> SourceObjectAssociation {
     }
 }
 
+#[test]
+fn source_association_is_a_free_carrier_root() {
+    let mut ir = CadIr::empty();
+    ir.model.curves.push(Curve {
+        id: CurveId::mint("synthetic:source:curve#0").expect("valid identity"),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+        source_object: Some(SourceObjectAssociation {
+            format: crate::CodecFormat::Rhino,
+            object_id: cadmpeg_core::text::NonBlankString::new(
+                "00000000-0000-0000-0000-000000000000",
+            )
+            .expect("nonempty source identity"),
+            name: Some("curve".into()),
+            color: None,
+            visible: Some(true),
+            layer: Some("layer-0".into()),
+            instance_path: Vec::new(),
+        }),
+    });
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+    assert!(report.is_ok(), "{:?}", report.findings);
+    let parsed = CadIr::from_json(&ir.to_canonical_json().unwrap()).unwrap();
+    assert_eq!(parsed, ir);
+}
+
 fn point(id: &str) -> Point {
-    Point {
-        id: PointId::mint(id.to_owned()).expect("valid identity"),
-        position: Point3 {
+    Point::new(
+        PointId::mint(id.to_owned()).expect("valid identity"),
+        crate::features::FinitePoint3::new(Point3 {
             x: 0.0,
             y: 0.0,
             z: 0.0,
-        },
+        })
+        .expect("a finite position is a point"),
         // Free points are reachable only via source association (or a vertex).
-        source_object: Some(free_carrier(id)),
-    }
+        Some(free_carrier(id)),
+    )
 }
 
 fn ir_strategy() -> impl Strategy<Value = CadIr> {
@@ -64,7 +96,8 @@ fn ir_strategy() -> impl Strategy<Value = CadIr> {
         for id in ids {
             ir.model.points.push(point(&id));
         }
-        ir.finalize();
+        ir.finalize(&cadmpeg_test_support::service_decode_context())
+            .expect("fixture ordering is admitted");
         ir
     })
 }
@@ -93,40 +126,55 @@ fn insert_free_vertex_shell(
     region_id: &str,
     shell_id: &str,
 ) {
-    draft.insert(point(point_id)).unwrap();
     draft
-        .insert(Vertex {
-            id: VertexId::mint(vertex_id).expect("valid identity"),
-            point: PointId::mint(point_id).expect("valid identity"),
-            tolerance: None,
-        })
+        .insert(
+            point(point_id),
+            &cadmpeg_test_support::service_decode_context(),
+        )
         .unwrap();
     draft
-        .insert(Body {
-            id: BodyId::mint(body_id).expect("valid identity"),
-            kind: BodyKind::Wire,
-            regions: vec![RegionId::mint(region_id).expect("valid identity")],
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        })
+        .insert(
+            Vertex {
+                id: VertexId::mint(vertex_id).expect("valid identity"),
+                point: PointId::mint(point_id).expect("valid identity"),
+                tolerance: None,
+            },
+            &cadmpeg_test_support::service_decode_context(),
+        )
         .unwrap();
     draft
-        .insert(Region {
-            id: RegionId::mint(region_id).expect("valid identity"),
-            body: BodyId::mint(body_id).expect("valid identity"),
-            shells: vec![ShellId::mint(shell_id).expect("valid identity")],
-        })
+        .insert(
+            Body {
+                id: BodyId::mint(body_id).expect("valid identity"),
+                kind: BodyKind::Wire,
+                regions: vec![RegionId::mint(region_id).expect("valid identity")],
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            },
+            &cadmpeg_test_support::service_decode_context(),
+        )
         .unwrap();
     draft
-        .insert(Shell {
-            id: ShellId::mint(shell_id).expect("valid identity"),
-            region: RegionId::mint(region_id).expect("valid identity"),
-            faces: Vec::new(),
-            wire_edges: Vec::new(),
-            free_vertices: vec![VertexId::mint(vertex_id).expect("valid identity")],
-        })
+        .insert(
+            Region {
+                id: RegionId::mint(region_id).expect("valid identity"),
+                body: BodyId::mint(body_id).expect("valid identity"),
+                shells: vec![ShellId::mint(shell_id).expect("valid identity")],
+            },
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .unwrap();
+    draft
+        .insert(
+            Shell::with_free_vertex(
+                ShellId::mint(shell_id).expect("valid identity"),
+                RegionId::mint(region_id).expect("valid identity"),
+                VertexId::mint(vertex_id).expect("valid identity"),
+            ),
+            &cadmpeg_test_support::service_decode_context(),
+        )
         .unwrap();
 }
 
@@ -135,7 +183,7 @@ proptest! {
 
     #[test]
     fn generated_documents_validate_clean(ir in ir_strategy()) {
-        let report = validate_neutral(&ir, Vec::new());
+        let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
         prop_assert_eq!(
             report.error_count(),
             0,
@@ -146,9 +194,9 @@ proptest! {
 
     #[test]
     fn census_matches_arena_lengths(ir in ir_strategy()) {
-        let census = entity_census(&ir);
+        let census = ir.census();
         prop_assert_eq!(census["points"], ir.model.points.len());
-        let report = validate_neutral(&ir, Vec::new());
+        let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
         prop_assert_eq!(&census, &report.entity_counts);
     }
 
@@ -164,7 +212,7 @@ proptest! {
         {
             let mut broken = ir.clone();
             broken.model.points.push(broken.model.points[0].clone());
-            let report = validate_neutral(&broken, Vec::new());
+            let report = validate_neutral(&broken, Vec::new()).expect("resource allocation did not fail");
             prop_assert!(
                 has_error(&report, Check::Identity),
                 "findings: {:?}",
@@ -175,7 +223,7 @@ proptest! {
         if ir.model.points.len() >= 2 {
             let mut broken = ir.clone();
             broken.model.points.swap(0, 1);
-            let report = validate_neutral(&broken, Vec::new());
+            let report = validate_neutral(&broken, Vec::new()).expect("resource allocation did not fail");
             prop_assert!(
                 has_error(&report, Check::ArenaOrder),
                 "findings: {:?}",
@@ -190,8 +238,8 @@ proptest! {
                 point: PointId::mint("x:y:z#missing").expect("valid identity"),
                 tolerance: None,
             });
-            broken.finalize();
-            let report = validate_neutral(&broken, Vec::new());
+            broken.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
+            let report = validate_neutral(&broken, Vec::new()).expect("resource allocation did not fail");
             prop_assert!(
                 has_error(&report, Check::ReferentialIntegrity),
                 "findings: {:?}",
@@ -202,8 +250,8 @@ proptest! {
 
     #[test]
     fn validation_is_deterministic(ir in ir_strategy()) {
-        let a = validate_neutral(&ir, Vec::new());
-        let b = validate_neutral(&ir, Vec::new());
+        let a = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+        let b = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
         prop_assert_eq!(a.findings, b.findings);
     }
 
@@ -228,10 +276,10 @@ proptest! {
                 id: vertex_id.clone().try_into().expect("valid identity"),
                 point: missing.try_into().expect("valid identity"),
                 tolerance: None,
-            })
+            }, &cadmpeg_test_support::service_decode_context())
             .unwrap();
         let mut base = CadIr::empty();
-        let dangling_result = dangling.commit_model(&mut base);
+        let dangling_result = dangling.commit_model(&mut base, &cadmpeg_test_support::service_decode_context()).unwrap();
         let is_unresolved = matches!(
             dangling_result,
             Err(DraftError::UnresolvedReference { .. })
@@ -252,9 +300,9 @@ proptest! {
             &shell_id,
         );
         let mut base = CadIr::empty();
-        draft.commit_model(&mut base).unwrap();
-        base.finalize();
-        let report = validate_neutral(&base, Vec::new());
+        draft.commit_model(&mut base, &cadmpeg_test_support::service_decode_context()).unwrap().unwrap();
+        base.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
+        let report = validate_neutral(&base, Vec::new()).expect("resource allocation did not fail");
         prop_assert_eq!(
             report.error_count(),
             0,
@@ -263,3 +311,11 @@ proptest! {
         );
     }
 }
+
+mod reports;
+
+mod geometry_admission;
+
+mod features_admission;
+
+mod borrowed_serialization;

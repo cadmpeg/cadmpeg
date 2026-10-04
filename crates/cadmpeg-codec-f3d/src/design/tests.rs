@@ -9,27 +9,28 @@
 
 use crate::design::constraints::project_sketch_constraints;
 use crate::design::decode::operands::has_typed_edge_treatment_group;
-use crate::design::decode::parameters::parse_design_parameter;
+use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::decode::sketch::bind_sketch_graph;
-use crate::design::edge_resolve::feature_input_topology_id;
-use crate::design::feature_project::project_parameter_design;
 use crate::design::sketch_project::project_sketch_design;
 use crate::design::test_support::parameter_record;
 use crate::design::{design_feature_family, is_localized_edge_treatment_kind, DesignFeatureFamily};
+use crate::ids::feature_input_topology_id;
 use crate::ids::{
     neutral_dimension_constraint_id, neutral_feature_id_parts, neutral_parameter_id_parts,
     neutral_sketch_curve_id, neutral_sketch_point_id,
 };
 use crate::records::{
-    DesignEntityHeader, DesignSketchPlacement, SketchPoint, SketchRelation, SketchRelationMember,
-    SketchRelationReturnMember, DESIGN_MODULE_SKETCH,
+    entity_header::{DesignEntityHeader, DESIGN_MODULE_SKETCH},
+    sketch_geometry::SketchPoint,
+    sketch_placement::DesignSketchPlacement,
+    sketch_relations::{SketchRelation, SketchRelationMember, SketchRelationReturnMember},
 };
 use cadmpeg_ir::math::Point2;
 use std::collections::HashSet;
 
 #[test]
 fn feature_family_tokens_are_localized() {
-    use crate::records::feature::DesignFeatureKind;
+    use crate::records::feature::scope::DesignFeatureKind;
     let family = |token: &str| {
         design_feature_family(
             &DesignFeatureKind::try_from(token.to_owned()).expect("nonempty family name"),
@@ -150,7 +151,7 @@ fn parameter_identity_uses_stream_and_native_record_index() {
 
 #[test]
 fn parameter_identity_distinguishes_repeated_source_ordinals() {
-    let mut first = parse_design_parameter(&parameter_record(
+    let mut first = parse_design_parameter_record(&parameter_record(
         Some(40),
         "1 cm",
         "AlongDistance",
@@ -176,8 +177,8 @@ fn parameter_identity_distinguishes_repeated_source_ordinals() {
 fn sketch_geometry_identity_uses_owner_and_native_persistent_ids() {
     use cadmpeg_ir::sketches::{SketchId, SpatialSketchId};
 
-    let sketch = SketchId("f3d:model:sketch#Design/A@10".into());
-    let other_sketch = SketchId("f3d:model:sketch#Design/A@11".into());
+    let sketch = SketchId::mint("f3d:model:sketch#Design/A@10").unwrap();
+    let other_sketch = SketchId::mint("f3d:model:sketch#Design/A@11").unwrap();
     let point = neutral_sketch_point_id(&sketch, 42);
     let same_point = neutral_sketch_point_id(&sketch, 42);
     let curve = neutral_sketch_curve_id(&sketch, 42, 0);
@@ -190,8 +191,8 @@ fn sketch_geometry_identity_uses_owner_and_native_persistent_ids() {
     assert_ne!(point, neutral_sketch_point_id(&other_sketch, 42));
     assert_ne!(curve, neutral_sketch_curve_id(&other_sketch, 42, 0));
 
-    let spatial = SpatialSketchId("f3d:model:spatial-sketch#Design/A@10".into());
-    let other_spatial = SpatialSketchId("f3d:model:spatial-sketch#Design/A@11".into());
+    let spatial = SpatialSketchId::mint("f3d:model:spatial-sketch#Design/A@10").unwrap();
+    let other_spatial = SpatialSketchId::mint("f3d:model:spatial-sketch#Design/A@11").unwrap();
     assert_ne!(
         crate::ids::neutral_spatial_sketch_point_id(&spatial, 42),
         crate::ids::neutral_spatial_sketch_point_id(&other_spatial, 42)
@@ -210,142 +211,171 @@ fn governing_dimension_identity_uses_parameter_identity() {
     let same = neutral_dimension_constraint_id(&parameter, "pair");
     let other_form = neutral_dimension_constraint_id(&parameter, "null-pair");
     let other_parameter = neutral_dimension_constraint_id(
-        &cadmpeg_ir::features::ParameterId::mint("parameter:Design/A").expect("identity grammar"),
+        &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:Design/A")
+            .expect("identity grammar"),
         "12:pair",
     );
 
     assert_eq!(relocated, same);
     assert_ne!(relocated, other_form);
     assert_ne!(relocated, other_parameter);
-    assert_eq!(relocated.0.matches('#').count(), 1);
+    assert_eq!(relocated.as_str().matches('#').count(), 1);
 }
 
 #[test]
 fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
     let placement = |stream: &str| DesignSketchPlacement {
-        frame: crate::records::DesignSketchFrame::new(
+        frame: crate::records::sketch_placement::DesignSketchFrame::new(
             0,
-            crate::records::DesignSketchFrameForm::ScopeCompact,
+            crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,
         )
         .unwrap(),
 
         id: format!("f3d:{stream}:design-sketch-placement#0"),
         scope_record_index: Some(10),
-        entity_id: crate::records::DesignEntityId::try_from(format!("{stream}_100"))
+        entity_id: crate::records::identity::DesignEntityId::try_from(format!("{stream}_100"))
             .expect("valid entity ID"),
 
         visibility: None,
 
-        class_tag: crate::records::DesignClassTag::try_from("356".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("356".to_owned()).unwrap(),
         record_index: 11,
 
-        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("259".to_owned())
+            .unwrap(),
     };
     let header = |stream: &str| DesignEntityHeader {
         id: format!("f3d:{stream}:design-entity-header#0"),
         byte_offset: 0,
 
-        entity_id: crate::records::DesignEntityId::try_from(format!("{stream}_100"))
+        entity_id: crate::records::identity::DesignEntityId::try_from(format!("{stream}_100"))
             .expect("valid entity ID"),
-        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned()).unwrap(),
         optional_slot_present: true,
-        registration: crate::records::DesignEntityRegistration::new(
+        registration: crate::records::entity_header::DesignEntityRegistration::new(
             Some(DESIGN_MODULE_SKETCH.to_owned()),
-            Some(crate::records::SketchHeaderReferences {
+            Some(crate::records::entity_header::SketchHeaderReferences {
                 record_reference: None,
                 record_reference_offset: 0,
                 references: vec![30]
                     .into_iter()
                     .zip(vec![0])
-                    .map(|(value, offset)| crate::records::Located { value, offset })
+                    .map(|(value, offset)| crate::records::identity::Located { value, offset })
                     .collect(),
             }),
-            crate::records::ReferenceRun::unlocated(Vec::new()),
+            crate::records::identity::ReferenceRun::unlocated(Vec::new()),
         )
         .expect("valid module registration"),
     };
-    let point = |stream: &str| SketchPoint {
-        id: format!("f3d:{stream}:sketch-point#0"),
-        record_index: 20,
-        owner_reference: None,
-        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
-        byte_offset: 0,
-        coordinate_offset: 89,
-        record_form: crate::records::SketchPointRecordForm::version11(
-            20,
-            crate::records::SketchPointClosure::Selector0State0,
-            None,
-            0.0,
-            None,
-        ),
-        paired_reference: 0,
-        coordinates: Point2::new(1.0, 2.0),
+    let point = |stream: &str| {
+        SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
+            id: format!("f3d:{stream}:sketch-point#0"),
+            record_index: 20,
+            owner_reference: None,
+            class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned())
+                .unwrap(),
+            byte_offset: 0,
+            coordinate_offset: 89,
+            companion: crate::records::sketch_geometry::SketchPointCompanion {
+                incident_curves: Vec::new(),
+            },
+            record_form: crate::records::sketch_geometry::SketchPointRecordForm::version11(
+                20,
+                crate::records::sketch_geometry::SketchPointClosure::Selector0State0,
+                None,
+                0.0,
+            ),
+            paired_reference: 0,
+            coordinates: Point2::new(1.0, 2.0),
+        })
+        .unwrap()
     };
-    let relation = |stream: &str| SketchRelation {
-        id: format!("f3d:{stream}:sketch-relation#30"),
-        record_index: 30,
-        class_tag: crate::records::DesignClassTag::try_from("302".to_owned()).unwrap(),
-        byte_offset: 0,
-        state_offset: 0,
-        owner_reference: 100,
-        owner_entity_id: None,
-        auxiliary_references: crate::records::ReferenceRun::unlocated(Vec::new()),
-        rectangular_counted_reference_count: None,
-        members: (vec![SketchRelationMember::from_index(20)])
-            .try_into()
-            .expect("uniform member resolution"),
-        owner_reference_offset: 0,
-        definition: crate::records::SketchRelationDefinition::new(0, None)
-            .expect("valid relation definition"),
-        entity_genesis: None,
-        return_members: (vec![SketchRelationReturnMember::from_index(20)])
-            .try_into()
-            .expect("uniform member resolution"),
-        raw_bytes: Vec::new(),
+    let relation = |stream: &str| {
+        SketchRelation::try_new(crate::records::sketch_relations::SketchRelationDraft {
+            id: format!("f3d:{stream}:sketch-relation#30"),
+            record_index: 30,
+            class_tag: crate::records::references::DesignClassTag::try_from("302".to_owned())
+                .unwrap(),
+            byte_offset: 0,
+            state_offset: 0,
+            owner_reference: 100,
+            owner_entity_id: None,
+            auxiliary_references: crate::records::identity::ReferenceRun::located(Vec::new()),
+            rectangular_counted_reference_count: None,
+            members: (vec![SketchRelationMember::from_index(20)])
+                .try_into()
+                .expect("uniform member resolution"),
+            owner_reference_offset: 0,
+            definition: crate::records::sketch_relations::SketchRelationDefinition::new(0, None)
+                .expect("valid relation definition"),
+            entity_genesis: None,
+            return_members: (vec![SketchRelationReturnMember::from_index(20)])
+                .try_into()
+                .expect("uniform member resolution"),
+            raw_bytes: vec![0; 160],
+        })
+        .unwrap()
     };
 
     let placements = [placement("A"), placement("B")];
     let mut points = [point("A"), point("B")];
     let mut relations = [relation("A"), relation("B")];
-    bind_sketch_graph(
-        &[header("A"), header("B")],
-        &mut points,
-        &mut [],
-        &mut [],
-        &mut relations,
-    )
+    crate::design::test_support::with_test_decode_context(|ctx| {
+        bind_sketch_graph(
+            ctx,
+            &[header("A"), header("B")],
+            &mut points,
+            &mut [],
+            &mut [],
+            &mut relations,
+        )
+    })
     .expect("stream-local sketch graphs bind independently");
     assert_eq!(
         relations[0]
             .owner_entity_id
             .as_ref()
-            .map(cadmpeg_ir::NonEmptyString::as_str),
+            .map(cadmpeg_core::text::NonBlankString::as_str),
         Some("A_100")
     );
     assert_eq!(
         relations[1]
             .owner_entity_id
             .as_ref()
-            .map(cadmpeg_ir::NonEmptyString::as_str),
+            .map(cadmpeg_core::text::NonBlankString::as_str),
         Some("B_100")
     );
 
     let mut overflowing_header = header("A");
     overflowing_header.entity_id =
-        crate::records::DesignEntityId::from_parts("A", u64::from(u32::MAX) + 101);
-    assert!(bind_sketch_graph(
-        &[overflowing_header],
-        &mut [point("A")],
-        &mut [],
-        &mut [],
-        &mut [relation("A")],
-    )
-    .is_err());
+        crate::records::identity::DesignEntityId::from_parts("A", u64::from(u32::MAX) + 101);
+    assert!(
+        crate::design::test_support::with_test_decode_context(|ctx| bind_sketch_graph(
+            ctx,
+            &[overflowing_header],
+            &mut [point("A")],
+            &mut [],
+            &mut [],
+            &mut [relation("A")],
+        ))
+        .is_err()
+    );
 
-    let (mut sketches, mut entities) =
-        project_sketch_design(&placements, &points, &[], &[], &[], 1.0e-6);
-    let mut constraints =
-        project_sketch_constraints(&placements, &[], &points, &[], &[], &relations, &entities);
+    let (mut sketches, mut entities) = crate::test_support::with_decode_context(|decode_ctx| {
+        project_sketch_design(decode_ctx, &placements, &points, &[], &[], &[], 1.0e-6)
+    })
+    .expect("sketch lanes pair");
+    let mut constraints = crate::test_support::with_decode_context(|decode_ctx| {
+        project_sketch_constraints(
+            decode_ctx,
+            &placements,
+            &[],
+            (&points, &[], &[]),
+            &relations,
+            &entities,
+        )
+    })
+    .unwrap();
     assert_eq!(sketches.len(), 2);
     assert_eq!(entities.len(), 2);
     assert_eq!(constraints.len(), 2);
@@ -375,7 +405,7 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
     );
 
     let parameter = |stream: &str, record_index, name: &str, expression: &str| {
-        let mut parameter = parse_design_parameter(&parameter_record(
+        let mut parameter = parse_design_parameter_record(&parameter_record(
             None,
             expression,
             "User Parameter",
@@ -389,20 +419,24 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
         parameter.source_ordinal = record_index;
         parameter
     };
-    let (_, parameters) = project_parameter_design(
-        &[
-            parameter("A", 40, "Width", "1 mm"),
-            parameter("A", 41, "Half", "Width / 2"),
-            parameter("B", 40, "Width", "2 mm"),
-        ],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-    );
+    let (_, parameters) = crate::test_support::with_decode_context(|ctx| {
+        let scopes = &[];
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                native: &[
+                    parameter("A", 40, "Width", "1 mm"),
+                    parameter("A", 41, "Half", "Width / 2"),
+                    parameter("B", 40, "Width", "2 mm"),
+                ],
+                scopes,
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
     let half = parameters
         .iter()
         .find(|parameter| parameter.name == "Half")
@@ -414,7 +448,10 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
                 && parameter.native_ref.as_deref() == Some("f3d:A:parameter#40")
         })
         .expect("projected stream A Width parameter");
-    assert_eq!(half.dependencies, std::slice::from_ref(&a_width.id));
+    assert_eq!(
+        half.dependencies.as_slice(),
+        std::slice::from_ref(&a_width.id)
+    );
     assert_eq!(
         parameters
             .iter()
@@ -437,7 +474,9 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
     ir.model.sketches = sketches;
     ir.model.sketch_entities = entities;
     ir.model.sketch_constraints = constraints;
-    ir.finalize();
-    let report = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new());
+    ir.finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
+    let report = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail");
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
 }

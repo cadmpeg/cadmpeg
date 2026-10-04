@@ -1,50 +1,883 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Versioned FCStd-native records.
 
+pub(crate) mod element_map;
+pub(crate) mod frame;
 pub(crate) mod joint;
+pub(crate) mod object_identity;
 
+use crate::attachment::MapModeIndex;
+use cadmpeg_ir::units::FiniteVector;
+use frame::FiniteFrame;
+
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::text::NonBlankString;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::hash::sha256_hex;
-use cadmpeg_ir::products::NonEmptyString;
+use cadmpeg_ir::ids::IdentityKey;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::num::NonZeroU64;
 
 pub(crate) fn native_id(kind: &str, key: impl AsRef<str>) -> String {
-    format!("fcstd:native:{kind}#{}", encode_id_key(key.as_ref()))
+    format!(
+        "fcstd:native:{kind}#{}",
+        IdentityKey::encode_segment(key.as_ref())
+    )
 }
 
+pub(crate) fn native_id_charged(
+    ctx: &DecodeContext<'_>,
+    kind: &str,
+    key: &str,
+) -> Result<String, CodecError> {
+    const OPERATION: &str = "FreeCAD native identity";
+    let encoded_len = encoded_segment_len(ctx, key, OPERATION)?;
+    let len = "fcstd:native:"
+        .len()
+        .checked_add(kind.len())
+        .and_then(|len| len.checked_add(1))
+        .and_then(|len| len.checked_add(encoded_len))
+        .ok_or_else(|| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                    ctx.policy().limits.max_retained_bytes,
+                    u64::MAX,
+                    OPERATION,
+                ),
+            )
+        })?;
+    let mut id = ctx.retained_string(len, OPERATION)?;
+    id.push_str("fcstd:native:");
+    id.push_str(kind);
+    id.push('#');
+    id.extend(encoded_segment_bytes(key).map(char::from));
+    Ok(id)
+}
+
+pub(crate) fn encoded_segment_charged(
+    ctx: &DecodeContext<'_>,
+    value: &str,
+    operation: &'static str,
+) -> Result<IdentityKey, CodecError> {
+    let len = encoded_segment_len(ctx, value, operation)?;
+    let mut key = ctx.retained_string(len, operation)?;
+    key.extend(encoded_segment_bytes(value).map(char::from));
+    IdentityKey::try_new(key).map_err(CodecError::malformed)
+}
+
+pub(crate) fn native_child_id_charged(
+    ctx: &DecodeContext<'_>,
+    kind: &str,
+    parent: &str,
+    child: &str,
+) -> Result<String, CodecError> {
+    const OPERATION: &str = "FreeCAD native child identity";
+    let parent_key = id_key(parent);
+    let child_len = encoded_segment_len(ctx, child, OPERATION)?;
+    let len = "fcstd:native:"
+        .len()
+        .checked_add(kind.len())
+        .and_then(|len| len.checked_add(1))
+        .and_then(|len| len.checked_add(parent_key.len()))
+        .and_then(|len| len.checked_add(1))
+        .and_then(|len| len.checked_add(child_len))
+        .ok_or_else(|| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                    ctx.policy().limits.max_retained_bytes,
+                    u64::MAX,
+                    OPERATION,
+                ),
+            )
+        })?;
+    let mut id = ctx.retained_string(len, OPERATION)?;
+    id.push_str("fcstd:native:");
+    id.push_str(kind);
+    id.push('#');
+    id.push_str(parent_key);
+    id.push(':');
+    id.extend(encoded_segment_bytes(child).map(char::from));
+    Ok(id)
+}
+
+pub(crate) fn model_id_charged(
+    ctx: &DecodeContext<'_>,
+    kind: &str,
+    parent: &str,
+    child: &str,
+) -> Result<String, CodecError> {
+    model_id_charged_at(ctx, kind, parent, child, "FreeCAD model identity")
+}
+
+pub(crate) fn model_id_charged_at(
+    ctx: &DecodeContext<'_>,
+    kind: &str,
+    parent: &str,
+    child: &str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let parent_key = id_key(parent);
+    let child_len = if child.is_empty() {
+        0
+    } else {
+        encoded_segment_len(ctx, child, operation)?
+    };
+    let len = "fcstd:model:"
+        .len()
+        .checked_add(kind.len())
+        .and_then(|len| len.checked_add(1))
+        .and_then(|len| len.checked_add(parent_key.len()))
+        .and_then(|len| len.checked_add(1))
+        .and_then(|len| len.checked_add(child_len))
+        .ok_or_else(|| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                    ctx.policy().limits.max_retained_bytes,
+                    u64::MAX,
+                    operation,
+                ),
+            )
+        })?;
+    let mut id = ctx.retained_string(len, operation)?;
+    id.push_str("fcstd:model:");
+    id.push_str(kind);
+    id.push('#');
+    id.push_str(parent_key);
+    id.push(':');
+    if !child.is_empty() {
+        id.extend(encoded_segment_bytes(child).map(char::from));
+    }
+    Ok(id)
+}
+
+fn encoded_segment_len(
+    ctx: &DecodeContext<'_>,
+    key: &str,
+    operation: &'static str,
+) -> Result<usize, CodecError> {
+    if key.is_empty() {
+        return Ok(6);
+    }
+    key.bytes()
+        .try_fold(0_usize, |len, byte| {
+            len.checked_add(
+                if byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'/') {
+                    1
+                } else {
+                    3
+                },
+            )
+        })
+        .ok_or_else(|| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                    ctx.policy().limits.max_retained_bytes,
+                    u64::MAX,
+                    operation,
+                ),
+            )
+        })
+}
+
+fn encoded_segment_bytes(key: &str) -> impl Iterator<Item = u8> + '_ {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    b"%EMPTY"
+        .iter()
+        .copied()
+        .take(if key.is_empty() { 6 } else { 0 })
+        .chain(key.bytes().flat_map(|byte| {
+            if byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'/') {
+                [byte, 0, 0].into_iter().take(1)
+            } else {
+                [
+                    b'%',
+                    HEX[usize::from(byte >> 4)],
+                    HEX[usize::from(byte & 0x0f)],
+                ]
+                .into_iter()
+                .take(3)
+            }
+        }))
+}
+
+#[cfg(test)]
 pub(crate) fn native_child_id(kind: &str, parent: &str, child: &str) -> String {
     let parent_key = id_key(parent);
-    format!("fcstd:native:{kind}#{parent_key}:{}", encode_id_key(child))
+    format!(
+        "fcstd:native:{kind}#{parent_key}:{}",
+        IdentityKey::encode_segment(child)
+    )
 }
 
+#[cfg(test)]
 pub(crate) fn model_id(kind: &str, parent: &str, child: impl AsRef<str>) -> String {
-    format!(
-        "fcstd:model:{kind}#{}:{}",
-        id_key(parent),
-        encode_id_key(child.as_ref())
-    )
+    let child = child.as_ref();
+    let child_key = if child.is_empty() {
+        String::new()
+    } else {
+        IdentityKey::encode_segment(child).into_string()
+    };
+    format!("fcstd:model:{kind}#{}:{}", id_key(parent), child_key)
 }
 
 pub(crate) fn id_key(id: &str) -> &str {
     id.split_once('#').map_or(id, |(_, key)| key)
 }
 
-fn encode_id_key(value: &str) -> String {
-    let mut output = String::with_capacity(value.len());
-    for byte in value.bytes() {
-        if byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'/') {
-            output.push(char::from(byte));
-        } else {
-            use std::fmt::Write;
-            write!(output, "%{byte:02X}").expect("writing to a String cannot fail");
-        }
-    }
-    output
-}
-
 #[cfg(test)]
 mod tests {
+
     use super::{model_id, native_child_id, native_id};
+
+    #[test]
+    fn entries_check_names_identities_references_and_charge_cached_digest() {
+        crate::test_support::with_service_context(&[], |ctx| {
+            for (id, name, references) in [
+                ("invalid", "safe", vec![]),
+                ("fcstd:native:entry#safe", "../x", vec![]),
+                (
+                    "fcstd:native:entry#safe",
+                    "safe",
+                    vec!["invalid".to_owned()],
+                ),
+            ] {
+                assert!(super::EntryRecord::new(
+                    ctx,
+                    id.into(),
+                    name.into(),
+                    cadmpeg_core::container::ContainerRole::Auxiliary,
+                    references,
+                    vec![1, 2, 3]
+                )
+                .is_err());
+            }
+            let record = super::EntryRecord::new(
+                ctx,
+                "fcstd:native:entry#safe".into(),
+                "safe".into(),
+                cadmpeg_core::container::ContainerRole::Auxiliary,
+                Vec::new(),
+                vec![1, 2, 3],
+            )
+            .expect("entry");
+            let wire = serde_json::to_value(&record).expect("wire");
+            assert_eq!(
+                wire["sha256"],
+                "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81"
+            );
+            for (key, value) in [
+                ("id", serde_json::json!("invalid")),
+                ("name", serde_json::json!("../x")),
+                ("referenced_by", serde_json::json!(["invalid"])),
+            ] {
+                let mut invalid = wire.clone();
+                invalid[key] = value;
+                assert!(serde_json::from_value::<super::EntryRecord>(invalid).is_err());
+            }
+            let mut record = record;
+            assert!(record.add_reference(ctx, "invalid").is_err());
+            assert!(record.referenced_by().is_empty());
+        });
+        crate::test_support::assert_retained_refusal_at(&[], "FreeCAD entry digest", |ctx| {
+            super::EntryRecord::new(
+                ctx,
+                "fcstd:native:entry#safe".into(),
+                "safe".into(),
+                cadmpeg_core::container::ContainerRole::Auxiliary,
+                Vec::new(),
+                vec![1, 2, 3],
+            )
+        });
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units =
+            cadmpeg_core::decode::u64_from_index("fcstd:native:entry#safe".len() + "safe".len())
+                + 2;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("context");
+        assert!(
+            matches!(super::EntryRecord::new(&ctx, "fcstd:native:entry#safe".into(), "safe".into(), cadmpeg_core::container::ContainerRole::Auxiliary, Vec::new(), vec![1, 2, 3]), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "FreeCAD entry digest")
+        );
+    }
+
+    #[test]
+    fn duplicate_property_diagnostic_refuses_at_retained_limit() {
+        let property = super::PropertyRecord {
+            id: "fcstd:native:property#LongProperty".into(),
+            owner: "fcstd:native:object#Owner".into(),
+            name: "LongProperty".into(),
+            type_name: "App::PropertyString".into(),
+            family: super::PropertyFamily::Unknown,
+            status: None,
+            body: super::PropertyBody::Transient,
+            order: 0,
+            xml: super::RetainedXml::from_text("<Property/>".into(), 0).expect("valid XML span"),
+        };
+        crate::test_support::assert_retained_refusal_at(
+            &[],
+            "FreeCAD duplicate property diagnostic",
+            |ctx| {
+                super::sole_named_property(ctx, "product", &[&property, &property], &property.name)
+            },
+        );
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is within policy");
+        let error =
+            super::sole_named_property(&ctx, "product", &[&property, &property], &property.name)
+                .expect_err("duplicate property");
+        assert_eq!(
+            error.to_string(),
+            "malformed container: product property LongProperty occurs more than once"
+        );
+    }
+
+    #[test]
+    fn boolean_tokens_parse_without_a_lowercase_copy() {
+        for (text, expected) in [
+            ("true", Some(true)),
+            ("TRUE", Some(true)),
+            ("TrUe", Some(true)),
+            ("1", Some(true)),
+            ("false", Some(false)),
+            ("FALSE", Some(false)),
+            ("FaLsE", Some(false)),
+            ("0", Some(false)),
+            ("truex", None),
+            ("1 ", None),
+            ("Å", None),
+        ] {
+            assert_eq!(super::parse_bool(text), expected, "{text}");
+        }
+    }
+
+    #[test]
+    fn charged_native_identity_preserves_encoding_and_refuses_at_retained_limit() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is within policy");
+        for key in ["", "Body", "A B#%", "Å"] {
+            assert_eq!(
+                super::native_id_charged(&ctx, "entry", key).expect("ID fits policy"),
+                native_id("entry", key)
+            );
+        }
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_retained_bytes =
+            cadmpeg_core::decode::u64_from_index(native_id("entry", "A B#%").len()) - 1;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is within policy");
+        assert!(matches!(super::native_id_charged(&ctx, "entry", "A B#%"),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "FreeCAD native identity"));
+    }
+
+    #[test]
+    fn charged_native_child_identity_refuses_at_retained_limit() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let parent = native_id("object", "A B");
+        let expected = native_child_id("property", &parent, "S # Å");
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is within policy");
+        assert!(
+            matches!(super::native_child_id_charged(&ctx, "property", &parent, "S # Å"),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "FreeCAD native child identity")
+        );
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is within policy");
+        assert_eq!(
+            super::native_child_id_charged(&ctx, "property", &parent, "S # Å")
+                .expect("ID fits policy"),
+            expected
+        );
+    }
+
+    #[test]
+    fn charged_model_identity_refuses_at_retained_limit() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let parent = native_id("object", "A B");
+        for child in ["", "S # Å"] {
+            let expected = model_id("body", &parent, child);
+            let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+            policy.limits.max_retained_bytes =
+                cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("empty root is within policy");
+            assert!(
+                matches!(super::model_id_charged(&ctx, "body", &parent, child),
+                Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                    if limit.operation == "FreeCAD model identity")
+            );
+            let policy = cadmpeg_core::decode::DecodePolicy::default();
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("empty root is within policy");
+            assert_eq!(
+                super::model_id_charged(&ctx, "body", &parent, child).expect("ID fits policy"),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn link_targets_reject_absence_on_every_admission_route() {
+        assert!(super::LinkTarget::try_new(None, None, vec![]).is_err());
+        let wire = serde_json::json!({"document":null,"document_attribute":null,"object":"","subelements":[]});
+        assert!(serde_json::from_value::<super::LinkTarget>(wire).is_err());
+        let target = super::LinkTarget::try_new(None, None, vec!["Face1".into()]).unwrap();
+        assert_eq!(
+            serde_json::to_value(&target).unwrap(),
+            serde_json::json!({"document":null,"document_attribute":null,"object":"","subelements":["Face1"]})
+        );
+    }
+
+    #[test]
+    fn design_census_neutral_is_derived_and_checked_on_the_wire() {
+        for (semantic_kind, neutral) in [("native", false), ("pattern", true)] {
+            let wire = serde_json::json!({"id":"census", "object":"object", "type_name":"type", "feature":"feature", "semantic_kind":semantic_kind, "neutral":neutral, "post_processed":false});
+            let record = serde_json::from_value::<super::DesignCensusRecord>(wire.clone()).unwrap();
+            assert_eq!(record.neutral(), neutral);
+            assert_eq!(serde_json::to_value(record).unwrap(), wire);
+            let mut invalid = wire;
+            invalid["neutral"] = serde_json::json!(!neutral);
+            assert!(serde_json::from_value::<super::DesignCensusRecord>(invalid)
+                .unwrap_err()
+                .to_string()
+                .contains("neutral"));
+        }
+    }
+
+    #[test]
+    fn string_table_admission_requires_distinct_backward_references() {
+        let entry = |id, components| serde_json::json!({"string_id":id,"flags":0,"components":components,"payload":"value","raw":"raw"});
+        for (entries, valid) in [
+            (vec![entry(1, vec![]), entry(2, vec![1])], true),
+            (vec![entry(1, vec![]), entry(1, vec![])], false),
+            (vec![entry(1, vec![1])], false),
+            (vec![entry(1, vec![2]), entry(2, vec![])], false),
+            (vec![entry(1, vec![9])], false),
+        ] {
+            let wire = serde_json::json!({
+                "id": native_id("string-table", "0"),
+                "index": 0,
+                "owner_property": null,
+                "save_all": false,
+                "threshold": 0,
+                "declared_count": entries.len(),
+                "source_entry": null,
+                "entries": entries
+            });
+            let result = serde_json::from_value::<super::StringTableRecord>(wire.clone());
+            assert_eq!(result.is_ok(), valid);
+            if let Ok(record) = result {
+                assert_eq!(serde_json::to_value(record).unwrap(), wire);
+            }
+        }
+    }
+
+    #[test]
+    fn string_table_admission_derives_and_checks_identity_from_index() {
+        let mut wire = serde_json::json!({
+            "id": native_id("string-table", "0"),
+            "index": 0,
+            "owner_property": null,
+            "save_all": false,
+            "threshold": 0,
+            "declared_count": 0,
+            "source_entry": null,
+            "entries": []
+        });
+        let table = serde_json::from_value::<super::StringTableRecord>(wire.clone()).unwrap();
+        assert_eq!(table.index, 0);
+        assert_eq!(table.id(), native_id("string-table", "0"));
+        assert_eq!(serde_json::to_value(&table).unwrap(), wire);
+
+        wire["id"] = serde_json::json!("fcstd:native:string-table#not-the-index");
+        let error = serde_json::from_value::<super::StringTableRecord>(wire.clone()).unwrap_err();
+        assert!(error.to_string().contains("string table id"));
+
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        ir.native
+            .namespace_mut("fcstd")
+            .set_arena(
+                &cadmpeg_test_support::service_decode_context(),
+                "string_tables",
+                &[wire],
+            )
+            .unwrap();
+        let roundtrip: cadmpeg_ir::CadIr =
+            serde_json::from_value(serde_json::to_value(&ir).unwrap()).unwrap();
+        let findings = crate::test_support::validate_native(&roundtrip);
+        assert!(findings.iter().any(|finding| {
+            finding.message.contains("string table id")
+                && finding.check == cadmpeg_ir::report::check::Check::NativeLinks
+        }));
+    }
+
+    #[test]
+    fn string_tables_admit_numeric_positions_from_canonical_native_order() {
+        let records = (0..12)
+            .map(|index| {
+                super::StringTableRecord::try_new(index, None, false, 0, None, Vec::new()).unwrap()
+            })
+            .collect::<Vec<_>>();
+        let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+        namespace
+            .set_arena(
+                &cadmpeg_test_support::service_decode_context(),
+                "string_tables",
+                &records,
+            )
+            .unwrap();
+        assert_eq!(
+            namespace.arenas()["string_tables"][2].id(),
+            "fcstd:native:string-table#10"
+        );
+        let mut ordered = namespace
+            .arena_as::<super::StringTableRecord>("string_tables")
+            .unwrap();
+        cadmpeg_test_support::service_decode_context()
+            .stable_sort_by(
+                &mut ordered,
+                |left, right| left.index.cmp(&right.index),
+                |_| 0,
+                "test string tables sort",
+            )
+            .unwrap();
+        let tables = super::StringTables::try_from(ordered).unwrap();
+        assert_eq!(
+            tables
+                .as_slice()
+                .iter()
+                .map(|table| table.index)
+                .collect::<Vec<_>>(),
+            (0..12).collect::<Vec<_>>()
+        );
+        let mut rewritten = cadmpeg_ir::native::NativeNamespace::default();
+        rewritten
+            .set_arena(
+                &cadmpeg_test_support::service_decode_context(),
+                "string_tables",
+                tables.as_slice(),
+            )
+            .unwrap();
+        assert_eq!(rewritten, namespace);
+        let wire = serde_json::to_value(&tables).unwrap();
+        assert!(wire.is_array());
+        assert_eq!(
+            serde_json::from_value::<super::StringTables>(wire).unwrap(),
+            tables
+        );
+    }
+
+    #[test]
+    fn string_tables_reject_duplicate_and_missing_numeric_positions() {
+        for indices in [vec![1], vec![0, 0], vec![0, 2]] {
+            let records = indices
+                .into_iter()
+                .map(|index| {
+                    super::StringTableRecord::try_new(index, None, false, 0, None, Vec::new())
+                        .unwrap()
+                })
+                .collect::<Vec<_>>();
+            assert!(super::StringTables::try_from(records.clone()).is_err());
+            let wire = serde_json::to_value(&records).unwrap();
+            assert!(serde_json::from_value::<super::StringTables>(wire).is_err());
+            let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+            namespace
+                .set_arena(
+                    &cadmpeg_test_support::service_decode_context(),
+                    "string_tables",
+                    &records,
+                )
+                .unwrap();
+            assert!(namespace
+                .arena_as_collection::<super::StringTableRecord, super::StringTables>(
+                    "string_tables"
+                )
+                .is_err());
+        }
+    }
+
+    #[test]
+    fn ledger_spans_reject_empty_and_reversed_wire_intervals() {
+        for (start, end, valid) in [(0, 1, true), (1, 1, false), (2, 1, false)] {
+            let physical = serde_json::json!({"id":"span", "start":start, "end":end, "role":"end-record", "entry":null});
+            let logical = serde_json::json!({"id":"span", "entry":"Document.xml", "start":start, "end":end, "classification":"structural", "owner":null});
+            assert_eq!(
+                serde_json::from_value::<super::ArchiveSpan>(physical).is_ok(),
+                valid
+            );
+            assert_eq!(
+                serde_json::from_value::<super::LogicalSpan>(logical).is_ok(),
+                valid
+            );
+        }
+    }
+
+    #[test]
+    fn gui_state_order_is_derived_from_collection_position() {
+        let state = serde_json::json!({"id":"camera", "kind":"Camera", "order":0, "attributes":{}, "values":[], "side_entries":[], "raw_xml":"<A/>", "byte_start":0, "byte_end":4});
+        let mut wire = serde_json::json!({"id":"gui", "schema_version":null, "attributes":{}, "states":[state.clone(),state]});
+        assert!(
+            serde_json::from_value::<super::GuiDocumentRecord>(wire.clone())
+                .unwrap_err()
+                .to_string()
+                .contains("order")
+        );
+        wire["states"][1]["order"] = serde_json::json!(1);
+        let mut record = serde_json::from_value::<super::GuiDocumentRecord>(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&record).unwrap(), wire);
+        record.states.remove(0);
+        let moved = serde_json::to_value(record).unwrap();
+        assert_eq!(moved["states"][0]["order"], 0);
+    }
+
+    #[test]
+    fn attachment_accepts_accumulated_rigid_tolerance() {
+        let mut rows = cadmpeg_ir::transform::Transform::identity().rows();
+        rows[0][0] += 4.0e-10;
+        let frame = super::FiniteFrame::try_from(rows).unwrap();
+        let product = frame.transform().compose(frame.transform()).unwrap();
+        assert!(!product.is_proper_rigid());
+        assert!(super::AttachmentRecord::try_new(
+            "attachment".into(),
+            "object".into(),
+            vec![],
+            None,
+            Some(frame),
+            Some(frame)
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn attachment_and_product_wire_admission_reject_nonfinite_frames() {
+        for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut matrix = cadmpeg_ir::transform::Transform::identity().rows();
+            matrix[0][3] = bad;
+            for offset in [false, true] {
+                let wire = super::AttachmentRecordWire {
+                    id: "attachment".into(),
+                    object: "object".into(),
+                    supports: vec![],
+                    map_mode: None,
+                    placement: (!offset).then_some(matrix),
+                    offset: offset.then_some(matrix),
+                    effective_frame: matrix,
+                };
+                let error = super::AttachmentRecord::try_from(wire).unwrap_err();
+                assert!(error.contains(if offset { "offset" } else { "placement" }));
+            }
+            for field in [
+                "element_transforms",
+                "element_scales",
+                "local_transform",
+                "scale",
+            ] {
+                let mut wire: super::ProductNodeRecordWire = serde_json::from_value(serde_json::json!({
+                    "id":"link", "object":"object", "kind":"occurrence", "members":[],
+                    "element_transforms":[], "element_scales":[], "linked_subelements":[], "element_visibility":[], "element_objects":[]
+                })).unwrap();
+                match field {
+                    "element_transforms" => wire.element_transforms.push(matrix),
+                    "element_scales" => wire.element_scales.push([bad, 1.0, 1.0]),
+                    "local_transform" => wire.local_transform = Some(matrix),
+                    _ => wire.scale = Some([bad, 1.0, 1.0]),
+                }
+                assert!(super::ProductNodeRecord::try_from(wire)
+                    .unwrap_err()
+                    .contains(field));
+            }
+        }
+    }
+
+    #[test]
+    fn file_version_preserves_spelling_and_rejects_invalid_wire() {
+        let wire = serde_json::json!({"id":"document", "file_version":"+001", "program_version":null, "root_name":"Document", "object_count":0, "domains":[], "document_kind":"empty"});
+        let record = serde_json::from_value::<super::DocumentFacts>(wire.clone()).unwrap();
+        assert_eq!(record.file_version.value(), 1);
+        assert_eq!(serde_json::to_value(record).unwrap(), wire);
+        for spelling in ["-1", "", "abc", "184467440737095516160"] {
+            let mut invalid = wire.clone();
+            invalid["file_version"] = serde_json::json!(spelling);
+            assert!(serde_json::from_value::<super::DocumentFacts>(invalid)
+                .unwrap_err()
+                .to_string()
+                .contains("file_version"));
+        }
+    }
+
+    #[test]
+    fn gui_provider_object_rejects_empty_wire_identity() {
+        let mut wire = serde_json::json!({"id":"provider", "object":"", "name":"A", "expanded":null, "order":0, "raw_xml":"<ViewProvider/>"});
+        assert!(serde_json::from_value::<super::GuiViewProviderRecord>(wire.clone()).is_err());
+        for object in [serde_json::Value::Null, serde_json::json!("object")] {
+            wire["object"] = object;
+            let record =
+                serde_json::from_value::<super::GuiViewProviderRecord>(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(record).unwrap(), wire);
+        }
+    }
+
+    #[test]
+    fn retained_xml_records_reject_invalid_wire_spans() {
+        let bases = [
+            serde_json::json!({"id":"state", "kind":"Camera", "order":0, "attributes":{}, "values":[], "side_entries":[]}),
+            serde_json::json!({"id":"property", "owner":"provider", "name":"Color", "type_name":"App::PropertyColor", "order":0, "values":[], "side_entries":[]}),
+            serde_json::json!({"id":"fcstd:native:object#A", "name":"A", "type_name":"App::Feature", "attributes":{}, "dependencies":[], "order":0}),
+            serde_json::json!({"id":"property", "owner":"object", "name":"Label", "type_name":"App::PropertyString", "family":"scalar", "transient":false, "order":0, "values":[], "links":[], "side_entries":[]}),
+        ];
+        for (kind, base) in bases.into_iter().enumerate() {
+            for (start, end, valid) in [
+                (10, 14, true),
+                (10, 10, false),
+                (10, 9, false),
+                (10, 15, false),
+            ] {
+                let mut wire = base.clone();
+                wire["raw_xml"] = serde_json::json!("<A/>");
+                wire["byte_start"] = serde_json::json!(start);
+                wire["byte_end"] = serde_json::json!(end);
+                let admitted = match kind {
+                    0 => serde_json::from_value::<super::GuiStateRecord>(wire).map(|_| ()),
+                    1 => serde_json::from_value::<super::GuiPropertyRecord>(wire).map(|_| ()),
+                    2 => serde_json::from_value::<super::ObjectRecord>(wire).map(|_| ()),
+                    _ => serde_json::from_value::<super::PropertyRecord>(wire).map(|_| ()),
+                };
+                assert_eq!(
+                    admitted.is_ok(),
+                    valid,
+                    "kind={kind}, span={start}..{end}: {admitted:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn document_kind_wire_must_match_domains_and_count() {
+        let mut wire = serde_json::json!({"id":"document",
+            "file_version":"1", "program_version":null, "root_name":"Document",
+            "object_count":1, "domains":["Part"], "document_kind":"empty"});
+        assert!(serde_json::from_value::<super::DocumentFacts>(wire.clone()).is_err());
+        wire["document_kind"] = serde_json::json!("part");
+        let facts = serde_json::from_value::<super::DocumentFacts>(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(facts).unwrap(), wire);
+    }
+
+    #[test]
+    fn link_array_wire_rejects_negative_and_mismatched_counts() {
+        let base = serde_json::json!({
+            "id": "link", "object": "object", "kind": "occurrence",
+            "members": [], "element_transforms": [], "element_scales": [],
+            "linked_subelements": [], "element_visibility": [], "element_objects": []
+        });
+        let mut negative = base.clone();
+        negative["element_count"] = serde_json::json!(-1);
+        assert!(serde_json::from_value::<super::ProductNodeRecord>(negative).is_err());
+        for field in [
+            "element_transforms",
+            "element_scales",
+            "element_visibility",
+            "element_objects",
+        ] {
+            let mut wire = base.clone();
+            wire["element_count"] = serde_json::json!(2);
+            wire[field] = match field {
+                "element_transforms" => serde_json::json!([[
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0]
+                ]]),
+                "element_scales" => serde_json::json!([[1.0, 1.0, 1.0]]),
+                "element_visibility" => serde_json::json!([true]),
+                _ => serde_json::json!(["object"]),
+            };
+            assert!(serde_json::from_value::<super::ProductNodeRecord>(wire.clone()).is_err());
+            wire["element_count"] = serde_json::json!(1);
+            assert!(serde_json::from_value::<super::ProductNodeRecord>(wire).is_ok());
+        }
+
+        let mut object_only = base;
+        object_only["element_objects"] = serde_json::json!(["object"]);
+        let record = serde_json::from_value::<super::ProductNodeRecord>(object_only)
+            .expect("an object carrier establishes absent-count cardinality");
+        assert!(matches!(
+            record.element_cardinality(),
+            Some(super::LinkArrayCardinality::Elements(elements)) if elements.get() == 1
+        ));
+    }
+
+    #[test]
+    fn copy_on_change_payload_requires_policy_on_wire() {
+        for (field, value) in [
+            (
+                "copy_on_change_source",
+                serde_json::json!({"document":null,"document_attribute":null,"object":"source","subelements":[]}),
+            ),
+            (
+                "copy_on_change_group",
+                serde_json::json!({"document":null,"document_attribute":null,"object":"group","subelements":[]}),
+            ),
+            ("copy_on_change_touched", serde_json::json!(false)),
+        ] {
+            let mut wire = serde_json::json!({
+                "id": "link", "object": "object", "kind": "occurrence",
+                "members": [], "element_transforms": [], "element_scales": [],
+                "linked_subelements": [], "element_visibility": [], "element_objects": []
+            });
+            wire[field] = value;
+            assert!(serde_json::from_value::<super::ProductNodeRecord>(wire.clone()).is_err());
+            wire["copy_on_change"] = serde_json::json!("2");
+            let admitted =
+                serde_json::from_value::<super::ProductNodeRecord>(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(admitted).unwrap()[field], wire[field]);
+        }
+
+        for raw in ["Owned", "abc", ""] {
+            let mut wire = serde_json::json!({
+                "id": "link", "object": "object", "kind": "occurrence",
+                "members": [], "element_transforms": [], "element_scales": [],
+                "linked_subelements": [], "element_visibility": [], "element_objects": [],
+                "copy_on_change": raw,
+            });
+            assert!(serde_json::from_value::<super::ProductNodeRecord>(wire.clone()).is_err());
+            wire["copy_on_change"] = serde_json::json!("+00099");
+            let admitted = serde_json::from_value::<super::ProductNodeRecord>(wire.clone())
+                .expect("numeric future policies retain their spelling");
+            assert_eq!(
+                serde_json::to_value(admitted).unwrap()["copy_on_change"],
+                "+00099"
+            );
+        }
+    }
+
+    #[test]
+    fn object_wire_rejects_nonpositive_partial_load_capability() {
+        for value in [0, -1] {
+            let wire = serde_json::json!({
+                "id": "fcstd:native:object#A", "name": "A", "type_name": "App::Feature",
+                "persistent_id": null, "view_type": null, "attributes": {},
+                "dependencies": [], "dependency_allow_partial": value, "order": 0,
+                "raw_xml": null, "byte_start": null, "byte_end": null
+            });
+            let error = serde_json::from_value::<super::ObjectRecord>(wire).unwrap_err();
+            assert!(error.to_string().contains("dependency_allow_partial"));
+        }
+    }
 
     #[test]
     fn canonical_ids_escape_names_without_aliasing_literal_escapes() {
@@ -54,38 +887,326 @@ mod tests {
         );
         assert_eq!(native_id("object", "A%20B"), "fcstd:native:object#A%2520B");
         assert_eq!(native_id("object", "A:B"), "fcstd:native:object#A%3AB");
+        assert_eq!(native_id("object", ""), "fcstd:native:object#%EMPTY");
         let property = native_child_id("property", &native_id("object", "A B"), "Shape Value");
         assert_eq!(property, "fcstd:native:property#A%20B:Shape%20Value");
         assert_eq!(
             model_id("body", &property, "root#1"),
             "fcstd:model:body#A%20B:Shape%20Value:root%231"
         );
+        assert_eq!(
+            model_id("body", &property, ""),
+            "fcstd:model:body#A%20B:Shape%20Value:"
+        );
+    }
+
+    /// Identity frame shared by the written-form tests below.
+    fn identity() -> [[f64; 4]; 4] {
+        cadmpeg_ir::transform::Transform::identity().rows()
+    }
+
+    /// A link target wire object naming one object and its subelements.
+    fn link(object: &str, subelements: &[&str]) -> serde_json::Value {
+        serde_json::json!({
+            "document": null,
+            "document_attribute": null,
+            "object": object,
+            "subelements": subelements
+        })
+    }
+
+    #[test]
+    fn an_attachment_writes_its_supports_frames_and_effective_frame() {
+        let wire = serde_json::json!({
+            "id": "attachment",
+            "object": "object",
+            "supports": [null, link("Pad", &["Face1"])],
+            "map_mode": "3",
+            "placement": identity(),
+            "offset": identity(),
+            "effective_frame": identity()
+        });
+        let record = serde_json::from_value::<super::AttachmentRecord>(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&record).unwrap(), wire);
+
+        let mut bare = wire;
+        bare["supports"] = serde_json::json!([]);
+        bare["map_mode"] = serde_json::Value::Null;
+        bare["placement"] = serde_json::Value::Null;
+        bare["offset"] = serde_json::Value::Null;
+        let record = serde_json::from_value::<super::AttachmentRecord>(bare.clone()).unwrap();
+        assert_eq!(serde_json::to_value(record).unwrap(), bare);
+    }
+
+    #[test]
+    fn archive_and_logical_spans_write_their_role_and_owner() {
+        for (role, entry) in [
+            ("compressed-payload", serde_json::json!("Document.xml")),
+            ("end-record", serde_json::Value::Null),
+        ] {
+            let wire = serde_json::json!({
+                "id": "span", "start": 0, "end": 4, "role": role, "entry": entry
+            });
+            let record = serde_json::from_value::<super::ArchiveSpan>(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(record).unwrap(), wire);
+        }
+
+        for (classification, owner) in [
+            ("structural", serde_json::Value::Null),
+            ("typed", serde_json::json!("fcstd:native:object#A")),
+            (
+                "named_opaque",
+                serde_json::json!("fcstd:native:property#A:Shape"),
+            ),
+        ] {
+            let wire = serde_json::json!({
+                "id": "span", "entry": "Document.xml", "start": 0, "end": 4,
+                "classification": classification, "owner": owner
+            });
+            let record = serde_json::from_value::<super::LogicalSpan>(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(record).unwrap(), wire);
+        }
+    }
+
+    #[test]
+    fn a_drawing_record_writes_page_views_and_a_non_page_without_them() {
+        let base = serde_json::json!({
+            "id": "drawing", "object": "object",
+            "kind": "TechDraw::DrawPage",
+            "views": ["fcstd:native:object#View"],
+            "template": "fcstd:native:object#Template",
+            "sources": [null, link("Body", &["Face2"])],
+            "relationships": {"Source": [link("Body", &[])]},
+            "parameters": {"Scale": "1.0"},
+            "side_entries": ["template.svg"]
+        });
+        let record = serde_json::from_value::<super::DrawingRecord>(base.clone()).unwrap();
+        assert_eq!(serde_json::to_value(record).unwrap(), base);
+
+        let mut other = base;
+        other["kind"] = serde_json::json!("TechDraw::DrawViewPart");
+        other["views"] = serde_json::json!([]);
+        other["template"] = serde_json::Value::Null;
+        let record = serde_json::from_value::<super::DrawingRecord>(other.clone()).unwrap();
+        assert_eq!(serde_json::to_value(record).unwrap(), other);
+    }
+
+    #[test]
+    fn an_object_record_writes_its_retained_xml_and_its_absence() {
+        let wire = serde_json::json!({
+            "id": "fcstd:native:object#A", "name": "A", "type_name": "App::Feature",
+            "persistent_id": 7, "view_type": "Gui::ViewProviderFeature",
+            "attributes": {"Touched": "1"},
+            "dependencies": ["fcstd:native:object#B"],
+            "dependency_allow_partial": 2, "order": 0,
+            "raw_xml": "<A/>", "byte_start": 10, "byte_end": 14
+        });
+        let record = serde_json::from_value::<super::ObjectRecord>(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(record).unwrap(), wire);
+
+        let mut bare = wire;
+        bare["persistent_id"] = serde_json::Value::Null;
+        bare["view_type"] = serde_json::Value::Null;
+        bare["dependency_allow_partial"] = serde_json::Value::Null;
+        bare["raw_xml"] = serde_json::Value::Null;
+        bare["byte_start"] = serde_json::Value::Null;
+        bare["byte_end"] = serde_json::Value::Null;
+        let record = serde_json::from_value::<super::ObjectRecord>(bare.clone()).unwrap();
+        assert_eq!(serde_json::to_value(record).unwrap(), bare);
+    }
+
+    #[test]
+    fn a_property_record_writes_its_payload_and_a_transient_declaration_without_one() {
+        let wire = serde_json::json!({
+            "id": "property", "owner": "object", "name": "Label",
+            "type_name": "App::PropertyString", "family": "string", "status": 1,
+            "transient": false,
+            "dynamic": {"group": "Base", "documentation": "label", "attributes": 0,
+                        "read_only": false, "hidden": null},
+            "order": 2,
+            "values": [{"tag": "String", "order": 0, "attributes": {"value": "A"},
+                        "text": null, "raw_xml": "<String value=\"A\"/>"}],
+            "links": [null, link("B", &["Face1"])],
+            "side_entries": ["Body.brp"],
+            "raw_xml": "<A/>", "byte_start": 10, "byte_end": 14
+        });
+        let record = serde_json::from_value::<super::PropertyRecord>(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(record).unwrap(), wire);
+
+        let mut transient = wire;
+        transient["transient"] = serde_json::json!(true);
+        transient["dynamic"] = serde_json::Value::Null;
+        transient["values"] = serde_json::json!([]);
+        transient["links"] = serde_json::json!([]);
+        transient["side_entries"] = serde_json::json!([]);
+        let record = serde_json::from_value::<super::PropertyRecord>(transient.clone()).unwrap();
+        assert_eq!(serde_json::to_value(record).unwrap(), transient);
+    }
+
+    #[test]
+    fn an_entry_record_writes_its_bytes_beside_their_length_and_digest() {
+        let wire = serde_json::json!({
+            "id": "fcstd:native:entry#Document.xml",
+            "name": "Document.xml",
+            "role": "document",
+            "byte_len": 3,
+            "sha256": "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81",
+            "referenced_by": ["fcstd:native:property#A:Shape"],
+            "data": [1, 2, 3]
+        });
+        let record = serde_json::from_value::<super::EntryRecord>(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&record).unwrap(), wire);
+
+        let mut empty = wire;
+        empty["byte_len"] = serde_json::json!(0);
+        empty["sha256"] =
+            serde_json::json!("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+        empty["referenced_by"] = serde_json::json!([]);
+        empty["data"] = serde_json::json!([]);
+        let record = serde_json::from_value::<super::EntryRecord>(empty.clone()).unwrap();
+        assert_eq!(serde_json::to_value(record).unwrap(), empty);
+    }
+
+    #[test]
+    fn a_product_node_writes_occurrence_fields_and_a_container_without_them() {
+        let occurrence = serde_json::json!({
+            "id": "link", "object": "object", "kind": "occurrence",
+            "members": ["fcstd:native:object#Child"],
+            "prototype": "fcstd:native:object#Proto",
+            "external_document": "Other.FCStd",
+            "external_document_attribute": "file",
+            "local_transform": identity(),
+            "placement_property": "Placement",
+            "element_count": 1,
+            "link_transform": true,
+            "element_transforms": [identity()],
+            "element_scales": [[2.0, 2.0, 2.0]],
+            "linked_subelements": ["Face1"],
+            "claim_child": false,
+            "copy_on_change": "2",
+            "copy_on_change_source": link("Source", &[]),
+            "copy_on_change_group": link("Group", &[]),
+            "copy_on_change_touched": true,
+            "scale": [3.0, 3.0, 3.0],
+            "element_visibility": [true],
+            "element_objects": ["fcstd:native:object#Element"]
+        });
+        let record =
+            serde_json::from_value::<super::ProductNodeRecord>(occurrence.clone()).unwrap();
+        assert_eq!(serde_json::to_value(record).unwrap(), occurrence);
+
+        let container = serde_json::json!({
+            "id": "group", "object": "object", "kind": "group",
+            "members": ["fcstd:native:object#Child"],
+            "prototype": null,
+            "external_document": null,
+            "external_document_attribute": null,
+            "local_transform": identity(),
+            "placement_property": "Placement",
+            "element_count": null,
+            "link_transform": null,
+            "element_transforms": [],
+            "element_scales": [],
+            "linked_subelements": [],
+            "claim_child": null,
+            "copy_on_change": null,
+            "copy_on_change_source": null,
+            "copy_on_change_group": null,
+            "copy_on_change_touched": null,
+            "scale": null,
+            "element_visibility": [],
+            "element_objects": []
+        });
+        let record = serde_json::from_value::<super::ProductNodeRecord>(container.clone()).unwrap();
+        assert_eq!(serde_json::to_value(record).unwrap(), container);
     }
 }
 
 /// Machine-derived semantic projection census for one design object.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DesignCensusRecord {
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "DesignCensusRecordWire")]
+pub(crate) struct DesignCensusRecord {
     /// Stable census identity derived from the native object.
-    pub id: String,
+    pub(crate) id: String,
     /// Native application object being classified.
-    pub object: String,
+    pub(crate) object: String,
     /// Persisted runtime type.
-    pub type_name: String,
+    pub(crate) type_name: String,
     /// Neutral history feature projected from the object.
-    pub feature: String,
+    pub(crate) feature: String,
     /// Stable CADIR feature-definition family name.
-    pub semantic_kind: String,
-    /// Whether the operation has neutral semantics instead of only native retention.
-    pub neutral: bool,
+    pub(crate) semantic_kind: String,
     /// Whether topology post-processing composition wraps the operation.
-    pub post_processed: bool,
+    pub(crate) post_processed: bool,
+}
+
+impl DesignCensusRecord {
+    /// Whether the operation has neutral semantics.
+    pub(crate) fn neutral(&self) -> bool {
+        self.semantic_kind != "native"
+    }
+}
+
+#[derive(Deserialize)]
+struct DesignCensusRecordWire {
+    id: String,
+    object: String,
+    type_name: String,
+    feature: String,
+    semantic_kind: String,
+    neutral: bool,
+    post_processed: bool,
+}
+
+#[derive(Serialize)]
+struct DesignCensusRecordOut<'a> {
+    id: &'a str,
+    object: &'a str,
+    type_name: &'a str,
+    feature: &'a str,
+    semantic_kind: &'a str,
+    neutral: bool,
+    post_processed: bool,
+}
+
+impl Serialize for DesignCensusRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        DesignCensusRecordOut {
+            id: &self.id,
+            object: &self.object,
+            type_name: &self.type_name,
+            feature: &self.feature,
+            semantic_kind: &self.semantic_kind,
+            neutral: self.neutral(),
+            post_processed: self.post_processed,
+        }
+        .serialize(serializer)
+    }
+}
+
+impl TryFrom<DesignCensusRecordWire> for DesignCensusRecord {
+    type Error = String;
+
+    fn try_from(wire: DesignCensusRecordWire) -> Result<Self, Self::Error> {
+        let record = Self {
+            id: wire.id,
+            object: wire.object,
+            type_name: wire.type_name,
+            feature: wire.feature,
+            semantic_kind: wire.semantic_kind,
+            post_processed: wire.post_processed,
+        };
+        if wire.neutral != record.neutral() {
+            return Err("neutral disagrees with semantic_kind".to_owned());
+        }
+        Ok(record)
+    }
 }
 
 /// Carrier grammar counted by a census record. Empty payloads have no census.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum CarrierCensusForm {
+pub(crate) enum CarrierCensusForm {
     /// Compact text shape-set grammar.
     Text,
     /// Binary shape-set grammar.
@@ -94,79 +1215,124 @@ pub enum CarrierCensusForm {
 
 /// Machine-derived carrier and topology-family census for one exact shape payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CarrierCensusRecord {
+pub(crate) struct CarrierCensusRecord {
     /// Stable census identity derived from the shape payload.
-    pub id: String,
+    pub(crate) id: String,
     /// Shape payload being counted.
-    pub payload: String,
+    pub(crate) payload: String,
     /// `text` or `binary` carrier grammar.
-    pub form: CarrierCensusForm,
+    pub(crate) form: CarrierCensusForm,
     /// Grammar version declared by the shape-set header.
-    pub topology_version: u8,
+    pub(crate) topology_version: u8,
     /// Recursive 2D-curve family counts.
-    pub curves_2d: BTreeMap<String, u64>,
+    pub(crate) curves_2d: BTreeMap<String, u64>,
     /// Recursive 3D-curve family counts.
-    pub curves_3d: BTreeMap<String, u64>,
+    pub(crate) curves_3d: BTreeMap<String, u64>,
     /// Recursive surface-family counts.
-    pub surfaces: BTreeMap<String, u64>,
+    pub(crate) surfaces: BTreeMap<String, u64>,
     /// Topological shape-family counts.
-    pub topology: BTreeMap<String, u64>,
+    pub(crate) topology: BTreeMap<String, u64>,
     /// Standalone polygon carrier count.
-    pub polygons_3d: u64,
+    pub(crate) polygons_3d: u64,
     /// Polygon-on-triangulation carrier count.
-    pub polygons_on_triangulations: u64,
+    pub(crate) polygons_on_triangulations: u64,
     /// Triangulation carrier count.
-    pub triangulations: u64,
+    pub(crate) triangulations: u64,
 }
 
 /// One support attachment and its distinct persisted frames.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "AttachmentRecordWire", into = "AttachmentRecordWire")]
-pub struct AttachmentRecord {
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "AttachmentRecordWire")]
+pub(crate) struct AttachmentRecord {
     /// Stable attachment identity.
-    pub id: String,
+    pub(crate) id: String,
     /// Attached application object.
-    pub object: String,
+    pub(crate) object: String,
     /// Ordered support objects and subelements.
-    pub supports: Vec<LinkTarget>,
+    pub(crate) supports: Vec<Option<LinkTarget>>,
     /// Persisted attachment-map mode.
-    pub map_mode: Option<String>,
+    pub(crate) map_mode: Option<MapModeIndex>,
     /// Persisted resolved object placement.
-    pub placement: Option<[[f64; 4]; 4]>,
+    placement: Option<FiniteFrame>,
     /// Persisted attachment-local offset.
-    pub offset: Option<[[f64; 4]; 4]>,
+    offset: Option<FiniteFrame>,
 }
 
 impl AttachmentRecord {
+    pub(crate) fn try_new(
+        id: String,
+        object: String,
+        supports: Vec<Option<LinkTarget>>,
+        map_mode: Option<MapModeIndex>,
+        placement: Option<FiniteFrame>,
+        offset: Option<FiniteFrame>,
+    ) -> Result<Self, String> {
+        let record = Self {
+            id,
+            object,
+            supports,
+            map_mode,
+            placement,
+            offset,
+        };
+        if let (Some(placement), Some(offset)) = (record.placement, record.offset) {
+            placement
+                .transform()
+                .compose(offset.transform())
+                .map_err(|error| format!("effective_frame: {error}"))?;
+        }
+        Ok(record)
+    }
+    pub(crate) fn placement(&self) -> Option<FiniteFrame> {
+        self.placement
+    }
+    pub(crate) fn offset(&self) -> Option<FiniteFrame> {
+        self.offset
+    }
+
     /// Effective frame used for neutral geometry.
-    pub fn effective_frame(&self) -> [[f64; 4]; 4] {
-        crate::attachment::effective_frame(self.placement, self.offset)
+    pub(crate) fn effective_frame(&self) -> [[f64; 4]; 4] {
+        crate::attachment::effective_frame(
+            self.placement().map(FiniteFrame::rows),
+            self.offset().map(FiniteFrame::rows),
+        )
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct AttachmentRecordWire {
     id: String,
     object: String,
-    supports: Vec<LinkTarget>,
-    map_mode: Option<String>,
+    supports: Vec<Option<LinkTarget>>,
+    map_mode: Option<MapModeIndex>,
     placement: Option<[[f64; 4]; 4]>,
     offset: Option<[[f64; 4]; 4]>,
     effective_frame: [[f64; 4]; 4],
 }
 
-impl From<AttachmentRecord> for AttachmentRecordWire {
-    fn from(value: AttachmentRecord) -> Self {
-        let effective_frame = value.effective_frame();
-        Self {
-            id: value.id,
-            object: value.object,
-            supports: value.supports,
-            map_mode: value.map_mode,
-            placement: value.placement,
-            offset: value.offset,
-            effective_frame,
+#[derive(Serialize)]
+struct AttachmentRecordOut<'a> {
+    id: &'a str,
+    object: &'a str,
+    supports: &'a [Option<LinkTarget>],
+    map_mode: Option<MapModeIndex>,
+    placement: Option<[[f64; 4]; 4]>,
+    offset: Option<[[f64; 4]; 4]>,
+    effective_frame: [[f64; 4]; 4],
+}
+
+impl Serialize for AttachmentRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        AttachmentRecordOut {
+            id: &self.id,
+            object: &self.object,
+            supports: &self.supports,
+            map_mode: self.map_mode,
+            placement: self.placement.map(FiniteFrame::rows),
+            offset: self.offset.map(FiniteFrame::rows),
+            effective_frame: self.effective_frame(),
         }
+        .serialize(serializer)
     }
 }
 
@@ -174,14 +1340,20 @@ impl TryFrom<AttachmentRecordWire> for AttachmentRecord {
     type Error = String;
 
     fn try_from(wire: AttachmentRecordWire) -> Result<Self, Self::Error> {
-        let record = Self {
-            id: wire.id,
-            object: wire.object,
-            supports: wire.supports,
-            map_mode: wire.map_mode,
-            placement: wire.placement,
-            offset: wire.offset,
-        };
+        let record = Self::try_new(
+            wire.id,
+            wire.object,
+            wire.supports,
+            wire.map_mode,
+            wire.placement
+                .map(FiniteFrame::try_from)
+                .transpose()
+                .map_err(|error| format!("placement: {error}"))?,
+            wire.offset
+                .map(FiniteFrame::try_from)
+                .transpose()
+                .map_err(|error| format!("offset: {error}"))?,
+        )?;
         if wire.effective_frame != record.effective_frame() {
             return Err(
                 "attachment effective_frame disagrees with placement and offset".to_owned(),
@@ -191,45 +1363,214 @@ impl TryFrom<AttachmentRecordWire> for AttachmentRecord {
     }
 }
 
+/// A nonempty half-open byte interval.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ByteSpan {
+    start: u64,
+    end: u64,
+}
+
+impl ByteSpan {
+    pub(crate) fn try_new(start: u64, end: u64) -> Result<Self, String> {
+        if start >= end {
+            return Err("byte span start must be less than end".to_owned());
+        }
+        Ok(Self { start, end })
+    }
+    pub(crate) fn start(self) -> u64 {
+        self.start
+    }
+    pub(crate) fn end(self) -> u64 {
+        self.end
+    }
+}
+
+/// Exact XML text paired with its nonempty source interval.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "RetainedXmlWire")]
+pub(crate) struct RetainedXml {
+    text: String,
+    span: ByteSpan,
+}
+
+impl RetainedXml {
+    fn try_new(text: String, start: u64, end: u64) -> Result<Self, String> {
+        let span = ByteSpan::try_new(start, end)?;
+        if end - start != cadmpeg_core::decode::u64_from_index(text.len()) {
+            return Err("raw_xml length disagrees with byte_start and byte_end".to_owned());
+        }
+        Ok(Self { text, span })
+    }
+    pub(crate) fn from_text(text: String, start: u64) -> Result<Self, String> {
+        let end = start
+            .checked_add(cadmpeg_core::decode::u64_from_index(text.len()))
+            .ok_or("raw_xml byte_end overflow")?;
+        Self::try_new(text, start, end)
+    }
+    pub(crate) fn from_source(
+        ctx: &DecodeContext<'_>,
+        text: &str,
+        start: u64,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        let copy = ctx.copy_retained_text(text, operation)?;
+        Self::from_text(copy, start).map_err(CodecError::Malformed)
+    }
+    pub(crate) fn text(&self) -> &str {
+        &self.text
+    }
+    pub(crate) fn start(&self) -> u64 {
+        self.span.start()
+    }
+    pub(crate) fn end(&self) -> u64 {
+        self.span.end()
+    }
+}
+
+#[derive(Deserialize)]
+struct RetainedXmlWire {
+    raw_xml: String,
+    byte_start: u64,
+    byte_end: u64,
+}
+impl TryFrom<RetainedXmlWire> for RetainedXml {
+    type Error = String;
+    fn try_from(wire: RetainedXmlWire) -> Result<Self, Self::Error> {
+        Self::try_new(wire.raw_xml, wire.byte_start, wire.byte_end)
+    }
+}
+
+#[derive(Serialize)]
+struct RetainedXmlOut<'a> {
+    raw_xml: &'a str,
+    byte_start: u64,
+    byte_end: u64,
+}
+
+impl Serialize for RetainedXml {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        RetainedXmlOut {
+            raw_xml: &self.text,
+            byte_start: self.span.start(),
+            byte_end: self.span.end(),
+        }
+        .serialize(serializer)
+    }
+}
+
 /// Document-level GUI state outside application-object view providers.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct GuiDocumentRecord {
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "GuiDocumentRecordWire")]
+pub(crate) struct GuiDocumentRecord {
     /// Stable GUI document identity.
-    pub id: String,
+    pub(crate) id: String,
     /// Exact persisted GUI schema declaration when present.
-    pub schema_version: Option<String>,
+    pub(crate) schema_version: Option<String>,
     /// Exact root attributes.
-    pub attributes: BTreeMap<String, String>,
+    pub(crate) attributes: BTreeMap<String, String>,
     /// Ordered camera, active-view, clipping, and other document state.
-    pub states: Vec<GuiStateRecord>,
+    pub(crate) states: Vec<GuiStateRecord>,
 }
 
 /// One ordered document-level GUI state element.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct GuiStateRecord {
+pub(crate) struct GuiStateRecord {
     /// Stable state identity.
-    pub id: String,
+    pub(crate) id: String,
     /// Persisted XML element name.
-    pub kind: String,
-    /// Source order among document-level state elements.
-    pub order: usize,
+    pub(crate) kind: String,
     /// Exact element attributes.
-    pub attributes: BTreeMap<String, String>,
+    pub(crate) attributes: BTreeMap<String, String>,
     /// Ordered descendant value elements.
-    pub values: Vec<ValueRecord>,
+    pub(crate) values: Vec<ValueRecord>,
     /// Referenced display assets.
-    pub side_entries: Vec<String>,
-    /// Exact state XML.
-    pub raw_xml: String,
-    /// Inclusive byte offset in `GuiDocument.xml`.
-    pub byte_start: u64,
-    /// Exclusive byte offset in `GuiDocument.xml`.
-    pub byte_end: u64,
+    pub(crate) side_entries: Vec<String>,
+    /// Retained XML and its byte span.
+    #[serde(flatten)]
+    pub(crate) xml: RetainedXml,
+}
+
+#[derive(Deserialize)]
+struct GuiStateRecordWire {
+    order: usize,
+    #[serde(flatten)]
+    state: GuiStateRecord,
+}
+
+#[derive(Deserialize)]
+struct GuiDocumentRecordWire {
+    id: String,
+    schema_version: Option<String>,
+    attributes: BTreeMap<String, String>,
+    states: Vec<GuiStateRecordWire>,
+}
+
+#[derive(Serialize)]
+struct GuiStateRecordOut<'a> {
+    order: usize,
+    #[serde(flatten)]
+    state: &'a GuiStateRecord,
+}
+
+/// Writes each state beside the order its collection position states.
+struct GuiStatesOut<'a>(&'a [GuiStateRecord]);
+
+impl Serialize for GuiStatesOut<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(
+            self.0
+                .iter()
+                .enumerate()
+                .map(|(order, state)| GuiStateRecordOut { order, state }),
+        )
+    }
+}
+
+#[derive(Serialize)]
+struct GuiDocumentRecordOut<'a> {
+    id: &'a str,
+    schema_version: Option<&'a str>,
+    attributes: &'a BTreeMap<String, String>,
+    states: GuiStatesOut<'a>,
+}
+
+impl Serialize for GuiDocumentRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        GuiDocumentRecordOut {
+            id: &self.id,
+            schema_version: self.schema_version.as_deref(),
+            attributes: &self.attributes,
+            states: GuiStatesOut(&self.states),
+        }
+        .serialize(serializer)
+    }
+}
+impl TryFrom<GuiDocumentRecordWire> for GuiDocumentRecord {
+    type Error = String;
+    fn try_from(wire: GuiDocumentRecordWire) -> Result<Self, Self::Error> {
+        let states = wire
+            .states
+            .into_iter()
+            .enumerate()
+            .map(|(order, wire)| {
+                if wire.order != order {
+                    return Err("GUI state order disagrees with its states position".to_owned());
+                }
+                Ok(wire.state)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self {
+            id: wire.id,
+            schema_version: wire.schema_version,
+            attributes: wire.attributes,
+            states,
+        })
+    }
 }
 
 /// A supported semantic annotation runtime type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AnnotationRuntimeType {
+pub(crate) enum AnnotationRuntimeType {
     /// The `App::Annotation` runtime type.
     Annotation,
     /// The `App::AnnotationLabel` runtime type.
@@ -266,7 +1607,7 @@ pub enum AnnotationRuntimeType {
 
 impl AnnotationRuntimeType {
     /// Returns the persisted runtime type name.
-    pub const fn as_str(self) -> &'static str {
+    pub(crate) const fn as_str(self) -> &'static str {
         match self {
             Self::Annotation => "App::Annotation",
             Self::AnnotationLabel => "App::AnnotationLabel",
@@ -329,93 +1670,160 @@ impl<'de> Deserialize<'de> for AnnotationRuntimeType {
 
 /// One semantic annotation object kept distinct from drawing presentation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SemanticAnnotationRecord {
+pub(crate) struct SemanticAnnotationRecord {
     /// Stable semantic annotation identity.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning application object.
-    pub object: String,
+    pub(crate) object: String,
     /// Persisted annotation runtime type.
-    pub kind: AnnotationRuntimeType,
+    pub(crate) kind: AnnotationRuntimeType,
     /// Ordered user-visible text fragments.
-    pub text: Vec<String>,
+    pub(crate) text: Vec<String>,
     /// Object and subelement references grouped by source property.
-    pub references: BTreeMap<String, Vec<LinkTarget>>,
+    pub(crate) references: BTreeMap<String, Vec<Option<LinkTarget>>>,
     /// Typed or exactly framed annotation properties grouped by source name.
-    pub parameters: BTreeMap<String, String>,
+    pub(crate) parameters: BTreeMap<String, String>,
     /// Referenced symbol, image, or other side entries.
-    pub side_entries: Vec<String>,
+    pub(crate) side_entries: Vec<String>,
 }
 
-/// Page-only vs other `TechDraw` drawing payload.
+/// Persisted page runtime type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TechDrawPageKind {
+    /// Native page.
+    Page,
+    /// Python page.
+    Python,
+}
+
+/// Persisted non-page runtime type.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DrawingRole {
-    /// `TechDraw::DrawPage` or `TechDraw::DrawPagePython`.
+pub(crate) struct TechDrawNonPageKind(String);
+
+/// Drawing runtime type and its page payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum TechDrawKind {
+    /// Page with ordered views and optional template.
     Page {
+        /// Persisted page class.
+        runtime: TechDrawPageKind,
         /// Ordered page views.
         views: Vec<String>,
-        /// Page template object, when linked.
+        /// Page template object.
         template: Option<String>,
     },
-    /// Template, view, dimension, annotation, or other drawing object.
-    Other,
+    /// Non-page drawing object.
+    Other(TechDrawNonPageKind),
+}
+
+impl TechDrawKind {
+    /// Admits a runtime type and its page payload.
+    pub(crate) fn try_new(
+        kind: String,
+        views: Vec<String>,
+        template: Option<String>,
+    ) -> Result<Self, String> {
+        let runtime = match kind.as_str() {
+            "TechDraw::DrawPage" => Some(TechDrawPageKind::Page),
+            "TechDraw::DrawPagePython" => Some(TechDrawPageKind::Python),
+            _ => None,
+        };
+        if let Some(runtime) = runtime {
+            Ok(Self::Page {
+                runtime,
+                views,
+                template,
+            })
+        } else if views.is_empty() && template.is_none() {
+            Ok(Self::Other(TechDrawNonPageKind(kind)))
+        } else {
+            Err("non-page drawing record cannot carry views or a template".to_owned())
+        }
+    }
+
+    /// Persisted runtime type name.
+    pub(crate) fn as_str(&self) -> &str {
+        match self {
+            Self::Page {
+                runtime: TechDrawPageKind::Page,
+                ..
+            } => "TechDraw::DrawPage",
+            Self::Page {
+                runtime: TechDrawPageKind::Python,
+                ..
+            } => "TechDraw::DrawPagePython",
+            Self::Other(kind) => &kind.0,
+        }
+    }
 }
 
 /// One `TechDraw` page, template, view, dimension, or annotation record.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "DrawingRecordWire", into = "DrawingRecordWire")]
-pub struct DrawingRecord {
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "DrawingRecordWire")]
+pub(crate) struct DrawingRecord {
     /// Stable drawing-record identity.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning application object.
-    pub object: String,
+    pub(crate) object: String,
     /// Persisted `TechDraw` runtime type.
-    pub kind: String,
-    /// Page views and template, or a non-page payload.
-    pub role: DrawingRole,
+    pub(crate) kind: TechDrawKind,
     /// Ordered source object and subelement references for a view or dimension.
-    pub sources: Vec<LinkTarget>,
+    pub(crate) sources: Vec<Option<LinkTarget>>,
     /// All drawing relationships grouped by their persisted property name.
-    pub relationships: BTreeMap<String, Vec<LinkTarget>>,
+    pub(crate) relationships: BTreeMap<String, Vec<Option<LinkTarget>>>,
     /// Typed scalar/vector/string drawing fields retained by property name.
-    pub parameters: BTreeMap<String, String>,
+    pub(crate) parameters: BTreeMap<String, String>,
     /// Referenced template or drawing side entries.
-    pub side_entries: Vec<String>,
+    pub(crate) side_entries: Vec<String>,
 }
 
-fn is_page_kind(kind: &str) -> bool {
-    matches!(kind, "TechDraw::DrawPage" | "TechDraw::DrawPagePython")
-}
-
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct DrawingRecordWire {
     id: String,
     object: String,
     kind: String,
     views: Vec<String>,
     template: Option<String>,
-    sources: Vec<LinkTarget>,
-    relationships: BTreeMap<String, Vec<LinkTarget>>,
+    sources: Vec<Option<LinkTarget>>,
+    relationships: BTreeMap<String, Vec<Option<LinkTarget>>>,
     parameters: BTreeMap<String, String>,
     side_entries: Vec<String>,
 }
 
-impl From<DrawingRecord> for DrawingRecordWire {
-    fn from(value: DrawingRecord) -> Self {
-        let (views, template) = match value.role {
-            DrawingRole::Page { views, template } => (views, template),
-            DrawingRole::Other => (Vec::new(), None),
+#[derive(Serialize)]
+struct DrawingRecordOut<'a> {
+    id: &'a str,
+    object: &'a str,
+    kind: &'a str,
+    views: &'a [String],
+    template: Option<&'a str>,
+    sources: &'a [Option<LinkTarget>],
+    relationships: &'a BTreeMap<String, Vec<Option<LinkTarget>>>,
+    parameters: &'a BTreeMap<String, String>,
+    side_entries: &'a [String],
+}
+
+impl Serialize for DrawingRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        // A non-page drawing object carries no views and no template.
+        let (views, template) = match &self.kind {
+            TechDrawKind::Page {
+                views, template, ..
+            } => (views.as_slice(), template.as_deref()),
+            TechDrawKind::Other(_) => (&[][..], None),
         };
-        Self {
-            id: value.id,
-            object: value.object,
-            kind: value.kind,
+        DrawingRecordOut {
+            id: &self.id,
+            object: &self.object,
+            kind: self.kind.as_str(),
             views,
             template,
-            sources: value.sources,
-            relationships: value.relationships,
-            parameters: value.parameters,
-            side_entries: value.side_entries,
+            sources: &self.sources,
+            relationships: &self.relationships,
+            parameters: &self.parameters,
+            side_entries: &self.side_entries,
         }
+        .serialize(serializer)
     }
 }
 
@@ -423,21 +1831,11 @@ impl TryFrom<DrawingRecordWire> for DrawingRecord {
     type Error = String;
 
     fn try_from(wire: DrawingRecordWire) -> Result<Self, Self::Error> {
-        let role = if is_page_kind(&wire.kind) {
-            DrawingRole::Page {
-                views: wire.views,
-                template: wire.template,
-            }
-        } else if wire.views.is_empty() && wire.template.is_none() {
-            DrawingRole::Other
-        } else {
-            return Err("non-page drawing record cannot carry views or a template".to_owned());
-        };
+        let kind = TechDrawKind::try_new(wire.kind, wire.views, wire.template)?;
         Ok(Self {
             id: wire.id,
             object: wire.object,
-            kind: wire.kind,
-            role,
+            kind,
             sources: wire.sources,
             relationships: wire.relationships,
             parameters: wire.parameters,
@@ -447,22 +1845,20 @@ impl TryFrom<DrawingRecordWire> for DrawingRecord {
 }
 
 /// One product container, prototype, or placed link occurrence.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "ProductNodeRecordWire", into = "ProductNodeRecordWire")]
-pub struct ProductNodeRecord {
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "ProductNodeRecordWire")]
+pub(crate) struct ProductNodeRecord {
     /// Stable record identity.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning application object.
-    pub object: String,
+    pub(crate) object: String,
     /// Structural family and family-specific payload.
-    pub node: ProductNode,
+    pub(crate) node: ProductNode,
 }
 
 /// Structural family of a product node.
 #[derive(Debug, Clone, PartialEq)]
-// Keep each native node payload inline; occurrence fields are read together during projection.
-#[allow(clippy::large_enum_variant)]
-pub enum ProductNode {
+pub(crate) enum ProductNode {
     /// `App::DocumentObjectGroup`.
     Group(ContainerNode),
     /// `App::Part` or assembly container.
@@ -475,62 +1871,189 @@ pub enum ProductNode {
         element_objects: Vec<String>,
     },
     /// `App::Link` or `App::LinkElement`.
-    Occurrence(LinkOccurrence),
+    Occurrence(Box<LinkOccurrence>),
 }
 
 /// Shared payload of a non-occurrence product container.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ContainerNode {
+pub(crate) struct ContainerNode {
     /// Ordered contained application objects.
-    pub members: Vec<String>,
+    pub(crate) members: Vec<String>,
     /// Local placement as a row-major affine matrix.
-    pub local_transform: Option<[[f64; 4]; 4]>,
+    pub(crate) local_transform: Option<FiniteFrame>,
     /// Property supplying the placement.
-    pub placement_property: Option<String>,
+    pub(crate) placement_property: Option<String>,
 }
 
 /// Link occurrence payload.
 #[derive(Debug, Clone, PartialEq)]
-pub struct LinkOccurrence {
+pub(crate) struct LinkOccurrence {
     /// Ordered contained application objects.
-    pub members: Vec<String>,
+    pub(crate) members: Vec<String>,
     /// Linked prototype object.
-    pub prototype: Option<String>,
+    pub(crate) prototype: Option<String>,
     /// External document token when the prototype is not local.
-    pub external_document: Option<ExternalDocument>,
+    pub(crate) external_document: Option<ExternalDocument>,
     /// Local occurrence placement as a row-major affine matrix.
-    pub local_transform: Option<[[f64; 4]; 4]>,
+    pub(crate) local_transform: Option<FiniteFrame>,
     /// Property supplying the placement.
-    pub placement_property: Option<String>,
-    /// Number of array elements requested by the link.
-    pub element_count: Option<i64>,
+    pub(crate) placement_property: Option<String>,
+    /// Admitted link-array values.
+    pub(crate) array: LinkArray,
     /// Whether the prototype transform participates in occurrence placement.
-    pub link_transform: Option<bool>,
-    /// Ordered per-element placements for a link array.
-    pub element_transforms: Vec<[[f64; 4]; 4]>,
-    /// Ordered per-element scale vectors for a link array.
-    pub element_scales: Vec<[f64; 3]>,
+    pub(crate) link_transform: Option<bool>,
     /// Subelement paths selected on the linked prototype.
-    pub linked_subelements: Vec<String>,
+    pub(crate) linked_subelements: Vec<String>,
     /// Whether the link claims its prototype as a tree child.
-    pub claim_child: Option<bool>,
-    /// Persisted copy-on-change policy name or numeric code.
-    pub copy_on_change: Option<String>,
-    /// Original object tracked by copy-on-change.
-    pub copy_on_change_source: Option<String>,
-    /// Internal ownership group for copy-on-change copies.
-    pub copy_on_change_group: Option<String>,
-    /// Whether the tracked source has changed.
-    pub copy_on_change_touched: Option<bool>,
+    pub(crate) claim_child: Option<bool>,
+    /// Copy-on-change policy and its payload.
+    pub(crate) copy_on_change: Option<CopyOnChange>,
     /// Base scale vector applied to every occurrence element.
-    pub scale: Option<[f64; 3]>,
-    /// Explicit per-element application objects in array order.
-    pub element_objects: Vec<String>,
+    pub(crate) scale: Option<FiniteVector<3>>,
+}
+
+/// Independently optional array carriers with a common element count.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct LinkArray {
+    count: Option<u64>,
+    transforms: Vec<FiniteFrame>,
+    scales: Vec<FiniteVector<3>>,
+    visibility: Vec<bool>,
+    objects: Vec<String>,
+}
+
+/// The element cardinality a link states.
+///
+/// A present zero `ElementCount` requires every array-valued field to be empty
+/// and the link retains its single scalar occurrence. An absent `ElementCount`
+/// permits one scalar link occurrence or infers a nonzero count from the
+/// populated array-valued fields, including per-element visibility.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LinkArrayCardinality {
+    /// The link is not an array and carries one occurrence.
+    Scalar,
+    /// The link is an array of this many elements.
+    Elements(NonZeroU64),
+}
+
+impl LinkArray {
+    pub(crate) fn try_new(
+        count: Option<u64>,
+        transforms: Vec<FiniteFrame>,
+        scales: Vec<FiniteVector<3>>,
+        visibility: Vec<bool>,
+        objects: Vec<String>,
+    ) -> Result<Self, String> {
+        let lengths = [
+            cadmpeg_core::decode::u64_from_index(transforms.len()),
+            cadmpeg_core::decode::u64_from_index(scales.len()),
+            cadmpeg_core::decode::u64_from_index(visibility.len()),
+            cadmpeg_core::decode::u64_from_index(objects.len()),
+        ];
+        // With no stated count the longest populated carrier establishes the
+        // cardinality; every populated carrier must agree with it. A stated
+        // zero therefore requires every carrier to be empty.
+        let effective = count.unwrap_or(lengths[0].max(lengths[1]).max(lengths[2]).max(lengths[3]));
+        if lengths
+            .into_iter()
+            .any(|length| length != 0 && length != effective)
+        {
+            return Err("element_count has inconsistent link-array counts".to_owned());
+        }
+        Ok(Self {
+            count,
+            transforms,
+            scales,
+            visibility,
+            objects,
+        })
+    }
+
+    /// Element cardinality: the stated count, else the one the carriers establish.
+    fn cardinality(&self) -> LinkArrayCardinality {
+        let elements = self.count.unwrap_or_else(|| {
+            (cadmpeg_core::decode::u64_from_index(self.transforms.len()))
+                .max(cadmpeg_core::decode::u64_from_index(self.scales.len()))
+                .max(cadmpeg_core::decode::u64_from_index(self.visibility.len()))
+                .max(cadmpeg_core::decode::u64_from_index(self.objects.len()))
+        });
+        match NonZeroU64::new(elements) {
+            None => LinkArrayCardinality::Scalar,
+            Some(elements) => LinkArrayCardinality::Elements(elements),
+        }
+    }
+}
+
+/// A source `LinkCopyOnChange` enumeration index with its exact spelling.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CopyOnChangePolicy {
+    raw: String,
+    index: i64,
+}
+
+impl CopyOnChangePolicy {
+    pub(crate) fn from_raw(raw: String) -> Result<Self, String> {
+        let index = raw
+            .parse::<i64>()
+            .map_err(|_| "copy-on-change policy must be a signed integer".to_owned())?;
+        Ok(Self { raw, index })
+    }
+
+    pub(crate) fn as_str(&self) -> &str {
+        &self.raw
+    }
+
+    pub(crate) fn index(&self) -> i64 {
+        self.index
+    }
+}
+
+/// Copy-on-change policy and its dependent payload.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct CopyOnChange {
+    /// Admitted persisted policy index.
+    policy: CopyOnChangePolicy,
+    /// Original tracked object.
+    pub(crate) source: Option<LinkTarget>,
+    /// Internal ownership group.
+    pub(crate) group: Option<LinkTarget>,
+    /// Whether the tracked source changed.
+    touched: Option<bool>,
+}
+
+impl CopyOnChange {
+    fn from_wire(
+        policy: Option<String>,
+        source: Option<LinkTarget>,
+        group: Option<LinkTarget>,
+        touched: Option<bool>,
+    ) -> Result<Option<Self>, String> {
+        let policy = policy.map(CopyOnChangePolicy::from_raw).transpose()?;
+        Self::from_admitted(policy, source, group, touched)
+    }
+
+    pub(crate) fn from_admitted(
+        policy: Option<CopyOnChangePolicy>,
+        source: Option<LinkTarget>,
+        group: Option<LinkTarget>,
+        touched: Option<bool>,
+    ) -> Result<Option<Self>, String> {
+        match policy {
+            Some(policy) => Ok(Some(Self {
+                policy,
+                source,
+                group,
+                touched,
+            })),
+            None if source.is_none() && group.is_none() && touched.is_none() => Ok(None),
+            None => Err("copy_on_change payload requires copy_on_change policy".to_owned()),
+        }
+    }
 }
 
 impl ProductNodeRecord {
     /// Structural family string retained on the CADIR wire.
-    pub fn kind(&self) -> &'static str {
+    pub(crate) fn kind(&self) -> &'static str {
         match self.node {
             ProductNode::Group(_) => "group",
             ProductNode::Part(_) => "part",
@@ -540,7 +2063,7 @@ impl ProductNodeRecord {
     }
 
     /// Ordered contained application objects.
-    pub fn members(&self) -> &[String] {
+    pub(crate) fn members(&self) -> &[String] {
         match &self.node {
             ProductNode::Group(node)
             | ProductNode::Part(node)
@@ -552,7 +2075,7 @@ impl ProductNodeRecord {
     }
 
     /// Local placement matrix when stored on the node.
-    pub fn local_transform(&self) -> Option<[[f64; 4]; 4]> {
+    pub(crate) fn local_transform(&self) -> Option<FiniteFrame> {
         match &self.node {
             ProductNode::Group(node)
             | ProductNode::Part(node)
@@ -564,7 +2087,7 @@ impl ProductNodeRecord {
     }
 
     /// Property supplying the placement.
-    pub fn placement_property(&self) -> Option<&str> {
+    pub(crate) fn placement_property(&self) -> Option<&str> {
         match &self.node {
             ProductNode::Group(node)
             | ProductNode::Part(node)
@@ -576,7 +2099,7 @@ impl ProductNodeRecord {
     }
 
     /// Occurrence payload when this node is a link.
-    pub fn occurrence(&self) -> Option<&LinkOccurrence> {
+    pub(crate) fn occurrence(&self) -> Option<&LinkOccurrence> {
         match &self.node {
             ProductNode::Occurrence(node) => Some(node),
             _ => None,
@@ -584,91 +2107,115 @@ impl ProductNodeRecord {
     }
 
     /// Linked prototype object for an occurrence.
-    pub fn prototype(&self) -> Option<&str> {
+    pub(crate) fn prototype(&self) -> Option<&str> {
         self.occurrence().and_then(|node| node.prototype.as_deref())
     }
 
     /// External document token when the prototype is not local.
-    pub fn external_document(&self) -> Option<&ExternalDocument> {
+    pub(crate) fn external_document(&self) -> Option<&ExternalDocument> {
         self.occurrence()
             .and_then(|node| node.external_document.as_ref())
     }
 
     /// Number of array elements requested by the link.
-    pub fn element_count(&self) -> Option<i64> {
-        self.occurrence().and_then(|node| node.element_count)
+    pub(crate) fn element_count(&self) -> Option<u64> {
+        self.occurrence().and_then(|node| node.array.count)
+    }
+
+    /// Element cardinality of a link occurrence. A non-occurrence node has none.
+    pub(crate) fn element_cardinality(&self) -> Option<LinkArrayCardinality> {
+        self.occurrence().map(|node| node.array.cardinality())
     }
 
     /// Whether the prototype transform participates in occurrence placement.
-    pub fn link_transform(&self) -> Option<bool> {
+    pub(crate) fn link_transform(&self) -> Option<bool> {
         self.occurrence().and_then(|node| node.link_transform)
     }
 
     /// Ordered per-element placements for a link array.
-    pub fn element_transforms(&self) -> &[[[f64; 4]; 4]] {
+    pub(crate) fn element_transforms(&self) -> &[FiniteFrame] {
         self.occurrence()
-            .map_or(&[], |node| node.element_transforms.as_slice())
+            .map_or(&[], |node| node.array.transforms.as_slice())
     }
 
     /// Ordered per-element scale vectors for a link array.
-    pub fn element_scales(&self) -> &[[f64; 3]] {
+    pub(crate) fn element_scales(&self) -> &[FiniteVector<3>] {
         self.occurrence()
-            .map_or(&[], |node| node.element_scales.as_slice())
+            .map_or(&[], |node| node.array.scales.as_slice())
+    }
+
+    /// Ordered per-element visibility values after `FreeCAD` bit-order decoding.
+    pub(crate) fn element_visibility(&self) -> &[bool] {
+        self.occurrence()
+            .map_or(&[], |node| node.array.visibility.as_slice())
     }
 
     /// Subelement paths selected on the linked prototype.
-    pub fn linked_subelements(&self) -> &[String] {
+    pub(crate) fn linked_subelements(&self) -> &[String] {
         self.occurrence()
             .map_or(&[], |node| node.linked_subelements.as_slice())
     }
 
     /// Whether the link claims its prototype as a tree child.
-    pub fn claim_child(&self) -> Option<bool> {
+    pub(crate) fn claim_child(&self) -> Option<bool> {
         self.occurrence().and_then(|node| node.claim_child)
     }
 
     /// Persisted copy-on-change policy name or numeric code.
-    pub fn copy_on_change(&self) -> Option<&str> {
+    pub(crate) fn copy_on_change(&self) -> Option<&str> {
         self.occurrence()
-            .and_then(|node| node.copy_on_change.as_deref())
+            .and_then(|node| node.copy_on_change.as_ref())
+            .map(|copy| copy.policy.as_str())
+    }
+
+    /// Admitted copy-on-change policy, including its parsed source index.
+    pub(crate) fn copy_on_change_policy(&self) -> Option<&CopyOnChangePolicy> {
+        self.occurrence()
+            .and_then(|node| node.copy_on_change.as_ref())
+            .map(|copy| &copy.policy)
     }
 
     /// Original object tracked by copy-on-change.
-    pub fn copy_on_change_source(&self) -> Option<&str> {
+    pub(crate) fn copy_on_change_source(&self) -> Option<&LinkTarget> {
         self.occurrence()
-            .and_then(|node| node.copy_on_change_source.as_deref())
+            .and_then(|node| node.copy_on_change.as_ref())
+            .and_then(|copy| copy.source.as_ref())
     }
 
     /// Internal ownership group for copy-on-change copies.
-    pub fn copy_on_change_group(&self) -> Option<&str> {
+    pub(crate) fn copy_on_change_group(&self) -> Option<&LinkTarget> {
         self.occurrence()
-            .and_then(|node| node.copy_on_change_group.as_deref())
+            .and_then(|node| node.copy_on_change.as_ref())
+            .and_then(|copy| copy.group.as_ref())
     }
 
     /// Whether the tracked source has changed.
-    pub fn copy_on_change_touched(&self) -> Option<bool> {
+    pub(crate) fn copy_on_change_touched(&self) -> Option<bool> {
         self.occurrence()
-            .and_then(|node| node.copy_on_change_touched)
+            .and_then(|node| node.copy_on_change.as_ref())
+            .and_then(|copy| copy.touched)
     }
 
     /// Base scale vector applied to every occurrence element.
-    pub fn scale(&self) -> Option<[f64; 3]> {
-        self.occurrence().and_then(|node| node.scale)
+    pub(crate) fn scale(&self) -> Option<[f64; 3]> {
+        self.occurrence()
+            .and_then(|node| node.scale)
+            .map(FiniteVector::get)
     }
 
     /// Explicit per-element application objects in array order.
-    pub fn element_objects(&self) -> &[String] {
+    pub(crate) fn element_objects(&self) -> &[String] {
         match &self.node {
             ProductNode::LinkGroup {
                 element_objects, ..
             } => element_objects,
-            ProductNode::Occurrence(node) => &node.element_objects,
+            ProductNode::Occurrence(node) => &node.array.objects,
             ProductNode::Group(_) | ProductNode::Part(_) => &[],
         }
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct ProductNodeRecordWire {
     id: String,
     object: String,
@@ -679,53 +2226,94 @@ struct ProductNodeRecordWire {
     external_document_attribute: Option<String>,
     local_transform: Option<[[f64; 4]; 4]>,
     placement_property: Option<String>,
-    element_count: Option<i64>,
+    element_count: Option<u64>,
     link_transform: Option<bool>,
     element_transforms: Vec<[[f64; 4]; 4]>,
     element_scales: Vec<[f64; 3]>,
     linked_subelements: Vec<String>,
     claim_child: Option<bool>,
     copy_on_change: Option<String>,
-    copy_on_change_source: Option<String>,
-    copy_on_change_group: Option<String>,
+    copy_on_change_source: Option<LinkTarget>,
+    copy_on_change_group: Option<LinkTarget>,
     copy_on_change_touched: Option<bool>,
     scale: Option<[f64; 3]>,
     element_visibility: Vec<bool>,
     element_objects: Vec<String>,
 }
 
-impl From<ProductNodeRecord> for ProductNodeRecordWire {
-    fn from(value: ProductNodeRecord) -> Self {
-        Self {
-            kind: value.kind().to_owned(),
-            members: value.members().to_vec(),
-            prototype: value.prototype().map(str::to_owned),
-            external_document: value
+/// Writes admitted frames as the row-major matrices the wire carries.
+struct FrameRowsOut<'a>(&'a [FiniteFrame]);
+
+impl Serialize for FrameRowsOut<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.iter().copied().map(FiniteFrame::rows))
+    }
+}
+
+/// Writes admitted scale vectors as the component triples the wire carries.
+struct Vec3ValuesOut<'a>(&'a [FiniteVector<3>]);
+
+impl Serialize for Vec3ValuesOut<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.iter().copied().map(FiniteVector::get))
+    }
+}
+
+#[derive(Serialize)]
+struct ProductNodeRecordOut<'a> {
+    id: &'a str,
+    object: &'a str,
+    kind: &'static str,
+    members: &'a [String],
+    prototype: Option<&'a str>,
+    external_document: Option<&'a str>,
+    external_document_attribute: Option<&'static str>,
+    local_transform: Option<[[f64; 4]; 4]>,
+    placement_property: Option<&'a str>,
+    element_count: Option<u64>,
+    link_transform: Option<bool>,
+    element_transforms: FrameRowsOut<'a>,
+    element_scales: Vec3ValuesOut<'a>,
+    linked_subelements: &'a [String],
+    claim_child: Option<bool>,
+    copy_on_change: Option<&'a str>,
+    copy_on_change_source: Option<&'a LinkTarget>,
+    copy_on_change_group: Option<&'a LinkTarget>,
+    copy_on_change_touched: Option<bool>,
+    scale: Option<[f64; 3]>,
+    element_visibility: &'a [bool],
+    element_objects: &'a [String],
+}
+
+impl Serialize for ProductNodeRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        ProductNodeRecordOut {
+            id: &self.id,
+            object: &self.object,
+            kind: self.kind(),
+            members: self.members(),
+            prototype: self.prototype(),
+            external_document: self.external_document().map(ExternalDocument::as_str),
+            external_document_attribute: self
                 .external_document()
-                .map(ExternalDocument::as_str)
-                .map(str::to_owned),
-            external_document_attribute: value
-                .external_document()
-                .and_then(ExternalDocument::attribute)
-                .map(str::to_owned),
-            local_transform: value.local_transform(),
-            placement_property: value.placement_property().map(str::to_owned),
-            element_count: value.element_count(),
-            link_transform: value.link_transform(),
-            element_transforms: value.element_transforms().to_vec(),
-            element_scales: value.element_scales().to_vec(),
-            linked_subelements: value.linked_subelements().to_vec(),
-            claim_child: value.claim_child(),
-            copy_on_change: value.copy_on_change().map(str::to_owned),
-            copy_on_change_source: value.copy_on_change_source().map(str::to_owned),
-            copy_on_change_group: value.copy_on_change_group().map(str::to_owned),
-            copy_on_change_touched: value.copy_on_change_touched(),
-            scale: value.scale(),
-            element_visibility: Vec::new(),
-            element_objects: value.element_objects().to_vec(),
-            id: value.id,
-            object: value.object,
+                .and_then(ExternalDocument::attribute),
+            local_transform: self.local_transform().map(FiniteFrame::rows),
+            placement_property: self.placement_property(),
+            element_count: self.element_count(),
+            link_transform: self.link_transform(),
+            element_transforms: FrameRowsOut(self.element_transforms()),
+            element_scales: Vec3ValuesOut(self.element_scales()),
+            linked_subelements: self.linked_subelements(),
+            claim_child: self.claim_child(),
+            copy_on_change: self.copy_on_change(),
+            copy_on_change_source: self.copy_on_change_source(),
+            copy_on_change_group: self.copy_on_change_group(),
+            copy_on_change_touched: self.copy_on_change_touched(),
+            scale: self.scale(),
+            element_visibility: self.element_visibility(),
+            element_objects: self.element_objects(),
         }
+        .serialize(serializer)
     }
 }
 
@@ -738,6 +2326,7 @@ impl ProductNodeRecordWire {
             || self.link_transform.is_some()
             || !self.element_transforms.is_empty()
             || !self.element_scales.is_empty()
+            || !self.element_visibility.is_empty()
             || !self.linked_subelements.is_empty()
             || self.claim_child.is_some()
             || self.copy_on_change.is_some()
@@ -752,9 +2341,6 @@ impl TryFrom<ProductNodeRecordWire> for ProductNodeRecord {
     type Error = String;
 
     fn try_from(wire: ProductNodeRecordWire) -> Result<Self, Self::Error> {
-        if !wire.element_visibility.is_empty() {
-            return Err("product node element_visibility is unused and must be empty".to_owned());
-        }
         if wire.kind != "occurrence" && wire.has_occurrence_fields() {
             return Err("container product node carries occurrence-only link fields".to_owned());
         }
@@ -765,7 +2351,11 @@ impl TryFrom<ProductNodeRecordWire> for ProductNodeRecord {
             "group" | "part" | "link_group" => {
                 let container = ContainerNode {
                     members: wire.members,
-                    local_transform: wire.local_transform,
+                    local_transform: wire
+                        .local_transform
+                        .map(FiniteFrame::try_from)
+                        .transpose()
+                        .map_err(|error| format!("local_transform: {error}"))?,
                     placement_property: wire.placement_property,
                 };
                 match wire.kind.as_str() {
@@ -777,28 +2367,54 @@ impl TryFrom<ProductNodeRecordWire> for ProductNodeRecord {
                     },
                 }
             }
-            "occurrence" => ProductNode::Occurrence(LinkOccurrence {
+            "occurrence" => ProductNode::Occurrence(Box::new(LinkOccurrence {
                 members: wire.members,
                 prototype: wire.prototype,
                 external_document: ExternalDocument::from_wire(
                     wire.external_document,
                     wire.external_document_attribute.as_deref(),
                 )?,
-                local_transform: wire.local_transform,
+                local_transform: wire
+                    .local_transform
+                    .map(FiniteFrame::try_from)
+                    .transpose()
+                    .map_err(|error| format!("local_transform: {error}"))?,
                 placement_property: wire.placement_property,
-                element_count: wire.element_count,
+                array: LinkArray::try_new(
+                    wire.element_count,
+                    wire.element_transforms
+                        .into_iter()
+                        .map(FiniteFrame::try_from)
+                        .collect::<Result<Vec<_>, _>>()
+                        .map_err(|error| format!("element_transforms: {error}"))?,
+                    wire.element_scales
+                        .into_iter()
+                        .map(|values| {
+                            FiniteVector::new(values)
+                                .ok_or("scale vector components must be finite")
+                        })
+                        .collect::<Result<Vec<_>, _>>()
+                        .map_err(|error| format!("element_scales: {error}"))?,
+                    wire.element_visibility,
+                    wire.element_objects,
+                )?,
                 link_transform: wire.link_transform,
-                element_transforms: wire.element_transforms,
-                element_scales: wire.element_scales,
                 linked_subelements: wire.linked_subelements,
                 claim_child: wire.claim_child,
-                copy_on_change: wire.copy_on_change,
-                copy_on_change_source: wire.copy_on_change_source,
-                copy_on_change_group: wire.copy_on_change_group,
-                copy_on_change_touched: wire.copy_on_change_touched,
-                scale: wire.scale,
-                element_objects: wire.element_objects,
-            }),
+                copy_on_change: CopyOnChange::from_wire(
+                    wire.copy_on_change,
+                    wire.copy_on_change_source,
+                    wire.copy_on_change_group,
+                    wire.copy_on_change_touched,
+                )?,
+                scale: wire
+                    .scale
+                    .map(|values| {
+                        FiniteVector::new(values).ok_or("scale vector components must be finite")
+                    })
+                    .transpose()
+                    .map_err(|error| format!("scale: {error}"))?,
+            })),
             _ => return Err("unknown product node kind".to_owned()),
         };
         Ok(Self {
@@ -811,51 +2427,48 @@ impl TryFrom<ProductNodeRecordWire> for ProductNodeRecord {
 
 /// One persisted GUI view provider linked to an application object when available.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct GuiViewProviderRecord {
+pub(crate) struct GuiViewProviderRecord {
     /// Stable native identity.
-    pub id: String,
+    pub(crate) id: String,
     /// Application object identity, or `None` for a GUI-only provider.
-    pub object: Option<String>,
+    pub(crate) object: Option<NonBlankString>,
     /// Persisted provider name.
-    pub name: String,
+    pub(crate) name: String,
     /// Persisted tree-expansion state.
-    pub expanded: Option<bool>,
+    pub(crate) expanded: Option<bool>,
     /// Source order in `ViewProviderData`.
-    pub order: usize,
+    pub(crate) order: usize,
     /// Exact provider XML.
-    pub raw_xml: String,
+    pub(crate) raw_xml: String,
 }
 
 /// One persisted property owned by a GUI view provider.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct GuiPropertyRecord {
+pub(crate) struct GuiPropertyRecord {
     /// Stable native identity.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning view-provider identity.
-    pub owner: String,
+    pub(crate) owner: String,
     /// Persisted property name.
-    pub name: String,
+    pub(crate) name: String,
     /// Runtime property type.
-    pub type_name: String,
+    pub(crate) type_name: String,
     /// Native status bits.
-    pub status: Option<u64>,
+    pub(crate) status: Option<u64>,
     /// Source order within the provider.
-    pub order: usize,
+    pub(crate) order: usize,
     /// Ordered value elements.
-    pub values: Vec<ValueRecord>,
+    pub(crate) values: Vec<ValueRecord>,
     /// Referenced archive entries.
-    pub side_entries: Vec<String>,
-    /// Exact property XML.
-    pub raw_xml: String,
-    /// Inclusive byte offset in `GuiDocument.xml`.
-    pub byte_start: u64,
-    /// Exclusive byte offset in `GuiDocument.xml`.
-    pub byte_end: u64,
+    pub(crate) side_entries: Vec<String>,
+    /// Retained XML and its byte span.
+    #[serde(flatten)]
+    pub(crate) xml: RetainedXml,
 }
 
 /// ZIP physical-ledger role stored on one archive span.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ArchiveSpanRole {
+pub(crate) enum ArchiveSpanRole {
     /// ZIP local-header signature for the named entry.
     LocalSignature(String),
     /// ZIP local-header fields for the named entry.
@@ -890,9 +2503,33 @@ pub enum ArchiveSpanRole {
     ArchivePadding,
 }
 
+impl From<&cadmpeg_container::ZipSpanRole> for ArchiveSpanRole {
+    fn from(role: &cadmpeg_container::ZipSpanRole) -> Self {
+        use cadmpeg_container::ZipSpanRole;
+        match role {
+            ZipSpanRole::LocalSignature(entry) => Self::LocalSignature(entry.clone()),
+            ZipSpanRole::LocalFields(entry) => Self::LocalFields(entry.clone()),
+            ZipSpanRole::LocalName(entry) => Self::LocalName(entry.clone()),
+            ZipSpanRole::LocalExtra(entry) => Self::LocalExtra(entry.clone()),
+            ZipSpanRole::CompressedPayload(entry) => Self::CompressedPayload(entry.clone()),
+            ZipSpanRole::DataDescriptor(entry) => Self::DataDescriptor(entry.clone()),
+            ZipSpanRole::CentralSignature(entry) => Self::CentralSignature(entry.clone()),
+            ZipSpanRole::CentralFields(entry) => Self::CentralFields(entry.clone()),
+            ZipSpanRole::CentralName(entry) => Self::CentralName(entry.clone()),
+            ZipSpanRole::CentralExtra(entry) => Self::CentralExtra(entry.clone()),
+            ZipSpanRole::CentralComment(entry) => Self::CentralComment(entry.clone()),
+            ZipSpanRole::Padding { entry: Some(entry) } => Self::EntryArchivePadding(entry.clone()),
+            ZipSpanRole::Padding { entry: None } => Self::ArchivePadding,
+            ZipSpanRole::Zip64EndRecord => Self::Zip64EndRecord,
+            ZipSpanRole::Zip64EndLocator => Self::Zip64EndLocator,
+            ZipSpanRole::EndRecord => Self::EndRecord,
+        }
+    }
+}
+
 impl ArchiveSpanRole {
     /// Stable physical-ledger label retained on the CADIR wire.
-    pub fn as_str(&self) -> &'static str {
+    pub(crate) fn as_str(&self) -> &'static str {
         match self {
             Self::LocalSignature(_) => "local-signature",
             Self::LocalFields(_) => "local-fields",
@@ -913,7 +2550,7 @@ impl ArchiveSpanRole {
     }
 
     /// Owning entry, when the role is entry-owned.
-    pub fn entry(&self) -> Option<&str> {
+    fn entry(&self) -> Option<&str> {
         match self {
             Self::LocalSignature(entry)
             | Self::LocalFields(entry)
@@ -934,7 +2571,7 @@ impl ArchiveSpanRole {
         }
     }
 
-    pub(crate) fn from_label(label: &str, entry: Option<String>) -> Result<Self, String> {
+    fn from_label(label: &str, entry: Option<String>) -> Result<Self, String> {
         let named = |entry: Option<String>, ctor: fn(String) -> Self| {
             entry
                 .map(ctor)
@@ -974,20 +2611,18 @@ impl ArchiveSpanRole {
 }
 
 /// One physical archive span.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "ArchiveSpanWire", into = "ArchiveSpanWire")]
-pub struct ArchiveSpan {
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "ArchiveSpanWire")]
+pub(crate) struct ArchiveSpan {
     /// Stable span identity.
-    pub id: String,
-    /// Inclusive byte offset.
-    pub start: u64,
-    /// Exclusive byte offset.
-    pub end: u64,
+    pub(crate) id: String,
+    /// Nonempty byte interval.
+    pub(crate) span: ByteSpan,
     /// Structural role.
-    pub role: ArchiveSpanRole,
+    pub(crate) role: ArchiveSpanRole,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct ArchiveSpanWire {
     id: String,
     start: u64,
@@ -996,15 +2631,25 @@ struct ArchiveSpanWire {
     entry: Option<String>,
 }
 
-impl From<ArchiveSpan> for ArchiveSpanWire {
-    fn from(value: ArchiveSpan) -> Self {
-        Self {
-            id: value.id,
-            start: value.start,
-            end: value.end,
-            role: value.role.as_str().to_owned(),
-            entry: value.role.entry().map(str::to_owned),
+#[derive(Serialize)]
+struct ArchiveSpanOut<'a> {
+    id: &'a str,
+    start: u64,
+    end: u64,
+    role: &'static str,
+    entry: Option<&'a str>,
+}
+
+impl Serialize for ArchiveSpan {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        ArchiveSpanOut {
+            id: &self.id,
+            start: self.span.start(),
+            end: self.span.end(),
+            role: self.role.as_str(),
+            entry: self.role.entry(),
         }
+        .serialize(serializer)
     }
 }
 
@@ -1014,8 +2659,7 @@ impl TryFrom<ArchiveSpanWire> for ArchiveSpan {
     fn try_from(wire: ArchiveSpanWire) -> Result<Self, Self::Error> {
         Ok(Self {
             id: wire.id,
-            start: wire.start,
-            end: wire.end,
+            span: ByteSpan::try_new(wire.start, wire.end)?,
             role: ArchiveSpanRole::from_label(&wire.role, wire.entry)?,
         })
     }
@@ -1024,7 +2668,7 @@ impl TryFrom<ArchiveSpanWire> for ArchiveSpan {
 /// Structural document-kind classification from declared object domains.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum DocumentKind {
+pub(crate) enum DocumentKind {
     /// At least one `Assembly::` object.
     Assembly,
     /// At least one `TechDraw::` object and no assembly objects.
@@ -1041,7 +2685,7 @@ pub enum DocumentKind {
 
 impl DocumentKind {
     /// Stable document-kind label retained on the CADIR wire.
-    pub fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::Assembly => "assembly",
             Self::Drawing => "drawing",
@@ -1053,65 +2697,156 @@ impl DocumentKind {
     }
 }
 
+/// Parsed file version with its exact source spelling.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct FileVersion {
+    spelling: String,
+    value: usize,
+}
+impl TryFrom<String> for FileVersion {
+    type Error = String;
+    fn try_from(spelling: String) -> Result<Self, Self::Error> {
+        let value = spelling
+            .parse()
+            .map_err(|_| "file_version must parse as usize".to_owned())?;
+        Ok(Self { spelling, value })
+    }
+}
+impl FileVersion {
+    pub(crate) fn value(&self) -> usize {
+        self.value
+    }
+    pub(crate) fn as_str(&self) -> &str {
+        &self.spelling
+    }
+}
+
 /// Metadata read from the persistence document.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DocumentFacts {
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "DocumentFactsWire")]
+pub(crate) struct DocumentFacts {
     /// Stable document-record identity.
-    pub id: String,
-    /// Persistence schema version.
-    pub schema_version: String,
+    pub(crate) id: String,
     /// Persistence file version.
-    pub file_version: String,
+    pub(crate) file_version: FileVersion,
     /// Producing application version, when carried.
-    pub program_version: Option<String>,
+    pub(crate) program_version: Option<String>,
     /// XML document element name.
-    pub root_name: String,
+    pub(crate) root_name: String,
     /// Number of declared application objects.
-    pub object_count: usize,
-    /// Structural document-kind classification.
-    pub document_kind: DocumentKind,
+    pub(crate) object_count: usize,
     /// Application domains present in object declarations.
-    pub domains: Vec<String>,
+    pub(crate) domains: Vec<String>,
+}
+
+impl DocumentFacts {
+    /// Structural document-kind classification.
+    pub(crate) fn document_kind(&self) -> DocumentKind {
+        if self.domains.iter().any(|domain| domain == "Assembly") {
+            DocumentKind::Assembly
+        } else if self.domains.iter().any(|domain| domain == "TechDraw") {
+            DocumentKind::Drawing
+        } else if self.domains.iter().any(|domain| domain == "PartDesign") {
+            DocumentKind::PartDesign
+        } else if self.domains.iter().any(|domain| domain == "Part") {
+            DocumentKind::Part
+        } else if self.object_count == 0 {
+            DocumentKind::Empty
+        } else {
+            DocumentKind::ApplicationDocument
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct DocumentFactsWire {
+    id: String,
+    file_version: String,
+    program_version: Option<String>,
+    root_name: String,
+    object_count: usize,
+    domains: Vec<String>,
+    document_kind: DocumentKind,
+}
+
+#[derive(Serialize)]
+struct DocumentFactsOut<'a> {
+    id: &'a str,
+    file_version: &'a str,
+    program_version: Option<&'a str>,
+    root_name: &'a str,
+    object_count: usize,
+    domains: &'a [String],
+    document_kind: DocumentKind,
+}
+
+impl Serialize for DocumentFacts {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        DocumentFactsOut {
+            id: &self.id,
+            file_version: self.file_version.as_str(),
+            program_version: self.program_version.as_deref(),
+            root_name: &self.root_name,
+            object_count: self.object_count,
+            domains: &self.domains,
+            document_kind: self.document_kind(),
+        }
+        .serialize(serializer)
+    }
+}
+impl TryFrom<DocumentFactsWire> for DocumentFacts {
+    type Error = String;
+    fn try_from(wire: DocumentFactsWire) -> Result<Self, Self::Error> {
+        let value = Self {
+            id: wire.id,
+            file_version: wire.file_version.try_into()?,
+            program_version: wire.program_version,
+            root_name: wire.root_name,
+            object_count: wire.object_count,
+            domains: wire.domains,
+        };
+        if wire.document_kind != value.document_kind() {
+            return Err("document_kind disagrees with domains and object_count".to_owned());
+        }
+        Ok(value)
+    }
 }
 
 /// One declared application object and its persistence state.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "ObjectRecordWire", into = "ObjectRecordWire")]
-pub struct ObjectRecord {
-    /// Stable native identity.
-    pub id: String,
-    /// Persisted object name.
-    pub name: String,
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "ObjectRecordWire")]
+pub(crate) struct ObjectRecord {
+    /// Checked identity and its persisted source name.
+    pub(crate) identity: object_identity::ObjectIdentity,
     /// Runtime type name.
-    pub type_name: String,
+    pub(crate) type_name: String,
     /// Persisted numeric identity, when present.
-    pub persistent_id: Option<i64>,
+    pub(crate) persistent_id: Option<i64>,
     /// Optional custom view-provider type.
-    pub view_type: Option<String>,
+    pub(crate) view_type: Option<String>,
     /// Declaration attributes not projected into dedicated fields.
-    pub attributes: BTreeMap<String, String>,
+    pub(crate) attributes: BTreeMap<String, String>,
     /// Ordered dependency identities.
-    pub dependencies: Vec<String>,
+    pub(crate) dependencies: Vec<String>,
     /// Positive partial-load capability from the dependency record.
-    pub dependency_allow_partial: Option<i64>,
+    pub(crate) dependency_allow_partial: Option<std::num::NonZeroU64>,
     /// Source-order index.
-    pub order: usize,
+    pub(crate) order: usize,
     /// Exact object-data XML and its source span, when present.
-    pub data: Option<ObjectData>,
+    pub(crate) data: Option<RetainedXml>,
 }
 
-/// Object-data XML and the source span that produced it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ObjectData {
-    /// Exact object-data XML.
-    pub raw_xml: String,
-    /// Inclusive byte offset of object-data XML.
-    pub byte_start: u64,
-    /// Exclusive byte offset of object-data XML.
-    pub byte_end: u64,
+impl ObjectRecord {
+    pub(crate) fn id(&self) -> &String {
+        self.identity.id()
+    }
+
+    pub(crate) fn name(&self) -> &String {
+        self.identity.name()
+    }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct ObjectRecordWire {
     id: String,
     name: String,
@@ -1120,37 +2855,53 @@ struct ObjectRecordWire {
     view_type: Option<String>,
     attributes: BTreeMap<String, String>,
     dependencies: Vec<String>,
-    dependency_allow_partial: Option<i64>,
+    dependency_allow_partial: Option<i128>,
     order: usize,
     raw_xml: Option<String>,
     byte_start: Option<u64>,
     byte_end: Option<u64>,
 }
 
-impl From<ObjectRecord> for ObjectRecordWire {
-    fn from(value: ObjectRecord) -> Self {
-        let (raw_xml, byte_start, byte_end) = match value.data {
-            Some(data) => (
-                Some(data.raw_xml),
-                Some(data.byte_start),
-                Some(data.byte_end),
-            ),
+#[derive(Serialize)]
+struct ObjectRecordOut<'a> {
+    id: &'a str,
+    name: &'a str,
+    type_name: &'a str,
+    persistent_id: Option<i64>,
+    view_type: Option<&'a str>,
+    attributes: &'a BTreeMap<String, String>,
+    dependencies: &'a [String],
+    dependency_allow_partial: Option<i128>,
+    order: usize,
+    raw_xml: Option<&'a str>,
+    byte_start: Option<u64>,
+    byte_end: Option<u64>,
+}
+
+impl Serialize for ObjectRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        // Absent object data writes all three span members absent.
+        let (raw_xml, byte_start, byte_end) = match &self.data {
+            Some(data) => (Some(data.text()), Some(data.start()), Some(data.end())),
             None => (None, None, None),
         };
-        Self {
-            id: value.id,
-            name: value.name,
-            type_name: value.type_name,
-            persistent_id: value.persistent_id,
-            view_type: value.view_type,
-            attributes: value.attributes,
-            dependencies: value.dependencies,
-            dependency_allow_partial: value.dependency_allow_partial,
-            order: value.order,
+        ObjectRecordOut {
+            id: self.id(),
+            name: self.name(),
+            type_name: &self.type_name,
+            persistent_id: self.persistent_id,
+            view_type: self.view_type.as_deref(),
+            attributes: &self.attributes,
+            dependencies: &self.dependencies,
+            dependency_allow_partial: self
+                .dependency_allow_partial
+                .map(|value| i128::from(value.get())),
+            order: self.order,
             raw_xml,
             byte_start,
             byte_end,
         }
+        .serialize(serializer)
     }
 }
 
@@ -1159,11 +2910,9 @@ impl TryFrom<ObjectRecordWire> for ObjectRecord {
 
     fn try_from(wire: ObjectRecordWire) -> Result<Self, Self::Error> {
         let data = match (wire.raw_xml, wire.byte_start, wire.byte_end) {
-            (Some(raw_xml), Some(byte_start), Some(byte_end)) => Some(ObjectData {
-                raw_xml,
-                byte_start,
-                byte_end,
-            }),
+            (Some(raw_xml), Some(byte_start), Some(byte_end)) => {
+                Some(RetainedXml::try_new(raw_xml, byte_start, byte_end)?)
+            }
             (None, None, None) => None,
             _ => {
                 return Err(
@@ -1172,14 +2921,21 @@ impl TryFrom<ObjectRecordWire> for ObjectRecord {
             }
         };
         Ok(Self {
-            id: wire.id,
-            name: wire.name,
+            identity: object_identity::ObjectIdentity::try_new(wire.id, wire.name)?,
             type_name: wire.type_name,
             persistent_id: wire.persistent_id,
             view_type: wire.view_type,
             attributes: wire.attributes,
             dependencies: wire.dependencies,
-            dependency_allow_partial: wire.dependency_allow_partial,
+            dependency_allow_partial: wire
+                .dependency_allow_partial
+                .map(|value| {
+                    u64::try_from(value)
+                        .ok()
+                        .and_then(std::num::NonZeroU64::new)
+                        .ok_or_else(|| "dependency_allow_partial must be positive".to_owned())
+                })
+                .transpose()?,
             order: wire.order,
             data,
         })
@@ -1188,63 +2944,70 @@ impl TryFrom<ObjectRecordWire> for ObjectRecord {
 
 /// One dynamic object extension.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ExtensionRecord {
+pub(crate) struct ExtensionRecord {
     /// Stable extension identity.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning object identity.
-    pub owner: String,
+    pub(crate) owner: String,
     /// Persisted extension name.
-    pub name: String,
+    pub(crate) name: String,
     /// Runtime extension type.
-    pub type_name: String,
+    pub(crate) type_name: String,
     /// Source-order index.
-    pub order: usize,
+    pub(crate) order: usize,
     /// Exact extension XML.
-    pub raw_xml: String,
+    pub(crate) raw_xml: String,
 }
 
 /// Dynamic-property persistence metadata.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DynamicPropertyMeta {
+pub(crate) struct DynamicPropertyMeta {
     /// Display group.
-    pub group: String,
+    pub(crate) group: String,
     /// Documentation string.
-    pub documentation: Option<String>,
+    pub(crate) documentation: Option<String>,
     /// Native attribute flags.
-    pub attributes: Option<i64>,
+    pub(crate) attributes: Option<i64>,
     /// Read-only state.
-    pub read_only: Option<bool>,
+    pub(crate) read_only: Option<bool>,
     /// Hidden state.
-    pub hidden: Option<bool>,
+    pub(crate) hidden: Option<bool>,
 }
 
 /// External document named by a file path or a document identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ExternalDocument {
+pub(crate) enum ExternalDocument {
     /// Path carried by a `file` attribute.
-    File(NonEmptyString),
+    File(NonBlankString),
     /// Document identity carried without a `file` attribute.
-    Name(NonEmptyString),
+    Name(NonBlankString),
 }
 
 impl ExternalDocument {
+    pub(crate) fn clone_with_context(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
+        let value = NonBlankString::new(
+            ctx.copy_retained_text(self.as_str(), "FreeCAD external document copy")?,
+        )
+        .ok_or_else(|| CodecError::Malformed("external document is empty".into()))?;
+        Ok(match self {
+            Self::File(_) => Self::File(value),
+            Self::Name(_) => Self::Name(value),
+        })
+    }
+
     /// Document token retained on the CADIR wire.
-    pub fn as_str(&self) -> &str {
+    pub(crate) fn as_str(&self) -> &str {
         match self {
             Self::File(value) | Self::Name(value) => value.as_str(),
         }
     }
 
     /// Attribute spelling retained on the CADIR wire.
-    pub fn attribute(&self) -> Option<&'static str> {
+    pub(crate) fn attribute(&self) -> Option<&'static str> {
         match self {
             Self::File(_) => Some("file"),
             Self::Name(_) => None,
         }
-    }
-
-    pub(crate) fn from_file_attr(file: Option<String>) -> Option<Self> {
-        file.and_then(NonEmptyString::new).map(Self::File)
     }
 
     fn from_wire(
@@ -1253,11 +3016,11 @@ impl ExternalDocument {
     ) -> Result<Option<Self>, String> {
         match (document, attribute) {
             (None, None | Some("file")) => Ok(None),
-            (Some(path), Some("file")) => NonEmptyString::new(path)
+            (Some(path), Some("file")) => NonBlankString::new(path)
                 .map(Self::File)
                 .map(Some)
                 .ok_or_else(|| "external document file path must not be empty".to_owned()),
-            (Some(name), None) => NonEmptyString::new(name)
+            (Some(name), None) => NonBlankString::new(name)
                 .map(Self::Name)
                 .map(Some)
                 .ok_or_else(|| "external document name must not be empty".to_owned()),
@@ -1269,66 +3032,132 @@ impl ExternalDocument {
 }
 
 /// One `XLink`, `PropertyLink`, or `PropertyLinkSub` target.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "LinkTargetWire", into = "LinkTargetWire")]
-pub struct LinkTarget {
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "LinkTargetWire")]
+pub(crate) struct LinkTarget {
     /// External document, when the target is not local.
-    pub document: Option<ExternalDocument>,
+    document: Option<ExternalDocument>,
     /// Target object identity. Empty source names are absent.
-    pub object: Option<NonEmptyString>,
+    object: Option<NonBlankString>,
     /// Ordered subelement selectors.
-    pub subelements: Vec<String>,
+    subelements: Vec<String>,
 }
 
 impl LinkTarget {
+    pub(crate) fn clone_with_context(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
+        let document = self
+            .document
+            .as_ref()
+            .map(|document| document.clone_with_context(ctx))
+            .transpose()?;
+        let object = self
+            .object
+            .as_ref()
+            .map(|value| {
+                NonBlankString::new(
+                    ctx.copy_retained_text(value.as_str(), "FreeCAD link object copy")?,
+                )
+                .ok_or_else(|| CodecError::Malformed("link object is empty".into()))
+            })
+            .transpose()?;
+        let mut subelements =
+            ctx.collection_vec(self.subelements.len(), "FreeCAD link subelement copies")?;
+        for subelement in &self.subelements {
+            subelements.push(ctx.copy_retained_text(subelement, "FreeCAD link subelement text")?);
+        }
+        Ok(Self {
+            document,
+            object,
+            subelements,
+        })
+    }
+
+    /// Admits a target from a parsed link element, or absence when the element
+    /// selects no document, object, or subelement.
+    pub(crate) fn optional_from_wire(wire: LinkTargetWire) -> Result<Option<Self>, String> {
+        let document =
+            ExternalDocument::from_wire(wire.document, wire.document_attribute.as_deref())?;
+        let object = wire.object.and_then(NonBlankString::new);
+        if document.is_none() && object.is_none() && wire.subelements.is_empty() {
+            return Ok(None);
+        }
+        Self::try_new(document, object, wire.subelements).map(Some)
+    }
+
+    /// Admits a target with a document, object, or subelement selection.
+    fn try_new(
+        document: Option<ExternalDocument>,
+        object: Option<NonBlankString>,
+        subelements: Vec<String>,
+    ) -> Result<Self, String> {
+        if document.is_none() && object.is_none() && subelements.is_empty() {
+            return Err("link target requires document, object, or subelements".to_owned());
+        }
+        Ok(Self {
+            document,
+            object,
+            subelements,
+        })
+    }
+
+    /// External document when the target is not local.
+    pub(crate) fn document(&self) -> Option<&ExternalDocument> {
+        self.document.as_ref()
+    }
+
+    /// Ordered subelement selectors.
+    pub(crate) fn subelements(&self) -> &[String] {
+        &self.subelements
+    }
+
+    /// Sets a nonempty object identity.
+    pub(crate) fn set_object(&mut self, object: NonBlankString) {
+        self.object = Some(object);
+    }
+
     /// Document token retained on the CADIR wire.
-    pub fn document_name(&self) -> Option<&str> {
+    pub(crate) fn document_name(&self) -> Option<&str> {
         self.document.as_ref().map(ExternalDocument::as_str)
     }
 
     /// Attribute spelling retained on the CADIR wire.
-    pub fn document_attribute(&self) -> Option<&'static str> {
+    pub(crate) fn document_attribute(&self) -> Option<&'static str> {
         self.document.as_ref().and_then(ExternalDocument::attribute)
     }
 
     /// Target object identity, omitting empty source names.
-    pub fn object(&self) -> Option<&str> {
-        self.object.as_ref().map(NonEmptyString::as_str)
+    pub(crate) fn object(&self) -> Option<&str> {
+        self.object.as_ref().map(NonBlankString::as_str)
     }
 }
 
-#[derive(Serialize, Deserialize)]
-struct LinkTargetWire {
-    document: Option<String>,
-    document_attribute: Option<String>,
-    object: Option<String>,
-    subelements: Vec<String>,
+/// The persisted link target fields.
+#[derive(Deserialize)]
+pub(crate) struct LinkTargetWire {
+    pub(crate) document: Option<String>,
+    pub(crate) document_attribute: Option<String>,
+    pub(crate) object: Option<String>,
+    pub(crate) subelements: Vec<String>,
 }
 
-impl From<LinkTarget> for LinkTargetWire {
-    fn from(value: LinkTarget) -> Self {
-        let document_attribute = value
-            .document
-            .as_ref()
-            .and_then(ExternalDocument::attribute)
-            .map(str::to_owned);
-        let document = value
-            .document
-            .as_ref()
-            .map(ExternalDocument::as_str)
-            .map(str::to_owned);
-        Self {
-            document,
-            document_attribute,
-            object: Some(
-                value
-                    .object
-                    .as_ref()
-                    .map_or("", NonEmptyString::as_str)
-                    .to_owned(),
-            ),
-            subelements: value.subelements,
+#[derive(Serialize)]
+struct LinkTargetOut<'a> {
+    document: Option<&'a str>,
+    document_attribute: Option<&'static str>,
+    object: Option<&'a str>,
+    subelements: &'a [String],
+}
+
+impl Serialize for LinkTarget {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        LinkTargetOut {
+            document: self.document_name(),
+            document_attribute: self.document_attribute(),
+            // An absent object identity writes the empty name the source carried.
+            object: Some(self.object().unwrap_or("")),
+            subelements: &self.subelements,
         }
+        .serialize(serializer)
     }
 }
 
@@ -1336,43 +3165,39 @@ impl TryFrom<LinkTargetWire> for LinkTarget {
     type Error = String;
 
     fn try_from(wire: LinkTargetWire) -> Result<Self, Self::Error> {
-        Ok(Self {
-            document: ExternalDocument::from_wire(
-                wire.document,
-                wire.document_attribute.as_deref(),
-            )?,
-            object: wire.object.and_then(NonEmptyString::new),
-            subelements: wire.subelements,
-        })
+        let document =
+            ExternalDocument::from_wire(wire.document, wire.document_attribute.as_deref())?;
+        let object = wire.object.and_then(NonBlankString::new);
+        Self::try_new(document, object, wire.subelements)
     }
 }
 
 /// One property value element retained in source order.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ValueRecord {
+pub(crate) struct ValueRecord {
     /// Value element tag.
-    pub tag: String,
+    pub(crate) tag: String,
     /// Ordered position among value elements.
-    pub order: usize,
+    pub(crate) order: usize,
     /// Value attributes.
-    pub attributes: BTreeMap<String, String>,
+    pub(crate) attributes: BTreeMap<String, String>,
     /// Direct text content.
-    pub text: Option<String>,
+    pub(crate) text: Option<String>,
     /// Exact value-element XML.
-    pub raw_xml: String,
+    pub(crate) raw_xml: String,
 }
 
 /// Persisted values of a property, or a status-only transient declaration.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PropertyBody {
+pub(crate) enum PropertyBody {
     /// Status-only transient property declaration.
     Transient,
     /// Persisted property payload.
     Persisted {
         /// Ordered value elements.
         values: Vec<ValueRecord>,
-        /// Generically recovered ordered link targets.
-        links: Vec<LinkTarget>,
+        /// Generically recovered ordered link targets; `None` is a null link.
+        links: Vec<Option<LinkTarget>>,
         /// Referenced archive entries.
         side_entries: Vec<String>,
         /// Dynamic-property metadata, when carried.
@@ -1381,41 +3206,94 @@ pub enum PropertyBody {
 }
 
 /// One persisted property.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "PropertyRecordWire", into = "PropertyRecordWire")]
-pub struct PropertyRecord {
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "PropertyRecordWire")]
+pub(crate) struct PropertyRecord {
     /// Stable native identity.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning native object or document identity.
-    pub owner: String,
+    pub(crate) owner: String,
     /// Persisted property name.
-    pub name: String,
+    pub(crate) name: String,
     /// Runtime property type.
-    pub type_name: String,
+    pub(crate) type_name: String,
     /// Broad persistence value family selected by the property type.
-    pub family: PropertyFamily,
+    pub(crate) family: PropertyFamily,
     /// Native status bits.
-    pub status: Option<u64>,
+    pub(crate) status: Option<u64>,
     /// Transient declaration or persisted payload.
-    pub body: PropertyBody,
+    pub(crate) body: PropertyBody,
     /// Source-order index within the owner.
-    pub order: usize,
-    /// Exact property XML.
-    pub raw_xml: String,
-    /// Inclusive byte offset in `Document.xml`.
-    pub byte_start: u64,
-    /// Exclusive byte offset in `Document.xml`.
-    pub byte_end: u64,
+    pub(crate) order: usize,
+    /// Retained XML and its byte span.
+    pub(crate) xml: RetainedXml,
+}
+
+/// More than one property matches a selection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct DuplicateProperty;
+
+/// Returns the sole property selected by a predicate.
+pub(crate) fn unique_property<P>(
+    properties: impl IntoIterator<Item = P>,
+    predicate: impl Fn(&PropertyRecord) -> bool,
+) -> Result<Option<P>, DuplicateProperty>
+where
+    P: std::ops::Deref<Target = PropertyRecord>,
+{
+    let mut matches = properties
+        .into_iter()
+        .filter(|property| predicate(property));
+    let property = matches.next();
+    if matches.next().is_some() {
+        return Err(DuplicateProperty);
+    }
+    Ok(property)
+}
+
+/// Returns the sole property with a name.
+///
+/// `owner` is the noun that names the property carrier in the duplicate
+/// diagnostic.
+pub(crate) fn sole_named_property<'a>(
+    ctx: &DecodeContext<'_>,
+    owner: &str,
+    properties: &[&'a PropertyRecord],
+    name: &str,
+) -> Result<Option<&'a PropertyRecord>, CodecError> {
+    match unique_property(properties.iter().copied(), |property| property.name == name) {
+        Ok(property) => Ok(property),
+        Err(_) => Err(CodecError::Malformed(ctx.format_retained(
+            format_args!("{owner} property {name} occurs more than once"),
+            "FreeCAD duplicate property diagnostic",
+        )?)),
+    }
+}
+
+/// Wraps a decode message in the malformed-source error variant.
+pub(crate) fn malformed(message: impl Into<String>) -> CodecError {
+    CodecError::Malformed(message.into())
+}
+
+/// Reads a `FreeCAD` boolean property text, which is `true`, `false`, `1` or `0`.
+pub(crate) fn parse_bool(value: &str) -> Option<bool> {
+    if value == "1" || value.eq_ignore_ascii_case("true") {
+        Some(true)
+    } else if value == "0" || value.eq_ignore_ascii_case("false") {
+        Some(false)
+    } else {
+        None
+    }
 }
 
 impl PropertyRecord {
     /// Whether this is a status-only transient property declaration.
-    pub fn is_transient(&self) -> bool {
+    pub(crate) fn is_transient(&self) -> bool {
         matches!(self.body, PropertyBody::Transient)
     }
 
     /// Ordered value elements; empty for a transient declaration.
-    pub fn values(&self) -> &[ValueRecord] {
+    pub(crate) fn values(&self) -> &[ValueRecord] {
         match &self.body {
             PropertyBody::Persisted { values, .. } => values,
             PropertyBody::Transient => &[],
@@ -1423,7 +3301,7 @@ impl PropertyRecord {
     }
 
     /// Recovered link targets; empty for a transient declaration.
-    pub fn links(&self) -> &[LinkTarget] {
+    pub(crate) fn links(&self) -> &[Option<LinkTarget>] {
         match &self.body {
             PropertyBody::Persisted { links, .. } => links,
             PropertyBody::Transient => &[],
@@ -1431,10 +3309,18 @@ impl PropertyRecord {
     }
 
     /// Referenced archive entries; empty for a transient declaration.
-    pub fn side_entries(&self) -> &[String] {
+    pub(crate) fn side_entries(&self) -> &[String] {
         match &self.body {
             PropertyBody::Persisted { side_entries, .. } => side_entries,
             PropertyBody::Transient => &[],
+        }
+    }
+
+    /// Dynamic-property metadata; absent for a transient declaration.
+    fn dynamic(&self) -> Option<&DynamicPropertyMeta> {
+        match &self.body {
+            PropertyBody::Persisted { dynamic, .. } => dynamic.as_ref(),
+            PropertyBody::Transient => None,
         }
     }
 
@@ -1446,7 +3332,7 @@ impl PropertyRecord {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct PropertyRecordWire {
     id: String,
     owner: String,
@@ -1458,41 +3344,54 @@ struct PropertyRecordWire {
     dynamic: Option<DynamicPropertyMeta>,
     order: usize,
     values: Vec<ValueRecord>,
-    links: Vec<LinkTarget>,
+    links: Vec<Option<LinkTarget>>,
     side_entries: Vec<String>,
     raw_xml: String,
     byte_start: u64,
     byte_end: u64,
 }
 
-impl From<PropertyRecord> for PropertyRecordWire {
-    fn from(value: PropertyRecord) -> Self {
-        let (transient, values, links, side_entries, dynamic) = match value.body {
-            PropertyBody::Transient => (true, Vec::new(), Vec::new(), Vec::new(), None),
-            PropertyBody::Persisted {
-                values,
-                links,
-                side_entries,
-                dynamic,
-            } => (false, values, links, side_entries, dynamic),
-        };
-        Self {
-            id: value.id,
-            owner: value.owner,
-            name: value.name,
-            type_name: value.type_name,
-            family: value.family,
-            status: value.status,
-            transient,
-            dynamic,
-            order: value.order,
-            values,
-            links,
-            side_entries,
-            raw_xml: value.raw_xml,
-            byte_start: value.byte_start,
-            byte_end: value.byte_end,
+#[derive(Serialize)]
+struct PropertyRecordOut<'a> {
+    id: &'a str,
+    owner: &'a str,
+    name: &'a str,
+    type_name: &'a str,
+    family: PropertyFamily,
+    status: Option<u64>,
+    transient: bool,
+    dynamic: Option<&'a DynamicPropertyMeta>,
+    order: usize,
+    values: &'a [ValueRecord],
+    links: &'a [Option<LinkTarget>],
+    side_entries: &'a [String],
+    raw_xml: &'a str,
+    byte_start: u64,
+    byte_end: u64,
+}
+
+impl Serialize for PropertyRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        PropertyRecordOut {
+            id: &self.id,
+            owner: &self.owner,
+            name: &self.name,
+            type_name: &self.type_name,
+            family: self.family,
+            status: self.status,
+            transient: self.is_transient(),
+            // A transient declaration writes no payload: the accessors state its
+            // empty tables and absent metadata.
+            dynamic: self.dynamic(),
+            order: self.order,
+            values: self.values(),
+            links: self.links(),
+            side_entries: self.side_entries(),
+            raw_xml: self.xml.text(),
+            byte_start: self.xml.start(),
+            byte_end: self.xml.end(),
         }
+        .serialize(serializer)
     }
 }
 
@@ -1529,9 +3428,7 @@ impl TryFrom<PropertyRecordWire> for PropertyRecord {
             status: wire.status,
             body,
             order: wire.order,
-            raw_xml: wire.raw_xml,
-            byte_start: wire.byte_start,
-            byte_end: wire.byte_end,
+            xml: RetainedXml::try_new(wire.raw_xml, wire.byte_start, wire.byte_end)?,
         })
     }
 }
@@ -1539,7 +3436,7 @@ impl TryFrom<PropertyRecordWire> for PropertyRecord {
 /// Format-level property value families.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum PropertyFamily {
+pub(crate) enum PropertyFamily {
     /// Boolean, integer, or floating scalar.
     Scalar,
     /// Unit-bearing quantity.
@@ -1573,34 +3470,153 @@ pub enum PropertyFamily {
 }
 
 /// One logical archive entry and its graph ownership.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "EntryRecordWire", into = "EntryRecordWire")]
-pub struct EntryRecord {
-    /// Stable entry identity.
-    pub id: String,
-    /// Exact archive entry name.
-    pub name: String,
-    /// Classified entry role.
-    pub role: cadmpeg_core::container::ContainerRole,
-    /// Application property, GUI property, and GUI state identities that reference this entry.
-    pub referenced_by: Vec<String>,
-    /// Complete logical bytes.
-    pub data: Vec<u8>,
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "EntryRecordWire")]
+pub(crate) struct EntryRecord {
+    id: cadmpeg_ir::ids::Identity,
+    name: ArchiveEntryName,
+    pub(crate) role: cadmpeg_core::container::ContainerRole,
+    referenced_by: EntryReferences,
+    data: Vec<u8>,
+    sha256: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ArchiveEntryName(String);
+
+impl TryFrom<String> for ArchiveEntryName {
+    type Error = &'static str;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if is_safe_entry_name(&value) {
+            Ok(Self(value))
+        } else {
+            Err("unsafe ZIP entry path")
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct EntryReferences(Vec<String>);
+
+impl TryFrom<Vec<String>> for EntryReferences {
+    type Error = String;
+    fn try_from(value: Vec<String>) -> Result<Self, Self::Error> {
+        if value
+            .iter()
+            .all(|id| cadmpeg_ir::ids::is_valid_identity(id))
+        {
+            Ok(Self(value))
+        } else {
+            Err("entry reference identity is invalid".into())
+        }
+    }
+}
+
+/// Check the exact ZIP name used by source scans and retained entry records.
+pub(crate) fn is_safe_entry_name(name: &str) -> bool {
+    !name.contains('\\')
+        && !name
+            .split('/')
+            .any(|component| component.is_empty() || component == "." || component == "..")
 }
 
 impl EntryRecord {
-    /// Logical byte length.
-    pub fn byte_len(&self) -> u64 {
-        self.data.len() as u64
+    pub(crate) fn new(
+        ctx: &DecodeContext<'_>,
+        id: String,
+        name: String,
+        role: cadmpeg_core::container::ContainerRole,
+        referenced_by: Vec<String>,
+        data: Vec<u8>,
+    ) -> Result<Self, CodecError> {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(id.len()),
+            "FreeCAD entry identity validation",
+        )?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(name.len()),
+            "FreeCAD entry name validation",
+        )?;
+        for reference in &referenced_by {
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(reference.len()),
+                "FreeCAD entry reference validation",
+            )?;
+        }
+        let id = cadmpeg_ir::ids::Identity::new(id).map_err(CodecError::malformed)?;
+        let name = ArchiveEntryName::try_from(name).map_err(CodecError::malformed)?;
+        let referenced_by =
+            EntryReferences::try_from(referenced_by).map_err(CodecError::malformed)?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(data.len()),
+            "FreeCAD entry digest",
+        )?;
+        ctx.charge_retained(64, "FreeCAD entry digest")?;
+        let sha256 = sha256_hex(&data);
+        Ok(Self {
+            id,
+            name,
+            role,
+            referenced_by,
+            data,
+            sha256,
+        })
     }
 
-    /// Lowercase SHA-256 of logical bytes.
-    pub fn sha256(&self) -> String {
-        sha256_hex(&self.data)
+    pub(crate) fn id(&self) -> &str {
+        self.id.as_str()
+    }
+    pub(crate) fn name(&self) -> &str {
+        &self.name.0
+    }
+    pub(crate) fn referenced_by(&self) -> &[String] {
+        &self.referenced_by.0
+    }
+    pub(crate) fn data(&self) -> &[u8] {
+        &self.data
+    }
+    pub(crate) fn byte_len(&self) -> u64 {
+        cadmpeg_core::decode::u64_from_index(self.data.len())
+    }
+    pub(crate) fn sha256(&self) -> &str {
+        &self.sha256
+    }
+
+    pub(crate) fn add_reference(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        owner: &str,
+    ) -> Result<(), CodecError> {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(owner.len()),
+            "FreeCAD entry reference validation",
+        )?;
+        if !cadmpeg_ir::ids::is_valid_identity(owner) {
+            return Err(CodecError::malformed("entry reference identity is invalid"));
+        }
+        for candidate in &self.referenced_by.0 {
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(candidate.len()),
+                "FreeCAD entry reference comparison",
+            )?;
+            if candidate == owner {
+                return Ok(());
+            }
+        }
+        ctx.reserve_vec(&mut self.referenced_by.0, 1, "FCStd GUI entry references")?;
+        let owner = ctx.copy_retained_text(owner, "FCStd GUI entry reference identity")?;
+        self.referenced_by.0.push(owner);
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn replace_data(&mut self, bytes: Vec<u8>) {
+        self.sha256 = sha256_hex(&bytes);
+        self.data = bytes;
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct EntryRecordWire {
     id: String,
     name: String,
@@ -1611,19 +3627,29 @@ struct EntryRecordWire {
     data: Vec<u8>,
 }
 
-impl From<EntryRecord> for EntryRecordWire {
-    fn from(value: EntryRecord) -> Self {
-        let byte_len = value.byte_len();
-        let sha256 = value.sha256();
-        Self {
-            id: value.id,
-            name: value.name,
-            role: value.role.as_str().to_owned(),
-            byte_len,
-            sha256,
-            referenced_by: value.referenced_by,
-            data: value.data,
+#[derive(Serialize)]
+struct EntryRecordOut<'a> {
+    id: &'a str,
+    name: &'a str,
+    role: &'static str,
+    byte_len: u64,
+    sha256: &'a str,
+    referenced_by: &'a [String],
+    data: &'a [u8],
+}
+
+impl Serialize for EntryRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        EntryRecordOut {
+            id: self.id(),
+            name: self.name(),
+            role: self.role.as_str(),
+            byte_len: self.byte_len(),
+            sha256: self.sha256(),
+            referenced_by: self.referenced_by(),
+            data: self.data(),
         }
+        .serialize(serializer)
     }
 }
 
@@ -1631,40 +3657,44 @@ impl TryFrom<EntryRecordWire> for EntryRecord {
     type Error = String;
 
     fn try_from(wire: EntryRecordWire) -> Result<Self, Self::Error> {
-        let record = Self {
-            id: wire.id,
-            name: wire.name,
-            role: serde_json::from_value(serde_json::Value::String(wire.role))
-                .map_err(|error| format!("entry role: {error}"))?,
-            referenced_by: wire.referenced_by,
-            data: wire.data,
-        };
-        if wire.byte_len != record.byte_len() || wire.sha256 != record.sha256() {
+        let id = cadmpeg_ir::ids::Identity::new(wire.id).map_err(|error| error.to_string())?;
+        let name = ArchiveEntryName::try_from(wire.name).map_err(str::to_owned)?;
+        let referenced_by = EntryReferences::try_from(wire.referenced_by)?;
+        if wire.byte_len != cadmpeg_core::decode::u64_from_index(wire.data.len())
+            || wire.sha256 != sha256_hex(&wire.data)
+        {
             return Err("entry byte_len/sha256 disagrees with data".to_owned());
         }
+        let record = Self {
+            id,
+            name,
+            role: serde_json::from_value(serde_json::Value::String(wire.role))
+                .map_err(|error| format!("entry role: {error}"))?,
+            referenced_by,
+            data: wire.data,
+            sha256: wire.sha256,
+        };
         Ok(record)
     }
 }
 
 /// One non-overlapping logical-entry byte span.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "LogicalSpanWire", into = "LogicalSpanWire")]
-pub struct LogicalSpan {
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "LogicalSpanWire")]
+pub(crate) struct LogicalSpan {
     /// Stable span identity.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning archive entry.
-    pub entry: String,
-    /// Inclusive logical byte offset.
-    pub start: u64,
-    /// Exclusive logical byte offset.
-    pub end: u64,
+    pub(crate) entry: String,
+    /// Nonempty byte interval.
+    pub(crate) span: ByteSpan,
     /// Span family and owner.
-    pub classification: LogicalClassification,
+    pub(crate) classification: LogicalClassification,
 }
 
 /// Logical-entry family. Typed and named-opaque spans own a native record.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LogicalClassification {
+pub(crate) enum LogicalClassification {
     /// Framing bytes with no native owner.
     Structural,
     /// Typed native record bytes.
@@ -1681,7 +3711,7 @@ pub enum LogicalClassification {
 
 impl LogicalClassification {
     /// Classification string retained on the CADIR wire.
-    pub const fn as_str(&self) -> &'static str {
+    pub(crate) const fn as_str(&self) -> &'static str {
         match self {
             Self::Structural => "structural",
             Self::Typed { .. } => "typed",
@@ -1690,7 +3720,7 @@ impl LogicalClassification {
     }
 
     /// Native record that owns typed or opaque bytes.
-    pub fn owner(&self) -> Option<&str> {
+    pub(crate) fn owner(&self) -> Option<&str> {
         match self {
             Self::Structural => None,
             Self::Typed { owner } | Self::NamedOpaque { owner } => Some(owner.as_str()),
@@ -1698,7 +3728,7 @@ impl LogicalClassification {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct LogicalSpanWire {
     id: String,
     entry: String,
@@ -1708,18 +3738,27 @@ struct LogicalSpanWire {
     owner: Option<String>,
 }
 
-impl From<LogicalSpan> for LogicalSpanWire {
-    fn from(value: LogicalSpan) -> Self {
-        let classification = value.classification.as_str().to_owned();
-        let owner = value.classification.owner().map(str::to_owned);
-        Self {
-            id: value.id,
-            entry: value.entry,
-            start: value.start,
-            end: value.end,
-            classification,
-            owner,
+#[derive(Serialize)]
+struct LogicalSpanOut<'a> {
+    id: &'a str,
+    entry: &'a str,
+    start: u64,
+    end: u64,
+    classification: &'static str,
+    owner: Option<&'a str>,
+}
+
+impl Serialize for LogicalSpan {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        LogicalSpanOut {
+            id: &self.id,
+            entry: &self.entry,
+            start: self.span.start(),
+            end: self.span.end(),
+            classification: self.classification.as_str(),
+            owner: self.classification.owner(),
         }
+        .serialize(serializer)
     }
 }
 
@@ -1742,8 +3781,7 @@ impl TryFrom<LogicalSpanWire> for LogicalSpan {
         Ok(Self {
             id: wire.id,
             entry: wire.entry,
-            start: wire.start,
-            end: wire.end,
+            span: ByteSpan::try_new(wire.start, wire.end)?,
             classification,
         })
     }
@@ -1751,55 +3789,118 @@ impl TryFrom<LogicalSpanWire> for LogicalSpan {
 
 /// Deterministic whole-archive byte-accounting summary.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ByteCoverageRecord {
+pub(crate) struct ByteCoverageRecord {
     /// Stable report identity.
-    pub id: String,
+    pub(crate) id: String,
     /// Complete physical archive length.
-    pub physical_byte_len: u64,
+    pub(crate) physical_byte_len: u64,
     /// Number of physical partition spans.
-    pub physical_span_count: usize,
+    pub(crate) physical_span_count: usize,
     /// Number of logical archive entries.
-    pub logical_entry_count: usize,
+    pub(crate) logical_entry_count: usize,
     /// Sum of complete logical entry lengths.
-    pub logical_byte_len: u64,
+    pub(crate) logical_byte_len: u64,
     /// Number of logical partition spans.
-    pub logical_span_count: usize,
+    pub(crate) logical_span_count: usize,
     /// Byte count for each closed classification.
-    pub classification_bytes: BTreeMap<String, u64>,
+    pub(crate) classification_bytes: BTreeMap<String, u64>,
     /// Sorted logical entries containing named opaque bytes.
-    pub named_opaque_entries: Vec<String>,
+    pub(crate) named_opaque_entries: Vec<String>,
     /// Whether both physical and logical partitions close exactly.
-    pub exact: bool,
+    pub(crate) exact: bool,
 }
 
-/// One document-wide persistent string table.
+/// Persistent string tables in contiguous numeric `HasherIndex` order.
+///
+/// Construction requires the records already in that order.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "StringTableRecordWire", into = "StringTableRecordWire")]
-pub struct StringTableRecord {
-    /// Stable table identity; the suffix is the zero-based `HasherIndex`.
-    pub id: String,
-    /// Zero-based document table index referenced by shape properties.
-    pub index: usize,
-    /// Owning property when the table is serialized beside its first use.
-    pub owner_property: Option<String>,
-    /// Whether all strings, rather than only marked strings, were persisted.
-    pub save_all: bool,
-    /// Native hashing threshold.
-    pub threshold: i64,
-    /// Referenced side entry, or `None` for inline data.
-    pub source_entry: Option<String>,
-    /// Parsed records in serialized order.
-    pub entries: Vec<StringTableEntry>,
-}
+#[serde(try_from = "Vec<StringTableRecord>")]
+pub(crate) struct StringTables(Vec<StringTableRecord>);
 
-impl StringTableRecord {
-    /// Declared number of serialized entries, equal to `entries.len()`.
-    pub fn declared_count(&self) -> usize {
-        self.entries.len()
+impl StringTables {
+    pub(crate) fn as_slice(&self) -> &[StringTableRecord] {
+        &self.0
     }
 }
 
-#[derive(Serialize, Deserialize)]
+impl TryFrom<Vec<StringTableRecord>> for StringTables {
+    type Error = cadmpeg_ir::native::NativeConvertError;
+
+    fn try_from(records: Vec<StringTableRecord>) -> Result<Self, Self::Error> {
+        for (position, record) in records.iter().enumerate() {
+            if record.index != position {
+                return Err(Self::Error::InvalidCollection(format!(
+                    "string_tables[{position}].index must equal {position}, got {}",
+                    record.index
+                )));
+            }
+        }
+        Ok(Self(records))
+    }
+}
+
+/// One document-wide persistent string table.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "StringTableRecordWire")]
+pub(crate) struct StringTableRecord {
+    /// Zero-based document table index referenced by shape properties.
+    pub(crate) index: usize,
+    /// Owning property when the table is serialized beside its first use.
+    pub(crate) owner_property: Option<String>,
+    /// Whether all strings, rather than only marked strings, were persisted.
+    save_all: bool,
+    /// Native hashing threshold.
+    threshold: i64,
+    /// Referenced side entry, or `None` for inline data.
+    pub(crate) source_entry: Option<String>,
+    /// Parsed records in serialized order.
+    entries: Vec<StringTableEntry>,
+}
+
+impl StringTableRecord {
+    pub(crate) fn try_new(
+        index: usize,
+        owner_property: Option<String>,
+        save_all: bool,
+        threshold: i64,
+        source_entry: Option<String>,
+        entries: Vec<StringTableEntry>,
+    ) -> Result<Self, String> {
+        let mut seen = std::collections::HashSet::new();
+        for entry in &entries {
+            if entry.components.iter().any(|id| !seen.contains(id)) {
+                return Err("entries.components must reference earlier string_id values".to_owned());
+            }
+            if !seen.insert(entry.string_id) {
+                return Err("entries.string_id values must be distinct".to_owned());
+            }
+        }
+        Ok(Self {
+            index,
+            owner_property,
+            save_all,
+            threshold,
+            source_entry,
+            entries,
+        })
+    }
+
+    /// Stable table identity derived from the document table index.
+    pub(crate) fn id(&self) -> String {
+        native_id("string-table", self.index.to_string())
+    }
+
+    pub(crate) fn entries(&self) -> &[StringTableEntry] {
+        &self.entries
+    }
+
+    /// Declared number of serialized entries, equal to `entries.len()`.
+    fn declared_count(&self) -> usize {
+        self.entries().len()
+    }
+}
+
+#[derive(Deserialize)]
 struct StringTableRecordWire {
     id: String,
     index: usize,
@@ -1811,19 +3912,32 @@ struct StringTableRecordWire {
     entries: Vec<StringTableEntry>,
 }
 
-impl From<StringTableRecord> for StringTableRecordWire {
-    fn from(value: StringTableRecord) -> Self {
-        let declared_count = value.declared_count();
-        Self {
-            id: value.id,
-            index: value.index,
-            owner_property: value.owner_property,
-            save_all: value.save_all,
-            threshold: value.threshold,
-            declared_count,
-            source_entry: value.source_entry,
-            entries: value.entries,
+#[derive(Serialize)]
+struct StringTableRecordOut<'a> {
+    id: String,
+    index: usize,
+    owner_property: Option<&'a str>,
+    save_all: bool,
+    threshold: i64,
+    declared_count: usize,
+    source_entry: Option<&'a str>,
+    entries: &'a [StringTableEntry],
+}
+
+impl Serialize for StringTableRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        StringTableRecordOut {
+            // The identity is the written value, derived from the table index.
+            id: self.id(),
+            index: self.index,
+            owner_property: self.owner_property.as_deref(),
+            save_all: self.save_all,
+            threshold: self.threshold,
+            declared_count: self.declared_count(),
+            source_entry: self.source_entry.as_deref(),
+            entries: self.entries(),
         }
+        .serialize(serializer)
     }
 }
 
@@ -1831,90 +3945,38 @@ impl TryFrom<StringTableRecordWire> for StringTableRecord {
     type Error = String;
 
     fn try_from(wire: StringTableRecordWire) -> Result<Self, Self::Error> {
+        let expected_id = native_id("string-table", wire.index.to_string());
+        if wire.id != expected_id {
+            return Err(format!(
+                "string table id must be {expected_id} for index {}",
+                wire.index
+            ));
+        }
         if wire.declared_count != wire.entries.len() {
             return Err("string table declared_count must equal entries.len()".to_owned());
         }
-        Ok(Self {
-            id: wire.id,
-            index: wire.index,
-            owner_property: wire.owner_property,
-            save_all: wire.save_all,
-            threshold: wire.threshold,
-            source_entry: wire.source_entry,
-            entries: wire.entries,
-        })
+        Self::try_new(
+            wire.index,
+            wire.owner_property,
+            wire.save_all,
+            wire.threshold,
+            wire.source_entry,
+            wire.entries,
+        )
     }
 }
 
 /// One relative-coded record in a persistent string table.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct StringTableEntry {
+pub(crate) struct StringTableEntry {
     /// Restored numeric string identity.
-    pub string_id: i64,
+    pub(crate) string_id: i64,
     /// Native flag word.
-    pub flags: u64,
+    pub(crate) flags: u64,
     /// Restored referenced string identities.
-    pub components: Vec<i64>,
+    pub(crate) components: Vec<i64>,
     /// Exact payload following the numeric header.
-    pub payload: String,
+    pub(crate) payload: String,
     /// Exact serialized record without its line terminator.
-    pub raw: String,
-}
-
-/// One persisted element map owned by an exact-shape property.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ElementMapRecord {
-    /// Stable map identity.
-    pub id: String,
-    /// Owning shape property identity.
-    pub property: String,
-    /// Version discriminator carried by the shape value.
-    pub version: String,
-    /// Document string-table index used by mapped names.
-    pub hasher_index: Option<usize>,
-    /// Referenced side entry, or `None` for inline data.
-    pub source_entry: Option<String>,
-    /// Native map identity.
-    pub map_id: u64,
-    /// Declared native element-map size, including mapped names and child spans.
-    pub declared_count: usize,
-    /// Ordered postfix dictionary.
-    pub postfixes: Vec<String>,
-    /// Ordered child-map records; the last record is the owning shape map.
-    pub maps: Vec<ElementMapNode>,
-}
-
-/// One map node, including recursively referenced child maps.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ElementMapNode {
-    /// One-based map index in this serialization.
-    pub index: usize,
-    /// Native node identity.
-    pub map_id: u64,
-    /// Ordered indexed-element groups.
-    pub groups: Vec<ElementMapGroup>,
-}
-
-/// Persistent-name chains for one native topology kind.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ElementMapGroup {
-    /// Native indexed-name prefix such as `Face`, `Edge`, or `Vertex`.
-    pub indexed_name: String,
-    /// Child-map descriptors retained exactly.
-    pub children: Vec<String>,
-    /// One entry per transient indexed element, in index order.
-    pub names: Vec<Vec<ElementMappedName>>,
-}
-
-/// One persistent mapped-name encoding and its neutral topology bindings.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ElementMappedName {
-    /// Exact encoded mapped name.
-    pub encoded: String,
-    /// Decoded base and postfix when all dictionary references are valid.
-    pub resolved: Option<String>,
-    /// Referenced persistent string identities.
-    pub string_ids: Vec<i64>,
-    /// Neutral topology ids for every placed occurrence of this element.
-    pub topology_ids: Vec<String>,
+    pub(crate) raw: String,
 }

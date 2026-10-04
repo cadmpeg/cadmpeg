@@ -2,8 +2,17 @@
 #![allow(clippy::unwrap_used)]
 
 use cadmpeg_asm::asm_header;
+use cadmpeg_test_support::service_decode_context;
 
-use crate::test_support::*;
+use crate::test_support::smbh_blocks_test::{
+    generated_curve_block, generated_pcurve_block, generated_rational_surface_block,
+    generated_surface_block,
+};
+use crate::test_support::smbh_geometry_test::synthetic_mixed_smbh;
+use crate::test_support::tokens_test::{
+    push_native_enum, push_tagged_i64, push_u8_string, t_dbl, t_end, t_ident, t_long, t_pos, t_ref,
+    t_subident, t_u16_string, t_vec,
+};
 
 pub(crate) fn synthetic_cyl_spl_sur_smbh() -> Vec<u8> {
     synthetic_cyl_spl_sur_with_cache_smbh(true)
@@ -14,7 +23,7 @@ pub(crate) fn synthetic_cyl_spl_sur_smbh() -> Vec<u8> {
 /// parameter interval and the V parameter interval in the optional bool-gated
 /// encoding, then the U closure, V closure, U singularity, and V singularity
 /// enums. Every slot carries a distinct value so a reordering fails loudly.
-pub(crate) fn append_revision_surface_tail_head(
+pub(super) fn append_revision_surface_tail_head(
     bytes: &mut Vec<u8>,
     form: i64,
     fit_tolerance: f64,
@@ -36,7 +45,7 @@ pub(crate) fn append_revision_surface_tail_head(
 
 /// Append the six counted discontinuity arrays and the boolean closing the
 /// shared revision-gated surface tail.
-pub(crate) fn append_revision_surface_tail_discontinuities(bytes: &mut Vec<u8>) {
+pub(super) fn append_revision_surface_tail_discontinuities(bytes: &mut Vec<u8>) {
     for values in [
         &[0.25][..],
         &[][..],
@@ -86,8 +95,10 @@ pub(crate) fn synthetic_versioned_cyl_spl_sur_smbh() -> Vec<u8> {
 pub(crate) fn synthetic_versioned_cyl_spl_sur_with_trailing_token_smbh() -> Vec<u8> {
     let mut bytes = synthetic_versioned_cyl_spl_sur_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -111,8 +122,10 @@ pub(crate) fn synthetic_versioned_cyl_spl_sur_with_trailing_token_smbh() -> Vec<
 pub(crate) fn synthetic_versioned_cyl_spl_sur_with_tail_smbh(tail_form: i64) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -157,11 +170,13 @@ pub(crate) fn synthetic_cacheless_cyl_spl_sur_smbh() -> Vec<u8> {
     synthetic_cyl_spl_sur_with_cache_smbh(false)
 }
 
-pub(crate) fn synthetic_cyl_spl_sur_with_cache_smbh(include_cache: bool) -> Vec<u8> {
+fn synthetic_cyl_spl_sur_with_cache_smbh(include_cache: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -197,8 +212,10 @@ pub(crate) fn synthetic_cyl_spl_sur_with_cache_smbh(include_cache: bool) -> Vec<
 pub(crate) fn synthetic_exact_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -241,8 +258,10 @@ pub(crate) fn synthetic_exact_spl_sur_with_decoy_sense_smbh() -> Vec<u8> {
 pub(crate) fn synthetic_ruled_spl_sur_smbh(name: &str, include_cache: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -274,8 +293,10 @@ pub(crate) fn synthetic_ruled_spl_sur_smbh(name: &str, include_cache: bool) -> V
 pub(crate) fn synthetic_sum_spl_sur_smbh(name: &str, include_cache: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -308,8 +329,10 @@ pub(crate) fn synthetic_sum_spl_sur_smbh(name: &str, include_cache: bool) -> Vec
 pub(crate) fn synthetic_rot_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -340,8 +363,10 @@ pub(crate) fn synthetic_rot_spl_sur_smbh(name: &str) -> Vec<u8> {
 pub(crate) fn synthetic_off_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -382,8 +407,10 @@ pub(crate) fn synthetic_off_spl_sur_smbh(name: &str) -> Vec<u8> {
 pub(crate) fn synthetic_comp_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -421,8 +448,10 @@ pub(crate) fn synthetic_comp_spl_sur_smbh() -> Vec<u8> {
 pub(crate) fn synthetic_taper_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -463,8 +492,9 @@ pub(crate) fn synthetic_taper_spl_sur_smbh(name: &str) -> Vec<u8> {
             t_dbl(&mut surface, 0.8);
             t_dbl(&mut surface, 1.25);
         }
-        "taper_spl_sur" => {}
-        _ => unreachable!(),
+        // "taper_spl_sur", and any taper name outside this set, states no
+        // extra field. The decode assertion in the calling test then fails.
+        _ => {}
     }
     surface.push(0x10);
     t_end(&mut surface);
@@ -472,7 +502,7 @@ pub(crate) fn synthetic_taper_spl_sur_smbh(name: &str) -> Vec<u8> {
     bytes
 }
 
-pub(crate) fn append_generated_loft_section(bytes: &mut Vec<u8>, parameter: f64, direction: bool) {
+fn append_generated_loft_section(bytes: &mut Vec<u8>, parameter: f64, direction: bool) {
     t_long(bytes, 1);
     t_dbl(bytes, parameter);
     t_long(bytes, 1);
@@ -504,8 +534,10 @@ pub(crate) fn append_generated_loft_section(bytes: &mut Vec<u8>, parameter: f64,
 pub(crate) fn synthetic_loft_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -548,8 +580,10 @@ pub(crate) fn synthetic_loft_spl_sur_smbh(name: &str) -> Vec<u8> {
 pub(crate) fn synthetic_net_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -597,8 +631,10 @@ pub(crate) fn synthetic_net_spl_sur_smbh() -> Vec<u8> {
 pub(crate) fn synthetic_profile_first_sweep_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -651,8 +687,10 @@ pub(crate) fn synthetic_profile_first_sweep_smbh() -> Vec<u8> {
 pub(crate) fn synthetic_t_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -697,8 +735,10 @@ pub(crate) fn synthetic_t_spl_sur_smbh() -> Vec<u8> {
 pub(crate) fn synthetic_helix_surface_smbh(circular: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -753,8 +793,10 @@ pub(crate) fn synthetic_helix_surface_smbh(circular: bool) -> Vec<u8> {
 pub(crate) fn synthetic_minimal_deformable_surface_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -800,8 +842,10 @@ pub(crate) fn synthetic_minimal_deformable_surface_smbh() -> Vec<u8> {
 pub(crate) fn synthetic_framed_deformable_surface_smbh(mode: i64) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -864,8 +908,10 @@ pub(crate) fn synthetic_framed_deformable_surface_smbh(mode: i64) -> Vec<u8> {
 pub(crate) fn synthetic_revision_deformable_surface_smbh() -> Vec<u8> {
     let mut bytes = synthetic_minimal_deformable_surface_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -934,8 +980,10 @@ pub(crate) fn synthetic_revision_deformable_surface_smbh() -> Vec<u8> {
 pub(crate) fn synthetic_surface_curve_deformable_smbh() -> Vec<u8> {
     let mut bytes = synthetic_minimal_deformable_surface_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -996,8 +1044,10 @@ pub(crate) fn synthetic_surface_curve_deformable_smbh() -> Vec<u8> {
 pub(crate) fn synthetic_full_deformable_surface_smbh(version_value: Option<i64>) -> Vec<u8> {
     let mut bytes = synthetic_minimal_deformable_surface_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -1071,8 +1121,10 @@ pub(crate) fn synthetic_full_deformable_surface_smbh(version_value: Option<i64>)
 pub(crate) fn synthetic_referenced_t_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -1087,7 +1139,6 @@ pub(crate) fn synthetic_referenced_t_spl_sur_smbh() -> Vec<u8> {
     t_ref(&mut surface, -1);
     t_long(&mut surface, -1);
     t_ref(&mut surface, -1);
-    let shared_offset = surface.len();
     surface.push(0x0f);
     t_ident(&mut surface, "t_spl_subtrans_object");
     t_u16_string(&mut surface, "degree 3\nv 1 0 0 0\n");
@@ -1114,19 +1165,37 @@ pub(crate) fn synthetic_referenced_t_spl_sur_smbh() -> Vec<u8> {
     surface.push(0x10);
     t_end(&mut surface);
     bytes.splice(old_offset..old_offset + old_len, surface);
-    let records = cadmpeg_asm::sab::frame(
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         asm_header::record_stream_start(&bytes).unwrap(),
-        asm_header::solved_record_limit(&bytes).unwrap(),
+        asm_header::solved_record_limit(&service_decode_context(), &bytes)
+            .expect("history scan")
+            .unwrap(),
         cadmpeg_asm::kernel_header::RefWidth::Eight,
     )
     .unwrap();
-    let tables = cadmpeg_asm::nurbs::subtypes::SubtypeTables::from_records(&records, &bytes);
-    let index = tables
-        .index_of_offset(
-            cadmpeg_asm::kernel_header::RefWidth::Eight,
-            old_offset + shared_offset,
-        )
+    // Resolve the fixture's unique shared definition in framed token order,
+    // including nested definitions and excluding reference wrappers.
+    let definitions: Vec<&str> = records
+        .iter()
+        .flat_map(|record| record.tokens.windows(2))
+        .filter_map(|pair| match pair {
+            [cadmpeg_asm::sab::Token::SubtypeOpen,
+             cadmpeg_asm::sab::Token::Ident(name) | cadmpeg_asm::sab::Token::SubIdent(name)]
+                if name != "ref" => Some(name.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        definitions
+            .iter()
+            .filter(|name| **name == "t_spl_subtrans_object")
+            .count(),
+        1
+    );
+    let index = definitions
+        .iter()
+        .position(|name| *name == "t_spl_subtrans_object")
         .expect("shared T-spline subtype index");
     bytes[old_offset + reference_value_offset..old_offset + reference_value_offset + 8]
         .copy_from_slice(&i64::try_from(index).unwrap().to_le_bytes());
@@ -1136,8 +1205,10 @@ pub(crate) fn synthetic_referenced_t_spl_sur_smbh() -> Vec<u8> {
 pub(crate) fn synthetic_explicit_formula_sweep_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -1190,8 +1261,10 @@ pub(crate) fn synthetic_explicit_formula_sweep_smbh() -> Vec<u8> {
 pub(crate) fn synthetic_explicit_guide_sweep_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -1249,8 +1322,10 @@ pub(crate) fn synthetic_explicit_guide_sweep_smbh() -> Vec<u8> {
 pub(crate) fn synthetic_explicit_surface_sweep_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -1328,8 +1403,10 @@ pub(crate) fn synthetic_cacheless_revision_text_law_sweep_smbh() -> Vec<u8> {
 fn synthetic_revision_text_law_sweep_with_tail_smbh(tail_form: i64) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -1411,8 +1488,10 @@ fn synthetic_law_driven_sweep_smbh_with_law_slots(
 ) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -1475,7 +1554,7 @@ fn synthetic_law_driven_sweep_smbh_with_law_slots(
     bytes
 }
 
-pub(crate) fn append_generated_compound_loft_scale(bytes: &mut Vec<u8>) {
+fn append_generated_compound_loft_scale(bytes: &mut Vec<u8>) {
     t_long(bytes, 1);
     t_long(bytes, 9);
     bytes.extend_from_slice(&generated_curve_block());
@@ -1504,8 +1583,10 @@ pub(crate) fn append_generated_compound_loft_scale(bytes: &mut Vec<u8>) {
 pub(crate) fn synthetic_compound_loft_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -1539,7 +1620,7 @@ pub(crate) fn synthetic_compound_loft_smbh() -> Vec<u8> {
     bytes
 }
 
-pub(crate) fn append_generated_float_array(bytes: &mut Vec<u8>, values: &[f64]) {
+pub(super) fn append_generated_float_array(bytes: &mut Vec<u8>, values: &[f64]) {
     t_long(bytes, i64::try_from(values.len()).unwrap());
     for value in values {
         t_dbl(bytes, *value);
@@ -1549,8 +1630,10 @@ pub(crate) fn append_generated_float_array(bytes: &mut Vec<u8>, values: &[f64]) 
 pub(crate) fn synthetic_scaled_compound_loft_smbh(full: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -1607,8 +1690,10 @@ pub(crate) fn synthetic_scaled_compound_loft_smbh(full: bool) -> Vec<u8> {
 pub(crate) fn synthetic_skin_spl_sur_smbh(law_case: u8, expanded: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -1726,8 +1811,10 @@ pub(crate) fn synthetic_law_spl_sur_smbh(
 ) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -1809,8 +1896,10 @@ pub(crate) fn synthetic_law_spl_sur_smbh(
 pub(crate) fn synthetic_sub_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,

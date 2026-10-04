@@ -1,13 +1,5 @@
 {
   "container_kind": "v5-cfv2",
-  "dialects": {
-    "extra": [],
-    "primary": {
-      "admission": "admitted",
-      "dialect": "catia:inner-no-directory",
-      "format": "catia"
-    }
-  },
   "entries": [
     {
       "attributes": {
@@ -16,11 +8,13 @@
         "extent_count": "1",
         "extent_flags": "0x00000000"
       },
-      "compressed_size": 95,
       "compression": "none",
       "name": "XainDataStream",
       "role": "stream",
-      "uncompressed_size": 95
+      "size": {
+        "form": "exact",
+        "size": 95
+      }
     },
     {
       "attributes": {
@@ -29,14 +23,25 @@
         "extent_count": "1",
         "extent_flags": "0x00000000"
       },
-      "compressed_size": 1,
       "compression": "none",
       "name": "SurfacicReps",
       "role": "stream",
-      "uncompressed_size": 1
+      "size": {
+        "form": "exact",
+        "size": 1
+      }
     }
   ],
-  "format": "catia",
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "dialect": "catia:inner-no-directory"
+      }
+    }
+  },
   "notes": [
     "outer V5_CFV2 container: directory offset 359 + length 0 = 359 (file size 359); variant: nested V5_CFV2 with no BREP-body directory (contiguous inner body): freeform carrier decode supported",
     "nested V5_CFV2 at file offset 16 with a CATIA_V5 CB0001 directory of 2 stream(s)",

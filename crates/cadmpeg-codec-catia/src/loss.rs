@@ -7,10 +7,11 @@
 //! human-readable message text, so a reworded message is not a contract change
 //! and a new drop path without a code does not compile.
 //!
-//! [`CatiaLossCode::note`] is the single practical construction path for a
+//! [`CatiaLossCode::note_charged`] is the single practical construction path for a
 //! decode-time [`LossNote`] in this crate: it fixes the loss category and
-//! severity from the code so the two cannot drift apart across sites, and it
-//! leaves only the per-instance message to the caller. Local codes appear on
+//! severity from the code so the two cannot drift apart across sites. The
+//! caller supplies the decode context, retained message and operation name.
+//! Local codes appear on
 //! [`LossNote::code`] under the `catia` namespace.
 //!
 //! [`CatiaLossCode::shared_taxonomy`] is an exhaustive match with no fall-through
@@ -18,16 +19,48 @@
 //! and the categories this codec spans (geometry, topology, history, attribute,
 //! container) have no honest common default.
 //!
-use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
+#[cfg(test)]
+use cadmpeg_ir::report::loss::LossKind;
+
+use cadmpeg_ir::report::{
+    loss::{LossNote, LossTaxonomy},
+    Severity,
+};
+
+/// Render an identity population into the caller's loss message.
+pub(crate) fn identity_statement<T: std::fmt::Display>(ids: &[T]) -> impl std::fmt::Display + '_ {
+    struct Statement<'a, T>(&'a [T]);
+    impl<T: std::fmt::Display> std::fmt::Display for Statement<'_, T> {
+        fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            const LISTED: usize = 8;
+            for (index, id) in self.0.iter().take(LISTED).enumerate() {
+                if index != 0 {
+                    formatter.write_str(", ")?;
+                }
+                write!(formatter, "{id}")?;
+            }
+            if let Some(rest) = self.0.len().checked_sub(LISTED).filter(|rest| *rest > 0) {
+                write!(formatter, " and {rest} more")?;
+            }
+            Ok(())
+        }
+    }
+    Statement(ids)
+}
 
 /// A stable, machine-readable identifier for one CATIA V5 transfer loss.
 ///
 /// Variants are grouped by the record family whose transfer degraded. The
 /// string form (via [`CatiaLossCode::code`]) is the stable contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum CatiaLossCode {
+pub(crate) enum CatiaLossCode {
     /// The storage layout matched no declared dialect's structural invariants.
     SourceDialectUnverified,
+    /// A decode route refused source records and then transferred no model, so
+    /// the decode continued to the next route or to the metadata fallback.
+    SourceRouteFellThrough,
+    /// Carrier populations assigned conflicting annotations to one identity.
+    SourceAnnotationCollision,
     /// Verbatim vertex points and analytic surface carriers were decoded.
     GeometryCarrierSummary,
     /// Transferred model retains unresolved curve or surface carriers.
@@ -38,6 +71,8 @@ pub enum CatiaLossCode {
     GeometryPlaneParametersInvalid,
     /// Analytic surface records had a non-finite or out-of-range payload.
     GeometryAnalyticPayloadInvalid,
+    /// A record stated a parameter range that is non-finite or not increasing.
+    GeometryParameterRangeInvalid,
     /// Equivalent support charts produce non-finite pcurve coordinates.
     GeometryPcurveRechartNonFinite,
     /// Face-local free-form carriers retain identity without aliased geometry.
@@ -88,13 +123,17 @@ pub enum CatiaLossCode {
 
 impl CatiaLossCode {
     /// Every code, in declaration order.
-    pub const ALL: &'static [CatiaLossCode] = &[
+    #[cfg(test)]
+    const ALL: &'static [CatiaLossCode] = &[
         Self::SourceDialectUnverified,
+        Self::SourceRouteFellThrough,
+        Self::SourceAnnotationCollision,
         Self::GeometryCarrierSummary,
         Self::GeometryUnresolvedCarriers,
         Self::GeometryBrepNotTransferred,
         Self::GeometryPlaneParametersInvalid,
         Self::GeometryAnalyticPayloadInvalid,
+        Self::GeometryParameterRangeInvalid,
         Self::GeometryPcurveRechartNonFinite,
         Self::GeometryFaceLocalFreeformNotTransferred,
         Self::GeometryRevolutionProfileUnbound,
@@ -122,14 +161,17 @@ impl CatiaLossCode {
 
     /// The stable string identifier. This is the gating contract.
     #[must_use]
-    pub const fn code(self) -> &'static str {
+    const fn code(self) -> &'static str {
         match self {
             Self::SourceDialectUnverified => "source.dialect-unverified",
+            Self::SourceRouteFellThrough => "source.route-fell-through",
+            Self::SourceAnnotationCollision => "source.annotation-identity-collision",
             Self::GeometryCarrierSummary => "geometry.carrier-summary",
             Self::GeometryUnresolvedCarriers => "geometry.unresolved-carriers",
             Self::GeometryBrepNotTransferred => "geometry.brep-not-transferred",
             Self::GeometryPlaneParametersInvalid => "geometry.plane-parameters-invalid",
             Self::GeometryAnalyticPayloadInvalid => "geometry.analytic-payload-invalid",
+            Self::GeometryParameterRangeInvalid => "geometry.parameter-range-invalid",
             Self::GeometryPcurveRechartNonFinite => "geometry.pcurve-rechart-non-finite",
             Self::GeometryFaceLocalFreeformNotTransferred => {
                 "geometry.face-local-freeform-not-transferred"
@@ -166,7 +208,7 @@ impl CatiaLossCode {
 
     /// The severity of this loss.
     #[must_use]
-    pub const fn severity(self) -> Severity {
+    const fn severity(self) -> Severity {
         match self {
             Self::GeometryCarrierSummary => Severity::Info,
             Self::GeometryUnresolvedCarriers
@@ -191,11 +233,15 @@ impl CatiaLossCode {
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
+            Self::SourceRouteFellThrough | Self::SourceAnnotationCollision => {
+                LossTaxonomy::DecodeDiagnostic
+            }
             Self::GeometryCarrierSummary => LossTaxonomy::CarrierSummary,
             Self::GeometryUnresolvedCarriers
             | Self::GeometryBrepNotTransferred
             | Self::GeometryPlaneParametersInvalid
             | Self::GeometryAnalyticPayloadInvalid
+            | Self::GeometryParameterRangeInvalid
             | Self::GeometryPcurveRechartNonFinite
             | Self::GeometryFaceLocalFreeformNotTransferred
             | Self::GeometryRevolutionProfileUnbound
@@ -224,8 +270,18 @@ impl CatiaLossCode {
 
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
-    pub fn kind(self) -> LossKind {
-        LossKind::namespaced("catia", self.code(), self.shared_taxonomy())
+    #[cfg(test)]
+    pub(crate) fn kind(self) -> LossKind {
+        LossKind::namespaced(
+            const {
+                match cadmpeg_ir::report::loss::LossNamespace::new("catia") {
+                    Ok(namespace) => namespace,
+                    Err(_) => panic!("reserved codec namespace"),
+                }
+            },
+            self.code(),
+            self.shared_taxonomy(),
+        )
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
@@ -233,8 +289,26 @@ impl CatiaLossCode {
     /// The structured code is `catia/<local>`. Severity comes from the local
     /// code; the strict floor comes from the taxonomy.
     #[must_use]
-    pub fn note(self, message: impl Into<String>) -> LossNote {
+    #[cfg(test)]
+    pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
+    }
+
+    pub(crate) fn note_charged(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        message: String,
+        operation: &'static str,
+    ) -> Result<LossNote, cadmpeg_core::CodecError> {
+        let namespace = ctx.copy_retained_text("catia", operation)?;
+        let code = ctx.copy_retained_text(self.code(), operation)?;
+        let kind = cadmpeg_ir::report::loss::NamespacedLossKind::new_owned(
+            namespace,
+            code,
+            self.shared_taxonomy(),
+        )
+        .map_err(cadmpeg_core::CodecError::malformed)?;
+        Ok(LossNote::new(kind, message).with_severity(self.severity()))
     }
 }
 
@@ -251,11 +325,14 @@ mod tests {
             codes,
             [
                 "source.dialect-unverified",
+                "source.route-fell-through",
+                "source.annotation-identity-collision",
                 "geometry.carrier-summary",
                 "geometry.unresolved-carriers",
                 "geometry.brep-not-transferred",
                 "geometry.plane-parameters-invalid",
                 "geometry.analytic-payload-invalid",
+                "geometry.parameter-range-invalid",
                 "geometry.pcurve-rechart-non-finite",
                 "geometry.face-local-freeform-not-transferred",
                 "geometry.revolution-profile-unbound",

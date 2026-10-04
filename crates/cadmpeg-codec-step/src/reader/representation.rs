@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Shared access to inherited `REPRESENTATION` attributes.
 
+use super::ValueExt;
 use crate::parse::{RawRecord, Value};
 
 pub(super) fn parameters(record: &RawRecord) -> Option<&[Value]> {
@@ -10,16 +11,16 @@ pub(super) fn parameters(record: &RawRecord) -> Option<&[Value]> {
     })
 }
 
-pub(super) fn items(record: &RawRecord) -> Option<Vec<u64>> {
+pub(super) fn items(record: &RawRecord) -> Option<impl DoubleEndedIterator<Item = u64> + '_> {
+    item_values(record).map(|items| items.iter().filter_map(ValueExt::reference))
+}
+
+pub(super) fn item_values(record: &RawRecord) -> Option<&[Value]> {
     record.partials.iter().find_map(|partial| {
         if !is_representation_name(&partial.name) {
             return None;
         }
-        partial
-            .parameters
-            .get(1)
-            .and_then(value_list)
-            .map(|items| items.iter().filter_map(value_reference).collect::<Vec<_>>())
+        partial.parameters.get(1).and_then(ValueExt::list)
     })
 }
 
@@ -30,29 +31,15 @@ pub(super) fn is_representation_name(name: &str) -> bool {
         || name == "TESSELLATED_SHAPE_REPRESENTATION_WITH_ACCURACY_PARAMETERS"
 }
 
-fn value_list(value: &Value) -> Option<&[Value]> {
-    match value {
-        Value::List(values) => Some(values),
-        _ => None,
-    }
-}
-
-fn value_reference(value: &Value) -> Option<u64> {
-    match value {
-        Value::Reference(id) => Some(*id),
-        _ => None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::parse::{PartialRecord, RawRecord};
+    use super::{items, parameters};
+    use crate::parse::{PartialRecord, RawRecord, Value};
 
     #[test]
     fn shape_representation_with_parameters_uses_inherited_attributes() {
         let record = RawRecord {
-            partials: crate::parse::RecordPartials::single(PartialRecord {
+            partials: crate::parse::partials::RecordPartials::single(PartialRecord {
                 name: "SHAPE_REPRESENTATION_WITH_PARAMETERS".into(),
                 parameters: vec![
                     Value::String(b"datum target".to_vec()),
@@ -74,6 +61,9 @@ mod tests {
                 .as_slice()
             )
         );
-        assert_eq!(items(&record), Some(vec![2, 3]));
+        assert_eq!(
+            items(&record).map(Iterator::collect::<Vec<_>>),
+            Some(vec![2, 3])
+        );
     }
 }

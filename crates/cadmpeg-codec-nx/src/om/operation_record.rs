@@ -29,10 +29,10 @@ impl<'a> OperationPayload<'a> {
         })
     }
 
-    pub(crate) fn payload(self) -> &'a [u8] {
+    pub(super) fn payload(self) -> &'a [u8] {
         self.payload
     }
-    pub(crate) fn payload_offset(self) -> usize {
+    pub(super) fn payload_offset(self) -> usize {
         self.payload_offset
     }
     pub(crate) fn name(self) -> &'a str {
@@ -51,7 +51,7 @@ pub(crate) struct OperationBodyInput<'a> {
 
 impl<'a> OperationBodyInput<'a> {
     #[cfg(test)]
-    pub(crate) fn new(
+    pub(super) fn new(
         bytes: &'a [u8],
         offset: usize,
         payload_start: usize,
@@ -67,25 +67,25 @@ impl<'a> OperationBodyInput<'a> {
         })
     }
 
-    pub(crate) fn bytes(self) -> &'a [u8] {
+    pub(super) fn bytes(self) -> &'a [u8] {
         self.bytes
     }
-    pub(crate) fn offset(self) -> usize {
+    pub(super) fn offset(self) -> usize {
         self.offset
     }
-    pub(crate) fn payload_start(self) -> usize {
+    pub(super) fn payload_start(self) -> usize {
         self.payload_start
     }
-    pub(crate) fn payload(self) -> &'a [u8] {
+    pub(super) fn payload(self) -> &'a [u8] {
         &self.bytes[self.payload_start..]
     }
-    pub(crate) fn payload_offset(self) -> usize {
+    pub(super) fn payload_offset(self) -> usize {
         self.offset + self.payload_start
     }
-    pub(crate) fn name(self) -> &'a str {
+    pub(super) fn name(self) -> &'a str {
         self.name
     }
-    pub(crate) fn payload_view(self) -> OperationPayload<'a> {
+    pub(super) fn payload_view(self) -> OperationPayload<'a> {
         OperationPayload {
             payload: self.payload(),
             payload_offset: self.payload_offset(),
@@ -194,7 +194,10 @@ mod tests {
     fn body_scan_preserves_prefix_references_and_excludes_payload_body_writes() {
         let bytes = b"\x01\x02\x10\x42\xff\x00\x01\x02\x0b\x21\x97\x75\x01\x02\x10\x22\xff";
         let body = OperationBodyInput::new(bytes, 100, 6, "EXTRUDE").unwrap();
-        let references = crate::om::operation_body_references(body);
+        let references = crate::test_support::with_decode_context(|ctx| {
+            crate::om::operation_body_references(ctx, body)
+        })
+        .unwrap();
         assert_eq!(references.len(), 1);
         assert_eq!(references[0].offset, 103);
         assert_eq!(references[0].object_index.value(), 0x42);

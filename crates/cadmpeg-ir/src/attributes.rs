@@ -6,11 +6,13 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::ids::{AttributeId, BodyId, CoedgeId, EdgeId, FaceId, LoopId, ShellId, VertexId};
+use crate::scalar::FiniteReal;
 
 /// An entity which owns a source attribute.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "id", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum AttributeTarget {
     /// Attribute is owned by the document as a whole, not a specific entity.
     Document,
@@ -30,15 +32,37 @@ pub enum AttributeTarget {
     Vertex(VertexId),
 }
 
+impl AttributeTarget {
+    /// Copy the owning identity under the decode budget.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, operation)?;
+        Ok(match self {
+            Self::Document => Self::Document,
+            Self::Body(id) => Self::Body(id.try_clone_for_decode(ctx, operation)?),
+            Self::Face(id) => Self::Face(id.try_clone_for_decode(ctx, operation)?),
+            Self::Shell(id) => Self::Shell(id.try_clone_for_decode(ctx, operation)?),
+            Self::Loop(id) => Self::Loop(id.try_clone_for_decode(ctx, operation)?),
+            Self::Coedge(id) => Self::Coedge(id.try_clone_for_decode(ctx, operation)?),
+            Self::Edge(id) => Self::Edge(id.try_clone_for_decode(ctx, operation)?),
+            Self::Vertex(id) => Self::Vertex(id.try_clone_for_decode(ctx, operation)?),
+        })
+    }
+}
+
 /// One ordered typed value from a source attribute record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum AttributeValue {
     /// A signed integer value.
     Integer(i64),
     /// A floating-point value.
-    Float(f64),
+    Float(#[cfg_attr(feature = "schema", schemars(with = "f64"))] FiniteReal),
     /// A text value.
     String(String),
     /// A boolean value.
@@ -46,12 +70,30 @@ pub enum AttributeValue {
     /// A string-encoded reference to another entity, opaque to this crate.
     Reference(String),
     /// A fixed- or variable-length numeric vector value.
-    Vector(Vec<f64>),
+    Vector(#[cfg_attr(feature = "schema", schemars(with = "Vec<f64>"))] Vec<FiniteReal>),
+}
+
+impl AttributeValue {
+    /// A float value, or `None` when `value` is not finite.
+    #[must_use]
+    pub fn float(value: f64) -> Option<Self> {
+        FiniteReal::new(value).map(Self::Float)
+    }
+
+    /// A vector value, or `None` when a component is not finite.
+    pub fn vector(values: impl IntoIterator<Item = f64>) -> Option<Self> {
+        values
+            .into_iter()
+            .map(FiniteReal::new)
+            .collect::<Option<Vec<_>>>()
+            .map(Self::Vector)
+    }
 }
 
 /// A linked source attribute record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct SourceAttribute {
     /// Stable id of this attribute record.
     pub id: AttributeId,
@@ -63,3 +105,42 @@ pub struct SourceAttribute {
     /// source-defined and vary per attribute name.
     pub values: Vec<AttributeValue>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::AttributeTarget;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    #[test]
+    fn attribute_target_copy_charges_only_owned_identity() {
+        let target = AttributeTarget::Face(crate::ids::FaceId::mint("test:model:face#17").unwrap());
+        let identity_len = "test:model:face#17".len();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = u64::try_from(identity_len).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert_eq!(
+            target
+                .try_clone_for_decode(&ctx, "attribute target copy")
+                .unwrap(),
+            target
+        );
+        let error = target
+            .try_clone_for_decode(&ctx, "attribute target copy")
+            .unwrap_err();
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "attribute target copy"));
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert_eq!(
+            AttributeTarget::Document
+                .try_clone_for_decode(&ctx, "document target copy")
+                .unwrap(),
+            AttributeTarget::Document
+        );
+    }
+}
+
+mod identity_rewrite;

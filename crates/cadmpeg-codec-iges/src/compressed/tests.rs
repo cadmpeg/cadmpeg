@@ -1,16 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use super::*;
+use cadmpeg_test_support::{wire, EditableDecodeResult};
+
+use super::{normalize, parse_data_entity, parse_directory_record, parse_field_specs, DataEntity};
 use crate::loss::IgesLossCode;
-use crate::test_support::{point_file, point_file_with_global};
+use crate::test_support::test_curves_and_surfaces::{point_file, point_file_with_global};
+use crate::test_support::{global_with_version_flag, only_match};
 use crate::IgesCodec;
 use crate::IgesVersion;
-use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch};
-use cadmpeg_ir::codec::write::TargetRequest;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::dialect::Admission;
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::report::{FidelityResolution, WritePath};
+use cadmpeg_ir::report::export::{FidelityResolution, WritePath};
 use std::fmt::Write as _;
 use std::io::Cursor;
 
@@ -19,6 +24,187 @@ fn normalize_for_test(source: &[u8]) -> Result<Vec<u8>, cadmpeg_core::CodecError
     let policy = cadmpeg_core::decode::DecodePolicy::default();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)?;
     normalize(source, &ctx)
+}
+
+fn normalize_with_policy(source: &[u8], policy: &DecodePolicy) -> Result<Vec<u8>, CodecError> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, policy)?;
+    normalize(source, &ctx)
+}
+
+#[test]
+fn compressed_ascii_normalizes_under_service_policy() {
+    let source = compressed_points_file();
+    let expected = normalize_for_test(&source).unwrap();
+    let normalized = normalize_with_policy(&source, &DecodePolicy::service()).unwrap();
+    assert_eq!(normalized, expected);
+}
+
+#[test]
+fn compressed_sparse_directory_shares_unchanged_field_values() {
+    let source = compressed_points_file();
+    let owned_lines = source_lines(&source);
+    let lines = owned_lines.iter().map(Vec::as_slice).collect::<Vec<_>>();
+    let first_directory = lines
+        .iter()
+        .position(|line| line.first() == Some(&b'D'))
+        .unwrap();
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+    let (first, next) = parse_data_entity(&lines, first_directory, None, b',', b';', &ctx).unwrap();
+    let (second, _) =
+        parse_data_entity(&lines, next, Some(&first.fields), b',', b';', &ctx).unwrap();
+
+    assert!(std::rc::Rc::ptr_eq(&first.fields.0[0], &second.fields.0[0]));
+    assert!(!std::rc::Rc::ptr_eq(
+        &first.fields.0[14],
+        &second.fields.0[14]
+    ));
+    assert_eq!(
+        first.fields.get(super::CompressedField::Shared(
+            crate::directory::DirectoryFieldSlot::Label
+        )),
+        b"POINT"
+    );
+    assert_eq!(
+        second.fields.get(super::CompressedField::Shared(
+            crate::directory::DirectoryFieldSlot::Label
+        )),
+        b"SECOND"
+    );
+}
+
+#[test]
+fn compressed_directory_specs_refuse_materialized_limit_before_copy() {
+    let lines = [b"D1@1_116;".as_slice()];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 5;
+    let (ctx, _) = DecodeContext::from_root_bytes(lines[0], &arena, &policy).unwrap();
+    let error = parse_directory_record(&lines, 0, b';', &ctx).unwrap_err();
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "iges_compressed_directory_spec_bytes")
+    );
+}
+
+#[test]
+fn compressed_line_index_refuses_collection_limit_before_growth() {
+    let source = compressed_points_file();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = u64::try_from(source_lines(&source).len() - 1).unwrap();
+    let error = normalize_with_policy(&source, &policy).unwrap_err();
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "iges_compressed_ascii_lines")
+    );
+}
+
+#[test]
+fn compressed_global_workspace_refuses_materialized_limit_before_copy() {
+    let source = compressed_points_file();
+    let global_cards = source_lines(&source)
+        .iter()
+        .filter(|line| line.get(72) == Some(&b'G'))
+        .count();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = u64::try_from(global_cards * 2 * 72 - 1).unwrap();
+    let error = normalize_with_policy(&source, &policy).unwrap_err();
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "iges_compressed_global_digits")
+    );
+}
+
+#[test]
+fn compressed_directory_field_refuses_retained_limit_before_copy() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"@1_116", &arena, &policy).unwrap();
+    let error = parse_field_specs(b"@1_116", &ctx).unwrap_err();
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "iges_compressed_directory_field")
+    );
+}
+
+#[test]
+fn compressed_entity_refuses_retained_limit_before_record_allocation() {
+    let source = compressed_points_file();
+    let mut policy = DecodePolicy::service();
+    let line_headers = source_lines(&source).len() * std::mem::size_of::<&[u8]>();
+    policy.limits.max_retained_bytes =
+        u64::try_from(line_headers + std::mem::size_of::<DataEntity>() - 1).unwrap();
+    let error = normalize_with_policy(&source, &policy).unwrap_err();
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "iges_compressed_entity_record")
+    );
+}
+
+#[test]
+fn compressed_entity_index_refuses_collection_limit_before_growth() {
+    let source = compressed_points_file();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = u64::try_from(source_lines(&source).len()).unwrap();
+    let error = normalize_with_policy(&source, &policy).unwrap_err();
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "iges_compressed_entities")
+    );
+}
+
+#[test]
+fn compressed_normalization_refuses_work_before_directory_loop() {
+    let source = compressed_points_file();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::try_from(source.len() - 1).unwrap();
+    let error = normalize_with_policy(&source, &policy).unwrap_err();
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "iges_compressed_ascii_normalization")
+    );
+}
+
+#[test]
+fn compressed_parameter_lines_refuse_collection_limit_before_allocation() {
+    let lines = [
+        b"D1@1_116@3_0@4_0@5_0@6_0@7_0@8_0@9_00000000".as_slice(),
+        b"@12_0@13_0@14_1@15_0@16_@17_@18_POINT@19_0;".as_slice(),
+        b"116,1.0,2.0,3.0;".as_slice(),
+    ];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = parse_data_entity(&lines, 0, None, b',', b';', &ctx).unwrap_err();
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "iges_compressed_parameter_lines")
+    );
+}
+
+#[test]
+fn compressed_parameter_starts_refuse_collection_limit_before_allocation() {
+    let source = compressed_points_file();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = u64::try_from(source_lines(&source).len() + 4).unwrap();
+    let error = normalize_with_policy(&source, &policy).unwrap_err();
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "iges_compressed_parameter_starts")
+    );
+}
+
+#[test]
+fn compressed_normalized_output_refuses_retained_limit_before_allocation() {
+    let source = compressed_points_file();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "iges_compressed_normalized_output",
+        |limit| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = limit;
+            normalize_with_policy(&source, &policy)
+        },
+    );
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "iges_compressed_normalized_output"),
+        "{error:#?}"
+    );
 }
 
 fn source_lines(bytes: &[u8]) -> Vec<Vec<u8>> {
@@ -147,9 +333,11 @@ fn compressed_ascii_derives_fixed_cards_and_inherits_directory_fields() {
     assert_eq!(lines[directory_start + 4][64..72], *b"       1");
     assert_eq!(lines[directory_start + 5][64..72], *b"       3");
 
-    let result = IgesCodec
-        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
-        .unwrap();
+    let result = EditableDecodeResult::from(
+        IgesCodec
+            .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
+            .unwrap(),
+    );
     assert_eq!(result.ir().model.points.len(), 2);
     assert_eq!(
         result.ir().source.as_ref().unwrap().attributes["representation"],
@@ -177,8 +365,17 @@ fn compressed_ascii_derives_fixed_cards_and_inherits_directory_fields() {
             TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
         )
         .unwrap();
-    assert_eq!(plan.report().write_path(), WritePath::Synthesized);
-    assert_eq!(&plan.report().fidelity(), &FidelityResolution::NotConsumed);
+    assert!(matches!(
+        plan.report().write_path(),
+        WritePath::Synthesized { .. }
+    ));
+    assert_eq!(
+        &wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
+        &FidelityResolution::NotConsumed {}
+    );
     let displacement = plan
         .report()
         .losses
@@ -199,9 +396,11 @@ fn compressed_ascii_derives_fixed_cards_and_inherits_directory_fields() {
 #[test]
 fn compressed_ascii_replays_its_own_bytes_under_an_inherit_request() {
     let source = compressed_points_file();
-    let result = IgesCodec
-        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
-        .unwrap();
+    let result = EditableDecodeResult::from(
+        IgesCodec
+            .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
+            .unwrap(),
+    );
     let plan = IgesCodec
         .plan(
             EncodeInput::new(result.ir(), Some(result.source_fidelity())),
@@ -209,14 +408,25 @@ fn compressed_ascii_replays_its_own_bytes_under_an_inherit_request() {
         )
         .unwrap();
 
-    assert_eq!(plan.report().write_path(), WritePath::VerbatimReplay);
+    assert!(matches!(
+        plan.report().write_path(),
+        WritePath::VerbatimReplay { .. }
+    ));
     assert_eq!(
-        plan.report().target().map(ToString::to_string),
+        wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            plan.report(),
+            "identity/target"
+        )
+        .as_ref()
+        .map(ToString::to_string),
         Some("iges:5.3-compressed-ascii".to_owned())
     );
     assert!(matches!(
-        &plan.report().fidelity(),
-        FidelityResolution::Replayed
+        &wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
+        FidelityResolution::Replayed {}
     ));
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
@@ -298,7 +508,11 @@ fn compressed_ascii_record_termination_ignores_hollerith_payload_delimiters() {
         b"@12_0@13_0@14_1@15_0@16_@17_@18_POINT@19_0;".as_slice(),
         b"116,1.0,2.0,3H;X;;".as_slice(),
     ];
-    let (entity, next) = parse_data_entity(&lines, 0, None, b',', b';').unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (entity, next) = parse_data_entity(&lines, 0, None, b',', b';', &ctx).unwrap();
     assert_eq!(next, 3);
     assert_eq!(entity.parameter_lines.len(), 1);
 }
@@ -327,25 +541,12 @@ fn compressed_ascii_accepts_non_default_delimiters() {
 #[test]
 fn compressed_ascii_rejects_redundant_directory_specifiers() {
     let lines = [b"D1@1_116@2_1;".as_slice()];
-    let error = parse_directory_record(&lines, 0, b';').unwrap_err();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = parse_directory_record(&lines, 0, b';', &ctx).unwrap_err();
     assert!(error.to_string().contains("Directory field 2 is redundant"));
-}
-
-/// A 26-field Global record carrying `version_flag` in field 23.
-fn compressed_global_with_version_flag(version_flag: &str) -> Vec<u8> {
-    format!(
-        "1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,\
-         2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,{version_flag},0,0H,0H;"
-    )
-    .into_bytes()
-}
-
-/// The one dialect match of a report or summary.
-fn only_match(dialects: Option<&DialectLayers>) -> &DialectMatch {
-    let layers = dialects.expect("IGES reports dialect layers");
-    assert_eq!(layers.iter().count(), 1, "{dialects:#?}");
-    assert_eq!(layers.primary().format(), "iges");
-    layers.primary()
 }
 
 #[test]
@@ -379,7 +580,7 @@ fn compressed_ascii_at_a_version_with_no_row_classifies_into_the_totality_row() 
     // The registry declines to invent Compressed ASCII rows below IGES 4.0: the
     // IGES 3.0 specification would witness them. A compressed file at flag 4
     // therefore satisfies no row, which is the totality row's whole purpose.
-    let source = compressed_points_file_with_global(&compressed_global_with_version_flag("4"));
+    let source = compressed_points_file_with_global(&global_with_version_flag("4"));
     let decoded = IgesCodec
         .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
         .unwrap();
@@ -388,7 +589,7 @@ fn compressed_ascii_at_a_version_with_no_row_classifies_into_the_totality_row() 
     assert_eq!(matched.dialect().as_str(), "iges:unknown");
     assert_eq!(
         matched.using(),
-        Some(DialectId::pinned("iges:5.3-compressed-ascii"))
+        Some(cadmpeg_core::dialect_id!("iges:5.3-compressed-ascii"))
     );
     assert_eq!(matched.declared()["representation"], "compressed-ascii");
     assert_eq!(matched.declared()["version_flag"], "4");
@@ -411,4 +612,22 @@ fn compressed_ascii_at_a_version_with_no_row_classifies_into_the_totality_row() 
         .notes
         .contains(&"iges_declared_version_flag=4".into()));
     assert!(summary.notes.contains(&"iges_effective_version=3.0".into()));
+}
+
+#[test]
+fn compressed_reserved_fields_use_fixed_directory_right_justification() {
+    let source = std::str::from_utf8(include_bytes!(
+        "../../tests/golden/fixtures/compressed_ascii_5_3.igs"
+    ))
+    .unwrap()
+    .replace("@16_@17_", "@16_LEFT@17_RIGHT");
+    let normalized = normalize_for_test(source.as_bytes()).unwrap();
+    let result = IgesCodec
+        .decode(&mut Cursor::new(normalized), &DecodeOptions::default())
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    assert_eq!(
+        native.arenas()["entities"][0].fields()["reserved"],
+        serde_json::json!([b"    LEFT", b"   RIGHT"])
+    );
 }

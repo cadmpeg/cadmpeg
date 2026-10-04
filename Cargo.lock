@@ -171,13 +171,16 @@ dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
  "cadmpeg-registry",
+ "cadmpeg-test-support",
  "clap",
  "crc32fast",
  "memchr",
  "predicates",
+ "proc-macro2",
  "serde",
  "serde_json",
  "sha2",
+ "syn 2.0.118",
  "tempfile",
  "thiserror",
  "toml",
@@ -194,6 +197,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde-value",
+ "serde_json",
 ]
 
 [[package]]
@@ -268,6 +272,7 @@ dependencies = [
  "memchr",
  "serde",
  "serde_json",
+ "thiserror",
  "toml",
 ]
 
@@ -373,6 +378,7 @@ name = "cadmpeg-container"
 version = "0.6.0"
 dependencies = [
  "cadmpeg-core",
+ "cadmpeg-test-support",
  "crc32fast",
  "flate2",
  "zip",
@@ -383,12 +389,15 @@ dependencies = [
 name = "cadmpeg-core"
 version = "0.6.0"
 dependencies = [
+ "flate2",
  "memchr",
+ "roxmltree",
  "schemars",
  "serde",
  "serde_json",
  "thiserror",
  "toml",
+ "zstd",
 ]
 
 [[package]]
@@ -397,11 +406,15 @@ version = "0.6.0"
 dependencies = [
  "base64",
  "cadmpeg-core",
+ "cadmpeg-test-support",
+ "proc-macro2",
  "proptest",
  "schemars",
  "serde",
+ "serde-value",
  "serde_json",
  "sha2",
+ "syn 2.0.118",
  "thiserror",
 ]
 
@@ -417,7 +430,9 @@ dependencies = [
 name = "cadmpeg-protein"
 version = "0.6.0"
 dependencies = [
+ "cadmpeg-container",
  "cadmpeg-core",
+ "cadmpeg-ir",
  "flate2",
  "roxmltree",
  "serde",
@@ -443,6 +458,7 @@ dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
+ "cadmpeg-test-support",
  "serde",
  "serde_json",
  "thiserror",
@@ -455,7 +471,9 @@ version = "0.6.0"
 dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
+ "serde",
  "serde_json",
+ "thiserror",
  "toml",
 ]
 

@@ -2,7 +2,9 @@
 //! b2/b3-family synthetic stream and CATPart builders.
 
 #![allow(clippy::unwrap_used)]
-use super::{a5_pcurve_stream, compact_uint_bytes, le_f64, object_main_catpart};
+use crate::test_support::test_a5a8::a5_pcurve_stream;
+use crate::test_support::test_bytes::{compact_uint_bytes, le_f64};
+use crate::test_support::test_container::object_main_catpart;
 
 pub(crate) fn b2_pcurve_stream() -> Vec<u8> {
     let narrow = a5_pcurve_stream();
@@ -220,7 +222,7 @@ pub(crate) fn b2_all_compact_owner_packet_stream() -> Vec<u8> {
     record
 }
 
-pub(crate) fn owner_numeric_tail() -> Vec<u8> {
+fn owner_numeric_tail() -> Vec<u8> {
     owner_numeric_tail_for([-0.0, 4.5], [12.25, 7.0])
 }
 

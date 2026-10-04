@@ -16,18 +16,18 @@ use super::{cell, print_json};
 
 /// Target selection for `query schema`.
 #[derive(Debug, Args)]
-pub struct SchemaArgs {
+pub(crate) struct SchemaArgs {
     /// Schema source; omit to list model arenas.
     #[command(subcommand)]
-    pub target: Option<SchemaTarget>,
+    target: Option<SchemaTarget>,
     /// Print the schema as JSON.
     #[arg(long, global = true)]
-    pub json: bool,
+    json: bool,
 }
 
 /// Source of a schema projection.
 #[derive(Debug, Subcommand)]
-pub enum SchemaTarget {
+enum SchemaTarget {
     /// Describe compiled IR types.
     Types {
         /// Model arena; omit to list all model arenas.
@@ -47,7 +47,7 @@ pub enum SchemaTarget {
 const SHAPE: &str = "the generated schema does not have the expected shape";
 
 /// Runs `query schema`.
-pub fn run(args: &SchemaArgs) -> Result<()> {
+pub(super) fn run(args: &SchemaArgs) -> Result<()> {
     match &args.target {
         None => compile_run(None, args.json),
         Some(SchemaTarget::Types { arena }) => compile_run(arena.as_deref(), args.json),
@@ -102,7 +102,7 @@ fn listing(model: &Map<String, Value>, defs: &Map<String, Value>, json: bool) ->
                 Value::String(element_label(node, defs)),
             );
         }
-        print_json("schema", Value::Object(payload));
+        print_json("schema", Value::Object(payload))?;
         return Ok(());
     }
     println!("arena\telement\trequired");
@@ -149,7 +149,7 @@ fn arena_table(
             "schema": element,
             "defs": defs_closure(element, defs),
         });
-        print_json("schema", payload);
+        print_json("schema", payload)?;
         return Ok(());
     }
     print_type_table(element, defs);
@@ -169,7 +169,7 @@ fn sidecar(json: bool) -> Result<()> {
             "element": "DecodeSidecar",
             "schema": root,
         });
-        print_json("schema", payload);
+        print_json("schema", payload)?;
         return Ok(());
     }
     print_type_table(&root, defs);
@@ -290,16 +290,19 @@ fn type_label(node: &Value, defs: &Map<String, Value>) -> String {
 /// For a `oneOf` union: `(tagged by <key>, N variants: a, b, …)` when every
 /// variant carries the same const-valued property, else the variant shapes.
 /// For a plain string enum: `(enum: a, b, …)`.
-fn enum_suffix(def: &Value, _defs: &Map<String, Value>) -> Option<String> {
+fn enum_suffix(def: &Value, defs: &Map<String, Value>) -> Option<String> {
     if let Some(values) = def.get("enum").and_then(Value::as_array) {
         let names: Vec<&str> = values.iter().filter_map(Value::as_str).collect();
         return Some(format!(" (enum: {})", names.join(", ")));
     }
-    let variants = def.get("oneOf").and_then(Value::as_array)?;
+    let variants = def
+        .get("oneOf")
+        .or_else(|| def.get("anyOf"))
+        .and_then(Value::as_array)?;
     if variants.is_empty() {
         return None;
     }
-    if let Some((tag, values)) = common_tag(variants) {
+    if let Some((tag, values)) = common_tag(variants, defs) {
         return Some(format!(
             " (tagged by {tag}, {} variants: {})",
             values.len(),
@@ -324,23 +327,41 @@ fn enum_suffix(def: &Value, _defs: &Map<String, Value>) -> Option<String> {
 
 /// The property key that has a string `const` in every variant, with the
 /// const values in variant order.
-fn common_tag(variants: &[Value]) -> Option<(String, Vec<String>)> {
+fn common_tag(variants: &[Value], defs: &Map<String, Value>) -> Option<(String, Vec<String>)> {
     let first = variants
         .first()?
         .get("properties")
         .and_then(Value::as_object)?;
     'candidate: for key in first.keys() {
-        let mut values = Vec::with_capacity(variants.len());
+        let mut values = Vec::new();
         for variant in variants {
-            let Some(constant) = variant
+            if let Some(constant) = variant
                 .get("properties")
                 .and_then(|p| p.get(key))
                 .and_then(|node| node.get("const"))
                 .and_then(Value::as_str)
+            {
+                values.push(constant.to_owned());
+                continue;
+            }
+            // A variant that is itself a union of the same tag contributes its
+            // own tag values: a union nested to keep one wire flat.
+            let Some((nested_tag, nested_values)) = ref_name(variant)
+                .and_then(|name| defs.get(name))
+                .and_then(|nested| {
+                    nested
+                        .get("oneOf")
+                        .or_else(|| nested.get("anyOf"))
+                        .and_then(Value::as_array)
+                })
+                .and_then(|nested| common_tag(nested, defs))
             else {
                 continue 'candidate;
             };
-            values.push(constant.to_owned());
+            if nested_tag != *key {
+                continue 'candidate;
+            }
+            values.extend(nested_values);
         }
         return Some((key.clone(), values));
     }

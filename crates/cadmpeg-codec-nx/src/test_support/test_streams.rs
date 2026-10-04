@@ -5,7 +5,14 @@
 //! construct raw bytes only; no native record type crosses in here.
 #![allow(clippy::unwrap_used)]
 
-use super::*;
+use super::test_bytes::put_f64;
+use super::test_bytes::put_ref;
+use super::test_bytes::put_vec3;
+use super::test_bytes::record;
+use super::test_bytes::zlib_compress_at_level;
+use super::test_deltas::link_partition_face;
+use super::test_deltas::DELTAS_PREAMBLE;
+use super::test_prt::prt_with_streams;
 
 /// A synthetic Parasolid partition stream: the `PS 00 00` header, a prologue with
 /// a `(partition)` subtype and a schema token, then one POINT, one PLANE, one
@@ -76,17 +83,17 @@ pub(crate) fn parasolid_group_partition_stream() -> Vec<u8> {
 pub(crate) fn external_reference_stream() -> Vec<u8> {
     let mut p = b"EXTREFSTREAM".to_vec();
     p.extend_from_slice(&[0u8; 13]); // header; byte 24 must be zero
-    debug_assert_eq!(p.len(), 25);
+    assert_eq!(p.len(), 25);
     // Record directory (ascending offsets): empty record 7 at 45, handle-set 6 at 51.
     p.extend_from_slice(&7u32.to_le_bytes());
     p.extend_from_slice(&45u32.to_le_bytes());
     p.extend_from_slice(&6u32.to_le_bytes());
     p.extend_from_slice(&51u32.to_le_bytes());
     p.extend_from_slice(&0u32.to_le_bytes()); // terminator
-    debug_assert_eq!(p.len(), 45);
+    assert_eq!(p.len(), 45);
     // Empty record 7: the exact six-byte form.
     p.extend_from_slice(&[1, 0, 0, 0, 0, 1]);
-    debug_assert_eq!(p.len(), 51);
+    assert_eq!(p.len(), 51);
     // Handle-set record 6.
     p.extend_from_slice(&[1, 0, 0, 0]); // record marker
     p.extend_from_slice(&2u16.to_be_bytes()); // declared count
@@ -101,12 +108,14 @@ pub(crate) fn external_reference_stream() -> Vec<u8> {
     p.push(3); // prefix closing count
                // Tail: one adjacent persistent-handle / tagged-reference pair.
     p.extend_from_slice(&[0xe0, 0, 0, 0, 0x05, 0xc0, 0, 0, 0x01]);
-    debug_assert_eq!(p.len(), 96);
+    assert_eq!(p.len(), 96);
     // End-anchored string table: four strings, ordinals 0..3.
     p.push(1);
     p.extend_from_slice(&4u32.to_le_bytes());
     for value in ["child.prt", "dirA", "dirB", "extra"] {
-        p.extend_from_slice(&(value.len() as u16).to_le_bytes());
+        p.extend_from_slice(
+            &(u16::try_from(value.len()).expect("fixture value fits u16")).to_le_bytes(),
+        );
         p.extend_from_slice(value.as_bytes());
     }
     p
@@ -129,7 +138,8 @@ pub(crate) fn display_jt_basic_stream() -> Vec<u8> {
     inflated.extend_from_slice(&[0xff; 16]);
     inflated.extend_from_slice(&[6, 5]);
     let compressed = zlib_compress_at_level(&inflated, 1);
-    let segment_byte_len = 24 + 9 + compressed.len() as u32;
+    let segment_byte_len =
+        24 + 9 + u32::try_from(compressed.len()).expect("fixture value fits u32");
 
     let mut data = Vec::new();
     // Outer index: version 9, one row.
@@ -159,7 +169,9 @@ pub(crate) fn display_jt_basic_stream() -> Vec<u8> {
     data.extend_from_slice(&1_u32.to_le_bytes()); // segment type
     data.extend_from_slice(&segment_byte_len.to_le_bytes()); // header byte len
     data.extend_from_slice(&2_u32.to_le_bytes()); // compression flag
-    data.extend_from_slice(&(compressed.len() as u32 + 1).to_le_bytes());
+    data.extend_from_slice(
+        &(u32::try_from(compressed.len()).expect("fixture value fits u32") + 1).to_le_bytes(),
+    );
     data.push(2); // algorithm
     data.extend_from_slice(&compressed);
     data
@@ -191,7 +203,7 @@ pub(crate) fn display_jt_shape_lod_stream() -> Vec<u8> {
     payload.extend_from_slice(&[0xff; 16]);
     payload.extend_from_slice(&[1, 0, 0, 0, 0, 0]); // segment tail
 
-    let segment_byte_len = 24 + payload.len() as u32;
+    let segment_byte_len = 24 + u32::try_from(payload.len()).expect("fixture value fits u32");
     let mut segment = Vec::new();
     segment.extend_from_slice(&[2; 16]); // segment id
     segment.extend_from_slice(&7u32.to_le_bytes()); // segment type
@@ -242,7 +254,8 @@ pub(crate) fn display_jt_string_property_stream() -> Vec<u8> {
     inflated.extend_from_slice(&[0xff; 16]);
 
     let compressed = zlib_compress_at_level(&inflated, 1);
-    let segment_byte_len = 24 + 9 + compressed.len() as u32;
+    let segment_byte_len =
+        24 + 9 + u32::try_from(compressed.len()).expect("fixture value fits u32");
 
     let mut data = Vec::new();
     data.extend_from_slice(&9_u32.to_le_bytes());
@@ -268,7 +281,9 @@ pub(crate) fn display_jt_string_property_stream() -> Vec<u8> {
     data.extend_from_slice(&31_u32.to_le_bytes()); // segment type 31
     data.extend_from_slice(&segment_byte_len.to_le_bytes());
     data.extend_from_slice(&2_u32.to_le_bytes());
-    data.extend_from_slice(&(compressed.len() as u32 + 1).to_le_bytes());
+    data.extend_from_slice(
+        &(u32::try_from(compressed.len()).expect("fixture value fits u32") + 1).to_le_bytes(),
+    );
     data.push(2);
     data.extend_from_slice(&compressed);
     data
@@ -276,15 +291,12 @@ pub(crate) fn display_jt_string_property_stream() -> Vec<u8> {
 
 /// Frame one JT logical element: length-prefixed `[type_id][base_type][object_id]
 /// [body]`, matching `parse_jt_element_sequence`.
-pub(crate) fn jt_scene_element(
-    type_id: [u8; 16],
-    base_type: u8,
-    object_id: u32,
-    body: &[u8],
-) -> Vec<u8> {
+fn jt_scene_element(type_id: [u8; 16], base_type: u8, object_id: u32, body: &[u8]) -> Vec<u8> {
     let mut element = Vec::new();
     let byte_len = 16 + 1 + 4 + body.len();
-    element.extend_from_slice(&(byte_len as u32).to_le_bytes());
+    element.extend_from_slice(
+        &(u32::try_from(byte_len).expect("fixture value fits u32")).to_le_bytes(),
+    );
     element.extend_from_slice(&type_id);
     element.push(base_type);
     element.extend_from_slice(&object_id.to_le_bytes());
@@ -432,7 +444,8 @@ pub(crate) fn display_jt_scene_graph_stream() -> Vec<u8> {
     inflated.extend_from_slice(&[0xff; 16]);
 
     let compressed = zlib_compress_at_level(&inflated, 1);
-    let segment_byte_len = 24 + 9 + compressed.len() as u32;
+    let segment_byte_len =
+        24 + 9 + u32::try_from(compressed.len()).expect("fixture value fits u32");
 
     let mut data = Vec::new();
     data.extend_from_slice(&9_u32.to_le_bytes());
@@ -458,7 +471,9 @@ pub(crate) fn display_jt_scene_graph_stream() -> Vec<u8> {
     data.extend_from_slice(&1_u32.to_le_bytes());
     data.extend_from_slice(&segment_byte_len.to_le_bytes());
     data.extend_from_slice(&2_u32.to_le_bytes());
-    data.extend_from_slice(&(compressed.len() as u32 + 1).to_le_bytes());
+    data.extend_from_slice(
+        &(u32::try_from(compressed.len()).expect("fixture value fits u32") + 1).to_le_bytes(),
+    );
     data.push(2);
     data.extend_from_slice(&compressed);
     data
@@ -515,8 +530,9 @@ pub(crate) fn parasolid_entity_records_stream() -> Vec<u8> {
     s.push(0x00); // terminator
 
     // `00 51` framed entity: flags 1 (low_flag 1 -> six references), identity
-    // xmt 50, sequence 2, definition xmt 202. Its references resolve to the
-    // string (100), integer (101), and double (102) records above.
+    // xmt 50, sequence 2, definition xmt 202. Its leading structural references
+    // collide with the framed string, integer and double identities. Its
+    // trailing value reference is 152 and resolves to none of those values.
     s.extend_from_slice(&[0x00, 0x51]);
     s.extend_from_slice(&1u32.to_be_bytes()); // flags
     s.extend_from_slice(&50u16.to_be_bytes()); // identity xmt
@@ -1073,33 +1089,55 @@ pub(crate) fn partial_ext11_charted_intersection_curve_stream() -> Vec<u8> {
 /// Wrap a partition topology and its ext11 intersection auxiliaries as a paired
 /// partition/deltas stream set.
 pub(crate) fn prt_with_ext11_intersection(partition: &[u8], ext11: &[u8]) -> Vec<u8> {
-    let chart = crate::intersection::chart_source_records(
-        ext11,
-        crate::intersection::ChartPointLayout::Ext11,
-    )
+    prt_with_streams(&[partition, &ext11_intersection_deltas(ext11)])
+}
+
+pub(crate) fn ext11_intersection_deltas(ext11: &[u8]) -> Vec<u8> {
+    let chart = crate::test_support::with_decode_context(|ctx| {
+        crate::intersection::chart_source_records(
+            ctx,
+            ext11,
+            crate::intersection::ChartPointLayout::Ext11,
+        )
+    })
+    .unwrap()
     .into_iter()
     .next()
     .expect("ext11 chart record");
-    let (_, chart_end) = crate::intersection::chart_source_record_at(
-        ext11,
-        chart.pos,
-        crate::intersection::ChartPointLayout::Ext11,
-    )
+    let (_, chart_end) = crate::test_support::with_decode_context(|ctx| {
+        crate::intersection::chart_source_record_at(
+            ctx,
+            ext11,
+            chart.pos,
+            crate::intersection::ChartPointLayout::Ext11,
+        )
+    })
+    .unwrap()
     .expect("ext11 chart bounds");
     let mut deltas = DELTAS_PREAMBLE.to_vec();
     deltas.extend_from_slice(&ext11[chart.pos..chart_end]);
-    for term in crate::intersection::term_use_records(ext11) {
+    for term in crate::test_support::with_decode_context(|ctx| {
+        crate::intersection::term_use_records(ctx, ext11)
+    })
+    .unwrap()
+    {
         let (_, end) = crate::intersection::term_use_at(ext11, term.pos).expect("term bounds");
         deltas.extend_from_slice(&ext11[term.pos..end]);
     }
-    let support_uv = crate::intersection::support_uv_records(ext11)
-        .into_iter()
-        .next()
-        .expect("ext11 support UV");
-    let (_, support_uv_end) =
-        crate::intersection::support_uv_record_at(ext11, support_uv.pos).expect("UV bounds");
+    let support_uv = crate::test_support::with_decode_context(|ctx| {
+        crate::intersection::support_uv_records(ctx, ext11)
+    })
+    .unwrap()
+    .into_iter()
+    .next()
+    .expect("ext11 support UV");
+    let (_, support_uv_end) = crate::test_support::with_decode_context(|ctx| {
+        crate::intersection::support_uv_record_at(ctx, ext11, support_uv.pos)
+    })
+    .unwrap()
+    .expect("UV bounds");
     deltas.extend_from_slice(&ext11[support_uv.pos..support_uv_end]);
-    prt_with_streams(&[partition, &deltas])
+    deltas
 }
 
 pub(crate) fn two_support_charted_intersection_curve_stream() -> Vec<u8> {
@@ -1178,7 +1216,16 @@ pub(crate) fn inline_descriptor_intersection_curve_stream() -> Vec<u8> {
     stream.splice(uv..uv + 41, inline_uv);
 
     for (xmt, point) in [(22u16, [0.01_f64, 0.0, 0.0]), (21, [0.0, 0.0, 0.0])] {
-        let marker = [0, 41, 0, 0, 0, 1, (xmt >> 8) as u8, xmt as u8];
+        let marker = [
+            0,
+            41,
+            0,
+            0,
+            0,
+            1,
+            u8::try_from(xmt >> 8).expect("fixture value fits u8"),
+            u8::try_from(xmt & 0xff).expect("fixture value fits u8"),
+        ];
         let term = stream
             .windows(marker.len())
             .position(|window| window == marker)

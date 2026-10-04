@@ -43,36 +43,36 @@ pub(crate) fn attach_test_body_surface(
             body: body_id.clone(),
             shells: vec![shell_id.clone()],
         });
-        ir.model.shells.push(Shell {
-            id: shell_id.clone(),
-            region: region_id,
-            faces: Vec::new(),
-            wire_edges: Vec::new(),
-            free_vertices: Vec::new(),
-        });
     }
     let face_id =
         FaceId::mint(format!("{body_id}:face:{}", ir.model.faces.len())).expect("identity grammar");
-    ir.model
+    if let Some(shell) = ir
+        .model
         .shells
         .iter_mut()
         .find(|shell| shell.id == shell_id)
-        .unwrap()
-        .faces
-        .push(face_id.clone());
+    {
+        shell.add_face(face_id.clone());
+    } else {
+        ir.model.shells.push(Shell::with_face(
+            shell_id.clone(),
+            region_id,
+            face_id.clone(),
+        ));
+    }
     ir.model.faces.push(Face {
         id: face_id,
         shell: shell_id,
         surface,
         sense: Sense::Forward,
-        loops: Vec::new().into(),
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
         name: None,
         color: None,
         tolerance: None,
     });
 }
 
-pub(crate) fn be_f64(v: f64) -> [u8; 8] {
+fn be_f64(v: f64) -> [u8; 8] {
     v.to_be_bytes()
 }
 
@@ -93,13 +93,19 @@ pub(crate) fn put_ref(rec: &mut [u8], at: usize, value: u16) {
 
 pub(crate) fn encoded_xmt(value: u32) -> Vec<u8> {
     if i16::try_from(value).is_ok() {
-        return (value as u16).to_be_bytes().to_vec();
+        return (u16::try_from(value).expect("fixture value fits u16"))
+            .to_be_bytes()
+            .to_vec();
     }
     let quotient = value / 32_767;
     let remainder = value % 32_767;
     assert!(remainder > 0 && i16::try_from(remainder).is_ok());
-    let mut out = (-(remainder as i16)).to_be_bytes().to_vec();
-    out.extend_from_slice(&(quotient as u16).to_be_bytes());
+    let mut out = (-(i16::try_from(remainder).expect("fixture value fits i16")))
+        .to_be_bytes()
+        .to_vec();
+    out.extend_from_slice(
+        &(u16::try_from(quotient).expect("fixture value fits u16")).to_be_bytes(),
+    );
     out
 }
 

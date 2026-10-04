@@ -93,14 +93,19 @@ impl ProjectedCurveReferences {
             "CPROJ_CMB" => &CMB_PREFIX[..],
             _ => return None,
         };
-        super::unique_candidate((0..=bytes.len().saturating_sub(marker.len())).filter_map(
-            |start| {
-                if bytes.get(start..start + marker.len()) != Some(marker) {
-                    return None;
-                }
-                decode(start)
-            },
-        ))
+        super::unique_candidate(
+            bytes
+                .len()
+                .checked_sub(marker.len())
+                .into_iter()
+                .flat_map(|last| 0..=last)
+                .filter_map(|start| {
+                    if bytes.get(start..start + marker.len()) != Some(marker) {
+                        return None;
+                    }
+                    decode(start)
+                }),
+        )
     }
 
     pub(crate) fn into_references(self) -> Vec<PayloadObjectReference<PayloadIndexToken>> {

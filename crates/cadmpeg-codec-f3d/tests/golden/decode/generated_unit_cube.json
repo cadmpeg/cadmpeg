@@ -2,10 +2,33 @@
   "ir": {
     "ir_version": "6",
     "source": {
-      "format": "f3d",
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "primary": {
+            "dialect": "f3d:manifest-3-2-0-0",
+            "declared": {
+              "top_level_manifest_version": "3-2-0-0"
+            },
+            "admission": "admitted"
+          },
+          "extra": [
+            {
+              "dialect": "acis:asm-binaryfile-8",
+              "declared": {
+                "carrier": "FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
+                "reference_width": "8",
+                "save_format_major": "231",
+                "save_format_minor": "0"
+              },
+              "admission": "admitted"
+            }
+          ]
+        }
+      },
       "attributes": {
         "active_brep": "FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
-        "active_brep_sha256": "70ccb866093e5428ae50b3a3190f07d411ea2afdb463ed53b19193b8d730c5a1",
+        "active_brep_sha256": "6c6c05ccc7d61852395fb09ed2a0305429e3b58985b9455f1cd0e6f8c5fd984f",
         "asset_folder": "FusionAssetName[Active]",
         "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "product_family": "Autodesk Neutron",
@@ -13,29 +36,6 @@
         "save_date": "Thu Jan  1 00:00:00 1970",
         "solved_record_len": "8627",
         "zip_entry_count": "4"
-      },
-      "dialects": {
-        "primary": {
-          "format": "f3d",
-          "dialect": "f3d:manifest-3-2-0-0",
-          "declared": {
-            "top_level_manifest_version": "3-2-0-0"
-          },
-          "admission": "admitted"
-        },
-        "extra": [
-          {
-            "format": "acis",
-            "dialect": "acis:asm-binaryfile-8",
-            "declared": {
-              "carrier": "FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
-              "reference_width": "8",
-              "save_format_major": "231",
-              "save_format_minor": "0"
-            },
-            "admission": "admitted"
-          }
-        ]
       }
     },
     "units": {
@@ -69,13 +69,31 @@
         {
           "id": "f3d:brep:entity#3",
           "region": "f3d:brep:entity#2",
-          "faces": [
-            "f3d:brep:entity#5",
-            "f3d:brep:entity#9",
-            "f3d:brep:entity#6",
-            "f3d:brep:entity#8",
-            "f3d:brep:entity#4",
-            "f3d:brep:entity#7"
+          "members": [
+            {
+              "kind": "face",
+              "id": "f3d:brep:entity#5"
+            },
+            {
+              "kind": "face",
+              "id": "f3d:brep:entity#9"
+            },
+            {
+              "kind": "face",
+              "id": "f3d:brep:entity#6"
+            },
+            {
+              "kind": "face",
+              "id": "f3d:brep:entity#8"
+            },
+            {
+              "kind": "face",
+              "id": "f3d:brep:entity#4"
+            },
+            {
+              "kind": "face",
+              "id": "f3d:brep:entity#7"
+            }
           ]
         }
       ],
@@ -85,9 +103,12 @@
           "shell": "f3d:brep:entity#3",
           "surface": "f3d:brep:entity#16",
           "sense": "forward",
-          "loops": [
-            "f3d:brep:entity#10"
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "f3d:brep:entity#10"
+            ]
+          },
           "name": "back face"
         },
         {
@@ -95,9 +116,12 @@
           "shell": "f3d:brep:entity#3",
           "surface": "f3d:brep:entity#17",
           "sense": "forward",
-          "loops": [
-            "f3d:brep:entity#11"
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "f3d:brep:entity#11"
+            ]
+          },
           "name": "bottom face"
         },
         {
@@ -105,9 +129,12 @@
           "shell": "f3d:brep:entity#3",
           "surface": "f3d:brep:entity#18",
           "sense": "forward",
-          "loops": [
-            "f3d:brep:entity#12"
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "f3d:brep:entity#12"
+            ]
+          },
           "name": "front face"
         },
         {
@@ -115,9 +142,12 @@
           "shell": "f3d:brep:entity#3",
           "surface": "f3d:brep:entity#19",
           "sense": "forward",
-          "loops": [
-            "f3d:brep:entity#13"
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "f3d:brep:entity#13"
+            ]
+          },
           "name": "left face"
         },
         {
@@ -125,9 +155,12 @@
           "shell": "f3d:brep:entity#3",
           "surface": "f3d:brep:entity#20",
           "sense": "forward",
-          "loops": [
-            "f3d:brep:entity#14"
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "f3d:brep:entity#14"
+            ]
+          },
           "name": "right face"
         },
         {
@@ -135,9 +168,12 @@
           "shell": "f3d:brep:entity#3",
           "surface": "f3d:brep:entity#21",
           "sense": "forward",
-          "loops": [
-            "f3d:brep:entity#15"
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "f3d:brep:entity#15"
+            ]
+          },
           "name": "top face"
         }
       ],
@@ -145,68 +181,80 @@
         {
           "id": "f3d:brep:entity#10",
           "face": "f3d:brep:entity#4",
-          "boundary_role": "unspecified",
-          "coedges": [
-            "f3d:brep:entity#34",
-            "f3d:brep:entity#35",
-            "f3d:brep:entity#36",
-            "f3d:brep:entity#37"
-          ]
+          "boundary": {
+            "kind": "ring",
+            "coedges": [
+              "f3d:brep:entity#34",
+              "f3d:brep:entity#35",
+              "f3d:brep:entity#36",
+              "f3d:brep:entity#37"
+            ]
+          }
         },
         {
           "id": "f3d:brep:entity#11",
           "face": "f3d:brep:entity#5",
-          "boundary_role": "unspecified",
-          "coedges": [
-            "f3d:brep:entity#38",
-            "f3d:brep:entity#39",
-            "f3d:brep:entity#40",
-            "f3d:brep:entity#41"
-          ]
+          "boundary": {
+            "kind": "ring",
+            "coedges": [
+              "f3d:brep:entity#38",
+              "f3d:brep:entity#39",
+              "f3d:brep:entity#40",
+              "f3d:brep:entity#41"
+            ]
+          }
         },
         {
           "id": "f3d:brep:entity#12",
           "face": "f3d:brep:entity#6",
-          "boundary_role": "unspecified",
-          "coedges": [
-            "f3d:brep:entity#42",
-            "f3d:brep:entity#43",
-            "f3d:brep:entity#44",
-            "f3d:brep:entity#45"
-          ]
+          "boundary": {
+            "kind": "ring",
+            "coedges": [
+              "f3d:brep:entity#42",
+              "f3d:brep:entity#43",
+              "f3d:brep:entity#44",
+              "f3d:brep:entity#45"
+            ]
+          }
         },
         {
           "id": "f3d:brep:entity#13",
           "face": "f3d:brep:entity#7",
-          "boundary_role": "unspecified",
-          "coedges": [
-            "f3d:brep:entity#46",
-            "f3d:brep:entity#47",
-            "f3d:brep:entity#48",
-            "f3d:brep:entity#49"
-          ]
+          "boundary": {
+            "kind": "ring",
+            "coedges": [
+              "f3d:brep:entity#46",
+              "f3d:brep:entity#47",
+              "f3d:brep:entity#48",
+              "f3d:brep:entity#49"
+            ]
+          }
         },
         {
           "id": "f3d:brep:entity#14",
           "face": "f3d:brep:entity#8",
-          "boundary_role": "unspecified",
-          "coedges": [
-            "f3d:brep:entity#50",
-            "f3d:brep:entity#51",
-            "f3d:brep:entity#52",
-            "f3d:brep:entity#53"
-          ]
+          "boundary": {
+            "kind": "ring",
+            "coedges": [
+              "f3d:brep:entity#50",
+              "f3d:brep:entity#51",
+              "f3d:brep:entity#52",
+              "f3d:brep:entity#53"
+            ]
+          }
         },
         {
           "id": "f3d:brep:entity#15",
           "face": "f3d:brep:entity#9",
-          "boundary_role": "unspecified",
-          "coedges": [
-            "f3d:brep:entity#54",
-            "f3d:brep:entity#55",
-            "f3d:brep:entity#56",
-            "f3d:brep:entity#57"
-          ]
+          "boundary": {
+            "kind": "ring",
+            "coedges": [
+              "f3d:brep:entity#54",
+              "f3d:brep:entity#55",
+              "f3d:brep:entity#56",
+              "f3d:brep:entity#57"
+            ]
+          }
         }
       ],
       "coedges": [
@@ -214,8 +262,6 @@
           "id": "f3d:brep:entity#34",
           "owner_loop": "f3d:brep:entity#10",
           "edge": "f3d:brep:entity#62",
-          "next": "f3d:brep:entity#35",
-          "previous": "f3d:brep:entity#37",
           "radial_next": "f3d:brep:entity#40",
           "sense": "reversed"
         },
@@ -223,8 +269,6 @@
           "id": "f3d:brep:entity#35",
           "owner_loop": "f3d:brep:entity#10",
           "edge": "f3d:brep:entity#60",
-          "next": "f3d:brep:entity#36",
-          "previous": "f3d:brep:entity#34",
           "radial_next": "f3d:brep:entity#53",
           "sense": "forward"
         },
@@ -232,8 +276,6 @@
           "id": "f3d:brep:entity#36",
           "owner_loop": "f3d:brep:entity#10",
           "edge": "f3d:brep:entity#66",
-          "next": "f3d:brep:entity#37",
-          "previous": "f3d:brep:entity#35",
           "radial_next": "f3d:brep:entity#55",
           "sense": "forward"
         },
@@ -241,8 +283,6 @@
           "id": "f3d:brep:entity#37",
           "owner_loop": "f3d:brep:entity#10",
           "edge": "f3d:brep:entity#61",
-          "next": "f3d:brep:entity#34",
-          "previous": "f3d:brep:entity#36",
           "radial_next": "f3d:brep:entity#47",
           "sense": "reversed"
         },
@@ -250,8 +290,6 @@
           "id": "f3d:brep:entity#38",
           "owner_loop": "f3d:brep:entity#11",
           "edge": "f3d:brep:entity#58",
-          "next": "f3d:brep:entity#39",
-          "previous": "f3d:brep:entity#41",
           "radial_next": "f3d:brep:entity#42",
           "sense": "forward"
         },
@@ -259,8 +297,6 @@
           "id": "f3d:brep:entity#39",
           "owner_loop": "f3d:brep:entity#11",
           "edge": "f3d:brep:entity#59",
-          "next": "f3d:brep:entity#40",
-          "previous": "f3d:brep:entity#38",
           "radial_next": "f3d:brep:entity#50",
           "sense": "forward"
         },
@@ -268,8 +304,6 @@
           "id": "f3d:brep:entity#40",
           "owner_loop": "f3d:brep:entity#11",
           "edge": "f3d:brep:entity#62",
-          "next": "f3d:brep:entity#41",
-          "previous": "f3d:brep:entity#39",
           "radial_next": "f3d:brep:entity#34",
           "sense": "forward"
         },
@@ -277,8 +311,6 @@
           "id": "f3d:brep:entity#41",
           "owner_loop": "f3d:brep:entity#11",
           "edge": "f3d:brep:entity#63",
-          "next": "f3d:brep:entity#38",
-          "previous": "f3d:brep:entity#40",
           "radial_next": "f3d:brep:entity#46",
           "sense": "forward"
         },
@@ -286,8 +318,6 @@
           "id": "f3d:brep:entity#42",
           "owner_loop": "f3d:brep:entity#12",
           "edge": "f3d:brep:entity#58",
-          "next": "f3d:brep:entity#43",
-          "previous": "f3d:brep:entity#45",
           "radial_next": "f3d:brep:entity#38",
           "sense": "reversed"
         },
@@ -295,8 +325,6 @@
           "id": "f3d:brep:entity#43",
           "owner_loop": "f3d:brep:entity#12",
           "edge": "f3d:brep:entity#68",
-          "next": "f3d:brep:entity#44",
-          "previous": "f3d:brep:entity#42",
           "radial_next": "f3d:brep:entity#49",
           "sense": "forward"
         },
@@ -304,8 +332,6 @@
           "id": "f3d:brep:entity#44",
           "owner_loop": "f3d:brep:entity#12",
           "edge": "f3d:brep:entity#64",
-          "next": "f3d:brep:entity#45",
-          "previous": "f3d:brep:entity#43",
           "radial_next": "f3d:brep:entity#57",
           "sense": "forward"
         },
@@ -313,8 +339,6 @@
           "id": "f3d:brep:entity#45",
           "owner_loop": "f3d:brep:entity#12",
           "edge": "f3d:brep:entity#69",
-          "next": "f3d:brep:entity#42",
-          "previous": "f3d:brep:entity#44",
           "radial_next": "f3d:brep:entity#51",
           "sense": "reversed"
         },
@@ -322,8 +346,6 @@
           "id": "f3d:brep:entity#46",
           "owner_loop": "f3d:brep:entity#13",
           "edge": "f3d:brep:entity#63",
-          "next": "f3d:brep:entity#47",
-          "previous": "f3d:brep:entity#49",
           "radial_next": "f3d:brep:entity#41",
           "sense": "reversed"
         },
@@ -331,8 +353,6 @@
           "id": "f3d:brep:entity#47",
           "owner_loop": "f3d:brep:entity#13",
           "edge": "f3d:brep:entity#61",
-          "next": "f3d:brep:entity#48",
-          "previous": "f3d:brep:entity#46",
           "radial_next": "f3d:brep:entity#37",
           "sense": "forward"
         },
@@ -340,8 +360,6 @@
           "id": "f3d:brep:entity#48",
           "owner_loop": "f3d:brep:entity#13",
           "edge": "f3d:brep:entity#67",
-          "next": "f3d:brep:entity#49",
-          "previous": "f3d:brep:entity#47",
           "radial_next": "f3d:brep:entity#54",
           "sense": "forward"
         },
@@ -349,8 +367,6 @@
           "id": "f3d:brep:entity#49",
           "owner_loop": "f3d:brep:entity#13",
           "edge": "f3d:brep:entity#68",
-          "next": "f3d:brep:entity#46",
-          "previous": "f3d:brep:entity#48",
           "radial_next": "f3d:brep:entity#43",
           "sense": "reversed"
         },
@@ -358,8 +374,6 @@
           "id": "f3d:brep:entity#50",
           "owner_loop": "f3d:brep:entity#14",
           "edge": "f3d:brep:entity#59",
-          "next": "f3d:brep:entity#51",
-          "previous": "f3d:brep:entity#53",
           "radial_next": "f3d:brep:entity#39",
           "sense": "reversed"
         },
@@ -367,8 +381,6 @@
           "id": "f3d:brep:entity#51",
           "owner_loop": "f3d:brep:entity#14",
           "edge": "f3d:brep:entity#69",
-          "next": "f3d:brep:entity#52",
-          "previous": "f3d:brep:entity#50",
           "radial_next": "f3d:brep:entity#45",
           "sense": "forward"
         },
@@ -376,8 +388,6 @@
           "id": "f3d:brep:entity#52",
           "owner_loop": "f3d:brep:entity#14",
           "edge": "f3d:brep:entity#65",
-          "next": "f3d:brep:entity#53",
-          "previous": "f3d:brep:entity#51",
           "radial_next": "f3d:brep:entity#56",
           "sense": "forward"
         },
@@ -385,8 +395,6 @@
           "id": "f3d:brep:entity#53",
           "owner_loop": "f3d:brep:entity#14",
           "edge": "f3d:brep:entity#60",
-          "next": "f3d:brep:entity#50",
-          "previous": "f3d:brep:entity#52",
           "radial_next": "f3d:brep:entity#35",
           "sense": "reversed"
         },
@@ -394,8 +402,6 @@
           "id": "f3d:brep:entity#54",
           "owner_loop": "f3d:brep:entity#15",
           "edge": "f3d:brep:entity#67",
-          "next": "f3d:brep:entity#55",
-          "previous": "f3d:brep:entity#57",
           "radial_next": "f3d:brep:entity#48",
           "sense": "reversed"
         },
@@ -403,8 +409,6 @@
           "id": "f3d:brep:entity#55",
           "owner_loop": "f3d:brep:entity#15",
           "edge": "f3d:brep:entity#66",
-          "next": "f3d:brep:entity#56",
-          "previous": "f3d:brep:entity#54",
           "radial_next": "f3d:brep:entity#36",
           "sense": "reversed"
         },
@@ -412,8 +416,6 @@
           "id": "f3d:brep:entity#56",
           "owner_loop": "f3d:brep:entity#15",
           "edge": "f3d:brep:entity#65",
-          "next": "f3d:brep:entity#57",
-          "previous": "f3d:brep:entity#55",
           "radial_next": "f3d:brep:entity#52",
           "sense": "reversed"
         },
@@ -421,8 +423,6 @@
           "id": "f3d:brep:entity#57",
           "owner_loop": "f3d:brep:entity#15",
           "edge": "f3d:brep:entity#64",
-          "next": "f3d:brep:entity#54",
-          "previous": "f3d:brep:entity#56",
           "radial_next": "f3d:brep:entity#44",
           "sense": "reversed"
         }
@@ -430,123 +430,147 @@
       "edges": [
         {
           "id": "f3d:brep:entity#58",
-          "curve": "f3d:brep:entity#22",
+          "carrier": {
+            "curve": "f3d:brep:entity#22",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "start": "f3d:brep:entity#70",
-          "end": "f3d:brep:entity#71",
-          "param_range": [
-            0.0,
-            10.0
-          ]
+          "end": "f3d:brep:entity#71"
         },
         {
           "id": "f3d:brep:entity#59",
-          "curve": "f3d:brep:entity#23",
+          "carrier": {
+            "curve": "f3d:brep:entity#23",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "start": "f3d:brep:entity#71",
-          "end": "f3d:brep:entity#72",
-          "param_range": [
-            0.0,
-            10.0
-          ]
+          "end": "f3d:brep:entity#72"
         },
         {
           "id": "f3d:brep:entity#60",
-          "curve": "f3d:brep:entity#24",
+          "carrier": {
+            "curve": "f3d:brep:entity#24",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "start": "f3d:brep:entity#72",
-          "end": "f3d:brep:entity#76",
-          "param_range": [
-            0.0,
-            10.0
-          ]
+          "end": "f3d:brep:entity#76"
         },
         {
           "id": "f3d:brep:entity#61",
-          "curve": "f3d:brep:entity#25",
+          "carrier": {
+            "curve": "f3d:brep:entity#25",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "start": "f3d:brep:entity#73",
-          "end": "f3d:brep:entity#77",
-          "param_range": [
-            0.0,
-            10.0
-          ]
+          "end": "f3d:brep:entity#77"
         },
         {
           "id": "f3d:brep:entity#62",
-          "curve": "f3d:brep:entity#26",
+          "carrier": {
+            "curve": "f3d:brep:entity#26",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "start": "f3d:brep:entity#72",
-          "end": "f3d:brep:entity#73",
-          "param_range": [
-            0.0,
-            10.0
-          ]
+          "end": "f3d:brep:entity#73"
         },
         {
           "id": "f3d:brep:entity#63",
-          "curve": "f3d:brep:entity#27",
+          "carrier": {
+            "curve": "f3d:brep:entity#27",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "start": "f3d:brep:entity#73",
-          "end": "f3d:brep:entity#70",
-          "param_range": [
-            0.0,
-            10.0
-          ]
+          "end": "f3d:brep:entity#70"
         },
         {
           "id": "f3d:brep:entity#64",
-          "curve": "f3d:brep:entity#28",
+          "carrier": {
+            "curve": "f3d:brep:entity#28",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "start": "f3d:brep:entity#74",
-          "end": "f3d:brep:entity#75",
-          "param_range": [
-            0.0,
-            10.0
-          ]
+          "end": "f3d:brep:entity#75"
         },
         {
           "id": "f3d:brep:entity#65",
-          "curve": "f3d:brep:entity#29",
+          "carrier": {
+            "curve": "f3d:brep:entity#29",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "start": "f3d:brep:entity#75",
-          "end": "f3d:brep:entity#76",
-          "param_range": [
-            0.0,
-            10.0
-          ]
+          "end": "f3d:brep:entity#76"
         },
         {
           "id": "f3d:brep:entity#66",
-          "curve": "f3d:brep:entity#30",
+          "carrier": {
+            "curve": "f3d:brep:entity#30",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "start": "f3d:brep:entity#76",
-          "end": "f3d:brep:entity#77",
-          "param_range": [
-            0.0,
-            10.0
-          ]
+          "end": "f3d:brep:entity#77"
         },
         {
           "id": "f3d:brep:entity#67",
-          "curve": "f3d:brep:entity#31",
+          "carrier": {
+            "curve": "f3d:brep:entity#31",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "start": "f3d:brep:entity#77",
-          "end": "f3d:brep:entity#74",
-          "param_range": [
-            0.0,
-            10.0
-          ]
+          "end": "f3d:brep:entity#74"
         },
         {
           "id": "f3d:brep:entity#68",
-          "curve": "f3d:brep:entity#32",
+          "carrier": {
+            "curve": "f3d:brep:entity#32",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "start": "f3d:brep:entity#70",
-          "end": "f3d:brep:entity#74",
-          "param_range": [
-            0.0,
-            10.0
-          ]
+          "end": "f3d:brep:entity#74"
         },
         {
           "id": "f3d:brep:entity#69",
-          "curve": "f3d:brep:entity#33",
+          "carrier": {
+            "curve": "f3d:brep:entity#33",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "start": "f3d:brep:entity#71",
-          "end": "f3d:brep:entity#75",
-          "param_range": [
-            0.0,
-            10.0
-          ]
+          "end": "f3d:brep:entity#75"
         }
       ],
       "vertices": [
@@ -1680,7 +1704,6 @@
         "tolerant_edge_tails": [],
         "tolerant_vertex_tails": [],
         "transform_hints": [],
-        "unknowns": [],
         "vertex_ownerships": [
           {
             "id": "f3d:asm:vertex-ownership#70",
@@ -1746,12 +1769,38 @@
     }
   },
   "report": {
-    "format": "f3d",
-    "container_only": false,
-    "geometry_transferred": true,
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "primary": {
+          "dialect": "f3d:manifest-3-2-0-0",
+          "declared": {
+            "top_level_manifest_version": "3-2-0-0"
+          },
+          "admission": "admitted"
+        },
+        "extra": [
+          {
+            "dialect": "acis:asm-binaryfile-8",
+            "declared": {
+              "carrier": "FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
+              "reference_width": "8",
+              "save_format_major": "231",
+              "save_format_minor": "0"
+            },
+            "admission": "admitted"
+          }
+        ]
+      }
+    },
+    "transfer": {
+      "transfer": "full",
+      "geometry_transferred": true
+    },
     "losses": [
       {
         "code": {
+          "scope": "namespaced",
           "namespace": "f3d",
           "code": "material.not-transferred",
           "kind": "material_not_transferred"
@@ -1764,625 +1813,598 @@
       "Design asset folder (from manifests): FusionAssetName[Active]",
       "1 ASM BREP stream(s); Design body-to-blob bindings select model geometry",
       "history-bearing BREP: FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh (8640 bytes uncompressed)"
-    ],
-    "dialects": {
-      "primary": {
-        "format": "f3d",
-        "dialect": "f3d:manifest-3-2-0-0",
-        "declared": {
-          "top_level_manifest_version": "3-2-0-0"
-        },
-        "admission": "admitted"
-      },
-      "extra": [
-        {
-          "format": "acis",
-          "dialect": "acis:asm-binaryfile-8",
-          "declared": {
-            "carrier": "FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
-            "reference_width": "8",
-            "save_format_major": "231",
-            "save_format_minor": "0"
-          },
-          "admission": "admitted"
-        }
-      ]
-    }
+    ]
   },
   "source_fidelity": {
     "annotations": {
-      "streams": [
-        "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
-        "f3d:native"
-      ],
       "provenance": {
         "f3d:brep:attribute#86": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 7644,
           "tag": "string_attrib-name_attrib-gen-attrib"
         },
         "f3d:brep:attribute#87": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 7784,
           "tag": "string_attrib-name_attrib-gen-attrib"
         },
         "f3d:brep:attribute#88": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 7924,
           "tag": "string_attrib-name_attrib-gen-attrib"
         },
         "f3d:brep:attribute#89": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 8066,
           "tag": "string_attrib-name_attrib-gen-attrib"
         },
         "f3d:brep:attribute#90": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 8207,
           "tag": "string_attrib-name_attrib-gen-attrib"
         },
         "f3d:brep:attribute#91": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 8347,
           "tag": "string_attrib-name_attrib-gen-attrib"
         },
         "f3d:brep:attribute#92": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 8488,
           "tag": "string_attrib-name_attrib-gen-attrib"
         },
         "f3d:brep:entity#1": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 168,
           "tag": "body"
         },
         "f3d:brep:entity#10": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 858,
           "tag": "loop"
         },
         "f3d:brep:entity#11": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 919,
           "tag": "loop"
         },
         "f3d:brep:entity#12": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 980,
           "tag": "loop"
         },
         "f3d:brep:entity#13": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 1041,
           "tag": "loop"
         },
         "f3d:brep:entity#14": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 1102,
           "tag": "loop"
         },
         "f3d:brep:entity#15": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 1163,
           "tag": "loop"
         },
         "f3d:brep:entity#16": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 1224,
           "tag": "plane-surface"
         },
         "f3d:brep:entity#17": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 1344,
           "tag": "plane-surface"
         },
         "f3d:brep:entity#18": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 1464,
           "tag": "plane-surface"
         },
         "f3d:brep:entity#19": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 1584,
           "tag": "plane-surface"
         },
         "f3d:brep:entity#2": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 229,
           "tag": "region"
         },
         "f3d:brep:entity#20": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 1704,
           "tag": "plane-surface"
         },
         "f3d:brep:entity#21": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 1824,
           "tag": "plane-surface"
         },
         "f3d:brep:entity#22": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 1944,
           "tag": "straight-curve"
         },
         "f3d:brep:entity#23": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 2039,
           "tag": "straight-curve"
         },
         "f3d:brep:entity#24": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 2134,
           "tag": "straight-curve"
         },
         "f3d:brep:entity#25": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 2229,
           "tag": "straight-curve"
         },
         "f3d:brep:entity#26": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 2324,
           "tag": "straight-curve"
         },
         "f3d:brep:entity#27": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 2419,
           "tag": "straight-curve"
         },
         "f3d:brep:entity#28": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 2514,
           "tag": "straight-curve"
         },
         "f3d:brep:entity#29": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 2609,
           "tag": "straight-curve"
         },
         "f3d:brep:entity#3": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 292,
           "tag": "shell"
         },
         "f3d:brep:entity#30": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 2704,
           "tag": "straight-curve"
         },
         "f3d:brep:entity#31": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 2799,
           "tag": "straight-curve"
         },
         "f3d:brep:entity#32": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 2894,
           "tag": "straight-curve"
         },
         "f3d:brep:entity#33": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 2989,
           "tag": "straight-curve"
         },
         "f3d:brep:entity#34": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 3084,
           "tag": "coedge"
         },
         "f3d:brep:entity#35": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 3184,
           "tag": "coedge"
         },
         "f3d:brep:entity#36": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 3284,
           "tag": "coedge"
         },
         "f3d:brep:entity#37": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 3384,
           "tag": "coedge"
         },
         "f3d:brep:entity#38": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 3484,
           "tag": "coedge"
         },
         "f3d:brep:entity#39": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 3584,
           "tag": "coedge"
         },
         "f3d:brep:entity#4": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 372,
           "tag": "face"
         },
         "f3d:brep:entity#40": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 3684,
           "tag": "coedge"
         },
         "f3d:brep:entity#41": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 3784,
           "tag": "coedge"
         },
         "f3d:brep:entity#42": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 3884,
           "tag": "coedge"
         },
         "f3d:brep:entity#43": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 3984,
           "tag": "coedge"
         },
         "f3d:brep:entity#44": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 4084,
           "tag": "coedge"
         },
         "f3d:brep:entity#45": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 4184,
           "tag": "coedge"
         },
         "f3d:brep:entity#46": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 4284,
           "tag": "coedge"
         },
         "f3d:brep:entity#47": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 4384,
           "tag": "coedge"
         },
         "f3d:brep:entity#48": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 4484,
           "tag": "coedge"
         },
         "f3d:brep:entity#49": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 4584,
           "tag": "coedge"
         },
         "f3d:brep:entity#5": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 453,
           "tag": "face"
         },
         "f3d:brep:entity#50": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 4684,
           "tag": "coedge"
         },
         "f3d:brep:entity#51": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 4784,
           "tag": "coedge"
         },
         "f3d:brep:entity#52": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 4884,
           "tag": "coedge"
         },
         "f3d:brep:entity#53": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 4984,
           "tag": "coedge"
         },
         "f3d:brep:entity#54": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 5084,
           "tag": "coedge"
         },
         "f3d:brep:entity#55": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 5184,
           "tag": "coedge"
         },
         "f3d:brep:entity#56": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 5284,
           "tag": "coedge"
         },
         "f3d:brep:entity#57": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 5384,
           "tag": "coedge"
         },
         "f3d:brep:entity#58": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 5484,
           "tag": "edge"
         },
         "f3d:brep:entity#59": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 5582,
           "tag": "edge"
         },
         "f3d:brep:entity#6": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 534,
           "tag": "face"
         },
         "f3d:brep:entity#60": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 5680,
           "tag": "edge"
         },
         "f3d:brep:entity#61": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 5778,
           "tag": "edge"
         },
         "f3d:brep:entity#62": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 5876,
           "tag": "edge"
         },
         "f3d:brep:entity#63": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 5974,
           "tag": "edge"
         },
         "f3d:brep:entity#64": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 6072,
           "tag": "edge"
         },
         "f3d:brep:entity#65": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 6170,
           "tag": "edge"
         },
         "f3d:brep:entity#66": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 6268,
           "tag": "edge"
         },
         "f3d:brep:entity#67": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 6366,
           "tag": "edge"
         },
         "f3d:brep:entity#68": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 6464,
           "tag": "edge"
         },
         "f3d:brep:entity#69": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 6562,
           "tag": "edge"
         },
         "f3d:brep:entity#7": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 615,
           "tag": "face"
         },
         "f3d:brep:entity#70": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 6660,
           "tag": "vertex"
         },
         "f3d:brep:entity#71": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 6723,
           "tag": "vertex"
         },
         "f3d:brep:entity#72": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 6786,
           "tag": "vertex"
         },
         "f3d:brep:entity#73": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 6849,
           "tag": "vertex"
         },
         "f3d:brep:entity#74": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 6912,
           "tag": "vertex"
         },
         "f3d:brep:entity#75": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 6975,
           "tag": "vertex"
         },
         "f3d:brep:entity#76": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 7038,
           "tag": "vertex"
         },
         "f3d:brep:entity#77": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 7101,
           "tag": "vertex"
         },
         "f3d:brep:entity#78": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 7164,
           "tag": "point"
         },
         "f3d:brep:entity#79": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 7224,
           "tag": "point"
         },
         "f3d:brep:entity#8": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 696,
           "tag": "face"
         },
         "f3d:brep:entity#80": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 7284,
           "tag": "point"
         },
         "f3d:brep:entity#81": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 7344,
           "tag": "point"
         },
         "f3d:brep:entity#82": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 7404,
           "tag": "point"
         },
         "f3d:brep:entity#83": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 7464,
           "tag": "point"
         },
         "f3d:brep:entity#84": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 7524,
           "tag": "point"
         },
         "f3d:brep:entity#85": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 7584,
           "tag": "point"
         },
         "f3d:brep:entity#9": {
-          "stream": 0,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
           "offset": 777,
           "tag": "face"
         }
       },
       "exactness": {
         "f3d:brep:entity#16": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "geometry.normal": "derived",
             "geometry.u_axis": "derived"
           }
         },
         "f3d:brep:entity#17": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "geometry.normal": "derived",
             "geometry.u_axis": "derived"
           }
         },
         "f3d:brep:entity#18": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "geometry.normal": "derived",
             "geometry.u_axis": "derived"
           }
         },
         "f3d:brep:entity#19": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "geometry.normal": "derived",
             "geometry.u_axis": "derived"
           }
         },
         "f3d:brep:entity#20": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "geometry.normal": "derived",
             "geometry.u_axis": "derived"
           }
         },
         "f3d:brep:entity#21": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "geometry.normal": "derived",
             "geometry.u_axis": "derived"
           }
         },
         "f3d:brep:entity#22": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "geometry.direction": "derived"
           }
         },
         "f3d:brep:entity#23": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "geometry.direction": "derived"
           }
         },
         "f3d:brep:entity#24": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "geometry.direction": "derived"
           }
         },
         "f3d:brep:entity#25": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "geometry.direction": "derived"
           }
         },
         "f3d:brep:entity#26": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "geometry.direction": "derived"
           }
         },
         "f3d:brep:entity#27": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "geometry.direction": "derived"
           }
         },
         "f3d:brep:entity#28": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "geometry.direction": "derived"
           }
         },
         "f3d:brep:entity#29": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "geometry.direction": "derived"
           }
         },
         "f3d:brep:entity#30": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "geometry.direction": "derived"
           }
         },
         "f3d:brep:entity#31": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "geometry.direction": "derived"
           }
         },
         "f3d:brep:entity#32": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "geometry.direction": "derived"
           }
         },
         "f3d:brep:entity#33": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "geometry.direction": "derived"
           }
         }
       }
     },
-    "retained_records": [
-      {
-        "id": "f3d:file:source-image#0",
+    "retained_records": {
+      "f3d:file:source-image#0": {
         "stream": "f3d",
         "offset": 0,
-        "byte_len": 10372,
-        "sha256": "00a97c4781992dda32de73d11bee4c37c6ce9b91b6aab50c244c8a7d590bd824",
-        "data": "UEsDBAoAAAAAAAAAIQCgv7HrOwIAADsCAAAMAAAATWFuaWZlc3QuZGF0BwAAADMtMi0wLTANAAAARnVzaW9uRG9jVHlwZQQAAAAuAGYAMwBkAA8AAABGAHUAcwBpAG8AbgAgAEQAbwBjAHUAbQBlAG4AdAARAAAAQQAgAEYAdQBzAGkAbwBuACAARABvAGMAdQBtAGUAbgB0ACQAAAAwADAAMAAwADAAMAAwADAALQAwADAAMAAwAC0ANAAwADAAMAAtADgAMAAwADAALQAwADAAMAAwADAAMAAwADAAMAAwADAAMQAkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADIA0gQAABQAAAAkAAAAQABAKgcAAAALAAAAQXBwbGljYXRpb24BAAAAAwAAAENBTQQAAAAIAAAAUGFyYU1lc2gIAAAACQAAAFNpbUNvbW1vbjV1AAAPAAAAU2ltRkVBQ1NPYmplY3RzAgAAABAAAABTaW1GbHVpZER5bmFtaWNzAgAAABcAAABTaW1TdHJ1Y3R1cmFsQXR0cmlidXRlcxInAAAAAAAAACQAAAAwADAAMAAwADAAMAAwADAALQAwADAAMAAwAC0ANAAwADAAMAAtADgAMAAwADAALQAwADAAMAAwADAAMAAwADAAMAAwADAAMwABAAAADwAAAEYAdQBzAGkAbwBuAEEAcwBzAGUAdABOAGEAbQBlAAAAAAABCQAAAE4AQQBfAEUAWABQAE8AUgBUAFBLAwQKAAAAAAAAACEAHN9EIQQAAAAEAAAADgAAAFByb3BlcnRpZXMuZGF0AAAAAFBLAwQKAAAAAAAAACEAfc3VPU0CAABNAgAAJAAAAEZ1c2lvbkFzc2V0TmFtZVtBY3RpdmVdL01hbmlmZXN0LmRhdA8AAABGAHUAcwBpAG8AbgBBAHMAcwBlAHQATgBhAG0AZQAkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADMAJAAAADAAMAAwADAAMAAwADAAMAAtADAAMAAwADAALQA0ADAAMAAwAC0AOAAwADAAMAAtADAAMAAwADAAMAAwADAAMAAwADAAMAA0AA8AAABGdXNpb25Bc3NldFR5cGUUAAAABAAAAAsAAABBcHBsaWNhdGlvbosAAAAIAAAAUGFyYU1lc2gNAAAABgAAAFNlcnZlciQAAAAIAAAAVm9sRmllbGQEAAAAEgAAAE5ldXRyb24zREFzc2V0VHlwZQAAAAAAAQAAABIAAABwaHlzaWNhbENoYW5nZUd1aWQkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADUAAAAAAAcAAAADAAAAAAAAABcAAABGdXNpb25EZXNpZ25TZWdtZW50VHlwZRcAAABGdXNpb25EZXNpZ25TZWdtZW50VHlwZQEAAAAUAAAARnVzaW9uQUNUU2VnbWVudFR5cGUUAAAARnVzaW9uQUNUU2VnbWVudFR5cGUCAAAAGAAAAEZ1c2lvbkJyb3dzZXJTZWdtZW50VHlwZRgAAABGdXNpb25Ccm93c2VyU2VnbWVudFR5cGVQSwMECgAAAAAAAAAhAEBKk7bAIQAAwCEAADsAAABGdXNpb25Bc3NldE5hbWVbQWN0aXZlXS9CcmVwcy5CbG9iUGFydHMvQlJFUC5nZW5lcmF0ZWQuc21iaEFTTSBCaW5hcnlGaWxlODxaAAAAAAAAAAAAAAAAAAAHAAAAAAAAAAMAAAAAAAAABxBBdXRvZGVzayBOZXV0cm9uBxVBU00gMjMxLjYuMy42NTUzNSBPU1gHGFRodSBKYW4gIDEgMDA6MDA6MDAgMTk3MAYAAAAAAABOQAaN7bWg98awPga7vdfZ33zbPQ0JYXNtaGVhZGVyBw0yMzEuNi4zLjY1NTM1EQ0EYm9keQxWAAAAAAAAAAQBAAAAAAAAAAz//////////wwCAAAAAAAAAAz//////////wz//////////xENBnJlZ2lvbgz//////////wT//////////wz//////////wz//////////wwDAAAAAAAAAAwBAAAAAAAAABENBXNoZWxsDP//////////BP//////////DP//////////DP//////////DP//////////DAUAAAAAAAAADP//////////DAIAAAAAAAAAEQ0EZmFjZQxXAAAAAAAAAAT//////////wz//////////wwHAAAAAAAAAAwKAAAAAAAAAAwDAAAAAAAAAAz//////////wwQAAAAAAAAAAsLEQ0EZmFjZQxYAAAAAAAAAAT//////////wz//////////wwJAAAAAAAAAAwLAAAAAAAAAAwDAAAAAAAAAAz//////////wwRAAAAAAAAAAsLEQ0EZmFjZQxZAAAAAAAAAAT//////////wz//////////wwIAAAAAAAAAAwMAAAAAAAAAAwDAAAAAAAAAAz//////////wwSAAAAAAAAAAsLEQ0EZmFjZQxaAAAAAAAAAAT//////////wz//////////wz//////////wwNAAAAAAAAAAwDAAAAAAAAAAz//////////wwTAAAAAAAAAAsLEQ0EZmFjZQxbAAAAAAAAAAT//////////wz//////////wwEAAAAAAAAAAwOAAAAAAAAAAwDAAAAAAAAAAz//////////wwUAAAAAAAAAAsLEQ0EZmFjZQxcAAAAAAAAAAT//////////wz//////////wwGAAAAAAAAAAwPAAAAAAAAAAwDAAAAAAAAAAz//////////wwVAAAAAAAAAAsLEQ0EbG9vcAz//////////wT//////////wz//////////wz//////////wwiAAAAAAAAAAwEAAAAAAAAABENBGxvb3AM//////////8E//////////8M//////////8M//////////8MJgAAAAAAAAAMBQAAAAAAAAARDQRsb29wDP//////////BP//////////DP//////////DP//////////DCoAAAAAAAAADAYAAAAAAAAAEQ0EbG9vcAz//////////wT//////////wz//////////wz//////////wwuAAAAAAAAAAwHAAAAAAAAABENBGxvb3AM//////////8E//////////8M//////////8M//////////8MMgAAAAAAAAAMCAAAAAAAAAARDQRsb29wDP//////////BP//////////DP//////////DP//////////DDYAAAAAAAAADAkAAAAAAAAAEQ4FcGxhbmUNB3N1cmZhY2UM//////////8E//////////8M//////////8TAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAFAAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAABQAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAALEQ4FcGxhbmUNB3N1cmZhY2UM//////////8E//////////8M//////////8TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwvxQAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAALEQ4FcGxhbmUNB3N1cmZhY2UM//////////8E//////////8M//////////8TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFAAAAAAAAAAAAAAAAAAA8L8AAAAAAAAAABQAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAALEQ4FcGxhbmUNB3N1cmZhY2UM//////////8E//////////8M//////////8TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFAAAAAAAAPC/AAAAAAAAAAAAAAAAAAAAABQAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAALEQ4FcGxhbmUNB3N1cmZhY2UM//////////8E//////////8M//////////8TAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAAFAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAABQAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAALEQ4FcGxhbmUNB3N1cmZhY2UM//////////8E//////////8M//////////8TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/FAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPxQAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAALEQ4Ic3RyYWlnaHQNBWN1cnZlDP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABQAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAARDghzdHJhaWdodA0FY3VydmUM//////////8E//////////8M//////////8TAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAAFAAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAABEOCHN0cmFpZ2h0DQVjdXJ2ZQz//////////wT//////////wz//////////xMAAAAAAADwPwAAAAAAAPA/AAAAAAAAAAAUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/EQ4Ic3RyYWlnaHQNBWN1cnZlDP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAABQAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8RDghzdHJhaWdodA0FY3VydmUM//////////8E//////////8M//////////8TAAAAAAAA8D8AAAAAAADwPwAAAAAAAAAAFAAAAAAAAPC/AAAAAAAAAAAAAAAAAAAAABEOCHN0cmFpZ2h0DQVjdXJ2ZQz//////////wT//////////wz//////////xMAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAUAAAAAAAAAAAAAAAAAADwvwAAAAAAAAAAEQ4Ic3RyYWlnaHQNBWN1cnZlDP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPxQAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAARDghzdHJhaWdodA0FY3VydmUM//////////8E//////////8M//////////8TAAAAAAAA8D8AAAAAAAAAAAAAAAAAAPA/FAAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAABEOCHN0cmFpZ2h0DQVjdXJ2ZQz//////////wT//////////wz//////////xMAAAAAAADwPwAAAAAAAPA/AAAAAAAA8D8UAAAAAAAA8L8AAAAAAAAAAAAAAAAAAAAAEQ4Ic3RyYWlnaHQNBWN1cnZlDP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAA8D8AAAAAAADwPxQAAAAAAAAAAAAAAAAAAPC/AAAAAAAAAAARDghzdHJhaWdodA0FY3VydmUM//////////8E//////////8M//////////8TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPxEOCHN0cmFpZ2h0DQVjdXJ2ZQz//////////wT//////////wz//////////xMAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAAUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/EQ0GY29lZGdlDP//////////BP//////////DP//////////DCMAAAAAAAAADCUAAAAAAAAADCgAAAAAAAAADD4AAAAAAAAACgwKAAAAAAAAAAQAAAAAAAAAAAz//////////xENBmNvZWRnZQz//////////wT//////////wz//////////wwkAAAAAAAAAAwiAAAAAAAAAAw1AAAAAAAAAAw8AAAAAAAAAAsMCgAAAAAAAAAEAAAAAAAAAAAM//////////8RDQZjb2VkZ2UM//////////8E//////////8M//////////8MJQAAAAAAAAAMIwAAAAAAAAAMNwAAAAAAAAAMQgAAAAAAAAALDAoAAAAAAAAABAAAAAAAAAAADP//////////EQ0GY29lZGdlDP//////////BP//////////DP//////////DCIAAAAAAAAADCQAAAAAAAAADC8AAAAAAAAADD0AAAAAAAAACgwKAAAAAAAAAAQAAAAAAAAAAAz//////////xENBmNvZWRnZQz//////////wT//////////wz//////////wwnAAAAAAAAAAwpAAAAAAAAAAwqAAAAAAAAAAw6AAAAAAAAAAsMCwAAAAAAAAAEAAAAAAAAAAAM//////////8RDQZjb2VkZ2UM//////////8E//////////8M//////////8MKAAAAAAAAAAMJgAAAAAAAAAMMgAAAAAAAAAMOwAAAAAAAAALDAsAAAAAAAAABAAAAAAAAAAADP//////////EQ0GY29lZGdlDP//////////BP//////////DP//////////DCkAAAAAAAAADCcAAAAAAAAADCIAAAAAAAAADD4AAAAAAAAACwwLAAAAAAAAAAQAAAAAAAAAAAz//////////xENBmNvZWRnZQz//////////wT//////////wz//////////wwmAAAAAAAAAAwoAAAAAAAAAAwuAAAAAAAAAAw/AAAAAAAAAAsMCwAAAAAAAAAEAAAAAAAAAAAM//////////8RDQZjb2VkZ2UM//////////8E//////////8M//////////8MKwAAAAAAAAAMLQAAAAAAAAAMJgAAAAAAAAAMOgAAAAAAAAAKDAwAAAAAAAAABAAAAAAAAAAADP//////////EQ0GY29lZGdlDP//////////BP//////////DP//////////DCwAAAAAAAAADCoAAAAAAAAADDEAAAAAAAAADEQAAAAAAAAACwwMAAAAAAAAAAQAAAAAAAAAAAz//////////xENBmNvZWRnZQz//////////wT//////////wz//////////wwtAAAAAAAAAAwrAAAAAAAAAAw5AAAAAAAAAAxAAAAAAAAAAAsMDAAAAAAAAAAEAAAAAAAAAAAM//////////8RDQZjb2VkZ2UM//////////8E//////////8M//////////8MKgAAAAAAAAAMLAAAAAAAAAAMMwAAAAAAAAAMRQAAAAAAAAAKDAwAAAAAAAAABAAAAAAAAAAADP//////////EQ0GY29lZGdlDP//////////BP//////////DP//////////DC8AAAAAAAAADDEAAAAAAAAADCkAAAAAAAAADD8AAAAAAAAACgwNAAAAAAAAAAQAAAAAAAAAAAz//////////xENBmNvZWRnZQz//////////wT//////////wz//////////wwwAAAAAAAAAAwuAAAAAAAAAAwlAAAAAAAAAAw9AAAAAAAAAAsMDQAAAAAAAAAEAAAAAAAAAAAM//////////8RDQZjb2VkZ2UM//////////8E//////////8M//////////8MMQAAAAAAAAAMLwAAAAAAAAAMNgAAAAAAAAAMQwAAAAAAAAALDA0AAAAAAAAABAAAAAAAAAAADP//////////EQ0GY29lZGdlDP//////////BP//////////DP//////////DC4AAAAAAAAADDAAAAAAAAAADCsAAAAAAAAADEQAAAAAAAAACgwNAAAAAAAAAAQAAAAAAAAAAAz//////////xENBmNvZWRnZQz//////////wT//////////wz//////////wwzAAAAAAAAAAw1AAAAAAAAAAwnAAAAAAAAAAw7AAAAAAAAAAoMDgAAAAAAAAAEAAAAAAAAAAAM//////////8RDQZjb2VkZ2UM//////////8E//////////8M//////////8MNAAAAAAAAAAMMgAAAAAAAAAMLQAAAAAAAAAMRQAAAAAAAAALDA4AAAAAAAAABAAAAAAAAAAADP//////////EQ0GY29lZGdlDP//////////BP//////////DP//////////DDUAAAAAAAAADDMAAAAAAAAADDgAAAAAAAAADEEAAAAAAAAACwwOAAAAAAAAAAQAAAAAAAAAAAz//////////xENBmNvZWRnZQz//////////wT//////////wz//////////wwyAAAAAAAAAAw0AAAAAAAAAAwjAAAAAAAAAAw8AAAAAAAAAAoMDgAAAAAAAAAEAAAAAAAAAAAM//////////8RDQZjb2VkZ2UM//////////8E//////////8M//////////8MNwAAAAAAAAAMOQAAAAAAAAAMMAAAAAAAAAAMQwAAAAAAAAAKDA8AAAAAAAAABAAAAAAAAAAADP//////////EQ0GY29lZGdlDP//////////BP//////////DP//////////DDgAAAAAAAAADDYAAAAAAAAADCQAAAAAAAAADEIAAAAAAAAACgwPAAAAAAAAAAQAAAAAAAAAAAz//////////xENBmNvZWRnZQz//////////wT//////////wz//////////ww5AAAAAAAAAAw3AAAAAAAAAAw0AAAAAAAAAAxBAAAAAAAAAAoMDwAAAAAAAAAEAAAAAAAAAAAM//////////8RDQZjb2VkZ2UM//////////8E//////////8M//////////8MNgAAAAAAAAAMOAAAAAAAAAAMLAAAAAAAAAAMQAAAAAAAAAAKDA8AAAAAAAAABAAAAAAAAAAADP//////////EQ0EZWRnZQz//////////wT//////////wz//////////wxGAAAAAAAAAAYAAAAAAAAAAAxHAAAAAAAAAAYAAAAAAADwPwz//////////wwWAAAAAAAAAAsHB3Vua25vd24RDQRlZGdlDP//////////BP//////////DP//////////DEcAAAAAAAAABgAAAAAAAAAADEgAAAAAAAAABgAAAAAAAPA/DP//////////DBcAAAAAAAAACwcHdW5rbm93bhENBGVkZ2UM//////////8E//////////8M//////////8MSAAAAAAAAAAGAAAAAAAAAAAMTAAAAAAAAAAGAAAAAAAA8D8M//////////8MGAAAAAAAAAALBwd1bmtub3duEQ0EZWRnZQz//////////wT//////////wz//////////wxJAAAAAAAAAAYAAAAAAAAAAAxNAAAAAAAAAAYAAAAAAADwPwz//////////wwZAAAAAAAAAAsHB3Vua25vd24RDQRlZGdlDP//////////BP//////////DP//////////DEgAAAAAAAAABgAAAAAAAAAADEkAAAAAAAAABgAAAAAAAPA/DP//////////DBoAAAAAAAAACwcHdW5rbm93bhENBGVkZ2UM//////////8E//////////8M//////////8MSQAAAAAAAAAGAAAAAAAAAAAMRgAAAAAAAAAGAAAAAAAA8D8M//////////8MGwAAAAAAAAALBwd1bmtub3duEQ0EZWRnZQz//////////wT//////////wz//////////wxKAAAAAAAAAAYAAAAAAAAAAAxLAAAAAAAAAAYAAAAAAADwPwz//////////wwcAAAAAAAAAAsHB3Vua25vd24RDQRlZGdlDP//////////BP//////////DP//////////DEsAAAAAAAAABgAAAAAAAAAADEwAAAAAAAAABgAAAAAAAPA/DP//////////DB0AAAAAAAAACwcHdW5rbm93bhENBGVkZ2UM//////////8E//////////8M//////////8MTAAAAAAAAAAGAAAAAAAAAAAMTQAAAAAAAAAGAAAAAAAA8D8M//////////8MHgAAAAAAAAALBwd1bmtub3duEQ0EZWRnZQz//////////wT//////////wz//////////wxNAAAAAAAAAAYAAAAAAAAAAAxKAAAAAAAAAAYAAAAAAADwPwz//////////wwfAAAAAAAAAAsHB3Vua25vd24RDQRlZGdlDP//////////BP//////////DP//////////DEYAAAAAAAAABgAAAAAAAAAADEoAAAAAAAAABgAAAAAAAPA/DP//////////DCAAAAAAAAAACwcHdW5rbm93bhENBGVkZ2UM//////////8E//////////8M//////////8MRwAAAAAAAAAGAAAAAAAAAAAMSwAAAAAAAAAGAAAAAAAA8D8M//////////8MIQAAAAAAAAALBwd1bmtub3duEQ0GdmVydGV4DP//////////BP//////////DP//////////DDoAAAAAAAAABAAAAAAAAAAADE4AAAAAAAAAEQ0GdmVydGV4DP//////////BP//////////DP//////////DDoAAAAAAAAABAEAAAAAAAAADE8AAAAAAAAAEQ0GdmVydGV4DP//////////BP//////////DP//////////DDsAAAAAAAAABAEAAAAAAAAADFAAAAAAAAAAEQ0GdmVydGV4DP//////////BP//////////DP//////////DD0AAAAAAAAABAAAAAAAAAAADFEAAAAAAAAAEQ0GdmVydGV4DP//////////BP//////////DP//////////DEAAAAAAAAAABAAAAAAAAAAADFIAAAAAAAAAEQ0GdmVydGV4DP//////////BP//////////DP//////////DEAAAAAAAAAABAEAAAAAAAAADFMAAAAAAAAAEQ0GdmVydGV4DP//////////BP//////////DP//////////DDwAAAAAAAAABAEAAAAAAAAADFQAAAAAAAAAEQ0GdmVydGV4DP//////////BP//////////DP//////////DD0AAAAAAAAABAEAAAAAAAAADFUAAAAAAAAAEQ0FcG9pbnQM//////////8E//////////8M//////////8TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEQ0FcG9pbnQM//////////8E//////////8M//////////8TAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAAEQ0FcG9pbnQM//////////8E//////////8M//////////8TAAAAAAAA8D8AAAAAAADwPwAAAAAAAAAAEQ0FcG9pbnQM//////////8E//////////8M//////////8TAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAEQ0FcG9pbnQM//////////8E//////////8M//////////8TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/EQ0FcG9pbnQM//////////8E//////////8M//////////8TAAAAAAAA8D8AAAAAAAAAAAAAAAAAAPA/EQ0FcG9pbnQM//////////8E//////////8M//////////8TAAAAAAAA8D8AAAAAAADwPwAAAAAAAPA/EQ0FcG9pbnQM//////////8E//////////8M//////////8TAAAAAAAAAAAAAAAAAADwPwAAAAAAAPA/EQ4Nc3RyaW5nX2F0dHJpYg4LbmFtZV9hdHRyaWIOA2dlbg0GYXR0cmliDP//////////BP//////////DP//////////DP//////////DAEAAAAAAAAABAEAAAAAAAAABAEAAAAAAAAABAEAAAAAAAAABAEAAAAAAAAABwRuYW1lBwl1bml0IGN1YmURDg1zdHJpbmdfYXR0cmliDgtuYW1lX2F0dHJpYg4DZ2VuDQZhdHRyaWIM//////////8E//////////8M//////////8M//////////8MBAAAAAAAAAAEAQAAAAAAAAAEAQAAAAAAAAAEAQAAAAAAAAAEAQAAAAAAAAAHBG5hbWUHCWJhY2sgZmFjZREODXN0cmluZ19hdHRyaWIOC25hbWVfYXR0cmliDgNnZW4NBmF0dHJpYgz//////////wT//////////wz//////////wz//////////wwFAAAAAAAAAAQBAAAAAAAAAAQBAAAAAAAAAAQBAAAAAAAAAAQBAAAAAAAAAAcEbmFtZQcLYm90dG9tIGZhY2URDg1zdHJpbmdfYXR0cmliDgtuYW1lX2F0dHJpYg4DZ2VuDQZhdHRyaWIM//////////8E//////////8M//////////8M//////////8MBgAAAAAAAAAEAQAAAAAAAAAEAQAAAAAAAAAEAQAAAAAAAAAEAQAAAAAAAAAHBG5hbWUHCmZyb250IGZhY2URDg1zdHJpbmdfYXR0cmliDgtuYW1lX2F0dHJpYg4DZ2VuDQZhdHRyaWIM//////////8E//////////8M//////////8M//////////8MBwAAAAAAAAAEAQAAAAAAAAAEAQAAAAAAAAAEAQAAAAAAAAAEAQAAAAAAAAAHBG5hbWUHCWxlZnQgZmFjZREODXN0cmluZ19hdHRyaWIOC25hbWVfYXR0cmliDgNnZW4NBmF0dHJpYgz//////////wT//////////wz//////////wz//////////wwIAAAAAAAAAAQBAAAAAAAAAAQBAAAAAAAAAAQBAAAAAAAAAAQBAAAAAAAAAAcEbmFtZQcKcmlnaHQgZmFjZREODXN0cmluZ19hdHRyaWIOC25hbWVfYXR0cmliDgNnZW4NBmF0dHJpYgz//////////wT//////////wz//////////wz//////////wwJAAAAAAAAAAQBAAAAAAAAAAQBAAAAAAAAAAQBAAAAAAAAAAQBAAAAAAAAAAcEbmFtZQcIdG9wIGZhY2URDQtkZWx0YV9zdGF0ZVBLAQIKAwoAAAAAAAAAIQCgv7HrOwIAADsCAAAMAAAAAAAAAAAAAACkgQAAAABNYW5pZmVzdC5kYXRQSwECCgMKAAAAAAAAACEAHN9EIQQAAAAEAAAADgAAAAAAAAAAAAAApIFlAgAAUHJvcGVydGllcy5kYXRQSwECCgMKAAAAAAAAACEAfc3VPU0CAABNAgAAJAAAAAAAAAAAAAAApIGVAgAARnVzaW9uQXNzZXROYW1lW0FjdGl2ZV0vTWFuaWZlc3QuZGF0UEsBAgoDCgAAAAAAAAAhAEBKk7bAIQAAwCEAADsAAAAAAAAAAAAAAKSBJAUAAEZ1c2lvbkFzc2V0TmFtZVtBY3RpdmVdL0JyZXBzLkJsb2JQYXJ0cy9CUkVQLmdlbmVyYXRlZC5zbWJoUEsFBgAAAAAEAAQAMQEAAD0nAAAAAA=="
+        "bytes": {
+          "retention": "inline",
+          "data": "UEsDBAoAAAAAAAAAIQCgv7HrOwIAADsCAAAMAAAATWFuaWZlc3QuZGF0BwAAADMtMi0wLTANAAAARnVzaW9uRG9jVHlwZQQAAAAuAGYAMwBkAA8AAABGAHUAcwBpAG8AbgAgAEQAbwBjAHUAbQBlAG4AdAARAAAAQQAgAEYAdQBzAGkAbwBuACAARABvAGMAdQBtAGUAbgB0ACQAAAAwADAAMAAwADAAMAAwADAALQAwADAAMAAwAC0ANAAwADAAMAAtADgAMAAwADAALQAwADAAMAAwADAAMAAwADAAMAAwADAAMQAkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADIA0gQAABQAAAAkAAAAQABAKgcAAAALAAAAQXBwbGljYXRpb24BAAAAAwAAAENBTQQAAAAIAAAAUGFyYU1lc2gIAAAACQAAAFNpbUNvbW1vbjV1AAAPAAAAU2ltRkVBQ1NPYmplY3RzAgAAABAAAABTaW1GbHVpZER5bmFtaWNzAgAAABcAAABTaW1TdHJ1Y3R1cmFsQXR0cmlidXRlcxInAAAAAAAAACQAAAAwADAAMAAwADAAMAAwADAALQAwADAAMAAwAC0ANAAwADAAMAAtADgAMAAwADAALQAwADAAMAAwADAAMAAwADAAMAAwADAAMwABAAAADwAAAEYAdQBzAGkAbwBuAEEAcwBzAGUAdABOAGEAbQBlAAAAAAABCQAAAE4AQQBfAEUAWABQAE8AUgBUAFBLAwQKAAAAAAAAACEAHN9EIQQAAAAEAAAADgAAAFByb3BlcnRpZXMuZGF0AAAAAFBLAwQKAAAAAAAAACEAfc3VPU0CAABNAgAAJAAAAEZ1c2lvbkFzc2V0TmFtZVtBY3RpdmVdL01hbmlmZXN0LmRhdA8AAABGAHUAcwBpAG8AbgBBAHMAcwBlAHQATgBhAG0AZQAkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADMAJAAAADAAMAAwADAAMAAwADAAMAAtADAAMAAwADAALQA0ADAAMAAwAC0AOAAwADAAMAAtADAAMAAwADAAMAAwADAAMAAwADAAMAA0AA8AAABGdXNpb25Bc3NldFR5cGUUAAAABAAAAAsAAABBcHBsaWNhdGlvbosAAAAIAAAAUGFyYU1lc2gNAAAABgAAAFNlcnZlciQAAAAIAAAAVm9sRmllbGQEAAAAEgAAAE5ldXRyb24zREFzc2V0VHlwZQAAAAAAAQAAABIAAABwaHlzaWNhbENoYW5nZUd1aWQkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADUAAAAAAAcAAAADAAAAAAAAABcAAABGdXNpb25EZXNpZ25TZWdtZW50VHlwZRcAAABGdXNpb25EZXNpZ25TZWdtZW50VHlwZQEAAAAUAAAARnVzaW9uQUNUU2VnbWVudFR5cGUUAAAARnVzaW9uQUNUU2VnbWVudFR5cGUCAAAAGAAAAEZ1c2lvbkJyb3dzZXJTZWdtZW50VHlwZRgAAABGdXNpb25Ccm93c2VyU2VnbWVudFR5cGVQSwMECgAAAAAAAAAhAC7wsOPAIQAAwCEAADsAAABGdXNpb25Bc3NldE5hbWVbQWN0aXZlXS9CcmVwcy5CbG9iUGFydHMvQlJFUC5nZW5lcmF0ZWQuc21iaEFTTSBCaW5hcnlGaWxlODxaAAAAAAAAAAAAAAAAAAAHAAAAAAAAAAMAAAAAAAAABxBBdXRvZGVzayBOZXV0cm9uBxVBU00gMjMxLjYuMy42NTUzNSBPU1gHGFRodSBKYW4gIDEgMDA6MDA6MDAgMTk3MAYAAAAAAABOQAZIr7ya8td6Pga7vdfZ33zbPQ0JYXNtaGVhZGVyBw0yMzEuNi4zLjY1NTM1EQ0EYm9keQxWAAAAAAAAAAQBAAAAAAAAAAz//////////wwCAAAAAAAAAAz//////////wz//////////xENBnJlZ2lvbgz//////////wT//////////wz//////////wz//////////wwDAAAAAAAAAAwBAAAAAAAAABENBXNoZWxsDP//////////BP//////////DP//////////DP//////////DP//////////DAUAAAAAAAAADP//////////DAIAAAAAAAAAEQ0EZmFjZQxXAAAAAAAAAAT//////////wz//////////wwHAAAAAAAAAAwKAAAAAAAAAAwDAAAAAAAAAAz//////////wwQAAAAAAAAAAsLEQ0EZmFjZQxYAAAAAAAAAAT//////////wz//////////wwJAAAAAAAAAAwLAAAAAAAAAAwDAAAAAAAAAAz//////////wwRAAAAAAAAAAsLEQ0EZmFjZQxZAAAAAAAAAAT//////////wz//////////wwIAAAAAAAAAAwMAAAAAAAAAAwDAAAAAAAAAAz//////////wwSAAAAAAAAAAsLEQ0EZmFjZQxaAAAAAAAAAAT//////////wz//////////wz//////////wwNAAAAAAAAAAwDAAAAAAAAAAz//////////wwTAAAAAAAAAAsLEQ0EZmFjZQxbAAAAAAAAAAT//////////wz//////////wwEAAAAAAAAAAwOAAAAAAAAAAwDAAAAAAAAAAz//////////wwUAAAAAAAAAAsLEQ0EZmFjZQxcAAAAAAAAAAT//////////wz//////////wwGAAAAAAAAAAwPAAAAAAAAAAwDAAAAAAAAAAz//////////wwVAAAAAAAAAAsLEQ0EbG9vcAz//////////wT//////////wz//////////wz//////////wwiAAAAAAAAAAwEAAAAAAAAABENBGxvb3AM//////////8E//////////8M//////////8M//////////8MJgAAAAAAAAAMBQAAAAAAAAARDQRsb29wDP//////////BP//////////DP//////////DP//////////DCoAAAAAAAAADAYAAAAAAAAAEQ0EbG9vcAz//////////wT//////////wz//////////wz//////////wwuAAAAAAAAAAwHAAAAAAAAABENBGxvb3AM//////////8E//////////8M//////////8M//////////8MMgAAAAAAAAAMCAAAAAAAAAARDQRsb29wDP//////////BP//////////DP//////////DP//////////DDYAAAAAAAAADAkAAAAAAAAAEQ4FcGxhbmUNB3N1cmZhY2UM//////////8E//////////8M//////////8TAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAFAAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAABQAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAALEQ4FcGxhbmUNB3N1cmZhY2UM//////////8E//////////8M//////////8TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwvxQAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAALEQ4FcGxhbmUNB3N1cmZhY2UM//////////8E//////////8M//////////8TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFAAAAAAAAAAAAAAAAAAA8L8AAAAAAAAAABQAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAALEQ4FcGxhbmUNB3N1cmZhY2UM//////////8E//////////8M//////////8TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFAAAAAAAAPC/AAAAAAAAAAAAAAAAAAAAABQAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAALEQ4FcGxhbmUNB3N1cmZhY2UM//////////8E//////////8M//////////8TAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAAFAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAABQAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAALEQ4FcGxhbmUNB3N1cmZhY2UM//////////8E//////////8M//////////8TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/FAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPxQAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAALEQ4Ic3RyYWlnaHQNBWN1cnZlDP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABQAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAARDghzdHJhaWdodA0FY3VydmUM//////////8E//////////8M//////////8TAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAAFAAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAABEOCHN0cmFpZ2h0DQVjdXJ2ZQz//////////wT//////////wz//////////xMAAAAAAADwPwAAAAAAAPA/AAAAAAAAAAAUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/EQ4Ic3RyYWlnaHQNBWN1cnZlDP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAABQAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8RDghzdHJhaWdodA0FY3VydmUM//////////8E//////////8M//////////8TAAAAAAAA8D8AAAAAAADwPwAAAAAAAAAAFAAAAAAAAPC/AAAAAAAAAAAAAAAAAAAAABEOCHN0cmFpZ2h0DQVjdXJ2ZQz//////////wT//////////wz//////////xMAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAUAAAAAAAAAAAAAAAAAADwvwAAAAAAAAAAEQ4Ic3RyYWlnaHQNBWN1cnZlDP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPxQAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAARDghzdHJhaWdodA0FY3VydmUM//////////8E//////////8M//////////8TAAAAAAAA8D8AAAAAAAAAAAAAAAAAAPA/FAAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAABEOCHN0cmFpZ2h0DQVjdXJ2ZQz//////////wT//////////wz//////////xMAAAAAAADwPwAAAAAAAPA/AAAAAAAA8D8UAAAAAAAA8L8AAAAAAAAAAAAAAAAAAAAAEQ4Ic3RyYWlnaHQNBWN1cnZlDP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAA8D8AAAAAAADwPxQAAAAAAAAAAAAAAAAAAPC/AAAAAAAAAAARDghzdHJhaWdodA0FY3VydmUM//////////8E//////////8M//////////8TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPxEOCHN0cmFpZ2h0DQVjdXJ2ZQz//////////wT//////////wz//////////xMAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAAUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/EQ0GY29lZGdlDP//////////BP//////////DP//////////DCMAAAAAAAAADCUAAAAAAAAADCgAAAAAAAAADD4AAAAAAAAACgwKAAAAAAAAAAQAAAAAAAAAAAz//////////xENBmNvZWRnZQz//////////wT//////////wz//////////wwkAAAAAAAAAAwiAAAAAAAAAAw1AAAAAAAAAAw8AAAAAAAAAAsMCgAAAAAAAAAEAAAAAAAAAAAM//////////8RDQZjb2VkZ2UM//////////8E//////////8M//////////8MJQAAAAAAAAAMIwAAAAAAAAAMNwAAAAAAAAAMQgAAAAAAAAALDAoAAAAAAAAABAAAAAAAAAAADP//////////EQ0GY29lZGdlDP//////////BP//////////DP//////////DCIAAAAAAAAADCQAAAAAAAAADC8AAAAAAAAADD0AAAAAAAAACgwKAAAAAAAAAAQAAAAAAAAAAAz//////////xENBmNvZWRnZQz//////////wT//////////wz//////////wwnAAAAAAAAAAwpAAAAAAAAAAwqAAAAAAAAAAw6AAAAAAAAAAsMCwAAAAAAAAAEAAAAAAAAAAAM//////////8RDQZjb2VkZ2UM//////////8E//////////8M//////////8MKAAAAAAAAAAMJgAAAAAAAAAMMgAAAAAAAAAMOwAAAAAAAAALDAsAAAAAAAAABAAAAAAAAAAADP//////////EQ0GY29lZGdlDP//////////BP//////////DP//////////DCkAAAAAAAAADCcAAAAAAAAADCIAAAAAAAAADD4AAAAAAAAACwwLAAAAAAAAAAQAAAAAAAAAAAz//////////xENBmNvZWRnZQz//////////wT//////////wz//////////wwmAAAAAAAAAAwoAAAAAAAAAAwuAAAAAAAAAAw/AAAAAAAAAAsMCwAAAAAAAAAEAAAAAAAAAAAM//////////8RDQZjb2VkZ2UM//////////8E//////////8M//////////8MKwAAAAAAAAAMLQAAAAAAAAAMJgAAAAAAAAAMOgAAAAAAAAAKDAwAAAAAAAAABAAAAAAAAAAADP//////////EQ0GY29lZGdlDP//////////BP//////////DP//////////DCwAAAAAAAAADCoAAAAAAAAADDEAAAAAAAAADEQAAAAAAAAACwwMAAAAAAAAAAQAAAAAAAAAAAz//////////xENBmNvZWRnZQz//////////wT//////////wz//////////wwtAAAAAAAAAAwrAAAAAAAAAAw5AAAAAAAAAAxAAAAAAAAAAAsMDAAAAAAAAAAEAAAAAAAAAAAM//////////8RDQZjb2VkZ2UM//////////8E//////////8M//////////8MKgAAAAAAAAAMLAAAAAAAAAAMMwAAAAAAAAAMRQAAAAAAAAAKDAwAAAAAAAAABAAAAAAAAAAADP//////////EQ0GY29lZGdlDP//////////BP//////////DP//////////DC8AAAAAAAAADDEAAAAAAAAADCkAAAAAAAAADD8AAAAAAAAACgwNAAAAAAAAAAQAAAAAAAAAAAz//////////xENBmNvZWRnZQz//////////wT//////////wz//////////wwwAAAAAAAAAAwuAAAAAAAAAAwlAAAAAAAAAAw9AAAAAAAAAAsMDQAAAAAAAAAEAAAAAAAAAAAM//////////8RDQZjb2VkZ2UM//////////8E//////////8M//////////8MMQAAAAAAAAAMLwAAAAAAAAAMNgAAAAAAAAAMQwAAAAAAAAALDA0AAAAAAAAABAAAAAAAAAAADP//////////EQ0GY29lZGdlDP//////////BP//////////DP//////////DC4AAAAAAAAADDAAAAAAAAAADCsAAAAAAAAADEQAAAAAAAAACgwNAAAAAAAAAAQAAAAAAAAAAAz//////////xENBmNvZWRnZQz//////////wT//////////wz//////////wwzAAAAAAAAAAw1AAAAAAAAAAwnAAAAAAAAAAw7AAAAAAAAAAoMDgAAAAAAAAAEAAAAAAAAAAAM//////////8RDQZjb2VkZ2UM//////////8E//////////8M//////////8MNAAAAAAAAAAMMgAAAAAAAAAMLQAAAAAAAAAMRQAAAAAAAAALDA4AAAAAAAAABAAAAAAAAAAADP//////////EQ0GY29lZGdlDP//////////BP//////////DP//////////DDUAAAAAAAAADDMAAAAAAAAADDgAAAAAAAAADEEAAAAAAAAACwwOAAAAAAAAAAQAAAAAAAAAAAz//////////xENBmNvZWRnZQz//////////wT//////////wz//////////wwyAAAAAAAAAAw0AAAAAAAAAAwjAAAAAAAAAAw8AAAAAAAAAAoMDgAAAAAAAAAEAAAAAAAAAAAM//////////8RDQZjb2VkZ2UM//////////8E//////////8M//////////8MNwAAAAAAAAAMOQAAAAAAAAAMMAAAAAAAAAAMQwAAAAAAAAAKDA8AAAAAAAAABAAAAAAAAAAADP//////////EQ0GY29lZGdlDP//////////BP//////////DP//////////DDgAAAAAAAAADDYAAAAAAAAADCQAAAAAAAAADEIAAAAAAAAACgwPAAAAAAAAAAQAAAAAAAAAAAz//////////xENBmNvZWRnZQz//////////wT//////////wz//////////ww5AAAAAAAAAAw3AAAAAAAAAAw0AAAAAAAAAAxBAAAAAAAAAAoMDwAAAAAAAAAEAAAAAAAAAAAM//////////8RDQZjb2VkZ2UM//////////8E//////////8M//////////8MNgAAAAAAAAAMOAAAAAAAAAAMLAAAAAAAAAAMQAAAAAAAAAAKDA8AAAAAAAAABAAAAAAAAAAADP//////////EQ0EZWRnZQz//////////wT//////////wz//////////wxGAAAAAAAAAAYAAAAAAAAAAAxHAAAAAAAAAAYAAAAAAADwPwz//////////wwWAAAAAAAAAAsHB3Vua25vd24RDQRlZGdlDP//////////BP//////////DP//////////DEcAAAAAAAAABgAAAAAAAAAADEgAAAAAAAAABgAAAAAAAPA/DP//////////DBcAAAAAAAAACwcHdW5rbm93bhENBGVkZ2UM//////////8E//////////8M//////////8MSAAAAAAAAAAGAAAAAAAAAAAMTAAAAAAAAAAGAAAAAAAA8D8M//////////8MGAAAAAAAAAALBwd1bmtub3duEQ0EZWRnZQz//////////wT//////////wz//////////wxJAAAAAAAAAAYAAAAAAAAAAAxNAAAAAAAAAAYAAAAAAADwPwz//////////wwZAAAAAAAAAAsHB3Vua25vd24RDQRlZGdlDP//////////BP//////////DP//////////DEgAAAAAAAAABgAAAAAAAAAADEkAAAAAAAAABgAAAAAAAPA/DP//////////DBoAAAAAAAAACwcHdW5rbm93bhENBGVkZ2UM//////////8E//////////8M//////////8MSQAAAAAAAAAGAAAAAAAAAAAMRgAAAAAAAAAGAAAAAAAA8D8M//////////8MGwAAAAAAAAALBwd1bmtub3duEQ0EZWRnZQz//////////wT//////////wz//////////wxKAAAAAAAAAAYAAAAAAAAAAAxLAAAAAAAAAAYAAAAAAADwPwz//////////wwcAAAAAAAAAAsHB3Vua25vd24RDQRlZGdlDP//////////BP//////////DP//////////DEsAAAAAAAAABgAAAAAAAAAADEwAAAAAAAAABgAAAAAAAPA/DP//////////DB0AAAAAAAAACwcHdW5rbm93bhENBGVkZ2UM//////////8E//////////8M//////////8MTAAAAAAAAAAGAAAAAAAAAAAMTQAAAAAAAAAGAAAAAAAA8D8M//////////8MHgAAAAAAAAALBwd1bmtub3duEQ0EZWRnZQz//////////wT//////////wz//////////wxNAAAAAAAAAAYAAAAAAAAAAAxKAAAAAAAAAAYAAAAAAADwPwz//////////wwfAAAAAAAAAAsHB3Vua25vd24RDQRlZGdlDP//////////BP//////////DP//////////DEYAAAAAAAAABgAAAAAAAAAADEoAAAAAAAAABgAAAAAAAPA/DP//////////DCAAAAAAAAAACwcHdW5rbm93bhENBGVkZ2UM//////////8E//////////8M//////////8MRwAAAAAAAAAGAAAAAAAAAAAMSwAAAAAAAAAGAAAAAAAA8D8M//////////8MIQAAAAAAAAALBwd1bmtub3duEQ0GdmVydGV4DP//////////BP//////////DP//////////DDoAAAAAAAAABAAAAAAAAAAADE4AAAAAAAAAEQ0GdmVydGV4DP//////////BP//////////DP//////////DDoAAAAAAAAABAEAAAAAAAAADE8AAAAAAAAAEQ0GdmVydGV4DP//////////BP//////////DP//////////DDsAAAAAAAAABAEAAAAAAAAADFAAAAAAAAAAEQ0GdmVydGV4DP//////////BP//////////DP//////////DD0AAAAAAAAABAAAAAAAAAAADFEAAAAAAAAAEQ0GdmVydGV4DP//////////BP//////////DP//////////DEAAAAAAAAAABAAAAAAAAAAADFIAAAAAAAAAEQ0GdmVydGV4DP//////////BP//////////DP//////////DEAAAAAAAAAABAEAAAAAAAAADFMAAAAAAAAAEQ0GdmVydGV4DP//////////BP//////////DP//////////DDwAAAAAAAAABAEAAAAAAAAADFQAAAAAAAAAEQ0GdmVydGV4DP//////////BP//////////DP//////////DD0AAAAAAAAABAEAAAAAAAAADFUAAAAAAAAAEQ0FcG9pbnQM//////////8E//////////8M//////////8TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEQ0FcG9pbnQM//////////8E//////////8M//////////8TAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAAEQ0FcG9pbnQM//////////8E//////////8M//////////8TAAAAAAAA8D8AAAAAAADwPwAAAAAAAAAAEQ0FcG9pbnQM//////////8E//////////8M//////////8TAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAEQ0FcG9pbnQM//////////8E//////////8M//////////8TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/EQ0FcG9pbnQM//////////8E//////////8M//////////8TAAAAAAAA8D8AAAAAAAAAAAAAAAAAAPA/EQ0FcG9pbnQM//////////8E//////////8M//////////8TAAAAAAAA8D8AAAAAAADwPwAAAAAAAPA/EQ0FcG9pbnQM//////////8E//////////8M//////////8TAAAAAAAAAAAAAAAAAADwPwAAAAAAAPA/EQ4Nc3RyaW5nX2F0dHJpYg4LbmFtZV9hdHRyaWIOA2dlbg0GYXR0cmliDP//////////BP//////////DP//////////DP//////////DAEAAAAAAAAABAEAAAAAAAAABAEAAAAAAAAABAEAAAAAAAAABAEAAAAAAAAABwRuYW1lBwl1bml0IGN1YmURDg1zdHJpbmdfYXR0cmliDgtuYW1lX2F0dHJpYg4DZ2VuDQZhdHRyaWIM//////////8E//////////8M//////////8M//////////8MBAAAAAAAAAAEAQAAAAAAAAAEAQAAAAAAAAAEAQAAAAAAAAAEAQAAAAAAAAAHBG5hbWUHCWJhY2sgZmFjZREODXN0cmluZ19hdHRyaWIOC25hbWVfYXR0cmliDgNnZW4NBmF0dHJpYgz//////////wT//////////wz//////////wz//////////wwFAAAAAAAAAAQBAAAAAAAAAAQBAAAAAAAAAAQBAAAAAAAAAAQBAAAAAAAAAAcEbmFtZQcLYm90dG9tIGZhY2URDg1zdHJpbmdfYXR0cmliDgtuYW1lX2F0dHJpYg4DZ2VuDQZhdHRyaWIM//////////8E//////////8M//////////8M//////////8MBgAAAAAAAAAEAQAAAAAAAAAEAQAAAAAAAAAEAQAAAAAAAAAEAQAAAAAAAAAHBG5hbWUHCmZyb250IGZhY2URDg1zdHJpbmdfYXR0cmliDgtuYW1lX2F0dHJpYg4DZ2VuDQZhdHRyaWIM//////////8E//////////8M//////////8M//////////8MBwAAAAAAAAAEAQAAAAAAAAAEAQAAAAAAAAAEAQAAAAAAAAAEAQAAAAAAAAAHBG5hbWUHCWxlZnQgZmFjZREODXN0cmluZ19hdHRyaWIOC25hbWVfYXR0cmliDgNnZW4NBmF0dHJpYgz//////////wT//////////wz//////////wz//////////wwIAAAAAAAAAAQBAAAAAAAAAAQBAAAAAAAAAAQBAAAAAAAAAAQBAAAAAAAAAAcEbmFtZQcKcmlnaHQgZmFjZREODXN0cmluZ19hdHRyaWIOC25hbWVfYXR0cmliDgNnZW4NBmF0dHJpYgz//////////wT//////////wz//////////wz//////////wwJAAAAAAAAAAQBAAAAAAAAAAQBAAAAAAAAAAQBAAAAAAAAAAQBAAAAAAAAAAcEbmFtZQcIdG9wIGZhY2URDQtkZWx0YV9zdGF0ZVBLAQIKAwoAAAAAAAAAIQCgv7HrOwIAADsCAAAMAAAAAAAAAAAAAACkgQAAAABNYW5pZmVzdC5kYXRQSwECCgMKAAAAAAAAACEAHN9EIQQAAAAEAAAADgAAAAAAAAAAAAAApIFlAgAAUHJvcGVydGllcy5kYXRQSwECCgMKAAAAAAAAACEAfc3VPU0CAABNAgAAJAAAAAAAAAAAAAAApIGVAgAARnVzaW9uQXNzZXROYW1lW0FjdGl2ZV0vTWFuaWZlc3QuZGF0UEsBAgoDCgAAAAAAAAAhAC7wsOPAIQAAwCEAADsAAAAAAAAAAAAAAKSBJAUAAEZ1c2lvbkFzc2V0TmFtZVtBY3RpdmVdL0JyZXBzLkJsb2JQYXJ0cy9CUkVQLmdlbmVyYXRlZC5zbWJoUEsFBgAAAAAEAAQAMQEAAD0nAAAAAA=="
+        }
       }
-    ]
+    }
   }
 }

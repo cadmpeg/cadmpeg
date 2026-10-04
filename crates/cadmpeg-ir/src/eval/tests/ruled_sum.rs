@@ -1,6 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use crate::eval::model_surface_partials_by_id;
+use crate::eval::model_surface_point;
+use crate::eval::model_surface_point_by_id;
+use crate::eval::model_surface_second_partials_by_id;
+use crate::geometry::Curve;
+use crate::geometry::CurveGeometry;
+use crate::geometry::ProceduralSurface;
+use crate::geometry::ProceduralSurfaceDefinition;
+use crate::geometry::SolvedCurveGeometry;
+use crate::geometry::Surface;
+use crate::geometry::SurfaceGeometry;
+use crate::ids::CurveId;
+use crate::ids::ProceduralSurfaceId;
+use crate::ids::SurfaceId;
+use crate::math::Point3;
+use crate::math::Vector3;
+use crate::CadIr;
 
 fn direct_surface_fixture(
     definition: ProceduralSurfaceDefinition,
@@ -15,18 +31,34 @@ fn direct_surface_fixture(
     ir.model.curves = vec![
         Curve {
             id: CurveId::mint("test:model:entity#first").expect("valid identity"),
-            geometry: CurveGeometry::Line {
-                origin: Point3::new(1.0, 2.0, 3.0),
-                direction: Vector3::new(2.0, 0.0, 0.0),
-            },
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                crate::geometry::nurbs::NurbsCurve::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point3::new(1.0, 2.0, 3.0), Point3::new(3.0, 2.0, 3.0)],
+                    None,
+                    false,
+                )
+                .expect("fixture constructor admission")
+                .unwrap(),
+            )),
             source_object: None,
         },
         Curve {
             id: CurveId::mint("test:model:entity#second").expect("valid identity"),
-            geometry: CurveGeometry::Line {
-                origin: Point3::new(5.0, 10.0, 13.0),
-                direction: Vector3::new(0.0, 3.0, 0.0),
-            },
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                crate::geometry::nurbs::NurbsCurve::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point3::new(5.0, 10.0, 13.0), Point3::new(5.0, 13.0, 13.0)],
+                    None,
+                    false,
+                )
+                .expect("fixture constructor admission")
+                .unwrap(),
+            )),
             source_object: None,
         },
     ];
@@ -53,19 +85,40 @@ fn cacheless_ruled_surface_interpolates_profiles_and_partials() {
         ProceduralSurfaceDefinition::Ruled {
             first: CurveId::mint("test:model:entity#first").expect("valid identity"),
             second: CurveId::mint("test:model:entity#second").expect("valid identity"),
+            cache: None,
         },
         "ruled",
     );
-    let index = crate::index::ModelIndex::new(&ir);
-    let point =
-        model_surface_point_by_id(&index, &surface_id, 0.25, 0.5).expect("cacheless ruled point");
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let point = model_surface_point_by_id(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &index,
+        &surface_id,
+        0.25,
+        0.5,
+    )
+    .expect("cacheless ruled point")
+    .get();
     assert_eq!(point, Point3::new(3.25, 6.375, 8.0));
     assert_eq!(
-        model_surface_point(&ir, &ir.model.surfaces[0].geometry, 0.25, 0.5),
-        Some(point)
+        model_surface_point(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &ir,
+            &ir.model.surfaces[0].geometry,
+            0.25,
+            0.5
+        )
+        .map(crate::features::FinitePoint3::get),
+        Ok(point)
     );
-    let partials = model_surface_second_partials_by_id(&index, &surface_id, 0.25, 0.5)
-        .expect("cacheless ruled second partials");
+    let partials = model_surface_second_partials_by_id(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &index,
+        &surface_id,
+        0.25,
+        0.5,
+    )
+    .expect("cacheless ruled second partials");
     assert_eq!(partials.point, point);
     assert_eq!(partials.du, Vector3::new(1.0, 1.5, 0.0));
     assert_eq!(partials.dv, Vector3::new(3.5, 8.75, 10.0));
@@ -77,21 +130,127 @@ fn cacheless_ruled_surface_interpolates_profiles_and_partials() {
 #[test]
 fn cacheless_sum_surface_adds_independent_curve_parameters() {
     let (ir, surface_id) = direct_surface_fixture(
-        ProceduralSurfaceDefinition::Sum {
-            first: CurveId::mint("test:model:entity#first").expect("valid identity"),
-            second: CurveId::mint("test:model:entity#second").expect("valid identity"),
-            basepoint: Vector3::new(0.5, 1.0, 2.0),
-            revision_form: None,
-        },
+        ProceduralSurfaceDefinition::Sum(
+            crate::geometry::surface_payloads::SumSurfaceConstruction::try_new(
+                CurveId::mint("test:model:entity#first").expect("valid identity"),
+                CurveId::mint("test:model:entity#second").expect("valid identity"),
+                Vector3::new(0.5, 1.0, 2.0),
+                crate::geometry::CacheContract::from_form(None),
+            )
+            .expect("valid sum"),
+        ),
         "sum",
     );
-    let index = crate::index::ModelIndex::new(&ir);
-    let point =
-        model_surface_point_by_id(&index, &surface_id, 0.25, 0.5).expect("cacheless sum point");
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let point = model_surface_point_by_id(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &index,
+        &surface_id,
+        0.25,
+        0.5,
+    )
+    .expect("cacheless sum point")
+    .get();
     assert_eq!(point, Point3::new(6.0, 12.5, 14.0));
-    let partials = model_surface_partials_by_id(&index, &surface_id, 0.25, 0.5)
-        .expect("cacheless sum partials");
+    let partials = model_surface_partials_by_id(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &index,
+        &surface_id,
+        0.25,
+        0.5,
+    )
+    .expect("cacheless sum partials");
     assert_eq!(partials.point, point);
     assert_eq!(partials.du, Vector3::new(2.0, 0.0, 0.0));
     assert_eq!(partials.dv, Vector3::new(0.0, 3.0, 0.0));
+}
+
+#[test]
+fn a_ruled_surface_whose_point_overflows_reports_the_point_it_reached() {
+    // At v = MAX the displacement between the profiles carries every
+    // coordinate past the finite range.
+    let (ir, surface_id) = direct_surface_fixture(
+        ProceduralSurfaceDefinition::Ruled {
+            first: CurveId::mint("test:model:entity#first").expect("valid identity"),
+            second: CurveId::mint("test:model:entity#second").expect("valid identity"),
+            cache: None,
+        },
+        "ruled",
+    );
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let reached =
+        |point: Result<crate::features::FinitePoint3, crate::eval::EvaluationFailure<Point3>>| {
+            matches!(point, Err(crate::eval::EvaluationFailure::NonFinite(point))
+            if point.x.is_nan() && point.y.is_nan() && point.z.is_nan())
+        };
+    assert!(reached(model_surface_point_by_id(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &index,
+        &surface_id,
+        0.25,
+        f64::MAX
+    )));
+    assert!(reached(model_surface_point(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &ir,
+        &ir.model.surfaces[0].geometry,
+        0.25,
+        f64::MAX
+    )));
+}
+
+#[test]
+fn a_sum_surface_whose_point_overflows_reports_the_point_it_reached() {
+    let (mut ir, surface_id) = direct_surface_fixture(
+        ProceduralSurfaceDefinition::Sum(
+            crate::geometry::surface_payloads::SumSurfaceConstruction::try_new(
+                CurveId::mint("test:model:entity#first").expect("valid identity"),
+                CurveId::mint("test:model:entity#second").expect("valid identity"),
+                Vector3::new(0.5, 1.0, 2.0),
+                crate::geometry::CacheContract::from_form(None),
+            )
+            .expect("valid sum"),
+        ),
+        "sum",
+    );
+    // Both profiles lie at x = MAX, so their sum leaves the finite range in
+    // x only.
+    for (curve, poles) in ir.model.curves.iter_mut().zip([
+        [
+            Point3::new(f64::MAX, 2.0, 3.0),
+            Point3::new(f64::MAX, 4.0, 3.0),
+        ],
+        [
+            Point3::new(f64::MAX, 10.0, 13.0),
+            Point3::new(f64::MAX, 13.0, 13.0),
+        ],
+    ]) {
+        curve.geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+            crate::geometry::nurbs::NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                poles.to_vec(),
+                None,
+                false,
+            )
+            .expect("fixture constructor admission")
+            .unwrap(),
+        ));
+    }
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    assert_eq!(
+        model_surface_point_by_id(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &index,
+            &surface_id,
+            0.25,
+            0.5
+        ),
+        Err(crate::eval::EvaluationFailure::NonFinite(Point3::new(
+            f64::INFINITY,
+            13.0,
+            14.0
+        )))
+    );
 }

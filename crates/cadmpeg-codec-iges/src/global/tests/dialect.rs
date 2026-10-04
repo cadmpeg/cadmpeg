@@ -5,15 +5,16 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
+use super::code_count;
 use super::{
     point_file_with_field, point_file_with_version_flag, report_code_count, resolve_global_fields,
     strict_options, valid_global_fields,
 };
 use crate::loss::IgesLossCode;
-use crate::test_support::point_file_with_global;
+use crate::test_support::test_curves_and_surfaces::point_file_with_global;
 use crate::IgesCodec;
 
-fn dialect_losses(report: &cadmpeg_ir::report::DecodeReport) -> usize {
+fn dialect_losses(report: &cadmpeg_ir::report::decode::DecodeReport) -> usize {
     report_code_count(report, IgesLossCode::SourceDialectUnverified)
 }
 
@@ -98,7 +99,9 @@ fn fixed_ascii_verified_versions_decode_under_their_versioned_profiles() {
             "{version_name}: {:#?}",
             result.report().losses
         );
-        assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).is_ok());
+        assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok());
     }
 }
 
@@ -287,7 +290,7 @@ fn the_4_0_global_contract_rejects_the_four_digit_date_and_later_fields() {
 
     let (_, losses) = resolve_global_fields(&fields);
     assert_eq!(
-        report_code_count_from_losses(&losses, IgesLossCode::GlobalMetadataFieldUnusable),
+        code_count(&losses, IgesLossCode::GlobalMetadataFieldUnusable),
         1
     );
 
@@ -295,7 +298,7 @@ fn the_4_0_global_contract_rejects_the_four_digit_date_and_later_fields() {
     extended.extend(["0H".into(), "0H".into()]);
     let (_, losses) = resolve_global_fields(&extended);
     assert_eq!(
-        report_code_count_from_losses(&losses, IgesLossCode::GlobalNoncanonicalFraming),
+        code_count(&losses, IgesLossCode::GlobalNoncanonicalFraming),
         1
     );
 }
@@ -325,7 +328,7 @@ fn the_5_0_global_contract_rejects_the_four_digit_date_and_later_fields() {
 
     let (_, losses) = resolve_global_fields(&fields);
     assert_eq!(
-        report_code_count_from_losses(&losses, IgesLossCode::GlobalMetadataFieldUnusable),
+        code_count(&losses, IgesLossCode::GlobalMetadataFieldUnusable),
         1
     );
 
@@ -333,7 +336,7 @@ fn the_5_0_global_contract_rejects_the_four_digit_date_and_later_fields() {
     extended.push("0H".into());
     let (_, losses) = resolve_global_fields(&extended);
     assert_eq!(
-        report_code_count_from_losses(&losses, IgesLossCode::GlobalNoncanonicalFraming),
+        code_count(&losses, IgesLossCode::GlobalNoncanonicalFraming),
         1
     );
 }
@@ -359,7 +362,7 @@ fn the_5_0_model_scale_default_is_not_the_4_0_implicit_zero() {
     let (parsed, losses) = resolve_global_fields(&fields);
     assert!(parsed.length_context().is_none());
     assert_eq!(
-        report_code_count_from_losses(&losses, IgesLossCode::GlobalLengthUnitUnresolved),
+        code_count(&losses, IgesLossCode::GlobalLengthUnitUnresolved),
         1
     );
 }
@@ -376,8 +379,8 @@ fn the_5_0_global_defaults_resolve_receiver_units_and_coordinate_metadata() {
 
     let (parsed, losses) = resolve_global_fields(&fields);
 
-    assert_eq!(parsed.receiver_product().as_deref(), Some("product"));
-    assert_eq!(parsed.units_name().as_deref(), Some("MM"));
+    assert_eq!(parsed.receiver_product(), Some("product"));
+    assert_eq!(parsed.units_name(), Some("MM"));
     assert!(losses.is_empty(), "{losses:#?}");
 }
 
@@ -403,11 +406,7 @@ fn the_5_0_required_global_fields_report_absence_without_later_defaults() {
 
         let (_, losses) = resolve_global_fields(&fields);
 
-        assert_eq!(
-            report_code_count_from_losses(&losses, code),
-            1,
-            "field {index}: {losses:#?}"
-        );
+        assert_eq!(code_count(&losses, code), 1, "field {index}: {losses:#?}");
     }
 
     let mut fields = valid_global_fields();
@@ -417,7 +416,7 @@ fn the_5_0_required_global_fields_report_absence_without_later_defaults() {
     fields.truncate(25);
     let (_, losses) = resolve_global_fields(&fields);
     assert_eq!(
-        report_code_count_from_losses(&losses, IgesLossCode::GlobalLengthUnitUnresolved),
+        code_count(&losses, IgesLossCode::GlobalLengthUnitUnresolved),
         1
     );
 }
@@ -494,7 +493,7 @@ fn the_4_0_global_defaults_do_not_inherit_5_0_metadata_defaults() {
     assert_eq!(parsed.receiver_product(), None);
     assert_eq!(parsed.units_name(), None);
     assert_eq!(
-        report_code_count_from_losses(&losses, IgesLossCode::GlobalMetadataFieldUnusable),
+        code_count(&losses, IgesLossCode::GlobalMetadataFieldUnusable),
         3,
         "{losses:#?}"
     );
@@ -537,7 +536,7 @@ fn the_5_0_present_gradations_still_require_field_17() {
 
     let (_, losses) = resolve_global_fields(&fields);
     assert_eq!(
-        report_code_count_from_losses(&losses, IgesLossCode::LineWeightScaleUnavailable),
+        code_count(&losses, IgesLossCode::LineWeightScaleUnavailable),
         1
     );
 }
@@ -557,26 +556,16 @@ fn the_4_0_missing_numeric_context_uses_reported_recovery_fallbacks() {
 
     assert_eq!(parsed.real_precision().single_significance, 17);
     assert_eq!(parsed.real_precision().double_significance, 17);
-    assert_eq!(parsed.minimum_resolution, 0.0);
+    assert_eq!(parsed.minimum_resolution.get(), 0.0);
     assert!(parsed.line_weight_scale.is_none());
     assert_eq!(
-        report_code_count_from_losses(&losses, IgesLossCode::LineWeightScaleUnavailable),
+        code_count(&losses, IgesLossCode::LineWeightScaleUnavailable),
         1
     );
     assert_eq!(
-        report_code_count_from_losses(&losses, IgesLossCode::GlobalSemanticContextSubstituted),
+        code_count(&losses, IgesLossCode::GlobalSemanticContextSubstituted),
         3
     );
-}
-
-fn report_code_count_from_losses(
-    losses: &[cadmpeg_ir::report::LossNote],
-    code: IgesLossCode,
-) -> usize {
-    losses
-        .iter()
-        .filter(|loss| loss.code == code.kind())
-        .count()
 }
 
 #[test]

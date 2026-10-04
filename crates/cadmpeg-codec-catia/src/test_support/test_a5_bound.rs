@@ -2,11 +2,13 @@
 //! a5 bound-edge and topology-run synthetic stream builders.
 
 #![allow(clippy::unwrap_used)]
-use super::{
+use crate::test_support::test_a5a8::{
     a5_native_edge_identity_stream, a5_pcurve_stream, a5_pcurve_stream_with_support_and_uv,
-    a5_pcurve_stream_with_uv, a5_surface_stream_with_poles, b2_circle_stream, b2_cone_stream,
-    b2_cylinder_stream, b2_edge_node_stream, b2_edge_parameter_stream_for, b2_sphere_stream,
-    b2_torus_stream,
+    a5_pcurve_stream_with_uv, a5_surface_stream_with_poles,
+};
+use crate::test_support::test_b2::{
+    b2_circle_stream, b2_cone_stream, b2_cylinder_stream, b2_edge_node_stream,
+    b2_edge_parameter_stream_for, b2_sphere_stream, b2_torus_stream,
 };
 
 pub(crate) fn a5_circle_bound_edge_stream() -> Vec<u8> {
@@ -35,7 +37,10 @@ pub(crate) fn a5_cone_bound_edge_stream() -> Vec<u8> {
         ];
         bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
         for value in point {
-            bytes.extend_from_slice(&(value as f32).to_le_bytes());
+            bytes.extend_from_slice(
+                &(cadmpeg_core::convert::f32_from_f64(value).expect("fixture value fits f32"))
+                    .to_le_bytes(),
+            );
         }
     }
     bytes
@@ -167,7 +172,10 @@ pub(crate) fn a5_nurbs_bound_edge_stream(offset: f64) -> Vec<u8> {
     for point in [p0, p1] {
         bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
         for value in point {
-            bytes.extend_from_slice(&(value as f32).to_le_bytes());
+            bytes.extend_from_slice(
+                &(cadmpeg_core::convert::f32_from_f64(value).expect("fixture value fits f32"))
+                    .to_le_bytes(),
+            );
         }
     }
     bytes

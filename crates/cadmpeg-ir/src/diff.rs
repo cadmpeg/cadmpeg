@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Structural comparison of IR documents.
 //!
-//! Numbers compare through [`cadmpeg_ir::compare`], so a coordinate that
+//! Numbers compare through [`crate::compare`], so a coordinate that
 //! differs only in the last place — what the same file decoded under two
 //! platforms' libm produces — is not reported as a change, while an integer
 //! count, index, or degree that moved by one always is. That module states the
@@ -14,7 +14,7 @@
 //! count, and the rest of what it read out of the container.
 //!
 //! One class of attribute is carved out. A machine-local digest, named by the
-//! [`cadmpeg_ir::compare::LOCAL_DIGEST_SUFFIX`] convention, is a bitwise
+//! [`crate::compare::LOCAL_DIGEST_SUFFIX`] convention, is a bitwise
 //! fingerprint of the very values this module compares tolerantly: two decodes
 //! that agree to fourteen significant digits hash differently, and no tolerance
 //! can reconcile them. Reporting such a difference as a difference would make
@@ -34,6 +34,7 @@ use std::ops::Deref;
 use crate::compare::{floats_agree, is_local_digest_attribute, values_agree};
 use crate::document::ArenaName;
 use cadmpeg_core::dialect::DialectLayers;
+use cadmpeg_core::text::NonBlankString;
 
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -48,7 +49,7 @@ use crate::CadIr;
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct AttributeChange {
     /// Attribute key.
-    pub key: String,
+    pub key: NonBlankString,
     /// Value in the left-hand document, absent when only the right-hand document
     /// carries the key.
     pub left: Option<String>,
@@ -176,12 +177,6 @@ impl NonEmptyFields {
     #[must_use]
     pub fn new(fields: Vec<String>) -> Option<Self> {
         (!fields.is_empty()).then_some(Self(fields))
-    }
-
-    /// Field names in discovery order.
-    #[must_use]
-    pub fn as_slice(&self) -> &[String] {
-        &self.0
     }
 }
 
@@ -333,6 +328,8 @@ impl IrDiff {
 }
 
 #[derive(Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(rename = "IrDiff"))]
 struct IrDiffWriteWire<'a> {
     unit_change: Option<(
         crate::units::CanonicalUnitsWire,
@@ -356,26 +353,13 @@ impl Serialize for IrDiff {
 }
 
 #[cfg(feature = "schema")]
-#[derive(JsonSchema)]
-#[expect(dead_code, reason = "fields define the structural-diff wire schema")]
-struct IrDiffSchemaWire {
-    unit_change: Option<(
-        crate::units::CanonicalUnitsWire,
-        crate::units::CanonicalUnitsWire,
-    )>,
-    tolerance_change: Option<(crate::units::Tolerances, crate::units::Tolerances)>,
-    source: SourceDiff,
-    per_arena: Vec<ArenaDiff>,
-}
-
-#[cfg(feature = "schema")]
 impl JsonSchema for IrDiff {
     fn schema_name() -> std::borrow::Cow<'static, str> {
         "IrDiff".into()
     }
 
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        IrDiffSchemaWire::json_schema(generator)
+        IrDiffWriteWire::json_schema(generator)
     }
 }
 
@@ -384,13 +368,18 @@ impl JsonSchema for IrDiff {
 ///
 /// A field present on one side and absent on the other always counts as
 /// differing, so an `Option` that gained or lost a value is reported even when
-/// the value would have agreed.
+/// the value would have agreed. The caller has found the two entities unequal,
+/// so when their JSON values are identical the difference is one JSON does not
+/// state, and the whole value is reported.
 fn differing_fields<T: Serialize>(left: &T, right: &T) -> Vec<String> {
     let (Ok(Value::Object(left)), Ok(Value::Object(right))) =
         (serde_json::to_value(left), serde_json::to_value(right))
     else {
         return vec!["value".to_string()];
     };
+    if left == right {
+        return vec!["value".to_string()];
+    }
     left.keys()
         .chain(right.keys())
         .collect::<std::collections::BTreeSet<_>>()
@@ -431,7 +420,8 @@ where
         .iter()
         .filter_map(|(id, before)| {
             let after = right.get(id)?;
-            // Empty differing_fields means every difference was below tolerance.
+            // Empty differing_fields means every difference JSON states was
+            // below tolerance.
             if *before == *after {
                 return None;
             }
@@ -451,10 +441,10 @@ where
 }
 
 macro_rules! define_diff_arenas {
-    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*]; )*) => {
+    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
         fn diff_arenas(left: &CadIr, right: &CadIr) -> Vec<ArenaDiff> {
             vec![$(arena(
-                ArenaKind::Model(ArenaName::$field),
+                ArenaKind::Model(ArenaName::registered(stringify!($field))),
                 &left.model.$field,
                 &right.model.$field,
                 crate::schema::EntitySchema::identity,
@@ -502,7 +492,8 @@ fn diff_native_namespaces(left: &CadIr, right: &CadIr) -> Vec<ArenaDiff> {
 /// Whether two tolerance declarations agree, each component within the
 /// comparator's tolerance.
 fn tolerances_agree(left: crate::units::Tolerances, right: crate::units::Tolerances) -> bool {
-    floats_agree(left.linear, right.linear) && floats_agree(left.angular, right.angular)
+    floats_agree(left.linear.get(), right.linear.get())
+        && floats_agree(left.angular.get(), right.angular.get())
 }
 
 /// Compare the source metadata of two documents, classifying each differing
@@ -533,7 +524,7 @@ fn diff_source(left: &CadIr, right: &CadIr) -> SourceDiff {
         ..SourceDiff::default()
     };
     for change in attribute_changes(left_attributes, right_attributes) {
-        if is_local_digest_attribute(&change.key) {
+        if is_local_digest_attribute(change.key.as_str()) {
             result.local_digests.push(change);
         } else {
             result.attributes.push(change);
@@ -545,8 +536,8 @@ fn diff_source(left: &CadIr, right: &CadIr) -> SourceDiff {
 /// Compare two string maps by key, reporting one change per differing key in
 /// key order.
 fn attribute_changes(
-    left: &BTreeMap<String, String>,
-    right: &BTreeMap<String, String>,
+    left: &BTreeMap<NonBlankString, String>,
+    right: &BTreeMap<NonBlankString, String>,
 ) -> Vec<AttributeChange> {
     left.keys()
         .chain(right.keys())
@@ -568,7 +559,7 @@ fn attribute_changes(
 /// entity ID.
 ///
 /// Fractional numbers compare within the tolerance stated by
-/// [`cadmpeg_ir::compare`]; integers, strings, enums, and structure
+/// [`crate::compare`]; integers, strings, enums, and structure
 /// compare exactly. Source attributes are strings and compare exactly; a
 /// machine-local digest among them is reported without counting as a difference.
 pub fn diff(left: &CadIr, right: &CadIr) -> IrDiff {
@@ -584,7 +575,6 @@ pub fn diff(left: &CadIr, right: &CadIr) -> IrDiff {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::collections::BTreeMap;
 
@@ -594,9 +584,17 @@ mod tests {
 
     #[test]
     fn detects_changes_in_all_document_dimensions() {
-        let left = unit_cube();
+        let left = unit_cube().expect("valid unit cube fixture");
         let mut right = left.clone();
-        right.model.points[0].position.x += 1.0;
+        let moved = right.model.points[0].position().get();
+        right.model.points[0].set_position(
+            crate::features::FinitePoint3::new(crate::math::Point3::new(
+                moved.x + 1.0,
+                moved.y,
+                moved.z,
+            ))
+            .expect("a finite position is a point"),
+        );
         right.model.loops.pop();
         right.model.coedges.pop();
 
@@ -652,7 +650,7 @@ mod tests {
         ir.model
             .points
             .iter()
-            .position(|point| point.position.x.abs() >= 1.0)
+            .position(|point| point.position().get().x.abs() >= 1.0)
             .expect("the cube fixture places points away from the origin")
     }
 
@@ -660,21 +658,25 @@ mod tests {
     /// file decoded under two platforms' libm produces.
     #[test]
     fn a_last_place_coordinate_move_is_not_a_difference() {
-        let left = unit_cube();
+        let left = unit_cube().expect("valid unit cube fixture");
         let mut right = left.clone();
         let index = scaled_point(&left);
-        let before = right.model.points[index].position.x;
+        let before = right.model.points[index].position().get().x;
         let after = f64::from_bits(before.to_bits() + 1);
         assert_ne!(
             before.to_bits(),
             after.to_bits(),
             "the coordinate must move, or this test proves nothing"
         );
-        right.model.points[index].position.x = after;
+        let moved = right.model.points[index].position().get();
+        right.model.points[index].set_position(
+            crate::features::FinitePoint3::new(crate::math::Point3::new(after, moved.y, moved.z))
+                .expect("a finite position is a point"),
+        );
 
         assert_ne!(
-            serde_json::to_value(&left.model.points).unwrap(),
-            serde_json::to_value(&right.model.points).unwrap(),
+            serde_json::to_value(&left.model.points).expect("test fixture invariant"),
+            serde_json::to_value(&right.model.points).expect("test fixture invariant"),
             "the serialized documents must differ, or exact equality would pass too"
         );
         let result = diff(&left, &right);
@@ -684,12 +686,17 @@ mod tests {
     /// A tolerance declaration moved in the last place is the same declaration.
     #[test]
     fn a_last_place_tolerance_move_is_not_a_difference() {
-        let left = unit_cube();
+        let left = unit_cube().expect("valid unit cube fixture");
         let mut right = left.clone();
-        right.tolerances.linear = f64::from_bits(left.tolerances.linear.to_bits() + 1);
+        right.tolerances.linear = crate::scalar::PositiveLength::new(f64::from_bits(
+            left.tolerances.linear.get().to_bits() + 1,
+        ))
+        .expect("positive finite tolerance");
         assert!(diff(&left, &right).is_empty());
 
-        right.tolerances.linear = left.tolerances.linear * 2.0;
+        right.tolerances.linear =
+            crate::scalar::PositiveLength::new(left.tolerances.linear.get() * 2.0)
+                .expect("positive finite tolerance");
         assert!(diff(&left, &right).tolerance_change.is_some());
     }
 
@@ -697,11 +704,18 @@ mod tests {
     /// coordinate is six orders above the tolerance.
     #[test]
     fn a_genuine_coordinate_change_is_still_reported() {
-        let left = unit_cube();
+        let left = unit_cube().expect("valid unit cube fixture");
         let mut right = left.clone();
         let index = scaled_point(&left);
-        let point = &mut right.model.points[index].position;
-        point.x = point.x.mul_add(1.0e-6, point.x);
+        let point = right.model.points[index].position().get();
+        right.model.points[index].set_position(
+            crate::features::FinitePoint3::new(crate::math::Point3::new(
+                point.x.mul_add(1.0e-6, point.x),
+                point.y,
+                point.z,
+            ))
+            .expect("a finite position is a point"),
+        );
 
         let result = diff(&left, &right);
         assert!(!result.is_empty());
@@ -715,14 +729,15 @@ mod tests {
     /// however small the change relative to it.
     #[test]
     fn an_integer_field_differing_by_one_is_always_reported() {
-        use crate::geometry::{Curve, CurveGeometry, NurbsCurve};
+        use crate::geometry::{nurbs::NurbsCurve, Curve, CurveGeometry, SolvedCurveGeometry};
         use crate::ids::CurveId;
         use crate::math::Point3;
 
         let nurbs = |degree: u32| Curve {
             id: CurveId::mint("synthetic:tolerance:curve#nurbs").expect("valid identity"),
-            geometry: CurveGeometry::Nurbs(
-                NurbsCurve::new(
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                NurbsCurve::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     degree,
                     if degree == 1 {
                         vec![0.0, 0.0, 0.5, 1.0, 1.0]
@@ -737,12 +752,13 @@ mod tests {
                     None,
                     false,
                 )
-                .unwrap(),
-            ),
+                .expect("fixture constructor admission")
+                .expect("test fixture invariant"),
+            )),
             source_object: None,
         };
 
-        let mut left = unit_cube();
+        let mut left = unit_cube().expect("valid unit cube fixture");
         let mut right = left.clone();
         left.model.curves.push(nurbs(1));
         right.model.curves.push(nurbs(2));
@@ -755,19 +771,57 @@ mod tests {
         );
     }
 
+    /// `NaN` and infinity both serialize as `null`, so the JSON projection of
+    /// these entities is identical although the entities differ.
+    #[test]
+    fn a_difference_json_cannot_state_is_reported_modified() {
+        #[derive(PartialEq, serde::Serialize)]
+        struct Entity {
+            id: &'static str,
+            value: f64,
+        }
+
+        let left = [Entity {
+            id: "test:entity#0",
+            value: f64::NAN,
+        }];
+        let right = [Entity {
+            id: "test:entity#0",
+            value: f64::INFINITY,
+        }];
+        let result = super::arena(
+            super::ArenaKind::native("test", "entities"),
+            &left,
+            &right,
+            |entity| entity.id,
+        );
+        assert_eq!(
+            result
+                .modified
+                .iter()
+                .map(|entity| entity.id.as_str())
+                .collect::<Vec<_>>(),
+            ["test:entity#0"]
+        );
+        assert_eq!(result.modified[0].fields, ["value"]);
+    }
+
     /// A cube carrying source metadata with the given attributes.
     fn with_source(attributes: &[(&str, &str)]) -> crate::CadIr {
-        let mut ir = unit_cube();
+        let mut ir = unit_cube().expect("valid unit cube fixture");
         ir.source = Some(crate::document::SourceMeta::classified(
             cadmpeg_core::dialect::DialectLayers::of(
-                cadmpeg_core::dialect::DialectMatch::admitted(
-                    cadmpeg_core::dialect::DialectId::pinned("rhino:archive-80"),
-                ),
+                cadmpeg_core::dialect::DialectMatch::admitted(cadmpeg_core::dialect_id!(
+                    "rhino:archive-80"
+                )),
             ),
-            attributes
-                .iter()
-                .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
-                .collect(),
+            cadmpeg_core::text::named_entries(
+                "the fixture document",
+                attributes
+                    .iter()
+                    .map(|(key, value)| ((*key).to_owned(), (*value).to_owned())),
+            )
+            .expect("the fixture states named attributes"),
         ));
         ir
     }
@@ -793,7 +847,7 @@ mod tests {
         assert_eq!(
             result.source.attributes,
             [super::AttributeChange {
-                key: "program_version".to_owned(),
+                key: cadmpeg_core::nonblank_literal!("program_version"),
                 left: Some("1.0".to_owned()),
                 right: Some("1.1".to_owned()),
             }]
@@ -850,7 +904,7 @@ mod tests {
         let right = with_source(&[(&key, "b"), ("footer_fingerprint", "f")]);
         let result = diff(&left, &right);
         assert!(result.is_empty(), "{result:?}");
-        assert_eq!(result.source.local_digests[0].key, key);
+        assert_eq!(result.source.local_digests[0].key.as_str(), key);
 
         // Digests over retained source bytes have no suffix; a change stays a difference.
         let right = with_source(&[(&key, "b"), ("footer_fingerprint", "g")]);
@@ -863,19 +917,24 @@ mod tests {
     /// without panicking in either order.
     #[test]
     fn absent_source_metadata_compares_without_panicking() {
-        let mut bare = unit_cube();
+        let mut bare = unit_cube().expect("valid unit cube fixture");
         bare.source = None;
         let populated = with_source(&[("object_count", "3")]);
 
         for (left, right) in [(&bare, &populated), (&populated, &bare)] {
             let result = diff(left, right);
             assert!(!result.is_empty());
-            let change = result.source.format_change.as_ref().unwrap();
+            let change = result
+                .source
+                .format_change
+                .as_ref()
+                .expect("test fixture invariant");
             assert_ne!(change.before(), change.after());
             assert_eq!(result.source.attributes.len(), 1);
         }
 
-        let rendered = serde_json::to_value(&diff(&bare, &populated).source).unwrap();
+        let rendered =
+            serde_json::to_value(&diff(&bare, &populated).source).expect("test fixture invariant");
         assert_eq!(rendered["format_change"], serde_json::json!(["", "rhino"]));
 
         assert!(diff(&bare, &bare).is_empty());
@@ -883,7 +942,7 @@ mod tests {
 
     #[test]
     fn identical_documents_have_empty_diff() {
-        let ir = unit_cube();
+        let ir = unit_cube().expect("valid unit cube fixture");
         assert!(diff(&ir, &ir).is_empty());
     }
 
@@ -895,86 +954,122 @@ mod tests {
         let mut right = left.clone();
         classify_source(
             &mut left,
-            cadmpeg_core::dialect::DialectMatch::admitted(
-                cadmpeg_core::dialect::DialectId::pinned("rhino:archive-70"),
-            ),
+            cadmpeg_core::dialect::DialectMatch::admitted(cadmpeg_core::dialect_id!(
+                "rhino:archive-70"
+            )),
         );
         classify_source(
             &mut right,
-            cadmpeg_core::dialect::DialectMatch::admitted(
-                cadmpeg_core::dialect::DialectId::pinned("rhino:archive-80"),
-            ),
+            cadmpeg_core::dialect::DialectMatch::admitted(cadmpeg_core::dialect_id!(
+                "rhino:archive-80"
+            )),
         );
 
         let result = diff(&left, &right);
         assert!(!result.is_empty());
-        let change = result.source.dialects_change.as_ref().unwrap();
-        assert_eq!(change.before(), left.source.as_ref().unwrap().dialects());
-        assert_eq!(change.after(), right.source.as_ref().unwrap().dialects());
+        let change = result
+            .source
+            .dialects_change
+            .as_ref()
+            .expect("test fixture invariant");
+        assert_eq!(
+            change.before(),
+            left.source
+                .as_ref()
+                .expect("test fixture invariant")
+                .dialects()
+        );
+        assert_eq!(
+            change.after(),
+            right
+                .source
+                .as_ref()
+                .expect("test fixture invariant")
+                .dialects()
+        );
 
         let mut declared_left = with_source(&[]);
         let mut declared_right = declared_left.clone();
         classify_source(
             &mut declared_left,
-            cadmpeg_core::dialect::DialectMatch::admitted(
-                cadmpeg_core::dialect::DialectId::pinned("rhino:archive-70"),
-            )
-            .with_declared(BTreeMap::from([("archive_version".into(), "70".into())])),
+            cadmpeg_core::dialect::DialectMatch::admitted(cadmpeg_core::dialect_id!(
+                "rhino:archive-70"
+            ))
+            .with_declared(BTreeMap::from([(
+                cadmpeg_core::nonblank_literal!("archive_version"),
+                "70".into(),
+            )])),
         );
         classify_source(
             &mut declared_right,
-            cadmpeg_core::dialect::DialectMatch::admitted(
-                cadmpeg_core::dialect::DialectId::pinned("rhino:archive-70"),
-            )
-            .with_declared(BTreeMap::from([("archive_version".into(), "80".into())])),
+            cadmpeg_core::dialect::DialectMatch::admitted(cadmpeg_core::dialect_id!(
+                "rhino:archive-70"
+            ))
+            .with_declared(BTreeMap::from([(
+                cadmpeg_core::nonblank_literal!("archive_version"),
+                "80".into(),
+            )])),
         );
 
         let declared = diff(&declared_left, &declared_right);
         assert!(!declared.is_empty());
-        let declared_change = declared.source.dialects_change.as_ref().unwrap();
+        let declared_change = declared
+            .source
+            .dialects_change
+            .as_ref()
+            .expect("test fixture invariant");
         assert_eq!(
             declared_change.before(),
-            declared_left.source.as_ref().unwrap().dialects()
+            declared_left
+                .source
+                .as_ref()
+                .expect("test fixture invariant")
+                .dialects()
         );
         assert_eq!(
             declared_change.after(),
-            declared_right.source.as_ref().unwrap().dialects()
+            declared_right
+                .source
+                .as_ref()
+                .expect("test fixture invariant")
+                .dialects()
         );
         assert!(declared.source.attributes.is_empty());
     }
 
     #[test]
     fn admission_and_instance_divergence_are_differences() {
-        use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
+        use cadmpeg_core::dialect::{DialectLayers, DialectMatch};
 
         let mut left = with_source(&[]);
         let mut right = left.clone();
         classify_source(
             &mut left,
-            DialectMatch::admitted(DialectId::pinned("rhino:archive-80")),
+            DialectMatch::admitted(cadmpeg_core::dialect_id!("rhino:archive-80")),
         );
         classify_source(
             &mut right,
-            DialectMatch::refused(DialectId::pinned("rhino:archive-80")),
+            DialectMatch::refused(cadmpeg_core::dialect_id!("rhino:archive-80")),
         );
         assert!(!diff(&left, &right).is_empty());
 
         classify_source(
             &mut right,
-            DialectMatch::admitted(DialectId::pinned("rhino:archive-80"))
+            DialectMatch::admitted(cadmpeg_core::dialect_id!("rhino:archive-80"))
                 .with_instance("embedded/model.3dm"),
         );
         assert!(!diff(&left, &right).is_empty());
 
-        let source = right.source.take().unwrap();
+        let source = right.source.take().expect("test fixture invariant");
         right.source = Some(crate::document::SourceMeta::classified(
-            DialectLayers::of(DialectMatch::admitted(DialectId::pinned(
+            DialectLayers::of(DialectMatch::admitted(cadmpeg_core::dialect_id!(
                 "rhino:archive-80",
             )))
             .with(
-                DialectMatch::residual(DialectId::pinned("acis:text-acis"))
+                DialectMatch::residual(cadmpeg_core::dialect_id!("acis:text-acis"))
                     .with_instance("body.sat"),
-            ),
+            )
+            .expect("the test dialect layers have distinct keys"),
             source.attributes,
         ));
         let result = diff(&left, &right);
@@ -984,9 +1079,9 @@ mod tests {
                 .source
                 .dialects_change
                 .as_ref()
-                .unwrap()
+                .expect("test fixture invariant")
                 .after()
-                .unwrap()
+                .expect("test fixture invariant")
                 .iter()
                 .count(),
             2
@@ -998,7 +1093,8 @@ mod tests {
     #[test]
     fn an_unpopulated_dialect_adds_no_key_to_the_serialized_diff() {
         let ir = with_source(&[]);
-        let rendered = serde_json::to_string(&diff(&ir, &ir).source).unwrap();
+        let rendered =
+            serde_json::to_string(&diff(&ir, &ir).source).expect("test fixture invariant");
 
         assert!(!rendered.contains("dialects_change"), "{rendered}");
     }

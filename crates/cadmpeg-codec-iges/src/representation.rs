@@ -17,15 +17,20 @@ pub(crate) enum Representation {
 }
 
 impl Representation {
+    /// The physical container kind.
+    pub(crate) const fn container_kind(self) -> cadmpeg_ir::ContainerKind {
+        match self {
+            Self::FixedAscii => cadmpeg_ir::ContainerKind::FixedAscii,
+            Self::CompressedAscii => cadmpeg_ir::ContainerKind::CompressedAscii,
+            Self::Binary => cadmpeg_ir::ContainerKind::Binary,
+        }
+    }
+
     /// The discriminant value `crates/cadmpeg-registry/docs/dialects.toml` states for this
     /// representation, and the value the `representation` source attribute and
     /// the non-Fixed-ASCII container kind carry.
     pub(crate) const fn as_str(self) -> &'static str {
-        match self {
-            Self::FixedAscii => "fixed-ascii",
-            Self::CompressedAscii => "compressed-ascii",
-            Self::Binary => "binary",
-        }
+        self.container_kind().as_str()
     }
 }
 
@@ -56,7 +61,7 @@ fn binary(prefix: &[u8]) -> bool {
         && flag[binary_flag::SEQUENCE] == b'1'
 }
 
-pub(crate) fn classify_prefix(prefix: &[u8]) -> Option<Representation> {
+fn classify_prefix(prefix: &[u8]) -> Option<Representation> {
     if compressed_ascii(prefix) {
         Some(Representation::CompressedAscii)
     } else if binary(prefix) {

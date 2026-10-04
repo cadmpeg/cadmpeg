@@ -7,20 +7,19 @@ use std::fmt;
 use cadmpeg_core::dialect::DialectId;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
-use serde::ser::SerializeStruct;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 
-use super::{LossNote, Severity};
-use crate::codec::write::WritePath as BackendWritePath;
 use crate::document::CensusKey;
+use crate::report::loss::LossNote;
 
 /// Entity census and fidelity details from a successful export.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct ExportReport {
     identity: ExportIdentity,
     /// Entity counts and the semantic basis on which they were measured.
     pub census: EntityCensus,
-    fidelity: FidelityResolution,
     write_path: WritePath,
     /// Omitted, normalized, or reduced content.
     pub losses: Vec<LossNote>,
@@ -28,120 +27,36 @@ pub struct ExportReport {
     pub notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+/// What an export report describes: the canonical CADIR document, or one
+/// native dialect.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "payload", rename_all = "snake_case", deny_unknown_fields)]
 enum ExportIdentity {
     /// The dialect-free canonical CADIR document.
-    Cadir,
+    Cadir {},
     /// A current native export, identified by its resolved target.
-    Native(DialectId),
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct ExportReportWire {
-    format: String,
-    census: EntityCensus,
-    fidelity: FidelityResolution,
-    write_path: WritePath,
-    losses: Vec<LossNote>,
-    notes: Vec<String>,
-    #[serde(default)]
-    target: Option<DialectId>,
-}
-
-impl Serialize for ExportReport {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut state = serializer.serialize_struct("ExportReport", 7)?;
-        state.serialize_field("format", self.format())?;
-        state.serialize_field("census", &self.census)?;
-        state.serialize_field("fidelity", &self.fidelity)?;
-        state.serialize_field("write_path", &self.write_path)?;
-        state.serialize_field("losses", &self.losses)?;
-        state.serialize_field("notes", &self.notes)?;
-        state.serialize_field("target", &self.target())?;
-        state.end()
-    }
-}
-
-impl<'de> Deserialize<'de> for ExportReport {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let wire = ExportReportWire::deserialize(deserializer)?;
-        let identity = match wire.target {
-            Some(target) if wire.format == "cadir" => {
-                return Err(serde::de::Error::custom(format_args!(
-                    "CADIR export report cannot name native dialect {:?}",
-                    target.as_str()
-                )))
-            }
-            Some(target) if target.namespace() == wire.format => ExportIdentity::Native(target),
-            Some(target) => {
-                return Err(serde::de::Error::custom(format_args!(
-                    "format {:?} does not match classified payload format {:?}",
-                    wire.format,
-                    target.namespace(),
-                )))
-            }
-            None if wire.format == "cadir" => ExportIdentity::Cadir,
-            None => {
-                return Err(serde::de::Error::custom(format_args!(
-                    "native export report for format {:?} requires a target",
-                    wire.format
-                )))
-            }
-        };
-        let (write_path, fidelity) = match (wire.write_path, wire.fidelity) {
-            (
-                WritePath::VerbatimReplay,
-                FidelityResolution::NotConsumed | FidelityResolution::Degraded { .. },
-            ) => {
-                return Err(serde::de::Error::custom(
-                    "verbatim_replay cannot pair with not_consumed or degraded fidelity",
-                ))
-            }
-            (WritePath::Synthesized, FidelityResolution::Replayed) => {
-                return Err(serde::de::Error::custom(
-                    "synthesized cannot pair with replayed fidelity",
-                ))
-            }
-            (write_path, fidelity) => (write_path, fidelity),
-        };
-        Ok(Self {
-            identity,
-            census: wire.census,
-            fidelity,
-            write_path,
-            losses: wire.losses,
-            notes: wire.notes,
-        })
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for ExportReport {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "ExportReport".into()
-    }
-
-    fn schema_id() -> std::borrow::Cow<'static, str> {
-        concat!(module_path!(), "::ExportReport").into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        let mut schema = ExportReportWire::json_schema(generator);
-        crate::schema::require_object_fields(&mut schema, ["target"]);
-        schema
-    }
+    Native {
+        /// Resolved native dialect written.
+        target: DialectId,
+    },
 }
 
 #[cfg(all(test, feature = "schema"))]
 mod schema_tests {
     #[test]
-    fn current_export_report_schema_requires_target() {
-        let schema = serde_json::to_value(schemars::schema_for!(super::ExportReport))
-            .expect("export report schema serializes");
-        let required = schema["required"]
+    fn the_native_export_payload_schema_requires_its_target() {
+        let schema = serde_json::to_value(schemars::schema_for!(super::ExportIdentity))
+            .expect("export identity schema serializes");
+        let native = schema["oneOf"]
             .as_array()
-            .expect("export report schema has required fields");
+            .expect("export identity schema is a tagged union")
+            .iter()
+            .find(|arm| arm["properties"]["payload"]["const"] == "native")
+            .expect("the native arm");
+        let required = native["required"]
+            .as_array()
+            .expect("the native arm has required fields");
         assert!(required.iter().any(|field| field == "target"), "{schema:#}");
     }
 }
@@ -157,28 +72,95 @@ mod schema_tests {
 /// encoder actually took, never derived from the output afterwards, so the
 /// distinction is a fact the caller can assert on.
 ///
+/// Each arm carries the fidelity resolutions that path admits, so a path and a
+/// resolution it can never produce have no spelling.
+///
 /// The variants are ordered by how much of the output the encoder authored.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
+#[serde(tag = "path", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum WritePath {
     /// Retained source bytes were copied to the output unchanged. No writer code
     /// ran, so the output says nothing about the writer.
-    VerbatimReplay,
+    VerbatimReplay {
+        /// How the replay resolved decode-time source fidelity.
+        fidelity: ReplayFidelity,
+    },
     /// The writer ran and consumed retained source content, rewriting part of a
     /// container it did not author in full.
-    Patched,
+    Patched {
+        /// How the patch resolved decode-time source fidelity.
+        fidelity: FidelityResolution,
+    },
     /// The writer ran over neutral IR content alone, authoring every output byte.
-    Synthesized,
+    Synthesized {
+        /// How the synthesized write resolved decode-time source fidelity.
+        fidelity: SynthesisFidelity,
+    },
 }
 
 impl fmt::Display for WritePath {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            Self::VerbatimReplay => "verbatim_replay",
-            Self::Patched => "patched",
-            Self::Synthesized => "synthesized",
+            Self::VerbatimReplay { .. } => "verbatim_replay",
+            Self::Patched { .. } => "patched",
+            Self::Synthesized { .. } => "synthesized",
         })
+    }
+}
+
+/// The fidelity resolutions a verbatim replay admits.
+///
+/// A replay copies retained source bytes, so it either consumed the fidelity it
+/// was given or was given none.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case", tag = "status")]
+#[serde(deny_unknown_fields)]
+pub enum ReplayFidelity {
+    /// The input had no decode-time fidelity state.
+    NotProvided {},
+    /// Preserved source content was consumed successfully.
+    Replayed {},
+}
+
+impl From<ReplayFidelity> for FidelityResolution {
+    fn from(fidelity: ReplayFidelity) -> Self {
+        match fidelity {
+            ReplayFidelity::NotProvided {} => Self::NotProvided {},
+            ReplayFidelity::Replayed {} => Self::Replayed {},
+        }
+    }
+}
+
+/// The fidelity resolutions a synthesized write admits.
+///
+/// Synthesis authors every output byte from neutral IR, so it never replays
+/// source content.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case", tag = "status")]
+#[serde(deny_unknown_fields)]
+pub enum SynthesisFidelity {
+    /// The input had no decode-time fidelity state.
+    NotProvided {},
+    /// The encoder does not consume source fidelity.
+    NotConsumed {},
+    /// Fidelity was available but could not be consumed.
+    Degraded {
+        /// Explanation of the degradation.
+        reason: String,
+    },
+}
+
+impl From<SynthesisFidelity> for FidelityResolution {
+    fn from(fidelity: SynthesisFidelity) -> Self {
+        match fidelity {
+            SynthesisFidelity::NotProvided {} => Self::NotProvided {},
+            SynthesisFidelity::NotConsumed {} => Self::NotConsumed {},
+            SynthesisFidelity::Degraded { reason } => Self::Degraded { reason },
+        }
     }
 }
 
@@ -186,13 +168,14 @@ impl fmt::Display for WritePath {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", tag = "status")]
+#[serde(deny_unknown_fields)]
 pub enum FidelityResolution {
     /// The input had no decode-time fidelity state.
-    NotProvided,
+    NotProvided {},
     /// Preserved source content was consumed successfully.
-    Replayed,
+    Replayed {},
     /// The encoder does not consume source fidelity.
-    NotConsumed,
+    NotConsumed {},
     /// Fidelity was available but could not be consumed.
     Degraded {
         /// Explanation of the degradation.
@@ -204,6 +187,7 @@ pub enum FidelityResolution {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum CensusBasis {
     /// Counts describe records emitted in the target format.
     TargetRecords,
@@ -214,10 +198,12 @@ pub enum CensusBasis {
 /// Explicitly based entity counts for one export.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct EntityCensus {
     /// Semantic basis of `counts`.
     pub basis: CensusBasis,
     /// Counts keyed by arena or target-record kind.
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub counts: BTreeMap<CensusKey, usize>,
 }
 
@@ -229,35 +215,19 @@ impl EntityCensus {
 }
 
 impl ExportReport {
-    /// How decode-time source fidelity was handled.
+    /// Which write path produced the exported bytes, and how that path resolved
+    /// source fidelity.
     #[must_use]
-    pub fn fidelity(&self) -> FidelityResolution {
-        self.fidelity.clone()
-    }
-
-    /// Which write path produced the exported bytes.
-    #[must_use]
-    pub fn write_path(&self) -> WritePath {
-        self.write_path
+    pub fn write_path(&self) -> &WritePath {
+        &self.write_path
     }
 
     /// Returns the native format namespace, or `"cadir"` for neutral CADIR.
     #[must_use]
     pub fn format(&self) -> &str {
         match &self.identity {
-            ExportIdentity::Cadir => "cadir",
-            ExportIdentity::Native(target) => target.namespace(),
-        }
-    }
-
-    /// The concrete native dialect written.
-    ///
-    /// `None` identifies neutral CADIR. Native reports always name a target.
-    #[must_use]
-    pub fn target(&self) -> Option<&DialectId> {
-        match &self.identity {
-            ExportIdentity::Native(target) => Some(target),
-            ExportIdentity::Cadir => None,
+            ExportIdentity::Cadir {} => "cadir",
+            ExportIdentity::Native { target } => target.namespace(),
         }
     }
 
@@ -266,16 +236,13 @@ impl ExportReport {
     #[must_use]
     pub(crate) fn cadir(
         census: EntityCensus,
-        write_path: BackendWritePath,
-        fidelity_provided: bool,
+        write_path: WritePath,
         losses: Vec<LossNote>,
         notes: Vec<String>,
     ) -> Self {
-        let (write_path, fidelity) = write_path.into_report(fidelity_provided);
         Self {
-            identity: ExportIdentity::Cadir,
+            identity: ExportIdentity::Cadir {},
             census,
-            fidelity,
             write_path,
             losses,
             notes,
@@ -288,27 +255,19 @@ impl ExportReport {
     pub(crate) fn native(
         target: DialectId,
         census: EntityCensus,
-        write_path: BackendWritePath,
-        fidelity_provided: bool,
+        write_path: WritePath,
         losses: Vec<LossNote>,
         notes: Vec<String>,
     ) -> Self {
-        let (write_path, fidelity) = write_path.into_report(fidelity_provided);
         Self {
-            identity: ExportIdentity::Native(target),
+            identity: ExportIdentity::Native { target },
             census,
-            fidelity,
             write_path,
             losses,
             notes,
         }
     }
-
-    /// Count loss notes at or above [`Severity::Error`].
-    pub fn error_count(&self) -> usize {
-        self.losses
-            .iter()
-            .filter(|loss| loss.severity >= Severity::Error)
-            .count()
-    }
 }
+
+#[cfg(test)]
+mod tests;

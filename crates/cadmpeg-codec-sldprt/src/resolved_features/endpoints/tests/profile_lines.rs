@@ -3,10 +3,33 @@
 use super::super::super::markers::{marker_local_id, sketch_input_entities};
 use super::super::super::selections::marker_local_links;
 use super::super::super::typed_relations::marker_curve_endpoint_markers;
-use super::super::super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
-use super::super::*;
+use super::super::super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER};
 use crate::layout::compact_legacy_140_relation_display_curve as legacy_140;
 use crate::records::{SketchInputEntity, SketchInputKind, SketchRelationKind};
+use crate::resolved_features::endpoints::compact_indexed_curve_endpoint_indices;
+use crate::resolved_features::endpoints::compact_indexed_curve_record_end;
+use crate::resolved_features::endpoints::coordinate_roster_endpoint_offset;
+use crate::resolved_features::endpoints::extended_compact_84_construction_line_endpoint_indices;
+use crate::resolved_features::endpoints::extended_compact_96_selected_axis_endpoint_indices;
+use crate::resolved_features::endpoints::extended_compact_endpoint_markers;
+use crate::resolved_features::endpoints::extended_profile_roster_construction_line_endpoint_indices;
+use crate::resolved_features::endpoints::extended_shifted_construction_line_endpoint_indices;
+use crate::resolved_features::endpoints::extended_state_one_84_profile_line_uses_point_roster;
+use crate::resolved_features::endpoints::legacy_104_profile_line_endpoint_indices;
+use crate::resolved_features::endpoints::legacy_compact_104_profile_line_endpoint_indices;
+use crate::resolved_features::endpoints::legacy_compact_84_construction_line_endpoint_indices;
+use crate::resolved_features::endpoints::legacy_compact_84_coordinate_roster_endpoint_indices;
+use crate::resolved_features::endpoints::legacy_coordinate_roster_selected_axis_endpoint_indices;
+use crate::resolved_features::endpoints::legacy_referenced_wide_arc_endpoint_indices;
+use crate::resolved_features::endpoints::legacy_state_one_84_profile_line_uses_point_roster;
+use crate::resolved_features::endpoints::legacy_state_one_profile_line_uses_point_roster;
+use crate::resolved_features::endpoints::legacy_wide_profile_roster_curve;
+use crate::resolved_features::endpoints::marker_is_selected_construction_line;
+use crate::resolved_features::endpoints::relation_reference_curve_record;
+use crate::resolved_features::endpoints::roster_curve_endpoint_markers;
+use crate::resolved_features::endpoints::wide_indexed_curve_endpoint_indices;
+use crate::resolved_features::endpoints::CompactIndexedCurveRecordEnd;
+use cadmpeg_core::decode::u64_from_index;
 use std::collections::HashMap;
 
 fn legacy_140_relation_payload(endpoints: [u16; 2]) -> Vec<u8> {
@@ -67,18 +90,17 @@ fn legacy_compact_84_construction_line_uses_direct_point_ids() {
     payload[80..84].copy_from_slice(&4u32.to_le_bytes());
     payload[84..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
-    let entity = |id: &str, object_index, coordinates_m, kind| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset: 0,
-        object_index,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, object_index, coordinates_m: Option<[f64; 2]>, kind| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(marker_id, marker_parent, 0, 0, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker = constructed_marker.with_test_identity(object_index, None);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let curve = entity("curve", Some(1), None, SketchInputKind::LineOrCircle);
     let impostor = entity(
@@ -97,10 +119,16 @@ fn legacy_compact_84_construction_line_uses_direct_point_ids() {
     );
     assert!(marker_is_selected_construction_line(&payload, 0));
     assert_eq!(
-        roster_curve_endpoint_markers(&payload, &curve, &markers)
-            .iter()
-            .map(|marker| marker.id.as_str())
-            .collect::<Vec<_>>(),
+        roster_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &curve,
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker.id())
+        .collect::<Vec<_>>(),
         ["first", "second"]
     );
 
@@ -141,18 +169,17 @@ fn legacy_compact_84_construction_line_uses_direct_point_ids() {
 
 #[test]
 fn legacy_compact_84_curves_use_complete_coordinate_roster() {
-    let entity = |id: &str, offset, coordinates_m, kind| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, offset, coordinates_m: Option<[f64; 2]>, kind| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let curve = entity("curve", 0, None, SketchInputKind::LineOrCircle);
     let first = entity("first", 10, Some([0.0, 0.0]), SketchInputKind::Point);
@@ -212,10 +239,16 @@ fn legacy_compact_84_curves_use_complete_coordinate_roster() {
         Some([2, 3])
     );
     assert_eq!(
-        roster_curve_endpoint_markers(&profile_payload, &curve, &markers)
-            .iter()
-            .map(|marker| marker.id.as_str())
-            .collect::<Vec<_>>(),
+        roster_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &profile_payload,
+            &curve,
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker.id())
+        .collect::<Vec<_>>(),
         ["second", "third"]
     );
 
@@ -225,10 +258,16 @@ fn legacy_compact_84_curves_use_complete_coordinate_roster() {
         Some([2, 4])
     );
     assert_eq!(
-        roster_curve_endpoint_markers(&code_one_payload, &curve, &markers)
-            .iter()
-            .map(|marker| marker.id.as_str())
-            .collect::<Vec<_>>(),
+        roster_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &code_one_payload,
+            &curve,
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker.id())
+        .collect::<Vec<_>>(),
         ["second", "coordinate-curve"]
     );
     let mut alternate_header = code_one_payload.clone();
@@ -248,10 +287,16 @@ fn legacy_compact_84_curves_use_complete_coordinate_roster() {
         0
     ));
     assert_eq!(
-        roster_curve_endpoint_markers(&construction_payload, &curve, &markers)
-            .iter()
-            .map(|marker| marker.id.as_str())
-            .collect::<Vec<_>>(),
+        roster_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &construction_payload,
+            &curve,
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker.id())
+        .collect::<Vec<_>>(),
         ["coordinate-curve", "fourth"]
     );
 
@@ -265,10 +310,16 @@ fn legacy_compact_84_curves_use_complete_coordinate_roster() {
         0
     ));
     assert_eq!(
-        roster_curve_endpoint_markers(&construction_zero_payload, &curve, &markers)
-            .iter()
-            .map(|marker| marker.id.as_str())
-            .collect::<Vec<_>>(),
+        roster_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &construction_zero_payload,
+            &curve,
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker.id())
+        .collect::<Vec<_>>(),
         ["first", "fourth"]
     );
 
@@ -278,7 +329,14 @@ fn legacy_compact_84_curves_use_complete_coordinate_roster() {
         legacy_compact_84_coordinate_roster_endpoint_indices(&rejected, 0),
         Some([1, 3])
     );
-    assert!(roster_curve_endpoint_markers(&rejected, &curve, &markers).is_empty());
+    assert!(roster_curve_endpoint_markers(
+        &cadmpeg_test_support::service_decode_context(),
+        &rejected,
+        &curve,
+        &markers
+    )
+    .unwrap()
+    .is_empty());
     rejected[58..60].copy_from_slice(&1u16.to_le_bytes());
     assert_eq!(
         legacy_compact_84_coordinate_roster_endpoint_indices(&rejected, 0),
@@ -296,18 +354,18 @@ fn legacy_compact_84_curves_use_complete_coordinate_roster() {
 fn legacy_compact_140_relation_continuation_resolves_zero_based_roster() {
     let payload = legacy_140_relation_payload([12, 13]);
 
-    let entity = |id: &str, offset, object_index, coordinates_m, kind| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset,
-        object_index,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, offset, object_index, coordinates_m: Option<[f64; 2]>, kind| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker = constructed_marker.with_test_identity(object_index, None);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let curve = entity("curve", 0, Some(7), None, SketchInputKind::LineOrCircle);
     let first = entity(
@@ -335,21 +393,34 @@ fn legacy_compact_140_relation_continuation_resolves_zero_based_roster() {
         Some(CompactIndexedCurveRecordEnd::Continuation120)
     );
     assert_eq!(
-        roster_curve_endpoint_markers(&payload, &curve, &markers)
-            .iter()
-            .map(|marker| marker.id.as_str())
-            .collect::<Vec<_>>(),
+        roster_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &curve,
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker.id())
+        .collect::<Vec<_>>(),
         ["first", "second"]
     );
     let markers_by_id = markers
         .iter()
-        .map(|marker| (marker.id.as_str(), *marker))
+        .map(|marker| (marker.id(), *marker))
         .collect::<HashMap<_, _>>();
     assert_eq!(
-        marker_curve_endpoint_markers(&payload, &curve, &markers_by_id, &markers)
-            .iter()
-            .map(|marker| marker.id.as_str())
-            .collect::<Vec<_>>(),
+        marker_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &curve,
+            &markers_by_id,
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker.id())
+        .collect::<Vec<_>>(),
         ["first", "second"]
     );
 
@@ -365,7 +436,7 @@ fn legacy_compact_140_relation_continuation_resolves_zero_based_roster() {
             &format!("point-{index}"),
             index,
             None,
-            Some([index as f64, 0.0]),
+            Some([f64::from(u32::try_from(index).unwrap()), 0.0]),
             SketchInputKind::Point,
         ));
     }
@@ -386,22 +457,26 @@ fn legacy_compact_140_relation_continuation_resolves_zero_based_roster() {
     let relation_curve = &relation_roster[0];
     let relation_markers = relation_roster.iter().collect::<Vec<_>>();
     assert!(relation_reference_curve_record(
+        &cadmpeg_test_support::service_decode_context(),
         &payload,
         relation_curve,
         &relation_markers
-    ));
+    )
+    .unwrap());
 
     let mut point_roster = relation_roster.clone();
     for marker in point_roster.iter_mut().skip(1) {
-        marker.kind = SketchInputKind::Point;
-        marker.coordinates_m = Some([0.0, 0.0]);
+        marker.reclassify(SketchInputKind::Point);
+        marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.0, 0.0]);
     }
     let point_markers = point_roster.iter().collect::<Vec<_>>();
     assert!(!relation_reference_curve_record(
+        &cadmpeg_test_support::service_decode_context(),
         &payload,
         &point_roster[0],
         &point_markers
-    ));
+    )
+    .unwrap());
 }
 
 #[test]
@@ -492,22 +567,26 @@ fn extended_compact_construction_line_distinguishes_direct_ids_from_roster_indic
         Some([8, 2])
     );
     payload[56..60].copy_from_slice(&[0x01, 0x00, 0x00, 0x00]);
-    let entity = |id: &str, offset, coordinates_m: Option<[f64; 2]>| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("sketch".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind: if coordinates_m.is_some() {
-            SketchInputKind::Point
-        } else {
-            SketchInputKind::LineOrCircle
-        },
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, offset, coordinates_m: Option<[f64; 2]>| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            0,
+            offset,
+            if coordinates_m.is_some() {
+                SketchInputKind::Point
+            } else {
+                SketchInputKind::LineOrCircle
+            },
+        );
+        constructed_marker.feature_ref = Some("sketch".into());
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let curve = entity("curve", 0, None);
     let first = entity("first", 10, Some([1.0, 2.0]));
@@ -515,10 +594,16 @@ fn extended_compact_construction_line_distinguishes_direct_ids_from_roster_indic
     let markers = [&curve, &first, &second];
     assert_eq!(coordinate_roster_endpoint_offset(&payload, 0), Some(56));
     assert_eq!(
-        roster_curve_endpoint_markers(&payload, &curve, &markers)
-            .iter()
-            .map(|endpoint| endpoint.id.as_str())
-            .collect::<Vec<_>>(),
+        roster_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &curve,
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|endpoint| endpoint.id())
+        .collect::<Vec<_>>(),
         ["second", "first"]
     );
 
@@ -567,44 +652,51 @@ fn extended_shifted_construction_line_indexes_coordinate_roster() {
         None
     );
 
-    let entity = |id: &str, offset: u64, coordinates_m: Option<[f64; 2]>| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind: if coordinates_m.is_some() {
-            SketchInputKind::Point
-        } else {
-            SketchInputKind::Relation(SketchRelationKind::Horizontal)
-        },
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, offset: u64, coordinates_m: Option<[f64; 2]>| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            0,
+            offset,
+            if coordinates_m.is_some() {
+                SketchInputKind::Point
+            } else {
+                SketchInputKind::Relation(SketchRelationKind::Horizontal)
+            },
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let points = (0..10)
         .map(|index| {
             entity(
                 &format!("marker-{index}"),
                 10 + index * 10,
-                matches!(index, 4 | 8).then_some([index as f64, 0.0]),
+                matches!(index, 4 | 8).then_some([f64::from(u32::try_from(index).unwrap()), 0.0]),
             )
         })
         .collect::<Vec<_>>();
-    let curve = SketchInputEntity {
-        id: "curve".into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset: 110,
-        object_index: None,
-        local_id: None,
-        kind: SketchInputKind::LineOrCircle,
-        state_value: Some(1.0),
-        coordinates_m: None,
-        links: None,
+    let curve = {
+        let marker_id: String = "curve".into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            0,
+            110,
+            SketchInputKind::LineOrCircle,
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m = None;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let markers = points
         .iter()
@@ -612,17 +704,24 @@ fn extended_shifted_construction_line_indexes_coordinate_roster() {
         .collect::<Vec<_>>();
     let markers_by_id = markers
         .iter()
-        .map(|marker| (marker.id.as_str(), *marker))
+        .map(|marker| (marker.id(), *marker))
         .collect::<HashMap<_, _>>();
     payload[58..60].copy_from_slice(&9u16.to_le_bytes());
     let record = payload[..84].to_vec();
     payload.resize(110 + 84, 0);
     payload[110..110 + 84].copy_from_slice(&record);
     assert_eq!(
-        marker_curve_endpoint_markers(&payload, &curve, &markers_by_id, &markers)
-            .iter()
-            .map(|marker| marker.id.as_str())
-            .collect::<Vec<_>>(),
+        marker_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &curve,
+            &markers_by_id,
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker.id())
+        .collect::<Vec<_>>(),
         ["marker-4", "marker-8"]
     );
 }
@@ -650,18 +749,17 @@ fn compact_legacy_142_profile_curve_matches_unique_coordinate_endpoints() {
     payload[138..142].copy_from_slice(&17u32.to_le_bytes());
     payload[142..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
-    let entity = |id: &str, offset, kind, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, offset, kind, coordinates_m: Option<[f64; 2]>| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let curve = entity("curve", 0, SketchInputKind::LineOrCircle, None);
     let first = entity("first", 100, SketchInputKind::Point, Some([0.0, 0.0]));
@@ -669,13 +767,20 @@ fn compact_legacy_142_profile_curve_matches_unique_coordinate_endpoints() {
     let markers = [&curve, &first, &second];
     let markers_by_id = markers
         .iter()
-        .map(|marker| (marker.id.as_str(), *marker))
+        .map(|marker| (marker.id(), *marker))
         .collect::<HashMap<_, _>>();
     assert_eq!(
-        marker_curve_endpoint_markers(&payload, &curve, &markers_by_id, &markers)
-            .iter()
-            .map(|marker| marker.id.as_str())
-            .collect::<Vec<_>>(),
+        marker_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &curve,
+            &markers_by_id,
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker.id())
+        .collect::<Vec<_>>(),
         ["first", "second"]
     );
 
@@ -683,12 +788,17 @@ fn compact_legacy_142_profile_curve_matches_unique_coordinate_endpoints() {
     let ambiguous_markers = [&curve, &first, &second, &duplicate];
     let ambiguous_by_id = ambiguous_markers
         .iter()
-        .map(|marker| (marker.id.as_str(), *marker))
+        .map(|marker| (marker.id(), *marker))
         .collect::<HashMap<_, _>>();
-    assert!(
-        marker_curve_endpoint_markers(&payload, &curve, &ambiguous_by_id, &ambiguous_markers,)
-            .is_empty()
-    );
+    assert!(marker_curve_endpoint_markers(
+        &cadmpeg_test_support::service_decode_context(),
+        &payload,
+        &curve,
+        &ambiguous_by_id,
+        &ambiguous_markers,
+    )
+    .unwrap()
+    .is_empty());
 }
 
 #[test]
@@ -707,18 +817,18 @@ fn extended_compact_profile_line_uses_complete_feature_roster_fallback() {
     payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
     payload[84..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
 
-    let entity = |id: &str, offset, kind, object_index, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 10_000,
-        offset,
-        object_index,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, offset, kind, object_index, coordinates_m: Option<[f64; 2]>| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 10_000, offset, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker = constructed_marker.with_test_identity(object_index, None);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let curve = entity("curve", 0, SketchInputKind::LineOrCircle, None, None);
     let first = entity(
@@ -745,10 +855,16 @@ fn extended_compact_profile_line_uses_complete_feature_roster_fallback() {
     let markers = [&curve, &first, &relation, &second];
 
     assert_eq!(
-        extended_compact_endpoint_markers(&payload, &curve, &markers)
-            .into_iter()
-            .map(|marker| marker.id.as_str())
-            .collect::<Vec<_>>(),
+        extended_compact_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &curve,
+            &markers
+        )
+        .unwrap()
+        .into_iter()
+        .map(crate::records::SketchInputEntity::id)
+        .collect::<Vec<_>>(),
         ["first", "second"]
     );
 }
@@ -771,18 +887,18 @@ fn extended_compact_84_profile_roster_uses_one_based_point_objects() {
     payload[80..84].copy_from_slice(&6u32.to_le_bytes());
     payload[84..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
 
-    let entity = |id: &str, offset, kind, object_index, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset,
-        object_index,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, offset, kind, object_index, coordinates_m: Option<[f64; 2]>| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker = constructed_marker.with_test_identity(object_index, None);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let curve = entity("curve", 0, SketchInputKind::LineOrCircle, Some(5), None);
     let relation = entity(
@@ -813,10 +929,16 @@ fn extended_compact_84_profile_roster_uses_one_based_point_objects() {
         Some([3, 2])
     );
     assert_eq!(
-        roster_curve_endpoint_markers(&payload, &curve, &markers)
-            .into_iter()
-            .map(|marker| marker.id.as_str())
-            .collect::<Vec<_>>(),
+        roster_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &curve,
+            &markers
+        )
+        .unwrap()
+        .into_iter()
+        .map(crate::records::SketchInputEntity::id)
+        .collect::<Vec<_>>(),
         ["second", "first"]
     );
 }
@@ -868,18 +990,17 @@ fn extended_marker84_line_uses_state_selected_point_roster_base() {
     payload[72..76].copy_from_slice(&[0x00, 0x00, 0x01, 0x00]);
     payload[80..84].copy_from_slice(&2u32.to_le_bytes());
     payload[84..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
-    let entity = |id: &str, offset, coordinates_m, kind| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("sketch".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, offset, coordinates_m: Option<[f64; 2]>, kind| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("sketch".into());
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let curve = entity("curve", 0, None, SketchInputKind::LineOrCircle);
     let points = [
@@ -894,11 +1015,17 @@ fn extended_marker84_line_uses_state_selected_point_roster_base() {
 
     assert!(super::extended_marker84_line_uses_point_roster(&payload, 0));
     assert_eq!(coordinate_roster_endpoint_offset(&payload, 0), Some(56));
-    let endpoints = roster_curve_endpoint_markers(&payload, &curve, &markers);
+    let endpoints = roster_curve_endpoint_markers(
+        &cadmpeg_test_support::service_decode_context(),
+        &payload,
+        &curve,
+        &markers,
+    )
+    .unwrap();
     assert_eq!(
         endpoints
             .iter()
-            .map(|endpoint| endpoint.id.as_str())
+            .map(|endpoint| endpoint.id())
             .collect::<Vec<_>>(),
         ["first", "third"]
     );
@@ -909,11 +1036,17 @@ fn extended_marker84_line_uses_state_selected_point_roster_base() {
     assert!(!super::extended_marker84_line_uses_point_roster(
         &payload, 0
     ));
-    let endpoints = roster_curve_endpoint_markers(&payload, &curve, &markers);
+    let endpoints = roster_curve_endpoint_markers(
+        &cadmpeg_test_support::service_decode_context(),
+        &payload,
+        &curve,
+        &markers,
+    )
+    .unwrap();
     assert_eq!(
         endpoints
             .iter()
-            .map(|endpoint| endpoint.id.as_str())
+            .map(|endpoint| endpoint.id())
             .collect::<Vec<_>>(),
         ["first", "third"]
     );
@@ -921,17 +1054,30 @@ fn extended_marker84_line_uses_state_selected_point_roster_base() {
     assert!(!super::extended_marker84_line_uses_point_roster(
         &payload, 0
     ));
-    assert!(roster_curve_endpoint_markers(&payload, &curve, &markers).is_empty());
+    assert!(roster_curve_endpoint_markers(
+        &cadmpeg_test_support::service_decode_context(),
+        &payload,
+        &curve,
+        &markers
+    )
+    .unwrap()
+    .is_empty());
     payload[80..84].copy_from_slice(&2u32.to_le_bytes());
     payload[56..58].copy_from_slice(&1u16.to_le_bytes());
     payload[58..60].copy_from_slice(&3u16.to_le_bytes());
     payload[72..76].fill(0);
     assert!(super::extended_marker84_line_uses_point_roster(&payload, 0));
-    let endpoints = roster_curve_endpoint_markers(&payload, &curve, &markers);
+    let endpoints = roster_curve_endpoint_markers(
+        &cadmpeg_test_support::service_decode_context(),
+        &payload,
+        &curve,
+        &markers,
+    )
+    .unwrap();
     assert_eq!(
         endpoints
             .iter()
-            .map(|endpoint| endpoint.id.as_str())
+            .map(|endpoint| endpoint.id())
             .collect::<Vec<_>>(),
         ["second", "fourth"]
     );
@@ -942,22 +1088,34 @@ fn extended_marker84_line_uses_state_selected_point_roster_base() {
     payload[72..76].copy_from_slice(&[0x00, 0x00, 0x02, 0x00]);
     payload[56..58].copy_from_slice(&4u16.to_le_bytes());
     payload[58..60].copy_from_slice(&1u16.to_le_bytes());
-    let endpoints = roster_curve_endpoint_markers(&payload, &curve, &markers);
+    let endpoints = roster_curve_endpoint_markers(
+        &cadmpeg_test_support::service_decode_context(),
+        &payload,
+        &curve,
+        &markers,
+    )
+    .unwrap();
     assert_eq!(
         endpoints
             .iter()
-            .map(|endpoint| endpoint.id.as_str())
+            .map(|endpoint| endpoint.id())
             .collect::<Vec<_>>(),
         ["fourth", "first"]
     );
     payload[72..76].fill(0);
     payload[56..58].copy_from_slice(&1u16.to_le_bytes());
     payload[58..60].copy_from_slice(&3u16.to_le_bytes());
-    let endpoints = roster_curve_endpoint_markers(&payload, &curve, &markers);
+    let endpoints = roster_curve_endpoint_markers(
+        &cadmpeg_test_support::service_decode_context(),
+        &payload,
+        &curve,
+        &markers,
+    )
+    .unwrap();
     assert_eq!(
         endpoints
             .iter()
-            .map(|endpoint| endpoint.id.as_str())
+            .map(|endpoint| endpoint.id())
             .collect::<Vec<_>>(),
         ["second", "fourth"]
     );
@@ -969,11 +1127,17 @@ fn extended_marker84_line_uses_state_selected_point_roster_base() {
     payload[27..29].copy_from_slice(&1u16.to_le_bytes());
     payload[56..58].fill(0);
     assert!(super::extended_marker84_line_uses_point_roster(&payload, 0));
-    let endpoints = roster_curve_endpoint_markers(&payload, &curve, &markers);
+    let endpoints = roster_curve_endpoint_markers(
+        &cadmpeg_test_support::service_decode_context(),
+        &payload,
+        &curve,
+        &markers,
+    )
+    .unwrap();
     assert_eq!(
         endpoints
             .iter()
-            .map(|endpoint| endpoint.id.as_str())
+            .map(|endpoint| endpoint.id())
             .collect::<Vec<_>>(),
         ["first", "fourth"]
     );
@@ -999,22 +1163,26 @@ fn legacy_compact_marker84_profile_line_uses_zero_based_point_roster() {
     payload[72..76].copy_from_slice(&[0x00, 0x00, 0x02, 0x00]);
     payload[80..84].copy_from_slice(&7u32.to_le_bytes());
     payload[84..].copy_from_slice(LEGACY_SKETCH_MARKER);
-    let entity = |id: &str, offset, coordinates_m: Option<[f64; 2]>| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("sketch".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind: if coordinates_m.is_some() {
-            SketchInputKind::Point
-        } else {
-            SketchInputKind::LineOrCircle
-        },
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, offset, coordinates_m: Option<[f64; 2]>| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            0,
+            offset,
+            if coordinates_m.is_some() {
+                SketchInputKind::Point
+            } else {
+                SketchInputKind::LineOrCircle
+            },
+        );
+        constructed_marker.feature_ref = Some("sketch".into());
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let curve = entity("curve", 0, None);
     let first = entity("first", 10, Some([0.0, 0.0]));
@@ -1027,10 +1195,16 @@ fn legacy_compact_marker84_profile_line_uses_zero_based_point_roster() {
     ));
     assert_eq!(coordinate_roster_endpoint_offset(&payload, 0), Some(56));
     assert_eq!(
-        roster_curve_endpoint_markers(&payload, &curve, &markers)
-            .iter()
-            .map(|endpoint| endpoint.id.as_str())
-            .collect::<Vec<_>>(),
+        roster_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &curve,
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|endpoint| endpoint.id())
+        .collect::<Vec<_>>(),
         ["first", "third"]
     );
 
@@ -1042,7 +1216,14 @@ fn legacy_compact_marker84_profile_line_uses_zero_based_point_roster() {
     assert!(!super::legacy_compact_84_profile_line_uses_point_roster(
         &payload, 0
     ));
-    assert!(roster_curve_endpoint_markers(&payload, &curve, &markers).is_empty());
+    assert!(roster_curve_endpoint_markers(
+        &cadmpeg_test_support::service_decode_context(),
+        &payload,
+        &curve,
+        &markers
+    )
+    .unwrap()
+    .is_empty());
 }
 
 #[test]
@@ -1061,22 +1242,26 @@ fn extended_compact_marker84_profile_line_uses_zero_based_geometry_roster() {
     payload[72..76].copy_from_slice(&[0x00, 0x00, 0x02, 0x00]);
     payload[80..84].copy_from_slice(&7u32.to_le_bytes());
     payload[84..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
-    let entity = |id: &str, offset, coordinates_m: Option<[f64; 2]>| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("sketch".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind: if coordinates_m.is_some() {
-            SketchInputKind::Point
-        } else {
-            SketchInputKind::LineOrCircle
-        },
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, offset, coordinates_m: Option<[f64; 2]>| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            0,
+            offset,
+            if coordinates_m.is_some() {
+                SketchInputKind::Point
+            } else {
+                SketchInputKind::LineOrCircle
+            },
+        );
+        constructed_marker.feature_ref = Some("sketch".into());
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let curve = entity("curve", 0, None);
     let first = entity("first", 10, Some([0.0, 0.0]));
@@ -1090,10 +1275,16 @@ fn extended_compact_marker84_profile_line_uses_zero_based_geometry_roster() {
     assert!(!marker_is_selected_construction_line(&payload, 0));
     assert_eq!(coordinate_roster_endpoint_offset(&payload, 0), Some(56));
     assert_eq!(
-        roster_curve_endpoint_markers(&payload, &curve, &markers)
-            .iter()
-            .map(|endpoint| endpoint.id.as_str())
-            .collect::<Vec<_>>(),
+        roster_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &curve,
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|endpoint| endpoint.id())
+        .collect::<Vec<_>>(),
         ["first", "third"]
     );
 
@@ -1106,7 +1297,14 @@ fn extended_compact_marker84_profile_line_uses_zero_based_geometry_roster() {
     assert!(!super::extended_compact_84_profile_line_uses_point_roster(
         &payload, 0
     ));
-    assert!(roster_curve_endpoint_markers(&payload, &curve, &markers).is_empty());
+    assert!(roster_curve_endpoint_markers(
+        &cadmpeg_test_support::service_decode_context(),
+        &payload,
+        &curve,
+        &markers
+    )
+    .unwrap()
+    .is_empty());
 }
 
 #[test]
@@ -1140,7 +1338,7 @@ fn legacy_referenced_wide_arc_indexes_center_and_endpoints() {
     );
     assert!(super::indexed_arc_uses_coordinate_center(&payload, 0));
     assert_eq!(
-        sketch_input_entities(&payload, "lane")[0].kind,
+        sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Arc
     );
 
@@ -1149,150 +1347,6 @@ fn legacy_referenced_wide_arc_indexes_center_and_endpoints() {
         legacy_referenced_wide_arc_endpoint_indices(&payload, 0),
         None
     );
-}
-
-#[test]
-fn current_compact_104_line_indexes_coordinate_markers() {
-    let mut payload = vec![0; 104 + SKETCH_MARKER.len()];
-    payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
-    payload[5..13].fill(0xff);
-    payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
-    payload[17..21].copy_from_slice(&2u32.to_le_bytes());
-    payload[23..31].copy_from_slice(&[0x05, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01, 0x00]);
-    payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
-    payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
-    payload[64..66].copy_from_slice(&7u16.to_le_bytes());
-    payload[66..68].copy_from_slice(&2u16.to_le_bytes());
-    payload[68..72].copy_from_slice(&1u32.to_le_bytes());
-    payload[72..80].copy_from_slice(&(-1.0f64).to_le_bytes());
-    payload[88..92].copy_from_slice(&[0x00, 0x00, 0x01, 0x00]);
-    payload[100..104].copy_from_slice(&1u32.to_le_bytes());
-    payload[104..].copy_from_slice(SKETCH_MARKER);
-
-    assert_eq!(
-        current_compact_104_indexed_line_endpoint_indices(&payload, 0),
-        Some([8, 3])
-    );
-    assert_eq!(
-        super::coordinate_roster_endpoint_offset(&payload, 0),
-        Some(64)
-    );
-
-    payload[100..104].fill(0);
-    assert_eq!(
-        current_compact_104_indexed_line_endpoint_indices(&payload, 0),
-        None
-    );
-}
-
-#[test]
-fn current_compact_84_line_falls_back_to_zero_based_point_roster() {
-    let mut payload = vec![0; 84 + SKETCH_MARKER.len()];
-    payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
-    payload[5..13].fill(0xff);
-    payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
-    payload[23..31].copy_from_slice(&[0x05, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01, 0x00]);
-    payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
-    payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
-    payload[58..60].copy_from_slice(&1u16.to_le_bytes());
-    payload[60..64].copy_from_slice(&1u32.to_le_bytes());
-    payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
-    payload[80..84].copy_from_slice(&2u32.to_le_bytes());
-    payload[84..].copy_from_slice(SKETCH_MARKER);
-
-    let entity =
-        |id: &str, offset, object_index, coordinates_m: Option<[f64; 2]>| SketchInputEntity {
-            id: id.into(),
-            parent: "lane".into(),
-            feature_ref: Some("sketch".into()),
-            ordinal: 0,
-            offset,
-            object_index,
-            local_id: None,
-            kind: if coordinates_m.is_some() {
-                SketchInputKind::Point
-            } else {
-                SketchInputKind::LineOrCircle
-            },
-            state_value: Some(1.0),
-            coordinates_m,
-            links: None,
-        };
-    let curve = entity("curve", 0, Some(1), None);
-    let first = entity("first", 10, Some(10), Some([0.0, 0.0]));
-    let second = entity("second", 20, Some(11), Some([1.0, 0.0]));
-    let markers = [&curve, &first, &second];
-
-    assert_eq!(coordinate_roster_endpoint_offset(&payload, 0), Some(56));
-    assert_eq!(
-        roster_curve_endpoint_markers(&payload, &curve, &markers)
-            .iter()
-            .map(|endpoint| endpoint.id.as_str())
-            .collect::<Vec<_>>(),
-        ["first", "second"]
-    );
-
-    payload.resize(96 + SKETCH_MARKER.len(), 0);
-    payload[72..82].fill(0);
-    payload[82..84].copy_from_slice(&2u16.to_le_bytes());
-    payload[84..88].fill(0);
-    payload[88..92].copy_from_slice(&2u32.to_le_bytes());
-    payload[92..96].copy_from_slice(&1u32.to_le_bytes());
-    payload[96..].copy_from_slice(SKETCH_MARKER);
-    assert_eq!(coordinate_roster_endpoint_offset(&payload, 0), Some(56));
-    assert_eq!(
-        roster_curve_endpoint_markers(&payload, &curve, &markers)
-            .iter()
-            .map(|endpoint| endpoint.id.as_str())
-            .collect::<Vec<_>>(),
-        ["first", "second"]
-    );
-
-    payload.resize(104 + SKETCH_MARKER.len(), 0);
-    payload[72..76].copy_from_slice(&1i32.to_le_bytes());
-    payload[76..78].copy_from_slice(&2u16.to_le_bytes());
-    for relative in [78, 82, 86, 90] {
-        payload[relative..relative + 4].copy_from_slice(&(-2i32).to_le_bytes());
-    }
-    payload[94..96].fill(0);
-    payload[96..104].copy_from_slice(&[2, 0, 0, 0, 3, 0, 0, 0]);
-    payload[104..].copy_from_slice(SKETCH_MARKER);
-    assert_eq!(coordinate_roster_endpoint_offset(&payload, 0), Some(56));
-    assert_eq!(
-        roster_curve_endpoint_markers(&payload, &curve, &markers)
-            .iter()
-            .map(|endpoint| endpoint.id.as_str())
-            .collect::<Vec<_>>(),
-        ["first", "second"]
-    );
-}
-
-#[test]
-fn current_compact_104_profile_record_is_a_line() {
-    let mut payload = vec![0; 104 + SKETCH_MARKER.len()];
-    payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
-    payload[5..13].fill(0xff);
-    payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
-    payload[17..21].copy_from_slice(&2u32.to_le_bytes());
-    payload[23..31].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00, 0x01, 0x00]);
-    payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
-    payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
-    payload[56..58].copy_from_slice(&4u16.to_le_bytes());
-    payload[58..60].copy_from_slice(&6u16.to_le_bytes());
-    payload[60..64].copy_from_slice(&1u32.to_le_bytes());
-    payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
-    payload[72..76].copy_from_slice(&1u32.to_le_bytes());
-    for relative in [78, 82, 86, 90] {
-        payload[relative..relative + 4].copy_from_slice(&(-2i32).to_le_bytes());
-    }
-    payload[96..100].copy_from_slice(&2u32.to_le_bytes());
-    payload[100..104].copy_from_slice(&2u32.to_le_bytes());
-    payload[104..].copy_from_slice(SKETCH_MARKER);
-
-    assert!(current_compact_104_profile_line(&payload, 0));
-
-    payload[100..104].copy_from_slice(&3u32.to_le_bytes());
-    assert!(!current_compact_104_profile_line(&payload, 0));
 }
 
 #[test]
@@ -1355,24 +1409,28 @@ fn legacy_104_profile_line_uses_zero_based_point_roster() {
     payload[offset + 100..offset + 104].copy_from_slice(&30u32.to_le_bytes());
     payload[offset + 104..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
-    let entity = |id: &str, entity_offset, coordinates_m: Option<[f64; 2]>| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset: entity_offset,
-        object_index: None,
-        local_id: None,
-        kind: if coordinates_m.is_some() {
-            SketchInputKind::Point
-        } else {
-            SketchInputKind::LineOrCircle
-        },
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, entity_offset, coordinates_m: Option<[f64; 2]>| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            0,
+            entity_offset,
+            if coordinates_m.is_some() {
+                SketchInputKind::Point
+            } else {
+                SketchInputKind::LineOrCircle
+            },
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
-    let curve = entity("curve", offset as u64, None);
+    let curve = entity("curve", u64_from_index(offset), None);
     let first = entity("first", 10, Some([0.0, 0.0]));
     let second = entity("second", 20, Some([1.0, 0.0]));
     let third = entity("third", 30, Some([1.0, 1.0]));
@@ -1387,10 +1445,16 @@ fn legacy_104_profile_line_uses_zero_based_point_roster() {
         Some(56)
     );
     assert_eq!(
-        roster_curve_endpoint_markers(&payload, &curve, &markers)
-            .iter()
-            .map(|endpoint| endpoint.id.as_str())
-            .collect::<Vec<_>>(),
+        roster_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &curve,
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|endpoint| endpoint.id())
+        .collect::<Vec<_>>(),
         ["second", "third"]
     );
 
@@ -1445,24 +1509,28 @@ fn legacy_state_one_profile_line_uses_zero_based_point_roster() {
     payload[offset + 100..offset + 104].copy_from_slice(&42u32.to_le_bytes());
     payload[offset + 104..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
-    let entity = |id: &str, entity_offset, coordinates_m: Option<[f64; 2]>| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset: entity_offset,
-        object_index: None,
-        local_id: None,
-        kind: if coordinates_m.is_some() {
-            SketchInputKind::Point
-        } else {
-            SketchInputKind::LineOrCircle
-        },
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, entity_offset, coordinates_m: Option<[f64; 2]>| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            0,
+            entity_offset,
+            if coordinates_m.is_some() {
+                SketchInputKind::Point
+            } else {
+                SketchInputKind::LineOrCircle
+            },
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
-    let curve = entity("curve", offset as u64, None);
+    let curve = entity("curve", u64_from_index(offset), None);
     let first = entity("first", 10, Some([0.0, 0.0]));
     let second = entity("second", 20, Some([1.0, 0.0]));
     let third = entity("third", 30, Some([1.0, 1.0]));
@@ -1476,10 +1544,16 @@ fn legacy_state_one_profile_line_uses_zero_based_point_roster() {
         Some(56)
     );
     assert_eq!(
-        roster_curve_endpoint_markers(&payload, &curve, &markers)
-            .iter()
-            .map(|endpoint| endpoint.id.as_str())
-            .collect::<Vec<_>>(),
+        roster_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &curve,
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|endpoint| endpoint.id())
+        .collect::<Vec<_>>(),
         ["second", "third"]
     );
 
@@ -1529,18 +1603,17 @@ fn legacy_wide_profile_roster_curves_use_zero_based_geometry_roster() {
         payload[length..].copy_from_slice(LEGACY_SKETCH_MARKER);
         payload
     };
-    let entity = |id: &str, offset, kind, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, offset, kind, coordinates_m: Option<[f64; 2]>| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let curve = entity("curve", 0, SketchInputKind::LineOrCircle, None);
     let center = entity("center", 10, SketchInputKind::Arc, Some([0.0, 0.0]));
@@ -1555,10 +1628,16 @@ fn legacy_wide_profile_roster_curves_use_zero_based_geometry_roster() {
     assert_eq!(marker_local_id(&short, 0), Some(0x0008_0000));
     assert_eq!(coordinate_roster_endpoint_offset(&short, 0), Some(64));
     assert_eq!(
-        roster_curve_endpoint_markers(&short, &curve, &markers)
-            .iter()
-            .map(|marker| marker.id.as_str())
-            .collect::<Vec<_>>(),
+        roster_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &short,
+            &curve,
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker.id())
+        .collect::<Vec<_>>(),
         ["center", "second"]
     );
 
@@ -1568,10 +1647,16 @@ fn legacy_wide_profile_roster_curves_use_zero_based_geometry_roster() {
     assert_eq!(marker_local_links(&long, 0), None);
     assert_eq!(coordinate_roster_endpoint_offset(&long, 0), Some(64));
     assert_eq!(
-        roster_curve_endpoint_markers(&long, &curve, &markers)
-            .iter()
-            .map(|marker| marker.id.as_str())
-            .collect::<Vec<_>>(),
+        roster_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &long,
+            &curve,
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker.id())
+        .collect::<Vec<_>>(),
         ["first", "second"]
     );
 
@@ -1610,24 +1695,28 @@ fn legacy_state_one_84_profile_line_uses_zero_based_point_roster() {
     payload[offset + 80..offset + 84].copy_from_slice(&42u32.to_le_bytes());
     payload[offset + 84..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
-    let entity = |id: &str, entity_offset, coordinates_m: Option<[f64; 2]>| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset: entity_offset,
-        object_index: None,
-        local_id: None,
-        kind: if coordinates_m.is_some() {
-            SketchInputKind::Point
-        } else {
-            SketchInputKind::LineOrCircle
-        },
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, entity_offset, coordinates_m: Option<[f64; 2]>| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            0,
+            entity_offset,
+            if coordinates_m.is_some() {
+                SketchInputKind::Point
+            } else {
+                SketchInputKind::LineOrCircle
+            },
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
-    let curve = entity("curve", offset as u64, None);
+    let curve = entity("curve", u64_from_index(offset), None);
     let first = entity("first", 10, Some([0.0, 0.0]));
     let second = entity("second", 20, Some([1.0, 0.0]));
     let third = entity("third", 30, Some([1.0, 1.0]));
@@ -1644,10 +1733,16 @@ fn legacy_state_one_84_profile_line_uses_zero_based_point_roster() {
         Some(56)
     );
     assert_eq!(
-        roster_curve_endpoint_markers(&payload, &curve, &markers)
-            .iter()
-            .map(|endpoint| endpoint.id.as_str())
-            .collect::<Vec<_>>(),
+        roster_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &curve,
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|endpoint| endpoint.id())
+        .collect::<Vec<_>>(),
         ["second", "third"]
     );
 
@@ -1696,24 +1791,28 @@ fn extended_state_one_84_profile_line_uses_one_based_point_roster() {
     payload[offset + 80..offset + 84].copy_from_slice(&42u32.to_le_bytes());
     payload[offset + 84..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
 
-    let entity = |id: &str, entity_offset, coordinates_m: Option<[f64; 2]>| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset: entity_offset,
-        object_index: None,
-        local_id: None,
-        kind: if coordinates_m.is_some() {
-            SketchInputKind::Point
-        } else {
-            SketchInputKind::LineOrCircle
-        },
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, entity_offset, coordinates_m: Option<[f64; 2]>| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            0,
+            entity_offset,
+            if coordinates_m.is_some() {
+                SketchInputKind::Point
+            } else {
+                SketchInputKind::LineOrCircle
+            },
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
-    let curve = entity("curve", offset as u64, None);
+    let curve = entity("curve", u64_from_index(offset), None);
     let first = entity("first", 10, Some([0.0, 0.0]));
     let second = entity("second", 20, Some([1.0, 0.0]));
     let third = entity("third", 30, Some([1.0, 1.0]));
@@ -1727,10 +1826,16 @@ fn extended_state_one_84_profile_line_uses_one_based_point_roster() {
         Some(56)
     );
     assert_eq!(
-        roster_curve_endpoint_markers(&payload, &curve, &markers)
-            .iter()
-            .map(|endpoint| endpoint.id.as_str())
-            .collect::<Vec<_>>(),
+        roster_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &curve,
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|endpoint| endpoint.id())
+        .collect::<Vec<_>>(),
         ["second", "third"]
     );
 
@@ -1760,33 +1865,6 @@ fn extended_state_one_84_profile_line_uses_one_based_point_roster() {
     ));
 }
 
-#[test]
-fn current_direct_92_profile_line_uses_point_object_ids() {
-    let mut payload = vec![0; 92 + SKETCH_MARKER.len()];
-    payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
-    payload[5..13].fill(0xff);
-    payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
-    payload[17..21].copy_from_slice(&2u32.to_le_bytes());
-    payload[23..31].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00, 0x01, 0x00]);
-    payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
-    payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
-    payload[64..66].copy_from_slice(&6u16.to_le_bytes());
-    payload[66..68].copy_from_slice(&9u16.to_le_bytes());
-    payload[68..72].copy_from_slice(&1u32.to_le_bytes());
-    payload[72..80].copy_from_slice(&(-1.0f64).to_le_bytes());
-    payload[84..88].copy_from_slice(&1u32.to_le_bytes());
-    payload[88..92].copy_from_slice(&6u32.to_le_bytes());
-    payload[92..].copy_from_slice(SKETCH_MARKER);
-
-    assert_eq!(
-        current_direct_92_profile_line_endpoint_indices(&payload, 0),
-        Some([6, 9])
-    );
-
-    payload[88..92].fill(0);
-    assert_eq!(
-        current_direct_92_profile_line_endpoint_indices(&payload, 0),
-        None
-    );
-}
 mod terminal_profile_lines;
+
+mod current_lines;

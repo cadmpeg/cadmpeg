@@ -15,7 +15,14 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::native_test::{f3d_native, f3d_native_mut};
+use crate::test_support::smbh_geometry_test::{
+    synthetic_geometry_smbh, synthetic_geometry_with_body_color_smbh,
+    synthetic_geometry_with_body_decimal_color_chain_smbh,
+    synthetic_geometry_with_body_truecolor_chain_smbh, synthetic_geometry_with_face_color_smbh,
+    synthetic_geometry_with_transform_smbh,
+};
+use crate::test_support::zip_test::f3d_with_smbh;
 use crate::F3dCodec;
 
 #[test]
@@ -68,18 +75,21 @@ fn body_key_edit_does_not_rewrite_ordinal_design_selector() {
             source_brep: Some("BREP.source.smb".into()),
             asm_body_key: Some(436),
         });
-    baseline
-        .body_visibilities
-        .push(crate::records::BodyVisibility {
-            id: "f3d:design:body-visibility#1".into(),
-            body,
-            stream: "Design1/BulkStream.dat".into(),
-            byte_offset: 20,
-            asm_body_key_offset: 40,
-            asm_body_key: 0,
-            entity_suffix: 1,
-            visible: true,
-        });
+    baseline.body_visibilities.push(
+        crate::records::bodies::BodyVisibility::try_from(
+            crate::records::bodies::BodyVisibilityWire {
+                id: "f3d:design:body-visibility#0".into(),
+                body,
+                stream: "Design1/BulkStream.dat".into(),
+                byte_offset: 20,
+                asm_body_key_offset: 40,
+                asm_body_key: 0,
+                entity_suffix: 1,
+                visible: true,
+            },
+        )
+        .unwrap(),
+    );
     let mut target = baseline.clone();
     target.body_native_keys[0].asm_body_key = Some(500);
 
@@ -102,12 +112,7 @@ fn generated_f3d_rewrites_body_rgb_color() {
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated F3D decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
-    let expected = cadmpeg_ir::topology::Color {
-        r: 0.7,
-        g: 0.4,
-        b: 0.2,
-        a: 1.0,
-    };
+    let expected = cadmpeg_ir::topology::Color::new(0.7, 0.4, 0.2, 1.0).expect("valid color");
     edited.model.bodies[0].color = Some(expected);
 
     let mut regenerated = Vec::new();
@@ -127,20 +132,15 @@ fn generated_f3d_rewrites_the_winning_truecolor_attribute() {
         .expect("generated truecolor F3D decode");
     assert_eq!(
         decoded.ir().model.bodies[0].color,
-        Some(cadmpeg_ir::topology::Color {
-            r: 32.0 / 255.0,
-            g: 64.0 / 255.0,
-            b: 96.0 / 255.0,
-            a: 1.0,
-        })
+        Some(
+            cadmpeg_ir::topology::Color::new(32.0 / 255.0, 64.0 / 255.0, 96.0 / 255.0, 1.0)
+                .expect("valid color")
+        )
     );
     let (mut edited, _, fidelity) = decoded.into_parts();
-    let expected = cadmpeg_ir::topology::Color {
-        r: 64.0 / 255.0,
-        g: 128.0 / 255.0,
-        b: 192.0 / 255.0,
-        a: 1.0,
-    };
+    let expected =
+        cadmpeg_ir::topology::Color::new(64.0 / 255.0, 128.0 / 255.0, 192.0 / 255.0, 1.0)
+            .expect("valid color");
     edited.model.bodies[0].color = Some(expected);
 
     let mut regenerated = Vec::new();
@@ -161,12 +161,8 @@ fn generated_f3d_rewrites_fixed_width_decimal_color_text() {
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated decimal-color F3D decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
-    let expected = cadmpeg_ir::topology::Color {
-        r: 1.0 / 255.0,
-        g: 2.0 / 255.0,
-        b: 3.0 / 255.0,
-        a: 1.0,
-    };
+    let expected = cadmpeg_ir::topology::Color::new(1.0 / 255.0, 2.0 / 255.0, 3.0 / 255.0, 1.0)
+        .expect("valid color");
     edited.model.bodies[0].color = Some(expected);
 
     let mut regenerated = Vec::new();
@@ -185,12 +181,10 @@ fn generated_f3d_rejects_lossy_truecolor_edit() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("generated truecolor F3D decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
-    edited.model.bodies[0].color = Some(cadmpeg_ir::topology::Color {
-        r: 0.5,
-        g: 64.0 / 255.0,
-        b: 96.0 / 255.0,
-        a: 1.0,
-    });
+    edited.model.bodies[0].color = Some(
+        cadmpeg_ir::topology::Color::new(0.5, 64.0 / 255.0, 96.0 / 255.0, 1.0)
+            .expect("valid color"),
+    );
 
     let error = crate::test_support::plan_inherited_write(&edited, &fidelity, &mut Vec::new())
         .expect_err("nonrepresentable truecolor edit must be rejected");
@@ -206,12 +200,8 @@ fn generated_f3d_rejects_decimal_color_text_growth() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("generated decimal-color F3D decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
-    edited.model.bodies[0].color = Some(cadmpeg_ir::topology::Color {
-        r: 1.0,
-        g: 0.0,
-        b: 0.0,
-        a: 1.0,
-    });
+    edited.model.bodies[0].color =
+        Some(cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("valid color"));
 
     let error = crate::test_support::plan_inherited_write(&edited, &fidelity, &mut Vec::new())
         .expect_err("wider decimal-color text must be rejected");
@@ -225,12 +215,7 @@ fn generated_f3d_rewrites_face_rgb_color_and_sense() {
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated F3D decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
-    let expected = cadmpeg_ir::topology::Color {
-        r: 0.6,
-        g: 0.3,
-        b: 0.9,
-        a: 1.0,
-    };
+    let expected = cadmpeg_ir::topology::Color::new(0.6, 0.3, 0.9, 1.0).expect("valid color");
     edited.model.faces[0].color = Some(expected);
     edited.model.faces[0].sense = cadmpeg_ir::topology::Sense::Reversed;
 
@@ -254,7 +239,11 @@ fn generated_f3d_rewrites_edge_parameter_range() {
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated F3D decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
-    edited.model.edges[0].param_range = Some([-2.5, 4.75]);
+    edited.model.edges[0].carrier = cadmpeg_ir::topology::EdgeCarrier::new(
+        edited.model.edges[0].curve().cloned(),
+        Some([-2.5, 4.75]),
+    )
+    .unwrap();
 
     let mut regenerated = Vec::new();
     crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
@@ -263,7 +252,9 @@ fn generated_f3d_rewrites_edge_parameter_range() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated F3D decode");
     assert_eq!(
-        round_trip.ir().model.edges[0].param_range,
+        round_trip.ir().model.edges[0]
+            .param_range()
+            .map(cadmpeg_ir::units::FiniteVector::get),
         Some([-2.5, 4.75])
     );
 }

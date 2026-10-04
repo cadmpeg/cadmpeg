@@ -1,14 +1,74 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(
-    clippy::cloned_ref_to_slice_refs,
-    clippy::default_trait_access,
-    clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
-)]
-use super::prelude::*;
+use cadmpeg_core::decode::u64_from_index;
+
+use crate::design::test_support::push_reference;
+use crate::test_support::lp_utf16;
+use cadmpeg_ir::math::Point2;
 
 const EPS_TEXT_ROTATION: f64 = 1.0e-12;
+
+fn decode_sketch_points_from_stream(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+    stream: &str,
+) -> Result<Vec<crate::records::sketch_geometry::SketchPoint>, cadmpeg_core::CodecError> {
+    crate::design::test_support::with_test_decode_context(|ctx| {
+        crate::design::decode::sketch::decode_sketch_points_from_stream(ctx, bytes, meta, stream)
+    })
+}
+
+fn decode_sketch_texts_from_stream(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+    stream: &str,
+) -> Result<Vec<crate::records::sketch_geometry::SketchText>, cadmpeg_core::CodecError> {
+    crate::design::test_support::with_test_decode_context(|ctx| {
+        crate::design::decode::sketch::decode_sketch_texts_from_stream(ctx, bytes, meta, stream)
+    })
+}
+
+fn decode_sketch_curve_identities_from_stream(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+    stream: &str,
+) -> Result<Vec<crate::records::sketch_geometry::SketchCurveIdentity>, cadmpeg_core::CodecError> {
+    crate::design::test_support::with_test_decode_context(|ctx| {
+        crate::design::decode::sketch::decode_sketch_curve_identities_from_stream(
+            ctx, bytes, meta, stream,
+        )
+    })
+}
+
+#[test]
+fn native_sketch_text_refuses_zero_height() {
+    let text = decode_sketch_text(&sketch_text_record(
+        &[("textex_tag", 109)],
+        [None, None],
+        None,
+    ))
+    .expect("sketch text record");
+    let mut zero_height = serde_json::to_value(&text).expect("serialize sketch text");
+    zero_height["height"] = serde_json::json!(0.0);
+    assert!(
+        serde_json::from_value::<crate::records::sketch_geometry::SketchText>(zero_height).is_err()
+    );
+}
+
+#[test]
+fn native_sketch_text_refuses_negative_width_factor() {
+    let text = decode_sketch_text(&sketch_text_record(
+        &[("textex_tag", 109)],
+        [None, None],
+        None,
+    ))
+    .expect("sketch text record");
+    let mut negative_width = serde_json::to_value(&text).expect("serialize sketch text");
+    negative_width["width_factor"] = serde_json::json!(-1.0);
+    assert!(
+        serde_json::from_value::<crate::records::sketch_geometry::SketchText>(negative_width)
+            .is_err()
+    );
+}
 
 #[test]
 fn indexed_textex_tag_sketch_text_record_decodes_frame_and_path_types() {
@@ -22,8 +82,12 @@ fn indexed_textex_tag_sketch_text_record_decodes_frame_and_path_types() {
         assert_eq!(text.text, "B6 Probe 47");
         assert_eq!(text.font_family, "Arial");
         assert_eq!(text.font_weight, 400);
-        assert_eq!(text.height, 6.0);
-        assert_eq!(text.width_factor(), Some(1.0));
+        assert_eq!(text.height.get(), 6.0);
+        assert_eq!(
+            text.width_factor()
+                .map(cadmpeg_ir::scalar::NonNegativeReal::get),
+            Some(1.0)
+        );
         assert_eq!(
             text.alignment().map(|alignment| alignment.horizontal),
             Some(3)
@@ -34,30 +98,33 @@ fn indexed_textex_tag_sketch_text_record_decodes_frame_and_path_types() {
         );
         assert_eq!(
             text.color,
-            cadmpeg_ir::topology::Color {
-                r: 0.0,
-                g: 0.0,
-                b: 0.0,
-                a: 1.0,
-            }
+            cadmpeg_ir::topology::Color::new(0.0, 0.0, 0.0, 1.0).expect("valid color")
         );
-        assert_eq!(text.placement().map(|placement| placement.anchor), None);
-        assert_eq!(text.placement().map(|placement| placement.rotation.0), None);
+        assert_eq!(
+            text.placement().map(|placement| placement.anchor.get()),
+            None
+        );
+        assert_eq!(
+            text.placement().map(|placement| placement.rotation.get()),
+            None
+        );
         assert_eq!(
             (match text.layout {
-                crate::records::SketchTextLayout::TextexTag {
-                    first_reference, ..
+                crate::records::sketch_geometry::SketchTextLayout::TextexTag {
+                    first_reference,
+                    ..
                 } => first_reference,
-                crate::records::SketchTextLayout::TxtTag { .. } => None,
+                crate::records::sketch_geometry::SketchTextLayout::TxtTag { .. } => None,
             }),
             Some(319)
         );
         assert_eq!(
             (match text.layout {
-                crate::records::SketchTextLayout::TextexTag {
-                    second_reference, ..
+                crate::records::sketch_geometry::SketchTextLayout::TextexTag {
+                    second_reference,
+                    ..
                 } => second_reference,
-                crate::records::SketchTextLayout::TxtTag { .. } => None,
+                crate::records::sketch_geometry::SketchTextLayout::TxtTag { .. } => None,
             }),
             Some(322)
         );
@@ -66,10 +133,186 @@ fn indexed_textex_tag_sketch_text_record_decodes_frame_and_path_types() {
 }
 
 #[test]
-fn sketch_records_use_the_primary_index_live_copy() {
+fn sketch_text_output_refuses_collection_limit() {
     use crate::metastream::{MetaStream, RecordIndexEntry};
-    use crate::records::{SegmentType, SketchCurveGeometry};
-    use cadmpeg_ir::math::{Point2, Point3};
+    use crate::records::entity_header::{BaseTypeGuid, SegmentTypeData};
+    use crate::records::identity::{Located, ReferenceRun};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let bytes = indexed_sketch_text_record(1);
+    let types = (0..32)
+        .map(|ordinal| SegmentTypeData {
+            byte_offset: 0,
+            type_guid: (if ordinal == 31 {
+                "E0618268-3A06-450E-9E94-7CF4C2E66802"
+            } else {
+                "00000000-0000-0000-0000-000000000000"
+            })
+            .to_owned()
+            .try_into()
+            .unwrap(),
+            type_guid_offset: 0,
+            base_type_guid: BaseTypeGuid::Absent,
+            version: 3,
+            version_offset: 0,
+            module: "Geometry".into(),
+            entities: ReferenceRun::located(if ordinal == 31 {
+                vec![Located {
+                    value: 304,
+                    offset: 0,
+                }]
+            } else {
+                Vec::new()
+            }),
+        })
+        .collect();
+    let meta = MetaStream {
+        types,
+        records: vec![RecordIndexEntry {
+            entity_id: 304,
+            bulk_offset: 0,
+        }],
+        secondary_records: Vec::new(),
+    };
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    assert_eq!(
+        crate::design::decode::sketch::decode_sketch_texts_from_stream(
+            &ctx,
+            &bytes,
+            &meta,
+            "Design/BulkStream.dat"
+        )
+        .unwrap()
+        .len(),
+        1
+    );
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 4;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let error = crate::design::decode::sketch::decode_sketch_texts_from_stream(
+        &ctx,
+        &bytes,
+        &meta,
+        "Design/BulkStream.dat",
+    )
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "f3d sketch text records"
+    ));
+}
+
+fn sketch_text_with_retained_limit(
+    bytes: &[u8],
+    class_version: u32,
+    maximum: u64,
+) -> cadmpeg_core::CodecError {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = maximum;
+    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    crate::design::decode::sketch::decode_sketch_text_record(
+        &ctx,
+        bytes,
+        "Design/BulkStream.dat",
+        crate::records::references::DesignClassTag::try_from("329".to_owned()).unwrap(),
+        class_version,
+        304,
+        7,
+    )
+    .unwrap_err()
+}
+
+#[test]
+fn sketch_text_identifier_refuses_retained_limit() {
+    let bytes = indexed_sketch_text_record(1);
+    let id_len = crate::ids::native_sketch_text_id("Design/BulkStream.dat", 7).len();
+    let text_len = "Arial".len() + "B6 Probe 47".len();
+    let error =
+        sketch_text_with_retained_limit(&bytes, 3, u64::try_from(text_len + id_len - 1).unwrap());
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.operation == "f3d sketch text identifier"
+    ));
+}
+
+#[test]
+fn sketch_text_raw_bytes_refuse_retained_limit() {
+    let bytes = indexed_sketch_text_record(1);
+    let id_len = crate::ids::native_sketch_text_id("Design/BulkStream.dat", 7).len();
+    let text_len = "Arial".len() + "B6 Probe 47".len();
+    let maximum = u64::try_from(text_len + id_len + bytes.len() - 1).unwrap();
+    let error = sketch_text_with_retained_limit(&bytes, 3, maximum);
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.operation == "f3d sketch text raw bytes"
+    ));
+}
+
+fn assert_sketch_text_utf16_refusal(bytes: &[u8], version: u32, maximum: u64) {
+    let error = sketch_text_with_retained_limit(bytes, version, maximum);
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.operation == "f3d Design UTF-16 text"
+    ));
+}
+
+#[test]
+fn legacy_sketch_text_font_refuses_retained_limit() {
+    let bytes = sketch_text_record(&[("textex_tag", 109)], [None, None], None);
+    assert_sketch_text_utf16_refusal(&bytes, 4, 4);
+}
+
+#[test]
+fn indexed_sketch_text_font_refuses_retained_limit() {
+    let bytes = indexed_sketch_text_record(1);
+    assert_sketch_text_utf16_refusal(&bytes, 3, 4);
+}
+
+#[test]
+fn legacy_sketch_text_content_refuses_retained_limit() {
+    let bytes = sketch_text_record(&[("textex_tag", 109)], [None, None], None);
+    let maximum = u64::try_from("Arial".len() + "path text".len() - 1).unwrap();
+    assert_sketch_text_utf16_refusal(&bytes, 4, maximum);
+}
+
+#[test]
+fn txt_tag_sketch_text_content_refuses_retained_limit() {
+    let bytes = txt_tag_sketch_text_record(&[("txt_tag", 115)], &[], &[], (0.0, 0.0));
+    let maximum = u64::try_from("Arial".len() + "sketch text".len() - 1).unwrap();
+    assert_sketch_text_utf16_refusal(&bytes, 4, maximum);
+}
+
+#[test]
+fn indexed_sketch_text_content_refuses_retained_limit() {
+    let bytes = indexed_sketch_text_record(1);
+    let maximum = u64::try_from("Arial".len() + "B6 Probe 47".len() - 1).unwrap();
+    assert_sketch_text_utf16_refusal(&bytes, 3, maximum);
+}
+
+fn indexed_sketch_fixture() -> (
+    Vec<u8>,
+    crate::metastream::MetaStream,
+    usize,
+    usize,
+    usize,
+    usize,
+) {
+    use crate::metastream::{MetaStream, RecordIndexEntry};
+    use crate::records::entity_header::SegmentTypeData;
 
     const PARENT: u64 = 900;
     const POINT: u64 = 50;
@@ -78,7 +321,9 @@ fn sketch_records_use_the_primary_index_live_copy() {
     const COMPANION: u64 = 60;
 
     let push_ascii = |bytes: &mut Vec<u8>, value: &str| {
-        bytes.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(value.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         bytes.extend_from_slice(value.as_bytes());
     };
     let record_prefix = |class_tag: u32, entity_id: u64| {
@@ -166,19 +411,18 @@ fn sketch_records_use_the_primary_index_live_copy() {
         bytes
     };
     let design_type =
-        |type_guid: &str, version: u32, module: &str, entity_ids: Vec<u64>| SegmentType {
-            id: String::new(),
+        |type_guid: &str, version: u32, module: &str, entity_ids: Vec<u64>| SegmentTypeData {
             byte_offset: 0,
             type_guid: type_guid.to_owned().try_into().expect("type GUID"),
             type_guid_offset: 0,
-            base_type_guid: None,
+            base_type_guid: crate::records::entity_header::BaseTypeGuid::Absent,
             version,
             version_offset: 0,
             module: module.into(),
-            entities: crate::records::ReferenceRun::located(
+            entities: crate::records::identity::ReferenceRun::located(
                 entity_ids
                     .into_iter()
-                    .map(|value| crate::records::Located { value, offset: 0 })
+                    .map(|value| crate::records::identity::Located { value, offset: 0 })
                     .collect(),
             ),
         };
@@ -203,7 +447,7 @@ fn sketch_records_use_the_primary_index_live_copy() {
     local_reference(&mut companion, POINT);
     bytes.extend_from_slice(&companion);
 
-    let mut meta = MetaStream {
+    let meta = MetaStream {
         types: vec![
             design_type(
                 crate::design::decode::sketch::SKETCH_CONTAINER_TYPE_GUID,
@@ -249,48 +493,57 @@ fn sketch_records_use_the_primary_index_live_copy() {
             },
             RecordIndexEntry {
                 entity_id: POINT,
-                bulk_offset: live_point_at as u64,
+                bulk_offset: u64_from_index(live_point_at),
             },
             RecordIndexEntry {
                 entity_id: CURVE,
-                bulk_offset: live_curve_at as u64,
+                bulk_offset: u64_from_index(live_curve_at),
             },
             RecordIndexEntry {
                 entity_id: TEXT,
-                bulk_offset: live_text_at as u64,
+                bulk_offset: u64_from_index(live_text_at),
             },
             RecordIndexEntry {
                 entity_id: COMPANION,
-                bulk_offset: companion_at as u64,
+                bulk_offset: u64_from_index(companion_at),
             },
         ],
         secondary_records: vec![RecordIndexEntry {
             entity_id: PARENT,
-            bulk_offset: nested_at as u64,
+            bulk_offset: u64_from_index(nested_at),
         }],
     };
 
-    let points = crate::design::decode::sketch::decode_sketch_points_from_stream(
-        &bytes,
-        &meta,
-        "Design/BulkStream.dat",
+    (
+        bytes,
+        meta,
+        live_point_at,
+        live_curve_at,
+        live_text_at,
+        nested_at,
     )
-    .expect("indexed sketch points");
+}
+
+#[test]
+fn sketch_records_use_the_primary_index_live_copy() {
+    use crate::records::sketch_geometry::SketchCurveGeometry;
+    use cadmpeg_ir::math::{Point2, Point3};
+
+    let (bytes, mut meta, live_point_at, live_curve_at, live_text_at, nested_at) =
+        indexed_sketch_fixture();
+    let points = decode_sketch_points_from_stream(&bytes, &meta, "Design/BulkStream.dat")
+        .expect("indexed sketch points");
     assert_eq!(points.len(), 1);
-    assert_eq!(points[0].byte_offset, live_point_at as u64);
-    assert_eq!(points[0].coordinates, Point2::new(70.0, -30.0));
+    assert_eq!(points[0].byte_offset, u64_from_index(live_point_at));
+    assert_eq!(points[0].coordinates(), Point2::new(70.0, -30.0));
     meta.types[1].type_guid = "00000000-0000-0000-0000-000000000002"
         .to_owned()
         .try_into()
         .expect("type GUID");
     assert!(
-        crate::design::decode::sketch::decode_sketch_points_from_stream(
-            &bytes,
-            &meta,
-            "Design/BulkStream.dat",
-        )
-        .expect("structurally point-shaped foreign type")
-        .is_empty()
+        decode_sketch_points_from_stream(&bytes, &meta, "Design/BulkStream.dat",)
+            .expect("structurally point-shaped foreign type")
+            .is_empty()
     );
     meta.types[1].type_guid = crate::design::decode::sketch::CURRENT_SKETCH_POINT_TYPE
         .0
@@ -300,59 +553,132 @@ fn sketch_records_use_the_primary_index_live_copy() {
     let mut malformed_point = bytes.clone();
     malformed_point[live_point_at + 70] = 0;
     assert!(matches!(
-        crate::design::decode::sketch::decode_sketch_points_from_stream(
-            &malformed_point,
-            &meta,
-            "Design/BulkStream.dat",
-        ),
+        decode_sketch_points_from_stream(&malformed_point, &meta, "Design/BulkStream.dat",),
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
 
-    let curves = crate::design::decode::sketch::decode_sketch_curve_identities_from_stream(
-        &bytes,
-        &meta,
-        "Design/BulkStream.dat",
-    )
-    .expect("indexed sketch curves");
+    let curves = decode_sketch_curve_identities_from_stream(&bytes, &meta, "Design/BulkStream.dat")
+        .expect("indexed sketch curves");
     assert_eq!(curves.len(), 1);
-    assert_eq!(curves[0].byte_offset, live_curve_at as u64);
+    assert_eq!(curves[0].byte_offset, u64_from_index(live_curve_at));
     assert!(matches!(
         curves[0].geometry,
-        Some(SketchCurveGeometry::Line { start, .. }) if start == Point3::new(50.0, 0.0, 0.0)
+        Some(SketchCurveGeometry::Line { start, .. }) if start.get() == Point3::new(50.0, 0.0, 0.0)
     ));
 
-    let texts = crate::design::decode::sketch::decode_sketch_texts_from_stream(
-        &bytes,
-        &meta,
-        "Design/BulkStream.dat",
-    )
-    .expect("indexed sketch texts");
+    let texts = decode_sketch_texts_from_stream(&bytes, &meta, "Design/BulkStream.dat")
+        .expect("indexed sketch texts");
     assert_eq!(texts.len(), 1);
-    assert_eq!(texts[0].byte_offset, live_text_at as u64);
+    assert_eq!(texts[0].byte_offset, u64_from_index(live_text_at));
     assert_eq!(texts[0].text, "live text");
 
     let mut mismatched_primary = bytes.clone();
     mismatched_primary[live_point_at + 7..live_point_at + 11]
         .copy_from_slice(&999u32.to_le_bytes());
     assert!(matches!(
-        crate::design::decode::sketch::decode_sketch_points_from_stream(
-            &mismatched_primary,
-            &meta,
-            "Design/BulkStream.dat",
-        ),
+        decode_sketch_points_from_stream(&mismatched_primary, &meta, "Design/BulkStream.dat",),
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
 
     let mut mismatched_secondary = bytes;
     mismatched_secondary[nested_at + 7..nested_at + 11].copy_from_slice(&999u32.to_le_bytes());
     assert!(matches!(
-        crate::design::decode::sketch::decode_sketch_points_from_stream(
-            &mismatched_secondary,
-            &meta,
-            "Design/BulkStream.dat",
-        ),
+        decode_sketch_points_from_stream(&mismatched_secondary, &meta, "Design/BulkStream.dat",),
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
+}
+
+#[test]
+fn sketch_point_indices_and_output_refuse_collection_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let (bytes, meta, _, _, _, _) = indexed_sketch_fixture();
+    for (limit, operation) in [
+        (21, "f3d sketch point frame index"),
+        (26, "f3d sketch point type index"),
+        (31, "f3d sketch point output"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = crate::design::decode::sketch::decode_sketch_points_from_stream(
+            &ctx,
+            &bytes,
+            &meta,
+            "Design/BulkStream.dat",
+        )
+        .expect_err("collection limit must refuse point decode");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == operation)
+        );
+    }
+}
+
+#[test]
+fn sketch_curve_output_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let (bytes, meta, _, _, _, _) = indexed_sketch_fixture();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 21;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = crate::design::decode::sketch::decode_sketch_curve_identities_from_stream(
+        &ctx,
+        &bytes,
+        &meta,
+        "Design/BulkStream.dat",
+    )
+    .expect_err("collection limit must refuse curve decode");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+        if failure.dimension == ResourceDimension::CollectionItems
+            && failure.operation == "f3d sketch curve output")
+    );
+}
+
+#[test]
+fn sketch_point_and_curve_ids_refuse_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let (bytes, meta, _, _, _, _) = indexed_sketch_fixture();
+    for (decode_point, operation) in [
+        (true, "f3d sketch point ID"),
+        (false, "f3d sketch curve ID"),
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::RetainedBytes,
+            operation,
+            0,
+            |ctx| {
+                if decode_point {
+                    crate::design::decode::sketch::decode_sketch_points_from_stream(
+                        ctx,
+                        &bytes,
+                        &meta,
+                        "Design/BulkStream.dat",
+                    )
+                    .map(|_| ())
+                } else {
+                    crate::design::decode::sketch::decode_sketch_curve_identities_from_stream(
+                        ctx,
+                        &bytes,
+                        &meta,
+                        "Design/BulkStream.dat",
+                    )
+                    .map(|_| ())
+                }
+            },
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+            if failure.dimension == ResourceDimension::RetainedBytes
+                && failure.operation == operation)
+        );
+    }
 }
 
 #[test]
@@ -377,8 +703,12 @@ fn sketch_text_record_decodes_typed_content_and_metrics() {
     assert_eq!(text.font_weight, 400);
     // The height is the field after the font family, in centimetres; the width
     // factor is the field before it.
-    assert_eq!(text.height, 10.0);
-    assert_eq!(text.width_factor(), Some(0.8));
+    assert_eq!(text.height.get(), 10.0);
+    assert_eq!(
+        text.width_factor()
+            .map(cadmpeg_ir::scalar::NonNegativeReal::get),
+        Some(0.8)
+    );
     assert_eq!(
         text.alignment().map(|alignment| alignment.horizontal),
         Some(3)
@@ -391,28 +721,25 @@ fn sketch_text_record_decodes_typed_content_and_metrics() {
     // that order.
     assert_eq!(
         text.color,
-        cadmpeg_ir::topology::Color {
-            r: 0.25,
-            g: 0.5,
-            b: 0.75,
-            a: 1.0,
-        }
+        cadmpeg_ir::topology::Color::new(0.25, 0.5, 0.75, 1.0).expect("valid color")
     );
     assert_eq!(
         (match text.layout {
-            crate::records::SketchTextLayout::TextexTag {
-                first_reference, ..
+            crate::records::sketch_geometry::SketchTextLayout::TextexTag {
+                first_reference,
+                ..
             } => first_reference,
-            crate::records::SketchTextLayout::TxtTag { .. } => None,
+            crate::records::sketch_geometry::SketchTextLayout::TxtTag { .. } => None,
         }),
         Some(307)
     );
     assert_eq!(
         (match text.layout {
-            crate::records::SketchTextLayout::TextexTag {
-                second_reference, ..
+            crate::records::sketch_geometry::SketchTextLayout::TextexTag {
+                second_reference,
+                ..
             } => second_reference,
-            crate::records::SketchTextLayout::TxtTag { .. } => None,
+            crate::records::sketch_geometry::SketchTextLayout::TxtTag { .. } => None,
         }),
         Some(310)
     );
@@ -446,24 +773,30 @@ fn sketch_text_record_decodes_without_the_optional_property_keys() {
     assert_eq!(text.persistent_id, Some(109));
     assert_eq!(
         (match text.layout {
-            crate::records::SketchTextLayout::TextexTag {
-                first_reference, ..
+            crate::records::sketch_geometry::SketchTextLayout::TextexTag {
+                first_reference,
+                ..
             } => first_reference,
-            crate::records::SketchTextLayout::TxtTag { .. } => None,
+            crate::records::sketch_geometry::SketchTextLayout::TxtTag { .. } => None,
         }),
         None
     );
     assert_eq!(
         (match text.layout {
-            crate::records::SketchTextLayout::TextexTag {
-                second_reference, ..
+            crate::records::sketch_geometry::SketchTextLayout::TextexTag {
+                second_reference,
+                ..
             } => second_reference,
-            crate::records::SketchTextLayout::TxtTag { .. } => None,
+            crate::records::sketch_geometry::SketchTextLayout::TxtTag { .. } => None,
         }),
         None
     );
-    assert_eq!(text.height, 10.0);
-    assert_eq!(text.width_factor(), Some(0.8));
+    assert_eq!(text.height.get(), 10.0);
+    assert_eq!(
+        text.width_factor()
+            .map(cadmpeg_ir::scalar::NonNegativeReal::get),
+        Some(0.8)
+    );
 }
 
 #[test]
@@ -480,13 +813,13 @@ fn frame_sketch_text_record_takes_its_anchor_and_rotation_from_the_transform() {
     // The anchor is the transform's last column in centimetres and the
     // rotation is the angle of its first basis column.
     assert_eq!(
-        text.placement().map(|placement| placement.anchor),
+        text.placement().map(|placement| placement.anchor.get()),
         Some(cadmpeg_ir::math::Point2::new(21.75, -5.0))
     );
     assert!(
         (text
             .placement()
-            .map(|placement| placement.rotation.0)
+            .map(|placement| placement.rotation.get())
             .expect("rotation")
             - rotation)
             .abs()
@@ -513,8 +846,14 @@ fn path_sketch_text_record_stores_neither_anchor_nor_rotation() {
         None,
     ))
     .expect("sketch text record");
-    assert_eq!(text.placement().map(|placement| placement.anchor), None);
-    assert_eq!(text.placement().map(|placement| placement.rotation.0), None);
+    assert_eq!(
+        text.placement().map(|placement| placement.anchor.get()),
+        None
+    );
+    assert_eq!(
+        text.placement().map(|placement| placement.rotation.get()),
+        None
+    );
 }
 
 #[test]
@@ -567,45 +906,42 @@ fn txt_tag_sketch_text_record_decodes_its_anchor_and_metrics() {
     assert_eq!(text.font_family, "Arial");
     assert_eq!(text.font_weight, 400);
     assert_eq!(
-        text.placement().map(|placement| placement.rotation.0),
+        text.placement().map(|placement| placement.rotation.get()),
         Some(0.0)
     );
-    assert_eq!(text.height, 5.0);
+    assert_eq!(text.height.get(), 5.0);
     // The form stores no width factor, and the anchor is the field pair the
     // other form omits.
     assert_eq!(text.width_factor(), None);
     assert_eq!(text.alignment().map(|alignment| alignment.horizontal), None);
     assert_eq!(text.alignment().map(|alignment| alignment.vertical), None);
     assert_eq!(
-        text.placement().map(|placement| placement.anchor),
+        text.placement().map(|placement| placement.anchor.get()),
         Some(cadmpeg_ir::math::Point2::new(2.5, -15.0))
     );
     // The colour closes the twenty-nine-byte run in the same component order
     // as the other form.
     assert_eq!(
         text.color,
-        cadmpeg_ir::topology::Color {
-            r: 0.0,
-            g: 0.3,
-            b: 1.0,
-            a: 1.0,
-        }
+        cadmpeg_ir::topology::Color::new(0.0, 0.3, 1.0, 1.0).expect("valid color")
     );
     assert_eq!(
         (match text.layout {
-            crate::records::SketchTextLayout::TextexTag {
-                first_reference, ..
+            crate::records::sketch_geometry::SketchTextLayout::TextexTag {
+                first_reference,
+                ..
             } => first_reference,
-            crate::records::SketchTextLayout::TxtTag { .. } => None,
+            crate::records::sketch_geometry::SketchTextLayout::TxtTag { .. } => None,
         }),
         None
     );
     assert_eq!(
         (match text.layout {
-            crate::records::SketchTextLayout::TextexTag {
-                second_reference, ..
+            crate::records::sketch_geometry::SketchTextLayout::TextexTag {
+                second_reference,
+                ..
             } => second_reference,
-            crate::records::SketchTextLayout::TxtTag { .. } => None,
+            crate::records::sketch_geometry::SketchTextLayout::TxtTag { .. } => None,
         }),
         None
     );
@@ -624,11 +960,11 @@ fn txt_tag_sketch_text_record_decodes_stored_rotation() {
     ))
     .expect("rotated txt_tag");
     assert_eq!(
-        text.placement().map(|placement| placement.rotation.0),
+        text.placement().map(|placement| placement.rotation.get()),
         Some(stored_rotation)
     );
     assert_eq!(
-        text.placement().map(|placement| placement.anchor),
+        text.placement().map(|placement| placement.anchor.get()),
         Some(Point2::new(8.114_737_226_243_502, -14.340_080_595_768_365,))
     );
 }
@@ -644,7 +980,7 @@ fn txt_tag_sketch_text_record_decodes_an_empty_reference_run() {
     .expect("sketch text record");
     assert_eq!(text.base_id, Some(305));
     assert_eq!(
-        text.placement().map(|placement| placement.anchor),
+        text.placement().map(|placement| placement.anchor.get()),
         Some(cadmpeg_ir::math::Point2::new(0.0, 0.0))
     );
 }
@@ -685,7 +1021,7 @@ fn a_txt_tag_sketch_text_record_below_the_identity_key_version_stores_no_identit
     assert_eq!(text.base_id, Some(300));
     assert_eq!(text.text, "sketch text");
     assert_eq!(
-        text.placement().map(|placement| placement.anchor),
+        text.placement().map(|placement| placement.anchor.get()),
         Some(cadmpeg_ir::math::Point2::new(2.5, -15.0))
     );
 }
@@ -722,19 +1058,18 @@ fn sketch_text_record(
 ) -> Vec<u8> {
     let mut bytes = Vec::new();
     let push_ascii = |bytes: &mut Vec<u8>, value: &str| {
-        bytes.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(value.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         bytes.extend_from_slice(value.as_bytes());
-    };
-    let push_utf16 = |bytes: &mut Vec<u8>, value: &str| {
-        let encoded = value.encode_utf16().collect::<Vec<_>>();
-        bytes.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
-        bytes.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
     };
     push_ascii(&mut bytes, "329");
     bytes.extend_from_slice(&304u64.to_le_bytes());
     bytes.extend_from_slice(&[0; 5]);
     bytes.push(1);
-    bytes.extend_from_slice(&(properties.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(properties.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     for (key, value) in properties {
         push_ascii(&mut bytes, key);
         push_ascii(&mut bytes, "IntrinsicMetaTypeuint64");
@@ -745,7 +1080,7 @@ fn sketch_text_record(
     for component in [0.25f32, 0.5, 0.75, 1.0] {
         bytes.extend_from_slice(&component.to_le_bytes());
     }
-    push_utf16(&mut bytes, "Arial");
+    lp_utf16(&mut bytes, "Arial");
     bytes.push(0);
     bytes.extend_from_slice(&1.0f64.to_le_bytes());
     if let Some(reference) = slots[0] {
@@ -754,7 +1089,7 @@ fn sketch_text_record(
     }
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 3]);
-    push_utf16(&mut bytes, "path text");
+    lp_utf16(&mut bytes, "path text");
     if let Some(reference) = slots[1] {
         push_reference(&mut bytes, reference);
         bytes.extend_from_slice(&[0; 6]);
@@ -787,13 +1122,10 @@ fn sketch_text_record(
 fn indexed_sketch_text_record(text_type: u32) -> Vec<u8> {
     let mut bytes = Vec::new();
     let push_ascii = |bytes: &mut Vec<u8>, value: &str| {
-        bytes.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(value.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         bytes.extend_from_slice(value.as_bytes());
-    };
-    let push_utf16 = |bytes: &mut Vec<u8>, value: &str| {
-        let encoded = value.encode_utf16().collect::<Vec<_>>();
-        bytes.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
-        bytes.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
     };
     let push_padded_reference = |bytes: &mut Vec<u8>, reference: u32| {
         push_reference(bytes, reference);
@@ -814,13 +1146,13 @@ fn indexed_sketch_text_record(text_type: u32) -> Vec<u8> {
     for component in [0.0f32, 0.0, 0.0, 1.0] {
         bytes.extend_from_slice(&component.to_le_bytes());
     }
-    push_utf16(&mut bytes, "Arial");
+    lp_utf16(&mut bytes, "Arial");
     bytes.push(0);
     bytes.extend_from_slice(&0.6f64.to_le_bytes());
     push_padded_reference(&mut bytes, 319);
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 3]);
-    push_utf16(&mut bytes, "B6 Probe 47");
+    lp_utf16(&mut bytes, "B6 Probe 47");
     push_padded_reference(&mut bytes, 322);
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.push(0);
@@ -840,20 +1172,27 @@ fn indexed_sketch_text_record(text_type: u32) -> Vec<u8> {
 
 /// Decode one sketch-text record at `class_version`, the version its Design
 /// `MetaStream` type table gives its class.
-fn decode_sketch_text_at(bytes: &[u8], class_version: u32) -> Option<crate::records::SketchText> {
-    crate::design::decode::sketch::decode_sketch_text_record(
-        bytes,
-        "Design/BulkStream.dat",
-        crate::records::DesignClassTag::try_from("329".to_owned()).unwrap(),
-        class_version,
-        304,
-        7,
-    )
+fn decode_sketch_text_at(
+    bytes: &[u8],
+    class_version: u32,
+) -> Option<crate::records::sketch_geometry::SketchText> {
+    crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::decode::sketch::decode_sketch_text_record(
+            decode_ctx,
+            bytes,
+            "Design/BulkStream.dat",
+            crate::records::references::DesignClassTag::try_from("329".to_owned()).unwrap(),
+            class_version,
+            304,
+            7,
+        )
+    })
+    .unwrap()
 }
 
 /// Decode one sketch-text record at the class version that writes an identity
 /// key and the wider anchor run.
-fn decode_sketch_text(bytes: &[u8]) -> Option<crate::records::SketchText> {
+fn decode_sketch_text(bytes: &[u8]) -> Option<crate::records::sketch_geometry::SketchText> {
     decode_sketch_text_at(bytes, 4)
 }
 
@@ -882,13 +1221,10 @@ fn txt_tag_sketch_text_record_at_with_rotation(
 ) -> Vec<u8> {
     let mut bytes = Vec::new();
     let push_ascii = |bytes: &mut Vec<u8>, value: &str| {
-        bytes.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(value.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         bytes.extend_from_slice(value.as_bytes());
-    };
-    let push_utf16 = |bytes: &mut Vec<u8>, value: &str| {
-        let encoded = value.encode_utf16().collect::<Vec<_>>();
-        bytes.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
-        bytes.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
     };
     let push_padded_reference = |bytes: &mut Vec<u8>, reference: u32| {
         push_reference(bytes, reference);
@@ -899,13 +1235,17 @@ fn txt_tag_sketch_text_record_at_with_rotation(
     bytes.extend_from_slice(&0u32.to_le_bytes());
     // The leading block: a reference and a u32 per entry.
     bytes.push(1);
-    bytes.extend_from_slice(&(frame.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(frame.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     for reference in frame {
         push_padded_reference(&mut bytes, *reference);
         bytes.extend_from_slice(&[0; 4]);
     }
     bytes.push(1);
-    bytes.extend_from_slice(&(properties.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(properties.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     for (key, value) in properties {
         push_ascii(&mut bytes, key);
         push_ascii(&mut bytes, "IntrinsicMetaTypeuint64");
@@ -917,14 +1257,16 @@ fn txt_tag_sketch_text_record_at_with_rotation(
     for component in [0.0f32, 0.3, 1.0, 1.0] {
         bytes.extend_from_slice(&component.to_le_bytes());
     }
-    push_utf16(&mut bytes, "Arial");
+    lp_utf16(&mut bytes, "Arial");
     bytes.extend_from_slice(&0.5f64.to_le_bytes());
     bytes.extend_from_slice(&[0; 2]);
     bytes.extend_from_slice(&anchor.0.to_le_bytes());
     bytes.extend_from_slice(&anchor.1.to_le_bytes());
     bytes.extend_from_slice(&vec![0u8; if class_version < 4 { 10 } else { 11 }]);
-    push_utf16(&mut bytes, "sketch text");
-    bytes.extend_from_slice(&(run.len() as u32).to_le_bytes());
+    lp_utf16(&mut bytes, "sketch text");
+    bytes.extend_from_slice(
+        &(u32::try_from(run.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     for reference in run {
         push_padded_reference(&mut bytes, *reference);
     }

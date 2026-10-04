@@ -6,17 +6,24 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::container::make_block;
+use crate::test_support::container::sldprt_with_body;
+use crate::test_support::history::resolved_feature_classes_with_ids;
+use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
 
 #[test]
 fn decode_projects_fixed_reference_plane_frame() {
-    use cadmpeg_ir::features::FeatureDefinition;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let mut resolved = resolved_feature_classes_with_ids(&[("moRefPlane_c", "Plano", 42)]);
     resolved.extend_from_slice(&[0xff, 0xff, 0x01, 0x00]);
-    resolved.extend_from_slice(&("moFixedRefPlnData_c".len() as u16).to_le_bytes());
+    resolved.extend_from_slice(
+        &u16::try_from("moFixedRefPlnData_c".len())
+            .unwrap()
+            .to_le_bytes(),
+    );
     resolved.extend_from_slice(b"moFixedRefPlnData_c");
     let mut frame = [0u8; 97];
     frame[0..8].copy_from_slice(&2.5f64.to_le_bytes());
@@ -49,34 +56,34 @@ fn decode_projects_fixed_reference_plane_frame() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir().model.features[0].definition,
-        FeatureDefinition::DatumPlane {
-            origin: Point3 {
+        decoded.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) if matches!(frame.origin().get(),  Point3 {
                 x: 2500.0,
                 y: -250.0,
                 z: 1500.0,
-            },
-            normal: Vector3 {
+            }) && matches!(frame.normal().get(),  Vector3 {
                 x: -1.0,
                 y: 0.0,
                 z: 0.0,
-            },
-            u_axis: Vector3 {
+            }) && matches!(frame.u_axis().get(),  Vector3 {
                 x: 0.0,
                 y: 0.0,
                 z: -1.0,
-            },
-        }
+            })
     ));
 }
 
 #[test]
 fn decode_rejects_nonorthogonal_fixed_reference_plane_frame() {
-    use cadmpeg_ir::features::{FeatureDefinition, UnresolvedFamily};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, UnresolvedFamily};
 
     let mut resolved = resolved_feature_classes_with_ids(&[("moRefPlane_c", "Plane", 42)]);
     resolved.extend_from_slice(&[0xff, 0xff, 0x01, 0x00]);
-    resolved.extend_from_slice(&("moFixedRefPlnData_c".len() as u16).to_le_bytes());
+    resolved.extend_from_slice(
+        &u16::try_from("moFixedRefPlnData_c".len())
+            .unwrap()
+            .to_le_bytes(),
+    );
     resolved.extend_from_slice(b"moFixedRefPlnData_c");
     let mut frame = [0u8; 97];
     frame[24..32].copy_from_slice(&1.0f64.to_le_bytes());
@@ -100,16 +107,16 @@ fn decode_rejects_nonorthogonal_fixed_reference_plane_frame() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir().model.features[0].definition,
-        FeatureDefinition::Unresolved {
+        decoded.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::DatumPlane
-        }
+        })
     ));
 }
 
 #[test]
 fn incomplete_coordinate_system_projects_as_typed_unresolved() {
-    use cadmpeg_ir::features::{FeatureDefinition, UnresolvedFamily};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, UnresolvedFamily};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -122,9 +129,9 @@ fn incomplete_coordinate_system_projects_as_typed_unresolved() {
         .unwrap();
 
     assert!(matches!(
-        decoded.ir().model.features[0].definition,
-        FeatureDefinition::Unresolved {
+        decoded.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::DatumCoordinateSystem
-        }
+        })
     ));
 }

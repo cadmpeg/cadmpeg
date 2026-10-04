@@ -7,13 +7,15 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry};
+use cadmpeg_ir::geometry::{pcurve::PcurveGeometry, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::Point2;
 
 use crate::loss::StepLossCode;
-use crate::test_support::decode_inline;
+use crate::test_support::exchange::{decode_inline, equivalent_seam_source};
 use crate::StepCodec;
+
+const EPS_PCURVE_PARAMETERS: f64 = 1.0e-12;
 
 #[test]
 fn invalid_single_pcurve_is_omitted_instead_of_invalidating_topology() {
@@ -35,7 +37,8 @@ fn invalid_single_pcurve_is_omitted_instead_of_invalidating_topology() {
             && loss.message.contains("one optional pcurve")
             && loss.message.contains("not continuous")
     }));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -56,10 +59,13 @@ fn pcurve_requires_one_two_dimensional_definition_and_rejects_replica_cycles() {
         .expect("valid pcurve");
     assert_eq!(
         pcurve.geometry,
-        PcurveGeometry::Line {
-            origin: Point2::new(2.0, 3.0),
-            direction: Point2::new(2.0, 0.0),
-        }
+        PcurveGeometry::Line(
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                Point2::new(2.0, 3.0),
+                Point2::new(2.0, 0.0)
+            )
+            .unwrap()
+        )
     );
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.message
@@ -81,7 +87,8 @@ fn pcurve_requires_one_two_dimensional_definition_and_rejects_replica_cycles() {
         .expect("STEP unknown arena")
         .iter()
         .any(|record| record.id.as_str() == "step:data:pcurve#36"));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -112,7 +119,8 @@ fn surface_curve_retains_direct_surface_support() {
             .map(|source| source.object_id.as_str()),
         Some("#57")
     );
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -152,10 +160,7 @@ fn trimmed_curve_resolves_a_surface_curve_basis_carrier() {
 
     assert!(decoded.ir().model.curves.iter().any(|curve| {
         curve.id.as_str() == "step:data:curve#70"
-            && matches!(
-                *curve.geometry.solved_cache().unwrap_or(&curve.geometry),
-                CurveGeometry::Line { .. }
-            )
+            && matches!(curve.geometry.solved(), Some(SolvedCurveGeometry::Line(_)))
     }));
     assert!(decoded.ir().model.procedural_curves.iter().any(|curve| {
         decoded
@@ -164,11 +169,7 @@ fn trimmed_curve_resolves_a_surface_curve_basis_carrier() {
             .procedural_curve_owner(&curve.id)
             .map(CurveId::as_str)
             == Some("step:data:curve#70")
-            && matches!(
-                curve.definition(),
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset { source, .. }
-                    if source.as_str() == "step:data:curve#16"
-            )
+            && match curve.definition() { cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) => matches!((matched_payload.source(),), (source,) if source.as_str() == "step:data:curve#16"), _ => false }
     }));
     assert!(decoded.report().losses.iter().all(|loss| {
         !loss
@@ -199,14 +200,15 @@ fn pcurve_trimmed_opposed_sense_has_an_ordered_parameter_range() {
         .iter()
         .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#56")
         .expect("trimmed pcurve");
-    assert!(matches!(
-        &pcurve.geometry,
-        cadmpeg_ir::geometry::PcurveGeometry::Trimmed {
-            parameter_range: [start, end],
-            ..
-        } if *start == 0.0 && *end == 1.0
-    ));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(
+        matches!(&pcurve.geometry, cadmpeg_ir::geometry::pcurve::PcurveGeometry::Trimmed(trimmed_pcurve)
+        if {
+            let [start, end] = &trimmed_pcurve.parameter_range().endpoints();
+            *start == 0.0 && *end == 1.0
+        })
+    );
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -231,8 +233,13 @@ fn pcurve_trimmed_stale_range_recovers_the_edge_use_interval() {
         .flat_map(|coedge| &coedge.pcurves)
         .find(|use_| use_.pcurve == pcurve)
         .expect("stale trimmed pcurve use");
-    assert_eq!(use_.parameter_range, Some([0.0, 1.0]));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert_eq!(
+        use_.parameter_range
+            .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints),
+        Some([0.0, 1.0])
+    );
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -263,11 +270,13 @@ fn cylindrical_pcurve_coordinates_follow_surface_parameter_units() {
         .iter()
         .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#56")
         .expect("cylindrical pcurve");
-    assert!(matches!(
-        &pcurve.geometry,
-        cadmpeg_ir::geometry::PcurveGeometry::Line { direction, .. }
-            if direction.u.abs() < 1.0e-12 && (direction.v - 10.0).abs() < 1.0e-12
-    ));
+    assert!(
+        matches!(&pcurve.geometry, cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line_pcurve)
+        if {
+            let direction = line_pcurve.direction().as_raw();
+            direction.u.abs() < EPS_PCURVE_PARAMETERS && (direction.v - 10.0).abs() < EPS_PCURVE_PARAMETERS
+        })
+    );
 }
 
 #[test]
@@ -379,10 +388,13 @@ fn linear_extrusion_pcurve_uses_directrix_and_dimensionless_sweep_parameters() {
         .expect("linear extrusion pcurve");
     assert_eq!(
         pcurve.geometry,
-        PcurveGeometry::Line {
-            origin: Point2::new(0.0, 0.0),
-            direction: Point2::new(10_000.0, 1.0),
-        }
+        PcurveGeometry::Line(
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                Point2::new(0.0, 0.0),
+                Point2::new(10_000.0, 1.0)
+            )
+            .unwrap()
+        )
     );
     assert!(decoded
         .ir()
@@ -405,7 +417,7 @@ fn linear_extrusion_pcurve_uses_directrix_and_dimensionless_sweep_parameters() {
 
 #[test]
 fn decode_maps_a_two_dimensional_polyline_to_a_pcurve_nurbs() {
-    use cadmpeg_ir::geometry::PcurveGeometry;
+    use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
     use cadmpeg_ir::math::Point2;
 
     let source =
@@ -461,12 +473,15 @@ fn planar_pcurve_coordinates_follow_the_document_length_unit() {
         .iter()
         .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#56")
         .expect("planar pcurve");
-    assert!(matches!(
-        &pcurve.geometry,
-        cadmpeg_ir::geometry::PcurveGeometry::Line { direction, .. }
-            if (direction.u - 10.0).abs() < 1.0e-12
-    ));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(
+        matches!(&pcurve.geometry, cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line_pcurve)
+        if {
+            let direction = line_pcurve.direction().as_raw();
+            (direction.u - 10.0).abs() < EPS_PCURVE_PARAMETERS
+        })
+    );
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -527,14 +542,17 @@ fn cylindrical_pcurve_uses_surface_parameter_without_degree_repair() {
         .iter()
         .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#34")
         .expect("surface-chart pcurve");
-    assert!(matches!(
-        &pcurve.geometry,
-        cadmpeg_ir::geometry::PcurveGeometry::Line { origin, direction }
-            if (origin.u - std::f64::consts::PI).abs() < 1.0e-12
-                && origin.v.abs() < 1.0e-12
-                && direction.u.abs() < 1.0e-12
-                && (direction.v - 10.0).abs() < 1.0e-12
-    ));
+    assert!(
+        matches!(&pcurve.geometry, cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line_pcurve)
+                if {
+                    let origin = line_pcurve.origin().as_raw();
+        let direction = line_pcurve.direction().as_raw();
+                    (origin.u - std::f64::consts::PI).abs() < EPS_PCURVE_PARAMETERS
+                        && origin.v.abs() < EPS_PCURVE_PARAMETERS
+                        && direction.u.abs() < EPS_PCURVE_PARAMETERS
+                        && (direction.v - 10.0).abs() < EPS_PCURVE_PARAMETERS
+                })
+    );
 
     let invalid_source = String::from_utf8(source.to_vec())
         .expect("fixture is UTF-8")
@@ -583,7 +601,7 @@ fn inconsistent_optional_pcurve_is_omitted_and_retained_as_source_data() {
     assert!(
         decoded.report().losses.iter().any(|loss| {
             loss.code == StepLossCode::PcurveEndpointsDiscontinuous.kind()
-                && loss.severity == cadmpeg_ir::Severity::Error
+                && loss.severity == cadmpeg_ir::report::Severity::Error
                 && loss.message.contains("optional pcurve")
         }),
         "{:#?}",
@@ -596,21 +614,9 @@ fn inconsistent_optional_pcurve_is_omitted_and_retained_as_source_data() {
         .iter()
         .any(|record| record.id.as_str() == "step:data:pcurve#56"));
 
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
-}
-
-fn equivalent_seam_source() -> String {
-    String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
-        .expect("fixture is UTF-8")
-        .replace(
-            "#57=SURFACE_CURVE('',#16,(#56),.PCURVE_S1.);",
-            "#57=SEAM_CURVE('',#16,(#56,#69),.PCURVE_S1.);",
-        )
-        .replace(
-            "ENDSEC;\nEND-ISO-10303-21;",
-            "#69=PCURVE('',#28,#70);\n#70=DEFINITIONAL_REPRESENTATION('',(#71),#50);\n#71=LINE('',#51,#53);\nENDSEC;\nEND-ISO-10303-21;",
-        )
 }
 
 fn distinct_seam_source() -> String {
@@ -647,7 +653,8 @@ fn equivalent_same_surface_pcurve_candidates_remain_detached() {
             && loss.message.contains("2 pcurves")
     }));
 
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -776,7 +783,7 @@ fn distinct_tied_seam_pcurve_candidates_are_reported_not_guessed() {
         "unexpected losses: {:#?}",
         decoded.report().losses
     );
-    assert_eq!(losses[0].severity, cadmpeg_ir::Severity::Warning);
+    assert_eq!(losses[0].severity, cadmpeg_ir::report::Severity::Warning);
     assert_eq!(
         losses[0].message,
         "curve #57 associates 2 pcurves with surface #28; Part 42 provides no non-seam selector, so the coedge has no pcurve"
@@ -803,7 +810,8 @@ fn endpoint_continuity_does_not_break_a_multiple_candidate_tie() {
             && loss.message.contains("2 pcurves")
     }));
 
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -845,7 +853,8 @@ fn ambiguous_pcurves_do_not_reject_the_body() {
         .losses
         .iter()
         .any(|loss| loss.code == StepLossCode::PcurveAssociationAmbiguous.kind()));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -870,7 +879,7 @@ fn intersection_curve_binds_its_basis_curve_and_pcurves() {
         .find(|edge| edge.id.as_str() == "step:data:edge#19")
         .expect("intersection-curve edge");
     assert_eq!(
-        edge.curve.as_ref().map(CurveId::as_str),
+        edge.curve().map(CurveId::as_str),
         Some("step:data:curve#16")
     );
     assert!(decoded.ir().model.coedges.iter().any(|coedge| {
@@ -907,15 +916,16 @@ fn quasi_uniform_pcurve_is_decoded_from_its_2d_representation() {
     assert!(result.ir().model.pcurves.iter().any(|pcurve| {
         matches!(
             &pcurve.geometry,
-            cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs }
+            cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs }
                 if nurbs.degree() == 1
-                    && nurbs.knots() == [0.0, 0.0, 1.0, 1.0]
+                    && nurbs.knots().as_slice() == [0.0, 0.0, 1.0, 1.0]
                     && nurbs.control_points().len() == 2
                     && nurbs.weights().is_none()
                     && !nurbs.periodic()
         )
     }));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -947,8 +957,8 @@ fn direct_boundary_curve_builds_a_curve_bounded_surface() {
             .find(|curve| curve.id.as_str() == "step:data:curve#9")
             .expect("boundary curve carrier");
         assert!(matches!(
-            boundary.geometry.solved_cache().unwrap_or(&boundary.geometry),
-            CurveGeometry::Composite { segments, .. }
+            &boundary.geometry,
+            CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. })
                 if segments.len() == 1 && segments[0].curve.as_str() == "step:data:curve#7"
         ));
 
@@ -968,7 +978,8 @@ fn direct_boundary_curve_builds_a_curve_bounded_surface() {
             loss.message
                 .contains("has invalid, cyclic, or unresolved segments")
         }));
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
 }
@@ -1022,7 +1033,8 @@ fn complex_surface_curve_pcurve_is_retained_by_curve_bounded_surface() {
         boundary_pcurves,
         &[cadmpeg_ir::ids::PcurveId::mint("step:data:pcurve#44").expect("identity grammar")]
     );
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1055,9 +1067,10 @@ fn free_surface_curve_keeps_its_three_dimensional_basis_reachable() {
             .map(|source| source.object_id.as_str()),
         Some("#84")
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(!validation.findings.iter().any(|finding| {
-        finding.check == cadmpeg_ir::report::Check::CarrierReachability
+        finding.check == cadmpeg_ir::report::check::Check::CarrierReachability
             && finding.entity.as_deref() == Some("step:data:curve#83")
     }));
 }

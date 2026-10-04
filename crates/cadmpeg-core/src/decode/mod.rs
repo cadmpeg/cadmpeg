@@ -6,29 +6,35 @@
 
 mod arena;
 mod budget;
+pub mod collect;
 mod context;
+mod deflate;
 mod error;
+mod input;
 mod policy;
 mod probe;
+mod sort;
 mod space;
+pub mod tree;
+mod unique;
+mod utf16;
 mod view;
+pub mod work_scratch;
+pub mod zstd;
 
 #[cfg(test)]
 mod tests;
 
 pub use arena::DecodeArena;
 pub use budget::{
-    alloc_filled, refuse_local_limit, DepthGuard, ScopedReservation, WorkBudget,
+    refuse_local_limit, work_units, BudgetExhausted, DepthGuard, ScopedReservation, WorkBudget,
     WorkBudgetRecursionGuard,
 };
 pub use context::{DecodeContext, ExpandSpec, ExpandWriter};
-pub use error::{
-    ErrorContext, LimitScope, ResourceDimension, ResourceFailure, ResourceLimit, SourceLocation,
-};
+pub use error::{ResourceDimension, ResourceFailure, ResourceLimit, SourceLocation};
 pub use policy::{DecodeMode, DecodePolicy, InspectOptions, ResourceLimits};
 pub use probe::{ParseError, ParseErrorKind};
-pub use space::{
-    resolve_address, AddressStep, AddressStepKind, ByteRange, ResolvedAddress, SpaceDerivation,
-    SpaceDescriptor, SpaceId,
+pub use space::{ByteRange, SpaceId};
+pub use view::{
+    bounded_len, id_from_index, index_from_u32, index_from_u64, u64_from_index, BoundedCount, View,
 };
-pub use view::{bounded_len, BoundedCount, View};

@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use crate::examples::unit_cube;
-use crate::features::{ConfigurationEvaluation, TrimCellSelection};
+use crate::features::TrimCellSelection;
 use crate::math::{Point3, Vector3};
-use crate::validate::validate_neutral;
-use crate::CadIr;
+
+mod distinct_members;
+mod revolve;
+mod unit_directions;
 
 #[test]
 fn native_feature_kind_preserves_the_source_spelling() {
@@ -25,1371 +26,12 @@ fn native_feature_kind_preserves_the_source_spelling() {
 }
 
 #[test]
-fn configuration_body_membership_round_trips_and_validates() {
-    use crate::features::{
-        Angle, ConfigurationEvaluation, ConfigurationFeatureState, ConfigurationId,
-        DesignConfiguration, DesignParameter, Feature, FeatureDefinition, FeatureId, Length,
-        ParameterId, ParameterValue,
-    };
-    use crate::ids::BodyId;
-    use std::collections::BTreeMap;
-
-    let mut ir = unit_cube();
-    let configuration_id =
-        ConfigurationId::mint("synthetic:test:configuration#0").expect("identity grammar");
-    let parameter_id =
-        ParameterId::mint("synthetic:test:parameter#width").expect("identity grammar");
-    let body = ir.model.bodies[0].id.clone();
-    ir.model.parameters.push(DesignParameter {
-        id: parameter_id.clone(),
-        owner: None,
-        ordinal: 0,
-        name: "width".into(),
-        expression: "10 mm".into(),
-        display: None,
-        value: None,
-        dependencies: Vec::new(),
-        properties: BTreeMap::new(),
-        pmi: None,
-        native_ref: None,
-    });
-    ir.model.configurations.push(DesignConfiguration {
-        id: configuration_id.clone(),
-        ordinal: 0,
-        active: false,
-        source_index: Some(7),
-        name: "Default".into(),
-        material: None,
-        properties: BTreeMap::new(),
-        parameter_overrides: BTreeMap::from([(parameter_id.clone(), "25 mm".into())]),
-        bodies: crate::features::ConfigurationBodies::Resolved(vec![body.clone()]),
-        parameter_values: BTreeMap::new(),
-        feature_states: BTreeMap::new(),
-        native_ref: None,
-    });
-    ir.finalize();
-    assert!(validate_neutral(&ir, Vec::new()).is_ok());
-    let round_trip = CadIr::from_json(&serde_json::to_string(&ir).unwrap()).unwrap();
-    assert_eq!(
-        round_trip.model.configurations[0].bodies,
-        vec![body.clone()]
-    );
-    assert_eq!(
-        round_trip.model.configurations[0].parameter_overrides[&parameter_id],
-        "25 mm"
-    );
-
-    ir.model.configurations[0].parameter_overrides = BTreeMap::from([(
-        ParameterId::mint("synthetic:test:parameter#missing").expect("identity grammar"),
-        "30 mm".into(),
-    )]);
-    let report = validate_neutral(&ir, Vec::new());
-    assert!(report.findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some(configuration_id.0.as_str())
-            && finding.message.contains("configuration parameter override")
-    }));
-    ir.model.configurations[0].parameter_overrides.clear();
-
-    ir.model.configurations[0].parameter_values = BTreeMap::from([(
-        ParameterId::mint("synthetic:test:parameter#missing-value").expect("identity grammar"),
-        ParameterValue::Real(1.0),
-    )]);
-    ir.model.configurations[0].feature_states = BTreeMap::from([(
-        FeatureId::mint("synthetic:test:feature#missing-state").expect("identity grammar"),
-        ConfigurationFeatureState {
-            evaluation: ConfigurationEvaluation::Active {
-                outputs: vec![
-                    BodyId::mint("synthetic:test:body#missing-output").expect("valid identity")
-                ],
-            },
-            dependencies: vec![FeatureId::mint("synthetic:test:feature#missing-dependency")
-                .expect("identity grammar")],
-            definition: FeatureDefinition::DatumPoint {
-                position: Point3::new(0.0, 0.0, 0.0),
-                construction: None,
-            },
-        },
-    )]);
-    let report = validate_neutral(&ir, Vec::new());
-    for reference in [
-        "configuration parameter value",
-        "configuration feature state",
-        "configuration feature dependency",
-        "configuration feature output",
-    ] {
-        assert!(report.findings.iter().any(|finding| {
-            finding.entity.as_deref() == Some(configuration_id.0.as_str())
-                && finding.message.contains(reference)
-        }));
-    }
-    ir.model.configurations[0].parameter_values.clear();
-    ir.model.configurations[0].feature_states.clear();
-
-    ir.model.parameters[0].value = Some(ParameterValue::Length(Length(10.0)));
-    ir.model.configurations[0].parameter_values =
-        BTreeMap::from([(parameter_id.clone(), ParameterValue::Angle(Angle(1.0)))]);
-    let report = validate_neutral(&ir, Vec::new());
-    assert!(report.findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some(configuration_id.0.as_str())
-            && finding.message == "configuration parameter value is invalid"
-    }));
-    ir.model.configurations[0].parameter_values.clear();
-
-    ir.model.parameters[0].value = Some(ParameterValue::Real(f64::NAN));
-    let report = validate_neutral(&ir, Vec::new());
-    assert!(report.findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some(parameter_id.0.as_str())
-            && finding.message == "parameter value is invalid"
-    }));
-    ir.model.parameters[0].value = None;
-
-    let first_feature =
-        FeatureId::mint("synthetic:test:feature#configuration-first").expect("identity grammar");
-    let later_feature =
-        FeatureId::mint("synthetic:test:feature#configuration-later").expect("identity grammar");
-    for (ordinal, feature) in [first_feature.clone(), later_feature.clone()]
-        .into_iter()
-        .enumerate()
-    {
-        ir.model.features.push(Feature {
-            id: feature,
-            ordinal: ordinal as u64,
-            name: None,
-            suppressed: Some(false),
-            dependencies: Vec::new(),
-            source_properties: BTreeMap::new(),
-            source_tag: None,
-            source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::DatumPoint {
-                position: Point3::new(0.0, 0.0, 0.0),
-                construction: None,
-            },
-            native_ref: None,
-        });
-    }
-    ir.model.configurations[0].feature_states = BTreeMap::from([(
-        first_feature.clone(),
-        ConfigurationFeatureState {
-            evaluation: ConfigurationEvaluation::Active {
-                outputs: vec![body.clone(), body.clone()],
-            },
-            dependencies: vec![later_feature.clone(), later_feature.clone()],
-            definition: FeatureDefinition::DatumPoint {
-                position: Point3::new(0.0, 0.0, 0.0),
-                construction: None,
-            },
-        },
-    )]);
-    let report = validate_neutral(&ir, Vec::new());
-    for message in [
-        "does not precede",
-        "repeats dependency",
-        "repeats output body",
-    ] {
-        assert!(report.findings.iter().any(|finding| {
-            finding.entity.as_deref() == Some(configuration_id.0.as_str())
-                && finding.message.contains(message)
-        }));
-    }
-    ir.model.configurations[0].feature_states.clear();
-
-    ir.model.configurations[0].feature_states = BTreeMap::from([(
-        first_feature.clone(),
-        ConfigurationFeatureState {
-            evaluation: ConfigurationEvaluation::Suppressed,
-            dependencies: Vec::new(),
-            definition: FeatureDefinition::DatumPoint {
-                position: Point3::new(0.0, 0.0, 0.0),
-                construction: None,
-            },
-        },
-    )]);
-    assert!(validate_neutral(&ir, Vec::new()).is_ok());
-    ir.model.configurations[0].feature_states.clear();
-
-    ir.model.configurations[0].active = true;
-    ir.model.features[0].suppressed = Some(true);
-    let report = validate_neutral(&ir, Vec::new());
-    assert!(report.findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some(configuration_id.0.as_str())
-            && finding.message
-                == "active configuration suppression disagrees with current feature state"
-    }));
-    ir.model.configurations[0].active = false;
-    ir.model.features[0].suppressed = Some(false);
-
-    ir.model.configurations[0].feature_states = BTreeMap::from([(
-        later_feature.clone(),
-        ConfigurationFeatureState {
-            evaluation: ConfigurationEvaluation::Active {
-                outputs: vec![body.clone()],
-            },
-            dependencies: vec![first_feature.clone()],
-            definition: FeatureDefinition::DatumPoint {
-                position: Point3::new(0.0, 0.0, 0.0),
-                construction: None,
-            },
-        },
-    )]);
-    // A dependency with no state in this configuration inherits its model-level
-    // state; `feature_states` is allowed to be sparse, so that is not a finding.
-    assert!(validate_neutral(&ir, Vec::new()).is_ok());
-    ir.model.configurations[0].feature_states.insert(
-        first_feature.clone(),
-        ConfigurationFeatureState {
-            evaluation: ConfigurationEvaluation::Suppressed,
-            dependencies: Vec::new(),
-            definition: FeatureDefinition::DatumPoint {
-                position: Point3::new(0.0, 0.0, 0.0),
-                construction: None,
-            },
-        },
-    );
-    let report = validate_neutral(&ir, Vec::new());
-    assert!(report.findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some(configuration_id.0.as_str())
-            && finding.message
-                == format!(
-                    "configuration state closure uses suppressed dependency state `{}`",
-                    first_feature.0
-                )
-    }));
-    ir.model.configurations[0]
-        .feature_states
-        .get_mut(&first_feature)
-        .expect("dependency state")
-        .evaluation = ConfigurationEvaluation::Active {
-        outputs: Vec::new(),
-    };
-    assert!(validate_neutral(&ir, Vec::new()).is_ok());
-    ir.model.configurations[0].feature_states.clear();
-
-    ir.model.configurations[0].bodies = crate::features::ConfigurationBodies::Resolved(vec![
-        BodyId::mint("synthetic:test:body#missing").expect("valid identity"),
-        BodyId::mint("synthetic:test:body#missing").expect("valid identity"),
-    ]);
-    let report = validate_neutral(&ir, Vec::new());
-    assert!(report.findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some(configuration_id.0.as_str())
-            && finding.message.contains("missing configuration body")
-    }));
-    assert!(report.findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some(configuration_id.0.as_str())
-            && finding.message.contains("repeats body")
-    }));
-
-    ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId::mint("synthetic:test:configuration#1").expect("identity grammar"),
-        ordinal: 0,
-        active: false,
-        source_index: Some(7),
-        name: "Alternate".into(),
-        material: None,
-        properties: BTreeMap::new(),
-        parameter_overrides: BTreeMap::new(),
-        bodies: crate::features::ConfigurationBodies::Resolved(Vec::new()),
-        parameter_values: BTreeMap::new(),
-        feature_states: BTreeMap::new(),
-        native_ref: None,
-    });
-    ir.model.configurations[0].active = true;
-    ir.model.configurations[1].active = true;
-    ir.finalize();
-    let report = validate_neutral(&ir, Vec::new());
-    assert!(report
-        .findings
-        .iter()
-        .any(|finding| finding.message.contains("repeats configuration ordinal")));
-    assert!(report
-        .findings
-        .iter()
-        .any(|finding| finding.message.contains("multiple active configurations")));
-    assert!(report.findings.iter().any(|finding| finding
-        .message
-        .contains("repeats configuration source index")));
-}
-
-#[test]
-fn configuration_name_preserves_resolution_state() {
-    use crate::features::{ConfigurationName, DesignConfiguration};
-
-    let configuration: DesignConfiguration = serde_json::from_value(serde_json::json!({
-        "id": "synthetic:test:configuration#0"
-    }))
-    .expect("legacy configuration");
-    assert_eq!(configuration.name, ConfigurationName::Unresolved);
-    assert!(!configuration.active);
-
-    let encoded = serde_json::to_value(&configuration).expect("unresolved configuration");
-    assert!(encoded.get("name").is_none());
-    assert!(encoded.get("active").is_none());
-    let round_trip: DesignConfiguration =
-        serde_json::from_value(encoded).expect("round-trip unresolved configuration");
-    assert_eq!(round_trip.name, ConfigurationName::Unresolved);
-    assert!(!round_trip.active);
-}
-
-#[test]
-fn configuration_suppression_is_derived_and_requires_agreeing_feature_states() {
-    use crate::features::{
-        ConfigurationBodies, ConfigurationFeatureState, ConfigurationId, DesignConfiguration,
-        Feature, FeatureDefinition, FeatureId,
-    };
-    use std::collections::BTreeMap;
-
-    let mut ir = unit_cube();
-    let feature = Feature::new(
-        FeatureId::mint("synthetic:test:feature#suppressed").expect("identity grammar"),
-        0,
-        FeatureDefinition::DatumPoint {
-            position: Point3::new(0.0, 0.0, 0.0),
-            construction: None,
-        },
-    );
-    ir.model.features.push(feature.clone());
-    ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId::mint("synthetic:test:configuration#suppressed")
-            .expect("identity grammar"),
-        ordinal: 0,
-        active: false,
-        source_index: None,
-        name: "Suppressed".into(),
-        material: None,
-        properties: BTreeMap::new(),
-        parameter_overrides: BTreeMap::new(),
-        bodies: ConfigurationBodies::Unresolved,
-        parameter_values: BTreeMap::new(),
-        feature_states: BTreeMap::from([(
-            feature.id.clone(),
-            ConfigurationFeatureState {
-                evaluation: ConfigurationEvaluation::Suppressed,
-                dependencies: feature.dependencies.clone(),
-                definition: feature.definition.clone(),
-            },
-        )]),
-        native_ref: None,
-    });
-
-    let mut wire = serde_json::to_value(&ir).unwrap();
-    let configuration = &mut wire["model"]["configurations"][0];
-    assert_eq!(
-        configuration["suppressed_features"],
-        serde_json::json!([feature.id.0.clone()])
-    );
-    configuration
-        .as_object_mut()
-        .unwrap()
-        .remove("feature_states");
-    let error = serde_json::from_value::<CadIr>(wire).unwrap_err();
-    assert!(
-        error.to_string().contains(&format!(
-            "configuration suppressed feature `{}` has no configuration feature state",
-            feature.id.0
-        )),
-        "{error}"
-    );
-
-    let mut invalid = serde_json::to_value(&ir).unwrap();
-    invalid["model"]["configurations"][0]["feature_states"][feature.id.0.as_str()]["evaluation"]
-        ["kind"] = serde_json::json!("active");
-    let error = serde_json::from_value::<CadIr>(invalid).unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("configuration suppression disagrees with feature state"));
-}
-
-#[test]
-fn datum_plane_reference_preserves_legacy_feature_ids_and_face_selections() {
-    let feature = crate::features::DatumPlaneReference::Feature(
-        crate::features::FeatureId::mint("test:model:feature#feature").expect("identity grammar"),
-    );
-    assert_eq!(
-        serde_json::to_value(&feature).unwrap(),
-        serde_json::json!("test:model:feature#feature")
-    );
-    assert_eq!(
-        serde_json::from_value::<crate::features::DatumPlaneReference>(serde_json::json!(
-            "test:model:feature#feature"
-        ))
-        .unwrap(),
-        feature
-    );
-
-    let face =
-        crate::features::DatumPlaneReference::Face(crate::features::FaceSelection::Faces(vec![
-            crate::ids::FaceId::mint("test:model:face#face").expect("valid identity"),
-        ]));
-    assert_eq!(
-        serde_json::to_value(&face).unwrap(),
-        serde_json::json!({
-            "face": {"kind": "faces", "value": ["test:model:face#face"]}
-        })
-    );
-    assert_eq!(
-        serde_json::from_value::<crate::features::DatumPlaneReference>(
-            serde_json::to_value(&face).unwrap()
-        )
-        .unwrap(),
-        face
-    );
-    let legacy_face_wire = serde_json::json!({
-        "face": {"kind": "faces", "value": ["test:model:face#face"]},
-        "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
-        "normal": {"x": 0.0, "y": 0.0, "z": 1.0},
-        "u_axis": {"x": 1.0, "y": 0.0, "z": 0.0}
-    });
-    assert_eq!(
-        serde_json::from_value::<crate::features::DatumPlaneReference>(legacy_face_wire).unwrap(),
-        face
-    );
-
-    let resolved = crate::features::DatumPlaneReference::ResolvedPlane {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    };
-    let resolved_wire = serde_json::json!({
-        "face": {"kind": "unresolved"},
-        "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
-        "normal": {"x": 0.0, "y": 0.0, "z": 1.0},
-        "u_axis": {"x": 1.0, "y": 0.0, "z": 0.0}
-    });
-    assert_eq!(serde_json::to_value(&resolved).unwrap(), resolved_wire);
-    assert_eq!(
-        serde_json::from_value::<crate::features::DatumPlaneReference>(
-            serde_json::to_value(&resolved).unwrap()
-        )
-        .unwrap(),
-        resolved
-    );
-
-    let partial_legacy_wire = serde_json::json!({
-        "face": {"kind": "faces", "value": ["test:model:face#face"]},
-        "origin": {"x": 0.0, "y": 0.0, "z": 0.0}
-    });
-    assert!(
-        serde_json::from_value::<crate::features::DatumPlaneReference>(partial_legacy_wire)
-            .is_err()
-    );
-}
-
-#[test]
-fn feature_extents_round_trip_through_json() {
-    use crate::features::{
-        Angle, AngularTermination, ExtrudeExtent, ExtrudeSide, FaceSelection, Length,
-        LinearTermination, RevolveExtent,
-    };
-    use crate::ids::FaceId;
-
-    let extents = vec![
-        ExtrudeExtent::OneSided {
-            side: ExtrudeSide {
-                termination: LinearTermination::Blind {
-                    length: Length(12.5),
-                },
-                draft: Some(Angle(0.1)),
-            },
-        },
-        ExtrudeExtent::Symmetric {
-            side: ExtrudeSide {
-                termination: LinearTermination::Blind {
-                    length: Length(25.0),
-                },
-                draft: None,
-            },
-        },
-        ExtrudeExtent::TwoSided {
-            first: ExtrudeSide {
-                termination: LinearTermination::Blind {
-                    length: Length(10.0),
-                },
-                draft: Some(Angle(0.2)),
-            },
-            second: ExtrudeSide {
-                termination: LinearTermination::ToFace {
-                    face: FaceSelection::Faces(vec![
-                        FaceId::mint("synthetic:test:face#0").expect("valid identity")
-                    ]),
-                    offset: Some(Length(-2.0)),
-                },
-                draft: None,
-            },
-        },
-        ExtrudeExtent::OneSided {
-            side: ExtrudeSide {
-                termination: LinearTermination::ThroughAll,
-                draft: None,
-            },
-        },
-    ];
-    let json = serde_json::to_string(&extents).unwrap();
-    assert_eq!(
-        serde_json::from_str::<Vec<ExtrudeExtent>>(&json).unwrap(),
-        extents
-    );
-
-    let revolve_extents = vec![
-        RevolveExtent::OneSided {
-            termination: AngularTermination::Angle {
-                angle: Angle(std::f64::consts::PI),
-            },
-        },
-        RevolveExtent::Symmetric {
-            termination: AngularTermination::Angle {
-                angle: Angle(std::f64::consts::FRAC_PI_2),
-            },
-        },
-        RevolveExtent::TwoSided {
-            first: AngularTermination::Angle { angle: Angle(0.25) },
-            second: AngularTermination::Angle { angle: Angle(0.75) },
-        },
-    ];
-    let json = serde_json::to_string(&revolve_extents).unwrap();
-    assert_eq!(
-        serde_json::from_str::<Vec<RevolveExtent>>(&json).unwrap(),
-        revolve_extents
-    );
-}
-
-#[test]
-fn termination_families_preserve_wire_and_reject_cross_family_variants() {
-    use crate::features::{Angle, AngularTermination, Length, LinearTermination};
-
-    let blind_wire = serde_json::json!({"kind": "blind", "length": 12.5});
-    let blind: LinearTermination = serde_json::from_value(blind_wire.clone()).unwrap();
-    assert_eq!(
-        blind,
-        LinearTermination::Blind {
-            length: Length(12.5)
-        }
-    );
-    assert_eq!(serde_json::to_value(blind).unwrap(), blind_wire);
-    assert!(serde_json::from_value::<AngularTermination>(blind_wire).is_err());
-
-    let angle_wire = serde_json::json!({"kind": "angle", "angle": 1.25});
-    let angle: AngularTermination = serde_json::from_value(angle_wire.clone()).unwrap();
-    assert_eq!(angle, AngularTermination::Angle { angle: Angle(1.25) });
-    assert_eq!(serde_json::to_value(angle).unwrap(), angle_wire);
-    assert!(serde_json::from_value::<LinearTermination>(angle_wire).is_err());
-}
-
-#[test]
-fn loft_sections_preserve_profile_shape() {
-    use crate::features::{BooleanOp, FeatureDefinition, LoftSection, ProfileRef};
-
-    let wire = serde_json::json!({
-        "definition": "loft",
-        "sections": [{"kind": "native", "value": "native:section"}],
-        "guidance": {"kind": "guides", "path": []},
-        "op": "new_body",
-        "closed": false
-    });
-    let definition: FeatureDefinition = serde_json::from_value(wire).unwrap();
-    assert!(matches!(
-        &definition,
-        FeatureDefinition::Loft {
-            sections,
-            guidance: crate::features::LoftGuidance::Guides(guides),
-            op: BooleanOp::NewBody,
-            closed: false,
-            ..
-        } if sections == &vec![LoftSection::Profile(ProfileRef::Native("native:section".into()))]
-            && guides.is_empty()
-    ));
-    let encoded = serde_json::to_value(definition).unwrap();
-    assert_eq!(
-        encoded["sections"][0],
-        serde_json::json!({"kind": "native", "value": "native:section"})
-    );
-}
-
-#[test]
-fn generated_sweep_sections_round_trip_and_validate() {
-    use crate::features::{
-        Feature, FeatureDefinition, FeatureId, GeneratedSweepSection, Length, SweepMode,
-        SweepSection,
-    };
-
-    let definition = FeatureDefinition::Sweep {
-        section: SweepSection::Generated(GeneratedSweepSection::CircularRegion {
-            outer_radius: Length(3.0),
-            wall_thickness: Some(Length(1.0)),
-        }),
-        sections: Vec::new(),
-        path: None,
-        mode: SweepMode::NewBody,
-        orientation: None,
-        transition: None,
-        transformation: None,
-        path_tangent: false,
-        linearize: false,
-        twist: None,
-        path_extent: None,
-        guide_rail: None,
-        taper: None,
-        scale: None,
-        allow_multi_profile_faces: None,
-    };
-    let json = serde_json::to_string(&definition).unwrap();
-    assert!(json.contains("\"kind\":\"generated\""));
-    assert!(json.contains("\"shape\":\"circular_region\""));
-    assert_eq!(
-        serde_json::from_str::<FeatureDefinition>(&json).unwrap(),
-        definition
-    );
-
-    let validate_definition = |definition| {
-        let mut ir = unit_cube();
-        ir.model.features.push(Feature {
-            id: FeatureId::mint("synthetic:test:feature#generated-sweep")
-                .expect("identity grammar"),
-            ordinal: 0,
-            name: None,
-            suppressed: Some(false),
-            dependencies: Vec::new(),
-            source_properties: std::collections::BTreeMap::new(),
-            source_tag: None,
-            source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition,
-            native_ref: None,
-        });
-        ir.finalize();
-        validate_neutral(&ir, Vec::new())
-    };
-    let report = validate_definition(definition.clone());
-    assert!(report.is_ok(), "{report:#?}");
-
-    let mut invalid_wall = definition.clone();
-    let FeatureDefinition::Sweep { section, .. } = &mut invalid_wall else {
-        unreachable!();
-    };
-    let SweepSection::Generated(GeneratedSweepSection::CircularRegion {
-        outer_radius,
-        wall_thickness,
-    }) = section
-    else {
-        unreachable!();
-    };
-    *wall_thickness = Some(*outer_radius);
-    assert!(validate_definition(invalid_wall)
-        .findings
-        .iter()
-        .any(|finding| { finding.message == "sweep magnitude is invalid" }));
-
-    let mut invalid_mode = definition;
-    let FeatureDefinition::Sweep { mode, .. } = &mut invalid_mode else {
-        unreachable!();
-    };
-    *mode = SweepMode::Surface;
-    assert!(validate_definition(invalid_mode)
-        .findings
-        .iter()
-        .any(|finding| { finding.message == "sweep magnitude is invalid" }));
-}
-
-#[test]
-fn full_round_fillet_keeps_automatic_side_semantics() {
-    use crate::features::{
-        FaceSelection, Feature, FeatureDefinition, FeatureId, FullRoundFilletGroup,
-        FullRoundSideSelection,
-    };
-
-    let mut ir = unit_cube();
-    let center = ir.model.faces[0].id.clone();
-    let feature_index = ir.model.features.len();
-    let definition = FeatureDefinition::FullRoundFillet {
-        groups: vec![FullRoundFilletGroup {
-            center_faces: FaceSelection::Faces(vec![center.clone()]),
-            side_one_faces: FullRoundSideSelection::Automatic,
-            side_two_faces: FullRoundSideSelection::Automatic,
-        }],
-    };
-    assert_eq!(
-        serde_json::from_value::<FeatureDefinition>(serde_json::to_value(&definition).unwrap())
-            .unwrap(),
-        definition
-    );
-    ir.model.features.push(Feature {
-        id: FeatureId::mint("synthetic:test:feature#full-round").expect("identity grammar"),
-        ordinal: 0,
-        name: None,
-        suppressed: Some(false),
-        dependencies: Vec::new(),
-        source_properties: std::collections::BTreeMap::new(),
-        source_tag: Some("Fillet".into()),
-        source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition,
-        native_ref: None,
-    });
-    assert!(!validate_neutral(&ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| {
-            finding.entity.as_deref() == Some("synthetic:test:feature#full-round")
-                && finding.message == "full-round fillet face sets are invalid"
-        }));
-
-    if let FeatureDefinition::FullRoundFillet { groups } =
-        &mut ir.model.features[feature_index].definition
-    {
-        groups[0].side_one_faces =
-            FullRoundSideSelection::Explicit(FaceSelection::Faces(vec![center]));
-    } else {
-        unreachable!("test feature is a full-round fillet");
-    }
-    assert!(validate_neutral(&ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| {
-            finding.entity.as_deref() == Some("synthetic:test:feature#full-round")
-                && finding.message == "full-round fillet face sets are invalid"
-        }));
-}
-
-#[test]
-fn flex_modes_round_trip_and_validate() {
-    use crate::features::{Angle, Feature, FeatureDefinition, FeatureId, FlexMode, Length};
-
-    let modes = vec![
-        FlexMode::Bending { angle: Angle(0.5) },
-        FlexMode::Twisting { angle: Angle(1.0) },
-        FlexMode::Tapering { factor: 1.5 },
-        FlexMode::Stretching {
-            distance: Length(12.0),
-        },
-    ];
-    let json = serde_json::to_string(&modes).unwrap();
-    assert_eq!(serde_json::from_str::<Vec<FlexMode>>(&json).unwrap(), modes);
-
-    let mut ir = unit_cube();
-    ir.model.features.push(Feature {
-        id: FeatureId::mint("synthetic:test:feature#flex").expect("identity grammar"),
-        ordinal: 0,
-        name: None,
-        suppressed: Some(false),
-        dependencies: Vec::new(),
-        source_properties: std::collections::BTreeMap::new(),
-        source_tag: None,
-        source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Flex {
-            axis: Some(Vector3::new(0.0, 0.0, 0.0)),
-            mode: FlexMode::Tapering { factor: 0.0 },
-        },
-        native_ref: None,
-    });
-    let findings = validate_neutral(&ir, Vec::new()).findings;
-    assert!(findings
-        .iter()
-        .any(|finding| finding.message == "flex axis is degenerate"));
-    assert!(findings
-        .iter()
-        .any(|finding| finding.message == "flex magnitude is invalid"));
-}
-
-#[test]
-fn unresolved_hole_and_flex_wire_forms_preserve_the_legacy_layout() {
-    use crate::features::{FlexMode, HoleKind};
-
-    let counterbore = serde_json::json!({
-        "kind": "unresolved",
-        "form": "counterbore",
-        "counterbore_diameter": 10.0
-    });
-    let kind: HoleKind = serde_json::from_value(counterbore.clone()).unwrap();
-    assert_eq!(
-        kind,
-        HoleKind::PartialCounterbore {
-            diameter: Some(crate::features::Length(10.0)),
-            depth: None,
-        }
-    );
-    assert_eq!(serde_json::to_value(kind).unwrap(), counterbore);
-
-    let flex = serde_json::json!({"kind": "unresolved", "form": "twisting"});
-    let mode: FlexMode = serde_json::from_value(flex.clone()).unwrap();
-    assert_eq!(
-        mode,
-        FlexMode::Unresolved(Some(crate::features::FlexForm::Twisting))
-    );
-    assert_eq!(serde_json::to_value(mode).unwrap(), flex);
-}
-
-#[test]
-fn unresolved_hole_and_flex_wire_forms_reject_cross_family_payloads() {
-    use crate::features::{FlexMode, HoleKind};
-
-    assert!(serde_json::from_value::<HoleKind>(serde_json::json!({
-        "kind": "unresolved",
-        "form": "counterbore",
-        "countersink_angle": 0.5
-    }))
-    .is_err());
-    assert!(serde_json::from_value::<FlexMode>(serde_json::json!({
-        "kind": "unresolved",
-        "form": "twisting",
-        "factor": 2.0
-    }))
-    .is_err());
-}
-
-#[test]
-fn hole_construction_forms_preserve_the_flat_wire_layout() {
-    use crate::features::{FeatureDefinition, HoleConstruction, HoleKind, HoleSpecification};
-
-    let standard = serde_json::json!({
-        "definition": "hole",
-        "kind": {"kind": "simple"},
-        "specification": {
-            "standard": "ISO metric",
-            "designation": "M8",
-            "fit": "normal",
-            "threaded": false,
-            "modeled": false,
-            "cosmetic": false,
-            "hand": "right",
-            "depth": {"kind": "hole_depth"}
-        }
-    });
-    let definition: FeatureDefinition = serde_json::from_value(standard.clone()).unwrap();
-    assert!(matches!(
-        &definition,
-        FeatureDefinition::Hole {
-            construction: HoleConstruction::Form {
-                kind: HoleKind::Simple,
-                specification: Some(specification),
-            },
-            ..
-        } if matches!(specification.as_ref(), HoleSpecification::Clearance { .. })
-    ));
-    assert_eq!(serde_json::to_value(definition).unwrap(), standard);
-
-    let native_thread = serde_json::json!({
-        "definition": "hole",
-        "kind": {
-            "kind": "threaded",
-            "major_diameter": 8.0,
-            "thread_depth": 12.0,
-            "pitch": 1.25,
-            "drill_point_angle": 2.0
-        }
-    });
-    let definition: FeatureDefinition = serde_json::from_value(native_thread.clone()).unwrap();
-    assert!(matches!(
-        &definition,
-        FeatureDefinition::Hole {
-            construction: HoleConstruction::NativeThread { .. },
-            ..
-        }
-    ));
-    assert_eq!(serde_json::to_value(definition).unwrap(), native_thread);
-}
-
-#[test]
-fn hole_wire_rejects_cross_form_thread_fields() {
-    use crate::features::{FeatureDefinition, HoleSpecification};
-
-    let specification = |threaded| {
-        serde_json::json!({
-            "standard": "ISO metric",
-            "threaded": threaded,
-            "modeled": false,
-            "cosmetic": false,
-            "hand": "right",
-            "depth": {"kind": "hole_depth"}
-        })
-    };
-
-    let mut clearance_with_class = specification(false);
-    clearance_with_class["class"] = serde_json::json!("6H");
-    assert!(serde_json::from_value::<HoleSpecification>(clearance_with_class).is_err());
-
-    let mut thread_with_fit = specification(true);
-    thread_with_fit["fit"] = serde_json::json!("normal");
-    assert!(serde_json::from_value::<HoleSpecification>(thread_with_fit).is_err());
-
-    let mut native_with_standard = serde_json::json!({
-        "definition": "hole",
-        "kind": {
-            "kind": "threaded",
-            "major_diameter": 8.0,
-            "thread_depth": 12.0,
-            "drill_point_angle": 2.0
-        }
-    });
-    native_with_standard["specification"] = specification(true);
-    assert!(serde_json::from_value::<FeatureDefinition>(native_with_standard).is_err());
-}
-
-#[test]
-fn filled_surface_continuity_preserves_aggregate_and_component_wire_fields() {
-    use crate::features::{
-        EdgeSelection, FaceSelection, FeatureDefinition, SurfaceBoundary, SurfaceContinuity,
-    };
-
-    let definition = FeatureDefinition::FilledSurface {
-        boundary: SurfaceBoundary::Edges(EdgeSelection::Unresolved),
-        support_faces: FaceSelection::Faces(Vec::new()),
-        continuity: crate::features::FilledSurfaceContinuityState::per_boundary(vec![
-            SurfaceContinuity::Contact,
-            SurfaceContinuity::Contact,
-        ]),
-        merge_result: Some(false),
-    };
-    let wire = serde_json::to_value(&definition).unwrap();
-    assert_eq!(wire["continuity"], serde_json::json!("contact"));
-    assert_eq!(
-        wire["boundary_continuities"],
-        serde_json::json!(["contact", "contact"])
-    );
-    assert_eq!(
-        serde_json::from_value::<FeatureDefinition>(wire.clone()).unwrap(),
-        definition
-    );
-
-    let mut conflicting = wire;
-    conflicting["continuity"] = serde_json::json!("curvature");
-    assert!(serde_json::from_value::<FeatureDefinition>(conflicting).is_err());
-}
-
-#[test]
-fn unresolved_filled_surface_continuity_omits_both_wire_fields() {
-    use crate::features::{EdgeSelection, FaceSelection, FeatureDefinition, SurfaceBoundary};
-
-    let definition = FeatureDefinition::FilledSurface {
-        boundary: SurfaceBoundary::Edges(EdgeSelection::Unresolved),
-        support_faces: FaceSelection::Faces(Vec::new()),
-        continuity: crate::features::FilledSurfaceContinuityState::unresolved(),
-        merge_result: None,
-    };
-    let wire = serde_json::to_value(&definition).unwrap();
-    assert!(wire.get("continuity").is_none());
-    assert!(wire.get("boundary_continuities").is_none());
-    assert_eq!(
-        serde_json::from_value::<FeatureDefinition>(wire).unwrap(),
-        definition
-    );
-}
-
-#[test]
-fn scale_factor_forms_preserve_the_legacy_wire_layout() {
-    use crate::features::ScaleFactors;
-
-    for wire in [
-        serde_json::json!({}),
-        serde_json::json!({"uniform": 2.0}),
-        serde_json::json!({"x": 1.0, "y": 2.0, "z": 3.0}),
-    ] {
-        let factors: ScaleFactors = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(factors).unwrap(), wire);
-    }
-}
-
-#[test]
-fn scale_factor_wire_rejects_mixed_and_partial_forms() {
-    use crate::features::ScaleFactors;
-
-    for wire in [
-        serde_json::json!({"uniform": 2.0, "x": 1.0}),
-        serde_json::json!({"x": 1.0, "z": 3.0}),
-    ] {
-        assert!(serde_json::from_value::<ScaleFactors>(wire).is_err());
-    }
-}
-
-#[test]
-fn edge_selections_round_trip_through_json() {
-    use crate::features::EdgeSelection;
-    use crate::ids::{EdgeId, FeatureInputTopologyId, HistoricalEdgeId};
-
-    let selections =
-        vec![
-            EdgeSelection::Unresolved,
-            EdgeSelection::Edges(vec![
-                EdgeId::mint("synthetic:test:edge#0").expect("valid identity")
-            ]),
-            EdgeSelection::Resolved {
-                edges: vec![EdgeId::mint("synthetic:test:edge#0").expect("valid identity")],
-                native: "edge:10".into(),
-            },
-            EdgeSelection::Historical {
-                state: FeatureInputTopologyId::mint("synthetic:history-input:state#0")
-                    .expect("valid identity"),
-                edges: vec![HistoricalEdgeId::mint("synthetic:history-input:edge#0")
-                    .expect("valid identity")],
-                native: "edge:9".into(),
-            },
-            EdgeSelection::HistoricalPartial {
-                state: FeatureInputTopologyId::mint("synthetic:history-input:state#0")
-                    .expect("valid identity"),
-                edges: vec![HistoricalEdgeId::mint("synthetic:history-input:edge#0")
-                    .expect("valid identity")],
-                unresolved: vec!["native:edge-operand#1".into()],
-                native: "edge:9".into(),
-            },
-            EdgeSelection::Native("sldprt:history:feature#10:0".into()),
-        ];
-    let json = serde_json::to_string(&selections).unwrap();
-    assert_eq!(
-        serde_json::from_str::<Vec<EdgeSelection>>(&json).unwrap(),
-        selections
-    );
-}
-
-#[test]
-fn historical_edge_paths_round_trip_through_json() {
-    use crate::features::PathRef;
-    use crate::ids::{FeatureInputTopologyId, HistoricalEdgeId};
-
-    let path = PathRef::HistoricalEdges {
-        state: FeatureInputTopologyId::mint("synthetic:history-input:state#0")
-            .expect("valid identity"),
-        edges: vec![
-            HistoricalEdgeId::mint("synthetic:history-input:edge#0").expect("valid identity"),
-            HistoricalEdgeId::mint("synthetic:history-input:edge#1").expect("valid identity"),
-        ],
-        native: "native:path#0".into(),
-    };
-    let json = serde_json::to_string(&path).unwrap();
-    assert_eq!(serde_json::from_str::<PathRef>(&json).unwrap(), path);
-}
-
-#[test]
-fn face_selections_round_trip_through_json() {
-    use crate::features::FaceSelection;
-    use crate::ids::{FaceId, FeatureInputTopologyId, HistoricalFaceId};
-
-    let selections =
-        vec![
-            FaceSelection::Unresolved,
-            FaceSelection::Faces(vec![
-                FaceId::mint("synthetic:test:face#0").expect("valid identity")
-            ]),
-            FaceSelection::Resolved {
-                faces: vec![FaceId::mint("synthetic:test:face#0").expect("valid identity")],
-                native: "face:14".into(),
-            },
-            FaceSelection::Historical {
-                state: FeatureInputTopologyId::mint("synthetic:history-input:state#0")
-                    .expect("valid identity"),
-                faces: vec![HistoricalFaceId::mint("synthetic:history-input:face#0")
-                    .expect("valid identity")],
-                native: "face:13".into(),
-            },
-            FaceSelection::HistoricalPartial {
-                state: FeatureInputTopologyId::mint("synthetic:history-input:state#0")
-                    .expect("valid identity"),
-                faces: vec![HistoricalFaceId::mint("synthetic:history-input:face#0")
-                    .expect("valid identity")],
-                unresolved: vec!["native:face-operand#1".into()],
-                native: "face:12".into(),
-            },
-            FaceSelection::Native("sldprt:history:feature#14:0".into()),
-        ];
-    let json = serde_json::to_string(&selections).unwrap();
-    assert_eq!(
-        serde_json::from_str::<Vec<FaceSelection>>(&json).unwrap(),
-        selections
-    );
-}
-
-#[test]
-fn historical_face_profiles_round_trip_through_json() {
-    use crate::features::ProfileRef;
-    use crate::ids::{FeatureInputTopologyId, HistoricalFaceId};
-
-    let profile = ProfileRef::HistoricalFaces {
-        state: FeatureInputTopologyId::mint("synthetic:history-input:state#0")
-            .expect("valid identity"),
-        faces: vec![
-            HistoricalFaceId::mint("synthetic:history-input:face#0").expect("valid identity")
-        ],
-        native: vec!["native:profile-group#0".into()],
-    };
-    let json = serde_json::to_string(&profile).unwrap();
-    assert_eq!(serde_json::from_str::<ProfileRef>(&json).unwrap(), profile);
-}
-
-#[test]
-fn body_selections_round_trip_through_json() {
-    use crate::features::BodySelection;
-    use crate::ids::{BodyId, FeatureInputTopologyId, HistoricalBodyId};
-
-    let selections = vec![
-        BodySelection::Unresolved,
-        BodySelection::Bodies(vec![
-            BodyId::mint("synthetic:test:body#0").expect("valid identity")
-        ]),
-        BodySelection::Resolved {
-            bodies: vec![BodyId::mint("synthetic:test:body#0").expect("valid identity")],
-            native: "body:17".into(),
-        },
-        BodySelection::ResolvedSet {
-            members: crate::features::BodyMembers::try_from_parts(
-                vec![
-                    BodyId::mint("synthetic:test:body#0").expect("valid identity"),
-                    BodyId::mint("synthetic:test:body#1").expect("valid identity"),
-                ],
-                vec!["body:17".into(), "body:18".into()],
-            )
-            .expect("valid body selection rows"),
-        },
-        BodySelection::Historical {
-            state: FeatureInputTopologyId::mint("synthetic:history-input:state#0")
-                .expect("valid identity"),
-            bodies: vec![
-                HistoricalBodyId::mint("synthetic:history-input:body#0").expect("valid identity")
-            ],
-            native: "body:16".into(),
-        },
-        BodySelection::HistoricalSet {
-            state: FeatureInputTopologyId::mint("synthetic:history-input:state#0")
-                .expect("valid identity"),
-            members: crate::features::BodyMembers::try_from_parts(
-                vec![
-                    HistoricalBodyId::mint("synthetic:history-input:body#0")
-                        .expect("valid identity"),
-                    HistoricalBodyId::mint("synthetic:history-input:body#1")
-                        .expect("valid identity"),
-                ],
-                vec!["body:16".into(), "body:17".into()],
-            )
-            .expect("valid historical body selection rows"),
-        },
-        BodySelection::HistoricalUnorderedSet {
-            state: FeatureInputTopologyId::mint("synthetic:history-input:state#0")
-                .expect("valid identity"),
-            selection: crate::features::HistoricalUnorderedBodySelection::try_from_parts(
-                vec![
-                    HistoricalBodyId::mint("synthetic:history-input:body#0")
-                        .expect("valid identity"),
-                    HistoricalBodyId::mint("synthetic:history-input:body#1")
-                        .expect("valid identity"),
-                ],
-                vec!["body:16".into(), "body:17".into()],
-            )
-            .expect("valid unordered historical body selection"),
-        },
-        BodySelection::Native("body:17,body:18".into()),
-        BodySelection::NativeSet(vec!["body:17".into(), "body:18".into()]),
-    ];
-    let json = serde_json::to_string(&selections).unwrap();
-    assert_eq!(
-        serde_json::from_str::<Vec<BodySelection>>(&json).unwrap(),
-        selections
-    );
-}
-
-#[test]
-fn body_selection_members_reject_blank_native_rows() {
-    use crate::features::{BodyMember, BodyMembers};
-    use crate::ids::BodyId;
-
-    let body = BodyId::mint("synthetic:test:body#blank").expect("identity grammar");
-    assert!(BodyMember::new(body.clone(), " \t".into()).is_err());
-    assert!(BodyMembers::try_from_parts(vec![body.clone()], vec!["\n".into()]).is_err());
-    assert!(
-        serde_json::from_value::<BodyMembers<BodyId>>(serde_json::json!([
-            {"body": body, "native": " "}
-        ]))
-        .is_err()
-    );
-}
-
-#[test]
-fn configuration_evaluation_wire_is_flat_and_strict() {
-    use crate::features::ConfigurationEvaluation;
-    use crate::ids::BodyId;
-
-    let body = BodyId::mint("synthetic:test:body#evaluation").expect("identity grammar");
-    let active = ConfigurationEvaluation::Active {
-        outputs: vec![body],
-    };
-    let wire = serde_json::to_value(&active).unwrap();
-    assert_eq!(
-        wire,
-        serde_json::json!({"kind": "active", "outputs": ["synthetic:test:body#evaluation"]})
-    );
-    assert_eq!(
-        serde_json::from_value::<ConfigurationEvaluation>(wire).unwrap(),
-        active
-    );
-    assert!(
-        serde_json::from_value::<ConfigurationEvaluation>(serde_json::json!({
-            "kind": "suppressed",
-            "outputs": []
-        }))
-        .is_err()
-    );
-    assert!(
-        serde_json::from_value::<ConfigurationEvaluation>(serde_json::json!({
-            "kind": "active",
-            "outputs": [],
-            "suppressed": true
-        }))
-        .is_err()
-    );
-}
-
-#[test]
-fn loft_guidance_rejects_mixed_wire_members() {
-    use crate::features::{LoftGuidance, PathRef};
-
-    let guidance = LoftGuidance::Centerline(PathRef::Native("test:centerline".into()));
-    let wire = serde_json::to_value(&guidance).unwrap();
-    assert_eq!(
-        serde_json::from_value::<LoftGuidance>(wire).unwrap(),
-        guidance
-    );
-    assert!(serde_json::from_value::<LoftGuidance>(serde_json::json!({
-        "kind": "guides",
-        "path": [],
-        "centerline": {"kind": "native", "value": "test:centerline"}
-    }))
-    .is_err());
-}
-
-#[test]
-fn feature_result_topology_round_trips_without_current_model_bodies() {
-    use crate::features::{FeatureId, FeatureResultTopology};
-    use crate::ids::FeatureResultTopologyId;
-
-    let state = FeatureResultTopology {
-        id: FeatureResultTopologyId::mint("synthetic:history-result:state#0")
-            .expect("valid identity"),
-        output_of: FeatureId::mint("synthetic:model:feature#0").expect("identity grammar"),
-        bodies: vec!["body:17".into()],
-        faces: vec!["face:3".into()],
-        edges: vec!["edge:5".into()],
-        vertices: vec!["vertex:8".into()],
-        native_ref: Some("native:result#0".into()),
-    };
-    let json = serde_json::to_string(&state).unwrap();
-    assert_eq!(
-        serde_json::from_str::<FeatureResultTopology>(&json).unwrap(),
-        state
-    );
-}
-
-#[test]
-fn combine_omits_the_default_keep_tools_flag_from_json() {
-    use crate::features::{BodySelection, BooleanKind, FeatureDefinition};
-
-    let definition = FeatureDefinition::Combine {
-        target: BodySelection::Native("body:17".into()),
-        tools: BodySelection::Native("body:18".into()),
-        op: BooleanKind::Join,
-        keep_tools: false,
-    };
-    let json = serde_json::to_value(definition).unwrap();
-    assert_eq!(json.get("keep_tools"), None);
-}
-
-#[test]
-fn sweep_mode_preserves_the_solid_new_body_wire_form() {
-    use crate::features::{BooleanKind, SweepMode};
-
-    let wire = serde_json::json!({"mode": "solid", "op": "new_body"});
-    assert_eq!(
-        serde_json::from_value::<SweepMode>(wire.clone()).unwrap(),
-        SweepMode::NewBody
-    );
-    assert_eq!(serde_json::to_value(SweepMode::NewBody).unwrap(), wire);
-    assert!(serde_json::from_value::<SweepMode>(
-        serde_json::json!({"mode": "solid", "op": "unresolved"})
-    )
-    .is_err());
-    assert_eq!(
-        serde_json::from_value::<SweepMode>(serde_json::json!({"mode": "solid", "op": "join"}))
-            .unwrap(),
-        SweepMode::Solid {
-            op: BooleanKind::Join
-        }
-    );
-}
-
-#[test]
-fn unresolved_feature_forms_preserve_the_legacy_wire_shape() {
-    use crate::features::{ChamferSpec, PatternKind, RadiusSpec};
-
-    for (wire, expected) in [
-        (
-            serde_json::json!({"kind": "unresolved"}),
-            RadiusSpec::Unresolved,
-        ),
-        (
-            serde_json::json!({"kind": "unresolved", "form": "constant"}),
-            RadiusSpec::UnresolvedConstant,
-        ),
-        (
-            serde_json::json!({"kind": "unresolved", "form": "variable"}),
-            RadiusSpec::UnresolvedVariable,
-        ),
-    ] {
-        assert_eq!(
-            serde_json::from_value::<RadiusSpec>(wire.clone()).unwrap(),
-            expected
-        );
-        assert_eq!(serde_json::to_value(expected).unwrap(), wire);
-    }
-
-    for (wire, expected) in [
-        (
-            serde_json::json!({"kind": "unresolved"}),
-            ChamferSpec::Unresolved,
-        ),
-        (
-            serde_json::json!({"kind": "unresolved", "form": "distance"}),
-            ChamferSpec::UnresolvedDistance,
-        ),
-        (
-            serde_json::json!({"kind": "unresolved", "form": "distance_angle"}),
-            ChamferSpec::UnresolvedDistanceAngle,
-        ),
-    ] {
-        assert_eq!(
-            serde_json::from_value::<ChamferSpec>(wire.clone()).unwrap(),
-            expected
-        );
-        assert_eq!(serde_json::to_value(expected).unwrap(), wire);
-    }
-
-    for (wire, expected) in [
-        (
-            serde_json::json!({"kind": "unresolved"}),
-            PatternKind::Unresolved,
-        ),
-        (
-            serde_json::json!({"kind": "unresolved", "form": "linear"}),
-            PatternKind::UnresolvedLinear,
-        ),
-        (
-            serde_json::json!({"kind": "unresolved", "form": "mirror"}),
-            PatternKind::UnresolvedMirror,
-        ),
-    ] {
-        assert_eq!(
-            serde_json::from_value::<PatternKind>(wire.clone()).unwrap(),
-            expected
-        );
-        assert_eq!(serde_json::to_value(expected).unwrap(), wire);
-    }
-}
-
-#[test]
-fn face_maker_preserves_the_legacy_wire_and_rejects_split_discriminants() {
+fn a_face_maker_is_its_class_and_carries_no_mode_key() {
     use crate::features::FaceMaker;
 
     #[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
     struct ExtrusionCarrier {
-        #[serde(default, with = "super::optional_extrusion_face_maker")]
+        #[serde(default)]
         maker: Option<FaceMaker>,
     }
 
@@ -1403,12 +45,7 @@ fn face_maker_preserves_the_legacy_wire_and_rejects_split_discriminants() {
     );
     assert!(serde_json::from_value::<FaceMaker>(serde_json::json!("")).is_err());
 
-    let wire = serde_json::json!({
-        "maker": {
-            "class": "Part::FaceMakerBullseye",
-            "mode": 3
-        }
-    });
+    let wire = serde_json::json!({ "maker": "Part::FaceMakerBullseye" });
     let carrier = serde_json::from_value::<ExtrusionCarrier>(wire.clone()).unwrap();
     assert_eq!(
         carrier,
@@ -1418,155 +55,93 @@ fn face_maker_preserves_the_legacy_wire_and_rejects_split_discriminants() {
     );
     assert_eq!(serde_json::to_value(carrier).unwrap(), wire);
 
-    let mismatch = serde_json::from_value::<ExtrusionCarrier>(serde_json::json!({
-        "maker": {
-            "class": "Part::FaceMakerBullseye",
-            "mode": 4
-        }
+    let error = serde_json::from_value::<ExtrusionCarrier>(serde_json::json!({
+        "maker": { "class": "Part::FaceMakerBullseye", "mode": 3 }
     }))
-    .unwrap_err();
-    assert!(mismatch.to_string().contains("face_maker.mode"));
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("invalid type: map"), "{error}");
 }
 
 #[test]
-fn draft_anchor_round_trips_through_the_flat_wire_shape() {
-    use crate::features::{DraftAnchor, FeatureDefinition};
+fn draft_anchor_round_trips_as_a_nested_key() {
+    use crate::features::{DraftAnchor, FeatureDefinition, FeatureOperation};
 
     let wire = serde_json::json!({
         "definition": "draft",
         "faces": {"kind": "native", "value": "draft:faces"},
-        "neutral_plane": {"kind": "unresolved"},
-        "parting_tool": {"kind": "native", "value": "draft:parting-tool"},
-        "pull_direction": {"x": 0.0, "y": 0.0, "z": 1.0},
-        "pull_plane": "draft:pull-plane",
+        "anchor": {
+            "kind": "parting_line",
+            "tool": {"kind": "native", "value": "draft:parting-tool"},
+            "pull": {
+                "direction": {"x": 0.0, "y": 0.0, "z": 1.0},
+                "plane": "test:draft:plane#pull"
+            }
+        },
         "angle": 0.1,
         "outward": false
     });
     let definition: FeatureDefinition = serde_json::from_value(wire.clone()).unwrap();
     assert!(matches!(
         &definition,
-        FeatureDefinition::Draft {
+        FeatureDefinition::Operation(FeatureOperation::Draft {
             anchor: DraftAnchor::PartingLine { .. },
             ..
-        }
+        })
     ));
     assert_eq!(serde_json::to_value(definition).unwrap(), wire);
 }
 
 #[test]
-fn draft_anchor_rejects_split_or_conflicting_wire_fields() {
-    use crate::features::FeatureDefinition;
-
-    let base = serde_json::json!({
-        "definition": "draft",
-        "faces": {"kind": "unresolved"},
-        "neutral_plane": {"kind": "unresolved"},
-        "pull_direction": null,
-        "angle": null,
-        "outward": null
-    });
-    for invalid in [
-        {
-            let mut value = base.clone();
-            value["pull_plane"] = serde_json::json!("draft:pull-plane");
-            value
-        },
-        {
-            let mut value = base.clone();
-            value["parting_tool"] =
-                serde_json::json!({"kind": "native", "value": "draft:parting-tool"});
-            value
-        },
-        {
-            let mut value = base.clone();
-            value["neutral_plane"] =
-                serde_json::json!({"kind": "native", "value": "draft:neutral-plane"});
-            value["parting_tool"] =
-                serde_json::json!({"kind": "native", "value": "draft:parting-tool"});
-            value["pull_direction"] = serde_json::json!({"x": 0.0, "y": 0.0, "z": 1.0});
-            value
-        },
-    ] {
-        assert!(serde_json::from_value::<FeatureDefinition>(invalid).is_err());
-    }
-}
-
-#[test]
-fn wrap_mode_round_trips_through_the_flat_wire_shape() {
-    use crate::features::{FeatureDefinition, Length, WrapMode};
+fn wrap_mode_round_trips_as_a_nested_key() {
+    use crate::features::{FeatureDefinition, FeatureOperation, WrapMode};
 
     let wire = serde_json::json!({
         "definition": "wrap",
         "profile": {"kind": "native", "value": "wrap:profile"},
         "face": {"kind": "native", "value": "wrap:face"},
-        "mode": "emboss",
-        "depth": 2.5
+        "mode": {"emboss": {"depth": 2.5}}
     });
     let definition: FeatureDefinition = serde_json::from_value(wire.clone()).unwrap();
     assert!(matches!(
         &definition,
-        FeatureDefinition::Wrap {
-            mode: WrapMode::Emboss { depth: Length(2.5) },
+        FeatureDefinition::Operation(FeatureOperation::Wrap {
+            mode: WrapMode::Emboss { depth: actual_depth },
             ..
-        }
+        }) if actual_depth.get() == 2.5
     ));
     assert_eq!(serde_json::to_value(definition).unwrap(), wire);
 
-    let scribe = FeatureDefinition::Wrap {
-        profile: crate::features::ProfileRef::Native("wrap:profile".into()),
+    let scribe = FeatureDefinition::Operation(FeatureOperation::Wrap {
+        profile: crate::features::PlanarProfileRef::Native("wrap:profile".into()),
         face: crate::features::FaceSelection::Native("wrap:face".into()),
         mode: WrapMode::Scribe,
-    };
+    });
     let encoded = serde_json::to_value(scribe).unwrap();
     assert_eq!(encoded.get("mode"), Some(&serde_json::json!("scribe")));
-    assert_eq!(encoded.get("depth"), None);
 }
 
 #[test]
-fn wrap_mode_rejects_a_missing_or_forbidden_depth() {
-    use crate::features::FeatureDefinition;
-
-    for invalid in [
-        serde_json::json!({
-            "definition": "wrap",
-            "profile": {"kind": "native", "value": "wrap:profile"},
-            "face": {"kind": "native", "value": "wrap:face"},
-            "mode": "emboss"
-        }),
-        serde_json::json!({
-            "definition": "wrap",
-            "profile": {"kind": "native", "value": "wrap:profile"},
-            "face": {"kind": "native", "value": "wrap:face"},
-            "mode": "scribe",
-            "depth": 1.0
-        }),
-    ] {
-        assert!(serde_json::from_value::<FeatureDefinition>(invalid).is_err());
-    }
-}
-
-#[test]
-fn helix_shape_round_trips_through_the_flat_wire_shape() {
-    use crate::features::{FeatureDefinition, HelixShape, Length};
+fn helix_shape_round_trips_as_a_nested_key() {
+    use crate::features::{FeatureDefinition, FeatureOperation, HelixShape};
 
     let conical_wire = serde_json::json!({
         "definition": "helix",
         "axis_origin": {"x": 0.0, "y": 0.0, "z": 0.0},
         "axis_direction": {"x": 0.0, "y": 0.0, "z": 1.0},
         "radius": 2.0,
-        "pitch": 3.0,
+        "shape": {"kind": "conical", "pitch": 3.0, "cone_angle": 0.2},
         "revolutions": 4.0,
         "start_angle": 0.0,
-        "clockwise": false,
-        "cone_angle": 0.2
+        "clockwise": false
     });
     let conical: FeatureDefinition = serde_json::from_value(conical_wire.clone()).unwrap();
     assert!(matches!(
         &conical,
-        FeatureDefinition::Helix {
+        FeatureDefinition::Operation(FeatureOperation::Helix {
             shape: HelixShape::Conical { pitch, .. },
             ..
-        } if pitch.get() == Length(3.0)
+        }) if pitch.get() == 3.0
     ));
     assert_eq!(serde_json::to_value(conical).unwrap(), conical_wire);
 
@@ -1575,121 +150,80 @@ fn helix_shape_round_trips_through_the_flat_wire_shape() {
         "axis_origin": {"x": 0.0, "y": 0.0, "z": 0.0},
         "axis_direction": {"x": 0.0, "y": 0.0, "z": 1.0},
         "radius": 2.0,
-        "pitch": 0.0,
+        "shape": {"kind": "spiral", "radial_growth": 1.5},
         "revolutions": 4.0,
         "start_angle": 0.0,
-        "clockwise": false,
-        "radial_growth": 1.5
+        "clockwise": false
     });
     let spiral: FeatureDefinition = serde_json::from_value(spiral_wire.clone()).unwrap();
     assert!(matches!(
         &spiral,
-        FeatureDefinition::Helix {
+        FeatureDefinition::Operation(FeatureOperation::Helix {
             shape: HelixShape::Spiral {
-                radial_growth: Length(1.5)
+                radial_growth: actual_radial_growth
             },
             ..
-        }
+        }) if actual_radial_growth.get() == 1.5
     ));
     assert_eq!(serde_json::to_value(spiral).unwrap(), spiral_wire);
 }
 
 #[test]
-fn helix_shape_rejects_sentinel_and_conflicting_wire_fields() {
-    use crate::features::FeatureDefinition;
-
-    let base = serde_json::json!({
-        "definition": "helix",
-        "axis_origin": {"x": 0.0, "y": 0.0, "z": 0.0},
-        "axis_direction": {"x": 0.0, "y": 0.0, "z": 1.0},
-        "radius": 2.0,
-        "pitch": 0.0,
-        "revolutions": 4.0,
-        "start_angle": 0.0,
-        "clockwise": false
-    });
-    for invalid in [
-        base.clone(),
-        {
-            let mut value = base.clone();
-            value["pitch"] = serde_json::json!(3.0);
-            value["radial_growth"] = serde_json::json!(1.5);
-            value
-        },
-        {
-            let mut value = base.clone();
-            value["radial_growth"] = serde_json::json!(1.5);
-            value["cone_angle"] = serde_json::json!(0.2);
-            value
-        },
-        {
-            let mut value = base.clone();
-            value["cone_angle"] = serde_json::json!(0.2);
-            value
-        },
-    ] {
-        assert!(serde_json::from_value::<FeatureDefinition>(invalid).is_err());
-    }
-}
-
-#[test]
 fn trim_cell_selection_requires_unique_in_range_ordinals() {
     let valid = TrimCellSelection::new(vec![1, 4], 5).unwrap();
-    assert_eq!(valid.removed(), &[1, 4]);
-    assert_eq!(valid.total(), 5);
+    assert_eq!(valid.removed, &[1, 4]);
+    assert_eq!(valid.total, 5);
     assert!(TrimCellSelection::new(vec![1, 1], 5).is_none());
     assert!(TrimCellSelection::new(vec![6], 5).is_none());
 }
 
 #[test]
-fn trim_cells_preserve_the_flat_wire_fields_and_reject_invalid_input() {
-    use crate::features::{FaceSelection, FeatureDefinition, PathRef, TrimRegion};
+fn trim_cells_preserve_the_nested_wire_fields_and_reject_invalid_input() {
+    use crate::features::{
+        FaceSelection, FeatureDefinition, FeatureOperation, PathRef, TrimRegion,
+    };
 
-    let definition = FeatureDefinition::TrimSurface {
+    let definition = FeatureDefinition::Operation(FeatureOperation::TrimSurface {
         faces: FaceSelection::Unresolved,
         tool: PathRef::Unresolved("test:trim-tool".into()),
         keep: TrimRegion::Cells(TrimCellSelection::new(vec![1, 4], 5).unwrap()),
-    };
+    });
     let wire = serde_json::to_value(&definition).unwrap();
     assert_eq!(wire["definition"], "trim_surface");
-    assert_eq!(wire["keep"], "unresolved");
-    assert_eq!(wire["cell_selection"]["removed"], serde_json::json!([1, 4]));
-    assert_eq!(wire["cell_selection"]["total"], 5);
+    assert_eq!(wire["keep"]["cells"]["removed"], serde_json::json!([1, 4]));
+    assert_eq!(wire["keep"]["cells"]["total"], 5);
     let decoded: FeatureDefinition = serde_json::from_value(wire.clone()).unwrap();
     assert!(matches!(
         decoded,
-        FeatureDefinition::TrimSurface {
+        FeatureDefinition::Operation(FeatureOperation::TrimSurface {
             keep: TrimRegion::Cells(ref selection),
             ..
-        } if selection.removed() == [1, 4] && selection.total() == 5
+        }) if selection.removed == [1, 4] && selection.total == 5
     ));
 
-    let mut conflicting = wire.clone();
-    conflicting["keep"] = serde_json::json!("inside");
-    assert!(serde_json::from_value::<FeatureDefinition>(conflicting).is_err());
-
     let mut invalid = wire;
-    invalid["cell_selection"]["removed"] = serde_json::json!([6]);
+    invalid["keep"]["cells"]["removed"] = serde_json::json!([6]);
     assert!(serde_json::from_value::<FeatureDefinition>(invalid).is_err());
 }
 
 #[test]
-fn revolve_construction_preserves_the_flat_wire_shape() {
-    use crate::features::{FeatureDefinition, PathRef, RevolveConstruction};
+fn revolve_construction_carries_its_axis_reference_inside_the_axis() {
+    use crate::features::{FeatureDefinition, FeatureOperation, PathRef, RevolveConstruction};
 
     let wire = serde_json::json!({
         "definition": "revolve",
         "construction": {
+            "state": "resolved",
             "profile": {"kind": "sketch", "value": "test:model:sketch#profile"},
             "axis": {
                 "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
-                "direction": {"x": 0.0, "y": 0.0, "z": 1.0}
+                "direction": {"x": 0.0, "y": 0.0, "z": 1.0},
+                "reference": {"kind": "native", "value": "test:axis"}
             },
             "extent": {
                 "kind": "one_sided",
                 "termination": {"kind": "angle", "angle": 1.25}
             },
-            "axis_reference": {"kind": "native", "value": "test:axis"},
             "solid": true,
             "face_maker_class": "Part::FaceMakerBullseye"
         },
@@ -1698,21 +232,33 @@ fn revolve_construction_preserves_the_flat_wire_shape() {
     let definition: FeatureDefinition = serde_json::from_value(wire.clone()).unwrap();
     assert!(matches!(
         definition,
-        FeatureDefinition::Revolve {
+        FeatureDefinition::Operation(FeatureOperation::Revolve {
             construction: RevolveConstruction::Resolved { ref axis, .. },
             ..
-        } if axis.reference == Some(PathRef::Native("test:axis".into()))
+        }) if axis.reference == Some(PathRef::Native("test:axis".into()))
     ));
     assert_eq!(serde_json::to_value(definition).unwrap(), wire);
+
+    let mut sibling = wire;
+    sibling["construction"].as_object_mut().unwrap().insert(
+        "axis_reference".to_string(),
+        serde_json::json!({"kind": "native", "value": "test:axis"}),
+    );
+    let error = serde_json::from_value::<FeatureOperation>(sibling)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("axis_reference"), "{error}");
 }
 
 #[test]
 fn revolve_construction_admits_only_typed_partial_states() {
-    use crate::features::{FeatureDefinition, RevolveConstruction};
+    use crate::features::{FeatureDefinition, FeatureOperation, RevolveConstruction};
 
     let partial_wire = serde_json::json!({
         "definition": "revolve",
         "construction": {
+            "state": "unresolved",
+            "missing": "axis",
             "profile": {"kind": "native", "value": "test:profile"},
             "solid": false
         },
@@ -1721,36 +267,104 @@ fn revolve_construction_admits_only_typed_partial_states() {
     let partial: FeatureDefinition = serde_json::from_value(partial_wire.clone()).unwrap();
     assert!(matches!(
         partial,
-        FeatureDefinition::Revolve {
+        FeatureDefinition::Operation(FeatureOperation::Revolve {
             construction: RevolveConstruction::Unresolved(_),
             ..
-        }
+        })
     ));
     assert_eq!(serde_json::to_value(partial).unwrap(), partial_wire);
 
-    let orphan_reference = serde_json::json!({
+    let resolved_without_a_profile = serde_json::json!({
         "definition": "revolve",
         "construction": {
-            "axis_reference": {"kind": "native", "value": "test:axis"}
+            "state": "resolved",
+            "axis": {
+                "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
+                "direction": {"x": 0.0, "y": 0.0, "z": 1.0}
+            },
+            "extent": {
+                "kind": "one_sided",
+                "termination": {"kind": "angle", "angle": 1.25}
+            }
         },
         "op": "unresolved"
     });
-    let error = serde_json::from_value::<FeatureDefinition>(orphan_reference)
+    let error = serde_json::from_value::<FeatureOperation>(resolved_without_a_profile)
         .unwrap_err()
         .to_string();
-    assert!(error.contains("axis_reference requires a revolution axis"));
+    assert!(error.contains("profile"), "{error}");
 }
 
 #[test]
-fn extrude_direction_preserves_the_flat_source_wire_shape() {
-    use crate::features::{ExtrudeDirection, ExtrusionDirectionSource, FeatureDefinition, PathRef};
+fn an_unresolved_revolve_names_its_first_missing_operand() {
+    use crate::features::{PartialRevolveConstruction, RevolveConstruction};
+
+    let axis = serde_json::json!({
+        "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
+        "direction": {"x": 0.0, "y": 0.0, "z": 1.0}
+    });
+    let extent = serde_json::json!({
+        "kind": "one_sided",
+        "termination": {"kind": "angle", "angle": 1.25}
+    });
+    let profile = serde_json::json!({"kind": "native", "value": "test:profile"});
+
+    let contradicting = serde_json::json!({
+        "state": "unresolved",
+        "missing": "axis",
+        "profile": profile,
+        "axis": axis,
+    });
+    let error = serde_json::from_value::<RevolveConstruction>(contradicting)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("axis"), "{error}");
+
+    let untyped = serde_json::json!({
+        "state": "unresolved",
+        "profile": profile,
+        "axis": axis,
+        "extent": extent,
+    });
+    let error = serde_json::from_value::<RevolveConstruction>(untyped)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("missing"), "{error}");
+
+    let named = serde_json::json!({
+        "state": "unresolved",
+        "missing": "profile",
+        "axis": axis,
+    });
+    let construction: RevolveConstruction =
+        serde_json::from_value(named.clone()).expect("reads the named partial state");
+    assert!(matches!(
+        construction,
+        RevolveConstruction::Unresolved(PartialRevolveConstruction::Profile {
+            axis: Some(_),
+            extent: None,
+            ..
+        })
+    ));
+    assert_eq!(serde_json::to_value(&construction).unwrap(), named);
+}
+
+#[test]
+fn extrude_direction_round_trips_as_a_nested_key() {
+    use crate::features::{
+        ExtrudeDirection, ExtrusionDirectionSource, FeatureDefinition, FeatureOperation, PathRef,
+    };
 
     let wire = serde_json::json!({
         "definition": "extrude",
         "profile": {"kind": "native", "value": "test:profile"},
         "direction": {
             "kind": "explicit",
-            "value": {"x": 0.0, "y": 1.0, "z": 0.0}
+            "vector": {"x": 0.0, "y": 1.0, "z": 0.0},
+            "source": {
+                "kind": "edge",
+                "reference": {"kind": "native", "value": "test:direction-edge"}
+            }
         },
         "start": {"kind": "profile_plane"},
         "extent": {
@@ -1760,16 +374,12 @@ fn extrude_direction_preserves_the_flat_source_wire_shape() {
             }
         },
         "op": "new_body",
-        "direction_source": {
-            "kind": "edge",
-            "reference": {"kind": "native", "value": "test:direction-edge"}
-        },
         "solid": true
     });
     let definition: FeatureDefinition = serde_json::from_value(wire.clone()).unwrap();
     assert!(matches!(
         definition,
-        FeatureDefinition::Extrude {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             direction: ExtrudeDirection::Explicit {
                 source: Some(ExtrusionDirectionSource::Edge {
                     reference: PathRef::Native(ref reference),
@@ -1777,32 +387,9 @@ fn extrude_direction_preserves_the_flat_source_wire_shape() {
                 ..
             },
             ..
-        } if reference == "test:direction-edge"
+        }) if reference == "test:direction-edge"
     ));
     assert_eq!(serde_json::to_value(definition).unwrap(), wire);
-}
-
-#[test]
-fn extrude_direction_rejects_a_source_without_an_explicit_vector() {
-    use crate::features::FeatureDefinition;
-
-    let invalid = serde_json::json!({
-        "definition": "extrude",
-        "profile": {"kind": "native", "value": "test:profile"},
-        "start": {"kind": "profile_plane"},
-        "extent": {
-            "kind": "one_sided",
-            "side": {
-                "termination": {"kind": "blind", "length": 4.0}
-            }
-        },
-        "op": "new_body",
-        "direction_source": {"kind": "custom"}
-    });
-    let error = serde_json::from_value::<FeatureDefinition>(invalid)
-        .unwrap_err()
-        .to_string();
-    assert!(error.contains("direction_source requires an explicit extrusion direction"));
 }
 
 #[test]
@@ -1825,16 +412,22 @@ fn per_edge_flange_widths_reject_empty_rosters_and_preserve_array_wire() {
 #[test]
 fn sketch_binding_preserves_known_planar_space_without_geometry() {
     for wire in [
-        serde_json::json!({"definition": "sketch", "space": "unresolved"}),
-        serde_json::json!({"definition": "sketch", "space": "planar"}),
-        serde_json::json!({"definition": "sketch", "space": "planar", "sketch": "test:model:sketch#1"}),
+        serde_json::json!({"definition": "sketch", "sketch": {"space": "unresolved"}}),
+        serde_json::json!({"definition": "sketch", "sketch": {"space": "planar"}}),
+        serde_json::json!({
+            "definition": "sketch",
+            "sketch": {"space": "planar", "sketch": "test:model:sketch#1"}
+        }),
     ] {
         let definition: super::FeatureDefinition = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(definition).unwrap(), wire);
     }
     for wire in [
-        serde_json::json!({"definition": "sketch", "space": "unresolved", "sketch": "test:model:sketch#1"}),
-        serde_json::json!({"definition": "sketch", "space": "spatial"}),
+        serde_json::json!({
+            "definition": "sketch",
+            "sketch": {"space": "unresolved", "sketch": "test:model:sketch#1"}
+        }),
+        serde_json::json!({"definition": "sketch", "sketch": {"space": "spatial"}}),
     ] {
         assert!(serde_json::from_value::<super::FeatureDefinition>(wire).is_err());
     }
@@ -1847,19 +440,1552 @@ fn sketch_binding_preserves_known_planar_space_without_geometry() {
 mod body_selection;
 
 #[test]
-fn active_configuration_evaluation_can_have_no_body_outputs() {
-    use crate::features::ConfigurationEvaluation;
+fn body_selection_admission_rejects_invalid_members() {
+    use super::{BodySelection, GeneratedBodyRef, NativeSelections};
+    use crate::ids::FeatureInputTopologyId;
+    for names in [
+        vec![],
+        vec![" ".to_owned()],
+        vec!["a".to_owned(), "a".to_owned()],
+    ] {
+        assert!(BodySelection::local(
+            names.clone(),
+            "native".into(),
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("body selection admission")
+        .is_err());
+        assert!(NativeSelections::try_from(names).is_err());
+    }
+    assert!(BodySelection::local(
+        vec!["body".into()],
+        " ".into(),
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("body selection admission")
+    .is_err());
+    let state = FeatureInputTopologyId::mint("test:model:feature-input#1").unwrap();
+    assert!(BodySelection::historical(
+        state,
+        vec![],
+        "native".into(),
+        &cadmpeg_test_support::service_decode_context()
+    )
+    .expect("selection storage is admitted")
+    .is_err());
+    assert!(GeneratedBodyRef::new(
+        super::FeatureId::mint("test:test:feature#1").unwrap(),
+        " ".into(),
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("selection reference admission")
+    .is_err());
+    for value in [
+        serde_json::json!({"kind":"local","value":{"bodies":[],"native":"source"}}),
+        serde_json::json!({"kind":"local","value":{"bodies":["a","a"],"native":"source"}}),
+        serde_json::json!({"kind":"generated","value":{"bodies":[],"native":"source"}}),
+        serde_json::json!({"kind":"native_set","value":[" "]}),
+    ] {
+        assert!(serde_json::from_value::<BodySelection>(value).is_err());
+    }
+}
 
-    let active = ConfigurationEvaluation::Active {
-        outputs: Vec::new(),
+#[test]
+fn topology_membership_admission() {
+    use super::{DistinctMembers, FeatureResultTopology};
+    let id = crate::ids::FeatureResultTopologyId::mint("test:model:feature-result#1").unwrap();
+    let feature = super::FeatureId::mint("test:test:feature#1").unwrap();
+    assert!(crate::features::FeatureResultMembers::new(
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+        &cadmpeg_test_support::service_decode_context(),
+        "validate feature result members"
+    )
+    .expect("result membership admission")
+    .map(|members| FeatureResultTopology::new(id.clone(), feature.clone(), members, None))
+    .is_err());
+    assert!(crate::features::FeatureResultMembers::new(
+        vec![
+            cadmpeg_core::nonblank_literal!("a"),
+            cadmpeg_core::nonblank_literal!("a"),
+        ],
+        vec![],
+        vec![],
+        vec![],
+        &cadmpeg_test_support::service_decode_context(),
+        "validate feature result members"
+    )
+    .expect("result membership admission")
+    .map(|members| FeatureResultTopology::new(id.clone(), feature.clone(), members, None))
+    .is_err());
+    // A blank member identity is refused by the member type, so the wire cannot
+    // spell one and the constructor cannot be handed one.
+    assert!(serde_json::from_value::<super::SelectionMember>(
+        serde_json::json!({"kind": "body", "id": ""})
+    )
+    .is_err());
+    assert!(DistinctMembers::<String>::try_from(
+        vec!["a".into(), "a".into()],
+        &cadmpeg_test_support::service_decode_context()
+    )
+    .is_err());
+    assert!(
+        serde_json::from_value::<DistinctMembers<crate::ids::BodyId>>(serde_json::json!([
+            "test:model:body#1",
+            "test:model:body#1"
+        ]))
+        .is_err()
+    );
+    assert!(serde_json::from_value::<FeatureResultTopology>(
+        serde_json::json!({"id":"test:model:feature-result#1","output_of":"test:test:feature#1"})
+    )
+    .is_err());
+}
+
+#[test]
+fn primitive_dimensions_are_checked_at_construction_and_deserialization() {
+    use super::{PrimitiveSolid, PrimitiveSolidKind};
+    use serde_json::{json, Value};
+
+    let cases: [(Value, &[&str]); 8] = [
+        (
+            json!({"kind":"box","length":1.0,"width":2.0,"height":3.0}),
+            &["length", "width", "height"],
+        ),
+        (
+            json!({"kind":"cylinder","radius":1.0,"height":2.0,"angle":0.0}),
+            &["radius", "height"],
+        ),
+        (
+            json!({"kind":"cone","radius1":0.0,"radius2":1.0,"height":2.0,"angle":-1.0}),
+            &["height"],
+        ),
+        (
+            json!({"kind":"sphere","radius":1.0,"latitude1":-1.0,"latitude2":1.0,"longitude":0.0}),
+            &["radius"],
+        ),
+        (
+            json!({"kind":"ellipsoid","x_radius":1.0,"y_radius":2.0,"z_radius":3.0,"latitude1":-1.0,"latitude2":1.0,"longitude":-1.0}),
+            &["x_radius", "y_radius", "z_radius"],
+        ),
+        (
+            json!({"kind":"torus","major_radius":1.0,"minor_radius":2.0,"latitude1":-1.0,"latitude2":1.0,"longitude":0.0}),
+            &["major_radius", "minor_radius"],
+        ),
+        (
+            json!({"kind":"prism","sides":3,"circumradius":1.0,"height":2.0}),
+            &["circumradius", "height"],
+        ),
+        (
+            json!({"kind":"wedge","xmin":-1.0,"ymin":-1.0,"zmin":-1.0,"x2min":0.0,"z2min":0.0,"xmax":1.0,"ymax":1.0,"zmax":1.0,"x2max":0.0,"z2max":0.0}),
+            &[],
+        ),
+    ];
+    for (wire, positive_fields) in cases {
+        let kind: PrimitiveSolidKind = serde_json::from_value(wire.clone()).unwrap();
+        let solid = PrimitiveSolid::new(kind).unwrap();
+        assert_eq!(serde_json::to_value(&solid).unwrap(), wire);
+        assert_eq!(
+            serde_json::from_value::<PrimitiveSolid>(wire.clone()).unwrap(),
+            solid
+        );
+        let mut invalid = Vec::new();
+        for field in positive_fields {
+            for value in [0.0, -1.0] {
+                let mut changed = wire.clone();
+                changed[field] = json!(value);
+                invalid.push(changed);
+            }
+        }
+        match wire["kind"].as_str().unwrap() {
+            "cone" => {
+                let mut both_zero = wire.clone();
+                both_zero["radius2"] = json!(0.0);
+                invalid.push(both_zero);
+                for field in ["radius1", "radius2"] {
+                    let mut changed = wire.clone();
+                    changed[field] = json!(-1.0);
+                    invalid.push(changed);
+                }
+            }
+            "sphere" | "ellipsoid" | "torus" => {
+                for lower in [1.0, 2.0] {
+                    let mut changed = wire.clone();
+                    changed["latitude1"] = json!(lower);
+                    invalid.push(changed);
+                }
+            }
+            "prism" => {
+                for sides in [0, 1, 2] {
+                    let mut changed = wire.clone();
+                    changed["sides"] = json!(sides);
+                    invalid.push(changed);
+                }
+            }
+            "wedge" => {
+                for field in ["xmax", "ymax", "zmax", "x2max", "z2max"] {
+                    let mut changed = wire.clone();
+                    changed[field] = json!(-1.0);
+                    invalid.push(changed);
+                }
+            }
+            _ => {}
+        }
+        for changed in invalid {
+            let kind: PrimitiveSolidKind = serde_json::from_value(changed.clone()).unwrap();
+            assert!(PrimitiveSolid::new(kind).is_err(), "{changed}");
+            assert!(
+                serde_json::from_value::<PrimitiveSolid>(changed.clone()).is_err(),
+                "{changed}"
+            );
+        }
+    }
+}
+
+#[test]
+fn scale_factors_admit_only_finite_nonzero_components() {
+    use crate::{features::ScaleFactors, scalar::NonZeroReal};
+    for value in [0.0, -0.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert!(NonZeroReal::new(value).is_none());
+    }
+    for value in [-2.0, 0.5] {
+        let factors = ScaleFactors::Uniform {
+            factor: NonZeroReal::new(value).unwrap(),
+        };
+        let wire = serde_json::to_value(factors).unwrap();
+        assert_eq!(
+            wire,
+            serde_json::json!({"kind": "uniform", "factor": value})
+        );
+        assert_eq!(
+            serde_json::from_value::<ScaleFactors>(wire).unwrap(),
+            factors
+        );
+    }
+    let factors = ScaleFactors::PerAxis {
+        factors: [-1.0, 2.0, -3.0].map(|value| NonZeroReal::new(value).unwrap()),
     };
+    let wire = serde_json::to_value(factors).unwrap();
     assert_eq!(
-        serde_json::to_value(&active).unwrap(),
-        serde_json::json!({"kind": "active"})
+        wire,
+        serde_json::json!({"kind": "per_axis", "factors": [-1.0, 2.0, -3.0]})
     );
     assert_eq!(
-        serde_json::from_value::<ConfigurationEvaluation>(serde_json::json!({"kind": "active"}))
-            .unwrap(),
-        active,
+        serde_json::from_value::<ScaleFactors>(wire).unwrap(),
+        factors
+    );
+    assert_eq!(
+        serde_json::to_value(ScaleFactors::Unresolved {}).unwrap(),
+        serde_json::json!({"kind": "unresolved"})
+    );
+
+    // A partial axis set, a mixed set and an untagged object have no name, so
+    // the wire cannot state them.
+    for wire in [
+        serde_json::json!({"kind": "uniform", "factor": 0.0}),
+        serde_json::json!({"kind": "per_axis", "factors": [0.0, 1.0, 1.0]}),
+        serde_json::json!({"kind": "per_axis", "factors": [1.0, 0.0, 1.0]}),
+        serde_json::json!({"kind": "per_axis", "factors": [1.0, 1.0, 0.0]}),
+        serde_json::json!({"kind": "per_axis", "factors": [1.0, 1.0]}),
+        serde_json::json!({"kind": "uniform", "factor": 1.0, "factors": [1.0, 1.0, 1.0]}),
+        serde_json::json!({"kind": "unresolved", "factor": 1.0}),
+        serde_json::json!({"uniform": 1.0}),
+        serde_json::json!({"x": 1.0, "y": 1.0, "z": 1.0}),
+    ] {
+        assert!(serde_json::from_value::<ScaleFactors>(wire).is_err());
+    }
+}
+
+#[test]
+fn blind_and_coil_lengths_reject_zero_without_losing_signed_wire_values() {
+    use crate::features::{CoilExtent, LinearTermination};
+    for value in [-4.0, 4.0] {
+        let wire = serde_json::json!({"kind": "blind", "length": value});
+        let admitted: LinearTermination = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(admitted).unwrap(), wire);
+    }
+    for value in [-0.0, 0.0] {
+        assert!(serde_json::from_value::<LinearTermination>(
+            serde_json::json!({"kind":"blind","length":value})
+        )
+        .is_err());
+        for wire in [
+            serde_json::json!({"kind":"revolutions_pitch","revolutions":1.0,"pitch":value}),
+            serde_json::json!({"kind":"height_pitch","height":value,"pitch":1.0}),
+            serde_json::json!({"kind":"height_pitch","height":1.0,"pitch":value}),
+            serde_json::json!({"kind":"spiral","revolutions":1.0,"radial_pitch":value}),
+        ] {
+            assert!(serde_json::from_value::<CoilExtent>(wire).is_err());
+        }
+    }
+    let wire = serde_json::json!({"kind":"revolutions_height","revolutions":1.0,"height":0.0});
+    let admitted: CoilExtent = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(admitted).unwrap(), wire);
+}
+
+#[test]
+fn hole_profile_filters_admit_exactly_the_nonempty_family_sets() {
+    use crate::features::holes::HoleProfileFilter;
+    let filters = [
+        (HoleProfileFilter::Points, "points"),
+        (HoleProfileFilter::Circles, "circles"),
+        (HoleProfileFilter::PointsAndCircles, "points_and_circles"),
+        (HoleProfileFilter::Arcs, "arcs"),
+        (HoleProfileFilter::PointsAndArcs, "points_and_arcs"),
+        (HoleProfileFilter::CirclesAndArcs, "circles_and_arcs"),
+        (HoleProfileFilter::All, "all"),
+    ];
+    for (filter, name) in filters {
+        let wire = serde_json::json!(name);
+        assert_eq!(serde_json::to_value(filter).unwrap(), wire);
+        assert_eq!(
+            serde_json::from_value::<HoleProfileFilter>(wire).unwrap(),
+            filter
+        );
+    }
+    // The empty family set has no name, so the wire cannot state it.
+    assert!(serde_json::from_value::<HoleProfileFilter>(serde_json::json!("none")).is_err());
+    assert!(serde_json::from_value::<HoleProfileFilter>(
+        serde_json::json!({"points":false,"circles":false,"arcs":false})
+    )
+    .is_err());
+}
+
+#[test]
+fn polygon_side_counts_reject_degenerate_polygons_at_admission() {
+    use crate::features::PolygonSideCount;
+    for value in [0, 1, 2] {
+        assert!(PolygonSideCount::new(value).is_none());
+        assert!(serde_json::from_value::<PolygonSideCount>(serde_json::json!(value)).is_err());
+    }
+    for value in [3, 7, u32::MAX] {
+        let sides = PolygonSideCount::new(value).unwrap();
+        assert_eq!(sides.0, value);
+        assert_eq!(
+            serde_json::to_value(sides).unwrap(),
+            serde_json::json!(value)
+        );
+        assert_eq!(
+            serde_json::from_value::<PolygonSideCount>(serde_json::json!(value)).unwrap(),
+            sides
+        );
+    }
+}
+
+#[test]
+fn feature_geometry_admission_preserves_nonunit_directions_and_zero_displacements() {
+    use crate::features::{FeatureDirection3, FinitePoint3, FiniteVector3};
+    for point in [Point3::new(0.0, 0.0, 0.0), Point3::new(-1.0, 2.0, f64::MAX)] {
+        let admitted = FinitePoint3::new(point).unwrap();
+        let wire = serde_json::to_value(point).unwrap();
+        assert_eq!(serde_json::to_value(admitted).unwrap(), wire);
+        assert_eq!(
+            serde_json::from_value::<FinitePoint3>(wire).unwrap(),
+            admitted
+        );
+    }
+    for vector in [
+        Vector3::new(0.0, 0.0, 0.0),
+        Vector3::new(-1.0, 2.0, f64::MAX),
+    ] {
+        let admitted = FiniteVector3::new(vector).unwrap();
+        let wire = serde_json::to_value(vector).unwrap();
+        assert_eq!(serde_json::to_value(admitted).unwrap(), wire);
+        assert_eq!(
+            serde_json::from_value::<FiniteVector3>(wire).unwrap(),
+            admitted
+        );
+    }
+    for vector in [Vector3::new(0.0, 0.0, -2.0), Vector3::new(3.0, 4.0, 0.0)] {
+        let admitted = FeatureDirection3::new(vector).unwrap();
+        let wire = serde_json::to_value(vector).unwrap();
+        assert_eq!(serde_json::to_value(admitted).unwrap(), wire);
+        assert_eq!(
+            serde_json::from_value::<FeatureDirection3>(wire).unwrap(),
+            admitted
+        );
+    }
+    for vector in [
+        Vector3::new(0.0, 0.0, 0.0),
+        Vector3::new(f64::MAX, 0.0, 0.0),
+    ] {
+        assert!(FeatureDirection3::new(vector).is_none());
+        assert!(
+            serde_json::from_value::<FeatureDirection3>(serde_json::to_value(vector).unwrap())
+                .is_err()
+        );
+    }
+    for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        for axis in 0..3 {
+            let mut components = [0.0; 3];
+            components[axis] = invalid;
+            assert!(FinitePoint3::new(Point3::from(components)).is_none());
+            assert!(FiniteVector3::new(Vector3::from(components)).is_none());
+            assert!(FeatureDirection3::new(Vector3::from(components)).is_none());
+            let deserialize_point = || {
+                serde::de::value::MapDeserializer::<_, serde::de::value::Error>::new(
+                    [
+                        ("x", components[0]),
+                        ("y", components[1]),
+                        ("z", components[2]),
+                    ]
+                    .into_iter(),
+                )
+            };
+            assert!(
+                <FinitePoint3 as serde::Deserialize>::deserialize(deserialize_point()).is_err()
+            );
+            assert!(
+                <FiniteVector3 as serde::Deserialize>::deserialize(deserialize_point()).is_err()
+            );
+            assert!(
+                <FeatureDirection3 as serde::Deserialize>::deserialize(deserialize_point())
+                    .is_err()
+            );
+        }
+    }
+}
+
+#[test]
+fn a_point_from_finite_coordinates_holds_them_bit_for_bit() {
+    use crate::features::FinitePoint3;
+    use crate::scalar::FiniteReal;
+    for [x, y, z] in [[0.0, -0.0, 1.0], [f64::MAX, f64::MIN, 5.0e-324]] {
+        let point = FinitePoint3::from_coordinates(
+            FiniteReal::new(x).unwrap(),
+            FiniteReal::new(y).unwrap(),
+            FiniteReal::new(z).unwrap(),
+        );
+        assert_eq!(
+            [point.x, point.y, point.z].map(f64::to_bits),
+            [x, y, z].map(f64::to_bits)
+        );
+        assert_eq!(point, FinitePoint3::new(Point3::new(x, y, z)).unwrap());
+    }
+}
+
+#[test]
+fn feature_lines_and_polylines_close_geometry_bounds_without_changing_wire_fields() {
+    use crate::features::{
+        FeatureDefinition, FeatureLineSegment, FeatureOperation, FeaturePolyline,
+    };
+    let first = Point3::new(0.0, 1.0, 2.0);
+    let second = Point3::new(3.0, 4.0, 5.0);
+    let segment = FeatureLineSegment::new(first, second).unwrap();
+    let wire =
+        serde_json::json!({"definition":"line_segment", "segment":{"start":first, "end":second}});
+    let definition = FeatureDefinition::Operation(FeatureOperation::LineSegment { segment });
+    assert_eq!(serde_json::to_value(&definition).unwrap(), wire);
+    assert_eq!(
+        serde_json::from_value::<FeatureDefinition>(wire).unwrap(),
+        definition
+    );
+    assert!(FeatureLineSegment::new(first, first).is_none());
+    assert!(FeatureLineSegment::new(Point3::new(f64::NAN, 0.0, 0.0), second).is_none());
+    assert!(serde_json::from_value::<FeatureDefinition>(
+        serde_json::json!({"definition":"line_segment", "segment":{"start":first, "end":first}})
+    )
+    .is_err());
+
+    for (points, closed) in [
+        (vec![first, second], false),
+        (vec![first, second, first], true),
+        (vec![first, second, first], false),
+    ] {
+        let chain = FeaturePolyline::new(points.clone(), closed).unwrap();
+        let admitted = points
+            .iter()
+            .copied()
+            .map(crate::features::FinitePoint3::new)
+            .collect::<Option<Vec<_>>>()
+            .unwrap();
+        assert_eq!(
+            FeaturePolyline::from_parts(admitted, closed),
+            Some(chain.clone())
+        );
+        let wire = serde_json::json!({"definition":"polyline", "chain":{"points":points, "closed":closed}});
+        let definition = FeatureDefinition::Operation(FeatureOperation::Polyline { chain });
+        assert_eq!(serde_json::to_value(&definition).unwrap(), wire);
+        assert_eq!(
+            serde_json::from_value::<FeatureDefinition>(wire).unwrap(),
+            definition
+        );
+    }
+    for (points, closed) in [
+        (vec![], false),
+        (vec![first], false),
+        (vec![first, second], true),
+        (vec![first, first, second], false),
+    ] {
+        assert!(FeaturePolyline::new(points.clone(), closed).is_none());
+        assert!(serde_json::from_value::<FeatureDefinition>(
+            serde_json::json!({"definition":"polyline", "chain":{"points":points, "closed":closed}})
+        )
+        .is_err());
+    }
+    assert!(
+        FeaturePolyline::new(vec![first, Point3::new(f64::INFINITY, 0.0, 0.0)], false).is_none()
     );
 }
+
+#[test]
+fn equation_curve_admission_preserves_expression_text_and_requires_an_increasing_domain() {
+    use crate::features::{FeatureDefinition, FeatureEquationCurve, FeatureOperation};
+    let curve = FeatureEquationCurve::new(
+        " t ".into(),
+        " t*t ".into(),
+        "0".into(),
+        " -t ".into(),
+        -2.0,
+        3.0,
+    )
+    .unwrap();
+    let definition = FeatureDefinition::Operation(FeatureOperation::EquationCurve { curve });
+    let wire = serde_json::json!({"definition":"equation_curve", "curve":{"parameter":" t ", "x_expression":" t*t ", "y_expression":"0", "z_expression":" -t ", "start":-2.0, "end":3.0}});
+    assert_eq!(serde_json::to_value(&definition).unwrap(), wire);
+    assert_eq!(
+        serde_json::from_value::<FeatureDefinition>(wire.clone()).unwrap(),
+        definition
+    );
+    for field in ["parameter", "x_expression", "y_expression", "z_expression"] {
+        for blank in ["", " \t\n"] {
+            let mut invalid = wire.clone();
+            invalid[field] = serde_json::json!(blank);
+            assert!(serde_json::from_value::<FeatureDefinition>(invalid).is_err());
+        }
+    }
+    for [start, end] in [
+        [1.0, 1.0],
+        [2.0, 1.0],
+        [f64::NAN, 2.0],
+        [0.0, f64::INFINITY],
+        [f64::NEG_INFINITY, 0.0],
+    ] {
+        assert!(FeatureEquationCurve::new(
+            "t".into(),
+            "t".into(),
+            "0".into(),
+            "0".into(),
+            start,
+            end
+        )
+        .is_none());
+    }
+    for [start, end] in [[1.0, 1.0], [2.0, 1.0]] {
+        let mut invalid = wire.clone();
+        invalid["curve"]["start"] = serde_json::json!(start);
+        invalid["curve"]["end"] = serde_json::json!(end);
+        assert!(serde_json::from_value::<FeatureDefinition>(invalid).is_err());
+    }
+}
+
+#[test]
+fn feature_arcs_preserve_directed_spans_and_admit_only_valid_frames_and_radii() {
+    use crate::geometry::DirectedParameterRange;
+    use crate::{
+        features::{FeatureCircularArc, FeatureDefinition, FeatureEllipticArc, FeatureOperation},
+        scalar::PositiveLength,
+    };
+    let center = Point3::new(1.0, 2.0, 3.0);
+    let normal = Vector3::new(0.0, 0.0, 2.0);
+    let major_axis = Vector3::new(3.0, 0.0, 0.0);
+    let major = PositiveLength::new(4.0).unwrap();
+    let minor = PositiveLength::new(2.0).unwrap();
+    for endpoints in [[0.0, std::f64::consts::TAU], [2.0, -1.0]] {
+        let angles = DirectedParameterRange::new(endpoints).unwrap();
+        let arc = FeatureCircularArc::new(center, normal, major, angles).unwrap();
+        let definition = FeatureDefinition::Operation(FeatureOperation::CircularArc { arc });
+        let wire = serde_json::json!({"definition":"circular_arc", "arc":{"center":center, "normal":normal, "radius":4.0, "start_angle":endpoints[0], "end_angle":endpoints[1]}});
+        assert_eq!(serde_json::to_value(&definition).unwrap(), wire);
+        assert_eq!(
+            serde_json::from_value::<FeatureDefinition>(wire.clone()).unwrap(),
+            definition
+        );
+        let mut invalid = wire;
+        invalid["arc"]["end_angle"] = invalid["arc"]["start_angle"].clone();
+        assert!(serde_json::from_value::<FeatureDefinition>(invalid).is_err());
+
+        let arc =
+            FeatureEllipticArc::new(center, normal, major_axis, [major, minor], angles).unwrap();
+        let definition = FeatureDefinition::Operation(FeatureOperation::EllipticArc { arc });
+        let wire = serde_json::json!({"definition":"elliptic_arc", "arc":{"center":center, "normal":normal, "major_axis":major_axis, "major_radius":4.0, "minor_radius":2.0, "start_angle":endpoints[0], "end_angle":endpoints[1]}});
+        assert_eq!(serde_json::to_value(&definition).unwrap(), wire);
+        assert_eq!(
+            serde_json::from_value::<FeatureDefinition>(wire.clone()).unwrap(),
+            definition
+        );
+        for (field, value) in [
+            ("minor_radius", serde_json::json!(5.0)),
+            ("major_axis", serde_json::json!({"x":0.0,"y":0.0,"z":1.0})),
+            ("end_angle", serde_json::json!(endpoints[0])),
+        ] {
+            let mut invalid = wire.clone();
+            invalid["arc"][field] = value;
+            assert!(serde_json::from_value::<FeatureDefinition>(invalid).is_err());
+        }
+    }
+    let angles = DirectedParameterRange::new([0.0, 1.0]).unwrap();
+    assert!(FeatureCircularArc::new(center, Vector3::new(0.0, 0.0, 0.0), major, angles).is_none());
+    assert!(FeatureEllipticArc::new(center, normal, major_axis, [minor, major], angles).is_none());
+    assert!(FeatureEllipticArc::new(center, normal, major_axis, [major, major], angles).is_some());
+    assert!(FeatureEllipticArc::new(center, normal, normal, [major, minor], angles).is_none());
+    assert!(FeatureEllipticArc::new(
+        center,
+        normal,
+        Vector3::new(1.0, 0.0, super::EPS_FEATURE_ELLIPSE_AXES_ORTHO / 2.0),
+        [major, minor],
+        angles
+    )
+    .is_some());
+    assert!(FeatureEllipticArc::new(
+        center,
+        normal,
+        Vector3::new(1.0, 0.0, super::EPS_FEATURE_ELLIPSE_AXES_ORTHO),
+        [major, minor],
+        angles
+    )
+    .is_none());
+}
+
+#[test]
+fn block_placement_admission_requires_a_right_handed_rigid_transform() {
+    use crate::features::FeatureRigidPlacement;
+    use crate::transform::Transform;
+    for rows in [
+        [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ],
+        [
+            [0.0, -1.0, 0.0, 3.0],
+            [1.0, 0.0, 0.0, -2.0],
+            [0.0, 0.0, 1.0, 5.0],
+        ],
+    ] {
+        let transform = Transform::affine(rows).unwrap();
+        let placement = FeatureRigidPlacement::new(transform).unwrap();
+        let wire = serde_json::to_value(transform).unwrap();
+        assert_eq!(serde_json::to_value(placement).unwrap(), wire);
+        assert_eq!(
+            serde_json::from_value::<FeatureRigidPlacement>(wire).unwrap(),
+            placement
+        );
+    }
+    for rows in [
+        [
+            [2.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ],
+        [
+            [1.0, 0.25, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ],
+        [
+            [-1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ],
+    ] {
+        let transform = Transform::affine(rows).unwrap();
+        assert!(FeatureRigidPlacement::new(transform).is_none());
+        assert!(serde_json::from_value::<FeatureRigidPlacement>(
+            serde_json::to_value(transform).unwrap()
+        )
+        .is_err());
+    }
+}
+
+#[test]
+fn helical_sweep_travel_preserves_signed_and_planar_values_but_rejects_zero_travel() {
+    use crate::{features::HelicalSweepTravel, scalar::Length};
+    for (height, radial_growth, wire) in [
+        (-2.0, 0.0, serde_json::json!({"kind":"axial","height":-2.0})),
+        (
+            0.0,
+            -3.0,
+            serde_json::json!({"kind":"radial","radial_growth":-3.0}),
+        ),
+        (
+            2.0,
+            -3.0,
+            serde_json::json!({"kind":"conical","height":2.0,"radial_growth":-3.0}),
+        ),
+    ] {
+        let travel = HelicalSweepTravel::new(
+            Length::new(height).unwrap(),
+            Length::new(radial_growth).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(travel.height().get(), height);
+        assert_eq!(travel.radial_growth().get(), radial_growth);
+        assert_eq!(serde_json::to_value(travel).unwrap(), wire);
+        assert_eq!(
+            serde_json::from_value::<HelicalSweepTravel>(wire).unwrap(),
+            travel
+        );
+    }
+    assert!(HelicalSweepTravel::new(Length::ZERO, Length::ZERO).is_none());
+    // A zero component has no spelling: the arm that would carry it is a
+    // `NonZeroLength`, and the arm that omits it names a different travel.
+    assert!(serde_json::from_value::<HelicalSweepTravel>(
+        serde_json::json!({"kind":"axial","height":0.0})
+    )
+    .is_err());
+    assert!(serde_json::from_value::<HelicalSweepTravel>(
+        serde_json::json!({"kind":"conical","height":1.0,"radial_growth":0.0})
+    )
+    .is_err());
+    assert!(serde_json::from_value::<HelicalSweepTravel>(
+        serde_json::json!({"kind":"axial","height":1.0,"radial_growth":2.0})
+    )
+    .is_err());
+}
+
+#[test]
+fn feature_coordinate_frame_admission_preserves_wire_and_handedness_bound() {
+    use crate::features::{
+        FeatureCoordinateFrame, FeatureDefinition, FeatureOperation, EPS_FEATURE_UNIT_FRAME,
+    };
+    use crate::math::{Point3, Vector3};
+    let origin = Point3::new(1.0, 2.0, 3.0);
+    let x = Vector3::new(1.0, 0.0, 0.0);
+    let y = Vector3::new(0.0, 1.0, 0.0);
+    let z = Vector3::new(0.0, 0.0, 1.0);
+    let frame = FeatureCoordinateFrame::new(origin, x, y, z).unwrap();
+    let wire = serde_json::json!({"definition":"datum_coordinate_system","frame":{"origin":origin,"x_axis":x,"y_axis":y,"z_axis":z}});
+    let definition =
+        FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem { frame });
+    assert_eq!(serde_json::to_value(&definition).unwrap(), wire);
+    assert_eq!(
+        serde_json::from_value::<FeatureDefinition>(wire.clone()).unwrap(),
+        definition
+    );
+    for (key, value) in [
+        ("x_axis", y),
+        ("z_axis", Vector3::new(0.0, 0.0, -1.0)),
+        ("x_axis", Vector3::new(2.0, 0.0, 0.0)),
+    ] {
+        let mut invalid = wire.clone();
+        invalid["frame"][key] = serde_json::to_value(value).unwrap();
+        assert!(serde_json::from_value::<FeatureDefinition>(invalid).is_err());
+    }
+    assert!(FeatureCoordinateFrame::new(Point3::new(f64::NAN, 0.0, 0.0), x, y, z).is_none());
+    let expanded = 1.0 + EPS_FEATURE_UNIT_FRAME * 0.75;
+    let frame = FeatureCoordinateFrame::new(
+        origin,
+        Vector3::new(expanded, 0.0, 0.0),
+        Vector3::new(0.0, expanded, 0.0),
+        Vector3::new(0.0, 0.0, expanded),
+    )
+    .unwrap();
+    assert!(
+        frame
+            .x_axis()
+            .as_raw()
+            .cross(*frame.y_axis().as_raw())
+            .dot(*frame.z_axis().as_raw())
+            > 1.0 + EPS_FEATURE_UNIT_FRAME
+    );
+}
+
+#[test]
+fn checked_feature_frame_parts_preserve_wire_and_cross_field_refusal() {
+    use crate::features::{
+        FeatureCoordinateFrame, FeatureDatumPlaneFrame, FeatureDirection3,
+        FeatureSupportPlaneFrame, FeatureUnitPlaneFrame, FinitePoint3,
+    };
+    use crate::units::UnitVector3;
+
+    let origin = Point3::new(1.0, 2.0, 3.0);
+    let x = Vector3::new(1.0, 0.0, 0.0);
+    let y = Vector3::new(0.0, 1.0, 0.0);
+    let z = Vector3::new(0.0, 0.0, 1.0);
+    let admitted_origin = FinitePoint3::new(origin).unwrap();
+    let plane = FeatureUnitPlaneFrame::from_parts(
+        admitted_origin,
+        UnitVector3::new(x).unwrap(),
+        UnitVector3::new(y).unwrap(),
+    )
+    .unwrap();
+    let frame = FeatureCoordinateFrame::from_parts(plane, UnitVector3::new(z).unwrap()).unwrap();
+    assert_eq!(frame, FeatureCoordinateFrame::new(origin, x, y, z).unwrap());
+    assert!(FeatureCoordinateFrame::from_parts(plane, UnitVector3::new(x).unwrap()).is_none());
+
+    let normal = Vector3::new(0.0, 0.0, 2.0);
+    let u_axis = Vector3::new(-3.0, 0.0, 0.0);
+    let admitted_normal = FeatureDirection3::new(normal).unwrap();
+    let admitted_u_axis = FeatureDirection3::new(u_axis).unwrap();
+    let datum =
+        FeatureDatumPlaneFrame::from_parts(admitted_origin, admitted_normal, admitted_u_axis)
+            .unwrap();
+    let support =
+        FeatureSupportPlaneFrame::from_parts(admitted_origin, admitted_normal, admitted_u_axis)
+            .unwrap();
+    assert_eq!(
+        datum,
+        FeatureDatumPlaneFrame::new(origin, normal, u_axis).unwrap()
+    );
+    assert_eq!(
+        support,
+        FeatureSupportPlaneFrame::new(origin, normal, u_axis).unwrap()
+    );
+    let parallel = FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap();
+    assert!(
+        FeatureDatumPlaneFrame::from_parts(admitted_origin, admitted_normal, parallel).is_none()
+    );
+    assert!(
+        FeatureSupportPlaneFrame::from_parts(admitted_origin, admitted_normal, parallel).is_none()
+    );
+}
+
+#[test]
+fn feature_unit_plane_and_image_bounds_reject_degenerate_geometry() {
+    use crate::features::{FeatureImageBounds, FeatureUnitPlaneFrame, EPS_FEATURE_UNIT_FRAME};
+    use crate::math::{Point2, Point3, Vector3};
+    let origin = Point3::new(0.0, 0.0, 0.0);
+    let x = Vector3::new(1.0, 0.0, 0.0);
+    for other in [
+        Vector3::new(0.0, 0.0, 0.0),
+        x,
+        Vector3::new(f64::INFINITY, 0.0, 0.0),
+    ] {
+        assert!(FeatureUnitPlaneFrame::new(origin, x, other).is_none());
+    }
+    assert!(FeatureUnitPlaneFrame::new(
+        origin,
+        x,
+        Vector3::new(EPS_FEATURE_UNIT_FRAME * 0.5, 1.0, 0.0)
+    )
+    .is_some());
+    assert!(FeatureUnitPlaneFrame::new(
+        origin,
+        x,
+        Vector3::new(EPS_FEATURE_UNIT_FRAME * 2.0, 1.0, 0.0)
+    )
+    .is_none());
+    assert!(serde_json::from_value::<FeatureUnitPlaneFrame>(
+        serde_json::json!({"origin":origin,"u_axis":x,"v_axis":x})
+    )
+    .is_err());
+    for corners in [
+        [Point2::new(2.0, 3.0), Point2::new(-2.0, -3.0)],
+        [Point2::new(-2.0, 3.0), Point2::new(2.0, -3.0)],
+    ] {
+        let bounds = FeatureImageBounds::new(corners).unwrap();
+        assert_eq!(bounds.corners(), corners);
+        assert_eq!(
+            bounds.corners(),
+            corners.map(|corner| crate::units::FinitePoint2::new(corner).unwrap())
+        );
+        let wire = serde_json::to_value(corners).unwrap();
+        assert_eq!(serde_json::to_value(bounds).unwrap(), wire);
+        assert_eq!(
+            serde_json::from_value::<FeatureImageBounds>(wire).unwrap(),
+            bounds
+        );
+    }
+    for corners in [
+        [Point2::new(0.0, 0.0), Point2::new(0.0, 1.0)],
+        [Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+    ] {
+        assert!(FeatureImageBounds::new(corners).is_none());
+        assert!(serde_json::from_value::<FeatureImageBounds>(
+            serde_json::to_value(corners).unwrap()
+        )
+        .is_err());
+    }
+    assert!(FeatureImageBounds::new([Point2::new(f64::NAN, 0.0), Point2::new(1.0, 1.0)]).is_none());
+}
+
+#[test]
+fn reference_image_and_coil_frames_preserve_wire_fields_and_reject_invalid_frames() {
+    use crate::features::{CoilPlacement, FeatureDefinition};
+    let image = serde_json::json!({
+        "definition":"reference_image", "asset":"synthetic:test:asset#frame",
+        "visible":true, "mirror_u":false, "mirror_v":false,
+        "frame":{
+            "origin":{"x":1.0,"y":2.0,"z":3.0},
+            "u_axis":{"x":1.0,"y":0.0,"z":0.0},
+            "v_axis":{"x":0.0,"y":1.0,"z":0.0}
+        },
+        "bounds":[{"u":2.0,"v":3.0},{"u":-2.0,"v":-3.0}]
+    });
+    let decoded = serde_json::from_value::<FeatureDefinition>(image.clone()).unwrap();
+    assert_eq!(serde_json::to_value(decoded).unwrap(), image);
+    let mut invalid = image.clone();
+    invalid["frame"]["v_axis"] = invalid["frame"]["u_axis"].clone();
+    assert!(serde_json::from_value::<FeatureDefinition>(invalid).is_err());
+    let mut invalid = image;
+    invalid["bounds"][1]["u"] = serde_json::json!(2.0);
+    assert!(serde_json::from_value::<FeatureDefinition>(invalid).is_err());
+
+    let coil = serde_json::json!({"kind":"explicit",
+        "origin":{"x":1.0,"y":2.0,"z":3.0},
+        "axis":{"x":0.0,"y":0.0,"z":1.0},
+        "radial":{"x":1.0,"y":0.0,"z":0.0}
+    });
+    let decoded = serde_json::from_value::<CoilPlacement>(coil.clone()).unwrap();
+    assert_eq!(serde_json::to_value(decoded).unwrap(), coil);
+    let mut invalid = coil;
+    invalid["radial"] = invalid["axis"].clone();
+    assert!(serde_json::from_value::<CoilPlacement>(invalid).is_err());
+    assert!(serde_json::from_value::<CoilPlacement>(
+        serde_json::json!({"kind":"native","native_ref":" \t "})
+    )
+    .is_err());
+    let native = serde_json::json!({"kind":"native","native_ref":" source:placement "});
+    let decoded = serde_json::from_value::<CoilPlacement>(native.clone()).unwrap();
+    assert_eq!(serde_json::to_value(decoded).unwrap(), native);
+}
+
+#[test]
+fn datum_and_support_plane_frames_preserve_nonunit_geometry_and_wire_fields() {
+    use crate::features::{
+        DatumPlaneReference, FeatureDatumPlaneFrame, FeatureDefinition, FeatureOperation,
+        FeatureSupportPlaneFrame,
+    };
+    let origin = Point3::new(1.0, 2.0, 3.0);
+    let normal = Vector3::new(0.0, 0.0, 2.0);
+    let u_axis = Vector3::new(-3.0, 0.0, 0.0);
+    let datum = FeatureDatumPlaneFrame::new(origin, normal, u_axis).unwrap();
+    let support = FeatureSupportPlaneFrame::new(origin, normal, u_axis).unwrap();
+    let geometry = serde_json::json!({"origin":origin,"normal":normal,"u_axis":u_axis});
+    assert_eq!(serde_json::to_value(datum).unwrap(), geometry);
+    assert_eq!(serde_json::to_value(support).unwrap(), geometry);
+    let datum_wire = serde_json::json!({"definition":"datum_plane","frame":geometry.clone()});
+    let definition = FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame: datum });
+    assert_eq!(serde_json::to_value(&definition).unwrap(), datum_wire);
+    assert_eq!(
+        serde_json::from_value::<FeatureDefinition>(datum_wire).unwrap(),
+        definition
+    );
+    let resolved = DatumPlaneReference::ResolvedPlane { frame: support };
+    let resolved_wire =
+        serde_json::json!({"reference": "resolved_plane", "frame": geometry.clone()});
+    assert_eq!(serde_json::to_value(&resolved).unwrap(), resolved_wire);
+    assert_eq!(
+        serde_json::from_value::<DatumPlaneReference>(resolved_wire).unwrap(),
+        resolved
+    );
+}
+
+#[test]
+fn plane_frame_admission_rejects_nonfinite_degenerate_and_nonorthogonal_directions() {
+    use crate::features::{FeatureDatumPlaneFrame, FeatureSupportPlaneFrame};
+    let origin = Point3::new(0.0, 0.0, 0.0);
+    let normal = Vector3::new(0.0, 0.0, 2.0);
+    for u_axis in [Vector3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 1.0)] {
+        assert!(FeatureDatumPlaneFrame::new(origin, normal, u_axis).is_none());
+        assert!(FeatureSupportPlaneFrame::new(origin, normal, u_axis).is_none());
+        let wire = serde_json::json!({"origin":origin,"normal":normal,"u_axis":u_axis});
+        assert!(serde_json::from_value::<FeatureDatumPlaneFrame>(wire.clone()).is_err());
+        assert!(serde_json::from_value::<FeatureSupportPlaneFrame>(wire).is_err());
+    }
+    let u_axis = Vector3::new(3.0, 0.0, 0.0);
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert!(
+            FeatureDatumPlaneFrame::new(Point3::new(value, 0.0, 0.0), normal, u_axis).is_none()
+        );
+        assert!(
+            FeatureSupportPlaneFrame::new(origin, Vector3::new(0.0, 0.0, value), u_axis).is_none()
+        );
+    }
+    let small = f64::EPSILON / 2.0;
+    assert!(FeatureDatumPlaneFrame::new(origin, Vector3::new(0.0, 0.0, small), u_axis).is_some());
+    assert!(FeatureSupportPlaneFrame::new(origin, normal, Vector3::new(small, 0.0, 0.0)).is_some());
+}
+
+#[test]
+fn plane_frame_owners_preserve_their_distinct_floating_point_thresholds() {
+    use crate::features::{
+        FeatureDatumPlaneFrame, FeatureSupportPlaneFrame, EPS_FEATURE_PLANE_ORTHOGONAL,
+    };
+    let origin = Point3::new(0.0, 0.0, 0.0);
+    let normal = Vector3::new(0.0, 0.0, 0.1);
+    let u_axis = Vector3::new(0.7, 0.0, EPS_FEATURE_PLANE_ORTHOGONAL * 0.7);
+    let dot = normal.dot(u_axis).abs();
+    let datum_bound = EPS_FEATURE_PLANE_ORTHOGONAL * (normal.norm() * u_axis.norm());
+    let support_bound = (EPS_FEATURE_PLANE_ORTHOGONAL * normal.norm()) * u_axis.norm();
+    assert!(dot > datum_bound);
+    assert!(dot <= support_bound);
+    assert!(FeatureDatumPlaneFrame::new(origin, normal, u_axis).is_none());
+    assert!(FeatureSupportPlaneFrame::new(origin, normal, u_axis).is_some());
+}
+
+#[test]
+fn a_resolved_plane_reference_checks_the_geometry_it_carries() {
+    use crate::features::{DatumPlaneReference, FaceSelection};
+    let degenerate = serde_json::json!({
+        "reference": "resolved_plane",
+        "frame": {
+            "origin":{"x":0.0,"y":0.0,"z":0.0},
+            "normal":{"x":0.0,"y":0.0,"z":0.0},
+            "u_axis":{"x":1.0,"y":0.0,"z":0.0}
+        }
+    });
+    assert!(serde_json::from_value::<DatumPlaneReference>(degenerate).is_err());
+    let native = serde_json::json!({
+        "reference": "face",
+        "face": {"kind":"native","value":"face:retained"}
+    });
+    assert_eq!(
+        serde_json::from_value::<DatumPlaneReference>(native).unwrap(),
+        DatumPlaneReference::Face {
+            face: FaceSelection::Native("face:retained".into())
+        }
+    );
+}
+
+mod selections;
+
+mod parameters;
+
+mod configuration_states;
+
+mod source_content;
+
+mod profile_selections;
+
+mod profile_regions;
+
+mod flange_widths;
+
+mod local_admission;
+
+mod configurations;
+mod finite_vectors;
+mod unit_scaling;
+mod wire_forms;
+
+#[test]
+fn every_payload_free_feature_variant_the_freecad_sweep_reached_refuses_an_unknown_key() {
+    use crate::features::{ExtrusionDirectionSource, FuzzyTolerance, SweepOrientation};
+
+    for kind in ["custom", "profile_normal"] {
+        let wire = serde_json::json!({"kind": kind, "zz_bogus": 1});
+        let error = serde_json::from_value::<ExtrusionDirectionSource>(wire)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("zz_bogus"), "{kind}: {error}");
+    }
+    for kind in ["corrected_frenet", "fixed", "frenet"] {
+        let wire = serde_json::json!({"kind": kind, "zz_bogus": 1});
+        let error = serde_json::from_value::<SweepOrientation>(wire)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("zz_bogus"), "{kind}: {error}");
+    }
+    for kind in ["kernel_default", "automatic"] {
+        let wire = serde_json::json!({"kind": kind, "zz_bogus": 1});
+        let error = serde_json::from_value::<FuzzyTolerance>(wire)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("zz_bogus"), "{kind}: {error}");
+    }
+
+    assert_eq!(
+        serde_json::to_value(ExtrusionDirectionSource::Custom {}).unwrap(),
+        serde_json::json!({"kind": "custom"})
+    );
+    assert_eq!(
+        serde_json::to_value(SweepOrientation::Frenet {}).unwrap(),
+        serde_json::json!({"kind": "frenet"})
+    );
+    assert_eq!(
+        serde_json::to_value(FuzzyTolerance::KernelDefault).unwrap(),
+        serde_json::json!({"kind": "kernel_default"})
+    );
+}
+
+#[test]
+fn a_hole_drilling_direction_admits_only_a_finite_nonzero_vector() {
+    use crate::features::holes::{HoleConstruction, HoleKind, HoleShape};
+    use crate::features::{FeatureDirection3, FeatureOperation};
+
+    for vector in [
+        Vector3::new(0.0, 0.0, 0.0),
+        Vector3::new(f64::NAN, 0.0, 1.0),
+        Vector3::new(f64::INFINITY, 0.0, 1.0),
+        Vector3::new(0.0, f64::NEG_INFINITY, 1.0),
+    ] {
+        assert!(FeatureDirection3::new(vector).is_none(), "{vector:?}");
+    }
+
+    let direction = FeatureDirection3::new(Vector3::new(0.0, 0.0, -2.0)).unwrap();
+    let shape = HoleShape::new(
+        HoleConstruction::Form {
+            kind: HoleKind::Simple,
+            specification: None,
+        },
+        None,
+        None,
+    )
+    .unwrap();
+    let hole = FeatureOperation::Hole {
+        profile: None,
+        profile_filter: None,
+        face: None,
+        direction: Some(direction),
+        placements: None,
+        shape,
+        extent: None,
+        bottom: None,
+        taper_angle: None,
+        allow_multi_profile_faces: None,
+    };
+    assert!(matches!(
+        hole,
+        FeatureOperation::Hole {
+            direction: Some(value),
+            ..
+        } if value.get() == Vector3::new(0.0, 0.0, -2.0)
+    ));
+}
+
+#[test]
+fn a_hole_wire_refuses_a_degenerate_drilling_direction() {
+    use crate::features::{FeatureDefinition, FeatureOperation};
+
+    // JSON itself states no infinity: `1e400` is out of range for the number
+    // it would be read into, and the parser refuses it before the field is
+    // reached. The zero vector is spellable and carries the same refusal,
+    // because one `FeatureDirection3::new` backs both the constructor and the
+    // deserializer.
+    let wire = |direction: serde_json::Value| {
+        serde_json::json!({
+            "definition": "hole",
+            "shape": {"construction": {"construction": "form", "kind": {"kind": "simple"}}},
+            "direction": direction
+        })
+    };
+
+    let degenerate = wire(serde_json::json!({"x": 0.0, "y": 0.0, "z": 0.0}));
+    let error = serde_json::from_value::<FeatureOperation>(degenerate.clone())
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("FeatureDirection3 norm"), "{error}");
+    // `FeatureDefinition::Operation` is untagged, so it reports only that no
+    // variant matched; the refusal above is the one it carries.
+    assert!(serde_json::from_value::<FeatureDefinition>(degenerate).is_err());
+
+    let admitted = wire(serde_json::json!({"x": 0.0, "y": 0.0, "z": -2.0}));
+    let definition: FeatureDefinition = serde_json::from_value(admitted.clone()).unwrap();
+    assert!(matches!(
+        definition,
+        FeatureDefinition::Operation(FeatureOperation::Hole {
+            direction: Some(_),
+            ..
+        })
+    ));
+    assert_eq!(serde_json::to_value(&definition).unwrap(), admitted);
+}
+
+#[test]
+fn feature_direction_from_unit_vector_keeps_the_admitted_components() {
+    use crate::features::FeatureDirection3;
+    use crate::units::{OrthonormalFrame3, UnitVector3};
+
+    for vector in [
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(0.6, -0.8, 0.0),
+        Vector3::new(1.0 + 0.5e-9, 0.0, 0.0),
+        Vector3::new(0.0, -(1.0 - 0.5e-9), 0.0),
+    ] {
+        let unit = UnitVector3::new(vector).unwrap();
+        for (unit, expected) in [
+            (unit, vector),
+            (
+                unit.reversed(),
+                Vector3::new(-vector.x, -vector.y, -vector.z),
+            ),
+        ] {
+            let direction = FeatureDirection3::from(unit);
+            assert_eq!(
+                [direction.x, direction.y, direction.z].map(f64::to_bits),
+                [expected.x, expected.y, expected.z].map(f64::to_bits)
+            );
+            assert_eq!(FeatureDirection3::new(expected), Some(direction));
+        }
+    }
+    let frame =
+        OrthonormalFrame3::new(Vector3::new(0.0, 0.0, 1.0), Vector3::new(1.0, 0.0, 0.0)).unwrap();
+    assert_eq!(
+        FeatureDirection3::from(*frame.axis()).get(),
+        *frame.axis().as_raw()
+    );
+    assert_eq!(
+        FeatureDirection3::from(*frame.reference()).get(),
+        *frame.reference().as_raw()
+    );
+}
+
+#[test]
+fn feature_direction_reversed_negates_the_components_and_stays_admitted() {
+    use crate::features::FeatureDirection3;
+
+    for vector in [
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(0.6, -0.8, 0.0),
+        Vector3::new(-0.0, 3.0, -4.0),
+        Vector3::new(1.0e154, 0.0, -0.0),
+        Vector3::new(1.0e-160, 0.0, 0.0),
+        Vector3::new(-2.5, 1.0e-300, 7.0e100),
+    ] {
+        let direction = FeatureDirection3::new(vector).unwrap();
+        let reversed = direction.reversed();
+        assert_eq!(
+            [reversed.x, reversed.y, reversed.z].map(f64::to_bits),
+            [-vector.x, -vector.y, -vector.z].map(f64::to_bits)
+        );
+        assert_eq!(FeatureDirection3::new(reversed.get()), Some(reversed));
+        assert_eq!(
+            reversed.dot(reversed.get()).to_bits(),
+            direction.dot(direction.get()).to_bits()
+        );
+        let restored = reversed.reversed();
+        assert_eq!(
+            [restored.x, restored.y, restored.z].map(f64::to_bits),
+            [vector.x, vector.y, vector.z].map(f64::to_bits)
+        );
+    }
+}
+
+#[test]
+fn finite_point_negated_negates_the_coordinates_and_stays_admitted() {
+    use crate::features::FinitePoint3;
+
+    for point in [
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(-0.0, 1.0, -2.5),
+        Point3::new(f64::MAX, -f64::MAX, f64::MIN_POSITIVE),
+        Point3::new(5.0e-324, -1.0e300, 3.0),
+    ] {
+        let admitted = FinitePoint3::new(point).unwrap();
+        let negated = admitted.negated();
+        assert_eq!(
+            [negated.x, negated.y, negated.z].map(f64::to_bits),
+            [-point.x, -point.y, -point.z].map(f64::to_bits)
+        );
+        assert_eq!(FinitePoint3::new(negated.get()), Some(negated));
+        let restored = negated.negated();
+        assert_eq!(
+            [restored.x, restored.y, restored.z].map(f64::to_bits),
+            [point.x, point.y, point.z].map(f64::to_bits)
+        );
+    }
+}
+
+#[test]
+fn feature_frames_replace_the_origin_and_keep_the_admitted_axes() {
+    use crate::features::{
+        FeatureCoordinateFrame, FeatureDatumPlaneFrame, FeatureSupportPlaneFrame,
+        FeatureUnitPlaneFrame, FinitePoint3,
+    };
+
+    let origin = Point3::new(1.0, 2.0, 3.0);
+    let moved = Point3::new(-4.0, 5.0e-324, f64::MAX);
+    let moved_origin = FinitePoint3::new(moved).unwrap();
+    let x = Vector3::new(0.6, 0.8, 0.0);
+    let y = Vector3::new(-0.8, 0.6, 0.0);
+    let z = Vector3::new(0.0, 0.0, 1.0);
+
+    let unit = FeatureUnitPlaneFrame::new(origin, x, y).unwrap();
+    assert_eq!(
+        unit.with_origin(moved_origin),
+        FeatureUnitPlaneFrame::new(moved, x, y).unwrap()
+    );
+    let coordinate = FeatureCoordinateFrame::new(origin, x, y, z).unwrap();
+    assert_eq!(
+        coordinate.with_origin(moved_origin),
+        FeatureCoordinateFrame::new(moved, x, y, z).unwrap()
+    );
+
+    // The plane frames keep non-unit directions with their magnitudes.
+    let normal = Vector3::new(0.0, 0.0, 2.0);
+    let u_axis = Vector3::new(3.0, 0.0, 0.0);
+    let datum = FeatureDatumPlaneFrame::new(origin, normal, u_axis).unwrap();
+    let moved_datum = datum.with_origin(moved_origin);
+    assert_eq!(
+        moved_datum,
+        FeatureDatumPlaneFrame::new(moved, normal, u_axis).unwrap()
+    );
+    assert_eq!(moved_datum.normal(), normal);
+    assert_eq!(moved_datum.u_axis(), u_axis);
+    let support = FeatureSupportPlaneFrame::new(origin, normal, u_axis).unwrap();
+    assert_eq!(
+        support.with_origin(moved_origin),
+        FeatureSupportPlaneFrame::new(moved, normal, u_axis).unwrap()
+    );
+    assert_eq!(
+        [
+            moved_datum.origin().x,
+            moved_datum.origin().y,
+            moved_datum.origin().z
+        ]
+        .map(f64::to_bits),
+        [moved.x, moved.y, moved.z].map(f64::to_bits)
+    );
+}
+
+#[test]
+fn feature_arcs_rebuild_from_checked_parts() {
+    use crate::features::{
+        FeatureCircularArc, FeatureDirection3, FeatureEllipticArc, FinitePoint3,
+    };
+    use crate::geometry::DirectedParameterRange;
+    use crate::scalar::{PositiveLength, PositiveReal};
+
+    let center = Point3::new(1.0, 2.0, 3.0);
+    let normal = Vector3::new(0.0, 0.0, 2.0);
+    let major_axis = Vector3::new(3.0, 0.0, 0.0);
+    let angles = DirectedParameterRange::new([2.0, -1.0]).unwrap();
+    let radius = PositiveLength::new(4.0).unwrap();
+
+    let arc = FeatureCircularArc::new(center, normal, radius, angles).unwrap();
+    assert_eq!(arc.center(), FinitePoint3::new(center).unwrap());
+    assert_eq!(arc.normal(), FeatureDirection3::new(normal).unwrap());
+    assert_eq!(
+        FeatureCircularArc::from_parts(arc.center(), arc.normal(), arc.radius(), arc.angles()),
+        arc
+    );
+    let moved = FinitePoint3::new(Point3::new(-5.0, 0.0, 7.5)).unwrap();
+    let wider = PositiveLength::new(8.0).unwrap();
+    assert_eq!(
+        FeatureCircularArc::from_parts(moved, arc.normal(), wider, arc.angles()),
+        FeatureCircularArc::new(moved.get(), normal, wider, angles).unwrap()
+    );
+
+    let [major, minor] = [4.0, 2.0].map(|value| PositiveLength::new(value).unwrap());
+    let ellipse =
+        FeatureEllipticArc::new(center, normal, major_axis, [major, minor], angles).unwrap();
+    let scale = PositiveReal::new(2.0).unwrap();
+    let scaled = [8.0, 4.0].map(|value| PositiveLength::new(value).unwrap());
+    assert_eq!(
+        ellipse
+            .with_scaled_radii(scale)
+            .map(|arc| arc.with_center(moved)),
+        FeatureEllipticArc::new(moved.get(), normal, major_axis, scaled, angles)
+    );
+    let equal =
+        FeatureEllipticArc::new(center, normal, major_axis, [major, major], angles).unwrap();
+    assert_eq!(
+        Some(equal.with_center(moved)),
+        FeatureEllipticArc::new(moved.get(), normal, major_axis, [major, major], angles)
+    );
+    assert!(
+        FeatureEllipticArc::new(moved.get(), normal, major_axis, [minor, major], angles).is_none()
+    );
+}
+
+#[test]
+fn with_translation_keeps_the_linear_rows_and_the_rigid_admission() {
+    use crate::features::{FeatureRigidPlacement, FiniteVector3};
+    use crate::transform::Transform;
+
+    let (sine, cosine) = 0.6_f64.sin_cos();
+    let transform = Transform::affine([
+        [cosine, -sine, 0.0, 4.0],
+        [sine, cosine, 0.0, -2.0],
+        [0.0, 0.0, 1.0, 1.0],
+    ])
+    .unwrap();
+    let translation = FiniteVector3::new(Vector3::new(-0.0, 5.0e-324, f64::MAX)).unwrap();
+    let moved = transform.with_translation(translation);
+    let mut expected = transform.affine_rows();
+    for (row, component) in expected.iter_mut().zip([-0.0, 5.0e-324, f64::MAX]) {
+        row[3] = component;
+    }
+    assert_eq!(
+        moved.affine_rows().map(|row| row.map(f64::to_bits)),
+        expected.map(|row| row.map(f64::to_bits))
+    );
+    assert_eq!(Transform::affine(expected), Some(moved));
+
+    let placement = FeatureRigidPlacement::new(transform).unwrap();
+    let placed = placement.with_translation(translation);
+    assert_eq!(FeatureRigidPlacement::new(moved), Some(placed));
+}
+
+#[test]
+fn apply_point_hands_back_an_admitted_point_bit_for_bit() {
+    use crate::features::FinitePoint3;
+    use crate::transform::Transform;
+
+    let transform = Transform::affine([
+        [2.0, 0.5, 0.0, 4.0],
+        [0.0, 3.0, 0.0, -2.0],
+        [0.0, 0.0, 4.0, 1.0],
+    ])
+    .unwrap();
+    for point in [
+        Point3::new(1.0, 2.0, 3.0),
+        Point3::new(-0.0, 5.0e-324, -1.0e300),
+    ] {
+        let admitted = FinitePoint3::new(point).unwrap();
+        let placed = transform.apply_point(admitted.get()).unwrap();
+        let raw = transform.apply_point(point).unwrap().get();
+        assert_eq!(
+            [placed.x, placed.y, placed.z].map(f64::to_bits),
+            [raw.x, raw.y, raw.z].map(f64::to_bits)
+        );
+        assert_eq!(FinitePoint3::new(raw), Some(placed));
+    }
+
+    // A finite translation added to a coordinate near the finite range
+    // overflows, and the transform hands back no point.
+    let overflow = Transform::affine([
+        [1.0, 0.0, 0.0, f64::MAX],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ])
+    .unwrap();
+    let edge = FinitePoint3::new(Point3::new(f64::MAX, 0.0, 0.0)).unwrap();
+    assert_eq!(overflow.apply_point(edge.get()), None);
+    assert_eq!(
+        overflow.apply_point(FinitePoint3::new(Point3::new(0.0, 0.0, 1.0)).unwrap().get()),
+        FinitePoint3::new(Point3::new(f64::MAX, 0.0, 1.0))
+    );
+}
+
+#[test]
+fn apply_vector_hands_back_an_admitted_vector_bit_for_bit() {
+    use crate::features::FiniteVector3;
+    use crate::transform::Transform;
+
+    let transform = Transform::affine([
+        [2.0, 0.5, 0.0, 4.0],
+        [0.0, 3.0, 0.0, -2.0],
+        [0.0, 0.0, 4.0, 1.0],
+    ])
+    .unwrap();
+    for vector in [
+        Vector3::new(1.0, 2.0, 3.0),
+        Vector3::new(-0.0, 5.0e-324, -1.0e300),
+    ] {
+        let admitted = FiniteVector3::new(vector).unwrap();
+        let placed = transform.apply_vector(admitted.get()).unwrap();
+        let raw = transform.apply_vector(vector).unwrap().get();
+        assert_eq!(
+            [placed.x, placed.y, placed.z].map(f64::to_bits),
+            [raw.x, raw.y, raw.z].map(f64::to_bits)
+        );
+        assert_eq!(FiniteVector3::new(raw), Some(placed));
+    }
+
+    // The translation does not act on a vector; a scale overflows it.
+    let stretch = Transform::affine([
+        [f64::MAX, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ])
+    .unwrap();
+    let unit = FiniteVector3::new(Vector3::new(1.0, 0.0, 0.0)).unwrap();
+    assert_eq!(
+        stretch.apply_vector(unit.get()),
+        FiniteVector3::new(Vector3::new(f64::MAX, 0.0, 0.0))
+    );
+    assert_eq!(
+        stretch.apply_vector(stretch.apply_vector(unit.get()).unwrap().get()),
+        None
+    );
+}
+
+#[test]
+fn feature_geometry_constants_are_the_admitted_literals() {
+    use crate::features::{FeatureDirection3, FinitePoint3};
+
+    let origin = Point3::new(0.0, 0.0, 0.0);
+    assert_eq!(FinitePoint3::new(origin), Some(FinitePoint3::ZERO));
+    assert_eq!(
+        [
+            FinitePoint3::ZERO.x,
+            FinitePoint3::ZERO.y,
+            FinitePoint3::ZERO.z
+        ]
+        .map(f64::to_bits),
+        [origin.x, origin.y, origin.z].map(f64::to_bits)
+    );
+    let z_axis = Vector3::new(0.0, 0.0, 1.0);
+    assert_eq!(
+        FeatureDirection3::new(z_axis),
+        Some(FeatureDirection3::Z_AXIS)
+    );
+    assert_eq!(
+        [
+            FeatureDirection3::Z_AXIS.x,
+            FeatureDirection3::Z_AXIS.y,
+            FeatureDirection3::Z_AXIS.z
+        ]
+        .map(f64::to_bits),
+        [z_axis.x, z_axis.y, z_axis.z].map(f64::to_bits)
+    );
+}
+
+#[test]
+fn wrap_depth_admits_only_a_positive_length_on_the_wire() {
+    use crate::features::FeatureOperation;
+
+    let wire = |depth: f64| {
+        serde_json::json!({
+            "definition": "wrap",
+            "profile": {"kind": "native", "value": "wrap:profile"},
+            "face": {"kind": "native", "value": "wrap:face"},
+            "mode": {"deboss": {"depth": depth}}
+        })
+    };
+    for refused in [0.0, -0.0, -2.5] {
+        let error = serde_json::from_value::<FeatureOperation>(wire(refused))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("PositiveLength must be positive"), "{error}");
+    }
+    let admitted = wire(f64::MIN_POSITIVE);
+    let operation: FeatureOperation = serde_json::from_value(admitted.clone()).unwrap();
+    assert_eq!(serde_json::to_value(operation).unwrap(), admitted);
+}
+
+#[test]
+fn feature_frames_hold_their_admitted_unit_axes() {
+    use crate::features::{
+        FeatureCoordinateFrame, FeatureDirection3, FeatureUnitPlaneFrame, FiniteVector3,
+    };
+    use crate::units::UnitVector3;
+
+    let origin = Point3::new(1.0, 2.0, 3.0);
+    let u = Vector3::new(0.0, 1.0, 0.0);
+    let v = Vector3::new(0.0, 0.0, 1.0);
+    let plane = FeatureUnitPlaneFrame::new(origin, u, v).unwrap();
+    assert_eq!(plane.u_axis(), UnitVector3::new(u).unwrap());
+    assert_eq!(plane.v_axis(), UnitVector3::new(v).unwrap());
+    assert_eq!(
+        serde_json::to_value(plane).unwrap(),
+        serde_json::json!({"origin": origin, "u_axis": u, "v_axis": v})
+    );
+    let frame = FeatureCoordinateFrame::new(
+        origin,
+        Vector3::new(1.0, 0.0, 0.0),
+        Vector3::new(0.0, 1.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+    )
+    .unwrap();
+    assert_eq!(
+        [frame.x_axis(), frame.y_axis(), frame.z_axis()],
+        [
+            UnitVector3::X_AXIS,
+            UnitVector3::Y_AXIS,
+            UnitVector3::Z_AXIS
+        ]
+    );
+    let direction = FeatureDirection3::new(Vector3::new(0.0, 3.0, 4.0)).unwrap();
+    assert_eq!(
+        FiniteVector3::from(direction),
+        FiniteVector3::new(Vector3::new(0.0, 3.0, 4.0)).unwrap()
+    );
+}
+
+mod reference_views;

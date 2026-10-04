@@ -1,31 +1,72 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Revolve, sweep, and loft write encoders.
 
-use super::super::{format_angle_rad, valid_direction};
+use super::super::literals::{format_angle_rad, valid_direction};
 use super::format::{format_point3_mm, format_vector3};
 use super::support::{
-    is_loft, is_revolve, is_sweep, path_source, profile_source, resolved_boolean_op,
+    is_loft, is_revolve, is_sweep, path_source, planar_profile_source, profile_source,
+    resolved_boolean_op,
 };
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{
-    Angle, AngularTermination, BooleanOp, LoftSection, PathRef, ProfileRef, RevolveConstruction,
-    RevolveExtent, SweepGuideRail, SweepMode, SweepOrientation, SweepPathExtent, SweepSection,
-    SweepTransformation, SweepTransition,
+use cadmpeg_ir::{
+    features::{
+        AngularTermination, BooleanOp, LoftSection, PathRef, PlanarProfileRef, RevolveConstruction,
+        RevolveExtent, SweepGuideRail, SweepMode, SweepOrientation, SweepPathExtent,
+        SweepTransformation, SweepTransition,
+    },
+    scalar::Angle,
 };
 
-#[allow(
-    clippy::too_many_arguments,
-    clippy::trivially_copy_pass_by_ref,
-    clippy::ref_option,
-    clippy::ptr_arg,
-    reason = "Encoder arguments are borrowed from one FeatureDefinition match."
-)]
+/// The decoded fields of one `Sweep` operation, borrowed from the feature definition.
+#[derive(Clone, Copy)]
+pub(super) struct SweepDefinition<'a> {
+    pub(super) shape: &'a cadmpeg_ir::features::SweepShape,
+    pub(super) path: Option<&'a PathRef>,
+    pub(super) orientation: Option<&'a SweepOrientation>,
+    pub(super) transition: Option<&'a SweepTransition>,
+    pub(super) transformation: Option<&'a SweepTransformation>,
+    pub(super) path_tangent: bool,
+    pub(super) linearize: bool,
+    pub(super) twist: Option<&'a Angle>,
+    pub(super) path_extent: Option<&'a SweepPathExtent>,
+    pub(super) guide_rail: Option<&'a SweepGuideRail>,
+    pub(super) taper: Option<&'a Angle>,
+    pub(super) scale: Option<&'a cadmpeg_ir::scalar::PositiveReal>,
+    pub(super) allow_multi_profile_faces: Option<bool>,
+}
+
+/// The closed and solid flags of a loft.
+#[derive(Clone, Copy)]
+pub(super) struct LoftForm {
+    pub(super) closed: bool,
+    pub(super) solid: bool,
+}
+
+/// The ruled and linearize flags of a loft.
+#[derive(Clone, Copy)]
+pub(super) struct LoftInterpolation {
+    pub(super) ruled: bool,
+    pub(super) linearize: bool,
+}
+
+/// The decoded fields of one `Loft` operation, borrowed from the feature definition.
+#[derive(Clone, Copy)]
+pub(super) struct LoftDefinition<'a> {
+    pub(super) sections: &'a [LoftSection],
+    pub(super) guidance: &'a cadmpeg_ir::features::LoftGuidance,
+    pub(super) op: &'a BooleanOp,
+    pub(super) form: LoftForm,
+    pub(super) interpolation: LoftInterpolation,
+    pub(super) max_degree: Option<&'a std::num::NonZeroU32>,
+    pub(super) allow_multi_profile_faces: Option<bool>,
+}
+
 impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_revolve(
         &self,
         construction: &RevolveConstruction,
-        op: &BooleanOp,
+        op: BooleanOp,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
@@ -52,7 +93,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            if existing.is_none() && (!construction.is_resolved() || *op == BooleanOp::Unresolved) {
+            if existing.is_none() && (!construction.is_resolved() || op == BooleanOp::Unresolved) {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} has unresolved revolution construction",
                     feature.id
@@ -69,22 +110,43 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     RevolveExtent::OneSided {
                         termination: AngularTermination::Angle { angle },
                     } => {
-                        properties.insert("EndCondition".into(), "OneSided".into());
-                        parameters.insert("Angle".into(), format_angle_rad(angle.0));
+                        properties.insert(
+                            cadmpeg_core::nonblank_literal!("EndCondition"),
+                            "OneSided".into(),
+                        );
+                        parameters.insert(
+                            cadmpeg_core::nonblank_literal!("Angle"),
+                            format_angle_rad((*angle).into()),
+                        );
                     }
                     RevolveExtent::Symmetric {
                         termination: AngularTermination::Angle { angle },
                     } => {
-                        properties.insert("EndCondition".into(), "Symmetric".into());
-                        parameters.insert("Angle".into(), format_angle_rad(angle.0));
+                        properties.insert(
+                            cadmpeg_core::nonblank_literal!("EndCondition"),
+                            "Symmetric".into(),
+                        );
+                        parameters.insert(
+                            cadmpeg_core::nonblank_literal!("Angle"),
+                            format_angle_rad((*angle).into()),
+                        );
                     }
                     RevolveExtent::TwoSided {
                         first: AngularTermination::Angle { angle: first },
                         second: AngularTermination::Angle { angle: second },
                     } => {
-                        properties.insert("EndCondition".into(), "TwoSided".into());
-                        parameters.insert("Angle".into(), format_angle_rad(first.0));
-                        parameters.insert("Angle2".into(), format_angle_rad(second.0));
+                        properties.insert(
+                            cadmpeg_core::nonblank_literal!("EndCondition"),
+                            "TwoSided".into(),
+                        );
+                        parameters.insert(
+                            cadmpeg_core::nonblank_literal!("Angle"),
+                            format_angle_rad((*first).into()),
+                        );
+                        parameters.insert(
+                            cadmpeg_core::nonblank_literal!("Angle2"),
+                            format_angle_rad((*second).into()),
+                        );
                     }
                     _ => {
                         return Err(CodecError::NotImplemented(format!(
@@ -95,31 +157,37 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 }
             }
             if let Some(axis) = construction.axis() {
-                if !valid_direction(axis.direction) {
+                if !valid_direction(axis.direction.get()) {
                     return Err(CodecError::malformed(format_args!(
                         "SLDPRT feature {} has a degenerate revolution axis",
                         feature.id
                     )));
                 }
-                properties.insert("AxisOrigin".into(), format_point3_mm(axis.origin));
-                properties.insert("AxisDirection".into(), format_vector3(axis.direction));
-            }
-            if *op != BooleanOp::Unresolved {
                 properties.insert(
-                    "Operation".into(),
-                    resolved_boolean_op(*op, &feature.id)?.into(),
+                    cadmpeg_core::nonblank_literal!("AxisOrigin"),
+                    format_point3_mm(axis.origin),
+                );
+                properties.insert(
+                    cadmpeg_core::nonblank_literal!("AxisDirection"),
+                    format_vector3(axis.direction.into()),
+                );
+            }
+            if op != BooleanOp::Unresolved {
+                properties.insert(
+                    cadmpeg_core::nonblank_literal!("Operation"),
+                    resolved_boolean_op(op, &feature.id)?.into(),
                 );
             }
             if let Some(profile) = construction.profile() {
                 let profile_source =
-                    profile_source(profile, record_sources, feature_sources, sketch_sources)
+                    planar_profile_source(profile, record_sources, feature_sources, sketch_sources)
                         .ok_or_else(|| {
                             CodecError::malformed(format_args!(
                                 "SLDPRT feature {} references a missing revolution profile",
                                 feature.id
                             ))
                         })?;
-                properties.insert("Profile".into(), profile_source);
+                properties.insert(cadmpeg_core::nonblank_literal!("Profile"), profile_source);
             }
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(|| "Revolve".into(), |record| record.kind.clone()),
@@ -131,34 +199,35 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_sweep(
         &self,
-        section: &SweepSection,
-        sections: &Vec<SweepSection>,
-        path: &Option<PathRef>,
-        mode: &SweepMode,
-        orientation: &Option<SweepOrientation>,
-        transition: &Option<SweepTransition>,
-        transformation: &Option<SweepTransformation>,
-        path_tangent: &bool,
-        linearize: &bool,
-        twist: &Option<Angle>,
-        path_extent: &Option<SweepPathExtent>,
-        guide_rail: &Option<SweepGuideRail>,
-        taper: &Option<Angle>,
-        scale: &Option<f64>,
-        allow_multi_profile_faces: &Option<bool>,
+        definition: SweepDefinition<'_>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
+        let SweepDefinition {
+            shape,
+            path,
+            orientation,
+            transition,
+            transformation,
+            path_tangent,
+            linearize,
+            twist,
+            path_extent,
+            guide_rail,
+            taper,
+            scale,
+            allow_multi_profile_faces,
+        } = definition;
         let feature = self.feature;
         let existing = self.existing;
         let record_sources = self.record_sources;
         let feature_sources = self.feature_sources;
         let sketch_sources = self.sketch_sources;
         Ok({
-            if !sections.is_empty()
+            if shape.additional_section_count() != 0
                 || orientation.is_some()
                 || transition.is_some()
                 || transformation.is_some()
-                || *path_tangent
-                || *linearize
+                || path_tangent
+                || linearize
                 || path_extent.is_some()
                 || guide_rail.is_some()
                 || taper.is_some()
@@ -175,34 +244,37 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            let profile_source =
-                match section {
-                    cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Generated {
-                        ..
-                    }) if existing.is_some() => None,
-                    cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Feature(_))
-                        if existing
+            if shape.generated_section().is_some() {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} uses an unsupported generated sweep section",
+                    feature.id
+                )));
+            }
+            let profile_source = match shape.referenced_profile() {
+                Some(profile)
+                    if matches!(profile, PlanarProfileRef::Generated { .. })
+                        && existing.is_some() =>
+                {
+                    None
+                }
+                Some(profile)
+                    if matches!(profile, PlanarProfileRef::Feature(_))
+                        && existing
                             .is_some_and(|record| !record.properties.contains_key("Profile")) =>
-                    {
-                        None
-                    }
-                    cadmpeg_ir::features::SweepSection::Profile(profile) => Some(
-                        profile_source(profile, record_sources, feature_sources, sketch_sources)
-                            .ok_or_else(|| {
-                                CodecError::malformed(format_args!(
-                                    "SLDPRT feature {} references a missing sweep profile",
-                                    feature.id
-                                ))
-                            })?,
-                    ),
-                    cadmpeg_ir::features::SweepSection::Unresolved(_) => None,
-                    cadmpeg_ir::features::SweepSection::Generated(_) => {
-                        return Err(CodecError::NotImplemented(format!(
-                            "SLDPRT feature {} uses an unsupported generated sweep section",
-                            feature.id
-                        )));
-                    }
-                };
+                {
+                    None
+                }
+                Some(profile) => Some(
+                    planar_profile_source(profile, record_sources, feature_sources, sketch_sources)
+                        .ok_or_else(|| {
+                            CodecError::malformed(format_args!(
+                                "SLDPRT feature {} references a missing sweep profile",
+                                feature.id
+                            ))
+                        })?,
+                ),
+                None => None,
+            };
             let path_source = match path {
                 Some(path) => Some(
                     path_source(path, record_sources, sketch_sources).ok_or_else(|| {
@@ -220,7 +292,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            if existing.is_none() && *mode == SweepMode::Unresolved {
+            if existing.is_none() && matches!(shape.mode(), SweepMode::Unresolved { .. }) {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} has unresolved sweep result semantics",
                     feature.id
@@ -231,21 +303,21 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 .unwrap_or_default();
             match twist {
                 Some(twist) => {
-                    parameters.insert("Twist".into(), format_angle_rad(twist.0));
+                    parameters.insert(
+                        cadmpeg_core::nonblank_literal!("Twist"),
+                        format_angle_rad(*twist),
+                    );
                 }
                 None => {
                     parameters.remove("Twist");
                 }
             }
             match scale {
-                Some(scale) if scale.is_finite() && *scale > 0.0 => {
-                    parameters.insert("Scale".into(), scale.to_string());
-                }
-                Some(_) => {
-                    return Err(CodecError::malformed(format_args!(
-                        "SLDPRT feature {} has an invalid sweep scale",
-                        feature.id
-                    )))
+                Some(scale) => {
+                    parameters.insert(
+                        cadmpeg_core::nonblank_literal!("Scale"),
+                        scale.get().to_string(),
+                    );
                 }
                 None => {
                     parameters.remove("Scale");
@@ -253,34 +325,41 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             }
             let mut properties = feature.source_properties.clone();
             if let Some(profile) = profile_source {
-                properties.insert("Profile".into(), profile);
+                properties.insert(cadmpeg_core::nonblank_literal!("Profile"), profile);
             }
             if let Some(path) = path_source {
-                properties.insert("Path".into(), path);
+                properties.insert(cadmpeg_core::nonblank_literal!("Path"), path);
             }
-            match mode {
-                SweepMode::Solid { op } => {
+            match shape.mode() {
+                SweepMode::Solid {
+                    op: cadmpeg_ir::features::SolidSweepOperation::NewBody,
+                } => {
                     properties.insert(
-                        "Operation".into(),
-                        resolved_boolean_op((*op).into(), &feature.id)?.into(),
+                        cadmpeg_core::nonblank_literal!("Operation"),
+                        "NewBody".into(),
                     );
                 }
-                SweepMode::NewBody => {
-                    properties.insert("Operation".into(), "NewBody".into());
+                SweepMode::Solid { op } => {
+                    properties.insert(
+                        cadmpeg_core::nonblank_literal!("Operation"),
+                        resolved_boolean_op(op.into(), &feature.id)?.into(),
+                    );
                 }
-                SweepMode::Surface => {
+                SweepMode::Surface {} => {
                     properties.remove("Operation");
                 }
-                SweepMode::Unresolved => {}
+                SweepMode::Unresolved {} => {}
             }
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(
                     || {
-                        match mode {
-                            SweepMode::Surface => "Surface-Sweep",
-                            SweepMode::NewBody
+                        match shape.mode() {
+                            SweepMode::Surface {} => "Surface-Sweep",
+                            SweepMode::Solid {
+                                op: cadmpeg_ir::features::SolidSweepOperation::NewBody,
+                            }
                             | SweepMode::Solid { .. }
-                            | SweepMode::Unresolved => "Sweep",
+                            | SweepMode::Unresolved {} => "Sweep",
                         }
                         .into()
                     },
@@ -294,16 +373,17 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_loft(
         &self,
-        sections: &Vec<LoftSection>,
-        guidance: &cadmpeg_ir::features::LoftGuidance,
-        op: &BooleanOp,
-        closed: &bool,
-        solid: &bool,
-        ruled: &bool,
-        linearize: &bool,
-        max_degree: &Option<u32>,
-        allow_multi_profile_faces: &Option<bool>,
+        definition: LoftDefinition<'_>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
+        let LoftDefinition {
+            sections,
+            guidance,
+            op,
+            form: LoftForm { closed, solid },
+            interpolation: LoftInterpolation { ruled, linearize },
+            max_degree,
+            allow_multi_profile_faces,
+        } = definition;
         let feature = self.feature;
         let existing = self.existing;
         let record_sources = self.record_sources;
@@ -317,8 +397,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         };
         Ok({
             if !solid
-                || *ruled
-                || *linearize
+                || ruled
+                || linearize
                 || max_degree.is_some()
                 || allow_multi_profile_faces.is_some()
             {
@@ -376,21 +456,30 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 })?;
             let mut properties = feature.source_properties.clone();
             if !profile_sources.is_empty() || existing.is_none() {
-                properties.insert("Profiles".into(), profile_sources.join(","));
+                properties.insert(
+                    cadmpeg_core::nonblank_literal!("Profiles"),
+                    profile_sources.join(","),
+                );
             }
             if guide_sources.is_empty() && existing.is_none() {
                 properties.remove("Guides");
             } else if !guide_sources.is_empty() {
-                properties.insert("Guides".into(), guide_sources.join(","));
+                properties.insert(
+                    cadmpeg_core::nonblank_literal!("Guides"),
+                    guide_sources.join(","),
+                );
             }
             if *op != BooleanOp::Unresolved {
                 properties.insert(
-                    "Operation".into(),
+                    cadmpeg_core::nonblank_literal!("Operation"),
                     resolved_boolean_op(*op, &feature.id)?.into(),
                 );
             }
-            if *closed || existing.is_none() || properties.contains_key("Closed") {
-                properties.insert("Closed".into(), closed.to_string());
+            if closed || existing.is_none() || properties.contains_key("Closed") {
+                properties.insert(
+                    cadmpeg_core::nonblank_literal!("Closed"),
+                    closed.to_string(),
+                );
             }
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(|| "Loft".into(), |record| record.kind.clone()),

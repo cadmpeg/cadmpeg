@@ -4,23 +4,22 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Swp104StateLane {
     witnessed_bytes: Option<Vec<u8>>,
+    witnessed_count: Option<u8>,
 }
 
 impl Swp104StateLane {
     pub(crate) fn from_parts(count: Option<u8>, bytes: Vec<u8>) -> Result<Self, &'static str> {
         match count {
-            None if bytes == [0; 5] => Ok(Self { witnessed_bytes: None }),
+            None if bytes == [0; 5] => Ok(Self { witnessed_bytes: None, witnessed_count: None }),
             Some(count) if count >= 2 && bytes.len() == usize::from(count) + 3 => {
-                Ok(Self { witnessed_bytes: Some(bytes) })
+                Ok(Self { witnessed_bytes: Some(bytes), witnessed_count: Some(count) })
             }
             _ => Err("state_lane must contain five zero bytes without witnessed_count, or witnessed_count plus three bytes with a count of at least two"),
         }
     }
 
     pub(crate) fn witnessed_count(&self) -> Option<u8> {
-        self.witnessed_bytes
-            .as_ref()
-            .map(|bytes| (bytes.len() - 3) as u8)
+        self.witnessed_count
     }
 
     /// Encoded state bytes including the optional witness marker and count.
@@ -35,7 +34,7 @@ impl Swp104StateLane {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::Swp104StateLane;
 
     #[test]
     fn state_lane_preserves_witness_presence_for_zero_bytes() {

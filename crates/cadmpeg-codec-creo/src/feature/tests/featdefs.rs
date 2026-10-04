@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::wire;
+
+use crate::test_support::build_prt;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchEntityId};
+use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput, SketchEntityId};
 
 use crate::container::{self};
-use crate::test_support::*;
 use crate::CreoCodec;
 
 #[test]
@@ -20,25 +22,29 @@ fn scan_decodes_featdefs_records_and_parameter_frames() {
     payload.extend([0xe4; 12]);
     payload.extend_from_slice(b"feat_defs_81\0opaque");
     let data = build_prt("c", &[("FeatDefs", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.features.definitions.len(), 2);
     assert_eq!(scan.features.definitions[0].identity.id(), 40);
     assert_eq!(scan.features.definitions[0].parameter_frames.len(), 2);
     assert_eq!(
         scan.features.definitions[0].parameter_frames[0].kind,
-        crate::feature::FeatureParameterFrameKind::LocalSystem
+        crate::feature::definitions::FeatureParameterFrameKind::LocalSystem
     );
     assert_eq!(
-        scan.features.definitions[0].parameter_frames[0].decoded_values,
+        scan.features.definitions[0].parameter_frames[0]
+            .decoded_values
+            .map(cadmpeg_ir::units::FiniteVector::get),
         Some([0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0])
     );
     assert_eq!(
         scan.features.definitions[0].parameter_frames[1].kind,
-        crate::feature::FeatureParameterFrameKind::Transform
+        crate::feature::definitions::FeatureParameterFrameKind::Transform
     );
     assert_eq!(
-        scan.features.definitions[0].parameter_frames[1].decoded_values,
+        scan.features.definitions[0].parameter_frames[1]
+            .decoded_values
+            .map(cadmpeg_ir::units::FiniteVector::get),
         Some([1.0; 12])
     );
 
@@ -68,10 +74,12 @@ fn scan_decodes_rank_two_featdefs_local_system() {
     payload.extend_from_slice(&[0x2d, 0x10, 0, 0, 0, 0, 0, 0]);
     payload.push(0x18);
     let data = build_prt("c", &[("FeatDefs", payload)]);
-    let scan = container::scan_bytes(data);
+    let scan = container::scan_bytes_ok(data);
 
     assert_eq!(
-        scan.features.definitions[0].parameter_frames[0].decoded_values,
+        scan.features.definitions[0].parameter_frames[0]
+            .decoded_values
+            .map(cadmpeg_ir::units::FiniteVector::get),
         Some([0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -3.0, -4.0, 0.0])
     );
 }
@@ -84,11 +92,14 @@ fn scan_decodes_featdefs_feature_local_outlines() {
     payload.extend_from_slice(b"\xe0\x00post_roll_back\0\xe3\xf7\x01\xf5\x96\x92\x02");
     payload.extend([0xe4; 6]);
     let data = build_prt("c", &[("FeatDefs", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     let outlines = &scan.features.definitions[0].outlines;
     assert_eq!(outlines.len(), 2);
-    assert_eq!(outlines[0].phase, crate::feature::OutlinePhase::PreRollback);
+    assert_eq!(
+        outlines[0].phase,
+        crate::feature::definitions::OutlinePhase::PreRollback
+    );
     assert_eq!(
         outlines[0]
             .local_scalars
@@ -117,7 +128,7 @@ fn scan_decodes_featdefs_feature_local_outlines() {
     );
     assert_eq!(
         outlines[1].phase,
-        crate::feature::OutlinePhase::PostRollback
+        crate::feature::definitions::OutlinePhase::PostRollback
     );
     assert_eq!(
         outlines[1]
@@ -169,11 +180,14 @@ fn scan_stops_feature_local_outlines_at_named_records() {
     payload.extend_from_slice(&[0xe4, 0x0f]);
     payload.extend_from_slice(b"\xe0\x00post_regen\0\xe3\xf7\x01\xf5\x96\x92\x02");
     payload.extend([0x0f; 6]);
-    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("FeatDefs", payload)]));
 
     let outlines = &scan.features.definitions[0].outlines;
     assert_eq!(outlines.len(), 3);
-    assert_eq!(outlines[0].phase, crate::feature::OutlinePhase::PreRollback);
+    assert_eq!(
+        outlines[0].phase,
+        crate::feature::definitions::OutlinePhase::PreRollback
+    );
     assert_eq!(
         outlines[0]
             .local_scalars
@@ -192,7 +206,7 @@ fn scan_stops_feature_local_outlines_at_named_records() {
     );
     assert_eq!(
         outlines[1].phase,
-        crate::feature::OutlinePhase::PostRollback
+        crate::feature::definitions::OutlinePhase::PostRollback
     );
     assert_eq!(
         outlines[1]
@@ -210,7 +224,10 @@ fn scan_stops_feature_local_outlines_at_named_records() {
             .as_slice(),
         vec![vec![0xe4], vec![0x0f], vec![], vec![], vec![], vec![]]
     );
-    assert_eq!(outlines[2].phase, crate::feature::OutlinePhase::PostRegen);
+    assert_eq!(
+        outlines[2].phase,
+        crate::feature::definitions::OutlinePhase::PostRegen
+    );
     assert_eq!(
         outlines[2]
             .local_scalars
@@ -236,7 +253,7 @@ fn scan_decodes_featdefs_var_arr_section_points() {
     payload.extend_from_slice(&[1, 7, 0xe4, 0x0f, 1, 0, 3, 0xe2]);
     payload.extend_from_slice(&[2, 7, 0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x0f, 1, 0, 4, 0xe2]);
     payload.extend_from_slice(&[1, 8, 0xe4, 0x0f, 1, 0, 5, 0xe2]);
-    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("FeatDefs", payload)]));
 
     let variables = scan.features.definitions[0]
         .variables
@@ -276,7 +293,7 @@ fn scan_decodes_featdefs_var_arr_named_prototype_row() {
         \xe0\x02guess\0\x0f\xe0\x06known\0\x01\
         \xe0\x0chomogeneity\0\x02\xe0\x08uvar_id\0\x03\xf1\xf7\x01\xe2"
         .to_vec();
-    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("FeatDefs", payload)]));
 
     let variables = scan.features.definitions[0]
         .variables
@@ -311,7 +328,7 @@ fn scan_classifies_named_var_arr_guess_sentinel() {
         \xe0\x06known\0\x01\xe0\x0chomogeneity\0\x02\
         \xe0\x08uvar_id\0\x03\xf1\xf7\x01\xe2"
         .to_vec();
-    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("FeatDefs", payload)]));
 
     let variables = scan.features.definitions[0]
         .variables
@@ -344,7 +361,7 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
     payload.extend_from_slice(b"dimtab_ptr\0");
     payload.extend_from_slice(&[2, 0, 0, 0, 11, 12, 0xf6, 0, 0, 0xf6, 0xf6, 44, 0xe2]);
     let data = build_prt("c", &[("FeatDefs", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     let segments = scan.features.definitions[0]
         .segments
@@ -354,7 +371,7 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
     assert_eq!(segments.rows.ordinary().count(), 5);
     assert!(matches!(
         segments.rows.ordinary().cloned().collect::<Vec<_>>()[0].kind,
-        crate::feature::FeatureSegmentKind::Line(_)
+        crate::feature::definitions::FeatureSegmentKind::Line(_)
     ));
     assert_eq!(
         segments.rows.ordinary().cloned().collect::<Vec<_>>()[0].point_ids(),
@@ -374,7 +391,7 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
     );
     assert!(matches!(
         segments.rows.ordinary().cloned().collect::<Vec<_>>()[1].kind,
-        crate::feature::FeatureSegmentKind::Arc(_)
+        crate::feature::definitions::FeatureSegmentKind::Arc(_)
     ));
     assert_eq!(
         segments.rows.ordinary().cloned().collect::<Vec<_>>()[1].center_id,
@@ -394,7 +411,7 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
     );
     assert!(matches!(
         segments.rows.ordinary().cloned().collect::<Vec<_>>()[4].kind,
-        crate::feature::FeatureSegmentKind::Point(_)
+        crate::feature::definitions::FeatureSegmentKind::Point(_)
     ));
     assert_eq!(
         segments.rows.ordinary().cloned().collect::<Vec<_>>()[4].point_ids(),
@@ -423,11 +440,11 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
         .model
         .sketches
         .iter()
-        .find(|sketch| sketch.id.0 == "creo:model:sketch#40")
+        .find(|sketch| sketch.id.as_str() == "creo:model:sketch#40")
         .expect("neutral unplaced sketch");
     assert_eq!(
         sketch.placement,
-        cadmpeg_ir::sketches::SketchPlacement::Unresolved
+        cadmpeg_ir::sketches::SketchPlacement::Unresolved {}
     );
     assert_eq!(
         result
@@ -451,42 +468,43 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
         let constraint = constraints
             .iter()
             .find(|constraint| {
-                constraint.id.0 == format!("creo:featdefs:sketch_constraint#40:segtab-{field}:43")
+                constraint.id.as_str()
+                    == format!("creo:featdefs:sketch_constraint#40:segtab-{field}:43")
             })
             .expect("segment radius binding");
-        let SketchConstraintDefinition::Native {
+        let SketchConstraintDefinitionInput::Native {
             native_kind,
             native_properties,
             entities,
             operands,
             ..
-        } = &constraint.definition
+        } = constraint.definition.kind()
         else {
             panic!("untyped segment radius binding must remain native");
         };
-        assert_eq!(native_kind, &format!("creo:segtab:{field}"));
+        assert_eq!(native_kind.as_str(), format!("creo:segtab:{field}"));
         assert_eq!(native_properties["dimension_ordinal"], ordinal.to_string());
         assert_eq!(
             entities,
-            &[SketchEntityId("creo:featdefs:sketch_entity#40:43".into())]
+            &[SketchEntityId::mint("creo:featdefs:sketch_entity#40:43").unwrap()]
         );
         assert_eq!(
             operands[1].field.as_ref().map(|field| field.name.as_str()),
             Some(field)
         );
-        assert_eq!(operands[1].object_index, ordinal);
+        assert_eq!(operands[1].object_index, Some(ordinal));
     }
     let point_verhor = constraints
         .iter()
-        .find(|constraint| constraint.id.0 == "creo:featdefs:sketch_constraint#40:verhor:4")
+        .find(|constraint| constraint.id.as_str() == "creo:featdefs:sketch_constraint#40:verhor:4")
         .expect("point verhor constraint");
-    let SketchConstraintDefinition::Native {
+    let SketchConstraintDefinitionInput::Native {
         native_kind,
         native_properties,
         entities,
         operands,
         ..
-    } = &point_verhor.definition
+    } = point_verhor.definition.kind()
     else {
         panic!("point verhor must remain native");
     };
@@ -494,13 +512,13 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
     assert_eq!(native_properties["verhor"], "2");
     assert_eq!(
         entities,
-        &[SketchEntityId("creo:featdefs:sketch_entity#40:4".into())]
+        &[SketchEntityId::mint("creo:featdefs:sketch_entity#40:4").unwrap()]
     );
     assert_eq!(
         operands[0].field.as_ref().map(|field| field.name.as_str()),
         Some("ext_id")
     );
-    assert_eq!(operands[0].object_index, 4);
+    assert_eq!(operands[0].object_index, Some(4));
 }
 
 #[test]
@@ -515,7 +533,7 @@ fn scan_retains_typed_special_segment_rows_in_native_sketch_records() {
     payload.extend_from_slice(&[47, 0, 0, 0, 0xf6, 1, 0, 0, 0, 1, 0xf6, 23, 0xe2]);
     payload.extend_from_slice(b"dimtab_ptr\0");
     let data = build_prt("c", &[("FeatDefs", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
     let segments = scan.features.definitions[0]
         .segments
         .as_ref()
@@ -587,36 +605,60 @@ fn scan_retains_typed_special_segment_rows_in_native_sketch_records() {
         .is_some_and(Vec::is_empty));
     let coverage = result.report();
     assert_eq!(
-        coverage.coverage_count(crate::coverage::DECODED_FEATURE_SEGMENT_ROW_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_SEGMENT_ROW_COUNT.as_str()
+        ),
         6
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::DECODED_FEATURE_CIRCLE_SEGMENT_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_CIRCLE_SEGMENT_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::DECODED_FEATURE_POINT_SEGMENT_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_POINT_SEGMENT_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::DECODED_FEATURE_CENTERED_LINE_SEGMENT_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_CENTERED_LINE_SEGMENT_COUNT.as_str()
+        ),
         2
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::DECODED_FEATURE_REFERENCE_LINE_SEGMENT_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_REFERENCE_LINE_SEGMENT_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::DECODED_FEATURE_BOUNDED_CURVE_SEGMENT_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_BOUNDED_CURVE_SEGMENT_COUNT.as_str()
+        ),
         1
     );
-    assert!(!coverage
-        .coverage()
-        .contains_key("decoded_feature_segment_count"));
+    assert!(!wire::coverage(&(coverage)).contains_key("decoded_feature_segment_count"));
     assert_eq!(
-        coverage.coverage_count(crate::coverage::RESOLVED_FEATURE_SEGMENT_GEOMETRY_COUNT)
-            + coverage.coverage_count(crate::coverage::UNRESOLVED_FEATURE_SEGMENT_GEOMETRY_COUNT),
-        coverage.coverage_count(crate::coverage::DECODED_FEATURE_SEGMENT_ROW_COUNT)
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::RESOLVED_FEATURE_SEGMENT_GEOMETRY_COUNT.as_str()
+        ) + wire::coverage_count(
+            &(coverage),
+            crate::coverage::UNRESOLVED_FEATURE_SEGMENT_GEOMETRY_COUNT.as_str()
+        ),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_SEGMENT_ROW_COUNT.as_str()
+        )
     );
 }
 
@@ -626,7 +668,7 @@ fn scan_includes_named_segtab_prototype_as_data() {
         type\0\x02dir\0\xf8\x03\xf6\x00\xe4pointid\0\xf8\x02\x00\x01\
         cntrid\0\xf6arcorient\0\x00verhor\0\x01radius\0\xf6radius2\0\xf6\
         ext_id\0\x04\xf2\xf7\x01\xe2order_table\0";
-    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload.to_vec())]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("FeatDefs", payload.to_vec())]));
     let segments = scan.features.definitions[0]
         .segments
         .as_ref()
@@ -656,7 +698,7 @@ fn scan_decodes_featdefs_ent_tab_trimmed_entities() {
     payload.extend_from_slice(&[0x80, 0xe3, 0, 102, 104, 0xf6, 0, 0xe3]);
     payload.extend_from_slice(b"vert_tab\0");
     let data = build_prt("c", &[("FeatDefs", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     let entities = scan.features.definitions[0]
         .trim_entities
@@ -666,10 +708,13 @@ fn scan_decodes_featdefs_ent_tab_trimmed_entities() {
     assert_eq!(entities.rows[0].external_id, 42);
     assert_eq!(entities.rows[0].vertices, [100, 101]);
     assert_eq!(entities.rows[0].center_vertex(), None);
-    assert_eq!(entities.rows[0].kind, crate::feature::TrimEntityKind::Line);
+    assert_eq!(
+        entities.rows[0].kind,
+        crate::feature::definitions::TrimEntityKind::Line
+    );
     assert_eq!(
         entities.rows[1].kind,
-        crate::feature::TrimEntityKind::Arc { center_vertex: 103 }
+        crate::feature::definitions::TrimEntityKind::Arc { center_vertex: 103 }
     );
     assert_eq!(entities.rows[2].external_id, 227);
     assert_eq!(entities.solved_external_ids, vec![42, 43, 227]);
@@ -697,7 +742,7 @@ fn scan_decodes_featdefs_vert_tab_entity_pairs() {
     payload.extend_from_slice(b"\xf3\xf7\x80\xa2\xe2\x01\xf8\x01\xf7\x80\xa3\xfb\xe3\xf7\x80\xa4");
     payload.extend_from_slice(&[42, 43, 100, 0]);
     let data = build_prt("c", &[("FeatDefs", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     let vertices = scan.features.definitions[0]
         .trim_vertices
@@ -750,13 +795,18 @@ fn scan_solves_featdefs_trim_vertex_line_intersection() {
     payload.extend_from_slice(b"\xf3\xf7\x80\xa2\xe2\x01\xf8\x01\xf7\x80\xa3\xfb\xe3\xf7\x80\xa4");
     payload.extend_from_slice(&[42, 43, 100, 0]);
 
-    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("FeatDefs", payload)]));
     let vertex = &scan.features.definitions[0]
         .trim_vertices
         .as_ref()
         .expect("vert_tab")
         .rows[0];
-    assert_eq!(vertex.section_coordinates, Some([1.0, 1.0]));
+    assert_eq!(
+        vertex
+            .section_coordinates
+            .map(cadmpeg_ir::units::FinitePoint2::get),
+        Some(cadmpeg_ir::math::Point2::new(1.0, 1.0))
+    );
 }
 
 #[test]
@@ -766,7 +816,7 @@ fn scan_decodes_featdefs_generated_entity_order_table() {
         \xf1\xf7\x81\x02\xe2\x81\x1b\x08\x00\xe2\x81\x36\x0c\x01\xe0\x01next_field\0"
         .to_vec();
     let data = build_prt("c", &[("FeatDefs", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     let order = scan.features.definitions[0]
         .order_table
@@ -809,7 +859,7 @@ fn scan_decodes_featdefs_dimension_prototype_and_replay() {
     let expressions = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
         \xe0\x0aexpression\0\xf8\x02angle=d42\0length=d43+2[mm]\0"
         .to_vec();
-    let scan = container::scan_bytes(build_prt(
+    let scan = container::scan_bytes_ok(build_prt(
         "c",
         &[("FeatDefs", payload), ("DEPDB_DATA", expressions)],
     ));
@@ -825,7 +875,7 @@ fn scan_decodes_featdefs_dimension_prototype_and_replay() {
     assert_eq!(dimensions.rows[0].value.resolved(), Some(1.0));
     assert_eq!(
         dimensions.rows[0].unit(),
-        crate::feature::DimensionUnit::Radians
+        crate::feature::definitions::DimensionUnit::Radians
     );
     assert_eq!(dimensions.rows[0].direction_byte, 1);
     assert_eq!(dimensions.rows[0].auxiliary_value, Some(0.0));
@@ -840,7 +890,7 @@ fn scan_decodes_featdefs_dimension_prototype_and_replay() {
     assert_eq!(dimensions.rows[1].auxiliary_body, [0x18]);
     assert_eq!(
         dimensions.rows[1].unit(),
-        crate::feature::DimensionUnit::Millimeters
+        crate::feature::definitions::DimensionUnit::Millimeters
     );
     assert_eq!(dimensions.rows[1].auxiliary_value, Some(0.0));
     assert_eq!(dimensions.rows[1].external_id, 43);
@@ -855,12 +905,15 @@ fn scan_decodes_featdefs_dimension_prototype_and_replay() {
     assert_eq!(
         scan.curves.expressions[0].assignments[0].value,
         Some(crate::curve::CurveExpressionValue::Angle(
-            1.0f64.to_degrees()
+            cadmpeg_ir::scalar::FiniteReal::new(1.0f64.to_degrees())
+                .expect("finite relation fixture")
         ))
     );
     assert_eq!(
         scan.curves.expressions[0].assignments[1].value,
-        Some(crate::curve::CurveExpressionValue::Length(5.0))
+        Some(crate::curve::CurveExpressionValue::Length(
+            cadmpeg_ir::scalar::FiniteReal::new(5.0).expect("finite relation fixture")
+        ))
     );
 }
 
@@ -882,7 +935,7 @@ fn scan_decodes_counted_featdefs_constraint_relations() {
           \xf1\xf7\x6d\xe2\xf6\x09\x05\xe2",
     );
     let data = build_prt("c", &[("FeatDefs", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     let relations = scan.features.definitions[0]
         .relations
@@ -968,31 +1021,52 @@ fn scan_decodes_counted_featdefs_constraint_relations() {
     assert_eq!(triples["row_count"], 2);
     let coverage = result.report();
     assert_eq!(
-        coverage.coverage_count(crate::coverage::DECODED_FEATURE_RELATION_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_RELATION_COUNT.as_str()
+        ),
         2
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::MISSING_FEATURE_RELATION_ROW_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::MISSING_FEATURE_RELATION_ROW_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::MALFORMED_FEATURE_RELATION_TABLE_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::MALFORMED_FEATURE_RELATION_TABLE_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::DECODED_FEATURE_SKAMP_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_SKAMP_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::MISSING_FEATURE_SKAMP_ROW_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::MISSING_FEATURE_SKAMP_ROW_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::DECODED_FEATURE_RELATION_TRIPLE_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_RELATION_TRIPLE_COUNT.as_str()
+        ),
         2
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::MISSING_FEATURE_RELATION_TRIPLE_ROW_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::MISSING_FEATURE_RELATION_TRIPLE_ROW_COUNT.as_str()
+        ),
         0
     );
 }
@@ -1010,7 +1084,7 @@ fn scan_decodes_extended_solver_incidences() {
         \xf7\x6d\x09\x03\xf1\xf7\x6c\xe2\x0a\x02\xe2\x0b\x03\
         \xe0\x00triples_ptr\0"
         .to_vec();
-    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("FeatDefs", payload)]));
     let relations = scan.features.definitions[0]
         .relations
         .as_ref()
@@ -1045,14 +1119,14 @@ fn scan_decodes_featdefs_saved_line_prototype_and_replay() {
     payload.extend_from_slice(&[0x0f, 0xe4, 0xe3]);
     payload.extend_from_slice(b"\xe0\x02local_sys\0");
     let data = build_prt("c", &[("FeatDefs", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     let saved = scan.features.definitions[0]
         .saved_section
         .as_ref()
         .expect("p_saved_result");
     assert_eq!(saved.entities.len(), 2);
-    let crate::feature::FeatureSavedEntity::Line(first) = &saved.entities[0] else {
+    let crate::feature::definitions::FeatureSavedEntity::Line(first) = &saved.entities[0] else {
         panic!("saved line prototype");
     };
     assert_eq!(first.entity_id, 42);
@@ -1064,7 +1138,7 @@ fn scan_decodes_featdefs_saved_line_prototype_and_replay() {
             [Some(1.0), Some(0.0), Some(1.0)]
         ]
     );
-    let crate::feature::FeatureSavedEntity::Line(second) = &saved.entities[1] else {
+    let crate::feature::definitions::FeatureSavedEntity::Line(second) = &saved.entities[1] else {
         panic!("saved line replay");
     };
     assert_eq!(second.entity_id, 43);
@@ -1086,7 +1160,7 @@ fn scan_decodes_featdefs_saved_line_prototype_and_replay() {
             .as_array()
             .expect("saved line body")
             .iter()
-            .map(|byte| byte.as_u64().expect("byte") as u8)
+            .map(|byte| u8::try_from(byte.as_u64().expect("byte")).expect("fixture value fits u8"))
             .collect::<Vec<_>>();
         assert_eq!(&body, expected);
     }
@@ -1112,7 +1186,7 @@ fn scan_decodes_featdefs_saved_circular_and_dummy_entities() {
     payload.extend_from_slice(b"\xe0\x00entity(dummy_ent)\0\xe0\x01id\0\x2e");
     payload.extend_from_slice(b"\xe0\x02local_sys\0");
     let data = build_prt("c", &[("FeatDefs", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     let entities = &scan.features.definitions[0]
         .saved_section
@@ -1120,19 +1194,19 @@ fn scan_decodes_featdefs_saved_circular_and_dummy_entities() {
         .expect("p_saved_result")
         .entities;
     assert_eq!(entities.len(), 3);
-    let crate::feature::FeatureSavedEntity::Arc(arc) = &entities[0] else {
+    let crate::feature::definitions::FeatureSavedEntity::Arc(arc) = &entities[0] else {
         panic!("saved arc");
     };
     assert_eq!(arc.entity_id, 44);
     assert_eq!(arc.center, [Some(0.0), Some(1.0), Some(3.0)]);
     assert_eq!(arc.radius, Some(1.0));
     assert_eq!(arc.parameters, [Some(0.0), Some(1.0)]);
-    let crate::feature::FeatureSavedEntity::Circle(circle) = &entities[1] else {
+    let crate::feature::definitions::FeatureSavedEntity::Circle(circle) = &entities[1] else {
         panic!("saved circle");
     };
     assert_eq!(circle.entity_id, 45);
     assert_eq!(circle.center, [Some(0.0), Some(1.0), Some(0.0)]);
-    let crate::feature::FeatureSavedEntity::Dummy(dummy) = &entities[2] else {
+    let crate::feature::definitions::FeatureSavedEntity::Dummy(dummy) = &entities[2] else {
         panic!("saved dummy");
     };
     assert_eq!(dummy.entity_id, Some(46));
@@ -1155,7 +1229,7 @@ fn scan_decodes_featdefs_saved_circular_and_dummy_entities() {
             .as_array()
             .expect("saved entity body")
             .iter()
-            .map(|byte| byte.as_u64().expect("byte") as u8)
+            .map(|byte| u8::try_from(byte.as_u64().expect("byte")).expect("fixture value fits u8"))
             .collect::<Vec<_>>();
         assert_eq!(&body, expected);
     }

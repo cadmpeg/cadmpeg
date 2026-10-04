@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Geometry record patchers and the `patch_*_definition` byte-patcher family.
 
+use cadmpeg_core::convert::truncate_f64_to_u8;
+
 use std::collections::BTreeMap;
 
 use cadmpeg_core::bytes::assemble_u32_be;
-use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::geometry::{knots_nondecreasing, NurbsCurve};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Color, Sense};
 use cadmpeg_ir::transform::Transform;
@@ -14,52 +14,40 @@ use cadmpeg_ir::transform::Transform;
 use super::edits::{
     NurbsCurveEdit, NurbsSurfaceEdit, PcurveEdit, ProceduralCurveEdit, ProceduralSurfaceEdit,
 };
-use crate::writer::primitives::{finite_vector, unique_knot_count};
+use crate::writer::primitives::unique_knot_count;
 use cadmpeg_asm::brep::attributes::{attribute_chain_color_carrier, DirectColorCarrier};
 use cadmpeg_asm::brep::records::EndpointSlot;
 use cadmpeg_asm::edit::{
-    AsmEditSet, InlinePcurveEdit, NurbsCurveEdit as AsmNurbsCurveEdit,
+    AsmEditSet, CacheTarget, InlinePcurveEdit, NurbsCurveEdit as AsmNurbsCurveEdit,
     NurbsSurfaceEdit as AsmNurbsSurfaceEdit, PcurveEdit as AsmPcurveEdit,
 };
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 use cadmpeg_asm::sab;
 
-const EPS_ORTHONORMAL: f64 = 1.0e-9;
-
-#[cfg(test)]
-use cadmpeg_asm::asm_header::stream_ref_width;
-
-pub(crate) fn valid_edited_curve_structure(before: &NurbsCurve, after: &NurbsCurve) -> bool {
-    valid_edited_nurbs_direction(
-        before.knots(),
-        after.degree(),
-        after.knots(),
-        after.control_points().len(),
-    )
+/// Whether an edited NURBS degree is one an ASM spline record states.
+///
+/// Every spline layout reader bounds the degree it reads to `1..=20`, so a
+/// record outside that range is one no f3d document holds.
+pub(super) const fn writable_nurbs_degree(after_degree: u32) -> bool {
+    matches!(after_degree, 1..=20)
 }
 
-pub(crate) fn valid_edited_nurbs_direction(
-    before_knots: &[f64],
-    after_degree: u32,
-    after_knots: &[f64],
-    control_count: usize,
-) -> bool {
-    let Ok(degree) = usize::try_from(after_degree) else {
-        return false;
-    };
-    (1..=20).contains(&after_degree)
-        && after_knots.len() == control_count + degree + 1
-        && unique_knot_count(after_knots) == unique_knot_count(before_knots)
-        && after_knots.iter().all(|value| value.is_finite())
-        && knots_nondecreasing(after_knots)
-}
-
-pub(crate) fn orthonormal_pair(first: Vector3, second: Vector3) -> bool {
-    finite_vector(first)
-        && finite_vector(second)
-        && (first.norm() - 1.0).abs() <= EPS_ORTHONORMAL
-        && (second.norm() - 1.0).abs() <= EPS_ORTHONORMAL
-        && first.dot(second).abs() <= EPS_ORTHONORMAL
+/// Whether one parametric direction of an edited NURBS carrier keeps the
+/// distinct-knot count the record's knot table holds.
+///
+/// `AsmEditSet::patch_knot_structure` writes each distinct knot and its
+/// multiplicity into the slot the baseline record already holds, so a
+/// direction that states a different number of distinct knots has no slot to
+/// take.
+///
+/// The carrier types state the rest of the knot contract on admission:
+/// `NurbsCurve::new` and `PcurveNurbs::new` call `require_curve_cardinality`
+/// and `require_nondecreasing_knots`, and `NurbsSurface::new` calls
+/// `require_length` and `require_nondecreasing_knots` per axis. A knot count
+/// that follows from the degree and the pole count, finite knots and
+/// non-decreasing knots therefore hold for every value this reads.
+pub(super) fn unchanged_unique_knot_count(before_knots: &[f64], after_knots: &[f64]) -> bool {
+    unique_knot_count(after_knots) == unique_knot_count(before_knots)
 }
 
 /// The per-entity BREP edit maps that the geometry patchers apply as a unit.
@@ -69,32 +57,33 @@ pub(crate) fn orthonormal_pair(first: Vector3, second: Vector3) -> bool {
 /// validation through `patch_geometry` into `patch_framed_geometry`, so they
 /// are bundled rather than threaded positionally.
 #[derive(Clone, Copy)]
-pub(crate) struct GeometryEdits<'a> {
-    pub(crate) positions: &'a BTreeMap<String, Point3>,
-    pub(crate) lines: &'a BTreeMap<String, (Point3, Vector3)>,
-    pub(crate) conics: &'a BTreeMap<String, (Point3, Vector3, Vector3, f64, f64)>,
-    pub(crate) degenerate_curves: &'a BTreeMap<String, Point3>,
-    pub(crate) planes: &'a BTreeMap<String, (Point3, Vector3, Vector3)>,
-    pub(crate) spheres: &'a BTreeMap<String, (Point3, Vector3, Vector3, f64)>,
-    pub(crate) tori: &'a BTreeMap<String, (Point3, Vector3, Vector3, f64, f64)>,
-    pub(crate) cones: &'a BTreeMap<String, (Point3, Vector3, Vector3, f64, f64, f64)>,
-    pub(crate) body_transforms: &'a BTreeMap<String, Transform>,
-    pub(crate) entity_colors: &'a BTreeMap<String, Color>,
-    pub(crate) edge_ranges: &'a BTreeMap<String, [f64; 2]>,
-    pub(crate) face_senses: &'a BTreeMap<String, Sense>,
-    pub(crate) coedge_senses: &'a BTreeMap<String, Sense>,
-    pub(crate) procedural_surface_edits: &'a BTreeMap<String, ProceduralSurfaceEdit>,
-    pub(crate) nurbs_surfaces: &'a BTreeMap<String, NurbsSurfaceEdit>,
-    pub(crate) nurbs_curves: &'a BTreeMap<String, NurbsCurveEdit>,
-    pub(crate) pcurves: &'a BTreeMap<String, PcurveEdit>,
-    pub(crate) procedural_curve_edits: &'a BTreeMap<String, ProceduralCurveEdit>,
-    pub(crate) procedural_surface_fits: &'a BTreeMap<String, f64>,
-    pub(crate) creation_timestamps: &'a BTreeMap<usize, f64>,
-    pub(crate) edge_continuities: &'a BTreeMap<usize, (Sense, String)>,
-    pub(crate) vertex_ownerships: &'a BTreeMap<usize, (i64, EndpointSlot)>,
-    pub(crate) face_sidedness: &'a BTreeMap<usize, cadmpeg_asm::brep::records::FaceContainment>,
-    pub(crate) tolerant_edges: &'a BTreeMap<usize, f64>,
-    pub(crate) tolerant_vertices: &'a BTreeMap<usize, (f64, [f64; 2])>,
+pub(super) struct GeometryEdits<'a> {
+    pub(in crate::writer) positions: &'a BTreeMap<String, Point3>,
+    pub(in crate::writer) lines: &'a BTreeMap<String, (Point3, Vector3)>,
+    pub(in crate::writer) conics: &'a BTreeMap<String, (Point3, Vector3, Vector3, f64, f64)>,
+    pub(in crate::writer) degenerate_curves: &'a BTreeMap<String, Point3>,
+    pub(in crate::writer) planes: &'a BTreeMap<String, (Point3, Vector3, Vector3)>,
+    pub(in crate::writer) spheres: &'a BTreeMap<String, (Point3, Vector3, Vector3, f64)>,
+    pub(in crate::writer) tori: &'a BTreeMap<String, (Point3, Vector3, Vector3, f64, f64)>,
+    pub(in crate::writer) cones: &'a BTreeMap<String, (Point3, Vector3, Vector3, f64, f64, f64)>,
+    pub(in crate::writer) body_transforms: &'a BTreeMap<String, Transform>,
+    pub(in crate::writer) entity_colors: &'a BTreeMap<String, Color>,
+    pub(in crate::writer) edge_ranges: &'a BTreeMap<String, [f64; 2]>,
+    pub(in crate::writer) face_senses: &'a BTreeMap<String, Sense>,
+    pub(in crate::writer) coedge_senses: &'a BTreeMap<String, Sense>,
+    pub(in crate::writer) procedural_surface_edits: &'a BTreeMap<String, ProceduralSurfaceEdit>,
+    pub(in crate::writer) nurbs_surfaces: &'a BTreeMap<String, NurbsSurfaceEdit>,
+    pub(in crate::writer) nurbs_curves: &'a BTreeMap<String, NurbsCurveEdit>,
+    pub(in crate::writer) pcurves: &'a BTreeMap<String, PcurveEdit>,
+    pub(in crate::writer) procedural_curve_edits: &'a BTreeMap<String, ProceduralCurveEdit>,
+    pub(in crate::writer) procedural_surface_fits: &'a BTreeMap<String, f64>,
+    pub(in crate::writer) creation_timestamps: &'a BTreeMap<usize, f64>,
+    pub(in crate::writer) edge_continuities: &'a BTreeMap<usize, (Sense, String)>,
+    pub(in crate::writer) vertex_ownerships: &'a BTreeMap<usize, (i64, EndpointSlot)>,
+    pub(in crate::writer) face_sidedness:
+        &'a BTreeMap<usize, cadmpeg_asm::brep::records::FaceContainment>,
+    pub(in crate::writer) tolerant_edges: &'a BTreeMap<usize, f64>,
+    pub(in crate::writer) tolerant_vertices: &'a BTreeMap<usize, (f64, [f64; 2])>,
 }
 
 fn asm_nurbs_surface_edit(edit: &NurbsSurfaceEdit) -> AsmNurbsSurfaceEdit<'_> {
@@ -120,7 +109,7 @@ fn asm_pcurve_edit(edit: &PcurveEdit) -> AsmPcurveEdit<'_> {
             native_tail_flags,
             parameter_range,
             fit_tolerance,
-        } => AsmPcurveEdit::Inline(InlinePcurveEdit {
+        } => AsmPcurveEdit::Inline(InlinePcurveEdit::PcurveWrapper {
             native_geometry,
             periodic: *periodic,
             wrapper_reversed: *wrapper_reversed,
@@ -136,21 +125,27 @@ fn asm_pcurve_edit(edit: &PcurveEdit) -> AsmPcurveEdit<'_> {
     }
 }
 
-pub(crate) fn patch_geometry(bytes: &mut [u8], edits: &GeometryEdits) -> Result<(), CodecError> {
+pub(super) fn patch_geometry(bytes: &mut [u8], edits: &GeometryEdits) -> Result<(), CodecError> {
     AsmEditSet::apply(bytes, |bytes, asm_edits| {
         patch_asm_geometry(bytes, asm_edits, edits)
     })
 }
 
 #[cfg(test)]
-pub(crate) fn patch_framed_geometry(
+pub(in crate::writer) fn patch_framed_geometry(
     bytes: &mut [u8],
     records: &[sab::Record],
     edits: &GeometryEdits,
     header_scale: f64,
 ) -> Result<(), CodecError> {
-    let asm_edits =
-        AsmEditSet::from_framed(records.to_vec(), stream_ref_width(bytes), header_scale);
+    let asm_edits = AsmEditSet::from_framed(
+        records.to_vec(),
+        cadmpeg_asm::asm_header::parse(&cadmpeg_test_support::service_decode_context(), bytes)?
+            .map_or(cadmpeg_asm::kernel_header::RefWidth::Eight, |header| {
+                header.width
+            }),
+        header_scale,
+    );
     patch_asm_geometry(bytes, &asm_edits, edits)
 }
 
@@ -199,7 +194,8 @@ fn patch_asm_geometry(
                 .get(&crate::ids::brep_entity_id(body.index))
                 .and_then(|transform| {
                     body.ref_at(5)
-                        .map(|reference| (reference as usize, *transform))
+                        .and_then(|reference| usize::try_from(reference).ok())
+                        .map(|reference| (reference, *transform))
                 })
         })
         .collect::<BTreeMap<_, _>>();
@@ -218,12 +214,9 @@ fn patch_asm_geometry(
             let target = usize::try_from(record.ref_at(4)?).ok()?;
             Some((
                 target,
-                AsmPcurveEdit::Inline(InlinePcurveEdit {
+                AsmPcurveEdit::Inline(InlinePcurveEdit::IntcurveCache {
                     native_geometry,
                     periodic: *periodic,
-                    wrapper_reversed: None,
-                    native_tail_flags: None,
-                    parameter_range: None,
                     fit_tolerance: None,
                 }),
             ))
@@ -238,7 +231,7 @@ fn patch_asm_geometry(
         let Some(color) = entity_colors.get(&id) else {
             continue;
         };
-        let carrier = attribute_chain_color_carrier(entity, |index| {
+        let carrier = attribute_chain_color_carrier(entity, records_by_index.len(), |index| {
             usize::try_from(index)
                 .ok()
                 .and_then(|index| records_by_index.get(&index).copied())
@@ -261,11 +254,7 @@ fn patch_asm_geometry(
     }
     for record in records {
         if let Some(timestamp) = creation_timestamps.get(&record.index) {
-            if !record.head().contains("ATTRIB_CUSTOM")
-                || !record.tokens.iter().any(
-                    |token| matches!(token, sab::Token::Str(value) if value == "Timestamp_attrib_def"),
-                )
-            {
+            if !record.head().contains("ATTRIB_CUSTOM") {
                 return Err(CodecError::malformed(format_args!(
                     "F3D timestamp record {} has the wrong attribute family",
                     record.index
@@ -273,12 +262,14 @@ fn patch_asm_geometry(
             }
             // Position in chunk space, because the index feeds `chunk()` below
             // and chunk indices skip payload identifiers.
-            let family = record
-                .chunks()
-                .position(
-                    |token| matches!(token, sab::Token::Str(value) if value == "Timestamp_attrib_def"),
-                )
-                .expect("timestamp family was checked");
+            let Some(family) = record.chunks().position(
+                |token| matches!(token, sab::Token::Str(value) if value == "Timestamp_attrib_def"),
+            ) else {
+                return Err(CodecError::malformed(format_args!(
+                    "F3D timestamp record {} has the wrong attribute family",
+                    record.index
+                )));
+            };
             if !matches!(record.chunk(family + 1), Some(sab::Token::Long(1))) {
                 return Err(CodecError::malformed(format_args!(
                     "F3D timestamp record {} lacks marker 1 after its family",
@@ -357,9 +348,9 @@ fn patch_asm_geometry(
             match carrier {
                 DirectColorCarrier::NormalizedRgb { fields } => {
                     for (index, value) in fields.iter().copied().zip([
-                        f64::from(color.r),
-                        f64::from(color.g),
-                        f64::from(color.b),
+                        f64::from(color.r()),
+                        f64::from(color.g()),
+                        f64::from(color.b()),
                     ]) {
                         let offset =
                             asm_edits.required_payload_field(bytes, record, index, 0x06)?;
@@ -391,7 +382,12 @@ fn patch_asm_geometry(
             asm_edits.patch_pcurve(bytes, record, asm_pcurve_edit(edit))?;
         }
         if let Some(edit) = nurbs_curves.get(&id) {
-            asm_edits.patch_nurbs_curve(bytes, record, asm_nurbs_curve_edit(edit), false)?;
+            asm_edits.patch_nurbs_curve(
+                bytes,
+                record,
+                asm_nurbs_curve_edit(edit),
+                CacheTarget::First,
+            )?;
         }
         let tolerant_curve_id = format!("f3d:brep:tolerant-coedge-curve#{}", record.index);
         if let Some(edit) = nurbs_curves.get(&tolerant_curve_id) {
@@ -402,7 +398,14 @@ fn patch_asm_geometry(
             }
             if matches!(record.chunk(15), Some(sab::Token::True)) {
                 let mut native_curve = edit.curve.clone();
-                native_curve.reverse_parameterization();
+                let writer_arena = cadmpeg_core::decode::DecodeArena::new();
+                let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
+                let (writer_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    &[],
+                    &writer_arena,
+                    &writer_policy,
+                )?;
+                native_curve.reverse_parameterization(&writer_ctx)?;
                 asm_edits.patch_nurbs_curve(
                     bytes,
                     record,
@@ -410,28 +413,43 @@ fn patch_asm_geometry(
                         curve: &native_curve,
                         periodic: edit.periodic,
                     },
-                    false,
+                    CacheTarget::First,
                 )?;
             } else {
-                asm_edits.patch_nurbs_curve(bytes, record, asm_nurbs_curve_edit(edit), false)?;
+                asm_edits.patch_nurbs_curve(
+                    bytes,
+                    record,
+                    asm_nurbs_curve_edit(edit),
+                    CacheTarget::First,
+                )?;
             }
         }
         let procedural_curve_id = format!("f3d:brep:procedural_curve#{}", record.index);
         if let Some(edit) = procedural_curve_edits.get(&procedural_curve_id) {
-            if let Some(tolerance) = edit.fit_tolerance {
+            if let Some(tolerance) = edit.fit_tolerance() {
                 asm_edits.patch_procedural_curve_fit(bytes, record, tolerance)?;
             }
-            if let Some(definition) = &edit.definition {
+            if let Some(definition) = edit.definition() {
                 asm_edits.patch_procedural_curve_definition(bytes, record, definition)?;
             }
         }
         let directrix_id = format!("f3d:brep:procedural_surface#{}:directrix", record.index);
         if let Some(edit) = nurbs_curves.get(&directrix_id) {
-            asm_edits.patch_nurbs_curve(bytes, record, asm_nurbs_curve_edit(edit), false)?;
+            asm_edits.patch_nurbs_curve(
+                bytes,
+                record,
+                asm_nurbs_curve_edit(edit),
+                CacheTarget::First,
+            )?;
         }
         let spine_id = format!("f3d:brep:procedural_surface#{}:spine", record.index);
         if let Some(edit) = nurbs_curves.get(&spine_id) {
-            asm_edits.patch_nurbs_curve(bytes, record, asm_nurbs_curve_edit(edit), true)?;
+            asm_edits.patch_nurbs_curve(
+                bytes,
+                record,
+                asm_nurbs_curve_edit(edit),
+                CacheTarget::Final,
+            )?;
         }
         if let Some(edit) = nurbs_surfaces.get(&id) {
             asm_edits.patch_nurbs_surface(bytes, record, asm_nurbs_surface_edit(edit), None)?;
@@ -577,10 +595,11 @@ fn patch_asm_geometry(
                     asm_edits.required_payload_field(bytes, record, field_indices[0], 0x13)?,
                     asm_edits.required_payload_field(bytes, record, field_indices[1], 0x14)?,
                     asm_edits.required_payload_field(bytes, record, field_indices[2], 0x14)?,
-                    asm_edits.required_payload_field(bytes, record, field_indices[3], 0x06)?,
                 ];
+                let (ratio_offset, old_ratio) =
+                    asm_edits.required_payload_double(bytes, record, field_indices[3])?;
                 let major = major_radius / LEN_TO_MM;
-                for (offset, values) in fields[..3].iter().zip([
+                for (offset, values) in fields.iter().zip([
                     [
                         center.x / LEN_TO_MM,
                         center.y / LEN_TO_MM,
@@ -599,14 +618,12 @@ fn patch_asm_geometry(
                     }
                 }
                 let ratio = minor_radius / major_radius;
-                let old_ratio = View::f64_le_at(bytes, fields[3] + 1)
-                    .expect("framed ellipse ratio has eight payload bytes");
                 let signed_ratio = if old_ratio.is_sign_negative() {
                     -ratio
                 } else {
                     ratio
                 };
-                AsmEditSet::patch_f64_payload(bytes, fields[3] + 1, signed_ratio)?;
+                AsmEditSet::patch_f64_payload(bytes, ratio_offset + 1, signed_ratio)?;
             }
         } else if record.head() == "plane" {
             if let Some((origin, normal, u_axis)) = planes.get(&id) {
@@ -730,15 +747,15 @@ fn patch_asm_geometry(
                     asm_edits.required_payload_field(bytes, record, field_indices[0], 0x13)?,
                     asm_edits.required_payload_field(bytes, record, field_indices[1], 0x14)?,
                     asm_edits.required_payload_field(bytes, record, field_indices[2], 0x14)?,
-                    asm_edits.required_payload_field(bytes, record, field_indices[3], 0x06)?,
-                    asm_edits.required_payload_field(bytes, record, field_indices[4], 0x06)?,
-                    asm_edits.required_payload_field(bytes, record, field_indices[5], 0x06)?,
-                    asm_edits.required_payload_field(bytes, record, field_indices[6], 0x06)?,
                 ];
-                let old_sine = View::f64_le_at(bytes, fields[4] + 1)
-                    .expect("framed cone sine has eight payload bytes");
-                let old_cosine = View::f64_le_at(bytes, fields[5] + 1)
-                    .expect("framed cone cosine has eight payload bytes");
+                let ratio_offset =
+                    asm_edits.required_payload_field(bytes, record, field_indices[3], 0x06)?;
+                let (sine_offset, old_sine) =
+                    asm_edits.required_payload_double(bytes, record, field_indices[4])?;
+                let (cosine_offset, old_cosine) =
+                    asm_edits.required_payload_double(bytes, record, field_indices[5])?;
+                let radius_offset =
+                    asm_edits.required_payload_field(bytes, record, field_indices[6], 0x06)?;
                 let sine_sign = if old_sine < 0.0 { -1.0 } else { 1.0 };
                 let cosine_sign = if old_cosine < 0.0 { -1.0 } else { 1.0 };
                 let native_axis = if *half_angle > 0.0 && sine_sign * cosine_sign < 0.0 {
@@ -747,7 +764,7 @@ fn patch_asm_geometry(
                     *axis
                 };
                 let scaled_radius = radius / LEN_TO_MM;
-                for (offset, values) in fields[..3].iter().zip([
+                for (offset, values) in fields.iter().zip([
                     [
                         origin.x / LEN_TO_MM,
                         origin.y / LEN_TO_MM,
@@ -765,13 +782,13 @@ fn patch_asm_geometry(
                         AsmEditSet::patch_f64_payload(bytes, at, value)?;
                     }
                 }
-                for (offset, value) in fields[3..].iter().zip([
-                    *ratio,
-                    sine_sign * half_angle.sin(),
-                    cosine_sign * half_angle.cos(),
-                    scaled_radius,
-                ]) {
-                    AsmEditSet::patch_f64_payload(bytes, *offset + 1, value)?;
+                for (offset, value) in [
+                    (ratio_offset, *ratio),
+                    (sine_offset, sine_sign * half_angle.sin()),
+                    (cosine_offset, cosine_sign * half_angle.cos()),
+                    (radius_offset, scaled_radius),
+                ] {
+                    AsmEditSet::patch_f64_payload(bytes, offset + 1, value)?;
                 }
             }
         }
@@ -780,18 +797,16 @@ fn patch_asm_geometry(
 }
 
 fn exact_8_bit_rgb(color: Color, record: &sab::Record) -> Result<[u8; 3], CodecError> {
-    let channels = [color.r, color.g, color.b];
-    if channels
-        .iter()
-        .any(|channel| !channel.is_finite() || !(0.0..=1.0).contains(channel))
-    {
-        return Err(CodecError::malformed(format_args!(
-            "{} record {} has an invalid edited color",
+    let channels = [color.r(), color.g(), color.b()];
+    let encoded = channels.map(|channel| truncate_f64_to_u8(f64::from((channel * 255.0).round())));
+    let [Some(red), Some(green), Some(blue)] = encoded else {
+        return Err(CodecError::NotImplemented(format!(
+            "{} record {} requires exactly representable 8-bit RGB channels",
             record.head(),
             record.index
         )));
-    }
-    let encoded = channels.map(|channel| (channel * 255.0).round() as u8);
+    };
+    let encoded = [red, green, blue];
     let decoded = encoded.map(|channel| f32::from(channel) / 255.0);
     if decoded != channels {
         return Err(CodecError::NotImplemented(format!(
@@ -802,3 +817,6 @@ fn exact_8_bit_rgb(color: Color, record: &sab::Record) -> Result<[u8; 3], CodecE
     }
     Ok(encoded)
 }
+
+#[cfg(test)]
+mod tests;

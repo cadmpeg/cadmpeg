@@ -6,74 +6,165 @@
 //! a stale sidecar beside a newer CADIR. Digest verification failing closed on
 //! the next load is what saves the caller, not a transactional pair.
 
-use std::fmt::Write as _;
 use std::fs::File;
-use std::io::{self, BufWriter, Read, Write};
+use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, Context, Result};
-use cadmpeg_container::compound::read_detection_prefix;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::ExportPlan;
-use cadmpeg_ir::report::ExportReport;
+use cadmpeg_ir::hash::digest::Sha256Digest;
+use cadmpeg_ir::report::export::ExportReport;
 use cadmpeg_ir::{decode_sidecar_path, DecodeSidecar};
 use sha2::{Digest, Sha256};
 
 use super::document::LoadOrigin;
+use super::refusal::ApplicationError;
 
-/// Read the bytes used for native-format detection.
-///
-/// Most codecs need only the leading prefix. A Compound File Binary
-/// directory may be physically remote from the header, so its codec
-/// evidence cannot be established from a short prefix. Extend such inputs
-/// until the bounded CFB probe reaches the directory or the configured
-/// input ceiling.
-pub fn read_detection_input(path: &Path, prefix_len: usize, max_bytes: u64) -> Result<Vec<u8>> {
-    let mut file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
-    read_detection_prefix(&mut file, prefix_len, max_bytes).map_err(|error| {
-        if error.kind() == io::ErrorKind::FileTooLarge {
-            anyhow!(
-                "{} exceeds the configured {}-byte input limit",
-                path.display(),
-                max_bytes
+/// File output path and its overwrite policy.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct FileDestination {
+    /// Output path.
+    pub(crate) path: PathBuf,
+    /// Replace an existing output.
+    pub(super) overwrite: bool,
+}
+
+impl FileDestination {
+    /// Checks the file output against its source and overwrite policy.
+    pub(crate) fn check(&self, input: &Path) -> Result<()> {
+        check_output_path(input, &self.path, self.overwrite)
+    }
+
+    /// Writes checked output bytes atomically.
+    pub(crate) fn write(&self, input: &Path, bytes: &[u8]) -> Result<()> {
+        self.check(input)?;
+        write_bytes_atomic(&self.path, bytes)
+    }
+}
+
+/// An optional file output admitted with its overwrite policy.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct OptionalFileDestination(pub Option<FileDestination>);
+
+impl clap::Args for OptionalFileDestination {
+    fn augment_args(command: clap::Command) -> clap::Command {
+        command
+            .arg(
+                clap::Arg::new("output")
+                    .short('o')
+                    .long("output")
+                    .help("Output file; omit to write to standard output")
+                    .value_parser(clap::value_parser!(PathBuf)),
             )
-        } else {
-            error.into()
-        }
+            .arg(
+                clap::Arg::new("force")
+                    .long("force")
+                    .help("Replace an existing output or report file")
+                    .action(clap::ArgAction::SetTrue),
+            )
+    }
+
+    fn augment_args_for_update(command: clap::Command) -> clap::Command {
+        Self::augment_args(command)
+    }
+}
+
+fn file_from_matches(matches: &clap::ArgMatches, id: &str) -> Option<FileDestination> {
+    matches.get_one::<PathBuf>(id).map(|path| FileDestination {
+        path: path.clone(),
+        overwrite: matches.get_flag("force"),
     })
 }
 
-/// Read a UTF-8 text file, refusing payloads above `max_bytes`.
-pub fn read_bounded_text(path: &Path, max_bytes: u64) -> Result<String> {
-    let file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
-    let mut limited = file.take(max_bytes.saturating_add(1));
-    let mut text = String::new();
-    limited
-        .read_to_string(&mut text)
-        .with_context(|| format!("reading UTF-8 text from {}", path.display()))?;
-    if text.len() as u64 > max_bytes {
-        return Err(anyhow!(
-            "{} exceeds the configured {}-byte input limit",
-            path.display(),
-            max_bytes
-        ));
+impl clap::FromArgMatches for OptionalFileDestination {
+    fn from_arg_matches(matches: &clap::ArgMatches) -> Result<Self, clap::Error> {
+        Ok(Self(file_from_matches(matches, "output")))
     }
+
+    fn update_from_arg_matches(&mut self, matches: &clap::ArgMatches) -> Result<(), clap::Error> {
+        *self = Self::from_arg_matches(matches)?;
+        Ok(())
+    }
+}
+
+/// Primary and report files admitted under one overwrite policy.
+#[derive(Debug)]
+pub(crate) struct OutputDestinations {
+    /// Optional primary file output.
+    pub(crate) output: OptionalFileDestination,
+    /// Optional command report file.
+    pub(crate) report: Option<FileDestination>,
+}
+
+impl clap::Args for OutputDestinations {
+    fn augment_args(command: clap::Command) -> clap::Command {
+        OptionalFileDestination::augment_args(command).arg(
+            clap::Arg::new("report")
+                .long("report")
+                .help("Write a JSON report to this file")
+                .value_parser(clap::value_parser!(PathBuf)),
+        )
+    }
+
+    fn augment_args_for_update(command: clap::Command) -> clap::Command {
+        Self::augment_args(command)
+    }
+}
+
+impl clap::FromArgMatches for OutputDestinations {
+    fn from_arg_matches(matches: &clap::ArgMatches) -> Result<Self, clap::Error> {
+        Ok(Self {
+            output: OptionalFileDestination::from_arg_matches(matches)?,
+            report: file_from_matches(matches, "report"),
+        })
+    }
+
+    fn update_from_arg_matches(&mut self, matches: &clap::ArgMatches) -> Result<(), clap::Error> {
+        *self = Self::from_arg_matches(matches)?;
+        Ok(())
+    }
+}
+
+/// Reads UTF-8 input under a typed input-byte limit.
+pub(crate) fn read_bounded_text(path: &Path, max_bytes: u64) -> Result<String, CodecError> {
+    let mut file = File::open(path)?;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_input_bytes = max_bytes;
+    let ctx = DecodeContext::new(&arena, &policy, false);
+    let mut bytes = Vec::new();
+    ctx.complete_input(&mut file, &mut bytes)?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(bytes.len()),
+        "validate text input UTF-8",
+    )?;
+    let text =
+        String::from_utf8(bytes).map_err(|_| CodecError::Malformed("input is not UTF-8".into()))?;
+    ctx.finish_session()?;
     Ok(text)
 }
 
 /// Load and parse a decode sidecar, verifying it against CADIR bytes.
 ///
 /// Mismatch is a hard error (fail-closed).
-pub fn load_matching_sidecar(
+pub(crate) fn load_matching_sidecar(
     cadir_path: &Path,
     cadir_bytes: &[u8],
     max_bytes: u64,
-) -> Result<Option<DecodeSidecar>> {
-    let path = decode_sidecar_path(cadir_path);
+) -> Result<Option<DecodeSidecar>, ApplicationError> {
+    let Some(path) = decode_sidecar_path(cadir_path) else {
+        return Err(anyhow!(
+            "{} names no file, so it has no decode sidecar",
+            cadir_path.display()
+        )
+        .into());
+    };
     if !path.exists() {
         return Ok(None);
     }
-    let text = read_bounded_text(&path, max_bytes)
-        .with_context(|| format!("reading decode sidecar {}", path.display()))?;
+    let text = read_bounded_text(&path, max_bytes)?;
     let sidecar = DecodeSidecar::from_json(&text)
         .with_context(|| format!("parsing decode sidecar {}", path.display()))?;
     if !sidecar.matches(cadir_bytes) {
@@ -81,13 +172,14 @@ pub fn load_matching_sidecar(
             "decode sidecar {} does not match {}",
             path.display(),
             cadir_path.display()
-        ));
+        )
+        .into());
     }
     Ok(Some(sidecar))
 }
 
 /// Refuse to overwrite the input path, or an existing output without force.
-pub fn check_output_path(input: &Path, output: &Path, force: bool) -> Result<()> {
+fn check_output_path(input: &Path, output: &Path, force: bool) -> Result<()> {
     // A missing source is diagnosed by the loader. It cannot alias an
     // existing source file, so output preflight must not replace that
     // input error with a canonicalization failure.
@@ -109,7 +201,7 @@ pub fn check_output_path(input: &Path, output: &Path, force: bool) -> Result<()>
 }
 
 /// Refuse two independently written outputs that resolve to one path.
-pub fn check_distinct_output_paths(
+pub(crate) fn check_distinct_output_paths(
     first: &Path,
     first_label: &str,
     second: &Path,
@@ -141,7 +233,7 @@ fn absolute_output_path(output: &Path) -> Result<PathBuf> {
 }
 
 /// Stage bytes then atomically replace `output`.
-pub fn write_bytes_atomic(output: &Path, bytes: &[u8]) -> Result<()> {
+fn write_bytes_atomic(output: &Path, bytes: &[u8]) -> Result<()> {
     let parent = output
         .parent()
         .filter(|path| !path.as_os_str().is_empty())
@@ -158,14 +250,11 @@ pub fn write_bytes_atomic(output: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
-/// Check the output path, then write bytes atomically.
-pub fn write_output(input: &Path, output: &Path, bytes: &[u8], force: bool) -> Result<()> {
-    check_output_path(input, output, force)?;
-    write_bytes_atomic(output, bytes)
-}
-
 /// Stage an export plan and hash the emitted bytes.
-pub fn write_plan_atomic(output: &Path, plan: ExportPlan) -> Result<(ExportReport, String)> {
+pub(super) fn write_plan_atomic(
+    output: &Path,
+    plan: ExportPlan,
+) -> Result<(ExportReport, Sha256Digest)> {
     let parent = output
         .parent()
         .filter(|path| !path.as_os_str().is_empty())
@@ -197,19 +286,27 @@ pub fn write_plan_atomic(output: &Path, plan: ExportPlan) -> Result<(ExportRepor
 /// A decoded origin causes a second atomic rename after the CADIR write.
 /// The pair is not transactional; see the module docs. A neutral origin
 /// removes a stale sidecar.
-pub fn persist_decode_sidecar(
+pub(super) fn persist_decode_sidecar(
     cadir_path: &Path,
-    cadir_sha256: &str,
+    cadir_sha256: &Sha256Digest,
     origin: &LoadOrigin,
 ) -> Result<SidecarPersistOutcome> {
-    let path = decode_sidecar_path(cadir_path);
+    let Some(path) = decode_sidecar_path(cadir_path) else {
+        return Err(anyhow!(
+            "{} names no file, so it has no decode sidecar",
+            cadir_path.display()
+        ));
+    };
     match origin {
         LoadOrigin::Decoded {
             report, fidelity, ..
         }
         | LoadOrigin::Restored { report, fidelity } => {
-            let mut sidecar =
-                DecodeSidecar::bind_sha256(cadir_sha256, report.clone(), fidelity.clone());
+            let sidecar = DecodeSidecar::bind_sha256(
+                cadir_sha256.clone(),
+                report.clone(),
+                fidelity.as_ref().clone(),
+            );
             let mut bytes = sidecar.to_canonical_json()?.into_bytes();
             bytes.push(b'\n');
             write_bytes_atomic(&path, &bytes)?;
@@ -226,7 +323,7 @@ pub fn persist_decode_sidecar(
 
 /// Result of attempting to keep a CADIR sidecar in sync with its document.
 #[derive(Debug)]
-pub enum SidecarPersistOutcome {
+pub(crate) enum SidecarPersistOutcome {
     /// Sidecar written beside the CADIR file.
     Wrote(PathBuf),
     /// Stale sidecar removed because the CADIR has no decode origin.
@@ -241,13 +338,8 @@ struct TempFileWriter<'a> {
 }
 
 impl TempFileWriter<'_> {
-    fn finish(self) -> String {
-        let digest = self.hasher.finalize();
-        let mut encoded = String::with_capacity(digest.len() * 2);
-        for byte in digest {
-            write!(encoded, "{byte:02x}").expect("writing a digest to a String");
-        }
-        encoded
+    fn finish(self) -> Sha256Digest {
+        Sha256Digest::from_bytes(self.hasher.finalize().into())
     }
 }
 
@@ -266,12 +358,118 @@ impl Write for TempFileWriter<'_> {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::default_trait_access)]
 mod tests {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::CodecError;
+    use std::fs::File;
+    #[cfg(feature = "nx")]
     use std::io::Cursor;
+    use std::path::Path;
 
-    use super::*;
+    use super::{
+        check_output_path, load_matching_sidecar, read_bounded_text, FileDestination,
+        OptionalFileDestination, OutputDestinations,
+    };
+    #[cfg(feature = "nx")]
     use cadmpeg_core::decode::InspectOptions;
-    use cadmpeg_ir::{CadIr, DecodeReport, SourceFidelity};
-    use cadmpeg_registry::{identify, InputCatalog, DETECTION_PREFIX_LEN};
+    use cadmpeg_ir::{decode_sidecar_path, DecodeSidecar};
+    use cadmpeg_ir::{report::decode::DecodeReport, CadIr, SourceFidelity};
+    use cadmpeg_registry::DETECTION_PREFIX_LEN;
+    #[cfg(feature = "nx")]
+    use cadmpeg_registry::{
+        resolve_and_inspect_with, InputCatalog, InspectError, Inspected, ResolveSourceError,
+        Selection,
+    };
+    #[cfg(feature = "nx")]
+    use cadmpeg_test_support::bytes::{put_u16, put_u32};
+
+    fn read_detection_input(
+        path: &Path,
+        prefix_len: usize,
+        max_bytes: u64,
+    ) -> Result<Vec<u8>, CodecError> {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_input_bytes = max_bytes;
+        let ctx = DecodeContext::new(&arena, &policy, false);
+        let mut file = File::open(path)?;
+        let result =
+            cadmpeg_container::compound::read_detection_prefix(&ctx, &mut file, prefix_len);
+        ctx.finish_session()?;
+        result
+    }
+
+    #[test]
+    fn clap_pairs_each_output_with_the_shared_force_flag() {
+        use clap::Parser;
+        for command in ["inspect", "check", "diff"] {
+            for flag in ["-o", "--output", "--report"] {
+                let mut args = vec!["cadmpeg", command, "input.step"];
+                if command == "diff" {
+                    args.push("other.step");
+                }
+                args.extend([flag, "report.json", "--force"]);
+                let report = match crate::Cli::try_parse_from(args).unwrap().command {
+                    crate::Command::Inspect(crate::inspect::InspectArgs::Summary(args)) => {
+                        args.report
+                    }
+                    crate::Command::Check { report, .. } | crate::Command::Diff { report, .. } => {
+                        report
+                    }
+                    _ => panic!("expected a report command"),
+                };
+                assert_eq!(
+                    report.0,
+                    Some(FileDestination {
+                        path: "report.json".into(),
+                        overwrite: true
+                    })
+                );
+            }
+        }
+        for command in ["dump", "convert"] {
+            let destinations = match crate::Cli::try_parse_from([
+                "cadmpeg",
+                command,
+                "input.step",
+                "-o",
+                "output.step",
+                "--report",
+                "report.json",
+                "--force",
+            ])
+            .unwrap()
+            .command
+            {
+                crate::Command::Dump { destinations, .. } => destinations,
+                crate::Command::Convert { destinations, .. } => {
+                    let crate::application::transcoder::DestinationPolicy::File(file) =
+                        destinations.destination
+                    else {
+                        panic!("expected file output");
+                    };
+                    OutputDestinations {
+                        output: OptionalFileDestination(Some(file)),
+                        report: destinations.report,
+                    }
+                }
+                _ => panic!("expected a writing command"),
+            };
+            assert_eq!(
+                destinations.output.0,
+                Some(FileDestination {
+                    path: "output.step".into(),
+                    overwrite: true
+                })
+            );
+            assert_eq!(
+                destinations.report,
+                Some(FileDestination {
+                    path: "report.json".into(),
+                    overwrite: true
+                })
+            );
+        }
+    }
 
     #[test]
     fn output_preflight_leaves_a_missing_source_for_the_loader() {
@@ -300,17 +498,19 @@ mod tests {
         let text = CadIr::empty().to_canonical_json().unwrap();
         std::fs::write(&path, &text).unwrap();
         let report: DecodeReport = serde_json::from_value(serde_json::json!({
-            "format": "test",
-            "container_only": false,
-            "geometry_transferred": false,
+            "identity": {"classification": "unclassified", "format": "test"},
+            "transfer": {"transfer": "full", "geometry_transferred": false},
             "losses": [],
             "notes": [],
-            "dialects": null,
         }))
         .unwrap();
-        let mut sidecar = DecodeSidecar::bind(text.as_bytes(), report, SourceFidelity::default());
+        let sidecar = DecodeSidecar::bind_sha256(
+            cadmpeg_ir::hash::digest::Sha256Digest::digest(text.as_bytes()),
+            report,
+            SourceFidelity::default(),
+        );
         std::fs::write(
-            decode_sidecar_path(&path),
+            decode_sidecar_path(&path).unwrap(),
             sidecar.to_canonical_json().unwrap(),
         )
         .unwrap();
@@ -330,7 +530,9 @@ mod tests {
         let path = directory.path().join("large.json");
         std::fs::write(&path, "12345").unwrap();
         let error = read_bounded_text(&path, 4).unwrap_err();
-        assert!(error.to_string().contains("4-byte input limit"));
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::InputBytes && limit.limit == 4)
+        );
     }
 
     #[test]
@@ -366,21 +568,51 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("remote-directory.prt");
         std::fs::write(&path, &bytes).unwrap();
-        let cli_prefix =
-            read_detection_input(&path, DETECTION_PREFIX_LEN, bytes.len() as u64).unwrap();
+        let cli_prefix = read_detection_input(
+            &path,
+            DETECTION_PREFIX_LEN,
+            cadmpeg_core::decode::u64_from_index(bytes.len()),
+        )
+        .unwrap();
         assert_eq!(cli_prefix, bytes);
 
-        let cli_candidates = InputCatalog::with_builtins()
-            .candidates(&cli_prefix)
+        let arena = DecodeArena::new();
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&cli_prefix, &arena, &DecodePolicy::default())
+                .expect("root");
+        let catalog = InputCatalog::with_builtins();
+        let mut candidates = Vec::new();
+        let _storage = catalog
+            .candidates(&ctx, root, &mut candidates)
+            .expect("candidates");
+        let cli_candidates = candidates
             .into_iter()
             .map(|(codec, confidence)| (codec.id(), confidence))
             .collect::<Vec<_>>();
         let mut source = Cursor::new(bytes);
-        let library_candidates = identify(&mut source, &InspectOptions::default())
-            .unwrap()
-            .into_iter()
-            .map(|identified| (identified.format(), identified.confidence()))
-            .collect::<Vec<_>>();
+        let catalog = InputCatalog::with_builtins();
+        let library_candidates =
+            match resolve_and_inspect_with(&catalog, &mut source, None, &InspectOptions::default())
+            {
+                Ok(Inspected {
+                    format, selection, ..
+                })
+                | Err(InspectError::Codec {
+                    format, selection, ..
+                }) => {
+                    let Selection::Detected { confidence } = selection else {
+                        panic!("unforced inspection must use content detection");
+                    };
+                    vec![(format, confidence)]
+                }
+                Err(InspectError::Unresolved(ResolveSourceError::Ambiguous(tie))) => tie
+                    .candidates()
+                    .iter()
+                    .map(|format| (*format, tie.confidence()))
+                    .collect(),
+                Err(InspectError::Unrecognized | InspectError::Cadir) => Vec::new(),
+                Err(error) => panic!("library detection failed: {error}"),
+            };
 
         assert!(cli_candidates
             .iter()
@@ -403,7 +635,11 @@ mod tests {
         put_u16(&mut file, 30, 9);
         put_u16(&mut file, 32, 6);
         put_u32(&mut file, 44, 3);
-        put_u32(&mut file, 48, DIRECTORY_SECTOR as u32);
+        put_u32(
+            &mut file,
+            48,
+            u32::try_from(DIRECTORY_SECTOR).expect("test directory sector fits u32"),
+        );
         put_u32(&mut file, 56, 4096);
         put_u32(&mut file, 60, END);
         put_u32(&mut file, 68, END);
@@ -411,7 +647,11 @@ mod tests {
             put_u32(&mut file, 76 + index * 4, FREE);
         }
         for index in 0..3 {
-            put_u32(&mut file, 76 + index * 4, index as u32);
+            put_u32(
+                &mut file,
+                76 + index * 4,
+                u32::try_from(index).expect("test FAT index fits u32"),
+            );
             file[SECTOR * (index + 1)..SECTOR * (index + 2)].fill(0xff);
             put_u32(&mut file, SECTOR + index * 4, FAT);
         }
@@ -461,22 +701,16 @@ mod tests {
         for (offset, word) in encoded.iter().enumerate() {
             put_u16(entry, offset * 2, *word);
         }
-        put_u16(entry, 64, (encoded.len() * 2) as u16);
+        put_u16(
+            entry,
+            64,
+            u16::try_from(encoded.len() * 2).expect("test name length fits u16"),
+        );
         entry[66] = kind;
         entry[67] = 1;
         put_u32(entry, 68, FREE);
         put_u32(entry, 72, FREE);
         put_u32(entry, 76, child);
         put_u32(entry, 116, start);
-    }
-
-    #[cfg(feature = "nx")]
-    fn put_u16(bytes: &mut [u8], offset: usize, value: u16) {
-        bytes[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
-    }
-
-    #[cfg(feature = "nx")]
-    fn put_u32(bytes: &mut [u8], offset: usize, value: u32) {
-        bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
     }
 }

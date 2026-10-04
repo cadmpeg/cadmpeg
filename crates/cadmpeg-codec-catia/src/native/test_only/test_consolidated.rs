@@ -1,5 +1,17 @@
-use super::*;
 use crate::native::class5b5c::CatiaConsolidatedClass5b5cRecord;
+use crate::native::{
+    CatiaConsolidatedCircle, CatiaConsolidatedClass61Payload, CatiaConsolidatedClass61Record,
+    CatiaConsolidatedCone, CatiaConsolidatedConeFace, CatiaConsolidatedCylinder,
+    CatiaConsolidatedCylinderPayload, CatiaConsolidatedEmbeddedCylinder, CatiaConsolidatedGroup,
+    CatiaConsolidatedLineProfile, CatiaConsolidatedParameterPoint, CatiaConsolidatedPcurve,
+    CatiaConsolidatedPlaneCarrier, CatiaConsolidatedPlaneCarrierPayload,
+    CatiaConsolidatedReferenceList, CatiaConsolidatedRevolution, CatiaConsolidatedSphere,
+    CatiaConsolidatedTorus,
+};
+use cadmpeg_ir::geometry::nurbs::knots_strictly_increasing;
+use cadmpeg_ir::scalar::FiniteReal;
+use std::collections::HashMap;
+use std::mem::size_of;
 
 pub(super) fn validate_consolidated_class61_records(
     records: &[CatiaConsolidatedClass61Record],
@@ -10,12 +22,8 @@ pub(super) fn validate_consolidated_class61_records(
             CatiaConsolidatedClass61Payload::Counted { references, tail } => {
                 !references.is_empty() && !tail.is_empty() && tail.last() == Some(&0x03)
             }
-            CatiaConsolidatedClass61Payload::Long {
-                members, scalar, ..
-            } => {
-                scalar.is_finite()
-                    && !members.is_empty()
-                    && members.windows(2).all(|pair| pair[0] < pair[1])
+            CatiaConsolidatedClass61Payload::Long { members, .. } => {
+                !members.is_empty() && members.windows(2).all(|pair| pair[0] < pair[1])
             }
         };
         if record.id != expected_id
@@ -96,9 +104,7 @@ pub(super) fn validate_consolidated_cone_faces(
             || face.program.first() != Some(&0x85)
             || !face.program.ends_with(&[0x03, 0x11])
             || !matches!(frame_overhead, Some(21..=23))
-            || !face.angular_scale.is_finite()
-            || face.half_angle <= 0.0
-            || face.half_angle >= std::f64::consts::FRAC_PI_2
+            || face.half_angle.get() >= std::f64::consts::FRAC_PI_2
             || !parameter_run_valid
             || index > 0 && faces[index - 1].byte_offset >= face.byte_offset
         {
@@ -123,16 +129,10 @@ pub(super) fn validate_consolidated_pcurves(
             || pcurve.points.len() != count
             || pcurve.first_derivatives.len() != count
             || pcurve.second_derivatives.len() != count
-            || !knots_strictly_increasing(&pcurve.knots)
-            || pcurve.range[0] >= pcurve.range[1]
-            || pcurve
-                .knots
-                .iter()
-                .chain(pcurve.points.iter().flatten())
-                .chain(pcurve.first_derivatives.iter().flatten())
-                .chain(pcurve.second_derivatives.iter().flatten())
-                .chain(&pcurve.range)
-                .any(|value| !value.is_finite())
+            || !knots_strictly_increasing(&FiniteReal::raw_lane(&pcurve.knots), |_| {
+                Ok::<(), std::convert::Infallible>(())
+            })
+            .unwrap()
             || !matches!(pcurve.tail.as_slice(), [0x07] | [0x07, 0x00])
             || index > 0 && pcurves[index - 1].byte_offset >= pcurve.byte_offset
         {
@@ -149,8 +149,6 @@ pub(super) fn validate_consolidated_circles(
     circles: &[CatiaConsolidatedCircle],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for (index, circle) in circles.iter().enumerate() {
-        let full_circle =
-            crate::families::b2::records::circle_range_is_full_turn(circle.radius, circle.range);
         let compact_len =
             usize::from(u8::from(circle.layout)).checked_sub(5 * size_of::<f64>() + 9);
         let record_id_fits_layout = matches!(
@@ -159,16 +157,7 @@ pub(super) fn validate_consolidated_circles(
         );
         if circle.id != format!("catia:consolidated:circle#{index}")
             || !record_id_fits_layout
-            || circle
-                .center_pair
-                .iter()
-                .chain(&circle.range)
-                .chain(&[circle.radius, circle.chart_shift])
-                .any(|value| !value.is_finite())
             || circle.center_pair.iter().any(|value| value.abs() > 1e6)
-            || circle.radius <= 0.0
-            || circle.range[0] >= circle.range[1]
-            || circle.full_circle != full_circle
             || index > 0 && circles[index - 1].byte_offset >= circle.byte_offset
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
@@ -185,49 +174,26 @@ pub(super) fn validate_consolidated_cones(
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for (index, cone) in cones.iter().enumerate() {
         let expected_id = format!("catia:consolidated:cone#{index}");
-        let dot = |first: [f64; 3], second: [f64; 3]| {
-            first[0] * second[0] + first[1] * second[1] + first[2] * second[2]
-        };
+        let direction_x = cone.direction_x.get();
+        let direction_y = cone.direction_y.get();
+        let axis = cone.axis.get();
         let cross = [
-            cone.direction_x[1] * cone.direction_y[2] - cone.direction_x[2] * cone.direction_y[1],
-            cone.direction_x[2] * cone.direction_y[0] - cone.direction_x[0] * cone.direction_y[2],
-            cone.direction_x[0] * cone.direction_y[1] - cone.direction_x[1] * cone.direction_y[0],
+            direction_x[1] * direction_y[2] - direction_x[2] * direction_y[1],
+            direction_x[2] * direction_y[0] - direction_x[0] * direction_y[2],
+            direction_x[0] * direction_y[1] - direction_x[1] * direction_y[0],
         ];
         if cone.id != expected_id
-            || cone
-                .apex
-                .iter()
-                .chain(&cone.direction_x)
-                .chain(&cone.direction_y)
-                .chain(&cone.axis)
-                .chain(&[
-                    cone.half_angle,
-                    cone.reference_radius,
-                    cone.angular_range[0],
-                    cone.angular_range[1],
-                    cone.slant_range[0],
-                    cone.slant_range[1],
-                    cone.angular_scale,
-                    cone.angular_domain[0],
-                    cone.angular_domain[1],
-                ])
-                .any(|value| !value.is_finite())
-            || [cone.direction_x, cone.direction_y, cone.axis]
-                .into_iter()
-                .any(|direction| (dot(direction, direction) - 1.0).abs() > 1.0e-9)
             || cross
                 .iter()
-                .zip(cone.axis)
+                .zip(axis)
                 .any(|(cross, axis)| (cross - axis).abs() > 1.0e-9)
-            || cone.half_angle <= 0.0
-            || cone.half_angle >= std::f64::consts::FRAC_PI_2
+            || cone.half_angle.get() <= 0.0
+            || cone.half_angle.get() >= std::f64::consts::FRAC_PI_2
             || !crate::analytic::periodic_angular_range_is_valid(
-                cone.angular_range,
-                cone.angular_domain,
+                cone.angular_range.endpoints(),
+                cone.angular_domain.endpoints(),
             )
-            || cone.slant_range[0] < 0.0
-            || cone.slant_range[0] >= cone.slant_range[1]
-            || cone.angular_scale <= 0.0
+            || cone.slant_range.lower() < 0.0
             || index > 0 && cones[index - 1].byte_offset >= cone.byte_offset
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
@@ -244,8 +210,6 @@ pub(super) fn validate_consolidated_cylinders(
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for (index, cylinder) in cylinders.iter().enumerate() {
         let expected_id = format!("catia:consolidated:cylinder#{index}");
-        let squared_length =
-            |direction: [f64; 3]| direction.iter().map(|value| value * value).sum::<f64>();
         let dot = |first: [f64; 3], second: [f64; 3]| {
             first[0] * second[0] + first[1] * second[1] + first[2] * second[2]
         };
@@ -256,18 +220,12 @@ pub(super) fn validate_consolidated_cylinders(
                 reference_direction,
             } => {
                 *frame_token == 0x1d
-                    && *axis == [1.0, 0.0, 0.0]
-                    && *reference_direction == [0.0, 1.0, 0.0]
-                    && axis
-                        .iter()
-                        .chain(reference_direction)
-                        .all(|value| value.is_finite())
-                    && (squared_length(*axis) - 1.0).abs() <= 1.0e-9
-                    && (squared_length(*reference_direction) - 1.0).abs() <= 1.0e-9
-                    && dot(*axis, *reference_direction).abs() <= 1.0e-9
+                    && axis.get() == [1.0, 0.0, 0.0]
+                    && reference_direction.get() == [0.0, 1.0, 0.0]
+                    && dot(axis.get(), reference_direction.get()).abs() <= 1.0e-9
                     && crate::families::b2::records::circle_range_is_full_turn(
-                        cylinder.radius,
-                        cylinder.u_range,
+                        cylinder.radius.get(),
+                        cylinder.u_range.endpoints(),
                     )
             }
             CatiaConsolidatedCylinderPayload::Layout5a {
@@ -276,18 +234,12 @@ pub(super) fn validate_consolidated_cylinders(
                 reference_direction,
             } => {
                 matches!(*frame_token, 0x19 | 0x1c)
-                    && axis[2] == 0.0
-                    && *reference_direction == [-axis[1], axis[0], 0.0]
-                    && axis
-                        .iter()
-                        .chain(reference_direction)
-                        .all(|value| value.is_finite())
-                    && (squared_length(*axis) - 1.0).abs() <= 1.0e-9
-                    && (squared_length(*reference_direction) - 1.0).abs() <= 1.0e-9
-                    && dot(*axis, *reference_direction).abs() <= 1.0e-9
+                    && axis.get()[2] == 0.0
+                    && reference_direction.get() == [-axis.get()[1], axis.get()[0], 0.0]
+                    && dot(axis.get(), reference_direction.get()).abs() <= 1.0e-9
                     && crate::families::b2::records::circle_range_is_full_turn(
-                        cylinder.radius,
-                        cylinder.u_range,
+                        cylinder.radius.get(),
+                        cylinder.u_range.endpoints(),
                     )
             }
             CatiaConsolidatedCylinderPayload::RangeOrigin {
@@ -297,36 +249,23 @@ pub(super) fn validate_consolidated_cylinders(
                 range_origin,
             } => {
                 cylinder.payload.layout() == 0x62
-                    && stored_vector
-                        .iter()
-                        .chain(std::iter::once(range_origin))
-                        .all(|value| value.is_finite())
-                    && (stored_vector[0].hypot(stored_vector[1]) - 1.0).abs() <= 1.0e-9
-                    && *axis == [0.0, 1.0, 0.0]
-                    && *reference_direction == [stored_vector[0], 0.0, stored_vector[1]]
+                    && range_origin.is_finite()
+                    && axis.get() == [0.0, 1.0, 0.0]
+                    && reference_direction.get()
+                        == [stored_vector.get()[0], 0.0, stored_vector.get()[1]]
                     && crate::families::b2::records::circle_range_is_within_full_turn(
-                        cylinder.radius,
-                        cylinder.u_range,
+                        cylinder.radius.get(),
+                        cylinder.u_range.endpoints(),
                     )
                     && range_origin.to_bits()
                         == crate::families::b2::records::cylinder_range_origin(
-                            cylinder.radius,
-                            cylinder.u_range,
+                            cylinder.radius.get(),
+                            cylinder.u_range.endpoints(),
                         )
                         .to_bits()
             }
         };
         if cylinder.id != expected_id
-            || cylinder
-                .origin
-                .iter()
-                .chain(&cylinder.u_range)
-                .chain(&cylinder.v_range)
-                .chain(&[cylinder.radius])
-                .any(|value| !value.is_finite())
-            || cylinder.radius <= 0.0
-            || cylinder.u_range[0] >= cylinder.u_range[1]
-            || cylinder.v_range[0] >= cylinder.v_range[1]
             || !payload_valid
             || index > 0 && cylinders[index - 1].byte_offset >= cylinder.byte_offset
         {
@@ -354,8 +293,6 @@ pub(super) fn validate_consolidated_embedded_cylinders(
         })
         .collect::<HashMap<_, _>>();
     for (index, cylinder) in cylinders.iter().enumerate() {
-        let squared_length =
-            |direction: [f64; 3]| direction.iter().map(|value| value * value).sum::<f64>();
         let dot = |first: [f64; 3], second: [f64; 3]| {
             first[0] * second[0] + first[1] * second[1] + first[2] * second[2]
         };
@@ -369,27 +306,14 @@ pub(super) fn validate_consolidated_embedded_cylinders(
                 });
         if cylinder.id != format!("catia:consolidated:embedded-cylinder#{index}")
             || !group_valid
-            || !cylinder
-                .origin
-                .iter()
-                .chain(&cylinder.u_range)
-                .chain(&cylinder.v_range)
-                .chain(&cylinder.axis)
-                .chain(&cylinder.reference_direction)
-                .chain(&[cylinder.radius])
-                .all(|value| value.is_finite())
-            || cylinder.radius <= 0.0
-            || cylinder.u_range[0] >= cylinder.u_range[1]
-            || cylinder.v_range[0] >= cylinder.v_range[1]
             || !matches!(cylinder.frame_token, 0x19 | 0x1c)
-            || cylinder.axis[2] != 0.0
-            || cylinder.reference_direction != [-cylinder.axis[1], cylinder.axis[0], 0.0]
-            || (squared_length(cylinder.axis) - 1.0).abs() > 1.0e-9
-            || (squared_length(cylinder.reference_direction) - 1.0).abs() > 1.0e-9
-            || dot(cylinder.axis, cylinder.reference_direction).abs() > 1.0e-9
+            || cylinder.axis.get()[2] != 0.0
+            || cylinder.reference_direction.get()
+                != [-cylinder.axis.get()[1], cylinder.axis.get()[0], 0.0]
+            || dot(cylinder.axis.get(), cylinder.reference_direction.get()).abs() > 1.0e-9
             || !crate::families::b2::records::circle_range_is_full_turn(
-                cylinder.radius,
-                cylinder.u_range,
+                cylinder.radius.get(),
+                cylinder.u_range.endpoints(),
             )
             || index > 0 && cylinders[index - 1].byte_offset >= cylinder.byte_offset
         {
@@ -406,14 +330,12 @@ pub(super) fn validate_consolidated_parameter_points(
     points: &[CatiaConsolidatedParameterPoint],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for (index, point) in points.iter().enumerate() {
-        let payload_valid = point.payload.is_valid();
         let frame_overhead = point
             .byte_len
             .checked_sub(u64::from(point.payload.layout()));
         if point.id != format!("catia:consolidated:parameter-point#{index}")
             || !matches!(frame_overhead, Some(5..=7))
             || !matches!(point.prefix.as_u8(), 0x05 | 0x09 | 0x0d | 0x11)
-            || !payload_valid
             || index > 0 && points[index - 1].byte_offset >= point.byte_offset
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
@@ -430,42 +352,14 @@ pub(super) fn validate_consolidated_plane_carriers(
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for (index, carrier) in carriers.iter().enumerate() {
         let (selector, scalar_count, payload_valid) = match &carrier.payload {
-            CatiaConsolidatedPlaneCarrierPayload::PointDirection2 {
-                point,
-                direction,
-                tail,
-            } => (
-                0xe4,
-                7,
-                point
-                    .iter()
-                    .chain(direction)
-                    .chain(tail)
-                    .all(|value| value.is_finite()),
-            ),
-            CatiaConsolidatedPlaneCarrierPayload::PointDirection3 {
-                point,
-                direction,
-                tail,
-            } => (
-                0xc4,
-                8,
-                point
-                    .iter()
-                    .chain(direction)
-                    .chain(tail)
-                    .all(|value| value.is_finite()),
-            ),
-            CatiaConsolidatedPlaneCarrierPayload::PointTail { point, tail } => (
-                0xec,
-                6,
-                point.iter().chain(tail).all(|value| value.is_finite()),
-            ),
-            CatiaConsolidatedPlaneCarrierPayload::ScalarLane { values, .. } => (
-                carrier.payload.selector(),
-                values.len(),
-                !values.is_empty() && values.iter().all(|value| value.is_finite()),
-            ),
+            CatiaConsolidatedPlaneCarrierPayload::PointDirection2 { direction, .. } => {
+                (0xe4, 7, direction.iter().all(|value| value.is_finite()))
+            }
+            CatiaConsolidatedPlaneCarrierPayload::PointDirection3 { .. } => (0xc4, 8, true),
+            CatiaConsolidatedPlaneCarrierPayload::PointTail { .. } => (0xec, 6, true),
+            CatiaConsolidatedPlaneCarrierPayload::ScalarLane { values, .. } => {
+                (carrier.payload.selector(), values.len(), !values.is_empty())
+            }
         };
         let header_limit = 1u32 << (8 * u8::from(carrier.width));
         let scalar_count = u64::try_from(scalar_count).map_err(|_| {
@@ -498,28 +392,18 @@ pub(super) fn validate_consolidated_plane_carriers(
 pub(super) fn valid_consolidated_plane_geometry(
     payload: &CatiaConsolidatedPlaneCarrierPayload,
 ) -> bool {
-    let (point, direction, tail) = match payload {
+    let (direction, tail) = match payload {
         CatiaConsolidatedPlaneCarrierPayload::PointDirection2 {
-            point,
-            direction,
-            tail,
-        } => (*point, [direction[0], direction[1], 0.0], *tail),
+            direction, tail, ..
+        } => ([direction[0], direction[1], 0.0], tail.get()),
         CatiaConsolidatedPlaneCarrierPayload::PointDirection3 {
-            point,
-            direction,
-            tail,
-        } => (*point, *direction, *tail),
+            direction, tail, ..
+        } => (direction.get(), tail.get()),
         CatiaConsolidatedPlaneCarrierPayload::PointTail { .. } => return false,
         CatiaConsolidatedPlaneCarrierPayload::ScalarLane { .. } => return false,
     };
-    let finite = point
-        .iter()
-        .chain(direction.iter())
-        .chain(tail.iter())
-        .all(|value| value.is_finite());
     let norm = direction[0].hypot(direction[1]).hypot(direction[2]);
-    finite
-        && (norm - 1.0).abs() <= 1.0e-9
+    (norm - 1.0).abs() <= 1.0e-9
         && direction[2].abs() <= 1.0e-9
         && tail[0] > 0.0
         && tail[1] < tail[2]
@@ -548,8 +432,8 @@ pub(super) fn validate_consolidated_revolutions(
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for (index, revolution) in revolutions.iter().enumerate() {
         let mut profile_candidates = circles.iter().filter(|circle| {
-            circle.range[0].to_bits() == revolution.profile_range[0].to_bits()
-                && circle.range[1].to_bits() == revolution.profile_range[1].to_bits()
+            circle.range.lower().to_bits() == revolution.profile_range.lower().to_bits()
+                && circle.range.upper().to_bits() == revolution.profile_range.upper().to_bits()
         });
         let expected_profile = profile_candidates.next().and_then(|circle| {
             profile_candidates
@@ -558,50 +442,24 @@ pub(super) fn validate_consolidated_revolutions(
                 .then_some(circle.id.as_str())
         });
         let expected_id = format!("catia:consolidated:revolution#{index}");
-        let squared_length = |direction: [f64; 3]| {
-            direction
-                .iter()
-                .map(|component| component * component)
-                .sum::<f64>()
-        };
+        let direction_x = revolution.direction_x.get();
+        let direction_y = revolution.direction_y.get();
+        let axis = revolution.axis.get();
         let cross = [
-            revolution.direction_x[1] * revolution.direction_y[2]
-                - revolution.direction_x[2] * revolution.direction_y[1],
-            revolution.direction_x[2] * revolution.direction_y[0]
-                - revolution.direction_x[0] * revolution.direction_y[2],
-            revolution.direction_x[0] * revolution.direction_y[1]
-                - revolution.direction_x[1] * revolution.direction_y[0],
+            direction_x[1] * direction_y[2] - direction_x[2] * direction_y[1],
+            direction_x[2] * direction_y[0] - direction_x[0] * direction_y[2],
+            direction_x[0] * direction_y[1] - direction_x[1] * direction_y[0],
         ];
         if revolution.id != expected_id
             || revolution.profile_allocation_id == 0
-            || revolution
-                .origin
-                .iter()
-                .chain(&revolution.direction_x)
-                .chain(&revolution.direction_y)
-                .chain(&revolution.axis)
-                .chain(&revolution.angular_range)
-                .chain(&revolution.profile_range)
-                .chain(&[revolution.angular_scale])
-                .any(|value| !value.is_finite())
-            || revolution.angular_scale <= 0.0
-            || revolution.angular_range[0] >= revolution.angular_range[1]
-            || revolution.profile_range[0] >= revolution.profile_range[1]
             || revolution.profile_circle.as_deref() != expected_profile
-            || [
-                revolution.direction_x,
-                revolution.direction_y,
-                revolution.axis,
-            ]
-            .into_iter()
-            .any(|direction| (squared_length(direction) - 1.0).abs() > 1.0e-12)
             || cross
                 .iter()
-                .zip(revolution.axis)
+                .zip(axis)
                 .any(|(cross, axis)| (cross - axis).abs() > 1.0e-12)
-            || revolution.angular_range[0] / revolution.angular_scale != 0.5
-            || (revolution.angular_range[1] - revolution.angular_range[0])
-                / revolution.angular_scale
+            || revolution.angular_range.lower() / revolution.angular_scale.get() != 0.5
+            || (revolution.angular_range.upper() - revolution.angular_range.lower())
+                / revolution.angular_scale.get()
                 != std::f64::consts::TAU
             || index > 0 && revolutions[index - 1].byte_offset >= revolution.byte_offset
         {
@@ -618,20 +476,7 @@ pub(super) fn validate_consolidated_line_profiles(
     lines: &[CatiaConsolidatedLineProfile],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for (index, line) in lines.iter().enumerate() {
-        let squared_length = line
-            .direction
-            .iter()
-            .map(|component| component * component)
-            .sum::<f64>();
         if line.id != format!("catia:consolidated:line-profile#{index}")
-            || line
-                .origin
-                .iter()
-                .chain(&line.direction)
-                .chain(&line.range)
-                .any(|value| !value.is_finite())
-            || (squared_length - 1.0).abs() > 1.0e-12
-            || line.range[0] >= line.range[1]
             || index > 0 && lines[index - 1].byte_offset >= line.byte_offset
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
@@ -651,39 +496,25 @@ pub(super) fn validate_consolidated_spheres(
         let dot = |first: [f64; 3], second: [f64; 3]| {
             first[0] * second[0] + first[1] * second[1] + first[2] * second[2]
         };
+        let direction_x = sphere.direction_x.get();
+        let direction_y = sphere.direction_y.get();
+        let axis = sphere.axis.get();
         let cross = [
-            sphere.direction_x[1] * sphere.direction_y[2]
-                - sphere.direction_x[2] * sphere.direction_y[1],
-            sphere.direction_x[2] * sphere.direction_y[0]
-                - sphere.direction_x[0] * sphere.direction_y[2],
-            sphere.direction_x[0] * sphere.direction_y[1]
-                - sphere.direction_x[1] * sphere.direction_y[0],
+            direction_x[1] * direction_y[2] - direction_x[2] * direction_y[1],
+            direction_x[2] * direction_y[0] - direction_x[0] * direction_y[2],
+            direction_x[0] * direction_y[1] - direction_x[1] * direction_y[0],
         ];
         if sphere.id != expected_id
-            || sphere
-                .center
-                .iter()
-                .chain(&sphere.direction_x)
-                .chain(&sphere.direction_y)
-                .chain(&sphere.axis)
-                .chain(&sphere.azimuth_range)
-                .chain(&sphere.latitude_range)
-                .chain(&[sphere.radius])
-                .any(|value| !value.is_finite())
-            || [sphere.direction_x, sphere.direction_y, sphere.axis]
-                .into_iter()
-                .any(|direction| (dot(direction, direction) - 1.0).abs() > 1.0e-12)
-            || dot(sphere.direction_x, sphere.direction_y).abs() > 1.0e-12
-            || dot(sphere.direction_x, sphere.axis).abs() > 1.0e-12
-            || dot(sphere.direction_y, sphere.axis).abs() > 1.0e-12
+            || dot(direction_x, direction_y).abs() > 1.0e-12
+            || dot(direction_x, axis).abs() > 1.0e-12
+            || dot(direction_y, axis).abs() > 1.0e-12
             || cross
                 .iter()
-                .zip(sphere.axis)
+                .zip(axis)
                 .any(|(cross, axis)| (cross - axis).abs() > 1.0e-12)
-            || sphere.radius <= 0.0
             || !crate::analytic::sphere_angular_ranges_are_valid(
-                sphere.azimuth_range,
-                sphere.latitude_range,
+                sphere.azimuth_range.endpoints(),
+                sphere.latitude_range.endpoints(),
             )
             || index > 0 && spheres[index - 1].byte_offset >= sphere.byte_offset
         {
@@ -704,54 +535,30 @@ pub(super) fn validate_consolidated_tori(
         let dot = |first: [f64; 3], second: [f64; 3]| {
             first[0] * second[0] + first[1] * second[1] + first[2] * second[2]
         };
+        let direction_x = torus.direction_x.get();
+        let direction_y = torus.direction_y.get();
+        let axis = torus.axis.get();
         let cross = [
-            torus.direction_x[1] * torus.direction_y[2]
-                - torus.direction_x[2] * torus.direction_y[1],
-            torus.direction_x[2] * torus.direction_y[0]
-                - torus.direction_x[0] * torus.direction_y[2],
-            torus.direction_x[0] * torus.direction_y[1]
-                - torus.direction_x[1] * torus.direction_y[0],
+            direction_x[1] * direction_y[2] - direction_x[2] * direction_y[1],
+            direction_x[2] * direction_y[0] - direction_x[0] * direction_y[2],
+            direction_x[0] * direction_y[1] - direction_x[1] * direction_y[0],
         ];
         if torus.id != expected_id
-            || torus
-                .center
-                .iter()
-                .chain(&torus.direction_x)
-                .chain(&torus.direction_y)
-                .chain(&torus.axis)
-                .chain(&torus.major_angular_range)
-                .chain(&torus.major_angular_domain)
-                .chain(&torus.minor_angular_range)
-                .chain(&torus.minor_angular_domain)
-                .chain(&[
-                    torus.major_radius,
-                    torus.minor_radius,
-                    torus.major_scale,
-                    torus.minor_scale,
-                ])
-                .any(|value| !value.is_finite())
-            || [torus.direction_x, torus.direction_y, torus.axis]
-                .into_iter()
-                .any(|direction| (dot(direction, direction) - 1.0).abs() > 1.0e-12)
-            || dot(torus.direction_x, torus.direction_y).abs() > 1.0e-12
-            || dot(torus.direction_x, torus.axis).abs() > 1.0e-12
-            || dot(torus.direction_y, torus.axis).abs() > 1.0e-12
+            || dot(direction_x, direction_y).abs() > 1.0e-12
+            || dot(direction_x, axis).abs() > 1.0e-12
+            || dot(direction_y, axis).abs() > 1.0e-12
             || cross
                 .iter()
-                .zip(torus.axis)
+                .zip(axis)
                 .any(|(cross, axis)| (cross - axis).abs() > 1.0e-12)
-            || torus.major_radius <= 0.0
-            || torus.minor_radius <= 0.0
             || !crate::analytic::periodic_angular_range_is_valid(
-                torus.major_angular_range,
-                torus.major_angular_domain,
+                torus.major_angular_range.endpoints(),
+                torus.major_angular_domain.endpoints(),
             )
             || !crate::analytic::periodic_angular_range_is_valid(
-                torus.minor_angular_range,
-                torus.minor_angular_domain,
+                torus.minor_angular_range.endpoints(),
+                torus.minor_angular_domain.endpoints(),
             )
-            || torus.major_scale <= 0.0
-            || torus.minor_scale <= 0.0
             || index > 0 && tori[index - 1].byte_offset >= torus.byte_offset
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(

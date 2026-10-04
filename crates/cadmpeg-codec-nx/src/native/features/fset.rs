@@ -3,25 +3,25 @@
 
 use super::payload_content::FeaturePayloadContent;
 use super::{
-    offset_data_block_bytes, unique_offset_data_block, visit_feature_history_operation_records,
-    FeatureConstructionOwner, FeatureConstructionPayload,
+    charged_unique_offset_data_block, format_feature_history_id, offset_data_block_bytes,
+    visit_feature_history_operation_records, FeatureConstructionOwner, FeatureConstructionPayload,
 };
 use crate::container::Container;
 use crate::om::fset_references::{word_reference_bytes, FsetReferences};
+use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use std::fmt::Write;
 
 /// Exact two-group object-reference graph carried by an `FSET` payload.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureFsetReferenceGraphWire",
-    into = "FeatureFsetReferenceGraphWire"
-)]
-pub struct FeatureFsetReferenceGraph {
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureFsetReferenceGraphWire")]
+pub(in crate::native) struct FeatureFsetReferenceGraph {
     /// Globally unique graph identity.
-    pub id: String,
+    pub(in crate::native) id: String,
     /// Owning `FSET` operation label.
-    pub operation_label: String,
-    pub references: FsetReferences<Option<String>>,
+    pub(in crate::native) operation_label: String,
+    references: FsetReferences<Option<String>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -52,6 +52,50 @@ struct FeatureFsetReferenceGraphWire {
     second_source_offsets: [u64; 3],
 }
 
+impl Serialize for FeatureFsetReferenceGraph {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let first = self.references.first();
+        let second = self.references.second();
+        let mut wire = serializer.serialize_map(None)?;
+        wire.serialize_entry("id", &self.id)?;
+        wire.serialize_entry("operation_label", &self.operation_label)?;
+        wire.serialize_entry("selector", self.references.selector())?;
+        wire.serialize_entry(
+            "first_object_indices",
+            &first.each_ref().map(|(index, _)| u32::from(*index)),
+        )?;
+        wire.serialize_entry(
+            "raw_first_object_indices",
+            &first
+                .each_ref()
+                .map(|(index, _)| word_reference_bytes(*index)),
+        )?;
+        wire.serialize_entry(
+            "first_data_blocks",
+            &first.each_ref().map(|(_, target)| target.as_deref()),
+        )?;
+        wire.serialize_entry(
+            "second_object_indices",
+            &second.each_ref().map(|(index, _)| u32::from(*index)),
+        )?;
+        wire.serialize_entry(
+            "raw_second_object_indices",
+            &second
+                .each_ref()
+                .map(|(index, _)| word_reference_bytes(*index)),
+        )?;
+        wire.serialize_entry(
+            "second_data_blocks",
+            &second.each_ref().map(|(_, target)| target.as_deref()),
+        )?;
+        wire.serialize_entry("source_offset", &self.references.offset())?;
+        wire.serialize_entry("first_source_offsets", &self.references.first_offsets())?;
+        wire.serialize_entry("second_source_offsets", &self.references.second_offsets())?;
+        wire.end()
+    }
+}
+
+#[cfg(test)]
 impl From<FeatureFsetReferenceGraph> for FeatureFsetReferenceGraphWire {
     fn from(value: FeatureFsetReferenceGraph) -> Self {
         Self {
@@ -143,7 +187,7 @@ impl TryFrom<FeatureFsetReferenceGraphWire> for FeatureFsetReferenceGraph {
 /// Serialized reference group selecting one logical `FSET` construction payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum FeatureFsetReferenceGroup {
+pub(in crate::native) enum FeatureFsetReferenceGroup {
     /// Two-reference group inside the byte-counted angle-bracket frame.
     First,
     /// Three-reference group following the angle-bracket frame.
@@ -152,95 +196,304 @@ pub enum FeatureFsetReferenceGroup {
 
 /// Decode and resolve exact `FSET` reference graphs without assigning semantic
 /// roles to either reference group.
-pub fn feature_fset_reference_graphs(container: &Container) -> Vec<FeatureFsetReferenceGraph> {
-    let indexed = container.indexed_om_sections();
+pub(in crate::native) fn feature_fset_reference_graphs(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    container: &Container,
+) -> Result<Vec<FeatureFsetReferenceGraph>, cadmpeg_core::CodecError> {
+    let indexed = container.indexed_om_sections(ctx)?;
     let mut graphs = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(graph) = FsetReferences::read(record.payload_view()) else {
+            if failure.is_some() {
                 return;
-            };
-            let Ok(references) = graph.resolve(entry_offset, |index| {
-                unique_offset_data_block(&indexed, u32::from(index))
-            }) else {
-                return;
-            };
-            let operation_label =
-                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
-            graphs.push(FeatureFsetReferenceGraph {
-                id: format!(
-                    "nx:feature-history:fset-reference-graph#{section_key}-{operation_ordinal:010}"
-                ),
-                operation_label,
-                references,
-            });
+            }
+            let projected =
+                (|| -> Result<Option<FeatureFsetReferenceGraph>, cadmpeg_core::CodecError> {
+                    let Some(graph) = FsetReferences::read(record.payload_view()) else {
+                        return Ok(None);
+                    };
+                    let Some(references) = graph.resolve(entry_offset, |index| {
+                        charged_unique_offset_data_block(ctx, &indexed, u32::from(index))
+                    })?
+                    else {
+                        return Ok(None);
+                    };
+                    let id = format_feature_history_id(
+                        ctx,
+                        "fset-reference-graph",
+                        section_key,
+                        operation_ordinal,
+                        None,
+                    )?;
+                    let operation_label = format_feature_history_id(
+                        ctx,
+                        "operation-label",
+                        section_key,
+                        operation_ordinal,
+                        None,
+                    )?;
+                    ctx.reserve_vec(&mut graphs, 1, "NX FSET reference graphs")?;
+                    Ok(Some(FeatureFsetReferenceGraph {
+                        id,
+                        operation_label,
+                        references,
+                    }))
+                })();
+            match projected {
+                Ok(Some(graph)) => graphs.push(graph),
+                Ok(None) => {}
+                Err(error) => failure = Some(error),
+            }
         },
-    );
-    graphs
+    )?;
+    if let Some(error) = failure {
+        return Err(error);
+    }
+    Ok(graphs)
 }
 
 /// Reconstruct the two ordered logical payloads selected by each complete
 /// same-store `FSET` reference graph.
-pub fn feature_fset_construction_payloads(
+pub(in crate::native) fn feature_fset_construction_payloads(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     graphs: &[FeatureFsetReferenceGraph],
-) -> Vec<FeatureConstructionPayload> {
-    let blocks = offset_data_block_bytes(container);
-    graphs
-        .iter()
-        .flat_map(|graph| {
-            let blocks = &blocks;
-            [
-                (
-                    FeatureFsetReferenceGroup::First,
-                    graph.references.first().iter(),
-                ),
-                (
-                    FeatureFsetReferenceGroup::Second,
-                    graph.references.second().iter(),
-                ),
-            ]
-            .into_iter()
-            .filter_map(move |(group, source_blocks)| {
-                let data_blocks = source_blocks
-                    .map(|(_, target)| target.clone())
-                    .collect::<Option<Vec<_>>>()?;
-                let store = data_blocks.first()?.rsplit_once(":block#")?.0;
-                if data_blocks.iter().any(|block| {
-                    block
-                        .rsplit_once(":block#")
-                        .is_none_or(|(prefix, _)| prefix != store)
-                }) {
-                    return None;
-                }
-                let (_, content) = FeaturePayloadContent::from_source(data_blocks, blocks)?;
-                let group_name = match group {
-                    FeatureFsetReferenceGroup::First => "first",
-                    FeatureFsetReferenceGroup::Second => "second",
-                };
-                let operation_key = graph
-                    .operation_label
-                    .strip_prefix("nx:feature-history:operation-label#")?;
-                Some(FeatureConstructionPayload {
-                    id: format!(
-                        "nx:feature-history:fset-construction-payload#{operation_key}-{group_name}"
-                    ),
-                    operation_label: graph.operation_label.clone(),
-                    owner: FeatureConstructionOwner::Fset {
-                        reference_graph: graph.id.clone(),
-                        group,
-                    },
-                    content,
-                })
-            })
-        })
-        .collect()
+) -> Result<Vec<FeatureConstructionPayload>, cadmpeg_core::CodecError> {
+    let blocks = offset_data_block_bytes(ctx, container)?;
+    let mut output = Vec::new();
+    for graph in graphs {
+        for (group, source_blocks) in [
+            (
+                FeatureFsetReferenceGroup::First,
+                graph.references.first().as_slice(),
+            ),
+            (
+                FeatureFsetReferenceGroup::Second,
+                graph.references.second().as_slice(),
+            ),
+        ] {
+            let Some(payload) =
+                fset_construction_payload_from_group(ctx, graph, group, source_blocks, &blocks)?
+            else {
+                continue;
+            };
+            ctx.reserve_vec(&mut output, 1, "NX FSET construction payloads")?;
+            output.push(payload);
+        }
+    }
+    Ok(output)
+}
+
+fn fset_construction_payload_from_group(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    graph: &FeatureFsetReferenceGraph,
+    group: FeatureFsetReferenceGroup,
+    source_blocks: &[(u16, Option<String>)],
+    blocks: &BTreeMap<String, (&[u8], u64)>,
+) -> Result<Option<FeatureConstructionPayload>, cadmpeg_core::CodecError> {
+    if source_blocks.iter().any(|(_, target)| target.is_none()) {
+        return Ok(None);
+    }
+
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(source_blocks.len()),
+        "NX FSET source block references",
+    )?;
+    let mut source_reservation = ctx.reserve_scoped(0, "NX FSET source block references")?;
+    let mut data_blocks = Vec::new();
+    source_reservation.with_storage(|| {
+        ctx.reserve_capacity(
+            &mut data_blocks,
+            source_blocks.len(),
+            "allocate NX FSET source block references",
+        )
+    })?;
+    for (_, target) in source_blocks {
+        let Some(block) = target else {
+            return Ok(None);
+        };
+        let mut id = String::new();
+        ctx.try_reserve_retained_text(
+            &mut id,
+            block.len(),
+            "allocate NX FSET source block reference",
+        )?;
+        id.push_str(block);
+        data_blocks.push(id);
+    }
+    let Some(store) = data_blocks
+        .first()
+        .and_then(|id| id.rsplit_once(":block#").map(|(store, _)| store))
+    else {
+        return Ok(None);
+    };
+    if data_blocks.iter().any(|block| {
+        block
+            .rsplit_once(":block#")
+            .is_none_or(|(prefix, _)| prefix != store)
+    }) {
+        return Ok(None);
+    }
+    let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, blocks)? else {
+        return Ok(None);
+    };
+    let group_name = match group {
+        FeatureFsetReferenceGroup::First => "first",
+        FeatureFsetReferenceGroup::Second => "second",
+    };
+    let Some(operation_key) = graph
+        .operation_label
+        .strip_prefix("nx:feature-history:operation-label#")
+    else {
+        return Ok(None);
+    };
+    let prefix = "nx:feature-history:fset-construction-payload#";
+    let id_len = prefix
+        .len()
+        .checked_add(operation_key.len())
+        .and_then(|length| length.checked_add(1 + group_name.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX FSET construction identity", 0, 1))?;
+    let mut id = ctx.retained_string(id_len, "NX FSET construction identity")?;
+    write!(&mut id, "{prefix}{operation_key}-{group_name}")
+        .map_err(|_| ctx.refuse_codec_limit("write NX FSET construction identity", 0, 1))?;
+    Ok(Some(FeatureConstructionPayload {
+        id,
+        operation_label: ctx
+            .copy_retained_text(&graph.operation_label, "NX FSET construction operation")?,
+        owner: FeatureConstructionOwner::Fset {
+            reference_graph: ctx.copy_retained_text(&graph.id, "NX FSET construction reference")?,
+            group,
+        },
+        content,
+    }))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::FeatureFsetReferenceGraph;
+    use super::{FeatureFsetReferenceGraph, FeatureFsetReferenceGraphWire};
+    use cadmpeg_core::CodecError;
+    use std::collections::BTreeMap;
+
+    fn fset_construction_fixture() -> (
+        FeatureFsetReferenceGraph,
+        BTreeMap<String, (&'static [u8], u64)>,
+    ) {
+        let graph = serde_json::from_str(r#"{"id":"graph","operation_label":"nx:feature-history:operation-label#0-0000000001","selector":"s","first_object_indices":[1,2],"raw_first_object_indices":[[144,0,1],[144,0,2]],"first_data_blocks":["nx:om-data-blocks-0:block#1","nx:om-data-blocks-0:block#2"],"second_object_indices":[3,4,5],"raw_second_object_indices":[[144,0,3],[144,0,4],[144,0,5]],"second_data_blocks":["nx:om-data-blocks-0:block#3","nx:om-data-blocks-0:block#4","nx:om-data-blocks-0:block#5"],"source_offset":10,"first_source_offsets":[14,17],"second_source_offsets":[21,24,27]}"#)
+            .expect("complete FSET graph");
+        let blocks = (1u32..=5)
+            .map(|ordinal| {
+                (
+                    format!("nx:om-data-blocks-0:block#{ordinal}"),
+                    (b"A".as_slice(), u64::from(ordinal)),
+                )
+            })
+            .collect();
+        (graph, blocks)
+    }
+
+    fn fset_construction_limit_error(
+        configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+    ) -> CodecError {
+        let (graph, blocks) = fset_construction_fixture();
+
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                configure(policy);
+            },
+            |ctx| {
+                super::fset_construction_payload_from_group(
+                    ctx,
+                    &graph,
+                    super::FeatureFsetReferenceGroup::First,
+                    graph.references.first().as_slice(),
+                    &blocks,
+                )
+                .expect_err("FSET construction limit refusal")
+            },
+        )
+    }
+
+    #[test]
+    fn fset_construction_refuses_collection_limit() {
+        let error = fset_construction_limit_error(|policy| policy.limits.max_collection_items = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+    }
+
+    #[test]
+    fn fset_construction_refuses_scoped_limit() {
+        let error =
+            fset_construction_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+    }
+
+    #[test]
+    fn fset_construction_refuses_retained_limit() {
+        let error = fset_construction_limit_error(|policy| policy.limits.max_retained_bytes = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+    }
+
+    #[test]
+    fn fset_construction_refuses_work_limit() {
+        let error = fset_construction_limit_error(|policy| policy.limits.max_work_units = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+    }
+
+    #[test]
+    fn fset_construction_preserves_first_and_second_source_groups() {
+        let (graph, blocks) = fset_construction_fixture();
+
+        crate::test_support::with_decode_context(|ctx| {
+            for (group, source_blocks, expected_count, first_id) in [
+                (
+                    super::FeatureFsetReferenceGroup::First,
+                    graph.references.first().as_slice(),
+                    2,
+                    "nx:om-data-blocks-0:block#1",
+                ),
+                (
+                    super::FeatureFsetReferenceGroup::Second,
+                    graph.references.second().as_slice(),
+                    3,
+                    "nx:om-data-blocks-0:block#3",
+                ),
+            ] {
+                let payload = super::fset_construction_payload_from_group(
+                    ctx,
+                    &graph,
+                    group,
+                    source_blocks,
+                    &blocks,
+                )
+                .expect("admitted source blocks")
+                .expect("complete FSET payload");
+                assert_eq!(payload.content.blocks().len(), expected_count);
+                assert_eq!(payload.content.blocks()[0].id, first_id);
+            }
+        });
+    }
+
+    #[test]
+    fn fset_reference_borrowed_wire_matches_owned_bytes_and_retained_limit() {
+        let json = r#"{"id":"nx:feature:fset-reference#0","operation_label":"o","selector":"s","first_object_indices":[1,2],"raw_first_object_indices":[[144,0,1],[144,0,2]],"first_data_blocks":["a",null],"second_object_indices":[3,4,5],"raw_second_object_indices":[[144,0,3],[144,0,4],[144,0,5]],"second_data_blocks":[null,"d","e"],"source_offset":10,"first_source_offsets":[14,17],"second_source_offsets":[21,24,27]}"#;
+        let record: FeatureFsetReferenceGraph = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
+        assert_eq!(
+            serde_json::to_vec(&record).unwrap(),
+            serde_json::to_vec(&FeatureFsetReferenceGraphWire::from(record.clone())).unwrap()
+        );
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::from_str::<serde_json::Value>(json).unwrap(),
+        );
+    }
 
     #[test]
     fn fset_wire_requires_fixed_words_and_selector_framed_positions(

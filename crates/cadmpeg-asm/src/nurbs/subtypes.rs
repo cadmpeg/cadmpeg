@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Subtype reference tables, intcurve subtype classification, and token walkers.
+//! Byte-scope ownership, intcurve subtype classification, and token walkers.
 
 use crate::kernel_header::RefWidth;
-use crate::sab::{int_le_at, Record};
+use crate::sab::int_le_at;
 use cadmpeg_core::decode::View;
 
 /// Modern and legacy spellings of the same intcurve construction.
-pub(crate) const INTCURVE_ALIASES: &[(&str, &str)] = &[
+pub(super) const INTCURVE_ALIASES: &[(&str, &str)] = &[
     ("blend_int_cur", "bldcur"),
     ("spring_int_cur", "blndsprngcur"),
     ("exact_int_cur", "exactcur"),
@@ -27,7 +27,9 @@ pub(crate) const INTCURVE_ALIASES: &[(&str, &str)] = &[
 /// `0x0f` openings at the outermost nesting level, in stream order, `ref`
 /// included. A definition inside a nested scope belongs to that scope's
 /// construction, not to `bytes`.
-pub(crate) fn owned_subtype_defs(bytes: &[u8], int_width: RefWidth) -> Vec<(usize, &[u8])> {
+///
+/// A `0x10` with no open scope is a malformed stream and is refused.
+pub(super) fn owned_subtype_defs(bytes: &[u8], int_width: RefWidth) -> Option<Vec<(usize, &[u8])>> {
     let mut owned = Vec::new();
     let mut depth = 0usize;
     let mut pos = 0usize;
@@ -35,14 +37,17 @@ pub(crate) fn owned_subtype_defs(bytes: &[u8], int_width: RefWidth) -> Vec<(usiz
         match bytes[pos] {
             0x0f => {
                 if depth == 0 && matches!(bytes.get(pos + 1), Some(0x0d | 0x0e)) {
-                    let len = usize::from(*bytes.get(pos + 2).unwrap_or(&0));
-                    if let Some(name) = bytes.get(pos + 3..pos + 3 + len) {
-                        owned.push((pos, name));
+                    // A stream that ends at the name-length byte states no
+                    // name at all, which is not a name of zero bytes.
+                    if let Some(&len) = bytes.get(pos + 2) {
+                        if let Some(name) = bytes.get(pos + 3..pos + 3 + usize::from(len)) {
+                            owned.push((pos, name));
+                        }
                     }
                 }
                 depth += 1;
             }
-            0x10 => depth = depth.saturating_sub(1),
+            0x10 => depth = depth.checked_sub(1)?,
             _ => {}
         }
         match next_token(bytes, pos, int_width) {
@@ -50,7 +55,7 @@ pub(crate) fn owned_subtype_defs(bytes: &[u8], int_width: RefWidth) -> Vec<(usiz
             None => break,
         }
     }
-    owned
+    Some(owned)
 }
 
 /// Byte offset of the first subtype definition `bytes` owns whose name matches
@@ -62,12 +67,12 @@ pub(crate) fn owned_subtype_defs(bytes: &[u8], int_width: RefWidth) -> Vec<(usiz
 /// embeds a variable blend, a variable blend embeds an extrusion — so a decoder
 /// that accepted any matching marker anywhere in the record would claim records
 /// belonging to the construction that encloses it.
-pub(crate) fn find_owned_subtype_marker<'n>(
+pub(super) fn find_owned_subtype_marker<'n>(
     bytes: &[u8],
     names: &[&'n [u8]],
     int_width: RefWidth,
 ) -> Option<(usize, &'n [u8])> {
-    let owned = owned_subtype_defs(bytes, int_width);
+    let owned = owned_subtype_defs(bytes, int_width)?;
     names.iter().copied().find_map(|name| {
         owned
             .iter()
@@ -79,7 +84,7 @@ pub(crate) fn find_owned_subtype_marker<'n>(
 /// Byte offset and name length of the `intcurve` subtype definition `bytes`
 /// owns, given the subtype's modern name. The legacy spelling of the same
 /// construction is accepted as a second candidate.
-pub(crate) fn find_owned_intcurve_subtype(
+pub(super) fn find_owned_intcurve_subtype(
     bytes: &[u8],
     modern: &[u8],
     int_width: RefWidth,
@@ -97,165 +102,40 @@ pub(crate) fn find_owned_intcurve_subtype(
     found.map(|(marker, name)| (marker, name.len()))
 }
 
-pub(crate) fn decode_cache_resolving_refs<T>(
-    bytes: &[u8],
-    active_bytes: &[u8],
-    tables: &SubtypeTables,
-    seen: &mut Vec<usize>,
-    decode_inline: fn(&[u8], RefWidth) -> Option<T>,
-    int_width: RefWidth,
-) -> Option<T> {
-    if let Some(decoded) = decode_inline(bytes, int_width) {
-        return Some(decoded);
-    }
-    let table = tables.for_width(int_width);
-    for index in subtype_refs(bytes, int_width) {
-        if seen.contains(&index) {
-            continue;
-        }
-        let target = *table.get(index)?;
-        seen.push(index);
-        if let Some(decoded) = decode_cache_resolving_refs(
-            subtype_span(active_bytes, target, int_width)?,
-            active_bytes,
-            tables,
-            seen,
-            decode_inline,
-            int_width,
-        ) {
-            return Some(decoded);
-        }
-    }
-    None
-}
-
-/// Byte positions of the stream's subtype definitions, one table per candidate
-/// integer width.
+/// A balanced subtype scope in byte space.
 ///
-/// A subtype definition opens as `0x0f` followed by a `0x0d`/`0x0e` name token
-/// other than `ref`; the table indexes definitions in stream order. Definition
-/// openings are recognized only at token boundaries — the same byte pattern
-/// inside an `f64` payload is data, not a definition — so the table is built by
-/// token-walking the framed records, not by scanning raw bytes.
-pub struct SubtypeTables {
-    eight: Vec<usize>,
-    four: Vec<usize>,
-}
+/// [`subtype_span`] is the only constructor: the field is private and the type
+/// has no `From` and no `Deref`. Every value therefore states one scope that
+/// tokenizes end to end at the width it was walked at, whose every `0x10` has a
+/// matching `0x0f` within the span, and whose final token is the close that
+/// balances it. The owned-marker walk is total over this type.
+///
+/// The field is not reachable from another module:
+///
+/// ```compile_fail
+/// use cadmpeg_asm::nurbs::subtypes::SubtypeScope;
+///
+/// let bytes = [0x0fu8, 0x10];
+/// let scope = SubtypeScope(&bytes[..]);
+/// ```
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SubtypeScope<'a>(&'a [u8]);
 
-impl SubtypeTables {
-    /// Build the tables by token-walking each framed record of `bytes`.
-    pub fn from_records(records: &[Record], bytes: &[u8]) -> Self {
-        let build = |walk_width| {
-            let mut table = Vec::new();
-            for record in records {
-                collect_defs_in_span(
-                    bytes,
-                    record.offset,
-                    record.offset + record.len,
-                    walk_width,
-                    &mut table,
-                );
-            }
-            table
-        };
-        Self {
-            eight: build(RefWidth::Eight),
-            four: build(RefWidth::Four),
-        }
+impl<'a> SubtypeScope<'a> {
+    /// The scope's bytes, both delimiters included.
+    pub fn bytes(&self) -> &'a [u8] {
+        self.0
     }
-
-    /// Build the tables by token-walking `bytes` as one contiguous token run.
-    pub fn from_stream(bytes: &[u8]) -> Self {
-        let build = |walk_width| {
-            let mut table = Vec::new();
-            collect_defs_in_span(bytes, 0, bytes.len(), walk_width, &mut table);
-            table
-        };
-        Self {
-            eight: build(RefWidth::Eight),
-            four: build(RefWidth::Four),
-        }
-    }
-
-    /// The table built for the specified stream width.
-    pub fn for_width(&self, int_width: RefWidth) -> &[usize] {
-        match int_width {
-            RefWidth::Eight => &self.eight,
-            RefWidth::Four => &self.four,
-        }
-    }
-
-    /// Return the table index assigned to an absolute subtype-definition offset,
-    /// for tests.
-    pub fn index_of_offset(&self, int_width: RefWidth, offset: usize) -> Option<usize> {
-        self.for_width(int_width)
-            .iter()
-            .position(|candidate| *candidate == offset)
-    }
-}
-
-/// Append the token-boundary subtype-definition openings in
-/// `bytes[start..end]` to `table`. Stops at the first unwalkable token.
-fn collect_defs_in_span(
-    bytes: &[u8],
-    start: usize,
-    end: usize,
-    int_width: RefWidth,
-    table: &mut Vec<usize>,
-) {
-    let end = end.min(bytes.len());
-    let mut pos = start;
-    while pos < end {
-        if bytes[pos] == 0x0f && matches!(bytes.get(pos + 1), Some(0x0d | 0x0e)) {
-            let len = usize::from(*bytes.get(pos + 2).unwrap_or(&0));
-            if let Some(name) = bytes.get(pos + 3..pos + 3 + len) {
-                if name != b"ref" {
-                    table.push(pos);
-                }
-            }
-        }
-        match next_token(bytes, pos, int_width) {
-            Some(next) => pos = next,
-            None => return,
-        }
-    }
-}
-
-/// Subtype-table reference indices in `bytes`, in token order. References are
-/// recognized only at token boundaries, mirroring [`SubtypeTables`].
-pub(crate) fn subtype_refs(bytes: &[u8], int_width: RefWidth) -> Vec<usize> {
-    let mut refs = Vec::new();
-    let marker = b"\x0f\x0d\x03ref\x04";
-    let mut pos = 0usize;
-    while pos < bytes.len() {
-        if bytes[pos..].starts_with(marker) {
-            if let Some(index) = int_le_at(bytes, pos + marker.len(), int_width) {
-                if index >= 0 {
-                    refs.push(index as usize);
-                }
-            }
-        } else if bytes.get(pos) == Some(&0x0f)
-            && bytes.get(pos + 1) == Some(&0x04)
-            && bytes.get(pos + 2 + int_width.bytes()) == Some(&0x10)
-        {
-            if let Some(index) = int_le_at(bytes, pos + 2, int_width) {
-                if index >= 0 {
-                    refs.push(index as usize);
-                }
-            }
-        }
-        match next_token(bytes, pos, int_width) {
-            Some(next) => pos = next,
-            None => break,
-        }
-    }
-    refs
 }
 
 /// The byte span of the subtype definition that opens at `start`: from its
 /// `0x0f` opening through the matching `0x10` close, nested definitions
 /// included.
-pub fn subtype_span(bytes: &[u8], start: usize, int_width: RefWidth) -> Option<&[u8]> {
+///
+/// `None` unless the byte at `start` is `0x0f`. A definition opens at its own
+/// `0x0f`, so a `start` that names another byte names no definition.
+pub fn subtype_span(bytes: &[u8], start: usize, int_width: RefWidth) -> Option<SubtypeScope<'_>> {
+    (bytes.get(start) == Some(&0x0f)).then_some(())?;
     let mut depth = 0usize;
     let mut pos = start;
     while pos < bytes.len() {
@@ -264,7 +144,7 @@ pub fn subtype_span(bytes: &[u8], start: usize, int_width: RefWidth) -> Option<&
             0x10 => {
                 depth = depth.checked_sub(1)?;
                 if depth == 0 {
-                    return bytes.get(start..=pos);
+                    return bytes.get(start..=pos).map(SubtypeScope);
                 }
             }
             _ => {}
@@ -278,7 +158,7 @@ pub fn subtype_span(bytes: &[u8], start: usize, int_width: RefWidth) -> Option<&
 /// unrecognized or its payload runs past the end. `0x04`, `0x0c` and `0x15`
 /// carry an `int_width` payload; `0x09` and `0x12` carry an `int_width` string
 /// length prefix, unlike the one- and two-byte prefixes of `0x07` and `0x08`.
-pub(crate) fn next_token(bytes: &[u8], pos: usize, int_width: RefWidth) -> Option<usize> {
+pub(super) fn next_token(bytes: &[u8], pos: usize, int_width: RefWidth) -> Option<usize> {
     let tag = *bytes.get(pos)?;
     let fixed = match tag {
         0x02 => 2,
@@ -303,7 +183,8 @@ pub(crate) fn next_token(bytes: &[u8], pos: usize, int_width: RefWidth) -> Optio
 
 #[cfg(test)]
 mod ownership_tests {
-    use super::*;
+    use super::{find_owned_intcurve_subtype, subtype_span};
+    use crate::kernel_header::RefWidth;
 
     /// A subtype definition opening: `0x0f`, name token, length, name bytes.
     fn open(bytes: &mut Vec<u8>, name: &[u8]) {
@@ -318,6 +199,10 @@ mod ownership_tests {
     /// intersection belongs to the construction the record embeds.
     #[test]
     fn a_nested_intcurve_construction_does_not_own_the_record() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         for int_width in [RefWidth::Four, RefWidth::Eight] {
             let mut bytes = Vec::new();
             open(&mut bytes, b"defm_int_cur");
@@ -336,12 +221,56 @@ mod ownership_tests {
                 None
             );
             assert_eq!(
-                crate::nurbs::toks::owned_construction_subtype(&crate::nurbs::toks::lex_test_span(
-                    &bytes, int_width
-                ))
+                crate::nurbs::toks::owned_construction_subtype(
+                    &ctx,
+                    &crate::nurbs::toks::lex_test_span(&bytes, int_width)
+                        .expect("valid single-record byte fixture")
+                )
+                .transpose()
+                .unwrap()
                 .as_deref(),
                 Some("defm_int_cur")
             );
+        }
+    }
+
+    /// A byte scope answers its owned markers with no refusal to answer: the
+    /// call binds a `Vec<usize>` directly, because `subtype_span` has already
+    /// proven the balance the raw-stream walk refuses.
+    #[test]
+    fn a_byte_scope_yields_its_owned_markers_with_no_refusal_to_answer() {
+        for int_width in [RefWidth::Four, RefWidth::Eight] {
+            let mut bytes = Vec::new();
+            open(&mut bytes, b"exact_int_cur");
+            let owned_marker = bytes.len();
+            bytes.extend_from_slice(b"\x0d\x04nubs");
+            open(&mut bytes, b"ref");
+            bytes.extend_from_slice(b"\x0d\x05nurbs");
+            bytes.push(0x10);
+            bytes.push(0x10);
+
+            let scope = subtype_span(&bytes, 0, int_width).expect("balanced scope");
+            let owned: Vec<usize> = scope.owned_marker_positions(int_width);
+            assert_eq!(owned, vec![owned_marker]);
+            assert_eq!(scope.bytes(), bytes.as_slice());
+        }
+    }
+
+    /// A definition opens at its own `0x0f`. A start that names another byte
+    /// names no definition.
+    #[test]
+    fn a_byte_span_that_does_not_open_at_start_is_not_a_scope() {
+        for int_width in [RefWidth::Four, RefWidth::Eight] {
+            let mut bytes = vec![0x0du8, 0x01, b'x'];
+            let open_at = bytes.len();
+            open(&mut bytes, b"exact_int_cur");
+            bytes.push(0x10);
+
+            assert_eq!(subtype_span(&bytes, 0, int_width), None);
+            assert_eq!(subtype_span(&bytes, 1, int_width), None);
+            assert_eq!(subtype_span(&bytes, bytes.len(), int_width), None);
+            let scope = subtype_span(&bytes, open_at, int_width).expect("balanced scope");
+            assert_eq!(scope.bytes(), &bytes[open_at..]);
         }
     }
 }

@@ -34,9 +34,9 @@
 //!
 //! Decode reports can accompany a usable model. Untyped support carriers become
 //! opaque geometry linked to retained bytes, while their resolvable topology
-//! remains in the IR. Failure to build a Parasolid graph yields a metadata-only
-//! IR with blocking diagnostics. Set [`DecodeOptions::container_only`] to request
-//! that result without attempting geometry.
+//! remains in the IR. No usable geometry yields metadata with diagnostics.
+//! Set [`DecodeOptions::container_only`] to omit geometry decoding explicitly.
+//! Semantic Parasolid graph errors propagate as decode errors.
 //!
 //! [`Codec::inspect`] inventories the outer blocks, section directory, cache
 //! cells, payload families, and Parasolid schemas. It does not build model
@@ -47,8 +47,9 @@
 //! The outer container uses an 8-byte header, CRC-validated raw-DEFLATE blocks,
 //! a fixed-cell section index, and a tail directory. Embedded Parasolid
 //! `partition` and `deltas` streams supply the B-rep record graph. The decoder
-//! groups related body streams by site, selects the richest resulting B-rep,
-//! and merges alternate sites as configuration-specific bodies. Parasolid
+//! groups related body streams by site and selects the resolved active site.
+//! Without a resolved active site, the first site is a deterministic merge
+//! accumulator. Alternate sites become configuration-specific bodies. Parasolid
 //! lengths are metres; decoded `CadIr` coordinates are millimetres. Directions,
 //! normals, and ratios remain dimensionless.
 //!
@@ -58,18 +59,19 @@
 //! use std::fs::File;
 //!
 //! use cadmpeg_codec_sldprt::SldprtCodec;
-//! use cadmpeg_ir::codec::write::TargetRequest;
+//! use cadmpeg_ir::codec::write::target::TargetRequest;
 //! use cadmpeg_ir::codec::write::Encoder;
 //! use cadmpeg_ir::{Codec, DecodeOptions};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let mut input = File::open("part.sldprt")?;
 //! let decoded = SldprtCodec.decode(&mut input, &DecodeOptions::default())?;
+//! let (ir, _report, fidelity) = decoded.into_parts();
 //! let mut output = File::create("part-edited.sldprt")?;
 //! SldprtCodec
 //!     .plan(cadmpeg_ir::codec::write::EncodeInput {
-//!         ir: decoded.ir(),
-//!         fidelity: Some(decoded.source_fidelity()),
+//!         ir: &ir,
+//!         fidelity: Some(&fidelity),
 //!     }, TargetRequest::Inherit)?
 //!     .write_to(&mut output)?;
 //! # Ok(())
@@ -98,24 +100,24 @@
 
 mod annotations;
 mod appearance;
-pub(crate) mod brep;
+mod brep;
 mod classification;
-pub(crate) mod container;
-pub(crate) mod decode;
+mod container;
+mod decode;
 mod dialect;
 mod feature_schema;
 #[doc(hidden)]
 pub mod fuzz;
 mod history;
+mod lane_refusal;
 /// Byte-offset constants generated from `docs/layouts/sldprt.toml`.
-pub(crate) mod layout;
-#[allow(dead_code)] // Loss catalog is consumed by the writer and hidden facade.
-pub(crate) mod loss;
+mod layout;
+mod loss;
 mod metadata;
 mod native;
-pub(crate) mod parasolid;
+mod parasolid;
 mod pmi;
-pub(crate) mod records;
+mod records;
 mod resolved_features;
 mod swift;
 mod tessellation;
@@ -130,17 +132,25 @@ use cadmpeg_ir::ContainerSummary;
 use std::io::Write;
 
 use cadmpeg_ir::codec::write::{
-    Catalog, Consumption, EncodeInput, EncoderBackend, ExportBody, PatchConsumption, ResolvedWrite,
-    WritePath,
+    target::{Catalog, ResolvedWrite},
+    Consumption, EncodeInput, EncoderBackend, ExportBody, PatchConsumption, WritePath,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE;
 use cadmpeg_ir::ids::UnknownId;
-use cadmpeg_ir::{Annotations, Finding, SourceFidelity};
+use cadmpeg_ir::{report::check::Finding, Annotations, SourceFidelity};
 
 /// Retained-record id of the whole source part, the byte-replay baseline.
 const SOURCE_IMAGE_ID: &str = "sldprt:file:source-image#0";
+
+/// The identity of the retained source image, composed from its literal parts.
+fn source_image_id() -> UnknownId {
+    UnknownId::compose(
+        &cadmpeg_ir::identity_namespace!("sldprt", "file", "source-image"),
+        cadmpeg_ir::identity_key!("0"),
+    )
+}
 
 /// Codec for `SolidWorks` `.sldprt` part documents.
 #[derive(Debug, Default, Clone, Copy)]
@@ -150,7 +160,7 @@ pub struct SldprtCodec;
 /// source-fidelity sidecar throughout export.
 struct SourceRecord<'a> {
     id: UnknownId,
-    sha256: &'a str,
+    sha256: String,
     data: Option<&'a [u8]>,
 }
 
@@ -188,7 +198,7 @@ impl SldprtCodec {
                 writer,
             );
         };
-        if decode::document_local_sha256(ir) != *expected {
+        if decode::document_local_sha256(ir)? != *expected {
             return Self::write_semantic(
                 ir,
                 annotations,
@@ -233,6 +243,29 @@ impl SldprtCodec {
         writer: &mut dyn Write,
     ) -> Result<Written, CodecError> {
         let dialect = writer::write_semantic_with_records(ir, annotations, records, writer)?;
+        let native = ir
+            .native
+            .namespace("sldprt")
+            .map(|namespace| native::SldprtNative::load(namespace).map_err(CodecError::from))
+            .transpose()?;
+        let source_arena = cadmpeg_core::decode::DecodeArena::new();
+        let source_context = records
+            .iter()
+            .find(|record| record.id.as_str() == SOURCE_IMAGE_ID)
+            .and_then(|record| record.data)
+            .map(|bytes| {
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    bytes,
+                    &source_arena,
+                    &cadmpeg_core::decode::DecodePolicy::desktop(),
+                )
+            })
+            .transpose()?;
+        let source_scan = source_context
+            .as_ref()
+            .map(|(ctx, root)| container::scan(ctx, *root))
+            .transpose()?;
+        history::write::brep_agreement::validate(ir, native.as_ref(), source_scan.as_ref())?;
         Ok(Written::Semantic {
             path: if records.is_empty() {
                 SemanticPath::Synthesized
@@ -346,15 +379,24 @@ impl Written {
 impl CodecBackend for SldprtCodec {
     const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
 
-    fn validate_native(ir: &CadIr) -> Vec<Finding> {
-        resolved_features::validate::validate_native(ir)
+    fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, CodecError> {
+        resolved_features::validate::validate_native(ctx, ir)
     }
 
-    fn detect_impl(&self, prefix: &[u8]) -> Confidence {
-        if container::looks_like_sldprt(prefix) {
-            Confidence::High
+    fn detect_impl(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        prefix: cadmpeg_core::decode::View<'_>,
+    ) -> Result<Confidence, cadmpeg_core::CodecError> {
+        let prefix = prefix.window();
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(prefix.len()),
+            "detect input",
+        )?;
+        if container::looks_like_sldprt(ctx, prefix)? {
+            Ok(Confidence::High)
         } else {
-            Confidence::No
+            Ok(Confidence::No)
         }
     }
 
@@ -364,9 +406,15 @@ impl CodecBackend for SldprtCodec {
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let scan = container::scan(ctx, root)?;
-        let classification = dialect::classify_layers(&scan);
-        let mut summary = container::summarize(&scan, classification.layers().clone());
-        classification.append_losses(&mut summary.losses);
+        let classification = dialect::classify_layers(ctx, &scan)?;
+        let mut summary = container::summarize(
+            ctx,
+            &scan,
+            classification
+                .layers()
+                .try_clone_for_decode(ctx, "copy dialect layers")?,
+        )?;
+        classification.append_losses(ctx, &mut summary.losses)?;
         Ok(summary)
     }
 
@@ -393,20 +441,17 @@ fn source_records<'a>(
     ir: &CadIr,
     source_fidelity: &'a SourceFidelity,
 ) -> Result<Vec<SourceRecord<'a>>, CodecError> {
-    let retained_by_id = source_fidelity
-        .retained_records
-        .iter()
-        .map(|record| (record.id(), record))
-        .collect::<std::collections::HashMap<_, _>>();
     let mut records = ir
         .native_unknowns_iter("sldprt")
         .map(|reference| {
             let reference = reference?;
-            let retained = retained_by_id.get(reference.id.as_str()).ok_or_else(|| {
-                cadmpeg_ir::native::NativeConvertError::MissingRetainedSourceRecord(
-                    reference.id.as_str().to_owned(),
-                )
-            })?;
+            let retained = source_fidelity
+                .retained_record(reference.id.as_str())
+                .ok_or_else(|| {
+                    cadmpeg_ir::native::NativeConvertError::MissingRetainedSourceRecord(
+                        reference.id.as_str().to_owned(),
+                    )
+                })?;
             Ok(SourceRecord {
                 id: reference.id,
                 sha256: retained.sha256(),
@@ -416,7 +461,7 @@ fn source_records<'a>(
         .collect::<Result<Vec<_>, cadmpeg_ir::native::NativeConvertError>>()?;
     if let Some(source) = source_fidelity.retained_record(SOURCE_IMAGE_ID) {
         records.push(SourceRecord {
-            id: source.id().to_owned().try_into().expect("valid identity"),
+            id: source_image_id(),
             sha256: source.sha256(),
             data: source.data(),
         });
@@ -429,7 +474,7 @@ mod golden_tests;
 #[cfg(test)]
 mod integration_tests;
 #[cfg(test)]
-pub(crate) mod test_support;
+mod test_support;
 
 #[cfg(test)]
 mod tests {
@@ -439,17 +484,26 @@ mod tests {
     fn source_record_join_borrows_the_retained_source_image() {
         let payload = vec![0x5a; 4096];
         let payload_ptr = payload.as_ptr();
-        let fidelity = cadmpeg_ir::SourceFidelity {
-            retained_records: vec![cadmpeg_ir::source_fidelity::RetainedSourceRecord::retained(
-                SOURCE_IMAGE_ID,
-                "source",
-                0,
-                payload,
-            )],
-            ..cadmpeg_ir::SourceFidelity::default()
-        };
+        let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+        let id: cadmpeg_ir::ids::UnknownId = SOURCE_IMAGE_ID
+            .to_owned()
+            .try_into()
+            .expect("source image identity");
+        let record = cadmpeg_ir::source_fidelity::RetainedSourceRecord::from_bytes(
+            "source",
+            0,
+            cadmpeg_ir::source_fidelity::RetainedBytes::Inline { data: payload },
+        )
+        .expect("source image extent");
+        fidelity
+            .insert_retained_record(id, record)
+            .expect("source image identity is unique");
 
-        let records = crate::source_records(&cadmpeg_ir::examples::unit_cube(), &fidelity).unwrap();
+        let records = crate::source_records(
+            &cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted"),
+            &fidelity,
+        )
+        .unwrap();
         let retained = records[0].data.expect("retained source bytes");
         assert_eq!(retained.as_ptr(), payload_ptr);
     }

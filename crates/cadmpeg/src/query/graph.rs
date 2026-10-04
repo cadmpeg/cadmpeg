@@ -6,38 +6,35 @@
 //! record. Multiple routes to the same record are separate results. A node
 //! already on the current path is not expanded.
 
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::VecDeque;
 
 use anyhow::{bail, Result};
 use clap::Args;
 use serde_json::{json, Value};
 
-use super::document::{select_records, CadirDocument};
-use super::item::{emit_values, ArenaTarget, Output};
+use super::document::{CadirDocument, RecordRef, RecordSelection};
+use super::item::{emit_values, ArenaTarget};
+use super::output::OutputArgs;
 
 /// Default cap on emitted walks. Truncation notes on stderr and exits 0.
 const DEFAULT_MAX_PATHS: usize = 10_000;
 
 /// Input selection for `query graph`.
 #[derive(Debug, Args)]
-pub struct GraphArgs {
+pub(crate) struct GraphArgs {
     /// JSON file, or `-` for standard input.
-    pub file: std::path::PathBuf,
+    file: std::path::PathBuf,
     /// Arena address: `model.<arena>`, `native.<codec>.<arena>`, or bare
     /// `<arena>` as shorthand for `model.<arena>`. Same dotted names as
     /// `query counts --json`.
-    pub arena: String,
-    /// Record IDs (exact or unique suffix). Omit for the first record;
-    /// conflicts with `--head`.
-    pub ids: Vec<String>,
-    /// Print the first N records in arena order as starts. Conflicts with
-    /// explicit IDs.
-    #[arg(long, value_name = "N", conflicts_with = "ids")]
-    pub head: Option<usize>,
+    arena: String,
+    /// Which records of the arena to walk from.
+    #[command(flatten)]
+    records: RecordSelection,
     /// Maximum edge length from a start. `0` emits only the start records.
     /// Default is 1 (the start and its immediate references).
     #[arg(long, value_name = "N", default_value_t = 1)]
-    pub hops: usize,
+    hops: usize,
     /// Comma-separated dotted field paths to follow. Omit to follow every
     /// string that equals another record's `id` in this document. Each path
     /// must match an extracted edge field exactly (`links`, `native_ref`,
@@ -45,48 +42,29 @@ pub struct GraphArgs {
     /// array's path (`links`), not `links.0`. An array of objects uses the
     /// nested field path without indices (`pcurves.pcurve`).
     #[arg(long, value_delimiter = ',', value_name = "PATH")]
-    pub follow: Option<Vec<String>>,
+    follow: Option<Vec<String>>,
     /// Walk incoming references ("what refers to this record?"). Forward is
     /// the default ("what does this record refer to?").
     #[arg(long)]
-    pub reverse: bool,
+    reverse: bool,
     /// Stop after this many result paths (default 10000). Truncation prints
     /// a note on standard error and still exits 0.
     #[arg(long, value_name = "N", default_value_t = DEFAULT_MAX_PATHS)]
-    pub max_paths: usize,
-    /// Comma-separated dotted field paths; project as TSV (no expressions).
-    /// Paths are relative to each result object (`start`, `path`, `record.id`).
-    /// Conflicts with `--json`.
-    #[arg(long, value_delimiter = ',', conflicts_with = "json")]
-    pub fields: Option<Vec<String>>,
-    /// Wrap matched walks in the JSON envelope.
-    #[arg(long)]
-    pub json: bool,
-}
-
-impl GraphArgs {
-    /// Resolves the flat clap output fields into one output mode.
-    pub(crate) fn mode(&self) -> Output<'_> {
-        if self.json {
-            Output::Json
-        } else if let Some(paths) = self.fields.as_deref() {
-            Output::Tsv(paths)
-        } else {
-            Output::Pretty
-        }
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-struct NodeRef {
-    arena: usize,
-    rec: usize,
+    max_paths: usize,
+    /// Record output selection.
+    #[command(flatten)]
+    output: OutputArgs,
 }
 
 #[derive(Clone, Debug)]
 struct AdjEdge {
     field: String,
-    to: NodeRef,
+    to: RecordRef,
+}
+
+#[cfg(test)]
+thread_local! {
+    static ADJ_EDGES_BUILT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 struct WalkOutcome {
@@ -95,19 +73,14 @@ struct WalkOutcome {
 }
 
 /// Runs `query graph` against one CADIR document.
-pub fn run(args: &GraphArgs, output: Output<'_>) -> Result<()> {
-    let doc = CadirDocument::load(&args.file, "graph")?;
+pub(super) fn run(args: &GraphArgs) -> Result<()> {
+    let output = args.output.mode();
+    let mut doc = CadirDocument::load(&args.file, "graph")?;
     let target = ArenaTarget::parse(&args.arena)?;
-    let arena_idx = doc.arena_index(&target)?;
-    let arena = &doc.arenas()[arena_idx];
-    let (starts, errors) = select_records(arena, &args.ids, args.head);
-    let start_nodes: Vec<NodeRef> = starts
-        .into_iter()
-        .map(|rec| NodeRef {
-            arena: arena_idx,
-            rec,
-        })
-        .collect();
+    let (start_nodes, errors) = doc.select_records(&target, &args.records)?;
+    if args.hops > 0 && args.max_paths > 0 {
+        doc.index_ids();
+    }
 
     let follow = args.follow.as_deref();
     let outcome = walk(
@@ -135,13 +108,12 @@ pub fn run(args: &GraphArgs, output: Output<'_>) -> Result<()> {
 
 fn walk(
     doc: &CadirDocument,
-    starts: &[NodeRef],
+    starts: &[RecordRef],
     hops: usize,
     follow: Option<&[String]>,
     reverse: bool,
     max_paths: usize,
 ) -> WalkOutcome {
-    let adj = build_adj(doc, follow, reverse);
     let mut results = Vec::new();
     let mut truncated = false;
 
@@ -160,20 +132,16 @@ fn walk(
 
         while let Some(path) = queue.pop_front() {
             let node = path.last().map_or(*start, |edge| edge.to);
-            let neighbors = match adj.get(node.arena).and_then(|row| row.get(node.rec)) {
-                Some(edges) => edges.as_slice(),
-                None => &[],
-            };
+            let remaining = max_paths - results.len();
+            let cap = remaining + usize::from(remaining < usize::MAX);
+            let neighbors = neighbors(doc, node, *start, &path, follow, reverse, cap);
             for edge in neighbors {
-                if edge.to == *start || path.iter().any(|step| step.to == edge.to) {
-                    continue;
-                }
                 if results.len() >= max_paths {
                     truncated = true;
                     break;
                 }
                 let mut next_path = path.clone();
-                next_path.push(edge.clone());
+                next_path.push(edge);
                 results.push(result_value(doc, *start, &next_path));
                 if next_path.len() < hops {
                     queue.push_back(next_path);
@@ -191,94 +159,91 @@ fn walk(
     WalkOutcome { results, truncated }
 }
 
-fn result_value(doc: &CadirDocument, start: NodeRef, path: &[AdjEdge]) -> Value {
+fn result_value(doc: &CadirDocument, start: RecordRef, path: &[AdjEdge]) -> Value {
     let mut node = start;
     let steps: Vec<Value> = path
         .iter()
         .map(|edge| {
             let step = json!({
-                "from": doc.locator(node.arena, node.rec),
+                "from": doc.locator(node),
                 "field": edge.field,
-                "to": doc.locator(edge.to.arena, edge.to.rec),
+                "to": doc.locator(edge.to),
             });
             node = edge.to;
             step
         })
         .collect();
     json!({
-        "start": doc.locator(start.arena, start.rec),
+        "start": doc.locator(start),
         "path": steps,
-        "record": doc.arenas()[node.arena].records[node.rec],
+        "record": doc.record(node),
     })
 }
 
-fn empty_adj(doc: &CadirDocument) -> Vec<Vec<Vec<AdjEdge>>> {
-    doc.arenas()
-        .iter()
-        .map(|arena| {
-            let mut row = Vec::with_capacity(arena.records.len());
-            for _ in 0..arena.records.len() {
-                row.push(Vec::new());
-            }
-            row
-        })
-        .collect()
-}
-
-fn build_adj(
+fn neighbors(
     doc: &CadirDocument,
+    node: RecordRef,
+    start: RecordRef,
+    path: &[AdjEdge],
     follow: Option<&[String]>,
     reverse: bool,
-) -> Vec<Vec<Vec<AdjEdge>>> {
-    let follow_set: Option<BTreeSet<&str>> =
-        follow.map(|paths| paths.iter().map(String::as_str).collect());
-    let mut fwd = empty_adj(doc);
-
-    for (ai, arena) in doc.arenas().iter().enumerate() {
-        for (ri, rec) in arena.records.iter().enumerate() {
-            let from = NodeRef { arena: ai, rec: ri };
-            let mut edges = Vec::new();
-            collect_edges(rec, "", true, doc, &mut edges);
-            for (field, to) in edges {
-                if from == to {
-                    continue;
-                }
-                if let Some(set) = &follow_set {
-                    if !set.contains(field.as_str()) {
-                        continue;
-                    }
-                }
-                fwd[ai][ri].push(AdjEdge { field, to });
+    cap: usize,
+) -> Vec<AdjEdge> {
+    let mut edges = Vec::new();
+    let mut visit = |field: &str, to: RecordRef| {
+        if to == start || path.iter().any(|step| step.to == to) {
+            return true;
+        }
+        if let Some(paths) = follow {
+            if !paths.iter().any(|candidate| candidate == field) {
+                return true;
             }
         }
-    }
+        #[cfg(test)]
+        ADJ_EDGES_BUILT.with(|count| count.set(count.get() + 1));
+        edges.push(AdjEdge {
+            field: field.to_owned(),
+            to,
+        });
+        edges.len() < cap
+    };
 
-    if !reverse {
-        return fwd;
-    }
-
-    let mut rev = empty_adj(doc);
-    for (ai, rows) in fwd.iter().enumerate() {
-        for (ri, edges) in rows.iter().enumerate() {
-            let from = NodeRef { arena: ai, rec: ri };
-            for edge in edges {
-                rev[edge.to.arena][edge.to.rec].push(AdjEdge {
-                    field: edge.field.clone(),
-                    to: from,
-                });
+    if reverse {
+        for (from, rec) in doc.records() {
+            if from == node {
+                continue;
+            }
+            let mut incoming = |field: &str, to: RecordRef| {
+                if to == node {
+                    visit(field, from)
+                } else {
+                    true
+                }
+            };
+            if !visit_edges(rec, "", true, doc, &mut incoming) {
+                break;
             }
         }
+    } else {
+        let mut outgoing = |field: &str, to: RecordRef| {
+            if to == node {
+                true
+            } else {
+                visit(field, to)
+            }
+        };
+        visit_edges(doc.record(node), "", true, doc, &mut outgoing);
     }
-    rev
+    edges
 }
 
-fn collect_edges(
+fn visit_edges(
     value: &Value,
     path: &str,
     skip_top_id: bool,
     doc: &CadirDocument,
-    out: &mut Vec<(String, NodeRef)>,
-) {
+    visit: &mut impl FnMut(&str, RecordRef) -> bool,
+) -> bool {
     match value {
         Value::Object(map) => {
             for (key, child) in map {
@@ -290,50 +255,58 @@ fn collect_edges(
                 } else {
                     format!("{path}.{key}")
                 };
-                collect_edges(child, &child_path, false, doc, out);
+                if !visit_edges(child, &child_path, false, doc, visit) {
+                    return false;
+                }
             }
         }
         Value::Array(items) => {
             for item in items {
-                collect_edges(item, path, false, doc, out);
+                if !visit_edges(item, path, false, doc, visit) {
+                    return false;
+                }
             }
         }
         Value::String(s) => {
             if path.is_empty() {
-                return;
+                return true;
             }
             let Some(hits) = doc.id_locations(s) else {
-                return;
+                return true;
             };
-            for &(arena, rec) in hits {
-                out.push((path.to_owned(), NodeRef { arena, rec }));
+            for &record in hits {
+                if !visit(path, record) {
+                    return false;
+                }
             }
         }
         _ => {}
     }
+    true
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::document::{CadirDocument, RecordRef, RecordSelection};
+    use super::super::item::ArenaTarget;
+    use super::{walk, ADJ_EDGES_BUILT, DEFAULT_MAX_PATHS};
     use serde_json::json;
+    use serde_json::Value;
 
     fn doc(v: &Value) -> CadirDocument {
-        CadirDocument::from_value(v)
+        let mut document = CadirDocument::from_value(v.clone());
+        document.index_ids();
+        document
     }
 
-    fn start_nodes(document: &CadirDocument, arena: &str, ids: &[&str]) -> Vec<NodeRef> {
+    fn start_nodes(document: &CadirDocument, arena: &str, ids: &[&str]) -> Vec<RecordRef> {
         let target = ArenaTarget::parse(arena).unwrap();
-        let arena_idx = document.arena_index(&target).unwrap();
         let ids: Vec<String> = ids.iter().map(|s| (*s).to_owned()).collect();
-        let (recs, errors) = select_records(&document.arenas()[arena_idx], &ids, None);
+        let selection = crate::query::document::RequestedIds::new(ids)
+            .map_or(RecordSelection::Head(1), RecordSelection::Ids);
+        let (recs, errors) = document.select_records(&target, &selection).unwrap();
         assert!(errors.is_empty(), "{errors:?}");
-        recs.into_iter()
-            .map(|rec| NodeRef {
-                arena: arena_idx,
-                rec,
-            })
-            .collect()
+        recs
     }
 
     fn walk_ids(
@@ -536,5 +509,22 @@ mod tests {
         }));
         let results = walk_ids(&document, "faces", &["f1"], 1, None, false);
         assert_eq!(paths_to(&results, "c1"), vec![vec!["pcurves.pcurve"]]);
+    }
+
+    #[test]
+    fn graph_max_paths_one_constructs_only_one_candidate_edge() {
+        let links: Vec<String> = (0..4096).map(|i| format!("leaf-{i}")).collect();
+        let leaves: Vec<Value> = links.iter().map(|id| json!({"id": id})).collect();
+        let value = json!({"model": {
+            "roots": [{"id": "root", "links": links}],
+            "leaves": leaves
+        }});
+        let document = doc(&value);
+        let starts = start_nodes(&document, "roots", &["root"]);
+        ADJ_EDGES_BUILT.with(|count| count.set(0));
+        let outcome = walk(&document, &starts, 1, None, false, 1);
+        assert_eq!(reached_ids(&outcome.results), vec!["root"]);
+        assert!(outcome.truncated);
+        ADJ_EDGES_BUILT.with(|count| assert_eq!(count.get(), 1));
     }
 }

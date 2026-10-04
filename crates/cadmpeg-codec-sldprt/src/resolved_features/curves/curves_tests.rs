@@ -1,48 +1,198 @@
 //! Tests for the `curves` module.
 
+const EPS_REFUSAL_GEOMETRY: f64 = 1.0e-9;
+
 use super::super::endpoints::{compact_legacy_code_one_line_endpoint_indices, minor_arc_geometry};
 use super::super::markers::sketch_input_entities;
 use super::super::typed_relations::compact_legacy_object_line_endpoints;
 use super::super::{
     CLASS_MARKER, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER,
 };
-use super::*;
+use super::{
+    closed_marker_profiles_allowing_shared_endpoints, compact_bounded_curve_tangent,
+    compact_legacy_rectangle_line_endpoints, compact_line_chain_addresses,
+    compact_line_region_addresses, complete_ordered_compact_line_profile,
+    current_linked_semicircle_record, legacy_extended_rectangle_diagonal_endpoint,
+    ordered_compact_line_profile, ordered_rectangle_corners, resolve_two_center_semicircle_profile,
+    tangent_bounded_curve, unique_dimensioned_rectangle_markers,
+};
 use crate::records::{SketchInputEntity, SketchInputKind, SketchInputLink};
-use cadmpeg_ir::features::{Angle, Length};
+use cadmpeg_core::decode::{
+    u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::Point2;
-use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometry, SketchId};
+use cadmpeg_ir::scalar::{Angle, Length};
+use cadmpeg_ir::sketches::{
+    SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
+};
 
 #[test]
-fn shared_endpoint_block_cycles_remain_profile_chains() {
-    let sketch = SketchId("block-sketch".into());
-    let line = |id: &str, start: &str, end: &str| {
-        SketchEntity::new(
-            SketchEntityId(id.into()),
-            sketch.clone(),
-            SketchGeometry::Line {
-                start: Point2::new(0.0, 0.0),
-                end: Point2::new(1.0, 0.0),
-            },
-        )
-        .with_native_ref(Some(id.into()))
-        .with_endpoint_refs(vec![start.into(), end.into()])
-    };
-    let entities = vec![
-        line("bottom", "p0", "p1"),
-        line("right", "p1", "p2"),
-        line("top", "p2", "p3"),
-        line("left", "p3", "p0"),
-        line("diagonal", "p0", "p2"),
-    ];
+fn sketch_plane_frames_refuse_collection_limit() {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PrincipalPlane};
+    use std::collections::BTreeMap;
 
-    assert!(super::closed_marker_profiles(&entities).is_empty());
-    let profiles = closed_marker_profiles_allowing_shared_endpoints(&entities);
-    assert_eq!(profiles.len(), 1);
-    assert_eq!(profiles[0].len(), 4);
+    let native = crate::records::Feature {
+        id: "plane-native".into(),
+        parent: "history".into(),
+        xml_tag: "Feature".into(),
+        tree_parent: None,
+        source_id: crate::records::FeatureSource::from_value(3),
+        ordinal: 0,
+        name: "Top".into(),
+        kind: "Plane".into(),
+        input_class: None,
+        suppressed: false,
+        parameters: BTreeMap::new(),
+        dimension_properties: BTreeMap::new(),
+        properties: BTreeMap::new(),
+        text: None,
+        content: Vec::new(),
+    };
+    let history = crate::records::FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![native],
+    };
+    let neutral = cadmpeg_ir::features::Feature {
+        id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#plane").unwrap(),
+        ordinal: 0,
+        name: Some("Top".into()),
+        suppressed: None,
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane {
+                plane: PrincipalPlane::Top,
+            }),
+        ),
+        native_ref: Some("plane-native".into()),
+    };
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::sketch_plane_frames(&ctx, &[neutral], &[history]).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "index SLDPRT sketch plane sources"));
+}
+
+fn indexed_rectangle_from_line_cycle(
+    payload: &[u8],
+    markers: &[&SketchInputEntity],
+) -> Option<[Point2; 4]> {
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(payload, &arena, &DecodePolicy::service()).unwrap();
+    super::indexed_rectangle_from_line_cycle(&ctx, payload, markers).unwrap()
+}
+
+fn resolve_connected_arc_test(entities: &mut [SketchEntity], tolerance: f64) {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    super::resolve_connected_marker_arcs(&ctx, entities, tolerance).unwrap();
+}
+
+fn connected_arc_limit_entities() -> Vec<SketchEntity> {
+    let sketch = SketchId::mint("synthetic:test:id#limit-sketch").unwrap();
+    vec![
+        SketchEntity::new(
+            SketchEntityId::mint("synthetic:test:id#limit-point").unwrap(),
+            sketch.clone(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
+                position: Point2::new(0.0, 0.0),
+            })
+            .unwrap(),
+        )
+        .with_native_ref(Some("p".into())),
+        SketchEntity::new(
+            SketchEntityId::mint("synthetic:test:id#limit-arc").unwrap(),
+            sketch,
+            SketchGeometry::native(
+                cadmpeg_core::text::NonBlankString::new("sldprt:marker-geometry:2").unwrap(),
+            ),
+        )
+        .with_native_ref(Some("arc".into()))
+        .with_endpoint_refs(vec!["p".into(), "q".into()]),
+    ]
 }
 
 #[test]
-fn compact_line_region_is_an_ordered_one_based_curve_roster() {
+fn connected_arc_refuses_collection_limit() {
+    let mut entities = connected_arc_limit_entities();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::resolve_connected_marker_arcs(&ctx, &mut entities, 1.0e-9).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "index SLDPRT connected arc points"));
+}
+
+#[test]
+fn connected_arc_refuses_retained_limit() {
+    let mut entities = connected_arc_limit_entities();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::resolve_connected_marker_arcs(&ctx, &mut entities, 1.0e-9).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "copy SLDPRT connected arc point identity"));
+}
+
+#[test]
+fn connected_arc_refuses_work_limit() {
+    let mut entities = connected_arc_limit_entities();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::resolve_connected_marker_arcs(&ctx, &mut entities, 1.0e-9).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "scan SLDPRT connected arc neighbors"));
+}
+
+#[test]
+fn indexed_rectangle_refuses_collection_limit() {
+    let markers = rectangle_limit_markers();
+    let marker_refs = markers.iter().collect::<Vec<_>>();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 3;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::indexed_rectangle_from_line_cycle(&ctx, &[], &marker_refs).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "collect SLDPRT rectangle marker roster"));
+}
+
+#[test]
+fn indexed_rectangle_refuses_work_limit() {
+    let markers = rectangle_limit_markers();
+    let marker_refs = markers.iter().collect::<Vec<_>>();
+    let mut policy = DecodePolicy::service();
+    // Four elements, eight bytes each, three bit-length levels plus one, eight work units per byte.
+    policy.limits.max_work_units = 4 + 4 * 8 * 4 * 8 - 1;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::indexed_rectangle_from_line_cycle(&ctx, &[], &marker_refs).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "sldprt rectangle marker roster sort"));
+}
+
+fn compact_region_payload() -> Vec<u8> {
     let mut payload = b"moSketchRegion_c".to_vec();
     payload.extend(0x8060u16.to_le_bytes());
     payload.extend(4u16.to_le_bytes());
@@ -52,16 +202,10 @@ fn compact_line_region_is_an_ordered_one_based_curve_roster() {
         payload.extend([0xff; 4]);
         payload.extend([0; 4]);
     }
-    assert_eq!(
-        compact_line_region_addresses(&payload),
-        Some(vec![2, 1, 4, 3])
-    );
-    payload[22] = 1;
-    assert_eq!(compact_line_region_addresses(&payload), None);
+    payload
 }
 
-#[test]
-fn compact_line_chain_is_an_ordered_one_based_vertex_roster() {
+fn compact_chain_payload() -> Vec<u8> {
     let mut payload = Vec::new();
     payload.extend(4u16.to_le_bytes());
     for address in [3u32, 2, 1, 4] {
@@ -76,12 +220,226 @@ fn compact_line_chain_is_an_ordered_one_based_vertex_roster() {
     payload.extend(5u32.to_le_bytes());
     payload.extend([0xff, 0xfe, 0xff, 0, 0, 0]);
     payload.extend([0xff; 4]);
-    assert_eq!(
-        compact_line_chain_addresses(&payload),
-        Some(vec![3, 2, 1, 4])
+    payload
+}
+
+fn region_addresses(payload: &[u8]) -> Option<Vec<u16>> {
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(payload, &arena, &DecodePolicy::service()).unwrap();
+    compact_line_region_addresses(&ctx, payload).unwrap()
+}
+
+fn chain_addresses(payload: &[u8]) -> Option<Vec<u16>> {
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(payload, &arena, &DecodePolicy::service()).unwrap();
+    compact_line_chain_addresses(&ctx, payload).unwrap()
+}
+
+fn rectangle_limit_markers() -> [SketchInputEntity; 4] {
+    let marker = |id: &str, u, v| {
+        let mut entity = SketchInputEntity::new(
+            id.to_owned(),
+            "lane".to_owned(),
+            0,
+            0,
+            SketchInputKind::Point,
+        );
+        entity.coordinates_m = cadmpeg_ir::units::FiniteVector::new([u, v]);
+        entity
+    };
+    [
+        marker("lower-left", 0.0, 0.0),
+        marker("lower-right", 0.0055, 0.0),
+        marker("upper-right", 0.0055, 0.0085),
+        marker("upper-left", 0.0, 0.0085),
+    ]
+}
+
+#[test]
+fn dimensioned_rectangle_refuses_collection_limit() {
+    let markers = rectangle_limit_markers();
+    let marker_refs = markers.iter().collect::<Vec<_>>();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 3;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = unique_dimensioned_rectangle_markers(&ctx, &marker_refs, &[8.5, 5.5]).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "collect SLDPRT rectangle points"));
+}
+
+#[test]
+fn dimensioned_rectangle_refuses_work_limit() {
+    let markers = rectangle_limit_markers();
+    let marker_refs = markers.iter().collect::<Vec<_>>();
+    let mut policy = DecodePolicy::service();
+    // Four i64 cells, eight bytes each, three bit-length levels plus one, eight work units per byte.
+    policy.limits.max_work_units = 4 + 4 * 8 * 4 * 8 - 1;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = unique_dimensioned_rectangle_markers(&ctx, &marker_refs, &[8.5, 5.5]).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "sldprt rectangle cells u sort"));
+}
+
+#[test]
+fn shared_endpoint_block_cycles_remain_profile_chains() {
+    let sketch = SketchId::mint("synthetic:test:id#block-sketch").unwrap();
+    let line = |id: &str, start: &str, end: &str| {
+        SketchEntity::new(
+            SketchEntityId::mint(id).unwrap(),
+            sketch.clone(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: Point2::new(0.0, 0.0),
+                end: Point2::new(1.0, 0.0),
+            })
+            .unwrap(),
+        )
+        .with_native_ref(Some(id.into()))
+        .with_endpoint_refs(vec![start.into(), end.into()])
+    };
+    let entities = vec![
+        line("synthetic:test:id#bottom", "p0", "p1"),
+        line("synthetic:test:id#right", "p1", "p2"),
+        line("synthetic:test:id#top", "p2", "p3"),
+        line("synthetic:test:id#left", "p3", "p0"),
+        line("synthetic:test:id#diagonal", "p0", "p2"),
+    ];
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert!(super::closed_marker_profiles(&ctx, &entities)
+        .unwrap()
+        .is_empty());
+    let profiles = closed_marker_profiles_allowing_shared_endpoints(&ctx, &entities).unwrap();
+    assert_eq!(profiles.len(), 1);
+    assert_eq!(profiles[0].len(), 4);
+}
+
+fn closed_profile_limit_entities() -> Vec<SketchEntity> {
+    let sketch = SketchId::mint("synthetic:test:id#closed-limit-sketch").unwrap();
+    [
+        ("synthetic:test:id#closed-limit-first", "p0", "p1"),
+        ("synthetic:test:id#closed-limit-second", "p1", "p0"),
+    ]
+    .into_iter()
+    .map(|(id, start_ref, end_ref)| {
+        SketchEntity::new(
+            SketchEntityId::mint(id).unwrap(),
+            sketch.clone(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: Point2::new(0.0, 0.0),
+                end: Point2::new(1.0, 0.0),
+            })
+            .unwrap(),
+        )
+        .with_endpoint_refs(vec![start_ref.into(), end_ref.into()])
+    })
+    .collect()
+}
+
+#[test]
+fn closed_profile_refuses_collection_limit() {
+    let entities = closed_profile_limit_entities();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::closed_marker_profiles(&ctx, &entities).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "collect SLDPRT closed curves"));
+}
+
+#[test]
+fn closed_profile_refuses_retained_limit() {
+    let entities = closed_profile_limit_entities();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "copy SLDPRT closed curve identity",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            super::closed_marker_profiles(&ctx, &entities).map(|_| ())
+        },
     );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "copy SLDPRT closed curve identity"));
+}
+
+#[test]
+fn closed_profile_refuses_work_limit() {
+    let entities = closed_profile_limit_entities();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::closed_marker_profiles(&ctx, &entities).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "scan SLDPRT closed curve incidence"));
+}
+
+#[test]
+fn compact_line_region_is_an_ordered_one_based_curve_roster() {
+    let mut payload = compact_region_payload();
+    assert_eq!(region_addresses(&payload), Some(vec![2, 1, 4, 3]));
+    payload[22] = 1;
+    assert_eq!(region_addresses(&payload), None);
+}
+
+#[test]
+fn compact_line_chain_is_an_ordered_one_based_vertex_roster() {
+    let mut payload = compact_chain_payload();
+    assert_eq!(chain_addresses(&payload), Some(vec![3, 2, 1, 4]));
     payload[24] = 4;
-    assert_eq!(compact_line_chain_addresses(&payload), None);
+    assert_eq!(chain_addresses(&payload), None);
+}
+
+#[test]
+fn compact_line_region_refuses_collection_limit() {
+    let payload = compact_region_payload();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 3;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let error = compact_line_region_addresses(&ctx, &payload).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "collect SLDPRT compact region addresses"));
+}
+
+#[test]
+fn compact_line_chain_refuses_collection_limit() {
+    let payload = compact_chain_payload();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 3;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let error = compact_line_chain_addresses(&ctx, &payload).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "collect SLDPRT compact chain addresses"));
+}
+
+#[test]
+fn compact_line_address_scan_refuses_work_limit() {
+    let payload = compact_region_payload();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64_from_index(payload.len() - 1);
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let error = compact_line_region_addresses(&ctx, &payload).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "scan SLDPRT compact region"));
 }
 
 #[test]
@@ -93,7 +451,8 @@ fn compact_rectangle_requires_each_axis_corner_exactly_once() {
         Point2::new(25.75, -14.15),
     ];
     assert_eq!(
-        ordered_rectangle_corners(&corners),
+        ordered_rectangle_corners(&cadmpeg_test_support::service_decode_context(), &corners)
+            .unwrap(),
         Some([
             Point2::new(-25.75, -14.15),
             Point2::new(25.75, -14.15),
@@ -103,14 +462,25 @@ fn compact_rectangle_requires_each_axis_corner_exactly_once() {
     );
 
     let duplicate = [corners[0], corners[0], corners[2], corners[3]];
-    assert_eq!(ordered_rectangle_corners(&duplicate), None);
+    assert_eq!(
+        ordered_rectangle_corners(&cadmpeg_test_support::service_decode_context(), &duplicate)
+            .unwrap(),
+        None
+    );
     let non_rectangular = [
         corners[0],
         corners[1],
         corners[2],
         Point2::new(24.0, -14.15),
     ];
-    assert_eq!(ordered_rectangle_corners(&non_rectangular), None);
+    assert_eq!(
+        ordered_rectangle_corners(
+            &cadmpeg_test_support::service_decode_context(),
+            &non_rectangular
+        )
+        .unwrap(),
+        None
+    );
 }
 
 #[test]
@@ -143,18 +513,18 @@ fn indexed_line_cycle_carries_rectangle_from_known_vertices() {
                   offset: u64,
                   object_index: Option<u32>,
                   coordinates_m: Option<[f64; 2]>,
-                  kind| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset,
-        object_index,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+                  kind| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker = constructed_marker.with_test_identity(object_index, None);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let markers = [
         marker(
@@ -175,28 +545,28 @@ fn indexed_line_cycle_carries_rectangle_from_known_vertices() {
         marker("fourth", 300, None, None, SketchInputKind::Point),
         marker(
             "line-1",
-            CURVE_START as u64,
+            u64_from_index(CURVE_START),
             None,
             None,
             SketchInputKind::LineOrCircle,
         ),
         marker(
             "line-2",
-            (CURVE_START + 84) as u64,
+            u64_from_index(CURVE_START + 84),
             None,
             None,
             SketchInputKind::LineOrCircle,
         ),
         marker(
             "line-3",
-            (CURVE_START + 168) as u64,
+            u64_from_index(CURVE_START + 168),
             None,
             None,
             SketchInputKind::LineOrCircle,
         ),
         marker(
             "line-4",
-            (CURVE_START + 252) as u64,
+            u64_from_index(CURVE_START + 252),
             None,
             None,
             SketchInputKind::LineOrCircle,
@@ -232,14 +602,14 @@ fn indexed_line_cycle_carries_rectangle_from_known_vertices() {
     }
     let mut adjacent = markers.clone();
     adjacent[1].coordinates_m = None;
-    adjacent[2].coordinates_m = Some([0.025, 0.011]);
+    adjacent[2].coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.025, 0.011]);
     assert_eq!(
         indexed_rectangle_from_line_cycle(&payload, &adjacent.iter().collect::<Vec<_>>(),),
         None
     );
 
     let mut three_corners = markers;
-    three_corners[2].coordinates_m = Some([0.025, -0.011]);
+    three_corners[2].coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.025, -0.011]);
     assert_eq!(
         indexed_rectangle_from_line_cycle(&payload, &three_corners.iter().collect::<Vec<_>>(),),
         Some([
@@ -259,10 +629,11 @@ fn indexed_line_cycle_carries_rectangle_from_known_vertices() {
     }
     let mut current_corners = three_corners.clone();
     for (index, marker) in current_corners.iter_mut().take(4).enumerate() {
-        marker.object_index = Some(index as u32 + 1);
+        *marker =
+            marker.with_test_identity(Some(u32::try_from(index).unwrap() + 1), marker.local_id());
     }
     for marker in current_corners.iter_mut().skip(4) {
-        marker.kind = SketchInputKind::Arc;
+        marker.reclassify(SketchInputKind::Arc);
     }
     assert_eq!(
         indexed_rectangle_from_line_cycle(
@@ -276,15 +647,15 @@ fn indexed_line_cycle_carries_rectangle_from_known_vertices() {
             Point2::new(-0.025, 0.011),
         ])
     );
-    three_corners[2].coordinates_m = Some([0.024, -0.010]);
+    three_corners[2].coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.024, -0.010]);
     assert_eq!(
         indexed_rectangle_from_line_cycle(&payload, &three_corners.iter().collect::<Vec<_>>(),),
         None
     );
-    three_corners[0].coordinates_m = Some([0.013, -0.025]);
-    three_corners[1].coordinates_m = Some([0.0, -0.03]);
-    three_corners[2].coordinates_m = Some([0.01, 0.0]);
-    three_corners[3].coordinates_m = Some([0.0, 0.0]);
+    three_corners[0].coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.013, -0.025]);
+    three_corners[1].coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.0, -0.03]);
+    three_corners[2].coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.01, 0.0]);
+    three_corners[3].coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.0, 0.0]);
     for (index, edge) in [[2u16, 4u16], [2, 3], [3, 1], [4, 1]]
         .into_iter()
         .enumerate()
@@ -339,17 +710,18 @@ fn indexed_line_cycle_carries_rectangle_from_known_vertices() {
         .zip([[0.01, -0.03], [0.0, -0.03], [0.01, 0.0], [0.0, 0.0]])
         .enumerate()
     {
-        marker.offset = u64::try_from(index + 1).unwrap();
-        marker.coordinates_m = Some(coordinates);
-        marker.kind = SketchInputKind::Point;
+        *marker = marker.with_test_position(marker.ordinal(), u64::try_from(index + 1).unwrap());
+        marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new(coordinates);
+        marker.reclassify(SketchInputKind::Point);
     }
     for (index, marker) in wide_markers[5..].iter_mut().enumerate() {
-        marker.offset = (CURVE_START + index * 92) as u64;
-        marker.kind = if index == 3 {
+        *marker =
+            marker.with_test_position(marker.ordinal(), u64_from_index(CURVE_START + index * 92));
+        marker.reclassify(if index == 3 {
             SketchInputKind::Arc
         } else {
             SketchInputKind::LineOrCircle
-        };
+        });
     }
     assert_eq!(
         indexed_rectangle_from_line_cycle(&wide, &wide_markers.iter().collect::<Vec<_>>(),),
@@ -371,8 +743,8 @@ fn indexed_line_cycle_carries_rectangle_from_known_vertices() {
     three_sides[CURVE_START + 2 * 92 + 17..CURVE_START + 2 * 92 + 21]
         .copy_from_slice(&2u32.to_le_bytes());
     let mut three_side_markers = wide_markers[..8].to_vec();
-    three_side_markers[4].coordinates_m = Some([1.0e-17, 0.0]);
-    three_side_markers[7].kind = SketchInputKind::Arc;
+    three_side_markers[4].coordinates_m = cadmpeg_ir::units::FiniteVector::new([1.0e-17, 0.0]);
+    three_side_markers[7].reclassify(SketchInputKind::Arc);
     assert_eq!(
         indexed_rectangle_from_line_cycle(
             &three_sides,
@@ -429,19 +801,17 @@ fn compact_legacy_object_index_cycle_carries_rectangle() {
     payload[terminal + 112..terminal + 116].copy_from_slice(b"line");
     let marker =
         |id: &str, offset: u64, object_index: u32, coordinates_m: Option<[f64; 2]>, kind| {
-            SketchInputEntity {
-                id: id.into(),
-                parent: "lane".into(),
-                feature_ref: Some("feature".into()),
-                ordinal: 0,
-                offset,
-                object_index: Some(object_index),
-                local_id: None,
-                kind,
-                state_value: Some(1.0),
-                coordinates_m,
-                links: None,
-            }
+            let marker_id: String = id.into();
+            let marker_parent: String = "lane".into();
+            let mut constructed_marker =
+                SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+            constructed_marker.feature_ref = Some("feature".into());
+            constructed_marker = constructed_marker.with_test_identity(Some(object_index), None);
+            constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+            constructed_marker.coordinates_m =
+                coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+            constructed_marker.links = None;
+            constructed_marker
         };
     let markers = [
         marker("missing", 0, 1, None, SketchInputKind::Point),
@@ -462,28 +832,28 @@ fn compact_legacy_object_index_cycle_carries_rectangle() {
         ),
         marker(
             "line-1",
-            CURVE_START as u64,
+            u64_from_index(CURVE_START),
             1,
             None,
             SketchInputKind::LineOrCircle,
         ),
         marker(
             "line-2",
-            (CURVE_START + 68) as u64,
+            u64_from_index(CURVE_START + 68),
             2,
             None,
             SketchInputKind::LineOrCircle,
         ),
         marker(
             "line-3",
-            (CURVE_START + 136) as u64,
+            u64_from_index(CURVE_START + 136),
             3,
             None,
             SketchInputKind::LineOrCircle,
         ),
         marker(
             "line-4",
-            (CURVE_START + 204) as u64,
+            u64_from_index(CURVE_START + 204),
             4,
             None,
             SketchInputKind::LineOrCircle,
@@ -504,7 +874,7 @@ fn compact_legacy_object_index_cycle_carries_rectangle() {
             &markers[6],
             &markers.iter().collect::<Vec<_>>(),
         )
-        .map(|endpoints| [endpoints[0].id.as_str(), endpoints[1].id.as_str()]),
+        .map(|endpoints| [endpoints[0].id(), endpoints[1].id()]),
         Some(["top-right", "top-left"])
     );
     payload[terminal + 106] = 0;
@@ -541,9 +911,9 @@ fn compact_legacy_object_index_cycle_carries_rectangle() {
             .copy_from_slice(&u32::try_from((index + 1) % 4 + 1).unwrap().to_le_bytes());
     }
     let mut diagonal = markers;
-    diagonal[0].kind = SketchInputKind::Point;
-    diagonal[0].coordinates_m = Some([0.0, 0.0]);
-    diagonal[1].coordinates_m = Some([2.0, 1.0]);
+    diagonal[0].reclassify(SketchInputKind::Point);
+    diagonal[0].coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.0, 0.0]);
+    diagonal[1].coordinates_m = cadmpeg_ir::units::FiniteVector::new([2.0, 1.0]);
     diagonal[2].coordinates_m = None;
     diagonal[3].coordinates_m = None;
     assert_eq!(
@@ -581,24 +951,28 @@ fn current_compact_line_cycle_infers_its_missing_rectangle_corner() {
     }
     payload[3 * 84 + 74..3 * 84 + 76].copy_from_slice(&2u16.to_le_bytes());
     payload[4 * 84..].copy_from_slice(SKETCH_MARKER);
-    let marker =
-        |id: &str, offset, object_index, coordinates_m: Option<[f64; 2]>| SketchInputEntity {
-            id: id.into(),
-            parent: "lane".into(),
-            feature_ref: Some("feature".into()),
-            ordinal: 0,
+    let marker = |id: &str, offset, object_index, coordinates_m: Option<[f64; 2]>| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            0,
             offset,
-            object_index,
-            local_id: None,
-            kind: if coordinates_m.is_some() {
+            if coordinates_m.is_some() {
                 SketchInputKind::Point
             } else {
                 SketchInputKind::LineOrCircle
             },
-            state_value: Some(1.0),
-            coordinates_m,
-            links: None,
-        };
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker = constructed_marker.with_test_identity(object_index, None);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
+    };
     let markers = [
         marker("missing", 500, Some(1), None),
         marker("top-right", 510, Some(2), Some([2.0, 1.0])),
@@ -646,29 +1020,34 @@ fn legacy_rectangle_diagonal_carries_one_endpoint_and_two_distinct_corner_links(
     payload[136..140].copy_from_slice(&1u32.to_le_bytes());
     payload[142..146].copy_from_slice(&6u32.to_le_bytes());
     payload[146..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
-    let marker = SketchInputEntity {
-        id: "diagonal".into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset: 0,
-        object_index: None,
-        local_id: None,
-        kind: SketchInputKind::LineOrCircle,
-        state_value: Some(1.0),
-        coordinates_m: None,
-        links: None,
+    let marker = {
+        let marker_id: String = "diagonal".into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            0,
+            0,
+            SketchInputKind::LineOrCircle,
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m = None;
+        constructed_marker.links = None;
+        constructed_marker
     };
 
     assert_eq!(
-        legacy_extended_rectangle_diagonal_endpoint(&payload, &marker),
+        legacy_extended_rectangle_diagonal_endpoint(&payload, &marker)
+            .map(cadmpeg_ir::units::FiniteVector::get),
         Some([-0.025, -0.011])
     );
     let mut terminal = payload.clone();
     terminal[136..142].fill(0);
     terminal[142..146].fill(0xff);
     assert_eq!(
-        legacy_extended_rectangle_diagonal_endpoint(&terminal, &marker),
+        legacy_extended_rectangle_diagonal_endpoint(&terminal, &marker)
+            .map(cadmpeg_ir::units::FiniteVector::get),
         Some([-0.025, -0.011])
     );
     payload[88..90].copy_from_slice(&1u16.to_le_bytes());
@@ -680,18 +1059,16 @@ fn legacy_rectangle_diagonal_carries_one_endpoint_and_two_distinct_corner_links(
 
 #[test]
 fn dimensioned_rectangle_selects_one_complete_marker_product() {
-    let marker = |id: &str, u, v| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset: 0,
-        object_index: None,
-        local_id: None,
-        kind: SketchInputKind::Point,
-        state_value: None,
-        coordinates_m: Some([u, v]),
-        links: None,
+    let marker = |id: &str, u, v| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, 0, SketchInputKind::Point);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.state_value = None;
+        constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new([u, v]);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let markers = [
         marker("center", -0.023, 0.0),
@@ -704,17 +1081,20 @@ fn dimensioned_rectangle_selects_one_complete_marker_product() {
         marker("origin", 0.0, 0.0),
     ];
     let marker_refs = markers.iter().collect::<Vec<_>>();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     assert_eq!(
-        unique_dimensioned_rectangle_markers(&marker_refs, &[8.5, 5.5])
-            .map(|markers| markers.map(|marker| marker.id.as_str())),
+        unique_dimensioned_rectangle_markers(&ctx, &marker_refs, &[8.5, 5.5])
+            .unwrap()
+            .map(|markers| markers.map(crate::records::SketchInputEntity::id)),
         Some(["lower-left", "lower-right", "upper-right", "upper-left"])
     );
     assert_eq!(
-        unique_dimensioned_rectangle_markers(&marker_refs, &[8.5]),
+        unique_dimensioned_rectangle_markers(&ctx, &marker_refs, &[8.5]).unwrap(),
         None
     );
     assert_eq!(
-        unique_dimensioned_rectangle_markers(&marker_refs, &[28.3, 5.5]),
+        unique_dimensioned_rectangle_markers(&ctx, &marker_refs, &[28.3, 5.5]).unwrap(),
         None
     );
 
@@ -730,51 +1110,49 @@ fn dimensioned_rectangle_selects_one_complete_marker_product() {
         .chain(second_rectangle.iter())
         .collect::<Vec<_>>();
     assert_eq!(
-        unique_dimensioned_rectangle_markers(&ambiguous, &[8.5, 5.5]),
+        unique_dimensioned_rectangle_markers(&ctx, &ambiguous, &[8.5, 5.5]).unwrap(),
         None
     );
 }
 
 #[test]
 fn compact_line_endpoint_pairs_form_one_oriented_cycle() {
-    let marker = SketchInputEntity {
-        id: "marker".into(),
-        parent: "lane".into(),
-        feature_ref: None,
-        ordinal: 0,
-        offset: 0,
-        object_index: None,
-        local_id: None,
-        kind: SketchInputKind::Point,
-        state_value: None,
-        coordinates_m: None,
-        links: None,
+    let marker = {
+        let marker_id: String = "marker".into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, 0, SketchInputKind::Point);
+        constructed_marker.feature_ref = None;
+        constructed_marker.state_value = None;
+        constructed_marker.coordinates_m = None;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let point = |u, v| Point2::new(u, v);
     let lines = vec![
         (
-            SketchEntityId("top".into()),
+            SketchEntityId::mint("synthetic:test:id#top").unwrap(),
             &marker,
             &marker,
             point(0.0, 1.0),
             point(1.0, 1.0),
         ),
         (
-            SketchEntityId("bottom".into()),
+            SketchEntityId::mint("synthetic:test:id#bottom").unwrap(),
             &marker,
             &marker,
             point(0.0, 0.0),
             point(1.0, 0.0),
         ),
         (
-            SketchEntityId("right".into()),
+            SketchEntityId::mint("synthetic:test:id#right").unwrap(),
             &marker,
             &marker,
             point(1.0, 0.0),
             point(1.0, 1.0),
         ),
         (
-            SketchEntityId("left".into()),
+            SketchEntityId::mint("synthetic:test:id#left").unwrap(),
             &marker,
             &marker,
             point(0.0, 1.0),
@@ -782,24 +1160,68 @@ fn compact_line_endpoint_pairs_form_one_oriented_cycle() {
         ),
     ];
 
-    let profile = ordered_compact_line_profile(&lines).expect("closed line cycle");
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let profile = ordered_compact_line_profile(&ctx, &lines)
+        .expect("profile allocation")
+        .expect("closed line cycle");
     assert_eq!(
         profile
             .iter()
-            .map(|use_| (use_.entity.0.as_str(), use_.reversed))
+            .map(|use_| (use_.entity.as_str(), use_.reversed))
             .collect::<Vec<_>>(),
         [
-            ("top", false),
-            ("right", true),
-            ("bottom", true),
-            ("left", true)
+            ("synthetic:test:id#top", false),
+            ("synthetic:test:id#right", true),
+            ("synthetic:test:id#bottom", true),
+            ("synthetic:test:id#left", true)
         ]
     );
-    assert_eq!(complete_ordered_compact_line_profile(&lines, 5), None);
+    assert_eq!(
+        complete_ordered_compact_line_profile(&ctx, &lines, 5).unwrap(),
+        None
+    );
 }
 
 #[test]
-fn linked_semicircle_records_close_a_two_center_profile() {
+fn compact_line_profile_reports_collection_limit() {
+    let marker = SketchInputEntity::new("marker", "lane", 0, 0, SketchInputKind::Point);
+    let point = |u, v| Point2::new(u, v);
+    let lines = [
+        (
+            SketchEntityId::mint("synthetic:test:id#a").unwrap(),
+            &marker,
+            &marker,
+            point(0.0, 0.0),
+            point(1.0, 0.0),
+        ),
+        (
+            SketchEntityId::mint("synthetic:test:id#b").unwrap(),
+            &marker,
+            &marker,
+            point(1.0, 0.0),
+            point(0.0, 1.0),
+        ),
+        (
+            SketchEntityId::mint("synthetic:test:id#c").unwrap(),
+            &marker,
+            &marker,
+            point(0.0, 1.0),
+            point(0.0, 0.0),
+        ),
+    ];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
+    let error = complete_ordered_compact_line_profile(&ctx, &lines, lines.len())
+        .expect_err("three usage slots exceed the collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "SLDPRT compact line profile usage"));
+}
+
+fn linked_semicircle_fixture() -> (Vec<u8>, [SketchInputEntity; 2], Vec<SketchEntity>) {
     let mut payload = vec![0; 224];
     for (offset, addresses) in [(0, [1u16, 2]), (112, [3, 5])] {
         payload[offset..offset + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
@@ -823,50 +1245,53 @@ fn linked_semicircle_records_close_a_two_center_profile() {
     }
     assert!(current_linked_semicircle_record(&payload, 0));
     assert!(current_linked_semicircle_record(&payload, 112));
-    let marker = |id: &str, offset, center: &str| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("sketch".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind: SketchInputKind::LineOrCircle,
-        state_value: Some(1.0),
-        coordinates_m: None,
-        links: crate::records::SketchInputLinks::new(
+    let marker = |id: &str, offset, center: &str| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            0,
+            offset,
+            SketchInputKind::LineOrCircle,
+        );
+        constructed_marker.feature_ref = Some("sketch".into());
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m = None;
+        constructed_marker.links = crate::records::SketchInputLinks::new(
             1,
             vec![SketchInputLink {
                 entity_ref: center.into(),
                 local_id: 1,
             }],
-        ),
+        );
+        constructed_marker
     };
     let records = [
         marker("curve-a", 0, "center-a"),
         marker("curve-b", 112, "center-b"),
     ];
-    let markers = records.iter().collect::<Vec<_>>();
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let point = |id: &str, position| {
         SketchEntity::new(
-            SketchEntityId(format!("entity-{id}")),
+            SketchEntityId::mint(format!("synthetic:test:id#entity-{id}")).unwrap(),
             sketch.clone(),
-            SketchGeometry::Point { position },
+            SketchGeometry::try_from(SketchGeometryDefinition::Point { position }).unwrap(),
         )
         .with_native_ref(Some(id.into()))
     };
     let curve = |id: &str| {
         SketchEntity::new(
-            SketchEntityId(format!("entity-{id}")),
+            SketchEntityId::mint(format!("synthetic:test:id#entity-{id}")).unwrap(),
             sketch.clone(),
-            SketchGeometry::Native {
-                native_kind: "sldprt:marker-geometry:1".into(),
-            },
+            SketchGeometry::native(
+                cadmpeg_core::text::NonBlankString::new("sldprt:marker-geometry:1")
+                    .expect("nonempty source identity"),
+            ),
         )
         .with_native_ref(Some(id.into()))
     };
-    let mut entities = vec![
+    let entities = vec![
         point("center-a", Point2::new(0.0, 0.0)),
         point("a-plus", Point2::new(0.0, 2.0)),
         point("a-minus", Point2::new(0.0, -2.0)),
@@ -877,29 +1302,86 @@ fn linked_semicircle_records_close_a_two_center_profile() {
         curve("curve-b"),
     ];
 
-    resolve_two_center_semicircle_profile(&payload, &markers, &mut entities, 1.0e-9);
+    (payload, records, entities)
+}
+
+#[test]
+fn linked_semicircle_refuses_collection_limit() {
+    let (payload, records, mut entities) = linked_semicircle_fixture();
+    let markers = records.iter().collect::<Vec<_>>();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let error =
+        resolve_two_center_semicircle_profile(&ctx, &payload, &markers, &mut entities, 1.0e-9)
+            .unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "collect SLDPRT semicircle records"));
+}
+
+#[test]
+fn linked_semicircle_refuses_retained_limit() {
+    let (payload, records, entities) = linked_semicircle_fixture();
+    let markers = records.iter().collect::<Vec<_>>();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "copy SLDPRT semicircle point identity",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+            let mut entities = entities.clone();
+            resolve_two_center_semicircle_profile(
+                &ctx,
+                &payload,
+                &markers,
+                &mut entities,
+                EPS_REFUSAL_GEOMETRY,
+            )
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "copy SLDPRT semicircle point identity"));
+}
+
+#[test]
+fn linked_semicircle_records_close_a_two_center_profile() {
+    let (payload, records, mut entities) = linked_semicircle_fixture();
+    let markers = records.iter().collect::<Vec<_>>();
+
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service()).unwrap();
+    resolve_two_center_semicircle_profile(&ctx, &payload, &markers, &mut entities, 1.0e-9).unwrap();
 
     assert_eq!(
         entities
             .iter()
-            .filter(|entity| matches!(entity.geometry, SketchGeometry::Arc { .. }))
+            .filter(|entity| matches!(
+                *entity.geometry.definition(),
+                SketchGeometryDefinition::Arc { .. }
+            ))
             .count(),
         2
     );
     assert_eq!(
         entities
             .iter()
-            .filter(|entity| matches!(entity.geometry, SketchGeometry::Line { .. }))
+            .filter(|entity| matches!(
+                *entity.geometry.definition(),
+                SketchGeometryDefinition::Line { .. }
+            ))
             .count(),
         2
     );
     assert!(entities
         .iter()
-        .filter_map(|entity| match entity.geometry {
-            SketchGeometry::Arc {
-                radius: Length(radius),
-                ..
-            } => Some(radius),
+        .filter_map(|entity| match *entity.geometry.definition() {
+            SketchGeometryDefinition::Arc { radius, .. } => Some(radius.get()),
             _ => None,
         })
         .all(|radius| (radius - 2.0).abs() < 1.0e-9));
@@ -932,12 +1414,15 @@ fn compact_curve_detail_tangent_distinguishes_lines_and_arcs() {
             [-1.0, 0.0],
             1.0e-9,
         ),
-        Some(SketchGeometry::Arc {
-            center: Point2::new(0.0, 1.0),
-            radius: Length(1.0),
-            start_angle: Angle(std::f64::consts::FRAC_PI_2),
-            end_angle: Angle(-std::f64::consts::FRAC_PI_2),
-        })
+        Some(
+            SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+                center: Point2::new(0.0, 1.0),
+                radius: Length::new(1.0).unwrap(),
+                start_angle: Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+                end_angle: Angle::new(-std::f64::consts::FRAC_PI_2).unwrap(),
+            })
+            .unwrap()
+        )
     );
     assert_eq!(
         tangent_bounded_curve(
@@ -946,155 +1431,175 @@ fn compact_curve_detail_tangent_distinguishes_lines_and_arcs() {
             [0.0, -1.0],
             1.0e-9,
         ),
-        Some(SketchGeometry::Line {
-            start: Point2::new(0.0, 2.0),
-            end: Point2::new(0.0, 0.0),
-        })
+        Some(
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: Point2::new(0.0, 2.0),
+                end: Point2::new(0.0, 0.0),
+            })
+            .unwrap()
+        )
     );
 }
 
 #[test]
 fn bounded_arc_normalization_uses_angular_tolerance() {
-    let Some(SketchGeometry::Arc {
+    let Some(SketchGeometryDefinition::Arc {
         start_angle,
         end_angle,
         ..
-    }) = minor_arc_geometry(
+    }) = (minor_arc_geometry(
         Point2::new(10.0, 0.0),
         Point2::new(0.0, -10.0),
         Point2::new(0.0, 0.0),
         4.0,
-    )
+    ))
+    .map(SketchGeometry::into_definition)
     else {
         panic!("valid bounded arc should resolve");
     };
-    let sweep = (end_angle.0 - start_angle.0).rem_euclid(std::f64::consts::TAU);
+    let sweep = (end_angle.get() - start_angle.get()).rem_euclid(std::f64::consts::TAU);
     assert!(sweep <= std::f64::consts::PI + 1.0e-9);
-    assert!((start_angle.0 + std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
-    assert!(end_angle.0.abs() < 1.0e-12);
+    assert!((start_angle.get() + std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
+    assert!(end_angle.get().abs() < 1.0e-12);
 }
 
 #[test]
 fn unresolved_fillet_without_tangent_record_remains_native() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let entity = |id: &str, geometry, endpoint_refs: &[&str]| {
-        cadmpeg_ir::sketches::SketchEntity::new(SketchEntityId(id.into()), sketch.clone(), geometry)
-            .with_native_ref(Some(id.into()))
-            .with_endpoint_refs(endpoint_refs.iter().map(|id| (*id).into()).collect())
+        cadmpeg_ir::sketches::SketchEntity::new(
+            SketchEntityId::mint(id).unwrap(),
+            sketch.clone(),
+            geometry,
+        )
+        .with_native_ref(Some(id.into()))
+        .with_endpoint_refs(endpoint_refs.iter().map(|id| (*id).into()).collect())
     };
     let mut entities = vec![
         entity(
-            "start",
-            SketchGeometry::Point {
+            "synthetic:test:id#start",
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: Point2::new(1.0, 0.0),
-            },
+            })
+            .unwrap(),
             &[],
         ),
         entity(
-            "end",
-            SketchGeometry::Point {
+            "synthetic:test:id#end",
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: Point2::new(0.0, 1.0),
-            },
+            })
+            .unwrap(),
             &[],
         ),
         entity(
-            "start-line",
-            SketchGeometry::Line {
+            "synthetic:test:id#start-line",
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(1.0, -1.0),
                 end: Point2::new(1.0, 0.0),
-            },
+            })
+            .unwrap(),
             &["start-line-other", "start"],
         ),
         entity(
-            "end-line",
-            SketchGeometry::Line {
+            "synthetic:test:id#end-line",
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(0.0, 1.0),
                 end: Point2::new(-1.0, 1.0),
-            },
+            })
+            .unwrap(),
             &["end", "end-line-other"],
         ),
         entity(
-            "fillet",
-            SketchGeometry::Native {
-                native_kind: "sldprt:marker-geometry:2".into(),
-            },
+            "synthetic:test:id#fillet",
+            SketchGeometry::try_from(SketchGeometryDefinition::Native {
+                native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-geometry:2")
+                    .expect("nonempty source identity"),
+            })
+            .unwrap(),
             &["start", "end"],
         ),
     ];
 
-    super::resolve_connected_marker_arcs(&mut entities, 1.0e-9);
+    resolve_connected_arc_test(&mut entities, 1.0e-9);
 
     assert!(matches!(
-        entities[4].geometry,
-        SketchGeometry::Native { .. }
+        *entities[4].geometry.definition(),
+        SketchGeometryDefinition::Native { .. }
     ));
 }
 
 #[test]
 fn unresolved_fillet_between_arcs_remains_native_without_tangent_relation() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let entity = |id: &str, geometry, endpoint_refs: &[&str]| {
-        SketchEntity::new(SketchEntityId(id.into()), sketch.clone(), geometry)
+        SketchEntity::new(SketchEntityId::mint(id).unwrap(), sketch.clone(), geometry)
             .with_native_ref(Some(id.into()))
             .with_endpoint_refs(endpoint_refs.iter().map(|id| (*id).into()).collect())
     };
     let mut entities = vec![
         entity(
-            "start",
-            SketchGeometry::Point {
+            "synthetic:test:id#start",
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: Point2::new(1.0, 0.0),
-            },
+            })
+            .unwrap(),
             &[],
         ),
         entity(
-            "end",
-            SketchGeometry::Point {
+            "synthetic:test:id#end",
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: Point2::new(0.0, 1.0),
-            },
+            })
+            .unwrap(),
             &[],
         ),
         entity(
-            "start-arc",
-            SketchGeometry::Arc {
+            "synthetic:test:id#start-arc",
+            SketchGeometry::try_from(SketchGeometryDefinition::Arc {
                 center: Point2::new(2.0, 0.0),
-                radius: Length(1.0),
-                start_angle: Angle(0.0),
-                end_angle: Angle(std::f64::consts::PI),
-            },
+                radius: Length::new(1.0).unwrap(),
+                start_angle: Angle::new(0.0).unwrap(),
+                end_angle: Angle::new(std::f64::consts::PI).unwrap(),
+            })
+            .unwrap(),
             &["start", "start-other"],
         ),
         entity(
-            "end-arc",
-            SketchGeometry::Arc {
+            "synthetic:test:id#end-arc",
+            SketchGeometry::try_from(SketchGeometryDefinition::Arc {
                 center: Point2::new(0.0, 2.0),
-                radius: Length(1.0),
-                start_angle: Angle(0.0),
-                end_angle: Angle(std::f64::consts::PI),
-            },
+                radius: Length::new(1.0).unwrap(),
+                start_angle: Angle::new(0.0).unwrap(),
+                end_angle: Angle::new(std::f64::consts::PI).unwrap(),
+            })
+            .unwrap(),
             &["end", "end-other"],
         ),
         entity(
-            "fillet",
-            SketchGeometry::Native {
-                native_kind: "sldprt:marker-geometry:2".into(),
-            },
+            "synthetic:test:id#fillet",
+            SketchGeometry::try_from(SketchGeometryDefinition::Native {
+                native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-geometry:2")
+                    .expect("nonempty source identity"),
+            })
+            .unwrap(),
             &["start", "end"],
         ),
     ];
 
-    super::resolve_connected_marker_arcs(&mut entities, 1.0e-9);
+    resolve_connected_arc_test(&mut entities, 1.0e-9);
 
     assert!(matches!(
-        entities[4].geometry,
-        SketchGeometry::Native { .. }
+        *entities[4].geometry.definition(),
+        SketchGeometryDefinition::Native { .. }
     ));
 }
 
 #[test]
 fn connected_marker_arc_uses_unique_equidistant_point_witness() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let entity = |id: &str, geometry, native_ref: &str, endpoint_refs: &[&str]| {
-        SketchEntity::new(SketchEntityId(id.into()), sketch.clone(), geometry)
+        SketchEntity::new(SketchEntityId::mint(id).unwrap(), sketch.clone(), geometry)
             .with_native_ref(Some(native_ref.into()))
             .with_endpoint_refs(
                 endpoint_refs
@@ -1105,149 +1610,170 @@ fn connected_marker_arc_uses_unique_equidistant_point_witness() {
     };
     let mut entities = vec![
         entity(
-            "center",
-            SketchGeometry::Point {
+            "synthetic:test:id#center",
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: Point2::new(0.0, 0.0),
-            },
+            })
+            .unwrap(),
             "point:10",
             &[],
         ),
         entity(
-            "start",
-            SketchGeometry::Point {
+            "synthetic:test:id#start",
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: Point2::new(1.0, 0.0),
-            },
+            })
+            .unwrap(),
             "point:100",
             &[],
         ),
         entity(
-            "end",
-            SketchGeometry::Point {
+            "synthetic:test:id#end",
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: Point2::new(0.0, 1.0),
-            },
+            })
+            .unwrap(),
             "point:200",
             &[],
         ),
         entity(
-            "arc",
-            SketchGeometry::Native {
-                native_kind: "sldprt:marker-geometry:2".into(),
-            },
+            "synthetic:test:id#arc",
+            SketchGeometry::try_from(SketchGeometryDefinition::Native {
+                native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-geometry:2")
+                    .expect("nonempty source identity"),
+            })
+            .unwrap(),
             "curve:300",
             &["point:100", "point:200"],
         ),
     ];
 
-    super::resolve_connected_marker_arcs(&mut entities, 1.0e-9);
+    resolve_connected_arc_test(&mut entities, 1.0e-9);
 
-    assert!(matches!(
-        entities[3].geometry,
-        SketchGeometry::Arc {
+    assert!(matches!(*entities[3].geometry.definition(),
+        SketchGeometryDefinition::Arc {
             center,
-            radius: Length(radius),
+            radius,
             ..
-        } if center == Point2::new(0.0, 0.0) && radius == 1.0
+        } if center == Point2::new(0.0, 0.0) && radius.get() == 1.0
     ));
 }
 
 #[test]
 fn connected_marker_arc_with_mirror_centers_remains_native() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let point = |id: &str, native_ref: &str, position| {
         SketchEntity::new(
-            SketchEntityId(id.into()),
+            SketchEntityId::mint(id).unwrap(),
             sketch.clone(),
-            SketchGeometry::Point { position },
+            SketchGeometry::try_from(SketchGeometryDefinition::Point { position }).unwrap(),
         )
         .with_native_ref(Some(native_ref.into()))
     };
     let mut entities = vec![
-        point("start", "point:100", Point2::new(1.0, 0.0)),
-        point("between-center", "point:200", Point2::new(0.0, 0.0)),
-        point("end", "point:300", Point2::new(0.0, 1.0)),
-        point("outside-center", "point:400", Point2::new(1.0, 1.0)),
+        point(
+            "synthetic:test:id#start",
+            "point:100",
+            Point2::new(1.0, 0.0),
+        ),
+        point(
+            "synthetic:test:id#between-center",
+            "point:200",
+            Point2::new(0.0, 0.0),
+        ),
+        point("synthetic:test:id#end", "point:300", Point2::new(0.0, 1.0)),
+        point(
+            "synthetic:test:id#outside-center",
+            "point:400",
+            Point2::new(1.0, 1.0),
+        ),
         SketchEntity::new(
-            SketchEntityId("arc".into()),
+            SketchEntityId::mint("synthetic:test:id#arc").unwrap(),
             sketch,
-            SketchGeometry::Native {
-                native_kind: "sldprt:marker-geometry:2".into(),
-            },
+            SketchGeometry::try_from(SketchGeometryDefinition::Native {
+                native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-geometry:2")
+                    .expect("nonempty source identity"),
+            })
+            .unwrap(),
         )
         .with_native_ref(Some("curve:500".into()))
         .with_endpoint_refs(vec!["point:100".into(), "point:300".into()]),
     ];
 
-    super::resolve_connected_marker_arcs(&mut entities, 1.0e-9);
+    resolve_connected_arc_test(&mut entities, 1.0e-9);
 
-    assert!(matches!(
-        entities[4].geometry,
-        SketchGeometry::Native { ref native_kind }
+    assert!(matches!(*entities[4].geometry.definition(),
+        SketchGeometryDefinition::Native { ref native_kind }
             if native_kind == "sldprt:marker-geometry:2"
     ));
 }
 
 #[test]
 fn connected_marker_arc_uses_one_resolved_arc_in_a_closed_cycle() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let point = |id: &str, position| {
         SketchEntity::new(
-            SketchEntityId(id.into()),
+            SketchEntityId::mint(id).unwrap(),
             sketch.clone(),
-            SketchGeometry::Point { position },
+            SketchGeometry::try_from(SketchGeometryDefinition::Point { position }).unwrap(),
         )
-        .with_native_ref(Some(id.into()))
+        .with_native_ref(Some(id.rsplit_once('#').map_or(id, |(_, key)| key).into()))
     };
     let line = |id: &str, start: &str, end: &str, start_position, end_position| {
         SketchEntity::new(
-            SketchEntityId(id.into()),
+            SketchEntityId::mint(id).unwrap(),
             sketch.clone(),
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: start_position,
                 end: end_position,
-            },
+            })
+            .unwrap(),
         )
-        .with_native_ref(Some(id.into()))
+        .with_native_ref(Some(id.rsplit_once('#').map_or(id, |(_, key)| key).into()))
         .with_endpoint_refs(vec![start.into(), end.into()])
     };
     let center = Point2::new(9.5, 0.0);
     let radius = (9.5_f64.powi(2) + 2.0_f64.powi(2)).sqrt();
     let mut entities = vec![
-        point("left-top", Point2::new(0.0, 2.0)),
-        point("left-bottom", Point2::new(0.0, -2.0)),
-        point("right-top", Point2::new(19.0, 2.0)),
-        point("right-bottom", Point2::new(19.0, -2.0)),
+        point("synthetic:test:id#left-top", Point2::new(0.0, 2.0)),
+        point("synthetic:test:id#left-bottom", Point2::new(0.0, -2.0)),
+        point("synthetic:test:id#right-top", Point2::new(19.0, 2.0)),
+        point("synthetic:test:id#right-bottom", Point2::new(19.0, -2.0)),
         line(
-            "top",
+            "synthetic:test:id#top",
             "left-top",
             "right-top",
             Point2::new(0.0, 2.0),
             Point2::new(19.0, 2.0),
         ),
         line(
-            "bottom",
+            "synthetic:test:id#bottom",
             "right-bottom",
             "left-bottom",
             Point2::new(19.0, -2.0),
             Point2::new(0.0, -2.0),
         ),
         SketchEntity::new(
-            SketchEntityId("left-arc".into()),
+            SketchEntityId::mint("synthetic:test:id#left-arc").unwrap(),
             sketch.clone(),
-            SketchGeometry::Arc {
+            SketchGeometry::try_from(SketchGeometryDefinition::Arc {
                 center,
-                radius: Length(radius),
-                start_angle: Angle((2.0_f64).atan2(-9.5)),
-                end_angle: Angle((-2.0_f64).atan2(-9.5)),
-            },
+                radius: Length::new(radius).unwrap(),
+                start_angle: Angle::new((2.0_f64).atan2(-9.5)).unwrap(),
+                end_angle: Angle::new((-2.0_f64).atan2(-9.5)).unwrap(),
+            })
+            .unwrap(),
         )
         .with_native_ref(Some("left-arc".into()))
         .with_endpoint_refs(vec!["left-top".into(), "left-bottom".into()]),
         SketchEntity::new(
-            SketchEntityId("right-arc".into()),
+            SketchEntityId::mint("synthetic:test:id#right-arc").unwrap(),
             sketch,
-            SketchGeometry::Native {
-                native_kind: "sldprt:marker-geometry:2".into(),
-            },
+            SketchGeometry::try_from(SketchGeometryDefinition::Native {
+                native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-geometry:2")
+                    .expect("nonempty source identity"),
+            })
+            .unwrap(),
         )
         .with_native_ref(Some("right-arc".into()))
         .with_endpoint_refs(vec!["right-top".into(), "right-bottom".into()]),
@@ -1256,7 +1782,7 @@ fn connected_marker_arc_uses_one_resolved_arc_in_a_closed_cycle() {
     let mut ambiguous_entities = entities.clone();
     let witness = &ambiguous_entities[6];
     let duplicate_witness = SketchEntity::new(
-        SketchEntityId("left-arc-duplicate".into()),
+        SketchEntityId::mint("synthetic:test:id#left-arc-duplicate").unwrap(),
         witness.sketch.clone(),
         witness.geometry.clone(),
     )
@@ -1265,22 +1791,20 @@ fn connected_marker_arc_uses_one_resolved_arc_in_a_closed_cycle() {
     .with_geometry_ref(witness.geometry_ref.clone())
     .with_endpoint_refs(witness.endpoint_refs.clone());
     ambiguous_entities.push(duplicate_witness);
-    super::resolve_connected_marker_arcs(&mut ambiguous_entities, 1.0e-9);
-    assert!(matches!(
-        ambiguous_entities[7].geometry,
-        SketchGeometry::Native { ref native_kind }
+    resolve_connected_arc_test(&mut ambiguous_entities, 1.0e-9);
+    assert!(matches!(*ambiguous_entities[7].geometry.definition(),
+        SketchGeometryDefinition::Native { ref native_kind }
             if native_kind == "sldprt:marker-geometry:2"
     ));
 
-    super::resolve_connected_marker_arcs(&mut entities, 1.0e-9);
+    resolve_connected_arc_test(&mut entities, 1.0e-9);
 
-    assert!(matches!(
-        entities[7].geometry,
-        SketchGeometry::Arc {
+    assert!(matches!(*entities[7].geometry.definition(),
+        SketchGeometryDefinition::Arc {
             center: actual_center,
-            radius: Length(actual_radius),
+            radius: actual_radius,
             ..
-        } if actual_center == center && actual_radius == radius
+        } if actual_center == center && actual_radius.get() == radius
     ));
 }
 
@@ -1332,5 +1856,62 @@ fn packed_slot_descriptor_run_is_not_independent_geometry() {
     assert_eq!(entities.len(), 2);
     assert!(entities
         .iter()
-        .all(|entity| entity.kind == SketchInputKind::from_handle_code(0)));
+        .all(|entity| entity.kind() == SketchInputKind::from_handle_code(0)));
+}
+
+#[test]
+fn linked_semicircle_refuses_work_at_minimum_admission() {
+    const EPS_SEMICIRCLE_TEST: f64 = 1.0e-9;
+    let (payload, records, entities) = linked_semicircle_fixture();
+    let markers = records.iter().collect::<Vec<_>>();
+    let run = |policy: &DecodePolicy| {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, policy).unwrap();
+        let mut output = entities.clone();
+        resolve_two_center_semicircle_profile(
+            &ctx,
+            &payload,
+            &markers,
+            &mut output,
+            EPS_SEMICIRCLE_TEST,
+        )?;
+        Ok::<_, CodecError>(output)
+    };
+    let mut policy = DecodePolicy::service();
+    let expected = run(&policy).unwrap();
+    assert_ne!(expected, entities);
+    let admitted = |policy: &DecodePolicy| match run(policy) {
+        Ok(actual) => {
+            assert_eq!(actual, expected);
+            true
+        }
+        Err(CodecError::ResourceLimit(limit)) => {
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            false
+        }
+        Err(error) => panic!("unexpected linked semicircle error: {error}"),
+    };
+    let mut lower = 0;
+    let mut upper = 1_u64;
+    loop {
+        policy.limits.max_work_units = upper;
+        if admitted(&policy) {
+            break;
+        }
+        upper = upper.checked_mul(2).unwrap();
+    }
+    while lower < upper {
+        let middle = lower + (upper - lower) / 2;
+        policy.limits.max_work_units = middle;
+        if admitted(&policy) {
+            upper = middle;
+        } else {
+            lower = middle + 1;
+        }
+    }
+    assert!(upper > 0);
+    policy.limits.max_work_units = upper;
+    assert!(admitted(&policy));
+    policy.limits.max_work_units = upper - 1;
+    assert!(!admitted(&policy));
 }

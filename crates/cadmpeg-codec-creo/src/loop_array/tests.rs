@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use super::scan;
+use cadmpeg_test_support::EditableDecodeResult;
+
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -52,6 +55,66 @@ fn row(id: u8, body: &[u8]) -> Vec<u8> {
     bytes
 }
 
+fn scan_with_limits(
+    payload: &[u8],
+    collection_limit: u64,
+    retained_limit: u64,
+) -> Result<super::LoopArrayScan, CodecError> {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_retained_bytes = retained_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
+        .expect("loop array fixture admitted");
+    super::scan(&ctx, payload)
+}
+
+fn scan(payload: &[u8]) -> super::LoopArrayScan {
+    scan_with_limits(payload, u64::MAX, u64::MAX).expect("service loop array scan")
+}
+
+fn assert_loop_array_collection_refusal(limit: u64, operation: &'static str) {
+    let payload = frame(1, &row(1, &[0xe2, 0x10]));
+    let error = scan_with_limits(&payload, limit, u64::MAX)
+        .expect_err("loop array exceeds collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == operation));
+}
+
+#[test]
+fn loop_array_refuses_frame_record_before_growth() {
+    assert_loop_array_collection_refusal(0, "creo loop array frame records");
+}
+
+#[test]
+fn loop_array_refuses_frame_before_growth() {
+    assert_loop_array_collection_refusal(1, "creo loop array frames");
+}
+
+#[test]
+fn loop_array_refuses_section_record_before_growth() {
+    assert_loop_array_collection_refusal(2, "creo loop array section records");
+}
+
+#[test]
+fn loop_array_refuses_body_before_retained_copy() {
+    let payload = frame(1, &row(1, &[0xe2, 0x10]));
+    let error = scan_with_limits(
+        &payload,
+        u64::MAX,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some("creo loop array record body"),
+            |cap| scan_with_limits(&payload, u64::MAX, cap),
+        ),
+    )
+    .expect_err("loop array body exceeds retained limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo loop array record body"));
+}
+
 #[test]
 fn retains_bounded_rows_and_frame_header() {
     let payload = frame(
@@ -68,10 +131,7 @@ fn retains_bounded_rows_and_frame_header() {
     assert_eq!(parsed.frames[0].variant, Some(super::LayoutMarker::F3));
     assert_eq!(parsed.frames[0].declared_count, 2);
     assert_eq!(parsed.frames[0].class_id, 0x2a);
-    assert_eq!(
-        parsed.frames[0].rows,
-        super::LoopArrayFrameRows::Materialized(2)
-    );
+    assert!(!parsed.frames[0].overfull);
     assert_eq!(parsed.records.len(), 2);
     assert_eq!(parsed.records[0].lo_id, 1);
     assert_eq!(parsed.records[0].feature_id, 4);
@@ -112,10 +172,7 @@ fn keeps_materialized_rows_when_slots_are_sparse() {
     let parsed = scan(&payload);
 
     assert_eq!(parsed.frames[0].declared_count, 3);
-    assert_eq!(
-        parsed.frames[0].rows,
-        super::LoopArrayFrameRows::Materialized(1)
-    );
+    assert!(!parsed.frames[0].overfull);
     assert_eq!(parsed.records.len(), 1);
 }
 
@@ -129,7 +186,7 @@ fn withholds_an_overfull_frame() {
     let parsed = scan(&frame(1, &rows));
 
     assert_eq!(parsed.frames.len(), 1);
-    assert_eq!(parsed.frames[0].rows, super::LoopArrayFrameRows::Overfull);
+    assert!(parsed.frames[0].overfull);
     assert!(parsed.records.is_empty());
 }
 
@@ -148,15 +205,17 @@ fn rejects_truncated_prototype_and_row() {
 fn container_and_native_arenas_retain_loop_roster() {
     let payload = frame(1, &row(1, &[0xe2, 0x10]));
     let data = build_prt("c", &[("VisibGeom", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.loop_arrays.frames.len(), 1);
     assert_eq!(scan.loop_arrays.records.len(), 1);
     assert_eq!(scan.loop_arrays.records[0].lo_id, 1);
 
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
+    let result = EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
     let namespace = result.ir().native.namespace("creo").unwrap();
     assert_eq!(namespace.arenas()["loop_array_frames"].len(), 1);
     let records = &namespace.arenas()["loop_array_records"];
@@ -169,4 +228,30 @@ fn container_and_native_arenas_retain_loop_roster() {
             .as_deref(),
         Some("loop_array_record")
     );
+}
+
+#[test]
+fn impossible_loop_extent_is_incomplete_not_overfull() {
+    let bytes = frame(100, &[1, 1, 1, 1, 0, 1, 0, 0xe3]);
+    let result = scan(&bytes);
+    assert_eq!(result.frames.len(), 1);
+    assert!(!result.frames[0].overfull);
+    assert_eq!(result.frames[0].declared_count, 100);
+    assert!(result.records.is_empty());
+}
+
+#[test]
+fn loop_array_framing_and_token_walks_refuse_work() {
+    let bytes = frame(1, &row(1, &[0xe4]));
+    let scan = crate::test_support::assert_work_boundaries(
+        &[
+            "creo loop array discovery",
+            "creo loop frame boundaries",
+            "creo loop prototype scan",
+            "creo loop row token walk",
+        ],
+        |ctx| super::scan(ctx, &bytes),
+    );
+    assert_eq!(scan.frames.len(), 1);
+    assert_eq!(scan.records.len(), 1);
 }

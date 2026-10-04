@@ -7,7 +7,7 @@ use super::state_index::{OperationStateIndex, StateIndexToken};
 
 /// One row in an `m_rollForwardStates` group table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OperationStateGroupRow {
+pub(crate) enum OperationStateGroupRow {
     /// `4a object_index position ff` list member. The common position is a
     /// direct byte; one generation uses the same compact token family as an
     /// object index for positions above the direct range.
@@ -76,6 +76,7 @@ impl<O: Copy + From<u16> + std::ops::Add<Output = O>> OperationStateGroup<O> {
     pub(crate) fn end_offset(&self) -> O {
         self.offset + O::from(self.byte_len())
     }
+    #[cfg(test)]
     pub(crate) fn map_rows<R>(
         self,
         mut map: impl FnMut(u8, O, OperationStateGroupRow) -> R,
@@ -181,7 +182,7 @@ pub(super) fn operation_state_group_end_at(
     base_offset: usize,
 ) -> Option<usize> {
     let (_, count, mut cursor) = operation_state_group_header_at(bytes, at)?;
-    let member_count = usize::from(count.declared_count().saturating_sub(1));
+    let member_count = count.member_row_count();
     for _ in 0..member_count {
         cursor = operation_state_group_row_at(bytes, cursor, base_offset)?.1;
     }
@@ -189,25 +190,47 @@ pub(super) fn operation_state_group_end_at(
 }
 
 pub(super) fn operation_state_group_at(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     at: usize,
     end: usize,
     base_offset: usize,
-) -> Option<OperationStateGroup> {
-    let (opener, count, mut cursor) = operation_state_group_header_at(bytes, at)?;
-    let member_count = usize::from(count.declared_count().saturating_sub(1));
-    let mut rows = Vec::with_capacity(member_count);
+) -> Result<Option<OperationStateGroup>, cadmpeg_core::CodecError> {
+    let Some((opener, count, mut cursor)) = operation_state_group_header_at(bytes, at) else {
+        return Ok(None);
+    };
+    let Some(group_end) = operation_state_group_end_at(bytes, at, end, base_offset) else {
+        return Ok(None);
+    };
+    let Some(offset) = base_offset.checked_add(at) else {
+        return Ok(None);
+    };
+    if base_offset.checked_add(group_end).is_none() {
+        return Ok(None);
+    }
+    let member_count = count.member_row_count();
+    let count_u64 = cadmpeg_core::decode::u64_from_index(member_count);
+    let operation = "NX operation-state group rows";
+    ctx.charge_work(count_u64, operation)?;
+    let mut rows = ctx.collection_vec(member_count, operation)?;
     for _ in 0..member_count {
-        let (row, row_end) = operation_state_group_row_at(bytes, cursor, base_offset)?;
+        let Some((row, row_end)) = operation_state_group_row_at(bytes, cursor, base_offset) else {
+            return Ok(None);
+        };
         rows.push(row);
         cursor = row_end;
     }
-    base_offset.checked_add(cursor)?;
-    (cursor <= end).then_some(OperationStateGroup {
-        offset: base_offset.checked_add(at)?,
+    if cursor != group_end {
+        return Ok(None);
+    }
+    let Some(members) = StateGroupMembers::new(count, rows).ok() else {
+        return Ok(None);
+    };
+    Ok(Some(OperationStateGroup {
+        offset,
         opener,
-        members: StateGroupMembers::new(count, rows).ok()?,
-    })
+        members,
+    }))
 }
 
 /// A nonempty contiguous group sequence with its exact boundary suffix.
@@ -246,7 +269,7 @@ impl GroupTableFooter {
 impl OperationStateGroupTable {
     pub(super) fn new(groups: Vec<OperationStateGroup>, trailing_bytes: &[u8]) -> Option<Self> {
         let footer = GroupTableFooter::try_from(trailing_bytes).ok()?;
-        let groups = super::nonempty::NonEmpty::new(groups)?;
+        let groups = super::nonempty::NonEmpty::from_admitted_vec(groups)?;
         let mut end = groups.first().offset();
         for group in groups.iter() {
             if group.offset() != end {
@@ -257,7 +280,7 @@ impl OperationStateGroupTable {
         end.checked_add(trailing_bytes.len())?;
         Some(Self { groups, footer })
     }
-    pub(crate) fn offset(&self) -> usize {
+    pub(super) fn offset(&self) -> usize {
         self.groups.first().offset()
     }
     pub(crate) fn end_offset(&self) -> usize {
@@ -266,10 +289,10 @@ impl OperationStateGroupTable {
     pub(crate) fn footer(&self) -> GroupTableFooter {
         self.footer
     }
-    pub(crate) fn trailing_bytes(&self) -> &'static [u8] {
+    pub(super) fn trailing_bytes(&self) -> &'static [u8] {
         self.footer.bytes()
     }
-    pub(crate) fn groups(&self) -> &super::nonempty::NonEmpty<OperationStateGroup> {
+    pub(super) fn groups(&self) -> &super::nonempty::NonEmpty<OperationStateGroup> {
         &self.groups
     }
     pub(crate) fn into_groups(self) -> super::nonempty::NonEmpty<OperationStateGroup> {
@@ -281,24 +304,36 @@ impl OperationStateGroupTable {
 mod tests {
     use super::{operation_state_group_at, OperationStateGroupTable};
 
+    fn group_at(
+        bytes: &[u8],
+        at: usize,
+        end: usize,
+        base_offset: usize,
+    ) -> Option<super::OperationStateGroup> {
+        crate::test_support::with_decode_context(|ctx| {
+            operation_state_group_at(ctx, bytes, at, end, base_offset)
+        })
+        .unwrap()
+    }
+
     #[test]
     fn row_positions_follow_mixed_token_widths() {
         let bytes = [
             1, 0, 1, 3, 0x4a, 0x83, 0xba, 1, 0xff, 0x4f, 0xf1, 4, 0x2d, 0x83, 0xe1, 0xff, 0xff,
         ];
-        let group = operation_state_group_at(&bytes, 0, bytes.len(), 900).unwrap();
+        let group = group_at(&bytes, 0, bytes.len(), 900).unwrap();
         assert_eq!(group.offset(), 900);
         assert_eq!(group.end_offset(), 917);
         let positions = group.map_rows(|_, offset, _| offset);
         assert_eq!(positions.rows(), &[904, 909]);
-        assert!(operation_state_group_at(&bytes, 0, bytes.len(), usize::MAX - 16).is_none());
+        assert!(group_at(&bytes, 0, bytes.len(), usize::MAX - 16).is_none());
     }
 
     #[test]
     fn table_bounds_follow_groups_and_closed_footer() {
         let bytes = [1, 0, 0];
-        let first = operation_state_group_at(&bytes, 0, 3, 10).unwrap();
-        let second = operation_state_group_at(&bytes, 0, 3, 13).unwrap();
+        let first = group_at(&bytes, 0, 3, 10).unwrap();
+        let second = group_at(&bytes, 0, 3, 13).unwrap();
         for footer in [&[][..], &[1, 1][..]] {
             let table =
                 OperationStateGroupTable::new(vec![first.clone(), second.clone()], footer).unwrap();
@@ -309,7 +344,7 @@ mod tests {
         assert!(OperationStateGroupTable::new(Vec::new(), &[]).is_none());
         assert!(OperationStateGroupTable::new(vec![first.clone(), first.clone()], &[]).is_none());
         assert!(OperationStateGroupTable::new(vec![first], &[1]).is_none());
-        let last = operation_state_group_at(&bytes, 0, 3, usize::MAX - 3).unwrap();
+        let last = group_at(&bytes, 0, 3, usize::MAX - 3).unwrap();
         assert!(OperationStateGroupTable::new(vec![last], &[1, 1]).is_none());
     }
 }

@@ -12,14 +12,14 @@ use crate::manifest::{self, GENERATED_DESIGN_ASSET_FOLDER as DESIGN_FOLDER};
 use crate::writer::primitives::{
     f3d_native, validate_assembly_projection, validate_configuration_projection,
 };
-pub(crate) mod attributes;
-pub(crate) mod index;
-pub(crate) mod native_bytes;
+mod attributes;
+mod index;
+mod native_bytes;
 pub(crate) mod native_geometry;
-pub(crate) mod preconditions;
-pub(crate) mod presentation;
-pub(crate) mod records;
-pub(crate) mod smbh;
+mod preconditions;
+mod presentation;
+mod records;
+mod smbh;
 use preconditions::{
     validate_source_less_auxiliary_geometry, validate_source_less_design_bindings,
     validate_source_less_design_links, validate_source_less_design_ownership,
@@ -33,7 +33,7 @@ use smbh::encode_smbh;
 
 /// Write a canonical source-less F3D archive for the currently supported
 /// native construction profile.
-pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), CodecError> {
+pub(super) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), CodecError> {
     let loaded_native = f3d_native(target)?;
     validate_assembly_projection(target, loaded_native.as_ref())?;
     let has_native = loaded_native.is_some();
@@ -107,34 +107,17 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
     archive.write_all(&smbh)?;
     if has_native {
         let mut configuration_names = BTreeSet::new();
-        let mut configuration_ids = BTreeSet::new();
         for configuration in &native.design_configurations {
-            if !configuration_names.insert(configuration.entry_name.as_str())
-                || !configuration_ids.insert(configuration.id.as_str())
-            {
+            if !configuration_names.insert(configuration.entry_name().as_str()) {
                 return Err(CodecError::malformed(format_args!(
                     "duplicate F3D configuration identity: {}",
-                    configuration.entry_name
-                )));
-            }
-            let valid_name = match configuration.kind {
-                crate::records::DesignConfigurationKind::Table => {
-                    configuration.entry_name.ends_with(".dsgcfg")
-                }
-                crate::records::DesignConfigurationKind::Rule => {
-                    configuration.entry_name.ends_with(".dsgcfgrule")
-                }
-            };
-            if !valid_name {
-                return Err(CodecError::malformed(format_args!(
-                    "F3D configuration kind conflicts with entry name: {}",
-                    configuration.entry_name
+                    configuration.entry_name()
                 )));
             }
             let payload =
-                crate::design::configurations::encode_configuration_payload(configuration)?;
+                crate::records::configuration::encode_configuration_payload(configuration)?;
             archive
-                .start_file(&configuration.entry_name, options)
+                .start_file(configuration.entry_name(), options)
                 .map_err(|error| {
                     CodecError::malformed(format_args!(
                         "cannot create F3D configuration entry: {error}"

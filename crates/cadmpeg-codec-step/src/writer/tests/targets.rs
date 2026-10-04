@@ -4,10 +4,12 @@
 
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::wire;
+
 use std::io::Cursor;
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{EncodeInput, Encoder, ExportPlan, TargetRequest};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, ExportPlan};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::examples::unit_cube;
@@ -24,8 +26,8 @@ use crate::options::{StepSchema, StepWriteOptions};
 fn source_declaring(identifier: &str) -> cadmpeg_ir::codec::DecodeResult {
     let written = StepSchema::Ap242Edition3;
     let mut bytes = Vec::new();
-    crate::write_step(
-        &unit_cube(),
+    crate::export::write_step(
+        &unit_cube().expect("unit cube fixture is admitted"),
         &mut bytes,
         written,
         &StepWriteOptions::default(),
@@ -57,7 +59,12 @@ fn written_text(plan: ExportPlan) -> String {
 }
 
 fn target_of(plan: &ExportPlan) -> Option<String> {
-    plan.report().target().map(ToString::to_string)
+    wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+        plan.report(),
+        "identity/target",
+    )
+    .as_ref()
+    .map(ToString::to_string)
 }
 
 /// Encoder planning always returns its typed loss rows, even when a direct
@@ -67,12 +74,14 @@ fn planning_reports_unrepresentable_content_under_strict_write_options() {
     let mut ir = CadIr::empty();
     ir.native.namespace_mut("f3d").arenas_mut().insert(
         "asm_histories".into(),
-        vec![
-            cadmpeg_ir::NativeRecord::new("f3d:test:asm-history#0", serde_json::Map::default())
-                .expect("valid native identity"),
-        ],
+        vec![cadmpeg_ir::NativeRecord::new(
+            cadmpeg_ir::ids::Identity::new("f3d:test:asm-history#0").expect("valid identity"),
+            serde_json::Map::default(),
+        )
+        .expect("valid native identity")],
     );
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
     let encoder = StepCodec {
         options: StepWriteOptions {
             ..StepWriteOptions::default()
@@ -96,13 +105,24 @@ fn refusal(
     error: &CodecError,
 ) -> (
     &str,
-    Option<&str>,
+    Option<String>,
     &'static [cadmpeg_core::target::TargetDescriptor],
 ) {
     let CodecError::UnsupportedTarget(refusal) = error else {
         panic!("expected a target refusal, got {error}");
     };
-    (refusal.format(), refusal.requested(), refusal.available())
+    (
+        refusal.format(),
+        {
+            let wire = serde_json::to_value(refusal).expect("serialize refusal");
+            wire["refusal"]
+                .get("requested")
+                .or_else(|| wire["refusal"].get("source"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        },
+        refusal.available(),
+    )
 }
 
 /// The flagship case: `convert in.step -o out.step` on a file that is not the
@@ -194,7 +214,7 @@ fn inherit_refuses_an_edition_unspecified_ap242_source() {
         .expect_err("an edition-unspecified AP242 source has no write target");
     let (format, requested, available) = refusal(&error);
     assert_eq!(format, "step");
-    assert_eq!(requested, Some("step:ap242"));
+    assert_eq!(requested.as_deref(), Some("step:ap242"));
     for schema in StepSchema::ALL {
         assert!(
             available
@@ -226,7 +246,7 @@ fn inherit_refuses_an_unrecognized_source_declaration() {
     let error =
         inherit(&StepCodec::default(), decoded.ir()).expect_err("step:unknown has no write target");
     let (_, requested, available) = refusal(&error);
-    assert_eq!(requested, Some("step:unknown"));
+    assert_eq!(requested.as_deref(), Some("step:unknown"));
     assert!(
         available
             .iter()
@@ -246,7 +266,7 @@ fn inherit_refuses_a_step_source_that_records_no_dialect() {
     let mut ir = CadIr::empty();
     ir.source = Some(
         serde_json::from_value(serde_json::json!({
-            "format": crate::dialect::FORMAT,
+            "identity": {"classification": "unclassified", "format": crate::dialect::FORMAT},
             "attributes": {},
         }))
         .unwrap(),
@@ -256,7 +276,7 @@ fn inherit_refuses_a_step_source_that_records_no_dialect() {
         .expect_err("a STEP source with no dialect has nothing to preserve");
     let (format, requested, available) = refusal(&error);
     assert_eq!(format, "step");
-    assert_eq!(requested, None);
+    assert_eq!(requested.as_deref(), None);
     assert!(
         available
             .iter()
@@ -318,10 +338,10 @@ fn a_cross_format_conversion_writes_the_catalog_default() {
         .expect("the catalog has a default");
     assert_eq!(default.id.as_str(), "step:ap214");
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.source = Some(SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
-            cadmpeg_core::dialect::DialectId::pinned("rhino:archive-50"),
+            cadmpeg_core::dialect_id!("rhino:archive-50"),
         )),
         std::collections::BTreeMap::new(),
     ));
@@ -352,15 +372,15 @@ fn nothing_to_inherit_falls_to_the_catalog_default() {
         .expect("the catalog has a default");
     assert_eq!(default.id.as_str(), "step:ap214");
 
-    let sourceless = unit_cube();
+    let sourceless = unit_cube().expect("unit cube fixture is admitted");
     let plan = inherit(&encoder, &sourceless).expect("a sourceless document takes the default");
     assert_eq!(target_of(&plan), Some("step:ap214".to_owned()));
     assert!(written_text(plan).contains("AUTOMOTIVE_DESIGN"));
 
-    let mut foreign = unit_cube();
+    let mut foreign = unit_cube().expect("unit cube fixture is admitted");
     foreign.source = Some(SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
-            cadmpeg_core::dialect::DialectId::pinned("iges:5.3-fixed-ascii"),
+            cadmpeg_core::dialect_id!("iges:5.3-fixed-ascii"),
         )),
         std::collections::BTreeMap::new(),
     ));
@@ -379,8 +399,11 @@ fn a_dialect_changing_explicit_write_charges_displacement_by_name() {
         )
         .expect("AP214 is a catalog row");
     assert_eq!(
-        plan.report().fidelity(),
-        cadmpeg_ir::FidelityResolution::NotProvided
+        wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
+        cadmpeg_ir::report::export::FidelityResolution::NotProvided {}
     );
     let loss = plan
         .report()
@@ -404,8 +427,11 @@ fn an_explicit_write_at_the_source_dialect_is_not_degraded() {
         )
         .expect("AP203 edition 1 is a catalog row");
     assert_eq!(
-        plan.report().fidelity(),
-        cadmpeg_ir::FidelityResolution::NotProvided
+        wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
+        cadmpeg_ir::report::export::FidelityResolution::NotProvided {}
     );
 }
 
@@ -463,7 +489,7 @@ fn the_catalog_is_the_schemas_the_writer_emits() {
 /// `step:ap242`, not any edition.
 #[test]
 fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
-    let cube = unit_cube();
+    let cube = unit_cube().expect("unit cube fixture is admitted");
     for schema in StepSchema::ALL {
         let plan = StepCodec::default()
             .plan(
@@ -471,11 +497,12 @@ fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
                 TargetRequest::Explicit(schema.descriptor().id.as_str()),
             )
             .unwrap_or_else(|error| panic!("{schema:?} is a catalog row, got {error}"));
-        let claimed = plan
-            .report()
-            .target()
-            .cloned()
-            .expect("a STEP write always names its schema");
+        let claimed = wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            plan.report(),
+            "identity/target",
+        )
+        .clone()
+        .expect("a STEP write always names its schema");
         let mut written = Vec::new();
         plan.write_to(&mut written).expect("the plan writes");
 

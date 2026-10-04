@@ -6,7 +6,7 @@
 pub(crate) struct ControlWord24([u8; 3]);
 
 impl ControlWord24 {
-    pub(crate) fn new(bytes: [u8; 3]) -> Self {
+    pub(super) fn new(bytes: [u8; 3]) -> Self {
         Self(bytes)
     }
     pub(crate) fn value(self) -> u32 {
@@ -20,7 +20,14 @@ impl TryFrom<u32> for ControlWord24 {
         if value > 0x00ff_ffff {
             return Err("value exceeds the unsigned 24-bit control-word range");
         }
-        Ok(Self([value as u8, (value >> 8) as u8, (value >> 16) as u8]))
+        Ok(Self([
+            u8::try_from(value & 0xff)
+                .map_err(|_| "value exceeds the unsigned 24-bit control-word range")?,
+            u8::try_from((value >> 8) & 0xff)
+                .map_err(|_| "value exceeds the unsigned 24-bit control-word range")?,
+            u8::try_from(value >> 16)
+                .map_err(|_| "value exceeds the unsigned 24-bit control-word range")?,
+        ]))
     }
 }
 impl From<ControlWord24> for u32 {

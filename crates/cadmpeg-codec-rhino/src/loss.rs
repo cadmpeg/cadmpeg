@@ -18,26 +18,183 @@
 //! and the categories this codec spans (geometry, annotation, attribute,
 //! diagnostic) have no honest common default.
 
-use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::{
+    loss::{LossKind, LossNote, LossTaxonomy},
+    Severity,
+};
 
-/// Construct the loss charged when a reading depends on an absent writer stamp.
-pub(crate) fn writer_stamp_unverified(message: impl std::fmt::Display) -> LossNote {
-    RhinoLossCode::SourceWriterStampUnverified.note(message)
+/// One decode diagnostic: its message and, when the producer knows it, its code.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RhinoDiagnostic {
+    /// The loss code the producer assigned, or `None` when the channel decides.
+    pub(crate) code: Option<RhinoLossCode>,
+    /// The human-readable message.
+    pub(crate) message: String,
+}
+
+/// The decode diagnostic channel: messages carrying the code their producer knew.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct Diagnostics(Vec<RhinoDiagnostic>);
+
+impl Diagnostics {
+    pub(crate) fn new() -> Self {
+        Self(Vec::new())
+    }
+
+    /// Admits one decoded diagnostic and its retained message before insertion.
+    pub(crate) fn push_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        message: std::fmt::Arguments<'_>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        self.push_coded_admitted(ctx, None, message)
+    }
+
+    /// Admits one classified diagnostic and its retained message before insertion.
+    pub(crate) fn push_coded_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        code: impl Into<Option<RhinoLossCode>>,
+        message: std::fmt::Arguments<'_>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        ctx.reserve_vec(&mut self.0, 1, "Rhino diagnostics")?;
+        let message = ctx.format_retained(message, "Rhino diagnostic message")?;
+        self.0.push(RhinoDiagnostic {
+            code: code.into(),
+            message,
+        });
+        Ok(())
+    }
+
+    /// Records a diagnostic whose category the consuming channel decides.
+    pub(crate) fn push(&mut self, message: impl Into<String>) {
+        self.0.push(RhinoDiagnostic {
+            code: None,
+            message: message.into(),
+        });
+    }
+
+    pub(crate) fn messages(&self) -> impl Iterator<Item = &str> {
+        self.0.iter().map(|entry| entry.message.as_str())
+    }
+
+    /// Places `earlier` ahead of the diagnostics already recorded.
+    pub(crate) fn prepend(&mut self, earlier: Self) {
+        self.0.splice(0..0, earlier.0);
+    }
+
+    pub(crate) fn truncate(&mut self, len: usize) {
+        self.0.truncate(len);
+    }
+
+    /// Moves admitted diagnostics into a second report collection.
+    pub(crate) fn append_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        other: &mut Self,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        ctx.reserve_vec(&mut self.0, other.0.len(), "Rhino diagnostic copies")?;
+        self.0.append(&mut other.0);
+        Ok(())
+    }
+
+    /// Adds a source label while admitting each destination diagnostic and message.
+    pub(crate) fn append_prefixed_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        other: Self,
+        prefix: std::fmt::Arguments<'_>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        for diagnostic in other {
+            self.push_coded_admitted(
+                ctx,
+                diagnostic.code,
+                format_args!("{prefix}: {}", diagnostic.message),
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Copies diagnostics into another report after admitting the slots and text.
+    pub(crate) fn extend_cloned_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        other: &Self,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        ctx.reserve_vec(&mut self.0, other.0.len(), "Rhino diagnostic copies")?;
+        for diagnostic in &other.0 {
+            self.0.push(RhinoDiagnostic {
+                code: diagnostic.code,
+                message: ctx
+                    .copy_retained_text(&diagnostic.message, "Rhino diagnostic copy text")?,
+            });
+        }
+        Ok(())
+    }
+}
+
+impl std::ops::Deref for Diagnostics {
+    type Target = [RhinoDiagnostic];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::Deref for RhinoDiagnostic {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.message
+    }
+}
+
+impl Extend<RhinoDiagnostic> for Diagnostics {
+    fn extend<T: IntoIterator<Item = RhinoDiagnostic>>(&mut self, iter: T) {
+        self.0.extend(iter);
+    }
+}
+
+impl FromIterator<RhinoDiagnostic> for Diagnostics {
+    fn from_iter<T: IntoIterator<Item = RhinoDiagnostic>>(iter: T) -> Self {
+        Self(iter.into_iter().collect())
+    }
+}
+
+impl IntoIterator for Diagnostics {
+    type Item = RhinoDiagnostic;
+    type IntoIter = std::vec::IntoIter<RhinoDiagnostic>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a Diagnostics {
+    type Item = &'a RhinoDiagnostic;
+    type IntoIter = std::slice::Iter<'a, RhinoDiagnostic>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
 }
 
 /// A stable, machine-readable identifier for one `.3dm` transfer loss.
 ///
 /// Variants are grouped by the record family whose transfer degraded. The
 /// string form (via [`RhinoLossCode::code`]) is the stable contract.
-#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum RhinoLossCode {
+pub(crate) enum RhinoLossCode {
     /// Container or table scan surfaced a structural diagnostic.
     ContainerScanDiagnostic,
     /// A stored checksum does not match the protected bytes.
     IntegrityFailure,
     /// A framed presentation record could not be transferred.
     PresentationRecordDropped,
+    /// A framed annotation record could not be transferred.
+    AnnotationRecordDropped,
+    /// A framed product occurrence could not be transferred to the native graph.
+    ProductOccurrenceDropped,
     /// A recognized annotation userdata payload could not be typed.
     AnnotationUserdataDropped,
     /// Viewport userdata has no typed CADIR owner.
@@ -140,6 +297,8 @@ impl RhinoLossCode {
         Self::ContainerScanDiagnostic,
         Self::IntegrityFailure,
         Self::PresentationRecordDropped,
+        Self::AnnotationRecordDropped,
+        Self::ProductOccurrenceDropped,
         Self::AnnotationUserdataDropped,
         Self::ViewportUserdataDropped,
         Self::MeshNgonGroupingDropped,
@@ -181,11 +340,13 @@ impl RhinoLossCode {
 
     /// The stable string identifier. This is the gating contract.
     #[must_use]
-    pub const fn code(self) -> &'static str {
+    pub(crate) const fn code(self) -> &'static str {
         match self {
             Self::ContainerScanDiagnostic => "container.scan-diagnostic",
             Self::IntegrityFailure => "container.integrity-failure",
             Self::PresentationRecordDropped => "presentation.record-dropped",
+            Self::AnnotationRecordDropped => "annotation.record-dropped",
+            Self::ProductOccurrenceDropped => "product.occurrence-dropped",
             Self::AnnotationUserdataDropped => "annotation.userdata-dropped",
             Self::ViewportUserdataDropped => "viewport.userdata-dropped",
             Self::MeshNgonGroupingDropped => "mesh.ngon-grouping-dropped",
@@ -228,7 +389,7 @@ impl RhinoLossCode {
 
     /// The severity of this loss.
     #[must_use]
-    pub const fn severity(self) -> Severity {
+    const fn severity(self) -> Severity {
         match self {
             Self::ObjectRecordCensus => Severity::Info,
             Self::ObjectFramingUndecodable | Self::IntegrityFailure => Severity::Error,
@@ -243,6 +404,7 @@ impl RhinoLossCode {
             | Self::ContainerInstanceDefinitionDegraded
             | Self::ObjectFramingUndecodable
             | Self::ObjectDecodeDiagnostic
+            | Self::AnnotationRecordDropped
             | Self::AnnotationUserdataDropped
             | Self::PolycurveJoinGap
             | Self::ReferenceMemberUnresolved
@@ -250,7 +412,9 @@ impl RhinoLossCode {
             Self::TrimPcurveDropped => LossTaxonomy::PcurveOmitted,
             Self::IntegrityFailure => LossTaxonomy::IntegrityFailure,
             Self::PresentationRecordDropped => LossTaxonomy::AssetNotTransferred,
-            Self::ViewportUserdataDropped => LossTaxonomy::RecordNotTyped,
+            Self::ViewportUserdataDropped | Self::ProductOccurrenceDropped => {
+                LossTaxonomy::RecordNotTyped
+            }
             Self::MeshNgonGroupingDropped | Self::MeshQuadTopologyTriangulated => {
                 LossTaxonomy::RecordNotTyped
             }
@@ -302,9 +466,19 @@ impl RhinoLossCode {
 
     /// Namespaced [`LossKind`] for this local code (taxonomy + pinned floor).
     #[must_use]
-    pub fn kind(self) -> LossKind {
-        LossKind::namespaced("rhino", self.code(), self.shared_taxonomy())
-            .with_strict_floor(self.strict_floor())
+    pub(crate) fn kind(self) -> LossKind {
+        cadmpeg_ir::report::loss::NamespacedLossKind::new(
+            const {
+                match cadmpeg_ir::report::loss::LossNamespace::new("rhino") {
+                    Ok(namespace) => namespace,
+                    Err(_) => panic!("reserved codec namespace"),
+                }
+            },
+            self.code(),
+            self.shared_taxonomy(),
+        )
+        .with_strict_floor(self.strict_floor())
+        .into()
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
@@ -312,7 +486,7 @@ impl RhinoLossCode {
     /// The structured code is `rhino/<local>`; the message is the per-instance
     /// text only. Severity and strict floor come from the local code.
     #[must_use]
-    pub fn note(self, message: impl std::fmt::Display) -> LossNote {
+    pub(crate) fn note(self, message: impl std::fmt::Display) -> LossNote {
         LossNote::new(self.kind(), message.to_string()).with_severity(self.severity())
     }
 }
@@ -323,6 +497,81 @@ mod tests {
     use std::collections::BTreeSet;
 
     #[test]
+    fn diagnostic_copy_refuses_collection_limit() {
+        let mut source = super::Diagnostics::new();
+        source.push("mesh warning");
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admitted");
+        let refusal = super::Diagnostics::new()
+            .extend_cloned_admitted(&ctx, &source)
+            .expect_err("one diagnostic copy exceeds zero collection items");
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(item)
+                if item.operation == "Rhino diagnostic copies"
+        ));
+        let mut copy = super::Diagnostics::new();
+        copy.extend_cloned_admitted(&cadmpeg_test_support::service_decode_context(), &source)
+            .expect("service profile admits diagnostic copy");
+        assert_eq!(copy, source);
+    }
+
+    #[test]
+    fn diagnostics_refuse_collection_and_retained_limits() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admitted");
+        let refusal = super::Diagnostics::new()
+            .push_admitted(&ctx, format_args!("fixture warning"))
+            .expect_err("one diagnostic exceeds zero collection items");
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "Rhino diagnostics"
+        ));
+        let mut retained_policy = cadmpeg_core::decode::DecodePolicy::service();
+        retained_policy.limits.max_retained_bytes =
+            crate::test_support::retained_limit_at("Rhino diagnostic message", 0, |cap| {
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) =
+                    cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                        .expect("empty root");
+                match super::Diagnostics::new()
+                    .push_coded_admitted(
+                        &ctx,
+                        RhinoLossCode::IntegrityFailure,
+                        format_args!("fixture warning"),
+                    )
+                    .expect_err("diagnostic refusal")
+                {
+                    cadmpeg_core::CodecError::ResourceLimit(limit) => limit,
+                    error => panic!("diagnostic refusal: {error:?}"),
+                }
+            });
+        let (retained_ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &retained_policy)
+                .expect("empty root admitted");
+        let refusal = super::Diagnostics::new()
+            .push_coded_admitted(
+                &retained_ctx,
+                RhinoLossCode::IntegrityFailure,
+                format_args!("fixture warning"),
+            )
+            .expect_err("diagnostic text exceeds zero retained bytes");
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "Rhino diagnostic message"
+        ));
+    }
+
+    #[test]
     fn code_strings_are_pinned() {
         let codes: Vec<&str> = RhinoLossCode::ALL.iter().map(|c| c.code()).collect();
         assert_eq!(
@@ -331,6 +580,8 @@ mod tests {
                 "container.scan-diagnostic",
                 "container.integrity-failure",
                 "presentation.record-dropped",
+                "annotation.record-dropped",
+                "product.occurrence-dropped",
                 "annotation.userdata-dropped",
                 "viewport.userdata-dropped",
                 "mesh.ngon-grouping-dropped",

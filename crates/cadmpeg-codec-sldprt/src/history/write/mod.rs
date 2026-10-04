@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Neutral-to-native history write preparation.
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     BodySelection, DesignParameter, EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection,
-    FeatureDefinition, FeatureId, LinearTermination, ProfileRef, VertexSelection,
+    FeatureDefinition, FeatureId, FeatureOperation, LinearTermination, PlanarProfileRef,
+    VertexSelection,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -15,14 +17,14 @@ use crate::history::hash::{feature_hash, history_hash, native_parameter_hash};
 use crate::history::parameters::expression_identifier_tokens;
 use crate::history::project::{project_feature_model, project_features, FeatureProjection};
 
-mod configurations;
-mod features;
-mod parameters;
-mod xml;
+pub(crate) mod brep_agreement;
+pub(crate) mod configurations;
+pub(crate) mod features;
+pub(crate) mod parameters;
+pub(crate) mod xml;
 
-pub(crate) use configurations::*;
-pub(crate) use features::*;
-pub(crate) use parameters::*;
+use self::features::sync_neutral_features;
+use self::parameters::rewrite_parameter_expression;
 
 /// Collect retained feature names changed by the neutral model.
 pub(crate) fn feature_name_changes(
@@ -54,21 +56,29 @@ pub(crate) fn feature_name_changes(
 pub(crate) fn native_parameters_match_source(
     ir: &cadmpeg_ir::CadIr,
     native: Option<&crate::native::SldprtNative>,
-) -> bool {
-    native
-        .map(|native| native_parameter_hash(&native.feature_histories))
+) -> Result<bool, CodecError> {
+    let hash_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (hash_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &hash_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+
+    Ok(native
+        .map(|native| native_parameter_hash(&hash_ctx, &native.feature_histories))
+        .transpose()?
         .zip(
             ir.source
                 .as_ref()
                 .and_then(|source| source.attributes.get("sldprt_native_parameter_sha256")),
         )
-        .is_some_and(|(current, baseline)| &current == baseline)
+        .is_some_and(|(current, baseline)| &current == baseline))
 }
 
 pub(crate) fn apply_feature_name_changes(
     parameters: &mut [DesignParameter],
     changes: &HashMap<FeatureId, (String, String)>,
-) {
+) -> Result<(), CodecError> {
     let owners = parameters
         .iter()
         .map(|parameter| (parameter.id.clone(), parameter.owner.clone()))
@@ -91,24 +101,33 @@ pub(crate) fn apply_feature_name_changes(
             .filter_map(|dependency| owners.get(dependency))
             .filter_map(|owner| owner.as_ref().and_then(|owner| changes.get(owner)))
             .collect::<Vec<_>>();
-        let aliases = expression_identifier_tokens(&parameter.expression)
-            .identifiers
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(
+            parameter.expression.as_bytes(),
+            &arena,
+            &DecodePolicy::service(),
+        )?;
+        let aliases = expression_identifier_tokens(&ctx, &parameter.expression)?
+            .unwrap_or_default()
             .into_iter()
             .filter_map(|token| {
                 dependency_changes
                     .iter()
                     .find_map(|(old_owner, new_owner)| {
                         token
-                            .value
+                            .value()
                             .strip_suffix(&format!("@{old_owner}"))
-                            .map(|base| (token.value.clone(), format!("{base}@{new_owner}")))
+                            .map(|base| (token.value().to_owned(), format!("{base}@{new_owner}")))
                     })
             })
             .collect::<HashMap<_, _>>();
-        if let Some(rewritten) = rewrite_parameter_expression(&parameter.expression, &aliases) {
+        if let Some(rewritten) =
+            rewrite_parameter_expression(&ctx, &parameter.expression, &aliases)?
+        {
             parameter.expression = rewritten;
         }
     }
+    Ok(())
 }
 
 /// Resolve neutral/native feature edit authority and update the write history.
@@ -116,14 +135,22 @@ pub(crate) fn apply_feature_name_changes(
 /// Bitwise comparison against the machine-local document baseline; see
 /// [`cadmpeg_ir::hash::document_local_sha256`]. Absent baseline: sync lanes from
 /// the neutral side.
-pub fn prepare_features_for_write(
+pub(crate) fn prepare_features_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
-) -> Result<(), CodecError> {
-    let neutral_hash = feature_hash(&ir.model);
+) -> Result<Vec<features::FeatureInputRename>, CodecError> {
+    let hash_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (hash_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &hash_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+
+    let neutral_hash = feature_hash(&hash_ctx, &ir.model)?;
     let native_hash = native
         .as_ref()
-        .map(|value| history_hash(&value.feature_histories));
+        .map(|value| history_hash(&hash_ctx, &value.feature_histories))
+        .transpose()?;
     let baseline_neutral = ir
         .source
         .as_ref()
@@ -148,15 +175,31 @@ pub fn prepare_features_for_write(
         return sync_neutral_features(&ir.model, &ir.model.parameters, &ir.model.bodies, native);
     }
     match (neutral_changed, native_changed) {
-        (false, _) => Ok(()),
+        (false, _) => Ok(Vec::new()),
         (true, true) => {
             let projected_model = native
                 .as_ref()
                 .map(project_feature_model_with_native_inputs)
-                .map(FeatureProjection::into_model)
+                .transpose()?
+                .map(|projection| {
+                    let projection_bytes = native
+                        .as_ref()
+                        .into_iter()
+                        .flat_map(|native| &native.feature_input_lanes)
+                        .flat_map(|lane| lane.native_payload.iter().copied())
+                        .collect::<Vec<_>>();
+                    let arena = DecodeArena::new();
+                    let (ctx, _) = DecodeContext::from_root_bytes(
+                        &projection_bytes,
+                        &arena,
+                        &DecodePolicy::service(),
+                    )?;
+                    Ok::<_, CodecError>(projection.into_model(&ctx)?.0)
+                })
+                .transpose()?
                 .unwrap_or_default();
-            if feature_hash(&projected_model) == neutral_hash {
-                Ok(())
+            if feature_hash(&hash_ctx, &projected_model)? == neutral_hash {
+                Ok(Vec::new())
             } else {
                 Err(CodecError::Malformed(
                     "conflicting neutral and native SLDPRT feature edits".into(),
@@ -174,36 +217,47 @@ pub fn prepare_features_for_write(
     }
 }
 
-pub(crate) fn validate_embedded_helix_edits(
+fn validate_embedded_helix_edits(
     features: &[cadmpeg_ir::features::Feature],
     native: Option<&crate::native::SldprtNative>,
 ) -> Result<(), CodecError> {
     let Some(native) = native else {
         return Ok(());
     };
-    let embedded = project_features(&native.feature_histories)
+    let projection_bytes = native
+        .feature_input_lanes
+        .iter()
+        .flat_map(|lane| lane.native_payload.iter().copied())
+        .collect::<Vec<_>>();
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&projection_bytes, &arena, &DecodePolicy::service())?;
+    let embedded = project_features(&ctx, &native.feature_histories)?
         .into_iter()
         .filter_map(|feature| {
             matches!(
-                feature.definition,
-                FeatureDefinition::HelixNativeAxis { .. }
+                feature.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::HelixNativeAxis { .. })
             )
             .then_some(feature.id)
         })
         .collect::<HashSet<_>>();
-    let expected = project_features_with_native_inputs(native)
+    let expected = project_features_with_native_inputs(native)?
         .into_iter()
         .filter_map(|feature| {
             (embedded.contains(&feature.id)
-                && matches!(feature.definition, FeatureDefinition::Helix { .. }))
-            .then_some((feature.id, feature.definition))
+                && matches!(
+                    feature.evaluation.definition(),
+                    FeatureDefinition::Operation(FeatureOperation::Helix { .. })
+                ))
+            .then_some((feature.id, feature.evaluation.definition().clone()))
         })
         .collect::<HashMap<_, _>>();
     for feature in features {
         let Some(expected) = expected.get(&feature.id) else {
             continue;
         };
-        if &feature.definition != expected {
+        if feature.evaluation.definition() != expected {
             return Err(CodecError::NotImplemented(format!(
                 "SLDPRT feature {} changes embedded helix geometry",
                 feature.id
@@ -213,41 +267,44 @@ pub(crate) fn validate_embedded_helix_edits(
     Ok(())
 }
 
-pub(crate) fn validate_surface_sweep_profile_edits(
+fn validate_surface_sweep_profile_edits(
     features: &[cadmpeg_ir::features::Feature],
     native: Option<&crate::native::SldprtNative>,
 ) -> Result<(), CodecError> {
     let Some(native) = native else {
         return Ok(());
     };
-    let expected = project_features_with_native_inputs(native)
+    let expected = project_features_with_native_inputs(native)?
         .into_iter()
         .filter_map(|feature| {
-            let FeatureDefinition::Sweep { section, .. } = feature.definition else {
-                return None;
-            };
-            let cadmpeg_ir::features::SweepSection::Profile(
-                profile @ (ProfileRef::Feature(_) | ProfileRef::Generated { .. }),
-            ) = section
+            let FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) =
+                feature.evaluation.definition()
             else {
                 return None;
             };
-            (matches!(profile, ProfileRef::Generated { .. })
+            let profile @ (PlanarProfileRef::Feature(_) | PlanarProfileRef::Generated { .. }) =
+                shape.referenced_profile()?
+            else {
+                return None;
+            };
+            (matches!(profile, PlanarProfileRef::Generated { .. })
                 || !feature.source_properties.contains_key("Profile"))
-            .then_some((feature.id, profile))
+            .then_some((feature.id, profile.clone()))
         })
         .collect::<HashMap<_, _>>();
     for feature in features {
         let Some(expected) = expected.get(&feature.id) else {
             continue;
         };
-        let FeatureDefinition::Sweep { section, .. } = &feature.definition else {
+        let FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) =
+            feature.evaluation.definition()
+        else {
             return Err(CodecError::NotImplemented(format!(
                 "SLDPRT feature {} changes a reference-curve sweep profile",
                 feature.id
             )));
         };
-        let Some(profile) = section.referenced_profile() else {
+        let Some(profile) = shape.referenced_profile() else {
             return Err(CodecError::NotImplemented(format!(
                 "SLDPRT feature {} changes a reference-curve sweep profile",
                 feature.id
@@ -263,57 +320,82 @@ pub(crate) fn validate_surface_sweep_profile_edits(
     Ok(())
 }
 
-pub(crate) fn project_features_with_native_inputs(
+fn project_features_with_native_inputs(
     native: &crate::native::SldprtNative,
-) -> Vec<cadmpeg_ir::features::Feature> {
-    project_feature_model_with_native_inputs(native).features
+) -> Result<Vec<cadmpeg_ir::features::Feature>, cadmpeg_core::CodecError> {
+    Ok(project_feature_model_with_native_inputs(native)?.features)
 }
 
 fn project_feature_model_with_native_inputs(
     native: &crate::native::SldprtNative,
-) -> FeatureProjection {
+) -> Result<FeatureProjection, cadmpeg_core::CodecError> {
+    let projection_bytes = native
+        .feature_input_lanes
+        .iter()
+        .flat_map(|lane| lane.native_payload.iter().copied())
+        .collect::<Vec<_>>();
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&projection_bytes, &arena, &DecodePolicy::service())?;
     let mut histories = native.feature_histories.clone();
     enrich_history_semantic(
+        &ctx,
         &mut histories,
         &native.feature_input_lanes,
         &native.pmi_dimensions,
         HistoryEnrichment::Write,
-    );
-    let mut projection = project_feature_model(&histories);
+    )?;
+    let mut projection = project_feature_model(&ctx, &histories)?;
     let features = &mut projection.features;
     crate::resolved_features::bindings::bind_pattern_inputs(
+        &ctx,
         features,
         &histories,
         &native.feature_input_lanes,
-    );
+    )?;
     crate::resolved_features::operations::bind_sweep_operations(
+        &ctx,
         features,
         &histories,
         &native.feature_input_lanes,
         None,
-    );
-    project_compact_and_generated(features, &histories, &native.feature_input_lanes);
+    )?;
+    project_compact_and_generated(&ctx, features, &histories, &native.feature_input_lanes)?;
     crate::resolved_features::operations::bind_revolution_operations(
+        &ctx,
         features,
         &histories,
         &native.feature_input_lanes,
         None,
-    );
+    )?;
+    // discarded-value: marking the features is the whole effect on the write route; the collected sketches have a reader only on the decode route
     let _ = crate::resolved_features::markers::spatial_sketches(
+        &ctx,
         features,
         &histories,
         &native.feature_input_lanes,
-    );
-    projection
+    )?;
+    Ok(projection)
 }
 
-pub(crate) fn validate_compact_body_selection_edits(
+fn validate_compact_body_selection_edits(
     features: &[cadmpeg_ir::features::Feature],
     native: Option<&crate::native::SldprtNative>,
 ) -> Result<(), CodecError> {
     let Some(native) = native else {
         return Ok(());
     };
+    let bytes = native
+        .feature_input_lanes
+        .iter()
+        .flat_map(|lane| lane.native_payload.iter().copied())
+        .collect::<Vec<_>>();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
     let mut selections = HashMap::<&str, Vec<&crate::records::FeatureInputBodySelection>>::new();
     for selection in native
         .feature_input_lanes
@@ -332,19 +414,24 @@ pub(crate) fn validate_compact_body_selection_edits(
         let Some([selection]) = selections.get(native_ref).map(Vec::as_slice) else {
             continue;
         };
-        let FeatureDefinition::DeleteBody { bodies, mode } = &feature.definition else {
+        let FeatureDefinition::Operation(FeatureOperation::DeleteBody { bodies, mode }) =
+            feature.evaluation.definition()
+        else {
             continue;
         };
-        let expected = BodySelection::Local {
-            bodies: selection
+        let expected = BodySelection::local(
+            selection
                 .local_body_ids
                 .iter()
                 .map(u32::to_string)
                 .collect(),
-            native: crate::resolved_features::component_paths::compact_body_selection_value(
+            crate::resolved_features::component_paths::compact_body_selection_value_charged(
+                &ctx,
                 &selection.local_body_ids,
-            ),
-        };
+            )?,
+            &ctx,
+        )?
+        .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
         if bodies != &expected {
             return Err(CodecError::NotImplemented(format!(
                 "SLDPRT feature {} changes a compact body selection",
@@ -365,13 +452,24 @@ pub(crate) fn validate_compact_body_selection_edits(
     Ok(())
 }
 
-pub(crate) fn validate_compact_edge_selection_edits(
+fn validate_compact_edge_selection_edits(
     features: &[cadmpeg_ir::features::Feature],
     native: Option<&crate::native::SldprtNative>,
 ) -> Result<(), CodecError> {
     let Some(native) = native else {
         return Ok(());
     };
+    let bytes = native
+        .feature_input_lanes
+        .iter()
+        .flat_map(|lane| lane.native_payload.iter().copied())
+        .collect::<Vec<_>>();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
     let mut selections = HashMap::<&str, Vec<&crate::records::FeatureInputEdgeSelection>>::new();
     for selection in native
         .feature_input_lanes
@@ -397,11 +495,11 @@ pub(crate) fn validate_compact_edge_selection_edits(
         else {
             continue;
         };
-        let groups = match &feature.definition {
-            FeatureDefinition::Fillet { groups } => {
+        let groups = match feature.evaluation.definition() {
+            FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) => {
                 groups.iter().map(|group| &group.edges).collect::<Vec<_>>()
             }
-            FeatureDefinition::Chamfer { groups, .. } => {
+            FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. }) => {
                 groups.iter().map(|group| &group.edges).collect::<Vec<_>>()
             }
             _ => continue,
@@ -412,25 +510,33 @@ pub(crate) fn validate_compact_edge_selection_edits(
                 feature.id
             )));
         };
-        let native = crate::resolved_features::component_paths::compact_edge_selection_set_value(
-            edge_selections,
-        );
+        let native =
+            crate::resolved_features::component_paths::compact_edge_selection_set_value_charged(
+                &ctx,
+                edge_selections,
+            )?;
         let generated = edge_selections
             .iter()
-            .map(|selection| {
-                let native_feature = selection.terminal_feature_ref.as_deref()?;
-                let feature = feature_ids_by_native.get(native_feature)?.clone();
+            .map(|selection| -> Result<Option<_>, CodecError> {
+                let Some(native_feature) = selection.terminal_feature_ref.as_deref() else {
+                    return Ok(None);
+                };
+                let Some(feature) = feature_ids_by_native.get(native_feature) else {
+                    return Ok(None);
+                };
+                let feature = feature.clone();
                 let local_id = selection
                     .local_edge_ids
                     .iter()
                     .map(u32::to_string)
                     .collect::<Vec<_>>()
                     .join(",");
-                Some(cadmpeg_ir::features::GeneratedEdgeRef { feature, local_id })
+                Ok(cadmpeg_ir::features::GeneratedEdgeRef::new(feature, local_id, &ctx)?.ok())
             })
-            .collect::<Option<Vec<_>>>();
+            .collect::<Result<Option<Vec<_>>, CodecError>>()?;
         let expected = match generated.filter(|edges| !edges.is_empty()) {
-            Some(edges) => EdgeSelection::Generated { edges, native },
+            Some(edges) => EdgeSelection::generated(edges, native.clone(), &ctx)?
+                .unwrap_or(EdgeSelection::Native(native)),
             None => EdgeSelection::Native(native),
         };
         if *edges != &expected {
@@ -443,7 +549,7 @@ pub(crate) fn validate_compact_edge_selection_edits(
     Ok(())
 }
 
-pub(crate) fn validate_compact_surface_selection_edits(
+fn validate_compact_surface_selection_edits(
     features: &[cadmpeg_ir::features::Feature],
     native: Option<&crate::native::SldprtNative>,
 ) -> Result<(), CodecError> {
@@ -452,6 +558,12 @@ pub(crate) fn validate_compact_surface_selection_edits(
         Vertex(&'a VertexSelection),
     }
     let Some(native) = native else { return Ok(()) };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
     let mut selections = HashMap::<&str, Vec<&crate::records::FeatureInputSurfaceSelection>>::new();
     for selection in native
         .feature_input_lanes
@@ -474,12 +586,18 @@ pub(crate) fn validate_compact_surface_selection_edits(
         let Some([selection]) = selections.get(native_ref).map(Vec::as_slice) else {
             continue;
         };
-        let first_component =
-            matches!(feature.definition, FeatureDefinition::CosmeticThread { .. });
-        let slot = match &feature.definition {
-            FeatureDefinition::Thicken { faces, .. } => SelectionSlot::Face(faces),
-            FeatureDefinition::CosmeticThread { face, .. } => SelectionSlot::Face(face),
-            FeatureDefinition::Extrude {
+        let first_component = matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::CosmeticThread { .. })
+        );
+        let slot = match feature.evaluation.definition() {
+            FeatureDefinition::Operation(FeatureOperation::Thicken { faces, .. }) => {
+                SelectionSlot::Face(faces)
+            }
+            FeatureDefinition::Operation(FeatureOperation::CosmeticThread { face, .. }) => {
+                SelectionSlot::Face(face)
+            }
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
                 extent:
                     ExtrudeExtent::OneSided {
                         side:
@@ -491,8 +609,8 @@ pub(crate) fn validate_compact_surface_selection_edits(
                             },
                     },
                 ..
-            } => SelectionSlot::Face(face),
-            FeatureDefinition::Extrude {
+            }) => SelectionSlot::Face(face),
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
                 extent:
                     ExtrudeExtent::OneSided {
                         side:
@@ -502,12 +620,13 @@ pub(crate) fn validate_compact_surface_selection_edits(
                             },
                     },
                 ..
-            } => SelectionSlot::Vertex(vertex),
+            }) => SelectionSlot::Vertex(vertex),
             _ => continue,
         };
         let native = crate::resolved_features::terminations::compact_surface_selection_value(
+            &ctx,
             &selection.components,
-        );
+        )?;
         let producer = if first_component {
             selection.producer_feature_refs.first().map(String::as_str)
         } else {
@@ -525,12 +644,14 @@ pub(crate) fn validate_compact_surface_selection_edits(
         let changed = match slot {
             SelectionSlot::Face(faces) => {
                 let expected = match generated {
-                    Some((feature, local_id)) => FaceSelection::Generated {
-                        faces: vec![cadmpeg_ir::features::GeneratedFaceRef {
-                            feature: feature.clone(),
-                            local_id: local_id.to_string(),
-                        }],
-                        native,
+                    Some((feature, local_id)) => match cadmpeg_ir::features::GeneratedFaceRef::new(
+                        feature.clone(),
+                        local_id.to_string(),
+                        &ctx,
+                    )? {
+                        Ok(face) => FaceSelection::generated(vec![face], native.clone(), &ctx)?
+                            .unwrap_or(FaceSelection::Native(native)),
+                        Err(_) => FaceSelection::Native(native),
                     },
                     None => FaceSelection::Native(native),
                 };
@@ -544,14 +665,25 @@ pub(crate) fn validate_compact_surface_selection_edits(
             }
             SelectionSlot::Vertex(vertex) => {
                 let expected = match generated {
-                    Some((feature, local_id)) => VertexSelection::Generated {
-                        vertex: cadmpeg_ir::features::GeneratedVertexRef {
-                            feature: feature.clone(),
-                            local_id: local_id.to_string(),
-                        },
-                        native,
-                    },
-                    None => VertexSelection::Native(native),
+                    Some((feature, local_id)) => {
+                        match cadmpeg_ir::features::GeneratedVertexRef::new(
+                            feature.clone(),
+                            local_id.to_string(),
+                            &ctx,
+                        )? {
+                            Ok(vertex) => {
+                                match VertexSelection::generated(vertex, native.clone(), &ctx)? {
+                                    Ok(selection) => selection,
+                                    Err(_) => VertexSelection::native(native, &ctx)?
+                                        .unwrap_or(VertexSelection::Unresolved),
+                                }
+                            }
+                            Err(_) => VertexSelection::native(native, &ctx)?
+                                .unwrap_or(VertexSelection::Unresolved),
+                        }
+                    }
+                    None => VertexSelection::native(native, &ctx)?
+                        .unwrap_or(VertexSelection::Unresolved),
                 };
                 vertex != &expected
             }

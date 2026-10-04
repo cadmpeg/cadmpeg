@@ -2,28 +2,13 @@
 //! Section geometry conversion and sketch-table coordinate, radius, and trim solvers.
 
 pub(super) mod axis;
-mod coordinates;
-mod equations_coordinate;
+pub(super) mod coordinates;
+pub(super) mod equations_coordinate;
 pub(super) mod equations_scalar;
-mod geometry;
-mod intersect;
-mod radii;
-mod skamp;
-
-#[allow(clippy::wildcard_imports)]
-pub(crate) use coordinates::*;
-#[allow(clippy::wildcard_imports)]
-pub(crate) use equations_coordinate::*;
-#[allow(clippy::wildcard_imports)]
-pub(crate) use equations_scalar::*;
-#[allow(clippy::wildcard_imports)]
-pub(crate) use geometry::*;
-#[allow(clippy::wildcard_imports)]
-pub(crate) use intersect::*;
-#[allow(clippy::wildcard_imports)]
-pub(crate) use radii::*;
-#[allow(clippy::wildcard_imports)]
-pub(crate) use skamp::*;
+pub(super) mod geometry;
+pub(super) mod intersect;
+pub(super) mod radii;
+pub(super) mod skamp;
 
 #[cfg(test)]
 mod tests;

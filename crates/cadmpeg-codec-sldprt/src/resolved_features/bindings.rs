@@ -2,9 +2,8 @@
 
 use super::assembly::is_supplemental_config_lane;
 use super::axes::{
-    canonical_unit_direction, compact_line_reference_directions,
-    declared_line_reference_directions, linear_pattern_display_directions,
-    temporary_axis_reference, typed_linear_pattern_dimensions,
+    compact_line_reference_directions, declared_line_reference_directions,
+    linear_pattern_display_directions, temporary_axis_reference, typed_linear_pattern_dimensions,
 };
 use super::component_paths::is_dissected_profile_feature;
 use super::endpoints::{
@@ -25,56 +24,79 @@ use super::selections::{
     mirror_pattern_component_path_at, unique_marker_candidate, COMPACT_EDGE_VECTOR_MARKER,
 };
 use super::typed_relations::{legacy_terminal_indexed_profile_line, marker_curve_endpoint_markers};
+use crate::brep::feature_source::FeatureSourceId;
 use crate::classification::{native_object_class, NativeClassKind};
-use crate::history::{is_history_metadata_record, parse_count, parse_positive_angle_rad};
+use crate::history::classify::is_history_metadata_record;
+use crate::history::literals::parse_positive_angle_rad;
+use crate::history::project::pattern::parse_count;
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind, SketchInputLink};
-use cadmpeg_core::decode::View;
-use cadmpeg_ir::features::{Angle, FeatureDefinition, Length, PathRef, PatternKind, PatternSeed};
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_core::decode::index_from_u64;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::SketchId;
+use cadmpeg_ir::{
+    features::{
+        patterns::{PatternKind, PatternSeed, PatternTransform},
+        FeatureDefinition, FeatureDirection3, FeatureOperation, FinitePoint3, PathRef,
+    },
+    units::UnitVector3,
+};
 use std::collections::{HashMap, HashSet};
 
 const EPS_BINDINGS_BIND_PATTERN_INPUTS_E12: f64 = 1e-12;
 const EPS_BINDINGS_BIND_DETACHED_SPATIAL_RELATION_OBJECTS_E9: f64 = 1e-9;
 
-pub(super) fn history_metadata_ids(
-    histories: &[crate::records::FeatureHistory],
-) -> HashSet<String> {
-    histories
-        .iter()
-        .flat_map(|history| {
-            history
-                .features
-                .iter()
-                .filter(|feature| is_history_metadata_record(feature, &history.features))
-                .map(|feature| feature.id.clone())
-        })
-        .collect()
+pub(super) fn history_metadata_ids<'a>(
+    ctx: &DecodeContext<'_>,
+    histories: &'a [crate::records::FeatureHistory],
+) -> Result<HashSet<&'a str>, cadmpeg_core::CodecError> {
+    let mut ids = HashSet::new();
+    for history in histories {
+        for feature in &history.features {
+            ctx.charge_work(1, "scan SLDPRT history metadata identities")?;
+            if is_history_metadata_record(feature, &history.features)
+                && !ids.contains(feature.id.as_str())
+            {
+                ctx.reserve_set(&mut ids, 1, SCALAR_BINDING_INDEX)?;
+                ids.insert(feature.id.as_str());
+            }
+        }
+    }
+    Ok(ids)
 }
 
 /// Bind pattern operands carried by adjacent feature-input objects.
 pub(crate) fn bind_pattern_inputs(
+    ctx: &DecodeContext<'_>,
     model_features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) {
-    let metadata_ids = history_metadata_ids(histories);
-    let history_features = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .collect::<Vec<_>>();
-    let model_by_native = model_features
-        .iter()
-        .enumerate()
-        .filter_map(|(index, feature)| Some((feature.native_ref.clone()?, index)))
-        .collect::<HashMap<_, _>>();
+) -> Result<(), cadmpeg_core::CodecError> {
+    let metadata_ids = history_metadata_ids(ctx, histories)?;
+    let history_features = collect_feature_binding_vec(
+        ctx,
+        "collect SLDPRT pattern input candidates",
+        "scan SLDPRT pattern input candidates",
+        histories.iter().flat_map(|history| &history.features),
+    )?;
+    let mut model_by_native = HashMap::new();
+    for (index, feature) in model_features.iter().enumerate() {
+        if let Some(native) = feature.native_ref.as_deref() {
+            let native = ctx.format_retained(
+                format_args!("{native}"),
+                "retain SLDPRT pattern native identity",
+            )?;
+            reserve_feature_binding_map(ctx, &mut model_by_native, "index SLDPRT pattern inputs")?;
+            model_by_native.insert(native, index);
+        }
+    }
     let mut curve_seed_assignments = Vec::<(usize, cadmpeg_ir::features::FeatureId)>::new();
     let mut curve_path_assignments =
         Vec::<(usize, cadmpeg_ir::features::FeatureId, PathRef)>::new();
     let mut pattern_seed_assignments = Vec::<(usize, cadmpeg_ir::features::FeatureId)>::new();
-    let mut circular_axis_assignments = Vec::<(usize, Point3, Vector3)>::new();
-    let mut linear_direction_assignments = Vec::<(usize, Vector3)>::new();
+    let mut circular_axis_assignments = Vec::<(usize, FinitePoint3, UnitVector3)>::new();
+    let mut linear_direction_assignments = Vec::<(usize, FeatureDirection3)>::new();
     let mut mirror_plane_assignments = Vec::<(usize, Point3, Vector3)>::new();
     let mut mirror_seed_assignments = Vec::<(usize, Vec<cadmpeg_ir::features::FeatureId>)>::new();
     let derived_cosmetic_thread_seed = |feature: &crate::records::Feature| {
@@ -86,107 +108,192 @@ pub(crate) fn bind_pattern_inputs(
                     && candidate.input_class.as_deref() == Some("moCosmeticThread_c")
             })
             .max_by_key(|candidate| candidate.ordinal)
-            .map(|native| native.id.clone())
+            .map(|native| native.id.as_str())
     };
 
     for lane in lanes {
+        let discovered_identities;
         let generated_identities = if lane.generated_surface_identities.is_empty() {
-            generated_surface_identities(lane)
+            discovered_identities = generated_surface_identities(ctx, lane)?;
+            &discovered_identities
         } else {
-            lane.generated_surface_identities.clone()
+            &lane.generated_surface_identities
         };
-        let mut starts = history_features
-            .iter()
-            .filter(|feature| !metadata_ids.contains(&feature.id))
-            .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, *feature)))
-            .collect::<Vec<_>>();
-        starts.sort_unstable_by_key(|(offset, _)| *offset);
+        // `lanes::admit` compares every stored name offset with the offset
+        // `object_names` read out of `native_payload`, so an admitted name
+        // offset is an index of that payload. It is narrowed once here, where
+        // that proof holds, and the objects below carry `usize` offsets.
+        let mut starts = collect_feature_binding_vec(
+            ctx,
+            "collect SLDPRT pattern input candidates",
+            "scan SLDPRT pattern input candidates",
+            history_features
+                .iter()
+                .filter(|feature| !metadata_ids.contains(feature.id.as_str()))
+                .filter_map(|feature| {
+                    let offset =
+                        usize::try_from(feature_object_name(feature, lane)?.offset).ok()?;
+                    Some((offset, *feature))
+                }),
+        )?;
+        ctx.sort_unstable_by(
+            &mut starts,
+            |(left, _), (right, _)| left.cmp(right),
+            |_| 0,
+            "sort SLDPRT pattern input candidates",
+        )?;
         for (start_index, (_, feature)) in starts.iter().enumerate() {
             let has_derived_cosmetic_thread_output =
                 starts.get(start_index + 1).is_some_and(|(_, candidate)| {
                     candidate.input_class.as_deref() == Some("moDerivedCosmeticThread_c")
                 });
+            // The end of this pattern's object is the next object name's
+            // offset, or the end of the payload when this is the last one.
+            // Both are inside `native_payload`: an object name states the
+            // payload bytes at its own offset, and `SldprtNative::load`
+            // refuses a name whose offset the payload does not state.
             let pattern_object_end = || {
                 let next = start_index + 1 + usize::from(has_derived_cosmetic_thread_output);
-                starts
-                    .get(next)
-                    .and_then(|(offset, _)| usize::try_from(*offset).ok())
-                    .unwrap_or(lane.native_payload.len())
+                match starts.get(next) {
+                    Some((offset, _)) => *offset,
+                    None => lane.native_payload.len(),
+                }
             };
-            if native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+            if native_object_class(feature.input_class.as_deref().unwrap_or_default())
                 == NativeClassKind::MirrorPattern
             {
                 let Some(&model_index) = model_by_native.get(feature.id.as_str()) else {
                     continue;
                 };
-                let (needs_plane, needs_seeds) = match &model_features[model_index].definition {
-                    FeatureDefinition::Pattern { seeds, pattern, .. } => {
-                        (pattern.is_unresolved(), seeds.is_empty())
-                    }
-                    _ => continue,
-                };
+                let (needs_plane, needs_seeds) =
+                    match model_features[model_index].evaluation.definition() {
+                        FeatureDefinition::Operation(FeatureOperation::Pattern {
+                            seeds,
+                            pattern,
+                            ..
+                        }) => (pattern.is_unresolved(), seeds.is_empty()),
+                        _ => continue,
+                    };
                 if !needs_plane && !needs_seeds {
                     continue;
                 }
-                let start = usize::try_from(starts[start_index].0).ok();
+                let start = Some(starts[start_index].0);
                 let end = pattern_object_end();
                 let Some(start) = start.filter(|start| *start < end) else {
                     continue;
                 };
                 let object = &lane.native_payload[start..end];
                 if needs_plane {
-                    if let Ok(Some((origin, normal, _))) = explicit_reference_plane_frame(object) {
-                        mirror_plane_assignments.push((model_index, origin, normal));
+                    if let Ok(Some((origin, normal, _))) =
+                        explicit_reference_plane_frame(ctx, object)?
+                    {
+                        push_feature_binding_candidate(
+                            ctx,
+                            &mut mirror_plane_assignments,
+                            (model_index, origin, normal),
+                        )?;
                     }
                 }
                 if !needs_seeds {
                     continue;
                 }
-                let seed_candidates = (0..object
-                    .len()
-                    .saturating_sub(COMPACT_EDGE_VECTOR_MARKER.len()))
-                    .filter(|offset| {
-                        object.get(*offset..*offset + COMPACT_EDGE_VECTOR_MARKER.len())
-                            == Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
-                    })
-                    .filter_map(|offset| mirror_pattern_component_path_at(object, offset))
-                    .filter_map(|components| {
+                let mut seeds = Vec::<cadmpeg_ir::features::FeatureId>::new();
+                let scan_end = if object.len() >= COMPACT_EDGE_VECTOR_MARKER.len() {
+                    object.len() - COMPACT_EDGE_VECTOR_MARKER.len()
+                } else {
+                    0
+                };
+                for offset in 0..scan_end {
+                    ctx.charge_work(16, "scan SLDPRT mirror pattern seed paths")?;
+                    if object.get(offset..offset + COMPACT_EDGE_VECTOR_MARKER.len())
+                        != Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
+                    {
+                        continue;
+                    }
+                    let Some(components) = mirror_pattern_component_path_at(ctx, object, offset)?
+                    else {
+                        continue;
+                    };
+                    ctx.charge_work(
+                        u64_from_index(components.len())
+                            .checked_mul(u64_from_index(history_features.len()))
+                            .ok_or_else(|| {
+                                ctx.refuse_codec_limit(
+                                    "resolve SLDPRT mirror pattern seeds",
+                                    u64::MAX - 1,
+                                    u64::MAX,
+                                )
+                            })?,
+                        "resolve SLDPRT mirror pattern seeds",
+                    )?;
+                    let native = (|| {
                         for component in components.iter().rev() {
                             let source = View::u32_le_at(&component.type_signature, 4)?;
-                            let mut matches = history_features.iter().filter(|candidate| {
-                                candidate
-                                    .source_id
-                                    .as_deref()
-                                    .and_then(|value| value.parse::<u32>().ok())
-                                    == Some(source)
-                            });
+                            let mut matches = history_features
+                                .iter()
+                                .filter(|candidate| candidate.source_value() == Some(source));
                             let Some(feature) = matches.next() else {
                                 continue;
                             };
-                            return matches.next().is_none().then(|| feature.id.clone());
+                            return matches.next().is_none().then_some(feature.id.as_str());
                         }
                         None
-                    })
-                    .filter_map(|native| model_by_native.get(native.as_str()).copied())
-                    .filter(|seed_index| *seed_index != model_index)
-                    .map(|seed_index| model_features[seed_index].id.clone());
-                let mut seeds = Vec::new();
-                for seed in seed_candidates {
-                    if !seeds.contains(&seed) {
-                        seeds.push(seed);
+                    })();
+                    let Some(native) = native else {
+                        continue;
+                    };
+                    ctx.charge_work(
+                        u64_from_index(native.len()),
+                        "resolve SLDPRT mirror pattern seeds",
+                    )?;
+                    let Some(seed_index) = model_by_native.get(native).copied() else {
+                        continue;
+                    };
+                    if seed_index == model_index {
+                        continue;
+                    }
+                    let seed = &model_features[seed_index].id;
+                    for existing in &seeds {
+                        ctx.charge_work(
+                            u64_from_index(seed.as_str().len())
+                                .checked_add(u64_from_index(existing.as_str().len()))
+                                .ok_or_else(|| {
+                                    ctx.refuse_codec_limit(
+                                        "compare SLDPRT mirror pattern seeds",
+                                        u64::MAX - 1,
+                                        u64::MAX,
+                                    )
+                                })?,
+                            "compare SLDPRT mirror pattern seeds",
+                        )?;
+                    }
+                    if !seeds.contains(seed) {
+                        let seed = copy_feature_binding_id(ctx, seed)?;
+                        push_feature_binding_candidate(ctx, &mut seeds, seed)?;
                     }
                 }
                 if seeds.is_empty() {
                     if has_derived_cosmetic_thread_output {
                         if let Some(seed_index) = derived_cosmetic_thread_seed(feature)
-                            .and_then(|native| model_by_native.get(native.as_str()).copied())
+                            .and_then(|native| model_by_native.get(native).copied())
                         {
-                            mirror_seed_assignments
-                                .push((model_index, vec![model_features[seed_index].id.clone()]));
+                            let mut seeds = Vec::new();
+                            let seed =
+                                copy_feature_binding_id(ctx, &model_features[seed_index].id)?;
+                            push_feature_binding_candidate(ctx, &mut seeds, seed)?;
+                            push_feature_binding_candidate(
+                                ctx,
+                                &mut mirror_seed_assignments,
+                                (model_index, seeds),
+                            )?;
                         }
                     }
                 } else {
-                    mirror_seed_assignments.push((model_index, seeds));
+                    push_feature_binding_candidate(
+                        ctx,
+                        &mut mirror_seed_assignments,
+                        (model_index, seeds),
+                    )?;
                 }
                 continue;
             }
@@ -194,32 +301,37 @@ pub(crate) fn bind_pattern_inputs(
                 let Some(&model_index) = model_by_native.get(feature.id.as_str()) else {
                     continue;
                 };
-                let (needs_seed, needs_axis) = match &model_features[model_index].definition {
-                    FeatureDefinition::Pattern {
-                        seeds,
-                        pattern: PatternKind::UnresolvedCircular,
-                        ..
-                    } => (seeds.is_empty(), true),
-                    FeatureDefinition::Pattern { seeds, .. } => (seeds.is_empty(), false),
+                let (needs_seed, needs_axis) = match model_features[model_index]
+                    .evaluation
+                    .definition()
+                {
+                    FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern })
+                        if matches!(
+                            pattern.definition(),
+                            PatternTransform::Unresolved {
+                                form: Some(cadmpeg_ir::features::patterns::PatternForm::Circular)
+                            }
+                        ) =>
+                    {
+                        (seeds.is_empty(), true)
+                    }
+                    FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) => {
+                        (seeds.is_empty(), false)
+                    }
                     _ => continue,
                 };
                 if !needs_seed && !needs_axis {
                     continue;
                 }
-                let Some(start) = usize::try_from(starts[start_index].0)
-                    .ok()
-                    .filter(|start| *start < pattern_object_end())
+                let Some(start) =
+                    Some(starts[start_index].0).filter(|start| *start < pattern_object_end())
                 else {
                     continue;
                 };
                 let end = pattern_object_end();
                 if needs_seed {
-                    if let Some(pattern_source) = feature
-                        .source_id
-                        .as_deref()
-                        .and_then(|source| source.parse::<u32>().ok())
-                    {
-                        let mut seed_candidates = generated_identities
+                    if let Some(pattern_source) = feature.source_value() {
+                        let seed_candidates = generated_identities
                             .iter()
                             .filter(|identity| {
                                 usize::try_from(identity.offset)
@@ -235,35 +347,51 @@ pub(crate) fn bind_pattern_inputs(
                             .filter(|identity| {
                                 identity.components.last().is_some_and(|component| {
                                     View::u32_le_at(&component.type_signature, 4)
-                                        == Some(identity.feature_source_id)
+                                        == Some(identity.feature_source_id.value())
                                         && component.local_id == Some(identity.local_identity)
                                 })
                             })
                             .filter_map(|identity| {
                                 let mut matches = history_features.iter().filter(|candidate| {
-                                    candidate
-                                        .source_id
-                                        .as_deref()
-                                        .and_then(|source| source.parse::<u32>().ok())
-                                        == Some(identity.feature_source_id)
+                                    candidate.source_value()
+                                        == Some(identity.feature_source_id.value())
                                 });
                                 let seed = matches.next()?;
-                                matches.next().is_none().then(|| seed.id.clone())
+                                matches.next().is_none().then_some(seed.id.as_str())
                             })
-                            .filter_map(|native| model_by_native.get(native.as_str()).copied())
+                            .filter_map(|native| model_by_native.get(native).copied())
                             .filter(|seed_index| *seed_index != model_index)
-                            .map(|seed_index| model_features[seed_index].id.clone())
-                            .collect::<Vec<_>>();
-                        seed_candidates.sort();
-                        seed_candidates.dedup();
-                        if let [seed] = seed_candidates.as_slice() {
-                            pattern_seed_assignments.push((model_index, seed.clone()));
+                            .map(|seed_index| &model_features[seed_index].id);
+                        let mut seeds = collect_feature_binding_vec(
+                            ctx,
+                            "collect SLDPRT pattern input candidates",
+                            "scan SLDPRT pattern input candidates",
+                            seed_candidates,
+                        )?;
+                        ctx.sort_unstable_by(
+                            &mut seeds,
+                            Ord::cmp,
+                            |seed| seed.as_str().len(),
+                            "sort SLDPRT pattern input seeds",
+                        )?;
+                        seeds.dedup();
+                        if let [seed] = seeds.as_slice() {
+                            let seed = copy_feature_binding_id(ctx, seed)?;
+                            push_feature_binding_candidate(
+                                ctx,
+                                &mut pattern_seed_assignments,
+                                (model_index, seed),
+                            )?;
                         }
                     }
                 }
                 if needs_axis {
                     if let Some(axis) = temporary_axis_reference(&lane.native_payload, start, end) {
-                        circular_axis_assignments.push((model_index, axis.0, axis.1));
+                        push_feature_binding_candidate(
+                            ctx,
+                            &mut circular_axis_assignments,
+                            (model_index, axis.0, axis.1),
+                        )?;
                     }
                 }
                 continue;
@@ -272,37 +400,55 @@ pub(crate) fn bind_pattern_inputs(
                 let Some(&model_index) = model_by_native.get(feature.id.as_str()) else {
                     continue;
                 };
-                let object_start = usize::try_from(starts[start_index].0).ok();
+                let object_start = Some(starts[start_index].0);
                 let end = pattern_object_end();
-                if matches!(
-                    model_features[model_index].definition,
-                    FeatureDefinition::Pattern {
-                        pattern: PatternKind::UnresolvedLinear,
+                if matches!(&(model_features[model_index].evaluation.definition()),
+                    FeatureDefinition::Operation(FeatureOperation::Pattern {
+                        pattern: admitted_pattern,
                         ..
-                    }
+                    }) if matches!(admitted_pattern.definition(), PatternTransform::Unresolved { form: Some(cadmpeg_ir::features::patterns::PatternForm::Linear) })
                 ) {
                     if let Some((spacing, count)) =
                         object_start.filter(|start| *start < end).and_then(|start| {
-                            typed_linear_pattern_dimensions(feature, lane, start, end)
+                            typed_linear_pattern_dimensions(
+                                feature,
+                                lane,
+                                start,
+                                pattern_object_end(),
+                            )
                         })
                     {
-                        if let FeatureDefinition::Pattern { pattern, .. } =
-                            &mut model_features[model_index].definition
-                        {
-                            *pattern = PatternKind::Linear {
-                                direction: None,
-                                spacing,
-                                count,
-                                second: None,
-                            };
-                        }
+                        let admitted = PatternKind::new(PatternTransform::Linear {
+                            direction: None,
+                            spacing,
+                            count,
+                            second: None,
+                        })
+                        .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?;
+                        model_features[model_index]
+                            .evaluation
+                            .edit(|definition, _| {
+                                if let FeatureDefinition::Operation(FeatureOperation::Pattern {
+                                    pattern,
+                                    ..
+                                }) = definition
+                                {
+                                    *pattern = admitted;
+                                }
+                            });
                     }
                 }
-                let (needs_seed, needs_direction) = match &model_features[model_index].definition {
-                    FeatureDefinition::Pattern {
-                        seeds,
-                        pattern: PatternKind::Linear { direction, .. },
-                    } => (seeds.is_empty(), direction.is_none()),
+                let (needs_seed, needs_direction) = match model_features[model_index]
+                    .evaluation
+                    .definition()
+                {
+                    FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) => {
+                        let PatternTransform::Linear { direction, .. } = pattern.definition()
+                        else {
+                            continue;
+                        };
+                        (seeds.is_empty(), direction.is_none())
+                    }
                     _ => continue,
                 };
                 if !needs_seed && !needs_direction {
@@ -311,87 +457,144 @@ pub(crate) fn bind_pattern_inputs(
                 if needs_seed {
                     if has_derived_cosmetic_thread_output {
                         if let Some(seed_index) = derived_cosmetic_thread_seed(feature)
-                            .and_then(|native| model_by_native.get(native.as_str()).copied())
+                            .and_then(|native| model_by_native.get(native).copied())
                         {
-                            pattern_seed_assignments
-                                .push((model_index, model_features[seed_index].id.clone()));
+                            let seed =
+                                copy_feature_binding_id(ctx, &model_features[seed_index].id)?;
+                            push_feature_binding_candidate(
+                                ctx,
+                                &mut pattern_seed_assignments,
+                                (model_index, seed),
+                            )?;
                         }
                     } else if let Some((_, seed)) = start_index
                         .checked_sub(1)
                         .and_then(|index| starts.get(index))
                     {
                         if let Some(&seed_index) = model_by_native.get(seed.id.as_str()) {
-                            pattern_seed_assignments
-                                .push((model_index, model_features[seed_index].id.clone()));
+                            let seed =
+                                copy_feature_binding_id(ctx, &model_features[seed_index].id)?;
+                            push_feature_binding_candidate(
+                                ctx,
+                                &mut pattern_seed_assignments,
+                                (model_index, seed),
+                            )?;
                         }
                     }
                 }
                 if !needs_direction {
                     continue;
                 }
-                let declarations = lane
-                    .classes
-                    .iter()
-                    .filter(|class| {
-                        class.name == "moLineRef_w"
-                            && class.offset > starts[start_index].0
-                            && usize::try_from(class.offset).is_ok_and(|offset| offset < end)
-                    })
-                    .collect::<Vec<_>>();
-                let mut directions = declarations
-                    .iter()
-                    .flat_map(|class| {
-                        declared_line_reference_directions(&lane.native_payload, class.offset, end)
-                    })
-                    .collect::<Vec<_>>();
+                let mut declarations = Vec::new();
+                for class in &lane.classes {
+                    ctx.charge_work(1, "scan SLDPRT pattern line declarations")?;
+                    if class.name == "moLineRef_w"
+                        && class.offset > u64_from_index(starts[start_index].0)
+                        && class.offset < u64_from_index(end)
+                    {
+                        ctx.reserve_vec(
+                            &mut declarations,
+                            1,
+                            "collect SLDPRT pattern line declarations",
+                        )?;
+                        declarations.push(class);
+                    }
+                }
+                let mut directions = Vec::new();
+                for class in &declarations {
+                    let declared = declared_line_reference_directions(
+                        ctx,
+                        &lane.native_payload,
+                        class.offset,
+                        end,
+                    )?;
+                    ctx.reserve_capacity(
+                        &mut directions,
+                        declared.len(),
+                        "merge SLDPRT declared line directions",
+                    )?;
+                    directions.extend(declared);
+                }
                 if let Some(start) = object_start {
-                    let excluded_handles = declarations
-                        .iter()
-                        .filter_map(|class| usize::try_from(class.offset).ok())
-                        .flat_map(|offset| [offset + 136, offset + 144])
-                        .collect::<Vec<_>>();
-                    directions.extend(compact_line_reference_directions(
+                    let mut excluded_handles = Vec::new();
+                    for class in &declarations {
+                        if let Ok(offset) = usize::try_from(class.offset) {
+                            ctx.reserve_vec(
+                                &mut excluded_handles,
+                                2,
+                                "collect SLDPRT excluded line handles",
+                            )?;
+                            excluded_handles.extend([offset + 136, offset + 144]);
+                        }
+                    }
+                    let compact = compact_line_reference_directions(
+                        ctx,
                         &lane.native_payload,
                         start,
                         end,
                         &excluded_handles,
-                    ));
+                    )?;
+                    ctx.reserve_capacity(
+                        &mut directions,
+                        compact.len(),
+                        "merge SLDPRT compact line directions",
+                    )?;
+                    directions.extend(compact);
                     if directions.is_empty() {
                         let first_spacing_m = feature
                             .parameters
                             .get("D3")
                             .and_then(|value| {
-                                crate::history::parse_positive_dimension_length_mm(value)
+                                crate::history::literals::parse_positive_dimension_length_mm(value)
                             })
-                            .map(|value| value / 1000.0);
+                            .map(|value| value.get() / 1000.0);
                         let second_spacing_m = feature
                             .parameters
                             .get("D4")
                             .and_then(|value| {
-                                crate::history::parse_positive_dimension_length_mm(value)
+                                crate::history::literals::parse_positive_dimension_length_mm(value)
                             })
-                            .map(|value| value / 1000.0);
-                        directions.extend(linear_pattern_display_directions(
+                            .map(|value| value.get() / 1000.0);
+                        let display = linear_pattern_display_directions(
                             &lane.native_payload,
                             start,
                             end,
                             &lane.names,
                             [first_spacing_m, second_spacing_m],
-                        ));
+                        );
+                        ctx.reserve_vec(
+                            &mut directions,
+                            display.len(),
+                            "collect SLDPRT pattern display directions",
+                        )?;
+                        directions.extend(display);
                     }
                 }
                 let mut unique_directions = Vec::new();
-                for direction in directions.into_iter().map(canonical_unit_direction) {
-                    if !unique_directions.iter().any(|candidate: &Vector3| {
-                        let dot = candidate.x * direction.x
-                            + candidate.y * direction.y
-                            + candidate.z * direction.z;
-                        (dot.abs() - 1.0).abs() <= EPS_BINDINGS_BIND_PATTERN_INPUTS_E12
-                    }) {
-                        unique_directions.push(direction);
+                for direction in directions
+                    .into_iter()
+                    .map(FeatureDirection3::from_unit_without_small_components)
+                {
+                    if !unique_directions
+                        .iter()
+                        .any(|candidate: &FeatureDirection3| {
+                            let candidate = candidate.get();
+                            let direction = direction.get();
+                            let dot = candidate.x * direction.x
+                                + candidate.y * direction.y
+                                + candidate.z * direction.z;
+                            (dot.abs() - 1.0).abs() <= EPS_BINDINGS_BIND_PATTERN_INPUTS_E12
+                        })
+                    {
+                        push_feature_binding_candidate(ctx, &mut unique_directions, direction)?;
                     }
                 }
                 if matches!(unique_directions.len(), 1 | 2) {
+                    ctx.reserve_vec(
+                        &mut linear_direction_assignments,
+                        unique_directions.len(),
+                        "collect SLDPRT pattern direction assignments",
+                    )?;
                     linear_direction_assignments.extend(
                         unique_directions
                             .into_iter()
@@ -406,12 +609,14 @@ pub(crate) fn bind_pattern_inputs(
             let Some(&model_index) = model_by_native.get(feature.id.as_str()) else {
                 continue;
             };
-            let (needs_seed, needs_path) = match &model_features[model_index].definition {
-                FeatureDefinition::Pattern {
-                    seeds,
-                    pattern: PatternKind::CurveDriven { path, .. },
-                    ..
-                } => (seeds.is_empty(), path.is_none()),
+            let (needs_seed, needs_path) = match model_features[model_index].evaluation.definition()
+            {
+                FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) => {
+                    let PatternTransform::CurveDriven { path, .. } = pattern.definition() else {
+                        continue;
+                    };
+                    (seeds.is_empty(), path.is_none())
+                }
                 _ => continue,
             };
             if needs_seed {
@@ -420,8 +625,12 @@ pub(crate) fn bind_pattern_inputs(
                     .and_then(|index| starts.get(index))
                 {
                     if let Some(&seed_index) = model_by_native.get(seed.id.as_str()) {
-                        curve_seed_assignments
-                            .push((model_index, model_features[seed_index].id.clone()));
+                        let seed = copy_feature_binding_id(ctx, &model_features[seed_index].id)?;
+                        push_feature_binding_candidate(
+                            ctx,
+                            &mut curve_seed_assignments,
+                            (model_index, seed),
+                        )?;
                     }
                 }
             }
@@ -437,156 +646,269 @@ pub(crate) fn bind_pattern_inputs(
             let Some(&target_index) = model_by_native.get(target.id.as_str()) else {
                 continue;
             };
-            let FeatureDefinition::Sketch {
+            let FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            } = &model_features[target_index].definition
+            }) = model_features[target_index].evaluation.definition()
             else {
                 continue;
             };
-            curve_path_assignments.push((
-                model_index,
-                model_features[target_index].id.clone(),
-                PathRef::Sketch(sketch.clone()),
-            ));
+            let dependency = copy_feature_binding_id(ctx, &model_features[target_index].id)?;
+            let sketch = copy_feature_binding_sketch_id(ctx, sketch)?;
+            push_feature_binding_candidate(
+                ctx,
+                &mut curve_path_assignments,
+                (model_index, dependency, PathRef::Sketch(sketch)),
+            )?;
         }
     }
+    ctx.reserve_capacity(
+        &mut pattern_seed_assignments,
+        curve_seed_assignments.len(),
+        "merge SLDPRT pattern seed assignments",
+    )?;
     pattern_seed_assignments.extend(curve_seed_assignments);
     let mut seeds_by_pattern = HashMap::<usize, Vec<cadmpeg_ir::features::FeatureId>>::new();
     for (index, seed) in pattern_seed_assignments {
+        reserve_feature_binding_map(ctx, &mut seeds_by_pattern, "index SLDPRT pattern inputs")?;
         let candidates = seeds_by_pattern.entry(index).or_default();
         if !candidates.contains(&seed) {
-            candidates.push(seed);
+            push_feature_binding_candidate(ctx, candidates, seed)?;
         }
     }
-    for (index, candidates) in seeds_by_pattern {
-        let [seed] = candidates.as_slice() else {
+    for (index, mut candidates) in seeds_by_pattern {
+        if candidates.len() != 1 {
+            continue;
+        }
+        let Some(seed) = candidates.pop() else {
             continue;
         };
-        if !model_features[index].dependencies.contains(seed) {
-            model_features[index].dependencies.push(seed.clone());
+        if !model_features[index].dependencies.contains(&seed) {
+            let dependency = copy_feature_binding_id(ctx, &seed)?;
+            model_features[index].dependencies.insert(
+                ctx,
+                dependency,
+                "collect SLDPRT pattern dependencies",
+            )?;
         }
-        if let FeatureDefinition::Pattern { seeds, .. } = &mut model_features[index].definition {
-            if seeds.is_empty() {
-                seeds.push(PatternSeed::Feature(seed.clone()));
-            }
-        }
+        let mut edit_result = Ok(());
+        model_features[index].evaluation.edit(|definition, _| {
+            edit_result = (|| {
+                if let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) =
+                    definition
+                {
+                    if seeds.is_empty() {
+                        push_feature_binding_candidate(ctx, seeds, PatternSeed::Feature(seed))?;
+                    }
+                }
+                Ok::<_, cadmpeg_core::CodecError>(())
+            })();
+        });
+        edit_result?;
     }
     let mut paths_by_pattern = HashMap::<usize, Vec<_>>::new();
     for (index, dependency, path) in curve_path_assignments {
+        reserve_feature_binding_map(ctx, &mut paths_by_pattern, "index SLDPRT pattern inputs")?;
         let candidates = paths_by_pattern.entry(index).or_default();
-        if !candidates.contains(&(dependency.clone(), path.clone())) {
-            candidates.push((dependency, path));
+        if !candidates
+            .iter()
+            .any(|(existing_dependency, existing_path)| {
+                existing_dependency == &dependency && existing_path == &path
+            })
+        {
+            push_feature_binding_candidate(ctx, candidates, (dependency, path))?;
         }
     }
-    for (index, candidates) in paths_by_pattern {
-        let [(dependency, path)] = candidates.as_slice() else {
+    for (index, mut candidates) in paths_by_pattern {
+        if candidates.len() != 1 {
+            continue;
+        }
+        let Some((dependency, path)) = candidates.pop() else {
             continue;
         };
-        if !model_features[index].dependencies.contains(dependency) {
-            model_features[index].dependencies.push(dependency.clone());
+        if !model_features[index].dependencies.contains(&dependency) {
+            model_features[index].dependencies.insert(
+                ctx,
+                dependency,
+                "collect SLDPRT pattern dependencies",
+            )?;
         }
-        if let FeatureDefinition::Pattern {
-            pattern: PatternKind::CurveDriven { path: slot, .. },
-            ..
-        } = &mut model_features[index].definition
-        {
-            if slot.is_none() {
-                *slot = Some(path.clone());
+        model_features[index].evaluation.edit(|definition, _| {
+            if let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) =
+                definition
+            {
+                if let Some(slot) = pattern.curve_path_mut() {
+                    if slot.is_none() {
+                        *slot = Some(path);
+                    }
+                }
             }
-        }
+        });
     }
-    let mut linear_directions_by_pattern = HashMap::<usize, Vec<Vector3>>::new();
+    let mut linear_directions_by_pattern = HashMap::<usize, Vec<FeatureDirection3>>::new();
     for (index, direction) in linear_direction_assignments {
+        reserve_feature_binding_map(
+            ctx,
+            &mut linear_directions_by_pattern,
+            "index SLDPRT pattern inputs",
+        )?;
         let candidates = linear_directions_by_pattern.entry(index).or_default();
         if !candidates.contains(&direction) {
-            candidates.push(direction);
+            push_feature_binding_candidate(ctx, candidates, direction)?;
         }
     }
     for (index, candidates) in linear_directions_by_pattern {
-        if let FeatureDefinition::Pattern {
-            pattern: PatternKind::Linear {
-                direction, second, ..
-            },
-            ..
-        } = &mut model_features[index].definition
-        {
-            match candidates.as_slice() {
-                [first] if direction.is_none() => *direction = Some(*first),
-                [first, second_direction] => {
-                    let native = model_features[index]
-                        .native_ref
-                        .as_deref()
-                        .and_then(|native| {
-                            history_features.iter().find(|feature| feature.id == native)
-                        });
-                    let secondary = native.and_then(|feature| {
-                        Some(cadmpeg_ir::features::LinearPatternDirection {
-                            direction: *second_direction,
-                            spacing: Length(feature.parameters.get("D4").and_then(|value| {
-                                crate::history::parse_positive_dimension_length_mm(value)
-                            })?),
-                            count: feature.parameters.get("D2")?.parse::<u32>().ok()?,
-                        })
-                    });
-                    if direction.is_none() && second.is_none() && secondary.is_some() {
-                        *direction = Some(*first);
-                        *second = secondary;
+        let native = model_features[index]
+            .native_ref
+            .as_deref()
+            .and_then(|native| history_features.iter().find(|feature| feature.id == native));
+        let parameters = native.and_then(|feature| {
+            Some((
+                feature.parameters.get("D4").and_then(|value| {
+                    crate::history::literals::parse_positive_dimension_length_mm(value)
+                })?,
+                feature.parameters.get("D2")?.parse::<u32>().ok()?,
+            ))
+        });
+        let mut edit_result = Ok(());
+        model_features[index].evaluation.edit(|definition, _| {
+            edit_result = (|| {
+                if let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) =
+                    definition
+                {
+                    let PatternTransform::Linear {
+                        direction,
+                        spacing,
+                        count,
+                        second,
+                    } = pattern.definition()
+                    else {
+                        return Ok(());
+                    };
+                    let mut direction = *direction;
+                    let mut second = second.clone();
+                    match candidates.as_slice() {
+                        [first] if direction.is_none() => direction = Some(*first),
+                        [first, second_direction] => {
+                            if let (true, true, Some((spacing, count))) =
+                                (direction.is_none(), second.is_none(), parameters)
+                            {
+                                direction = Some(*first);
+                                second =
+                                    Some(cadmpeg_ir::features::patterns::LinearPatternDirection {
+                                        direction: *second_direction,
+                                        spacing,
+                                        count,
+                                    });
+                            }
+                        }
+                        _ => {}
                     }
+                    *pattern = PatternKind::new(PatternTransform::Linear {
+                        direction,
+                        spacing: *spacing,
+                        count: *count,
+                        second,
+                    })
+                    .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?;
                 }
-                _ => {}
-            }
-        }
+                Ok::<_, cadmpeg_core::CodecError>(())
+            })();
+        });
+        edit_result?;
     }
     let mut mirror_planes_by_pattern = HashMap::<usize, Vec<_>>::new();
     for (index, origin, normal) in mirror_plane_assignments {
+        reserve_feature_binding_map(
+            ctx,
+            &mut mirror_planes_by_pattern,
+            "index SLDPRT pattern inputs",
+        )?;
         let candidates = mirror_planes_by_pattern.entry(index).or_default();
         if !candidates.contains(&(origin, normal)) {
-            candidates.push((origin, normal));
+            push_feature_binding_candidate(ctx, candidates, (origin, normal))?;
         }
     }
     for (index, candidates) in mirror_planes_by_pattern {
         let [(origin, normal)] = candidates.as_slice() else {
             continue;
         };
-        if let FeatureDefinition::Pattern { pattern, .. } = &mut model_features[index].definition {
-            if pattern.is_unresolved() {
-                *pattern = PatternKind::Mirror {
-                    plane_origin: *origin,
-                    plane_normal: *normal,
-                };
-            }
+        if matches!(model_features[index].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) if pattern.is_unresolved())
+        {
+            let admitted = PatternKind::new(PatternTransform::Mirror {
+                plane_origin: admitted_point(*origin)?,
+                plane_normal: admitted_direction(*normal)?,
+            })
+            .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?;
+            model_features[index].evaluation.edit(|definition, _| {
+                if let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) =
+                    definition
+                {
+                    *pattern = admitted;
+                }
+            });
         }
     }
     let mut mirror_seed_sets_by_pattern = HashMap::<usize, Vec<_>>::new();
     for (index, seeds) in mirror_seed_assignments {
+        reserve_feature_binding_map(
+            ctx,
+            &mut mirror_seed_sets_by_pattern,
+            "index SLDPRT pattern inputs",
+        )?;
         let candidates = mirror_seed_sets_by_pattern.entry(index).or_default();
         if !candidates.contains(&seeds) {
-            candidates.push(seeds);
+            push_feature_binding_candidate(ctx, candidates, seeds)?;
         }
     }
-    for (index, candidates) in mirror_seed_sets_by_pattern {
-        let [seeds] = candidates.as_slice() else {
+    for (index, mut candidates) in mirror_seed_sets_by_pattern {
+        if candidates.len() != 1 {
+            continue;
+        }
+        let Some(seeds) = candidates.pop() else {
             continue;
         };
-        for seed in seeds {
+        for seed in &seeds {
             if !model_features[index].dependencies.contains(seed) {
-                model_features[index].dependencies.push(seed.clone());
+                let dependency = copy_feature_binding_id(ctx, seed)?;
+                model_features[index].dependencies.insert(
+                    ctx,
+                    dependency,
+                    "collect SLDPRT pattern dependencies",
+                )?;
             }
         }
-        if let FeatureDefinition::Pattern {
-            seeds: seed_slots, ..
-        } = &mut model_features[index].definition
-        {
-            if seed_slots.is_empty() {
-                seed_slots.extend(seeds.iter().cloned().map(PatternSeed::Feature));
-            }
-        }
+        let mut edit_result = Ok(());
+        model_features[index].evaluation.edit(|definition, _| {
+            edit_result = (|| {
+                if let FeatureDefinition::Operation(FeatureOperation::Pattern {
+                    seeds: seed_slots,
+                    ..
+                }) = definition
+                {
+                    if seed_slots.is_empty() {
+                        ctx.reserve_vec(
+                            seed_slots,
+                            seeds.len(),
+                            "collect SLDPRT mirror pattern seeds",
+                        )?;
+                        seed_slots.extend(seeds.into_iter().map(PatternSeed::Feature));
+                    }
+                }
+                Ok::<_, cadmpeg_core::CodecError>(())
+            })();
+        });
+        edit_result?;
     }
-    let mut circular_axes_by_pattern = HashMap::<usize, Vec<(Point3, Vector3)>>::new();
+    let mut circular_axes_by_pattern = HashMap::<usize, Vec<(FinitePoint3, UnitVector3)>>::new();
     for (index, origin, direction) in circular_axis_assignments {
+        reserve_feature_binding_map(
+            ctx,
+            &mut circular_axes_by_pattern,
+            "index SLDPRT pattern inputs",
+        )?;
         let candidates = circular_axes_by_pattern.entry(index).or_default();
         if !candidates.contains(&(origin, direction)) {
-            candidates.push((origin, direction));
+            push_feature_binding_candidate(ctx, candidates, (origin, direction))?;
         }
     }
     for (index, candidates) in circular_axes_by_pattern {
@@ -616,29 +938,72 @@ pub(crate) fn bind_pattern_inputs(
         else {
             continue;
         };
-        if let FeatureDefinition::Pattern {
-            pattern: slot @ PatternKind::UnresolvedCircular,
-            ..
-        } = &mut model_features[index].definition
+        if !matches!(model_features[index].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) if matches!(pattern.definition(), PatternTransform::Unresolved { form: Some(cadmpeg_ir::features::patterns::PatternForm::Circular) }))
         {
-            *slot = PatternKind::Circular {
-                axis_origin: *axis_origin,
-                axis_dir: *axis_dir,
-                angle: Angle(angle),
-                count,
-            };
+            continue;
         }
+        let admitted = PatternKind::new(PatternTransform::Circular {
+            axis_origin: *axis_origin,
+            axis_dir: FeatureDirection3::from(*axis_dir),
+            angle,
+            count,
+        })
+        .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?;
+        model_features[index].evaluation.edit(|definition, _| {
+            if let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) =
+                definition
+            {
+                *pattern = admitted;
+            }
+        });
     }
+    Ok(())
 }
 
-fn mirror_plane_from_surface(geometry: &SurfaceGeometry) -> Option<(Point3, Vector3)> {
+fn push_feature_binding_candidate<T>(
+    ctx: &DecodeContext<'_>,
+    values: &mut Vec<T>,
+    value: T,
+) -> Result<(), cadmpeg_core::CodecError> {
+    ctx.charge_work(1, "collect SLDPRT feature binding assignments")?;
+    ctx.reserve_vec(values, 1, "collect SLDPRT feature binding assignments")?;
+    values.push(value);
+    Ok(())
+}
+
+/// Admits a pattern axis or plane point read from solved `SolidWorks` geometry.
+fn admitted_point(
+    point: Point3,
+) -> Result<cadmpeg_ir::features::FinitePoint3, cadmpeg_core::CodecError> {
+    cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+        cadmpeg_core::CodecError::Malformed("SolidWorks pattern point must be finite".into())
+    })
+}
+
+/// Admits a pattern direction or plane normal read from solved `SolidWorks` geometry.
+fn admitted_direction(
+    direction: Vector3,
+) -> Result<cadmpeg_ir::features::FeatureDirection3, cadmpeg_core::CodecError> {
+    cadmpeg_ir::features::FeatureDirection3::new(direction).ok_or_else(|| {
+        cadmpeg_core::CodecError::Malformed(
+            "SolidWorks pattern direction must have a finite nonzero norm".into(),
+        )
+    })
+}
+
+fn mirror_plane_from_surface(
+    geometry: &SolvedSurfaceGeometry,
+) -> Option<(cadmpeg_ir::features::FinitePoint3, UnitVector3)> {
     match geometry {
-        SurfaceGeometry::Plane { origin, normal, .. } => Some((*origin, normal.unit()?)),
-        SurfaceGeometry::Transformed { basis, transform } if transform.is_proper_rigid() => {
-            let (origin, normal) = mirror_plane_from_surface(basis)?;
+        SolvedSurfaceGeometry::Plane(plane_surface) => {
+            Some((plane_surface.origin(), *plane_surface.frame().axis()))
+        }
+        SolvedSurfaceGeometry::Transformed(placed) if placed.transform().is_proper_rigid() => {
+            let (origin, normal) = mirror_plane_from_surface(placed.basis())?;
+            let transform = placed.transform();
             Some((
-                transform.apply_point(origin),
-                transform.apply_normal(normal)?,
+                transform.apply_point(origin.get())?,
+                transform.apply_unit_normal(normal)?,
             ))
         }
         _ => None,
@@ -647,109 +1012,172 @@ fn mirror_plane_from_surface(geometry: &SurfaceGeometry) -> Option<(Point3, Vect
 
 /// Bind mirror planes selected by persistent feature-local face identity.
 pub(crate) fn bind_mirror_surface_planes(
+    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     face_identities: &[(cadmpeg_ir::ids::FaceId, crate::brep::PersistentFaceIdentity)],
     faces: &[cadmpeg_ir::topology::Face],
     surfaces: &[cadmpeg_ir::geometry::Surface],
-) {
-    let mirror_native_refs = histories
+) -> Result<(), cadmpeg_core::CodecError> {
+    let mut mirror_native_refs = HashSet::new();
+    for feature in histories
         .iter()
         .flat_map(|history| &history.features)
         .filter(|feature| {
-            native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+            native_object_class(feature.input_class.as_deref().unwrap_or_default())
                 == NativeClassKind::MirrorPattern
         })
-        .map(|feature| feature.id.as_str())
-        .collect::<HashSet<_>>();
-    let mut faces_by_identity = HashMap::<(u32, u32), Vec<&str>>::new();
+    {
+        ctx.charge_work(1, "index SLDPRT mirror surface planes")?;
+        ctx.reserve_set(
+            &mut mirror_native_refs,
+            1,
+            "index SLDPRT mirror surface planes",
+        )?;
+        mirror_native_refs.insert(feature.id.as_str());
+    }
+    let mut faces_by_identity = HashMap::<(FeatureSourceId, u32), Vec<&str>>::new();
     for (face, identity) in face_identities {
+        reserve_feature_binding_map(
+            ctx,
+            &mut faces_by_identity,
+            "index SLDPRT mirror surface planes",
+        )?;
         let candidates = faces_by_identity
             .entry((identity.feature_source_id, identity.local_id))
             .or_default();
         if !candidates.contains(&face.as_str()) {
+            ctx.reserve_vec(candidates, 1, "collect SLDPRT mirror face identities")?;
             candidates.push(face.as_str());
         }
     }
-    let faces_by_id = faces
-        .iter()
-        .map(|face| (face.id.as_str(), face))
-        .collect::<HashMap<_, _>>();
-    let surfaces_by_id = surfaces
-        .iter()
-        .map(|surface| (surface.id.as_str(), surface))
-        .collect::<HashMap<_, _>>();
+    let mut faces_by_id = HashMap::new();
+    for face in faces {
+        reserve_feature_binding_map(ctx, &mut faces_by_id, "index SLDPRT mirror surface planes")?;
+        faces_by_id.insert(face.id.as_str(), face);
+    }
+    let mut surfaces_by_id = HashMap::new();
+    for surface in surfaces {
+        reserve_feature_binding_map(
+            ctx,
+            &mut surfaces_by_id,
+            "index SLDPRT mirror surface planes",
+        )?;
+        surfaces_by_id.insert(surface.id.as_str(), surface);
+    }
 
     for feature in features {
-        let FeatureDefinition::Pattern { pattern, .. } = &mut feature.definition else {
-            continue;
-        };
-        if !pattern.is_unresolved() {
-            continue;
-        }
-        let Some(native_ref) = feature.native_ref.as_deref() else {
-            continue;
-        };
-        if !mirror_native_refs.contains(native_ref) {
-            continue;
-        }
-        let mut candidates = Vec::new();
-        for selection in lanes
-            .iter()
-            .filter(|lane| !is_supplemental_config_lane(lane))
-            .flat_map(|lane| &lane.surface_selections)
-            .filter(|selection| selection.feature_ref == native_ref)
-        {
-            let Some(component) = selection.components.last() else {
-                continue;
-            };
-            let source = View::u32_le_at(&component.type_signature, 4)
-                .expect("four-byte feature source ID slice");
-            let Some(local) = component.local_id else {
-                continue;
-            };
-            let Some([face_id]) = faces_by_identity.get(&(source, local)).map(Vec::as_slice) else {
-                continue;
-            };
-            let Some(surface) = faces_by_id
-                .get(face_id)
-                .and_then(|face| surfaces_by_id.get(face.surface.as_str()))
-            else {
-                continue;
-            };
-            let Some(plane) = mirror_plane_from_surface(&surface.geometry) else {
-                continue;
-            };
-            if !candidates.contains(&plane) {
-                candidates.push(plane);
-            }
-        }
-        let [(origin, normal)] = candidates.as_slice() else {
-            continue;
-        };
-        *pattern = PatternKind::Mirror {
-            plane_origin: *origin,
-            plane_normal: *normal,
-        };
+        let native_ref = feature.native_ref.as_deref();
+        let mut edit_result = Ok(());
+        feature.evaluation.edit(|definition, _| {
+            edit_result = (|| {
+                'feature_edit: {
+                    let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) =
+                        definition
+                    else {
+                        break 'feature_edit;
+                    };
+                    if !pattern.is_unresolved() {
+                        break 'feature_edit;
+                    }
+                    let Some(native_ref) = native_ref else {
+                        break 'feature_edit;
+                    };
+                    if !mirror_native_refs.contains(native_ref) {
+                        break 'feature_edit;
+                    }
+                    let mut candidates = Vec::new();
+                    for selection in lanes
+                        .iter()
+                        .filter(|lane| !is_supplemental_config_lane(lane))
+                        .flat_map(|lane| &lane.surface_selections)
+                        .filter(|selection| selection.feature_ref == native_ref)
+                    {
+                        ctx.charge_work(1, "scan SLDPRT mirror plane selections")?;
+                        let Some(component) = selection.components.last() else {
+                            continue;
+                        };
+                        let Some(source) = View::u32_le_at(&component.type_signature, 4)
+                            .and_then(|source| FeatureSourceId::try_from(source).ok())
+                        else {
+                            continue;
+                        };
+                        let Some(local) = component.local_id else {
+                            continue;
+                        };
+                        let Some([face_id]) =
+                            faces_by_identity.get(&(source, local)).map(Vec::as_slice)
+                        else {
+                            continue;
+                        };
+                        let Some(surface) = faces_by_id
+                            .get(face_id)
+                            .and_then(|face| surfaces_by_id.get(face.surface.as_str()))
+                        else {
+                            continue;
+                        };
+                        let Some(plane) = mirror_plane_from_surface(
+                            surface.geometry.solved().ok_or_else(|| {
+                                cadmpeg_core::CodecError::NotImplemented(
+                                    "carrier has no solved geometry".into(),
+                                )
+                            })?,
+                        ) else {
+                            continue;
+                        };
+                        if !candidates.contains(&plane) {
+                            ctx.reserve_vec(
+                                &mut candidates,
+                                1,
+                                "collect SLDPRT mirror plane candidates",
+                            )?;
+                            candidates.push(plane);
+                        }
+                    }
+                    let [(origin, normal)] = candidates.as_slice() else {
+                        break 'feature_edit;
+                    };
+                    if let Ok(admitted) = PatternKind::new(PatternTransform::Mirror {
+                        plane_origin: *origin,
+                        plane_normal: cadmpeg_ir::features::FeatureDirection3::from(*normal),
+                    }) {
+                        *pattern = admitted;
+                    }
+                }
+                Ok::<_, cadmpeg_core::CodecError>(())
+            })();
+        });
+        edit_result?;
     }
+
+    Ok(())
 }
 
 pub(crate) fn bind_sweep_adjacent_profiles(
+    ctx: &DecodeContext<'_>,
     model_features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) {
-    let metadata_ids = history_metadata_ids(histories);
-    let history_features = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .collect::<Vec<_>>();
-    let model_by_native = model_features
-        .iter()
-        .enumerate()
-        .filter_map(|(index, feature)| Some((feature.native_ref.as_deref()?, index)))
-        .collect::<HashMap<_, _>>();
+) -> Result<(), cadmpeg_core::CodecError> {
+    let metadata_ids = history_metadata_ids(ctx, histories)?;
+    let history_features = collect_feature_binding_vec(
+        ctx,
+        "collect SLDPRT feature binding candidates",
+        "scan SLDPRT feature binding candidates",
+        histories.iter().flat_map(|history| &history.features),
+    )?;
+    let mut model_by_native = HashMap::new();
+    for (index, feature) in model_features.iter().enumerate() {
+        if let Some(native) = feature.native_ref.as_deref() {
+            reserve_feature_binding_map(
+                ctx,
+                &mut model_by_native,
+                "index SLDPRT sweep adjacent profiles",
+            )?;
+            model_by_native.insert(native, index);
+        }
+    }
     let mut assignments = HashMap::<
         usize,
         Vec<(
@@ -759,12 +1187,21 @@ pub(crate) fn bind_sweep_adjacent_profiles(
         )>,
     >::new();
     for lane in lanes {
-        let mut starts = history_features
-            .iter()
-            .filter(|feature| !metadata_ids.contains(&feature.id))
-            .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, *feature)))
-            .collect::<Vec<_>>();
-        starts.sort_unstable_by_key(|(offset, _)| *offset);
+        let mut starts = collect_feature_binding_vec(
+            ctx,
+            "collect SLDPRT feature binding candidates",
+            "scan SLDPRT feature binding candidates",
+            history_features
+                .iter()
+                .filter(|feature| !metadata_ids.contains(feature.id.as_str()))
+                .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, *feature))),
+        )?;
+        ctx.sort_unstable_by(
+            &mut starts,
+            |(left, _), (right, _)| left.cmp(right),
+            |_| 0,
+            "sort SLDPRT sweep adjacent features",
+        )?;
         for (index, (_, feature)) in starts.iter().enumerate() {
             if feature.input_class.as_deref() != Some("moSweep_c") {
                 continue;
@@ -773,12 +1210,11 @@ pub(crate) fn bind_sweep_adjacent_profiles(
                 continue;
             };
             if !matches!(
-                model_features[model_index].definition,
-                FeatureDefinition::Sweep {
-                    section: cadmpeg_ir::features::SweepSection::Unresolved(_),
+                model_features[model_index].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sweep {
+                    shape,
                     ..
-                }
-            ) {
+                }) if shape.section_is_unresolved())
+            {
                 continue;
             }
             let Some((_, profile_feature)) = starts.get(index + 1) else {
@@ -790,9 +1226,9 @@ pub(crate) fn bind_sweep_adjacent_profiles(
             let Some(&profile_index) = model_by_native.get(profile_feature.id.as_str()) else {
                 continue;
             };
-            let FeatureDefinition::Sketch {
+            let FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            } = &model_features[profile_index].definition
+            }) = model_features[profile_index].evaluation.definition()
             else {
                 continue;
             };
@@ -802,123 +1238,199 @@ pub(crate) fn bind_sweep_adjacent_profiles(
                     return None;
                 }
                 let path_index = *model_by_native.get(path_feature.id.as_str())?;
-                let FeatureDefinition::Sketch {
+                let FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(path)),
-                } = &model_features[path_index].definition
+                }) = model_features[path_index].evaluation.definition()
                 else {
                     return None;
                 };
-                Some((model_features[path_index].id.clone(), path.clone()))
+                Some((&model_features[path_index].id, path))
             });
+            let path = path
+                .map(|(feature, sketch)| {
+                    Ok::<_, cadmpeg_core::CodecError>((
+                        copy_feature_binding_id(ctx, feature)?,
+                        copy_feature_binding_sketch_id(ctx, sketch)?,
+                    ))
+                })
+                .transpose()?;
             let candidate = (
-                model_features[profile_index].id.clone(),
-                sketch.clone(),
+                copy_feature_binding_id(ctx, &model_features[profile_index].id)?,
+                copy_feature_binding_sketch_id(ctx, sketch)?,
                 path,
             );
+            reserve_feature_binding_map(
+                ctx,
+                &mut assignments,
+                "index SLDPRT sweep adjacent profiles",
+            )?;
             let candidates = assignments.entry(model_index).or_default();
             if !candidates.contains(&candidate) {
+                ctx.reserve_vec(candidates, 1, "collect SLDPRT sweep profile assignments")?;
                 candidates.push(candidate);
             }
         }
     }
-    for (index, candidates) in assignments {
-        let [(profile_dependency, sketch, path)] = candidates.as_slice() else {
+    for (index, mut candidates) in assignments {
+        if candidates.len() != 1 {
+            continue;
+        }
+        let Some((profile_dependency, sketch, path)) = candidates.pop() else {
             continue;
         };
         let mut profile_bound = false;
-        if let FeatureDefinition::Sweep {
-            section,
-            path: path_slot,
-            ..
-        } = &mut model_features[index].definition
-        {
-            if matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_)) {
-                *section = cadmpeg_ir::features::SweepSection::Profile(
-                    cadmpeg_ir::features::ProfileRef::Sketch(sketch.clone()),
-                );
-                profile_bound = true;
-            }
-            if let Some((_, path)) = path {
-                if path_slot
-                    .as_ref()
-                    .is_none_or(|existing| matches!(existing, PathRef::Native(_)))
-                {
-                    *path_slot = Some(PathRef::Sketch(path.clone()));
+        let mut path_dependency = None;
+        model_features[index].evaluation.edit(|definition, _| {
+            if let FeatureDefinition::Operation(FeatureOperation::Sweep {
+                shape,
+                path: path_slot,
+                ..
+            }) = definition
+            {
+                if shape.section_is_unresolved() {
+                    shape.set_referenced_profile(sketch.into());
+                    profile_bound = true;
                 }
+                if let Some((dependency, path)) = path {
+                    if path_slot
+                        .as_ref()
+                        .is_none_or(|existing| matches!(existing, PathRef::Native(_)))
+                    {
+                        *path_slot = Some(PathRef::Sketch(path));
+                    }
+                    path_dependency = Some(dependency);
+                }
+            } else {
+                path_dependency = path.map(|(dependency, _)| dependency);
             }
-        }
+        });
         if profile_bound
             && !model_features[index]
                 .dependencies
-                .contains(profile_dependency)
+                .contains(&profile_dependency)
         {
-            model_features[index]
-                .dependencies
-                .push(profile_dependency.clone());
+            model_features[index].dependencies.insert(
+                ctx,
+                profile_dependency,
+                "collect SLDPRT sweep profile dependencies",
+            )?;
         }
-        if let Some((path_dependency, _)) = path {
-            if !model_features[index].dependencies.contains(path_dependency) {
-                model_features[index]
-                    .dependencies
-                    .push(path_dependency.clone());
+        if let Some(dependency) = path_dependency {
+            if !model_features[index].dependencies.contains(&dependency) {
+                model_features[index].dependencies.insert(
+                    ctx,
+                    dependency,
+                    "collect SLDPRT sweep profile dependencies",
+                )?;
             }
         }
     }
+    Ok(())
+}
+
+fn copy_feature_binding_id(
+    ctx: &DecodeContext<'_>,
+    id: &cadmpeg_ir::features::FeatureId,
+) -> Result<cadmpeg_ir::features::FeatureId, cadmpeg_core::CodecError> {
+    let text = ctx.format_retained(
+        format_args!("{}", id.as_str()),
+        "retain SLDPRT feature binding identity",
+    )?;
+    cadmpeg_ir::features::FeatureId::mint(text).map_err(cadmpeg_core::CodecError::malformed)
+}
+
+fn copy_feature_binding_sketch_id(
+    ctx: &DecodeContext<'_>,
+    id: &SketchId,
+) -> Result<SketchId, cadmpeg_core::CodecError> {
+    let text = ctx.format_retained(
+        format_args!("{}", id.as_str()),
+        "retain SLDPRT feature binding identity",
+    )?;
+    SketchId::mint(text).map_err(cadmpeg_core::CodecError::malformed)
+}
+
+fn reserve_feature_binding_map<K: Eq + std::hash::Hash, V>(
+    ctx: &DecodeContext<'_>,
+    values: &mut HashMap<K, V>,
+    operation: &'static str,
+) -> Result<(), cadmpeg_core::CodecError> {
+    ctx.charge_work(1, operation)?;
+    ctx.reserve_map(values, 1, operation)
+}
+
+fn collect_feature_binding_vec<T>(
+    ctx: &DecodeContext<'_>,
+    collection_operation: &'static str,
+    work_operation: &'static str,
+    items: impl Iterator<Item = T>,
+) -> Result<Vec<T>, cadmpeg_core::CodecError> {
+    let mut values = Vec::new();
+    for item in items {
+        ctx.charge_work(1, work_operation)?;
+        ctx.reserve_vec(&mut values, 1, collection_operation)?;
+        values.push(item);
+    }
+    Ok(values)
 }
 
 pub(crate) fn bind_scalar_operands(
+    ctx: &DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
     lanes: &mut [FeatureInputLane],
-) {
-    let represented_sketches = represented_sketch_features(histories, lanes);
-    let metadata_ids = history_metadata_ids(histories);
+) -> Result<(), cadmpeg_core::CodecError> {
+    let represented_sketches = represented_sketch_features(ctx, histories, lanes)?;
+    let metadata_ids = history_metadata_ids(ctx, histories)?;
     for lane in lanes {
         for entity in &mut lane.sketch_entities {
             entity.feature_ref = None;
             entity.links = None;
         }
-        let mut starts = histories
-            .iter()
-            .flat_map(|history| &history.features)
-            .filter(|feature| !metadata_ids.contains(&feature.id))
-            .filter_map(|feature| {
-                Some((
-                    feature_object_name(feature, lane)?.offset,
-                    feature.id.as_str(),
-                ))
-            })
-            .collect::<Vec<_>>();
-        starts.sort_unstable_by_key(|start| start.0);
+        let mut starts = collect_binding_vec(
+            ctx,
+            histories
+                .iter()
+                .flat_map(|history| &history.features)
+                .filter(|feature| !metadata_ids.contains(feature.id.as_str()))
+                .filter_map(|feature| {
+                    Some((
+                        feature_object_name(feature, lane)?.offset,
+                        feature.id.as_str(),
+                    ))
+                }),
+        )?;
+        ctx.sort_unstable_by(
+            &mut starts,
+            |left, right| left.0.cmp(&right.0),
+            |_| 0,
+            "sort SLDPRT scalar operand features",
+        )?;
         for (index, &(start, feature_id)) in starts.iter().enumerate() {
-            let end = starts.get(index + 1).map_or(u64::MAX, |next| next.0);
-            for entity in lane
-                .sketch_entities
-                .iter_mut()
-                .filter(|entity| entity.offset > start && entity.offset < end)
-            {
-                entity.feature_ref = Some(feature_id.to_string());
+            let end = starts.get(index + 1).map(|next| next.0);
+            for entity in lane.sketch_entities.iter_mut().filter(|entity| {
+                entity.offset() > start && end.is_none_or(|end| entity.offset() < end)
+            }) {
+                entity.feature_ref = Some(copy_binding_text(ctx, feature_id)?);
             }
-            for reference in lane
-                .references
-                .iter_mut()
-                .filter(|reference| reference.offset > start && reference.offset < end)
-            {
-                reference.feature_ref = Some(feature_id.to_string());
+            for reference in lane.references.iter_mut().filter(|reference| {
+                reference.offset > start && end.is_none_or(|end| reference.offset < end)
+            }) {
+                reference.feature_ref = Some(copy_binding_text(ctx, feature_id)?);
             }
             for scalar in lane
                 .scalars
                 .iter_mut()
-                .filter(|scalar| scalar.offset > start && scalar.offset < end)
+                .filter(|scalar| scalar.offset > start && end.is_none_or(|end| scalar.offset < end))
             {
-                scalar.feature_ref = Some(feature_id.to_string());
+                scalar.feature_ref = Some(copy_binding_text(ctx, feature_id)?);
             }
         }
-        bind_detached_legacy_sketch_objects(histories, &represented_sketches, lane);
-        let features_by_id = histories
-            .iter()
-            .flat_map(|history| &history.features)
-            .map(|feature| (feature.id.as_str(), feature))
-            .collect::<HashMap<_, _>>();
+        bind_detached_legacy_sketch_objects(ctx, histories, &represented_sketches, lane)?;
+        let mut features_by_id = HashMap::new();
+        for feature in histories.iter().flat_map(|history| &history.features) {
+            ctx.reserve_map(&mut features_by_id, 1, SCALAR_BINDING_INDEX)?;
+            features_by_id.insert(feature.id.as_str(), feature);
+        }
         for pair in starts.windows(2) {
             let [(_, parent_id), (child_start, child_id)] = pair else {
                 continue;
@@ -929,7 +1441,7 @@ pub(crate) fn bind_scalar_operands(
             ) else {
                 continue;
             };
-            if native_object_class(parent.input_class.as_deref().unwrap_or_default()).kind
+            if native_object_class(parent.input_class.as_deref().unwrap_or_default())
                 != NativeClassKind::Extrusion
                 && !matches!(parent.xml_tag.as_str(), "Extrusion" | "Cut")
             {
@@ -941,72 +1453,97 @@ pub(crate) fn bind_scalar_operands(
             let child_end = starts
                 .iter()
                 .find(|(offset, _)| offset > child_start)
-                .map_or(u64::MAX, |(offset, _)| *offset);
+                .map(|(offset, _)| *offset);
             for scalar in lane.scalars.iter_mut().filter(|scalar| {
                 scalar.offset > *child_start
-                    && scalar.offset < child_end
+                    && child_end.is_none_or(|end| scalar.offset < end)
                     && scalar.feature_ref.as_deref() == Some(*child_id)
             }) {
-                scalar.feature_ref = Some((*parent_id).to_string());
+                scalar.feature_ref = Some(copy_binding_text(ctx, parent_id)?);
             }
         }
-        finalize_lane_bindings(histories, lane);
+        finalize_lane_bindings(ctx, histories, lane)?;
     }
+    Ok(())
 }
 
-pub(super) fn finalize_lane_bindings(
+pub(crate) fn finalize_lane_bindings(
+    ctx: &DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
     lane: &mut FeatureInputLane,
-) {
-    normalize_indexed_curve_entities(lane);
-    let mut marker_ids = HashMap::<(String, u32), Vec<(String, bool)>>::new();
+) -> Result<(), cadmpeg_core::CodecError> {
+    normalize_indexed_curve_entities(ctx, lane)?;
+    let mut marker_ids = HashMap::<String, HashMap<u32, Vec<(String, bool)>>>::new();
     for entity in &lane.sketch_entities {
-        if let (Some(feature), Some(local_id)) = (&entity.feature_ref, entity.local_id) {
-            marker_ids
-                .entry((feature.clone(), local_id))
-                .or_default()
-                .push((entity.id.clone(), entity.coordinates_m.is_some()));
+        if let (Some(feature), Some(local_id)) = (&entity.feature_ref, entity.local_id()) {
+            if !marker_ids.contains_key(feature.as_str()) {
+                ctx.reserve_map(&mut marker_ids, 1, SCALAR_BINDING_INDEX)?;
+                marker_ids.insert(copy_binding_text(ctx, feature)?, HashMap::new());
+            }
+            if let Some(by_local) = marker_ids.get_mut(feature.as_str()) {
+                ctx.reserve_map(by_local, 1, SCALAR_BINDING_INDEX)?;
+                let candidates = by_local.entry(local_id).or_default();
+                ctx.reserve_vec(candidates, 1, "collect SLDPRT scalar marker candidates")?;
+                candidates.push((
+                    copy_binding_text(ctx, entity.id())?,
+                    entity.coordinates_m.is_some(),
+                ));
+            }
         }
     }
     for entity in &mut lane.sketch_entities {
-        let Ok(offset) = usize::try_from(entity.offset) else {
+        let Ok(offset) = usize::try_from(entity.offset()) else {
             continue;
         };
-        let Some((local_ids, selector)) = marker_local_links(&lane.native_payload, offset)
-            .map(|(links, selector)| (links.to_vec(), selector))
-            .or_else(|| coordinate_marker_local_links(&lane.native_payload, offset))
-        else {
+        ctx.charge_work(128, "decode SLDPRT scalar local links")?;
+        let local_links =
+            if let Some((local_ids, selector)) = marker_local_links(&lane.native_payload, offset) {
+                let mut links = Vec::new();
+                ctx.reserve_vec(
+                    &mut links,
+                    local_ids.len(),
+                    "decode SLDPRT scalar local links",
+                )?;
+                links.extend(local_ids);
+                Some((links, selector))
+            } else {
+                coordinate_marker_local_links(ctx, &lane.native_payload, offset)?
+            };
+        let Some((local_ids, selector)) = local_links else {
             continue;
         };
         let Some(owner) = &entity.feature_ref else {
             continue;
         };
-        let links = local_ids
-            .into_iter()
-            .filter_map(|local_id| {
-                let entity_ref = unique_marker_candidate(
-                    marker_ids.get(&(owner.clone(), u32::from(local_id)))?,
-                )?;
-                Some(SketchInputLink {
-                    local_id,
-                    entity_ref: entity_ref.to_string(),
-                })
-            })
-            .collect::<Vec<_>>();
+        let mut links = Vec::new();
+        for local_id in local_ids {
+            let Some(entity_ref) = marker_ids
+                .get(owner.as_str())
+                .and_then(|by_local| by_local.get(&u32::from(local_id)))
+                .and_then(|candidates| unique_marker_candidate(candidates))
+            else {
+                continue;
+            };
+            ctx.reserve_vec(&mut links, 1, "collect SLDPRT scalar local links")?;
+            links.push(SketchInputLink {
+                local_id,
+                entity_ref: copy_binding_text(ctx, entity_ref)?,
+            });
+        }
         if let Some(links) = crate::records::SketchInputLinks::new(selector, links) {
             entity.links = Some(links);
         }
     }
-    bind_resolved_curve_vertices(lane);
-    let entities_by_feature = lane.sketch_entities.iter().fold(
-        HashMap::<&str, Vec<&SketchInputEntity>>::new(),
-        |mut by_feature, entity| {
-            if let Some(feature) = entity.feature_ref.as_deref() {
-                by_feature.entry(feature).or_default().push(entity);
-            }
-            by_feature
-        },
-    );
+    bind_resolved_curve_vertices(ctx, lane)?;
+    let mut entities_by_feature = HashMap::<&str, Vec<&SketchInputEntity>>::new();
+    for entity in &lane.sketch_entities {
+        if let Some(feature) = entity.feature_ref.as_deref() {
+            ctx.reserve_map(&mut entities_by_feature, 1, SCALAR_BINDING_INDEX)?;
+            let entities = entities_by_feature.entry(feature).or_default();
+            ctx.reserve_vec(entities, 1, "collect SLDPRT scalar owner entities")?;
+            entities.push(entity);
+        }
+    }
     for scalar in &mut lane.scalars {
         let Some(entities) = scalar
             .feature_ref
@@ -1015,158 +1552,193 @@ pub(super) fn finalize_lane_bindings(
         else {
             continue;
         };
-        let resolved = resolve_scalar_operand_markers(entities.iter().copied(), &scalar.operands);
+        let resolved =
+            resolve_scalar_operand_markers(ctx, entities.iter().copied(), &scalar.operands)?;
         for (operand, resolved) in scalar.operands.iter_mut().zip(resolved) {
-            operand.entity_ref = resolved.map(|entity| entity.id.clone());
+            operand.entity_ref = resolved
+                .map(|entity| copy_binding_text(ctx, entity.id()))
+                .transpose()?;
         }
     }
-    let scalar_owners = lane
-        .scalars
-        .iter()
-        .map(|scalar| (scalar.id.as_str(), scalar.feature_ref.clone()))
-        .collect::<HashMap<_, _>>();
+    let mut scalar_owners = HashMap::new();
+    for scalar in &lane.scalars {
+        ctx.reserve_map(&mut scalar_owners, 1, SCALAR_BINDING_INDEX)?;
+        scalar_owners.insert(scalar.id.as_str(), scalar.feature_ref.as_deref());
+    }
     for binding in &mut lane.relation_bindings {
         binding.feature_ref = scalar_owners
             .get(binding.scalar_ref.as_str())
-            .cloned()
-            .flatten();
+            .copied()
+            .flatten()
+            .map(|owner| copy_binding_text(ctx, owner))
+            .transpose()?;
     }
-    let intervals = feature_intervals(histories, lane);
+    let intervals = feature_intervals(ctx, histories, lane)?;
     lane.relation_bindings =
-        relation_bindings_scoped(&lane.id, &lane.classes, &lane.scalars, &intervals);
-    lane.relation_instances = relation_instances(histories, lane);
-    lane.body_selections = compact_body_selections(histories, lane);
-    lane.edge_selections = compact_edge_selections(histories, lane);
-    lane.surface_selections = compact_surface_selections(histories, lane);
-    lane.generated_surface_identities = generated_surface_identities(lane);
+        relation_bindings_scoped(ctx, &lane.id, &lane.classes, &lane.scalars, &intervals)?;
+    lane.relation_instances = relation_instances(ctx, histories, lane)?;
+    lane.body_selections = compact_body_selections(ctx, histories, lane)?;
+    lane.edge_selections = compact_edge_selections(ctx, histories, lane)?;
+    lane.surface_selections = compact_surface_selections(ctx, histories, lane)?;
+    lane.generated_surface_identities = generated_surface_identities(ctx, lane)?;
+    Ok(())
 }
 
 fn represented_sketch_features(
+    ctx: &DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) -> HashSet<String> {
-    let metadata_ids = history_metadata_ids(histories);
-    let features = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .collect::<Vec<_>>();
+) -> Result<HashSet<String>, cadmpeg_core::CodecError> {
+    let metadata_ids = history_metadata_ids(ctx, histories)?;
+    let features =
+        collect_binding_vec(ctx, histories.iter().flat_map(|history| &history.features))?;
     let mut represented = HashSet::new();
     for lane in lanes {
         if is_supplemental_config_lane(lane) {
             continue;
         }
-        let mut objects = features
-            .iter()
-            .filter(|feature| !metadata_ids.contains(&feature.id))
-            .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, *feature)))
-            .collect::<Vec<_>>();
-        objects.sort_unstable_by_key(|(offset, _)| *offset);
+        let mut objects = collect_binding_vec(
+            ctx,
+            features
+                .iter()
+                .filter(|feature| !metadata_ids.contains(feature.id.as_str()))
+                .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, *feature))),
+        )?;
+        ctx.sort_unstable_by(
+            &mut objects,
+            |(left, _), (right, _)| left.cmp(right),
+            |_| 0,
+            "sort SLDPRT represented sketch objects",
+        )?;
         for (index, &(start, feature)) in objects.iter().enumerate() {
             if feature.xml_tag != "Sketch" {
                 continue;
             }
-            let end = objects.get(index + 1).map_or(u64::MAX, |next| next.0);
+            let end = objects.get(index + 1).map(|next| next.0);
             if lane.sketch_entities.iter().any(|entity| {
-                entity.offset > start && entity.offset < end && entity.coordinates_m.is_some()
+                entity.offset() > start
+                    && end.is_none_or(|end| entity.offset() < end)
+                    && entity.coordinates_m.is_some()
             }) {
-                represented.insert(feature.id.clone());
+                ctx.reserve_set(&mut represented, 1, SCALAR_BINDING_INDEX)?;
+                represented.insert(copy_binding_text(ctx, &feature.id)?);
             }
         }
     }
-    represented
+    Ok(represented)
 }
 
 pub(crate) fn bind_unresolved_detached_sketch_objects(
+    ctx: &DecodeContext<'_>,
     model_features: &[cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &mut [FeatureInputLane],
-) {
-    let unresolved = model_features
-        .iter()
-        .filter_map(|feature| match &feature.definition {
-            FeatureDefinition::Sketch {
-                sketch:
-                    cadmpeg_ir::features::SketchFeatureBinding::Unresolved
+) -> Result<(), cadmpeg_core::CodecError> {
+    let mut unresolved = HashSet::new();
+    for feature in model_features {
+        if matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
                     | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
                 ..
-            } => feature.native_ref.clone(),
-            _ => None,
-        })
-        .collect::<HashSet<_>>();
-    let represented = histories
+            })
+        ) {
+            if let Some(native) = feature.native_ref.as_deref() {
+                ctx.reserve_set(&mut unresolved, 1, SCALAR_BINDING_INDEX)?;
+                unresolved.insert(native);
+            }
+        }
+    }
+    let mut represented = HashSet::new();
+    for feature in histories
         .iter()
         .flat_map(|history| &history.features)
-        .filter(|feature| feature.xml_tag == "Sketch" && !unresolved.contains(&feature.id))
-        .map(|feature| feature.id.clone())
-        .collect::<HashSet<_>>();
+        .filter(|feature| feature.xml_tag == "Sketch" && !unresolved.contains(feature.id.as_str()))
+    {
+        ctx.reserve_set(&mut represented, 1, SCALAR_BINDING_INDEX)?;
+        represented.insert(copy_binding_text(ctx, &feature.id)?);
+    }
     for lane in lanes
         .iter_mut()
         .filter(|lane| is_supplemental_config_lane(lane))
     {
-        bind_detached_legacy_sketch_objects(histories, &represented, lane);
-        finalize_lane_bindings(histories, lane);
+        bind_detached_legacy_sketch_objects(ctx, histories, &represented, lane)?;
+        finalize_lane_bindings(ctx, histories, lane)?;
     }
+    Ok(())
 }
 
 pub(super) fn bind_detached_legacy_sketch_objects(
+    ctx: &DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
     represented: &HashSet<String>,
     lane: &mut FeatureInputLane,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     const OBJECT_GAP: u64 = 4096;
 
     if !is_supplemental_config_lane(lane) {
-        return;
+        return Ok(());
     }
     let limit = lane
         .classes
         .iter()
         .find(|class| class.name == "moFeatureDimHandle_c")
         .map_or_else(
-            || u64::try_from(lane.native_payload.len()).unwrap_or(u64::MAX),
+            || u64_from_index(lane.native_payload.len()),
             |class| class.offset,
         );
-    let relation_bindings = bind_detached_spatial_relation_objects(histories, represented, lane);
-    let markers = lane
-        .sketch_entities
-        .iter()
-        .filter(|entity| entity.offset < limit)
-        .filter(|entity| {
-            relation_bindings
-                .iter()
-                .all(|(start, end, _)| entity.offset < *start || entity.offset >= *end)
-        })
-        .map(|entity| entity.offset)
-        .collect::<Vec<_>>();
+    let relation_bindings =
+        bind_detached_spatial_relation_objects(ctx, histories, represented, lane)?;
+    let markers = collect_binding_vec(
+        ctx,
+        lane.sketch_entities
+            .iter()
+            .filter(|entity| entity.offset() < limit)
+            .filter(|entity| {
+                relation_bindings
+                    .iter()
+                    .all(|(start, end, _)| entity.offset() < *start || entity.offset() >= *end)
+            })
+            .map(crate::records::SketchInputEntity::offset),
+    )?;
     let Some(&first) = markers.first() else {
-        return;
+        return Ok(());
     };
-    let mut starts = vec![first];
-    starts.extend(
-        markers
-            .windows(2)
-            .filter_map(|pair| (pair[1].saturating_sub(pair[0]) >= OBJECT_GAP).then_some(pair[1])),
-    );
+    let mut starts = ctx.alloc_filled(1, first, "collect SLDPRT detached sketch starts")?;
+    for pair in markers.windows(2) {
+        if pair[1] >= pair[0] && pair[1] - pair[0] >= OBJECT_GAP {
+            ctx.reserve_vec(&mut starts, 1, "collect SLDPRT detached sketch starts")?;
+            starts.push(pair[1]);
+        }
+    }
 
-    let mut owners = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .filter(|feature| feature.xml_tag == "Sketch")
-        .filter(|feature| {
-            native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
-                != NativeClassKind::OriginProfileFeature
-        })
-        .filter(|feature| !represented.contains(&feature.id))
-        .filter(|feature| {
-            relation_bindings
-                .iter()
-                .all(|(_, _, owner)| owner != &feature.id)
-        })
-        .filter_map(|feature| Some((feature.source_id.as_deref()?.parse::<u32>().ok()?, feature)))
-        .collect::<Vec<_>>();
-    owners.sort_unstable_by_key(|(source, _)| *source);
+    let mut owners = collect_binding_vec(
+        ctx,
+        histories
+            .iter()
+            .flat_map(|history| &history.features)
+            .filter(|feature| feature.xml_tag == "Sketch")
+            .filter(|feature| {
+                native_object_class(feature.input_class.as_deref().unwrap_or_default())
+                    != NativeClassKind::OriginProfileFeature
+            })
+            .filter(|feature| !represented.contains(&feature.id))
+            .filter(|feature| {
+                relation_bindings
+                    .iter()
+                    .all(|(_, _, owner)| owner != &feature.id)
+            })
+            .filter_map(|feature| Some((feature.source_value()?, feature))),
+    )?;
+    ctx.sort_unstable_by(
+        &mut owners,
+        |(left, _), (right, _)| left.cmp(right),
+        |_| 0,
+        "sort SLDPRT detached sketch owners",
+    )?;
     if starts.len() != owners.len() {
-        return;
+        return Ok(());
     }
 
     for (index, (&start, (_, owner))) in starts.iter().zip(owners).enumerate() {
@@ -1174,30 +1746,72 @@ pub(super) fn bind_detached_legacy_sketch_objects(
         for entity in lane
             .sketch_entities
             .iter_mut()
-            .filter(|entity| entity.offset >= start && entity.offset < end)
+            .filter(|entity| entity.offset() >= start && entity.offset() < end)
         {
-            entity.feature_ref = Some(owner.id.clone());
+            entity.feature_ref = Some(copy_binding_text(ctx, &owner.id)?);
         }
         for reference in lane
             .references
             .iter_mut()
             .filter(|reference| reference.offset >= start && reference.offset < end)
         {
-            reference.feature_ref = Some(owner.id.clone());
+            reference.feature_ref = Some(copy_binding_text(ctx, &owner.id)?);
         }
         for scalar in lane
             .scalars
             .iter_mut()
             .filter(|scalar| scalar.offset >= start && scalar.offset < end)
         {
-            scalar.feature_ref = Some(owner.id.clone());
+            scalar.feature_ref = Some(copy_binding_text(ctx, &owner.id)?);
         }
     }
+    Ok(())
 }
 
-pub(super) fn spatial_relation_manager_ranges(lane: &FeatureInputLane) -> Vec<(u64, u64)> {
-    let mut ranges = lane
+pub(super) fn spatial_relation_manager_ranges_charged(
+    ctx: &DecodeContext<'_>,
+    lane: &FeatureInputLane,
+) -> Result<Vec<(u64, u64)>, cadmpeg_core::CodecError> {
+    let scan_steps = lane
         .classes
+        .len()
+        .checked_mul(lane.classes.len())
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "scan SLDPRT spatial relation classes",
+                u64::MAX - 1,
+                u64::MAX,
+            )
+        })?;
+    ctx.charge_work(
+        u64::try_from(scan_steps).map_err(|_| {
+            ctx.refuse_codec_limit(
+                "scan SLDPRT spatial relation classes",
+                u64::MAX - 1,
+                u64::MAX,
+            )
+        })?,
+        "scan SLDPRT spatial relation classes",
+    )?;
+    let mut ranges = Vec::new();
+    for range in spatial_relation_manager_candidates(lane) {
+        ctx.reserve_vec(&mut ranges, 1, "collect SLDPRT spatial relation ranges")?;
+        ranges.push(range);
+    }
+    ctx.sort_unstable_by(
+        &mut ranges,
+        Ord::cmp,
+        |_| 0,
+        "sort SLDPRT spatial relation ranges",
+    )?;
+    ranges.dedup();
+    Ok(ranges)
+}
+
+fn spatial_relation_manager_candidates(
+    lane: &FeatureInputLane,
+) -> impl Iterator<Item = (u64, u64)> + '_ {
+    lane.classes
         .iter()
         .filter(|class| class.name == "sg3DPlaneHandle")
         .filter_map(|plane| {
@@ -1215,262 +1829,372 @@ pub(super) fn spatial_relation_manager_ranges(lane: &FeatureInputLane) -> Vec<(u
                 .offset;
             (start < plane.offset && plane.offset < end).then_some((start, end))
         })
-        .collect::<Vec<_>>();
-    ranges.sort_unstable();
-    ranges.dedup();
-    ranges
 }
 
 fn bind_detached_spatial_relation_objects(
+    ctx: &DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
     represented: &HashSet<String>,
     lane: &mut FeatureInputLane,
-) -> Vec<(u64, u64, String)> {
-    let ranges = spatial_relation_manager_ranges(lane);
+) -> Result<Vec<(u64, u64, String)>, cadmpeg_core::CodecError> {
+    let ranges = spatial_relation_manager_ranges_charged(ctx, lane)?;
     if ranges.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let names = lane
-        .names
-        .iter()
-        .map(|name| (name.id.as_str(), name.value.as_str()))
-        .collect::<HashMap<_, _>>();
+    let mut names = HashMap::new();
+    for name in &lane.names {
+        ctx.reserve_map(&mut names, 1, SCALAR_BINDING_INDEX)?;
+        names.insert(name.id.as_str(), name.value.as_str());
+    }
     let is_dimension_name = |name: &str| {
         name.strip_prefix('D').is_some_and(|suffix| {
             !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_digit())
         })
     };
-    let owners = histories
+    let mut owners = Vec::new();
+    'owner: for feature in histories
         .iter()
         .flat_map(|history| &history.features)
         .filter(|feature| feature.input_class.as_deref() == Some("mo3DProfileFeature_c"))
         .filter(|feature| !represented.contains(&feature.id))
-        .filter_map(|feature| {
-            let dimensions = feature
-                .parameters
-                .iter()
-                .filter(|(name, _)| is_dimension_name(name))
-                .map(|(name, value)| {
-                    Some((
-                        name.as_str(),
-                        crate::history::parse_dimension_length_mm(value)?,
-                    ))
-                })
-                .collect::<Option<Vec<_>>>()?;
-            (dimensions.len() >= 3).then_some((feature, dimensions))
-        })
-        .collect::<Vec<_>>();
+    {
+        ctx.charge_work(1, "scan SLDPRT spatial sketch owners")?;
+        let mut dimensions = Vec::new();
+        for (name, value) in feature
+            .parameters
+            .iter()
+            .filter(|(name, _)| is_dimension_name(name.as_str()))
+        {
+            let Some(value) = crate::history::literals::parse_dimension_length_mm(value) else {
+                continue 'owner;
+            };
+            ctx.reserve_vec(
+                &mut dimensions,
+                1,
+                "collect SLDPRT spatial sketch dimensions",
+            )?;
+            dimensions.push((name.as_str(), value));
+        }
+        if dimensions.len() >= 3 {
+            ctx.reserve_vec(&mut owners, 1, "collect SLDPRT spatial sketch owners")?;
+            owners.push((feature, dimensions));
+        }
+    }
     let mut candidates = Vec::new();
     for &(start, end) in &ranges {
-        let scalars = lane
-            .scalars
-            .iter()
-            .filter(|scalar| scalar.offset > start && scalar.offset < end)
-            .filter(|scalar| scalar.role != crate::records::FeatureInputScalarRole::Display)
-            .filter_map(|scalar| Some((names.get(scalar.name.as_str()).copied()?, scalar.value)))
-            .filter(|(name, _)| is_dimension_name(name))
-            .collect::<Vec<_>>();
-        let scalar_names = scalars
-            .iter()
-            .map(|(name, _)| *name)
-            .collect::<HashSet<_>>();
-        for (owner, dimensions) in &owners {
-            let dimension_names = dimensions
+        let scalars = collect_binding_vec(
+            ctx,
+            lane.scalars
                 .iter()
-                .map(|(name, _)| *name)
-                .collect::<HashSet<_>>();
-            if scalar_names != dimension_names {
+                .filter(|scalar| scalar.offset > start && scalar.offset < end)
+                .filter(|scalar| scalar.role != crate::records::FeatureInputScalarRole::Display)
+                .filter_map(|scalar| {
+                    Some((
+                        names.get(scalar.name.as_str()).copied()?,
+                        scalar.value.get(),
+                    ))
+                })
+                .filter(|(name, _)| is_dimension_name(name)),
+        )?;
+        for (owner, dimensions) in &owners {
+            ctx.charge_work(1, "match SLDPRT spatial sketch owners")?;
+            let steps = dimensions
+                .len()
+                .checked_mul(scalars.len())
+                .and_then(|count| count.checked_mul(2))
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "match SLDPRT spatial sketch names",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    )
+                })?;
+            ctx.charge_work(u64_from_index(steps), "match SLDPRT spatial sketch names")?;
+            if !scalars
+                .iter()
+                .all(|(name, _)| dimensions.iter().any(|(candidate, _)| candidate == name))
+                || !dimensions
+                    .iter()
+                    .all(|(name, _)| scalars.iter().any(|(candidate, _)| candidate == name))
+            {
                 continue;
             }
-            let exact = dimensions.iter().all(|(name, expected_mm)| {
-                scalars.iter().any(|(candidate, value_m)| {
+            let mut exact = true;
+            for (name, expected_mm) in dimensions {
+                ctx.charge_work(
+                    u64_from_index(scalars.len()),
+                    "match SLDPRT spatial sketch dimensions",
+                )?;
+                if !scalars.iter().any(|(candidate, value_m)| {
                     candidate == name
-                        && (value_m * 1000.0 - expected_mm).abs()
-                            <= expected_mm.abs().max(1.0)
+                        && (value_m * 1000.0 - expected_mm.get()).abs()
+                            <= expected_mm.get().abs().max(1.0)
                                 * EPS_BINDINGS_BIND_DETACHED_SPATIAL_RELATION_OBJECTS_E9
-                })
-            });
+                }) {
+                    exact = false;
+                    break;
+                }
+            }
             if exact {
-                candidates.push((start, end, owner.id.clone()));
+                ctx.reserve_vec(
+                    &mut candidates,
+                    1,
+                    "collect SLDPRT spatial sketch candidates",
+                )?;
+                candidates.push((start, end, owner.id.as_str()));
             }
         }
     }
-    let bound = candidates
-        .iter()
-        .filter(|(start, end, owner)| {
-            candidates
-                .iter()
-                .filter(|(candidate_start, candidate_end, _)| {
-                    candidate_start == start && candidate_end == end
-                })
-                .count()
-                == 1
-                && candidates
-                    .iter()
-                    .filter(|(_, _, candidate_owner)| candidate_owner == owner)
-                    .count()
-                    == 1
-        })
-        .cloned()
-        .collect::<Vec<_>>();
+    let mut bound = Vec::new();
+    for &(start, end, owner) in &candidates {
+        ctx.charge_work(
+            u64_from_index(candidates.len()),
+            "disambiguate SLDPRT spatial sketch ranges",
+        )?;
+        if candidates
+            .iter()
+            .filter(|(candidate_start, candidate_end, _)| {
+                *candidate_start == start && *candidate_end == end
+            })
+            .count()
+            != 1
+        {
+            continue;
+        }
+        ctx.charge_work(
+            u64_from_index(candidates.len()),
+            "disambiguate SLDPRT spatial sketch owners",
+        )?;
+        if candidates
+            .iter()
+            .filter(|(_, _, candidate_owner)| *candidate_owner == owner)
+            .count()
+            == 1
+        {
+            ctx.reserve_vec(&mut bound, 1, "collect SLDPRT spatial sketch bindings")?;
+            bound.push((start, end, copy_binding_text(ctx, owner)?));
+        }
+    }
     for (start, end, owner) in &bound {
         for entity in lane
             .sketch_entities
             .iter_mut()
-            .filter(|entity| entity.offset > *start && entity.offset < *end)
+            .filter(|entity| entity.offset() > *start && entity.offset() < *end)
         {
-            entity.feature_ref = Some(owner.clone());
+            entity.feature_ref = Some(copy_binding_text(ctx, owner)?);
         }
         for reference in lane
             .references
             .iter_mut()
             .filter(|reference| reference.offset > *start && reference.offset < *end)
         {
-            reference.feature_ref = Some(owner.clone());
+            reference.feature_ref = Some(copy_binding_text(ctx, owner)?);
         }
         for scalar in lane
             .scalars
             .iter_mut()
             .filter(|scalar| scalar.offset > *start && scalar.offset < *end)
         {
-            scalar.feature_ref = Some(owner.clone());
+            scalar.feature_ref = Some(copy_binding_text(ctx, owner)?);
         }
     }
-    bound
+    Ok(bound)
 }
 
-pub(super) fn normalize_indexed_curve_entities(lane: &mut FeatureInputLane) {
+pub(super) fn normalize_indexed_curve_entities(
+    ctx: &DecodeContext<'_>,
+    lane: &mut FeatureInputLane,
+) -> Result<(), cadmpeg_core::CodecError> {
     let terminal_lines = {
-        let markers = lane.sketch_entities.iter().collect::<Vec<_>>();
-        markers
-            .iter()
-            .copied()
-            .filter(|curve| {
-                legacy_terminal_indexed_profile_line(&lane.native_payload, curve, &markers)
-            })
-            .map(|curve| curve.id.clone())
-            .collect::<HashSet<_>>()
+        let markers = collect_binding_vec(ctx, lane.sketch_entities.iter())?;
+        let mut terminal = HashSet::new();
+        for curve in &markers {
+            ctx.charge_work(
+                u64_from_index(markers.len()),
+                "scan SLDPRT terminal profile lines",
+            )?;
+            if legacy_terminal_indexed_profile_line(&lane.native_payload, curve, &markers) {
+                ctx.reserve_set(&mut terminal, 1, SCALAR_BINDING_INDEX)?;
+                terminal.insert(copy_binding_text(ctx, curve.id())?);
+            }
+        }
+        terminal
     };
     for marker in &mut lane.sketch_entities {
-        if terminal_lines.contains(&marker.id) {
-            marker.kind = SketchInputKind::LineOrCircle;
+        if terminal_lines.contains(marker.id()) {
+            marker.reclassify(SketchInputKind::LineOrCircle);
         }
     }
-    let endpoints = lane
-        .sketch_entities
-        .iter()
-        .filter_map(|curve| {
-            let feature = curve.feature_ref.as_ref()?;
-            let offset = usize::try_from(curve.offset).ok()?;
-            let indices = wide_indexed_curve_endpoint_indices(&lane.native_payload, offset)
-                .or_else(|| compact_indexed_curve_endpoint_indices(&lane.native_payload, offset))
-                .or_else(|| {
-                    extended_compact_indexed_curve_endpoint_indices(&lane.native_payload, offset)
-                })
-                .or_else(|| compact_legacy_curve_endpoint_indices(&lane.native_payload, offset))
-                .or_else(|| {
-                    alternate_current_indexed_curve_endpoint_indices(&lane.native_payload, offset)
-                })?;
-            Some(indices.map(|index| (feature.clone(), index)))
-        })
-        .flatten()
-        .collect::<HashSet<_>>();
+    let mut endpoints = HashMap::<String, HashSet<u32>>::new();
+    for curve in &lane.sketch_entities {
+        ctx.charge_work(1, "scan SLDPRT indexed curve endpoints")?;
+        let Some(feature) = curve.feature_ref.as_deref() else {
+            continue;
+        };
+        let Some(offset) = index_from_u64(curve.offset()) else {
+            continue;
+        };
+        let Some(indices) = wide_indexed_curve_endpoint_indices(&lane.native_payload, offset)
+            .or_else(|| compact_indexed_curve_endpoint_indices(&lane.native_payload, offset))
+            .or_else(|| {
+                extended_compact_indexed_curve_endpoint_indices(&lane.native_payload, offset)
+            })
+            .or_else(|| compact_legacy_curve_endpoint_indices(&lane.native_payload, offset))
+            .or_else(|| {
+                alternate_current_indexed_curve_endpoint_indices(&lane.native_payload, offset)
+            })
+        else {
+            continue;
+        };
+        if !endpoints.contains_key(feature) {
+            ctx.reserve_map(&mut endpoints, 1, SCALAR_BINDING_INDEX)?;
+            endpoints.insert(copy_binding_text(ctx, feature)?, HashSet::new());
+        }
+        if let Some(by_index) = endpoints.get_mut(feature) {
+            for index in indices {
+                ctx.reserve_set(by_index, 1, SCALAR_BINDING_INDEX)?;
+                by_index.insert(index);
+            }
+        }
+    }
     let linked_endpoint_coordinates = {
-        let markers = lane.sketch_entities.iter().collect::<Vec<_>>();
-        lane.sketch_entities
-            .iter()
-            .filter_map(|curve| {
-                current_reverse_incidence_endpoint_offsets(&lane.native_payload, curve, &markers)
-            })
-            .flatten()
-            .filter_map(|offset| {
-                let native_offset = usize::try_from(offset).ok()?;
-                let (coordinates, _) = linked_profile_point(&lane.native_payload, native_offset)?;
-                Some((offset, coordinates))
-            })
-            .collect::<HashMap<_, _>>()
+        let markers = collect_binding_vec(ctx, lane.sketch_entities.iter())?;
+        let mut coordinates = HashMap::new();
+        for curve in &lane.sketch_entities {
+            ctx.charge_work(
+                u64_from_index(markers.len()),
+                "scan SLDPRT reverse incidence endpoints",
+            )?;
+            let Some(offsets) = current_reverse_incidence_endpoint_offsets(
+                ctx,
+                &lane.native_payload,
+                curve,
+                &markers,
+            )?
+            else {
+                continue;
+            };
+            for offset in offsets {
+                let Ok(native_offset) = usize::try_from(offset) else {
+                    continue;
+                };
+                let Some((point, _)) = linked_profile_point(&lane.native_payload, native_offset)
+                else {
+                    continue;
+                };
+                ctx.reserve_map(&mut coordinates, 1, SCALAR_BINDING_INDEX)?;
+                coordinates.insert(offset, point);
+            }
+        }
+        coordinates
     };
     for marker in &mut lane.sketch_entities {
-        let Some(key) = marker.feature_ref.clone().zip(marker.object_index) else {
+        let Some((feature, index)) = marker.feature_ref.as_deref().zip(marker.object_index())
+        else {
             continue;
         };
         if marker.coordinates_m.is_none() {
-            marker.coordinates_m = linked_endpoint_coordinates.get(&marker.offset).copied();
+            marker.coordinates_m = linked_endpoint_coordinates.get(&marker.offset()).copied();
         }
-        if (endpoints.contains(&key) || linked_endpoint_coordinates.contains_key(&marker.offset))
+        if (endpoints
+            .get(feature)
+            .is_some_and(|indices| indices.contains(&index))
+            || linked_endpoint_coordinates.contains_key(&marker.offset()))
             && marker.coordinates_m.is_some()
         {
-            marker.kind = SketchInputKind::Point;
+            marker.reclassify(SketchInputKind::Point);
         }
     }
+    Ok(())
 }
 
-pub(super) fn bind_resolved_curve_vertices(lane: &mut FeatureInputLane) {
+fn bind_resolved_curve_vertices(
+    ctx: &DecodeContext<'_>,
+    lane: &mut FeatureInputLane,
+) -> Result<(), cadmpeg_core::CodecError> {
     let selected_axis_endpoints = {
-        let markers_by_id = lane
-            .sketch_entities
-            .iter()
-            .map(|marker| (marker.id.as_str(), marker))
-            .collect::<HashMap<_, _>>();
-        let markers = lane.sketch_entities.iter().collect::<Vec<_>>();
-        markers
-            .iter()
-            .copied()
-            .filter(|curve| {
-                usize::try_from(curve.offset).ok().is_some_and(|offset| {
-                    marker_is_selected_construction_line(&lane.native_payload, offset)
-                })
-            })
-            .flat_map(|curve| {
-                marker_curve_endpoint_markers(&lane.native_payload, curve, &markers_by_id, &markers)
-            })
-            .filter(|marker| marker.coordinates_m.is_some())
-            .map(|marker| marker.id.clone())
-            .collect::<HashSet<_>>()
-    };
-    for marker in &mut lane.sketch_entities {
-        if selected_axis_endpoints.contains(marker.id.as_str()) {
-            marker.kind = SketchInputKind::Point;
+        let mut markers_by_id = HashMap::new();
+        for marker in &lane.sketch_entities {
+            ctx.reserve_map(&mut markers_by_id, 1, SCALAR_BINDING_INDEX)?;
+            markers_by_id.insert(marker.id(), marker);
         }
-    }
-    loop {
-        let markers_by_id = lane
-            .sketch_entities
-            .iter()
-            .map(|marker| (marker.id.as_str(), marker))
-            .collect::<HashMap<_, _>>();
-        let markers = lane.sketch_entities.iter().collect::<Vec<_>>();
-        let mut resolved_curves = HashSet::new();
-        let mut resolved_endpoints = HashSet::new();
-        for curve in markers.iter().copied().filter(|marker| {
-            matches!(
-                marker.kind,
-                SketchInputKind::LineOrCircle | SketchInputKind::Arc
-            )
+        let markers = collect_binding_vec(ctx, lane.sketch_entities.iter())?;
+        let mut selected = HashSet::new();
+        for curve in markers.iter().copied().filter(|curve| {
+            index_from_u64(curve.offset()).is_some_and(|offset| {
+                marker_is_selected_construction_line(&lane.native_payload, offset)
+            })
         }) {
-            let endpoints = marker_curve_endpoint_markers(
+            ctx.charge_work(
+                u64_from_index(markers.len()),
+                "scan SLDPRT selected curve endpoints",
+            )?;
+            for marker in marker_curve_endpoint_markers(
+                ctx,
                 &lane.native_payload,
                 curve,
                 &markers_by_id,
                 &markers,
-            );
-            if endpoints.len() == 2 {
-                resolved_curves.insert(curve.id.clone());
+            )?
+            .into_iter()
+            .filter(|marker| marker.coordinates_m.is_some())
+            {
+                ctx.reserve_set(&mut selected, 1, SCALAR_BINDING_INDEX)?;
+                selected.insert(copy_binding_text(ctx, marker.id())?);
             }
-            resolved_endpoints.extend(
-                endpoints
-                    .into_iter()
-                    .filter(|marker| marker.coordinates_m.is_some())
-                    .map(|marker| marker.id.clone()),
-            );
+        }
+        selected
+    };
+    for marker in &mut lane.sketch_entities {
+        if selected_axis_endpoints.contains(marker.id()) {
+            marker.reclassify(SketchInputKind::Point);
+        }
+    }
+    loop {
+        let mut markers_by_id = HashMap::new();
+        for marker in &lane.sketch_entities {
+            ctx.reserve_map(&mut markers_by_id, 1, SCALAR_BINDING_INDEX)?;
+            markers_by_id.insert(marker.id(), marker);
+        }
+        let markers = collect_binding_vec(ctx, lane.sketch_entities.iter())?;
+        let mut resolved_curves = HashSet::new();
+        let mut resolved_endpoints = HashSet::new();
+        for curve in markers.iter().copied().filter(|marker| {
+            matches!(
+                marker.kind(),
+                SketchInputKind::LineOrCircle | SketchInputKind::Arc
+            )
+        }) {
+            ctx.charge_work(
+                u64_from_index(markers.len()),
+                "resolve SLDPRT curve endpoints",
+            )?;
+            let endpoints = marker_curve_endpoint_markers(
+                ctx,
+                &lane.native_payload,
+                curve,
+                &markers_by_id,
+                &markers,
+            )?;
+            if endpoints.len() == 2 {
+                ctx.reserve_set(&mut resolved_curves, 1, SCALAR_BINDING_INDEX)?;
+                resolved_curves.insert(copy_binding_text(ctx, curve.id())?);
+            }
+            for marker in endpoints
+                .into_iter()
+                .filter(|marker| marker.coordinates_m.is_some())
+            {
+                ctx.reserve_set(&mut resolved_endpoints, 1, SCALAR_BINDING_INDEX)?;
+                resolved_endpoints.insert(copy_binding_text(ctx, marker.id())?);
+            }
         }
         let mut changed = false;
         for marker in &mut lane.sketch_entities {
-            if marker.kind != SketchInputKind::Point
-                && resolved_endpoints.contains(marker.id.as_str())
-                && !resolved_curves.contains(marker.id.as_str())
+            if marker.kind() != SketchInputKind::Point
+                && resolved_endpoints.contains(marker.id())
+                && !resolved_curves.contains(marker.id())
             {
-                marker.kind = SketchInputKind::Point;
+                marker.reclassify(SketchInputKind::Point);
                 changed = true;
             }
         }
@@ -1478,6 +2202,42 @@ pub(super) fn bind_resolved_curve_vertices(lane: &mut FeatureInputLane) {
             break;
         }
     }
+    Ok(())
+}
+
+fn copy_binding_text(
+    ctx: &DecodeContext<'_>,
+    text: &str,
+) -> Result<String, cadmpeg_core::CodecError> {
+    let copy_work = cadmpeg_core::decode::u64_from_index(text.len())
+        .checked_mul(4)
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "retain SLDPRT scalar binding identity",
+                u64::MAX - 1,
+                u64::MAX,
+            )
+        })?;
+    ctx.charge_work(copy_work, "retain SLDPRT scalar binding identity")?;
+    ctx.format_retained(
+        format_args!("{text}"),
+        "retain SLDPRT scalar binding identity",
+    )
+}
+
+const SCALAR_BINDING_INDEX: &str = "index SLDPRT scalar bindings";
+
+fn collect_binding_vec<T>(
+    ctx: &DecodeContext<'_>,
+    items: impl Iterator<Item = T>,
+) -> Result<Vec<T>, cadmpeg_core::CodecError> {
+    let mut values = Vec::new();
+    for item in items {
+        ctx.charge_work(1, "scan SLDPRT scalar binding candidates")?;
+        ctx.reserve_vec(&mut values, 1, "collect SLDPRT scalar binding candidates")?;
+        values.push(item);
+    }
+    Ok(values)
 }
 
 #[cfg(test)]

@@ -3,7 +3,9 @@
 //! files stored in the PSB container.
 //!
 //! [`CreoCodec`] is the normal public decode API. A hidden `fuzz` module
-//! exposes `()`-returning parser wrappers. It implements [`cadmpeg_ir::codec::Codec`]:
+//! exposes parser probes. Context-taking probes propagate errors and discard
+//! successful parser values; primitive probes return `()`. [`CreoCodec`]
+//! implements [`cadmpeg_ir::codec::Codec`]:
 //! it detects the `#UGC:2` PSB signature, inspects named sections, and decodes
 //! the geometry, topology, sketches, and design records supported for that
 //! layout.
@@ -33,7 +35,7 @@
 //! ```
 //!
 //! Use [`cadmpeg_ir::Codec::decode`] for a [`cadmpeg_ir::document::CadIr`] document and
-//! its [`cadmpeg_ir::report::DecodeReport`].
+//! its [`cadmpeg_ir::report::decode::DecodeReport`].
 //!
 //! # Format model
 //!
@@ -58,31 +60,34 @@
 //! and feature evaluation remain incomplete. The decode report identifies
 //! these losses.
 
+mod axis;
 mod compress;
-pub(crate) mod container;
-pub(crate) mod coverage;
-pub(crate) mod curve;
-pub(crate) mod datum;
-pub(crate) mod decode;
-pub(crate) mod dialect;
-pub(crate) mod feature;
+mod container;
+mod coverage;
+mod curve;
+mod datum;
+mod decode;
+mod dialect;
+mod feature;
+mod identity;
+mod interpolation_grid;
+mod lane_refusal;
 /// Byte-offset constants generated from `docs/layouts/creo.toml`.
-pub(crate) mod layout;
-pub(crate) mod legacy;
-pub(crate) mod legacy_family;
-pub(crate) mod legacy_feature;
-pub(crate) mod legacy_geometry;
-pub(crate) mod loop_array;
-#[allow(dead_code)] // Loss catalog is consumed by tests and the writer.
-pub(crate) mod loss;
-pub(crate) mod placement;
-pub(crate) mod primdata;
-pub(crate) mod psb;
-pub(crate) mod reference;
-pub(crate) mod scalar;
-pub(crate) mod surface;
-pub(crate) mod topology;
-pub(crate) mod vecmath;
+mod layout;
+mod legacy;
+mod legacy_family;
+mod legacy_feature;
+mod legacy_geometry;
+mod loop_array;
+mod loss;
+mod placement;
+mod primdata;
+mod psb;
+mod reference;
+mod scalar;
+mod surface;
+mod topology;
+mod vecmath;
 
 #[doc(hidden)]
 pub mod fuzz;
@@ -99,24 +104,33 @@ pub struct CreoCodec;
 impl CodecBackend for CreoCodec {
     const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
 
-    fn detect_impl(&self, prefix: &[u8]) -> Confidence {
+    fn detect_impl(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        prefix: cadmpeg_core::decode::View<'_>,
+    ) -> Result<Confidence, cadmpeg_core::CodecError> {
+        let prefix = prefix.window();
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(prefix.len()),
+            "detect input",
+        )?;
         // The `#UGC:2` ASCII magic is unique to the Creo/Pro-E PSB container and
         // distinguishes it from a Siemens NX `.prt` sharing the extension.
         if container::looks_like_creo(prefix) {
-            Confidence::High
+            Ok(Confidence::High)
         } else {
-            Confidence::No
+            Ok(Confidence::No)
         }
     }
 
     fn inspect_impl(
         &self,
-        _ctx: &DecodeContext<'_>,
+        ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        let scan = container::scan_bytes(root.window());
-        let classification = dialect::classify(&scan);
-        Ok(container::summarize(&scan, &classification))
+        let scan = container::scan_bytes(ctx, root.window())?;
+        let classification = dialect::classify(ctx, &scan)?;
+        container::summarize(ctx, &scan, classification)
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
@@ -129,4 +143,4 @@ mod golden_tests;
 #[cfg(test)]
 mod integration_tests;
 #[cfg(test)]
-pub(crate) mod test_support;
+mod test_support;

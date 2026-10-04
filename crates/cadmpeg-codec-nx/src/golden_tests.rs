@@ -5,6 +5,116 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use cadmpeg_test_support::EditableDecodeResult;
+
+use crate::test_support::test_bytes::zlib_compress;
+use crate::test_support::test_cfb::legacy_cfb_with_ug_part;
+use crate::test_support::test_deltas::bspline_curve_replacement_partition_stream;
+use crate::test_support::test_deltas::bspline_partition_stream;
+use crate::test_support::test_deltas::bspline_surface_replacement_partition_stream;
+use crate::test_support::test_deltas::circle_topology_partition_stream;
+use crate::test_support::test_deltas::cone_topology_partition_stream;
+use crate::test_support::test_deltas::cylinder_topology_partition_stream;
+use crate::test_support::test_deltas::deltas_blend_surface_partition_stream;
+use crate::test_support::test_deltas::deltas_bspline_curve_wrapper_stream;
+use crate::test_support::test_deltas::deltas_bspline_surface_wrapper_stream;
+use crate::test_support::test_deltas::deltas_circle_partition_stream;
+use crate::test_support::test_deltas::deltas_cone_partition_stream;
+use crate::test_support::test_deltas::deltas_cylinder_partition_stream;
+use crate::test_support::test_deltas::deltas_edge_partition_stream;
+use crate::test_support::test_deltas::deltas_ellipse_partition_stream;
+use crate::test_support::test_deltas::deltas_face_vertex_partition_stream;
+use crate::test_support::test_deltas::deltas_fin_partition_stream;
+use crate::test_support::test_deltas::deltas_line_partition_stream;
+use crate::test_support::test_deltas::deltas_loop_partition_stream;
+use crate::test_support::test_deltas::deltas_offset_surface_partition_stream;
+use crate::test_support::test_deltas::deltas_plane_partition_stream;
+use crate::test_support::test_deltas::deltas_point_partition_stream;
+use crate::test_support::test_deltas::deltas_shell_partition_stream;
+use crate::test_support::test_deltas::deltas_sphere_partition_stream;
+use crate::test_support::test_deltas::deltas_surface_curve_partition_stream;
+use crate::test_support::test_deltas::deltas_torus_partition_stream;
+use crate::test_support::test_deltas::deltas_trimmed_curve_partition_stream;
+use crate::test_support::test_deltas::ellipse_topology_partition_stream;
+use crate::test_support::test_deltas::extended_bspline_surface_stream;
+use crate::test_support::test_deltas::forward_trimmed_curve_chain_stream;
+use crate::test_support::test_deltas::mismatched_trimmed_topology_partition_stream;
+use crate::test_support::test_deltas::offset_surface_with_fully_extended_common_header;
+use crate::test_support::test_deltas::partnered_trimmed_topology_partition_stream;
+use crate::test_support::test_deltas::sphere_topology_partition_stream;
+use crate::test_support::test_deltas::status_framed_deltas_point_stream;
+use crate::test_support::test_deltas::status_framed_deltas_stream;
+use crate::test_support::test_deltas::topology_with_escaped_geometry_envelopes;
+use crate::test_support::test_deltas::topology_with_extended_edge_attribute_reference;
+use crate::test_support::test_deltas::topology_with_extended_edge_curve_reference;
+use crate::test_support::test_deltas::topology_with_extended_face_attribute_reference;
+use crate::test_support::test_deltas::topology_with_extended_internal_topology_references;
+use crate::test_support::test_deltas::topology_with_fully_extended_geometry_headers;
+use crate::test_support::test_deltas::torus_topology_partition_stream;
+use crate::test_support::test_deltas::trimmed_topology_partition_stream;
+use crate::test_support::test_deltas::variable_status_framed_deltas_stream;
+use crate::test_support::test_om::multi_section_feature_history_payload;
+use crate::test_support::test_om::offset_only_indexed_om_section;
+use crate::test_support::test_om::offset_only_indexed_om_section_with_control;
+use crate::test_support::test_om::offset_only_indexed_om_section_with_index_values;
+use crate::test_support::test_om::offset_only_indexed_om_section_with_named_point;
+use crate::test_support::test_om::segment_body_binding_payload;
+use crate::test_support::test_om::segment_index_payload;
+use crate::test_support::test_om::segment_om_record_area_payload;
+use crate::test_support::test_om::segment_om_record_area_with_input_store_payload;
+use crate::test_support::test_om::segment_stream_payload;
+use crate::test_support::test_om::size_framed_om_section_with_repeated_operations;
+use crate::test_support::test_prt::assembly_prt;
+use crate::test_support::test_prt::assembly_with_external_paths;
+use crate::test_support::test_prt::composed_feature_history_prt;
+use crate::test_support::test_prt::large_xmt_headers;
+use crate::test_support::test_prt::many_face_partition_stream;
+use crate::test_support::test_prt::prt_with_arrangement_attribute;
+use crate::test_support::test_prt::prt_with_arrangements;
+use crate::test_support::test_prt::prt_with_indexed_om_section;
+use crate::test_support::test_prt::prt_with_missing_active_body_record;
+use crate::test_support::test_prt::prt_with_named_payloads;
+use crate::test_support::test_prt::prt_with_partition;
+use crate::test_support::test_prt::prt_with_size_framed_om_section;
+use crate::test_support::test_prt::prt_with_streams;
+use crate::test_support::test_prt::prt_with_two_active_bodies_and_rmfastload;
+use crate::test_support::test_prt::prt_with_two_bodies_and_rmfastload;
+use crate::test_support::test_prt::prt_with_weak_rmfastload_overlap;
+use crate::test_support::test_prt::rmfastload_prt;
+use crate::test_support::test_prt::single_part_prt;
+use crate::test_support::test_prt::topology_part_prt;
+use crate::test_support::test_prt::topology_with_missing_tolerances;
+use crate::test_support::test_streams::blend_bound_charted_intersection_curve_stream;
+use crate::test_support::test_streams::blend_surface_topology_partition_stream;
+use crate::test_support::test_streams::blend_surface_with_extended_support_reference;
+use crate::test_support::test_streams::blend_surface_with_forward_blend_support;
+use crate::test_support::test_streams::blend_surface_with_intersection_spine;
+use crate::test_support::test_streams::charted_intersection_curve_topology_partition_stream;
+use crate::test_support::test_streams::charted_intersection_with_approximated_term_stream;
+use crate::test_support::test_streams::charted_intersection_with_edge_endpoint_witnesses_stream;
+use crate::test_support::test_streams::charted_intersection_without_uv_stream;
+use crate::test_support::test_streams::deltas_intersection_curve_stream;
+use crate::test_support::test_streams::display_jt_basic_stream;
+use crate::test_support::test_streams::display_jt_scene_graph_stream;
+use crate::test_support::test_streams::display_jt_shape_lod_stream;
+use crate::test_support::test_streams::display_jt_string_property_stream;
+use crate::test_support::test_streams::ext11_charted_intersection_curve_stream;
+use crate::test_support::test_streams::external_reference_stream;
+use crate::test_support::test_streams::inline_descriptor_intersection_curve_stream;
+use crate::test_support::test_streams::intersection_curve_topology_partition_stream;
+use crate::test_support::test_streams::offset_surface_topology_partition_stream;
+use crate::test_support::test_streams::parasolid_entity_records_stream;
+use crate::test_support::test_streams::parasolid_group_partition_stream;
+use crate::test_support::test_streams::partial_ext11_charted_intersection_curve_stream;
+use crate::test_support::test_streams::partition_stream;
+use crate::test_support::test_streams::pcurve_topology_partition_stream;
+use crate::test_support::test_streams::prt_with_ext11_intersection;
+use crate::test_support::test_streams::shared_region_shells_partition_stream;
+use crate::test_support::test_streams::surface_curve_topology_partition_stream;
+use crate::test_support::test_streams::topology_partition_stream;
+use crate::test_support::test_streams::two_support_charted_intersection_curve_stream;
+use crate::test_support::test_streams::two_support_charted_intersection_curve_stream_with_second_plane_axis;
+use crate::test_support::test_streams::two_support_ext11_charted_intersection_curve_stream;
 use std::collections::BTreeSet;
 use std::io::Cursor;
 
@@ -12,7 +122,6 @@ use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_test_support::golden::{snapshot_text, Branch, Harness};
 
-use crate::test_support::*;
 use crate::NxCodec;
 
 /// Arena names the native catalogue can emit.
@@ -800,12 +909,15 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
 /// Serialize decode + inspect output as stable pretty JSON. Errors are frozen.
 fn snapshot(bytes: &[u8]) -> String {
     let decode = match NxCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
-        Ok(result) => serde_json::json!({
-            "ir": serde_json::to_value(result.ir()).expect("serialize ir"),
-            "report": serde_json::to_value(result.report()).expect("serialize report"),
-            "source_fidelity": serde_json::to_value(result.source_fidelity())
-                .expect("serialize source_fidelity"),
-        }),
+        Ok(result) => {
+            let result = EditableDecodeResult::from(result);
+            serde_json::json!({
+                "ir": serde_json::to_value(result.ir()).expect("serialize ir"),
+                "report": serde_json::to_value(result.report()).expect("serialize report"),
+                "source_fidelity": serde_json::to_value(result.source_fidelity())
+                    .expect("serialize source_fidelity"),
+            })
+        }
         Err(err) => serde_json::json!({ "decode_error": err.to_string() }),
     };
     let inspect =
@@ -877,7 +989,11 @@ fn arena_coverage_meets_floor() {
     println!(
         "golden arena coverage: {hit}/{} known arenas ({:.1}%)\nuncovered: {uncovered:?}",
         KNOWN_ARENAS.len(),
-        100.0 * hit as f64 / KNOWN_ARENAS.len() as f64,
+        100.0
+            * cadmpeg_core::convert::f64_from_index(hit)
+                .expect("fixture integer is exactly representable")
+            / cadmpeg_core::convert::f64_from_index(KNOWN_ARENAS.len())
+                .expect("fixture integer is exactly representable"),
     );
     assert!(
         hit >= ARENA_COVERAGE_FLOOR,

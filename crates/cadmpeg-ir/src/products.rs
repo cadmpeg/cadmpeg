@@ -5,20 +5,24 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::collections::{HashMap, HashSet};
+pub(crate) mod assembly_graph;
+
+use cadmpeg_core::text::NonBlankString;
 
 use crate::ids::{BodyId, OccurrenceId, ProductDefinitionId};
+use crate::scalar::FiniteReal;
 use crate::transform::Transform;
 
-crate::ids::reference_id_type!(
+crate::ids::id_type!(
     /// Stable assembly-joint identity.
-    JointId
+    JointId, compose
 );
 
 /// Role of a component definition in the product tree.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum ProductDefinitionKind {
     /// Product part or assembly container.
     Part,
@@ -33,31 +37,53 @@ pub enum ProductDefinitionKind {
 /// A reusable product definition or structural container.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct ProductDefinition {
     /// Globally unique definition identity.
     pub id: ProductDefinitionId,
     /// Structural role.
     pub kind: ProductDefinitionKind,
     /// Stable source object name used by product/BOM tooling.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_source_name"
+    )]
     pub source_name: Option<String>,
     /// User-visible component label, when distinct from the source name.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_label"
+    )]
     pub label: Option<String>,
     /// User-maintained BOM description.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_description"
+    )]
     pub description: Option<String>,
     /// User-maintained part or stock number.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_part_number"
+    )]
     pub part_number: Option<String>,
     /// Additional persisted BOM identity fields by exact property name.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub bom_properties: BTreeMap<String, String>,
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+    pub bom_properties: BTreeMap<NonBlankString, String>,
     /// Shape bodies owned by this reusable definition.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bodies: Vec<BodyId>,
     /// Format-native object supplying this definition.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
     pub native_ref: Option<String>,
 }
 
@@ -65,6 +91,7 @@ pub struct ProductDefinition {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "scope", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum PrototypeReference {
     /// Prototype resolves to a definition in this document.
     Local {
@@ -74,228 +101,65 @@ pub enum PrototypeReference {
     /// Prototype belongs to another document, loaded or not.
     External {
         /// Persisted external-document reference and unresolved state.
-        document: ExternalDocumentReference,
+        document: ExternalDocument,
         /// Persisted object identity within that document.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_object"
+        )]
         object: Option<String>,
     },
     /// The source intentionally carries no resolvable prototype.
-    Unresolved,
-}
-
-/// A source string that is not empty.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(transparent)]
-pub struct NonEmptyString(String);
-
-impl NonEmptyString {
-    /// Constructs a non-empty source string.
-    pub fn new(value: impl Into<String>) -> Option<Self> {
-        let value = value.into();
-        (!value.is_empty()).then_some(Self(value))
-    }
-
-    /// Returns the source string.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl PartialEq<str> for NonEmptyString {
-    fn eq(&self, other: &str) -> bool {
-        self.0 == other
-    }
-}
-
-impl PartialEq<&str> for NonEmptyString {
-    fn eq(&self, other: &&str) -> bool {
-        self == *other
-    }
-}
-
-impl std::fmt::Display for NonEmptyString {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(self.as_str())
-    }
-}
-
-impl<'de> Deserialize<'de> for NonEmptyString {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        Self::new(String::deserialize(deserializer)?)
-            .ok_or_else(|| serde::de::Error::custom("external document identity must not be empty"))
-    }
+    Unresolved {},
 }
 
 /// Typed identity or explicit absence of an external document.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "resolution", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ExternalDocument {
     /// Non-empty file path stored by the source.
-    Path(NonEmptyString),
+    Path {
+        /// Persisted file path.
+        path: NonBlankString,
+    },
     /// Non-empty document identity stored by the source.
-    DocumentId(NonEmptyString),
+    DocumentId {
+        /// Persisted document identity.
+        document_id: NonBlankString,
+    },
     /// Persisted reference was empty or structurally unusable.
-    Missing,
+    Missing {},
 }
 
 impl ExternalDocument {
     /// Constructs a path reference, or [`Self::Missing`] when the path is empty.
     pub fn path(path: impl Into<String>) -> Self {
-        match NonEmptyString::new(path) {
-            Some(path) => Self::Path(path),
-            None => Self::Missing,
+        match NonBlankString::new(path) {
+            Some(path) => Self::Path { path },
+            None => Self::Missing {},
         }
     }
 
     /// Constructs a document-id reference, or [`Self::Missing`] when the id is empty.
     pub fn document_id(document_id: impl Into<String>) -> Self {
-        match NonEmptyString::new(document_id) {
-            Some(document_id) => Self::DocumentId(document_id),
-            None => Self::Missing,
+        match NonBlankString::new(document_id) {
+            Some(document_id) => Self::DocumentId { document_id },
+            None => Self::Missing {},
         }
-    }
-
-    /// Returns the explicit missing-reference state.
-    pub fn missing() -> Self {
-        Self::Missing
-    }
-
-    /// Returns the persisted file path, when the reference uses one.
-    pub fn as_path(&self) -> Option<&str> {
-        match self {
-            Self::Path(path) => Some(path.as_str()),
-            Self::DocumentId(_) | Self::Missing => None,
-        }
-    }
-
-    /// Returns the persisted document id, when the reference uses one.
-    pub fn as_document_id(&self) -> Option<&str> {
-        match self {
-            Self::DocumentId(document_id) => Some(document_id.as_str()),
-            Self::Path(_) | Self::Missing => None,
-        }
-    }
-
-    /// Returns whether the source carried no usable external document identity.
-    pub fn is_missing(&self) -> bool {
-        matches!(self, Self::Missing)
-    }
-}
-
-/// First-class external document reference without implicit loading.
-pub type ExternalDocumentReference = ExternalDocument;
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct ExternalDocumentReferenceWire {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    path: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    document_id: Option<String>,
-    resolution: ExternalResolutionWire,
-}
-
-#[derive(Clone, Copy, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-enum ExternalResolutionWire {
-    Unresolved,
-    MissingReference,
-}
-
-impl Serialize for ExternalDocument {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let (path, document_id, resolution) = match self {
-            Self::Path(path) => (
-                Some(path.as_str().to_owned()),
-                None,
-                ExternalResolutionWire::Unresolved,
-            ),
-            Self::DocumentId(document_id) => (
-                None,
-                Some(document_id.as_str().to_owned()),
-                ExternalResolutionWire::Unresolved,
-            ),
-            Self::Missing => (
-                Some(String::new()),
-                None,
-                ExternalResolutionWire::MissingReference,
-            ),
-        };
-        ExternalDocumentReferenceWire {
-            path,
-            document_id,
-            resolution,
-        }
-        .serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for ExternalDocument {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let wire = ExternalDocumentReferenceWire::deserialize(deserializer)?;
-        match (wire.path, wire.document_id, wire.resolution) {
-            (Some(path), None, ExternalResolutionWire::Unresolved) => {
-                NonEmptyString::new(path).map(Self::Path).ok_or_else(|| {
-                    serde::de::Error::custom(
-                        "external document path must not be empty when resolution is unresolved",
-                    )
-                })
-            }
-            (None, Some(document_id), ExternalResolutionWire::Unresolved) => {
-                NonEmptyString::new(document_id)
-                    .map(Self::DocumentId)
-                    .ok_or_else(|| {
-                        serde::de::Error::custom(
-                            "external document id must not be empty when resolution is unresolved",
-                        )
-                    })
-            }
-            (Some(path), None, ExternalResolutionWire::MissingReference) if path.is_empty() => {
-                Ok(Self::Missing)
-            }
-            (None, Some(document_id), ExternalResolutionWire::MissingReference)
-                if document_id.is_empty() =>
-            {
-                Ok(Self::Missing)
-            }
-            _ => {
-                Err(serde::de::Error::custom(
-                    "external document reference must contain one non-empty unresolved identity or one empty missing identity",
-                ))
-            }
-        }
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for ExternalDocument {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "ExternalDocumentReference".into()
-    }
-
-    fn schema_id() -> std::borrow::Cow<'static, str> {
-        concat!(module_path!(), "::ExternalDocumentReference").into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        ExternalDocumentReferenceWire::json_schema(generator)
     }
 }
 
 /// Copy-on-change ownership behavior of a link.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "policy", content = "native_policy", rename_all = "snake_case")]
+#[serde(
+    tag = "policy",
+    content = "native_policy",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum CopyOnChangePolicy {
     /// Link follows its prototype without making an owned copy.
     Disabled,
@@ -313,9 +177,10 @@ pub enum CopyOnChangePolicy {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum OccurrenceParent {
     /// A root occurrence has no containing occurrence.
-    Root,
+    Root {},
     /// A child is placed inside another occurrence.
     Occurrence {
         /// Containing occurrence identity.
@@ -326,6 +191,7 @@ pub enum OccurrenceParent {
 /// One placed use, including an element of a link array.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct Occurrence {
     /// Globally unique instance identity.
     pub id: OccurrenceId,
@@ -338,195 +204,227 @@ pub struct Occurrence {
     /// Placement relative to the direct container.
     pub transform: Transform,
     /// Linked prototype placement contribution when link-transform policy applies.
-    #[serde(flatten, with = "linked_prototype_wire")]
-    #[cfg_attr(feature = "schema", schemars(with = "LinkedPrototypeWire"))]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_linked_prototype"
+    )]
     pub linked_prototype: Option<Transform>,
     /// Per-axis instance scale.
-    pub scale: [f64; 3],
+    #[serde(deserialize_with = "deserialize_occurrence_scale")]
+    pub scale: [FiniteReal; 3],
     /// Source occurrence identifier or display name.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_name"
+    )]
     pub name: Option<String>,
     /// Per-element visibility override.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_visible"
+    )]
     pub visible: Option<bool>,
     /// `FreeCAD` `App::Link`-specific occurrence state.
-    #[serde(flatten, with = "link_state_wire")]
-    #[cfg_attr(feature = "schema", schemars(with = "LinkStateWire"))]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_link"
+    )]
     pub link: Option<LinkState>,
     /// Format-native object supplying this instance.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
     pub native_ref: Option<String>,
 }
 
-/// `FreeCAD` `App::Link`-specific occurrence state.
-#[derive(Debug, Clone, PartialEq)]
-pub struct LinkState {
-    /// Persisted prototype subelement selection.
-    pub linked_subelements: Vec<String>,
-    /// Explicit application object representing this array element.
-    pub element_component: Option<ProductDefinitionId>,
+/// One member of an `App::Link` occurrence state.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
+pub enum LinkMember {
+    /// One persisted prototype subelement selection.
+    LinkedSubelement {
+        /// Subelement path inside the prototype.
+        subelement: String,
+    },
+    /// The explicit application object representing this array element.
+    ElementComponent {
+        /// Component definition.
+        component: ProductDefinitionId,
+    },
     /// Whether this link claims its prototype in the source tree.
-    pub claim_child: Option<bool>,
-    /// Copy-on-change ownership state, when enabled on the link.
-    pub copy_on_change: Option<CopyOnChange>,
+    ClaimChild {
+        /// The claim the source recorded.
+        claim: bool,
+    },
+    /// Copy-on-change ownership state.
+    CopyOnChange {
+        /// The recorded ownership state.
+        state: CopyOnChange,
+    },
+}
+
+/// `FreeCAD` `App::Link`-specific occurrence state.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "LinkStateWire"))]
+#[serde(try_from = "LinkStateWire", into = "LinkStateWire")]
+pub struct LinkState {
+    linked_subelements: Vec<String>,
+    element_component: Option<ProductDefinitionId>,
+    claim_child: Option<bool>,
+    copy_on_change: Option<CopyOnChange>,
+}
+
+/// `FreeCAD` `App::Link`-specific occurrence state.
+///
+/// The wire carries one member list, so "all four members are absent" has no
+/// spelling: the only emptiness admission is over that one list, and the three
+/// members a link states at most once are refused only when repeated.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(rename = "LinkState"))]
+#[serde(deny_unknown_fields)]
+struct LinkStateWire {
+    /// The link members the source recorded.
+    members: Vec<LinkMember>,
+}
+
+impl TryFrom<LinkStateWire> for LinkState {
+    type Error = &'static str;
+
+    fn try_from(wire: LinkStateWire) -> Result<Self, Self::Error> {
+        if wire.members.is_empty() {
+            return Err("link state states at least one member");
+        }
+        let mut state = Self {
+            linked_subelements: Vec::new(),
+            element_component: None,
+            claim_child: None,
+            copy_on_change: None,
+        };
+        for member in wire.members {
+            match member {
+                LinkMember::LinkedSubelement { subelement } => {
+                    state.linked_subelements.push(subelement);
+                }
+                LinkMember::ElementComponent { component } => {
+                    if state.element_component.replace(component).is_some() {
+                        return Err("link state states element_component once");
+                    }
+                }
+                LinkMember::ClaimChild { claim } => {
+                    if state.claim_child.replace(claim).is_some() {
+                        return Err("link state states claim_child once");
+                    }
+                }
+                LinkMember::CopyOnChange {
+                    state: copy_on_change,
+                } => {
+                    if state.copy_on_change.replace(copy_on_change).is_some() {
+                        return Err("link state states copy_on_change once");
+                    }
+                }
+            }
+        }
+        Ok(state)
+    }
+}
+
+impl LinkState {
+    /// Nonempty link state, or absence when all members are empty.
+    pub fn new(
+        linked_subelements: Vec<String>,
+        element_component: Option<ProductDefinitionId>,
+        claim_child: Option<bool>,
+        copy_on_change: Option<CopyOnChange>,
+    ) -> Option<Self> {
+        if linked_subelements.is_empty()
+            && element_component.is_none()
+            && claim_child.is_none()
+            && copy_on_change.is_none()
+        {
+            return None;
+        }
+        Some(Self {
+            linked_subelements,
+            element_component,
+            claim_child,
+            copy_on_change,
+        })
+    }
+
+    /// Persisted prototype subelement selection.
+    pub fn linked_subelements(&self) -> &[String] {
+        &self.linked_subelements
+    }
+
+    /// Explicit application object representing this array element.
+    pub fn element_component(&self) -> Option<&ProductDefinitionId> {
+        self.element_component.as_ref()
+    }
+
+    /// Whether this link claims its prototype in the source tree.
+    ///
+    /// `FreeCAD` states `LinkClaimChild` as an optional `App::PropertyBool`,
+    /// so an absent property and a stated `false` are separate source facts
+    /// and reach separate wire member lists.
+    pub const fn claim_child(&self) -> Option<bool> {
+        self.claim_child
+    }
+
+    /// Copy-on-change ownership state.
+    pub fn copy_on_change(&self) -> Option<&CopyOnChange> {
+        self.copy_on_change.as_ref()
+    }
 }
 
 /// Copy-on-change ownership state carried by an `App::Link` occurrence.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct CopyOnChange {
     /// Ownership policy.
     pub policy: CopyOnChangePolicy,
-    /// Original component tracked by copy-on-change.
-    pub source: Option<ProductDefinitionId>,
-    /// Internal component holding owned copies.
-    pub group: Option<ProductDefinitionId>,
+    /// Original component or external object tracked by copy-on-change.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_source"
+    )]
+    pub source: Option<PrototypeReference>,
+    /// Internal component or external object holding owned copies.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_group"
+    )]
+    pub group: Option<PrototypeReference>,
     /// Whether the tracked source was persisted as changed.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_touched"
+    )]
     pub touched: Option<bool>,
 }
 
+crate::units::named_field!(deserialize_occurrence_scale, [FiniteReal; 3], "scale");
+
 impl Occurrence {
     /// Placement after applying the linked prototype contribution, when present.
-    #[must_use]
-    pub fn effective_transform(&self) -> Transform {
-        self.linked_prototype.map_or(self.transform, |prototype| {
-            self.transform.compose(prototype)
-        })
-    }
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct LinkedPrototypeWire {
-    #[serde(default)]
-    prototype_transform: Transform,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    link_transform: Option<bool>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct LinkStateWire {
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    linked_subelements: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    element_component: Option<ProductDefinitionId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    claim_child: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    copy_on_change: Option<CopyOnChangePolicy>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    copy_on_change_source: Option<ProductDefinitionId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    copy_on_change_group: Option<ProductDefinitionId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    copy_on_change_touched: Option<bool>,
-}
-
-mod linked_prototype_wire {
-    use super::LinkedPrototypeWire;
-    use crate::transform::Transform;
-    use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
-
-    // Serde passes the borrowed field to this adapter.
-    #[allow(clippy::ref_option)]
-    pub fn serialize<S>(value: &Option<Transform>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        LinkedPrototypeWire {
-            prototype_transform: value.unwrap_or_else(Transform::identity),
-            link_transform: value.map(|_| true),
-        }
-        .serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Transform>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = LinkedPrototypeWire::deserialize(deserializer)?;
-        match wire.link_transform {
-            Some(true) => Ok(Some(wire.prototype_transform)),
-            None | Some(false) if wire.prototype_transform == Transform::identity() => Ok(None),
-            None | Some(false) => Err(D::Error::custom(
-                "prototype_transform must be identity unless link_transform is true",
-            )),
-        }
-    }
-}
-
-mod link_state_wire {
-    use super::{CopyOnChange, LinkState, LinkStateWire};
-    use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
-
-    // Serde passes the borrowed field to this adapter.
-    #[allow(clippy::ref_option)]
-    pub fn serialize<S>(value: &Option<LinkState>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let wire = value.as_ref().map_or_else(
-            || LinkStateWire {
-                linked_subelements: Vec::new(),
-                element_component: None,
-                claim_child: None,
-                copy_on_change: None,
-                copy_on_change_source: None,
-                copy_on_change_group: None,
-                copy_on_change_touched: None,
-            },
-            |link| LinkStateWire {
-                linked_subelements: link.linked_subelements.clone(),
-                element_component: link.element_component.clone(),
-                claim_child: link.claim_child,
-                copy_on_change: link.copy_on_change.as_ref().map(|copy| copy.policy.clone()),
-                copy_on_change_source: link
-                    .copy_on_change
-                    .as_ref()
-                    .and_then(|copy| copy.source.clone()),
-                copy_on_change_group: link
-                    .copy_on_change
-                    .as_ref()
-                    .and_then(|copy| copy.group.clone()),
-                copy_on_change_touched: link.copy_on_change.as_ref().and_then(|copy| copy.touched),
-            },
-        );
-        wire.serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<LinkState>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = LinkStateWire::deserialize(deserializer)?;
-        let copy_payload_present = wire.copy_on_change_source.is_some()
-            || wire.copy_on_change_group.is_some()
-            || wire.copy_on_change_touched.is_some();
-        let copy_on_change = match wire.copy_on_change {
-            Some(policy) => Some(CopyOnChange {
-                policy,
-                source: wire.copy_on_change_source,
-                group: wire.copy_on_change_group,
-                touched: wire.copy_on_change_touched,
-            }),
-            None if !copy_payload_present => None,
-            None => {
-                return Err(D::Error::custom(
-                    "copy_on_change_source, copy_on_change_group, and \
-                     copy_on_change_touched require copy_on_change",
-                ));
-            }
-        };
-        let present = !wire.linked_subelements.is_empty()
-            || wire.element_component.is_some()
-            || wire.claim_child.is_some()
-            || copy_on_change.is_some();
-        Ok(present.then_some(LinkState {
-            linked_subelements: wire.linked_subelements,
-            element_component: wire.element_component,
-            claim_child: wire.claim_child,
-            copy_on_change,
-        }))
+    pub fn effective_transform(&self) -> Result<Transform, crate::transform::TransformError> {
+        self.linked_prototype
+            .map_or(Ok(self.transform), |prototype| {
+                self.transform.compose(prototype)
+            })
     }
 }
 
@@ -544,6 +442,13 @@ pub enum AssemblyGraphError {
     },
     /// Parent links contain a cycle.
     ParentCycle(OccurrenceId),
+    /// An occurrence placement cannot be composed into a finite transform.
+    Transform {
+        /// The occurrence whose placement failed.
+        occurrence: OccurrenceId,
+        /// The transform arithmetic failure.
+        source: crate::transform::TransformError,
+    },
 }
 
 impl std::fmt::Display for AssemblyGraphError {
@@ -557,72 +462,186 @@ impl std::fmt::Display for AssemblyGraphError {
                 )
             }
             Self::ParentCycle(id) => write!(formatter, "occurrence parent cycle at {id}"),
+            Self::Transform { occurrence, source } => {
+                write!(formatter, "occurrence {occurrence}: {source}")
+            }
         }
     }
 }
 
-impl std::error::Error for AssemblyGraphError {}
+impl std::error::Error for AssemblyGraphError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Transform { source, .. } => Some(source),
+            _ => None,
+        }
+    }
+}
 
-/// Validated, memoized view over a canonical occurrence tree.
+/// Validated lookup view over a canonical occurrence tree.
 pub struct AssemblyGraph<'a> {
-    occurrences: HashMap<&'a str, &'a Occurrence>,
-    resolved: HashMap<&'a str, Transform>,
+    occurrences: assembly_graph::Facts<'a>,
 }
 
 #[cfg(test)]
 mod tests {
     mod joints;
-    use super::*;
+    mod occurrences;
+    use super::{
+        AssemblyGraph, AssemblyGraphError, CopyOnChange, CopyOnChangePolicy, ExternalDocument,
+        JointLimits, JointOperand, LinkState, Occurrence, OccurrenceParent, PrototypeReference,
+    };
+    use crate::ids::{OccurrenceId, ProductDefinitionId};
+    use crate::transform::Transform;
 
     #[test]
-    fn external_document_wire_preserves_legacy_fields_and_rejects_split_states() {
+    fn a_blank_selection_id_has_no_wire_spelling() {
+        assert!(serde_json::from_value::<crate::features::SelectionMember>(
+            serde_json::json!({"kind": "face", "id": "   "})
+        )
+        .is_err());
+        assert!(serde_json::from_value::<crate::features::SelectionMember>(
+            serde_json::json!({"kind": "face", "id": " a "})
+        )
+        .is_ok());
+        let topology = |id: &str| {
+            serde_json::json!({
+                "id": "test:model:feature-result#1",
+                "output_of": "test:test:feature#1",
+                "members": [{"kind": "face", "id": id}],
+            })
+        };
+        assert!(
+            serde_json::from_value::<crate::features::FeatureResultTopology>(topology("   "))
+                .is_err()
+        );
+        assert!(
+            serde_json::from_value::<crate::features::FeatureResultTopology>(topology(" a "))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn an_external_document_states_its_resolution_and_carries_one_identity() {
         let path = ExternalDocument::path("parts/widget.FCStd");
         let path_wire = serde_json::to_value(&path).unwrap();
         assert_eq!(
             path_wire,
             serde_json::json!({
-                "path": "parts/widget.FCStd",
-                "resolution": "unresolved"
+                "resolution": "path",
+                "path": "parts/widget.FCStd"
             })
         );
         assert_eq!(
-            serde_json::from_value::<ExternalDocument>(path_wire).unwrap(),
+            serde_json::from_value::<ExternalDocument>(path_wire.clone()).unwrap(),
             path
         );
 
-        let missing = ExternalDocument::missing();
+        let document_id = ExternalDocument::document_id("document-7");
+        let document_id_wire = serde_json::to_value(&document_id).unwrap();
+        assert_eq!(
+            document_id_wire,
+            serde_json::json!({"resolution": "document_id", "document_id": "document-7"})
+        );
+        assert_eq!(
+            serde_json::from_value::<ExternalDocument>(document_id_wire).unwrap(),
+            document_id
+        );
+
+        let missing = ExternalDocument::Missing {};
         assert_eq!(ExternalDocument::path(""), missing);
         assert_eq!(ExternalDocument::document_id(""), missing);
         let missing_wire = serde_json::to_value(&missing).unwrap();
-        assert_eq!(
-            missing_wire,
-            serde_json::json!({"path": "", "resolution": "missing_reference"})
-        );
+        assert_eq!(missing_wire, serde_json::json!({"resolution": "missing"}));
         assert_eq!(
             serde_json::from_value::<ExternalDocument>(missing_wire).unwrap(),
             missing
         );
+
+        for (invalid, named) in [
+            (
+                serde_json::json!({"resolution": "path", "path": ""}),
+                "must not be blank",
+            ),
+            (
+                serde_json::json!({"resolution": "path", "path": "   "}),
+                "must not be blank",
+            ),
+            (
+                serde_json::json!({
+                    "resolution": "path",
+                    "path": "parts/widget.FCStd",
+                    "document_id": "document-7"
+                }),
+                "document_id",
+            ),
+            (
+                serde_json::json!({"resolution": "missing", "path": ""}),
+                "path",
+            ),
+            (serde_json::json!({"resolution": "path"}), "path"),
+        ] {
+            let error = serde_json::from_value::<ExternalDocument>(invalid)
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains(named), "{error}");
+        }
+    }
+
+    #[test]
+    fn a_joint_operand_states_the_container_that_owns_its_object() {
+        let root = JointOperand::root("Body1", Vec::new());
+        let root_wire = serde_json::to_value(&root).unwrap();
         assert_eq!(
-            serde_json::from_value::<ExternalDocument>(serde_json::json!({
-                "document_id": "",
-                "resolution": "missing_reference"
-            }))
-            .unwrap(),
-            missing
+            root_wire,
+            serde_json::json!({"container": {"container": "root"}, "object": "Body1"})
+        );
+        assert_eq!(
+            serde_json::from_value::<JointOperand>(root_wire.clone()).unwrap(),
+            root
         );
 
-        for invalid in [
-            serde_json::json!({"path": "", "resolution": "unresolved"}),
-            serde_json::json!({"path": "parts/widget.FCStd", "resolution": "missing_reference"}),
-            serde_json::json!({"document_id": "", "resolution": "unresolved"}),
-            serde_json::json!({
-                "path": "parts/widget.FCStd",
-                "document_id": "document-7",
-                "resolution": "unresolved"
-            }),
-        ] {
-            assert!(serde_json::from_value::<ExternalDocument>(invalid).is_err());
-        }
+        let occurrence_id = OccurrenceId::mint("test:model:occurrence#0").unwrap();
+        let occurrence = JointOperand::occurrence(occurrence_id.clone(), "Body1", Vec::new());
+        let occurrence_wire = serde_json::to_value(&occurrence).unwrap();
+        assert_eq!(occurrence_wire["container"]["container"], "occurrence");
+        assert_eq!(
+            serde_json::from_value::<JointOperand>(occurrence_wire.clone()).unwrap(),
+            occurrence
+        );
+
+        let external = JointOperand::external(
+            ExternalDocument::path("parts/widget.FCStd"),
+            "Body1",
+            Vec::new(),
+        );
+        let external_wire = serde_json::to_value(&external).unwrap();
+        assert_eq!(external_wire["container"]["container"], "external");
+        assert_eq!(
+            serde_json::from_value::<JointOperand>(external_wire).unwrap(),
+            external
+        );
+
+        let mut both = occurrence_wire;
+        both["container"]["external_document"] = serde_json::json!({"resolution": "missing"});
+        let error = serde_json::from_value::<JointOperand>(both)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("external_document"), "{error}");
+
+        let mut stray = root_wire.clone();
+        stray["container"]["occurrence"] = serde_json::json!(occurrence_id.as_str());
+        let error = serde_json::from_value::<JointOperand>(stray)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("occurrence"), "{error}");
+
+        let mut without_object = root_wire;
+        without_object.as_object_mut().unwrap().remove("object");
+        let error = serde_json::from_value::<JointOperand>(without_object)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("object"), "{error}");
     }
 
     fn translation(x: f64) -> Transform {
@@ -637,12 +656,12 @@ mod tests {
     fn occurrence(id: &str, parent: OccurrenceParent, x: f64) -> Occurrence {
         Occurrence {
             id: OccurrenceId::mint(id).expect("valid identity"),
-            prototype: PrototypeReference::Unresolved,
+            prototype: PrototypeReference::Unresolved {},
             parent,
             ordinal: 0,
             transform: translation(x),
             linked_prototype: None,
-            scale: [1.0; 3],
+            scale: [crate::scalar::FiniteReal::ONE; 3],
             name: None,
             visible: None,
             link: None,
@@ -652,7 +671,7 @@ mod tests {
 
     #[test]
     fn resolves_parent_chains_and_conditional_prototype_placement() {
-        let root = occurrence("test:model:entity#root", OccurrenceParent::Root, 1.0);
+        let root = occurrence("test:model:entity#root", OccurrenceParent::Root {}, 1.0);
         let mut child = occurrence(
             "test:model:entity#child",
             OccurrenceParent::Occurrence {
@@ -662,89 +681,216 @@ mod tests {
         );
         child.linked_prototype = Some(translation(10.0));
         let occurrences = [child, root];
-        let graph = AssemblyGraph::new(&occurrences).expect("valid graph");
+        let mut graph = AssemblyGraph::new(&occurrences).expect("valid graph");
         assert_eq!(
-            graph
-                .resolved_transform(
-                    &OccurrenceId::mint("test:model:entity#child").expect("valid identity")
-                )
-                .expect("resolved child")
-                .rows()[0][3],
+            crate::index::public_result(super::assembly_graph::resolve_occurrence(
+                graph
+                    .occurrence(
+                        &OccurrenceId::mint("test:model:entity#child").expect("valid identity")
+                    )
+                    .unwrap(),
+                &mut graph.occurrences,
+                &crate::index::PublicStorage
+            ))
+            .expect("resolved child")
+            .rows()[0][3],
             13.0
         );
     }
 
     #[test]
-    fn linked_prototype_wire_preserves_the_legacy_fields_and_rejects_ignored_transforms() {
-        let plain = occurrence("test:model:occurrence#plain", OccurrenceParent::Root, 1.0);
-        let mut plain_wire = serde_json::to_value(&plain).expect("plain occurrence wire");
-        assert_eq!(
-            plain_wire.get("prototype_transform"),
-            Some(&serde_json::to_value(Transform::identity()).unwrap())
+    fn an_absent_linked_prototype_key_is_the_only_spelling_of_absence() {
+        let plain = occurrence(
+            "test:model:occurrence#plain",
+            OccurrenceParent::Root {},
+            1.0,
         );
-        assert!(plain_wire.get("link_transform").is_none());
-
-        plain_wire["link_transform"] = serde_json::json!(false);
-        let decoded: Occurrence = serde_json::from_value(plain_wire.clone()).unwrap();
-        assert_eq!(decoded.linked_prototype, None);
+        let plain_wire = serde_json::to_value(&plain).expect("plain occurrence wire");
+        assert!(plain_wire.get("linked_prototype").is_none());
+        assert_eq!(
+            serde_json::from_value::<Occurrence>(plain_wire).unwrap(),
+            plain
+        );
 
         let mut linked = plain;
         linked.linked_prototype = Some(translation(10.0));
         let linked_wire = serde_json::to_value(&linked).expect("linked occurrence wire");
         assert_eq!(
-            linked_wire.get("link_transform"),
-            Some(&serde_json::json!(true))
+            linked_wire.get("linked_prototype"),
+            Some(&serde_json::to_value(translation(10.0)).unwrap())
         );
         assert_eq!(
             serde_json::from_value::<Occurrence>(linked_wire).unwrap(),
             linked
         );
 
-        plain_wire["prototype_transform"] = serde_json::to_value(translation(10.0)).unwrap();
-        assert!(serde_json::from_value::<Occurrence>(plain_wire).is_err());
+        let mut identity = serde_json::to_value(&linked).unwrap();
+        identity["linked_prototype"] = serde_json::to_value(Transform::identity()).unwrap();
+        assert_eq!(
+            serde_json::from_value::<Occurrence>(identity)
+                .unwrap()
+                .linked_prototype,
+            Some(Transform::identity())
+        );
     }
 
     #[test]
-    fn link_state_wire_preserves_the_legacy_fields_and_requires_a_copy_policy() {
-        let mut linked = occurrence("test:model:occurrence#link", OccurrenceParent::Root, 1.0);
-        linked.link = Some(LinkState {
-            linked_subelements: vec!["Face1".into()],
-            element_component: Some(
-                ProductDefinitionId::mint("test:model:product#element").expect("valid identity"),
-            ),
-            claim_child: Some(true),
-            copy_on_change: Some(CopyOnChange {
+    fn joint_limits_admit_only_finite_ordered_bounds() {
+        assert!(JointLimits::new(None, None).is_none());
+        assert!(JointLimits::new(Some(2.0), Some(1.0)).is_none());
+        for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(JointLimits::new(Some(value), None).is_none());
+            assert!(JointLimits::new(None, Some(value)).is_none());
+        }
+        for (minimum, maximum) in [
+            (Some(-2.0), None),
+            (None, Some(-1.0)),
+            (Some(0.0), Some(0.0)),
+        ] {
+            let limits = JointLimits::new(minimum, maximum).unwrap();
+            assert_eq!(
+                serde_json::from_value::<JointLimits>(serde_json::to_value(&limits).unwrap())
+                    .unwrap(),
+                limits
+            );
+        }
+    }
+
+    #[test]
+    fn joint_limits_from_parts_checks_only_presence_and_order() {
+        let lower = crate::scalar::FiniteReal::new(-2.0).unwrap();
+        let upper = crate::scalar::FiniteReal::new(1.0).unwrap();
+        assert!(JointLimits::from_parts(None, None).is_none());
+        assert!(JointLimits::from_parts(Some(upper), Some(lower)).is_none());
+        assert_eq!(
+            JointLimits::from_parts(Some(lower), Some(upper)),
+            Some(JointLimits::Range(
+                super::JointLimitRange::new(lower, upper).unwrap()
+            ))
+        );
+    }
+
+    #[test]
+    fn a_joint_limit_range_owns_the_order_of_its_bounds() {
+        use super::JointLimitRange;
+        use crate::scalar::FiniteReal;
+
+        let bound = |value: f64| FiniteReal::new(value).unwrap();
+        assert!(JointLimitRange::new(bound(2.0), bound(1.0)).is_none());
+        let equal = JointLimitRange::new(bound(1.0), bound(1.0)).unwrap();
+        assert_eq!([equal.minimum(), equal.maximum()], [bound(1.0), bound(1.0)]);
+        let range = JointLimitRange::new(bound(-2.0), bound(3.0)).unwrap();
+        assert_eq!(
+            [range.minimum(), range.maximum()],
+            [bound(-2.0), bound(3.0)]
+        );
+
+        let wire = serde_json::to_value(JointLimits::Range(range)).unwrap();
+        assert_eq!(
+            wire,
+            serde_json::json!({"bounds": "range", "minimum": -2.0, "maximum": 3.0})
+        );
+        assert_eq!(
+            serde_json::from_value::<JointLimits>(wire).unwrap(),
+            JointLimits::Range(range)
+        );
+        let error = serde_json::from_value::<JointLimits>(
+            serde_json::json!({"bounds": "range", "minimum": 2.0, "maximum": 1.0}),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            error.contains("joint limit range must be ordered"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn empty_link_state_is_absent() {
+        assert!(LinkState::new(Vec::new(), None, None, None).is_none());
+        assert!(LinkState::new(Vec::new(), None, Some(false), None).is_some());
+        let plain = occurrence(
+            "test:model:occurrence#empty-link",
+            OccurrenceParent::Root {},
+            0.0,
+        );
+        let wire = serde_json::to_value(&plain).unwrap();
+        assert!(serde_json::from_value::<Occurrence>(wire)
+            .unwrap()
+            .link
+            .is_none());
+    }
+
+    #[test]
+    fn the_link_state_is_one_nested_object_with_its_own_copy_on_change() {
+        let mut linked = occurrence("test:model:occurrence#link", OccurrenceParent::Root {}, 1.0);
+        linked.link = LinkState::new(
+            vec!["Face1".into()],
+            Some(ProductDefinitionId::mint("test:model:product#element").expect("valid identity")),
+            Some(true),
+            Some(CopyOnChange {
                 policy: CopyOnChangePolicy::Owned,
-                source: Some(
-                    ProductDefinitionId::mint("test:model:product#source").expect("valid identity"),
-                ),
-                group: Some(
-                    ProductDefinitionId::mint("test:model:product#group").expect("valid identity"),
-                ),
+                source: Some(PrototypeReference::Local {
+                    definition: ProductDefinitionId::mint("test:model:product#source")
+                        .expect("valid identity"),
+                }),
+                group: Some(PrototypeReference::Local {
+                    definition: ProductDefinitionId::mint("test:model:product#group")
+                        .expect("valid identity"),
+                }),
                 touched: Some(true),
             }),
-        });
-        let wire = serde_json::to_value(&linked).expect("App::Link occurrence wire");
-        assert_eq!(wire["linked_subelements"], serde_json::json!(["Face1"]));
-        assert_eq!(
-            wire["copy_on_change"],
-            serde_json::json!({"policy": "owned"})
         );
-        assert_eq!(serde_json::from_value::<Occurrence>(wire).unwrap(), linked);
+        let wire = serde_json::to_value(&linked).expect("App::Link occurrence wire");
+        assert_eq!(
+            wire["link"]["members"],
+            serde_json::json!([
+                {"kind": "linked_subelement", "subelement": "Face1"},
+                {"kind": "element_component", "component": "test:model:product#element"},
+                {"kind": "claim_child", "claim": true},
+                {"kind": "copy_on_change", "state": {
+                    "policy": {"policy": "owned"},
+                    "source": {"scope": "local", "definition": "test:model:product#source"},
+                    "group": {"scope": "local", "definition": "test:model:product#group"},
+                    "touched": true
+                }}
+            ])
+        );
+        assert_eq!(
+            serde_json::from_value::<Occurrence>(wire.clone()).unwrap(),
+            linked
+        );
 
-        let mut invalid = serde_json::to_value(occurrence(
-            "test:model:occurrence#invalid-link",
-            OccurrenceParent::Root,
+        let mut without_policy = wire.clone();
+        without_policy["link"]["members"][3]["state"]
+            .as_object_mut()
+            .expect("a copy-on-change object")
+            .remove("policy");
+        let error = serde_json::from_value::<Occurrence>(without_policy)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("policy"), "{error}");
+
+        let mut bogus = wire;
+        bogus["link"]["members"][3]["state"]["zz_bogus"] = serde_json::json!(1);
+        let error = serde_json::from_value::<Occurrence>(bogus)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("zz_bogus"), "{error}");
+
+        let mut empty = serde_json::to_value(occurrence(
+            "test:model:occurrence#empty-link",
+            OccurrenceParent::Root {},
             1.0,
         ))
         .unwrap();
-        invalid["copy_on_change_source"] = serde_json::json!("test:model:product#source");
-        assert!(serde_json::from_value::<Occurrence>(invalid).is_err());
+        empty["link"] = serde_json::json!({"members": []});
+        assert!(serde_json::from_value::<Occurrence>(empty).is_err());
     }
 
     #[test]
     fn rejects_duplicate_missing_and_cyclic_parent_links() {
-        let duplicate = occurrence("test:model:entity#same", OccurrenceParent::Root, 0.0);
+        let duplicate = occurrence("test:model:entity#same", OccurrenceParent::Root {}, 0.0);
         assert!(matches!(
             AssemblyGraph::new(&[duplicate.clone(), duplicate]),
             Err(AssemblyGraphError::DuplicateOccurrence(_))
@@ -785,125 +931,72 @@ mod tests {
 }
 
 impl<'a> AssemblyGraph<'a> {
-    /// Validates parent links and precomputes every resolved occurrence transform.
+    /// Validates parent links and every composed occurrence transform.
     pub fn new(occurrences: &'a [Occurrence]) -> Result<Self, AssemblyGraphError> {
-        let mut by_id = HashMap::with_capacity(occurrences.len());
-        for occurrence in occurrences {
-            if by_id.insert(occurrence.id.as_str(), occurrence).is_some() {
-                return Err(AssemblyGraphError::DuplicateOccurrence(
-                    occurrence.id.clone(),
-                ));
+        crate::index::public_result(assembly_graph::build(
+            occurrences,
+            &crate::index::PublicStorage,
+        ))
+        .map(|occurrences| Self { occurrences })
+        .map_err(|error| match error {
+            assembly_graph::GraphError::Duplicate(id) => {
+                AssemblyGraphError::DuplicateOccurrence(id.clone())
             }
-        }
-        let mut resolved = HashMap::with_capacity(occurrences.len());
-        for occurrence in occurrences {
-            resolve_occurrence(occurrence, &by_id, &mut resolved, &mut HashSet::new())?;
-        }
-        Ok(Self {
-            occurrences: by_id,
-            resolved,
+            assembly_graph::GraphError::Missing { occurrence, parent } => {
+                AssemblyGraphError::MissingParent {
+                    occurrence: occurrence.clone(),
+                    parent: parent.clone(),
+                }
+            }
+            assembly_graph::GraphError::Cycle(id) => AssemblyGraphError::ParentCycle(id.clone()),
+            assembly_graph::GraphError::Transform { occurrence, source } => {
+                AssemblyGraphError::Transform {
+                    occurrence: occurrence.clone(),
+                    source,
+                }
+            }
         })
     }
 
     /// Returns an occurrence by identity.
     pub fn occurrence(&self, id: &OccurrenceId) -> Option<&'a Occurrence> {
-        self.occurrences.get(id.as_str()).copied()
+        crate::index::public_result(
+            self.occurrences
+                .occurrence(id, &crate::index::PublicStorage),
+        )
     }
-
-    /// Returns the transform composed from the root through this occurrence.
-    pub fn resolved_transform(&self, id: &OccurrenceId) -> Option<Transform> {
-        self.resolved.get(id.as_str()).copied()
-    }
-}
-
-fn resolve_occurrence<'a>(
-    occurrence: &'a Occurrence,
-    occurrences: &HashMap<&'a str, &'a Occurrence>,
-    resolved: &mut HashMap<&'a str, Transform>,
-    active: &mut HashSet<&'a str>,
-) -> Result<Transform, AssemblyGraphError> {
-    if let Some(transform) = resolved.get(occurrence.id.as_str()) {
-        return Ok(*transform);
-    }
-    if !active.insert(occurrence.id.as_str()) {
-        return Err(AssemblyGraphError::ParentCycle(occurrence.id.clone()));
-    }
-    let parent = match &occurrence.parent {
-        OccurrenceParent::Root => Transform::identity(),
-        OccurrenceParent::Occurrence {
-            occurrence: parent_id,
-        } => {
-            let Some(parent_occurrence) = occurrences.get(parent_id.as_str()).copied() else {
-                return Err(AssemblyGraphError::MissingParent {
-                    occurrence: occurrence.id.clone(),
-                    parent: parent_id.clone(),
-                });
-            };
-            resolve_occurrence(parent_occurrence, occurrences, resolved, active)?
-        }
-    };
-    let transform = parent.compose(occurrence.effective_transform());
-    active.remove(occurrence.id.as_str());
-    resolved.insert(occurrence.id.as_str(), transform);
-    Ok(transform)
-}
-
-/// Neutral family of an assembly joint.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "native_kind", rename_all = "snake_case")]
-pub(crate) enum JointKind {
-    /// Rigid connection with no relative degrees of freedom.
-    Fixed,
-    /// Rotation about one axis.
-    Revolute,
-    /// Translation along one axis.
-    Slider,
-    /// Coupled rotation and translation on one axis.
-    Cylindrical,
-    /// Rotation about a common point.
-    Ball,
-    /// Maintains a scalar separation.
-    Distance,
-    /// Maintains parallel connector directions.
-    Parallel,
-    /// Maintains perpendicular connector directions.
-    Perpendicular,
-    /// Maintains an angular separation.
-    Angle,
-    /// Couples rack translation to pinion rotation.
-    RackPinion,
-    /// Couples translation and rotation by screw pitch.
-    Screw,
-    /// Couples two gear rotations.
-    Gears,
-    /// Couples two pulley rotations through a belt.
-    Belt,
-    /// Persisted grounding of a component.
-    Grounded,
-    /// Future application-defined family retained without relabeling.
-    Native(String),
 }
 
 /// Container that owns a joint operand object.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "container", rename_all = "snake_case", deny_unknown_fields)]
 pub enum OperandContainer {
     /// Object in the current document root.
-    Root,
+    Root {},
     /// Object in a placed local occurrence.
-    Occurrence(OccurrenceId),
+    Occurrence {
+        /// Placed local occurrence that owns the object.
+        occurrence: OccurrenceId,
+    },
     /// Object in an external document.
-    External(ExternalDocumentReference),
+    External {
+        /// External document that owns the object.
+        external_document: ExternalDocument,
+    },
 }
 
 /// One connector operand and its selected native subelements.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct JointOperand {
     /// Container that owns the object.
     pub container: OperandContainer,
     /// Exact referenced application object identity.
     pub object: String,
     /// Ordered persistent object/element paths.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub subelements: Vec<String>,
 }
 
@@ -911,7 +1004,7 @@ impl JointOperand {
     /// Constructs an operand owned by the current document root.
     pub fn root(object: impl Into<String>, subelements: Vec<String>) -> Self {
         Self {
-            container: OperandContainer::Root,
+            container: OperandContainer::Root {},
             object: object.into(),
             subelements,
         }
@@ -924,7 +1017,7 @@ impl JointOperand {
         subelements: Vec<String>,
     ) -> Self {
         Self {
-            container: OperandContainer::Occurrence(occurrence),
+            container: OperandContainer::Occurrence { occurrence },
             object: object.into(),
             subelements,
         }
@@ -932,166 +1025,147 @@ impl JointOperand {
 
     /// Constructs an operand owned by an external document.
     pub fn external(
-        document: ExternalDocumentReference,
+        document: ExternalDocument,
         object: impl Into<String>,
         subelements: Vec<String>,
     ) -> Self {
         Self {
-            container: OperandContainer::External(document),
+            container: OperandContainer::External {
+                external_document: document,
+            },
             object: object.into(),
             subelements,
         }
     }
 }
 
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct JointOperandWire {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    occurrence: Option<OccurrenceId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    external_document: Option<ExternalDocumentReference>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    object: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    subelements: Vec<String>,
-}
-
-impl Serialize for JointOperand {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let (occurrence, external_document) = match &self.container {
-            OperandContainer::Root => (None, None),
-            OperandContainer::Occurrence(occurrence) => (Some(occurrence.clone()), None),
-            OperandContainer::External(document) => (None, Some(document.clone())),
-        };
-        JointOperandWire {
-            occurrence,
-            external_document,
-            object: Some(self.object.clone()),
-            subelements: self.subelements.clone(),
-        }
-        .serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for JointOperand {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let wire = JointOperandWire::deserialize(deserializer)?;
-        let container = match (wire.occurrence, wire.external_document) {
-            (None, None) => OperandContainer::Root,
-            (Some(occurrence), None) => OperandContainer::Occurrence(occurrence),
-            (None, Some(document)) => OperandContainer::External(document),
-            (Some(_), Some(_)) => {
-                return Err(serde::de::Error::custom(
-                    "joint operand cannot name both an occurrence and an external document",
-                ));
-            }
-        };
-        Ok(Self {
-            container,
-            object: wire
-                .object
-                .ok_or_else(|| serde::de::Error::missing_field("object"))?,
-            subelements: wire.subelements,
-        })
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for JointOperand {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "JointOperand".into()
-    }
-
-    fn schema_id() -> std::borrow::Cow<'static, str> {
-        concat!(module_path!(), "::JointOperand").into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        JointOperandWire::json_schema(generator)
-    }
-}
-
 /// Enabled bounds for one joint degree of freedom.
-#[derive(Debug, Clone, PartialEq)]
+///
+/// Each arm names the bounds the source enabled, so "neither bound" has no
+/// spelling. The two-bound arm holds a [`JointLimitRange`], which owns the
+/// order of its bounds.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "JointLimitsWire", into = "JointLimitsWire")]
 pub enum JointLimits {
-    /// Lower bound only.
-    Minimum(f64),
-    /// Upper bound only.
-    Maximum(f64),
-    /// Lower and upper bounds.
-    Both {
+    /// Only the lower bound is enabled.
+    Minimum {
         /// Lower bound.
-        minimum: f64,
-        /// Upper bound.
-        maximum: f64,
+        minimum: FiniteReal,
     },
+    /// Only the upper bound is enabled.
+    Maximum {
+        /// Upper bound.
+        maximum: FiniteReal,
+    },
+    /// Both bounds are enabled, in order.
+    Range(JointLimitRange),
+}
+
+/// Finite lower and upper joint bounds with the upper bound at or above the
+/// lower bound.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct JointLimitRange {
+    minimum: FiniteReal,
+    maximum: FiniteReal,
+}
+
+impl JointLimitRange {
+    /// Admit bounds whose upper bound is at or above the lower bound.
+    #[must_use]
+    pub fn new(minimum: FiniteReal, maximum: FiniteReal) -> Option<Self> {
+        (minimum.get() <= maximum.get()).then_some(Self { minimum, maximum })
+    }
+
+    /// Return the lower bound.
+    #[must_use]
+    pub const fn minimum(self) -> FiniteReal {
+        self.minimum
+    }
+
+    /// Return the upper bound, at or above [`Self::minimum`].
+    #[must_use]
+    pub const fn maximum(self) -> FiniteReal {
+        self.maximum
+    }
 }
 
 impl JointLimits {
-    /// Constructs enabled bounds when at least one bound is present.
+    /// Constructs finite ordered limits with at least one enabled bound.
     pub fn new(minimum: Option<f64>, maximum: Option<f64>) -> Option<Self> {
+        let minimum = match minimum {
+            None => None,
+            Some(value) => Some(FiniteReal::new(value)?),
+        };
+        let maximum = match maximum {
+            None => None,
+            Some(value) => Some(FiniteReal::new(value)?),
+        };
+        Self::from_parts(minimum, maximum)
+    }
+
+    /// Build from admitted bounds; check only presence and order.
+    pub fn from_parts(minimum: Option<FiniteReal>, maximum: Option<FiniteReal>) -> Option<Self> {
         match (minimum, maximum) {
-            (Some(minimum), None) => Some(Self::Minimum(minimum)),
-            (None, Some(maximum)) => Some(Self::Maximum(maximum)),
-            (Some(minimum), Some(maximum)) => Some(Self::Both { minimum, maximum }),
             (None, None) => None,
-        }
-    }
-
-    /// Returns the lower bound, when enabled.
-    pub fn minimum(&self) -> Option<f64> {
-        match *self {
-            Self::Minimum(minimum) | Self::Both { minimum, .. } => Some(minimum),
-            Self::Maximum(_) => None,
-        }
-    }
-
-    /// Returns the upper bound, when enabled.
-    pub fn maximum(&self) -> Option<f64> {
-        match *self {
-            Self::Maximum(maximum) | Self::Both { maximum, .. } => Some(maximum),
-            Self::Minimum(_) => None,
+            (Some(minimum), None) => Some(Self::Minimum { minimum }),
+            (None, Some(maximum)) => Some(Self::Maximum { maximum }),
+            (Some(minimum), Some(maximum)) => {
+                JointLimitRange::new(minimum, maximum).map(Self::Range)
+            }
         }
     }
 }
 
+/// The wire spelling of [`JointLimits`], before the ordered-pair mint.
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct JointLimitsWire {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    minimum: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    maximum: Option<f64>,
+#[serde(tag = "bounds", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
+enum JointLimitsWire {
+    /// Only the lower bound is enabled.
+    Minimum {
+        /// Lower bound.
+        minimum: FiniteReal,
+    },
+    /// Only the upper bound is enabled.
+    Maximum {
+        /// Upper bound.
+        maximum: FiniteReal,
+    },
+    /// Both bounds are enabled, in order.
+    Range {
+        /// Lower bound.
+        minimum: FiniteReal,
+        /// Upper bound, at or above `minimum`.
+        maximum: FiniteReal,
+    },
 }
 
-impl Serialize for JointLimits {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        JointLimitsWire {
-            minimum: self.minimum(),
-            maximum: self.maximum(),
+impl From<JointLimits> for JointLimitsWire {
+    fn from(limits: JointLimits) -> Self {
+        match limits {
+            JointLimits::Minimum { minimum } => Self::Minimum { minimum },
+            JointLimits::Maximum { maximum } => Self::Maximum { maximum },
+            JointLimits::Range(range) => Self::Range {
+                minimum: range.minimum(),
+                maximum: range.maximum(),
+            },
         }
-        .serialize(serializer)
     }
 }
 
-impl<'de> Deserialize<'de> for JointLimits {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let wire = JointLimitsWire::deserialize(deserializer)?;
-        Self::new(wire.minimum, wire.maximum)
-            .ok_or_else(|| serde::de::Error::custom("joint limits must contain at least one bound"))
+impl TryFrom<JointLimitsWire> for JointLimits {
+    type Error = &'static str;
+
+    fn try_from(wire: JointLimitsWire) -> Result<Self, Self::Error> {
+        Ok(match wire {
+            JointLimitsWire::Minimum { minimum } => Self::Minimum { minimum },
+            JointLimitsWire::Maximum { maximum } => Self::Maximum { maximum },
+            JointLimitsWire::Range { minimum, maximum } => Self::Range(
+                JointLimitRange::new(minimum, maximum)
+                    .ok_or("joint limit range must be ordered")?,
+            ),
+        })
     }
 }
 
@@ -1111,7 +1185,9 @@ impl JsonSchema for JointLimits {
 }
 
 /// One joint connector with its local frame.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct JointConnector {
     /// Referenced operand.
     pub operand: JointOperand,
@@ -1122,15 +1198,20 @@ pub struct JointConnector {
 }
 
 /// Structurally complete operands and frames for an assembly joint.
-#[derive(Debug, Clone, PartialEq)]
-// Inline fixed-size arrays encode the one-or-two connector invariant directly.
-#[allow(clippy::large_enum_variant)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "arity", rename_all = "snake_case", deny_unknown_fields)]
 pub enum JointOperands {
     /// One grounded connector and its optional attachment offset.
     Grounded {
         /// Grounded connector.
         connector: JointConnector,
         /// Connector attachment offset.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_offset_frame"
+        )]
         offset_frame: Option<Transform>,
     },
     /// Two paired connectors and their optional attachment offsets.
@@ -1138,447 +1219,265 @@ pub enum JointOperands {
         /// Non-grounded joint family.
         kind: PairedJointKind,
         /// Connectors in operand order.
-        connectors: [JointConnector; 2],
+        connectors: Box<[JointConnector; 2]>,
         /// Connector attachment offsets in operand order.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_offset_frames"
+        )]
         offset_frames: Option<[Transform; 2]>,
     },
 }
 
 /// Assembly-joint families that connect two operands.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PairedJointKind {
     /// Rigid connection with no relative degrees of freedom.
     Fixed {
         /// Angular offset in radians.
-        angle: Option<f64>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_angle"
+        )]
+        angle: Option<FiniteReal>,
         /// Connector-local translation offset in document length units.
-        translation_offset: Option<[f64; 3]>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_translation_offset"
+        )]
+        translation_offset: Option<[FiniteReal; 3]>,
         /// Enabled angular interval in radians.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_angular_limits"
+        )]
         angular_limits: Option<JointLimits>,
         /// Enabled linear interval in document length units.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_linear_limits"
+        )]
         linear_limits: Option<JointLimits>,
     },
     /// Rotation about one axis.
     Revolute {
         /// Angular offset in radians.
-        angle: Option<f64>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_angle"
+        )]
+        angle: Option<FiniteReal>,
         /// Enabled angular interval in radians.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_angular_limits"
+        )]
         angular_limits: Option<JointLimits>,
     },
     /// Translation along one axis.
     Slider {
         /// Primary linear offset in document length units.
-        distance: Option<f64>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_distance"
+        )]
+        distance: Option<FiniteReal>,
         /// Connector-local translation offset in document length units.
-        translation_offset: Option<[f64; 3]>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_translation_offset"
+        )]
+        translation_offset: Option<[FiniteReal; 3]>,
         /// Enabled linear interval in document length units.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_linear_limits"
+        )]
         linear_limits: Option<JointLimits>,
     },
     /// Coupled rotation and translation on one axis.
     Cylindrical {
         /// Angular offset in radians.
-        angle: Option<f64>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_angle"
+        )]
+        angle: Option<FiniteReal>,
         /// Primary linear offset in document length units.
-        distance: Option<f64>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_distance"
+        )]
+        distance: Option<FiniteReal>,
         /// Enabled angular interval in radians.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_angular_limits"
+        )]
         angular_limits: Option<JointLimits>,
         /// Enabled linear interval in document length units.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_linear_limits"
+        )]
         linear_limits: Option<JointLimits>,
     },
     /// Rotation about a common point.
-    Ball,
+    Ball {},
     /// Maintains a scalar separation.
     Distance {
         /// Primary linear offset in document length units.
-        distance: Option<f64>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_distance"
+        )]
+        distance: Option<FiniteReal>,
     },
     /// Maintains parallel connector directions.
-    Parallel,
+    Parallel {},
     /// Maintains perpendicular connector directions.
-    Perpendicular,
+    Perpendicular {},
     /// Maintains an angular separation.
     Angle {
         /// Angular offset in radians.
-        angle: Option<f64>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_angle"
+        )]
+        angle: Option<FiniteReal>,
     },
     /// Couples rack translation to pinion rotation.
     RackPinion {
         /// Primary linear offset in document length units.
-        distance: Option<f64>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_distance"
+        )]
+        distance: Option<FiniteReal>,
         /// Secondary linear offset in document length units.
-        distance2: Option<f64>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_distance2"
+        )]
+        distance2: Option<FiniteReal>,
     },
     /// Couples translation and rotation by screw pitch.
     Screw {
         /// Primary linear offset in document length units.
-        distance: Option<f64>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_distance"
+        )]
+        distance: Option<FiniteReal>,
     },
     /// Couples two gear rotations.
     Gears {
         /// Primary linear offset in document length units.
-        distance: Option<f64>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_distance"
+        )]
+        distance: Option<FiniteReal>,
         /// Secondary linear offset in document length units.
-        distance2: Option<f64>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_distance2"
+        )]
+        distance2: Option<FiniteReal>,
     },
     /// Couples two pulley rotations through a belt.
     Belt {
         /// Primary linear offset in document length units.
-        distance: Option<f64>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_distance"
+        )]
+        distance: Option<FiniteReal>,
         /// Secondary linear offset in document length units.
-        distance2: Option<f64>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_distance2"
+        )]
+        distance2: Option<FiniteReal>,
     },
     /// Future application-defined family retained without relabeling.
     Native {
         /// Application-defined family name.
         name: String,
         /// Angular offset in radians.
-        angle: Option<f64>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_angle"
+        )]
+        angle: Option<FiniteReal>,
         /// Connector-local translation offset in document length units.
-        translation_offset: Option<[f64; 3]>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_translation_offset"
+        )]
+        translation_offset: Option<[FiniteReal; 3]>,
         /// Primary linear offset in document length units.
-        distance: Option<f64>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_distance"
+        )]
+        distance: Option<FiniteReal>,
         /// Secondary linear offset in document length units.
-        distance2: Option<f64>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_distance2"
+        )]
+        distance2: Option<FiniteReal>,
         /// Enabled angular interval in radians.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_angular_limits"
+        )]
         angular_limits: Option<JointLimits>,
         /// Enabled linear interval in document length units.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_linear_limits"
+        )]
         linear_limits: Option<JointLimits>,
     },
 }
 
-/// Kind-specific scalars carried on the CADIR joint wire.
-struct JointScalars {
-    angle: Option<f64>,
-    translation_offset: Option<[f64; 3]>,
-    distance: Option<f64>,
-    distance2: Option<f64>,
-    angular_limits: Option<JointLimits>,
-    linear_limits: Option<JointLimits>,
-}
-
-impl PairedJointKind {
-    fn from_wire(kind: JointKind, scalars: JointScalars) -> Result<Self, &'static str> {
-        let JointScalars {
-            angle,
-            translation_offset,
-            distance,
-            distance2,
-            angular_limits,
-            linear_limits,
-        } = scalars;
-        match kind {
-            JointKind::Fixed if distance.is_none() && distance2.is_none() => Ok(Self::Fixed {
-                angle,
-                translation_offset,
-                angular_limits,
-                linear_limits,
-            }),
-            JointKind::Revolute
-                if translation_offset.is_none()
-                    && distance.is_none()
-                    && distance2.is_none()
-                    && linear_limits.is_none() =>
-            {
-                Ok(Self::Revolute {
-                    angle,
-                    angular_limits,
-                })
-            }
-            JointKind::Slider
-                if angle.is_none() && distance2.is_none() && angular_limits.is_none() =>
-            {
-                Ok(Self::Slider {
-                    distance,
-                    translation_offset,
-                    linear_limits,
-                })
-            }
-            JointKind::Cylindrical if translation_offset.is_none() && distance2.is_none() => {
-                Ok(Self::Cylindrical {
-                    angle,
-                    distance,
-                    angular_limits,
-                    linear_limits,
-                })
-            }
-            JointKind::Ball
-                if angle.is_none()
-                    && translation_offset.is_none()
-                    && distance.is_none()
-                    && distance2.is_none()
-                    && angular_limits.is_none()
-                    && linear_limits.is_none() =>
-            {
-                Ok(Self::Ball)
-            }
-            JointKind::Distance
-                if angle.is_none()
-                    && translation_offset.is_none()
-                    && distance2.is_none()
-                    && angular_limits.is_none()
-                    && linear_limits.is_none() =>
-            {
-                Ok(Self::Distance { distance })
-            }
-            JointKind::Parallel
-                if angle.is_none()
-                    && translation_offset.is_none()
-                    && distance.is_none()
-                    && distance2.is_none()
-                    && angular_limits.is_none()
-                    && linear_limits.is_none() =>
-            {
-                Ok(Self::Parallel)
-            }
-            JointKind::Perpendicular
-                if angle.is_none()
-                    && translation_offset.is_none()
-                    && distance.is_none()
-                    && distance2.is_none()
-                    && angular_limits.is_none()
-                    && linear_limits.is_none() =>
-            {
-                Ok(Self::Perpendicular)
-            }
-            JointKind::Angle
-                if translation_offset.is_none()
-                    && distance.is_none()
-                    && distance2.is_none()
-                    && angular_limits.is_none()
-                    && linear_limits.is_none() =>
-            {
-                Ok(Self::Angle { angle })
-            }
-            JointKind::RackPinion
-                if angle.is_none()
-                    && translation_offset.is_none()
-                    && angular_limits.is_none()
-                    && linear_limits.is_none() =>
-            {
-                Ok(Self::RackPinion {
-                    distance,
-                    distance2,
-                })
-            }
-            JointKind::Screw
-                if angle.is_none()
-                    && translation_offset.is_none()
-                    && distance2.is_none()
-                    && angular_limits.is_none()
-                    && linear_limits.is_none() =>
-            {
-                Ok(Self::Screw { distance })
-            }
-            JointKind::Gears
-                if angle.is_none()
-                    && translation_offset.is_none()
-                    && angular_limits.is_none()
-                    && linear_limits.is_none() =>
-            {
-                Ok(Self::Gears {
-                    distance,
-                    distance2,
-                })
-            }
-            JointKind::Belt
-                if angle.is_none()
-                    && translation_offset.is_none()
-                    && angular_limits.is_none()
-                    && linear_limits.is_none() =>
-            {
-                Ok(Self::Belt {
-                    distance,
-                    distance2,
-                })
-            }
-            JointKind::Native(name) => Ok(Self::Native {
-                name,
-                angle,
-                translation_offset,
-                distance,
-                distance2,
-                angular_limits,
-                linear_limits,
-            }),
-            JointKind::Grounded => Err("paired joint cannot use the grounded kind"),
-            _ => Err("joint scalar fields are not supported by the selected kind"),
-        }
-    }
-
-    fn scalars(&self) -> JointScalars {
-        match self {
-            Self::Fixed {
-                angle,
-                translation_offset,
-                angular_limits,
-                linear_limits,
-            } => JointScalars {
-                angle: *angle,
-                translation_offset: *translation_offset,
-                distance: None,
-                distance2: None,
-                angular_limits: angular_limits.clone(),
-                linear_limits: linear_limits.clone(),
-            },
-            Self::Revolute {
-                angle,
-                angular_limits,
-            } => JointScalars {
-                angle: *angle,
-                translation_offset: None,
-                distance: None,
-                distance2: None,
-                angular_limits: angular_limits.clone(),
-                linear_limits: None,
-            },
-            Self::Slider {
-                distance,
-                translation_offset,
-                linear_limits,
-            } => JointScalars {
-                angle: None,
-                translation_offset: *translation_offset,
-                distance: *distance,
-                distance2: None,
-                angular_limits: None,
-                linear_limits: linear_limits.clone(),
-            },
-            Self::Cylindrical {
-                angle,
-                distance,
-                angular_limits,
-                linear_limits,
-            } => JointScalars {
-                angle: *angle,
-                translation_offset: None,
-                distance: *distance,
-                distance2: None,
-                angular_limits: angular_limits.clone(),
-                linear_limits: linear_limits.clone(),
-            },
-            Self::Ball | Self::Parallel | Self::Perpendicular => JointScalars {
-                angle: None,
-                translation_offset: None,
-                distance: None,
-                distance2: None,
-                angular_limits: None,
-                linear_limits: None,
-            },
-            Self::Distance { distance } => JointScalars {
-                angle: None,
-                translation_offset: None,
-                distance: *distance,
-                distance2: None,
-                angular_limits: None,
-                linear_limits: None,
-            },
-            Self::Angle { angle } => JointScalars {
-                angle: *angle,
-                translation_offset: None,
-                distance: None,
-                distance2: None,
-                angular_limits: None,
-                linear_limits: None,
-            },
-            Self::RackPinion {
-                distance,
-                distance2,
-            }
-            | Self::Gears {
-                distance,
-                distance2,
-            }
-            | Self::Belt {
-                distance,
-                distance2,
-            } => JointScalars {
-                angle: None,
-                translation_offset: None,
-                distance: *distance,
-                distance2: *distance2,
-                angular_limits: None,
-                linear_limits: None,
-            },
-            Self::Screw { distance } => JointScalars {
-                angle: None,
-                translation_offset: None,
-                distance: *distance,
-                distance2: None,
-                angular_limits: None,
-                linear_limits: None,
-            },
-            Self::Native {
-                angle,
-                translation_offset,
-                distance,
-                distance2,
-                angular_limits,
-                linear_limits,
-                ..
-            } => JointScalars {
-                angle: *angle,
-                translation_offset: *translation_offset,
-                distance: *distance,
-                distance2: *distance2,
-                angular_limits: angular_limits.clone(),
-                linear_limits: linear_limits.clone(),
-            },
-        }
-    }
-
-    fn set_angular_limits(&mut self, limits: Option<JointLimits>) {
-        match self {
-            Self::Fixed { angular_limits, .. }
-            | Self::Revolute { angular_limits, .. }
-            | Self::Cylindrical { angular_limits, .. }
-            | Self::Native { angular_limits, .. } => *angular_limits = limits,
-            _ => {}
-        }
-    }
-}
-
-impl From<PairedJointKind> for JointKind {
-    fn from(kind: PairedJointKind) -> Self {
-        match kind {
-            PairedJointKind::Fixed { .. } => Self::Fixed,
-            PairedJointKind::Revolute { .. } => Self::Revolute,
-            PairedJointKind::Slider { .. } => Self::Slider,
-            PairedJointKind::Cylindrical { .. } => Self::Cylindrical,
-            PairedJointKind::Ball => Self::Ball,
-            PairedJointKind::Distance { .. } => Self::Distance,
-            PairedJointKind::Parallel => Self::Parallel,
-            PairedJointKind::Perpendicular => Self::Perpendicular,
-            PairedJointKind::Angle { .. } => Self::Angle,
-            PairedJointKind::RackPinion { .. } => Self::RackPinion,
-            PairedJointKind::Screw { .. } => Self::Screw,
-            PairedJointKind::Gears { .. } => Self::Gears,
-            PairedJointKind::Belt { .. } => Self::Belt,
-            PairedJointKind::Native { name, .. } => Self::Native(name),
-        }
-    }
-}
-
-impl TryFrom<JointKind> for PairedJointKind {
-    type Error = ();
-
-    fn try_from(kind: JointKind) -> Result<Self, Self::Error> {
-        Self::from_wire(
-            kind,
-            JointScalars {
-                angle: None,
-                translation_offset: None,
-                distance: None,
-                distance2: None,
-                angular_limits: None,
-                linear_limits: None,
-            },
-        )
-        .map_err(|_| ())
-    }
-}
-
 /// Neutral assembly constraint between connector frames.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct AssemblyJoint {
     /// Globally unique joint identity.
     pub id: JointId,
@@ -1587,6 +1486,11 @@ pub struct AssemblyJoint {
     /// Whether solving this joint is suppressed.
     pub suppressed: bool,
     /// Format-native joint record supplying this constraint.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
     pub native_ref: Option<String>,
 }
 
@@ -1617,7 +1521,7 @@ impl AssemblyJoint {
             id,
             JointOperands::Pair {
                 kind,
-                connectors,
+                connectors: Box::new(connectors),
                 offset_frames,
             },
         )
@@ -1632,360 +1536,58 @@ impl AssemblyJoint {
         }
     }
 
-    /// Returns the joint kinematic family.
-    pub(crate) fn kind(&self) -> JointKind {
-        match &self.operands {
-            JointOperands::Grounded { .. } => JointKind::Grounded,
-            JointOperands::Pair { kind, .. } => kind.clone().into(),
-        }
-    }
-
-    /// Paired family when this joint is not grounded.
-    #[must_use]
-    pub fn paired_kind(&self) -> Option<&PairedJointKind> {
-        match &self.operands {
-            JointOperands::Pair { kind, .. } => Some(kind),
-            JointOperands::Grounded { .. } => None,
-        }
-    }
-
-    /// Whether this joint grounds a single connector.
-    #[must_use]
-    pub fn is_grounded(&self) -> bool {
-        matches!(self.operands, JointOperands::Grounded { .. })
-    }
-
-    /// Returns the structurally complete operand and frame state.
-    pub fn operands(&self) -> &JointOperands {
-        &self.operands
-    }
-
     /// Visits every connector in operand order.
     pub fn connectors(&self) -> impl Iterator<Item = &JointConnector> {
         let slice: &[JointConnector] = match &self.operands {
             JointOperands::Grounded { connector, .. } => std::slice::from_ref(connector),
-            JointOperands::Pair { connectors, .. } => connectors,
+            JointOperands::Pair { connectors, .. } => connectors.as_slice(),
         };
         slice.iter()
     }
+}
 
-    /// Visits every attachment offset in operand order.
-    pub fn offset_frames(&self) -> impl Iterator<Item = &Transform> {
-        let slice: &[Transform] = match &self.operands {
-            JointOperands::Grounded {
-                offset_frame: Some(offset),
-                ..
-            } => std::slice::from_ref(offset),
-            JointOperands::Pair {
-                offset_frames: Some(offsets),
-                ..
-            } => offsets,
-            _ => &[],
-        };
-        slice.iter()
-    }
-
-    /// Per-connector detach flags in operand order. Grounded joints emit a false second flag.
-    #[must_use]
-    pub fn detached(&self) -> [bool; 2] {
-        match &self.operands {
-            JointOperands::Grounded { connector, .. } => [connector.detached, false],
-            JointOperands::Pair { connectors, .. } => {
-                [connectors[0].detached, connectors[1].detached]
-            }
-        }
-    }
-
-    fn pair_kind_mut(&mut self) -> Option<&mut PairedJointKind> {
-        match &mut self.operands {
-            JointOperands::Pair { kind, .. } => Some(kind),
-            JointOperands::Grounded { .. } => None,
-        }
-    }
-
-    fn scalars(&self) -> JointScalars {
-        self.paired_kind().map_or(
-            JointScalars {
-                angle: None,
-                translation_offset: None,
-                distance: None,
-                distance2: None,
-                angular_limits: None,
-                linear_limits: None,
-            },
-            PairedJointKind::scalars,
-        )
-    }
-
-    /// Angular offset in radians.
-    #[must_use]
-    pub fn angle(&self) -> Option<f64> {
-        self.scalars().angle
-    }
-
-    /// Connector-local translation offset in document length units.
-    #[must_use]
-    pub fn translation_offset(&self) -> Option<[f64; 3]> {
-        self.scalars().translation_offset
-    }
-
-    /// Primary linear offset in document length units.
-    #[must_use]
-    pub fn distance(&self) -> Option<f64> {
-        self.scalars().distance
-    }
-
-    /// Secondary linear offset in document length units.
-    #[must_use]
-    pub fn distance2(&self) -> Option<f64> {
-        self.scalars().distance2
-    }
-
-    /// Enabled angular interval in radians.
-    #[must_use]
-    pub fn angular_limits(&self) -> Option<&JointLimits> {
-        match self.paired_kind() {
-            Some(
-                PairedJointKind::Fixed { angular_limits, .. }
-                | PairedJointKind::Revolute { angular_limits, .. }
-                | PairedJointKind::Cylindrical { angular_limits, .. }
-                | PairedJointKind::Native { angular_limits, .. },
-            ) => angular_limits.as_ref(),
-            _ => None,
-        }
-    }
-
-    /// Enabled linear interval in document length units.
-    #[must_use]
-    pub fn linear_limits(&self) -> Option<&JointLimits> {
-        match self.paired_kind() {
-            Some(
-                PairedJointKind::Fixed { linear_limits, .. }
-                | PairedJointKind::Slider { linear_limits, .. }
-                | PairedJointKind::Cylindrical { linear_limits, .. }
-                | PairedJointKind::Native { linear_limits, .. },
-            ) => linear_limits.as_ref(),
-            _ => None,
-        }
-    }
-
-    /// Replace the angular interval when the joint family admits one.
-    pub fn set_angular_limits(&mut self, limits: Option<JointLimits>) {
-        if let Some(kind) = self.pair_kind_mut() {
-            kind.set_angular_limits(limits);
-        }
+#[cfg(test)]
+mod nonblank_literal_tests {
+    /// A whitespace-leading template fails the build, so the probe below is
+    /// the run-time reach the macro does not have: the `const { … }` block
+    /// evaluates the constructor at compile time at every use.
+    #[test]
+    fn a_formatted_literal_keeps_its_non_blank_prefix() {
+        assert_eq!(
+            cadmpeg_core::nonblank_literal!("sldprt:marker-relation:{}", 34).as_str(),
+            "sldprt:marker-relation:34"
+        );
+        assert_eq!(cadmpeg_core::nonblank_literal!("d6").as_str(), "d6");
     }
 }
 
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct AssemblyJointWire {
-    id: JointId,
-    kind: JointKind,
-    operands: Vec<JointOperand>,
-    frames: Vec<Transform>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    offset_frames: Vec<Transform>,
-    suppressed: bool,
-    detached: [bool; 2],
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    angle: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    translation_offset: Option<[f64; 3]>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    distance: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    distance2: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    angular_limits: Option<JointLimits>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    linear_limits: Option<JointLimits>,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    properties: BTreeMap<String, String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    native_ref: Option<String>,
-}
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_source_name, String, "source_name");
+cadmpeg_core::named_optional_field!(deserialize_label, String, "label");
+cadmpeg_core::named_optional_field!(deserialize_description, String, "description");
+cadmpeg_core::named_optional_field!(deserialize_part_number, String, "part_number");
+cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
+cadmpeg_core::named_optional_field!(deserialize_object, String, "object");
+cadmpeg_core::named_optional_field!(deserialize_linked_prototype, Transform, "linked_prototype");
+cadmpeg_core::named_optional_field!(deserialize_name, String, "name");
+cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");
+cadmpeg_core::named_optional_field!(deserialize_link, LinkState, "link");
+cadmpeg_core::named_optional_field!(deserialize_source, PrototypeReference, "source");
+cadmpeg_core::named_optional_field!(deserialize_group, PrototypeReference, "group");
+cadmpeg_core::named_optional_field!(deserialize_touched, bool, "touched");
+cadmpeg_core::named_optional_field!(deserialize_offset_frame, Transform, "offset_frame");
+cadmpeg_core::named_optional_field!(deserialize_offset_frames, [Transform; 2], "offset_frames");
+cadmpeg_core::named_optional_field!(deserialize_angle, FiniteReal, "angle");
+cadmpeg_core::named_optional_field!(
+    deserialize_translation_offset,
+    [FiniteReal; 3],
+    "translation_offset"
+);
+cadmpeg_core::named_optional_field!(deserialize_angular_limits, JointLimits, "angular_limits");
+cadmpeg_core::named_optional_field!(deserialize_linear_limits, JointLimits, "linear_limits");
+cadmpeg_core::named_optional_field!(deserialize_distance, FiniteReal, "distance");
+cadmpeg_core::named_optional_field!(deserialize_distance2, FiniteReal, "distance2");
 
-impl From<&AssemblyJoint> for AssemblyJointWire {
-    fn from(joint: &AssemblyJoint) -> Self {
-        let (operands, frames, offset_frames) = match &joint.operands {
-            JointOperands::Grounded {
-                connector,
-                offset_frame,
-            } => (
-                vec![connector.operand.clone()],
-                vec![connector.frame],
-                offset_frame.iter().copied().collect(),
-            ),
-            JointOperands::Pair {
-                connectors,
-                offset_frames,
-                ..
-            } => (
-                connectors
-                    .iter()
-                    .map(|connector| connector.operand.clone())
-                    .collect(),
-                connectors.iter().map(|connector| connector.frame).collect(),
-                offset_frames.iter().flatten().copied().collect::<Vec<_>>(),
-            ),
-        };
-        let scalars = joint.scalars();
-        Self {
-            id: joint.id.clone(),
-            kind: joint.kind(),
-            operands,
-            frames,
-            offset_frames,
-            suppressed: joint.suppressed,
-            detached: joint.detached(),
-            angle: scalars.angle,
-            translation_offset: scalars.translation_offset,
-            distance: scalars.distance,
-            distance2: scalars.distance2,
-            angular_limits: scalars.angular_limits,
-            linear_limits: scalars.linear_limits,
-            properties: BTreeMap::new(),
-            native_ref: joint.native_ref.clone(),
-        }
-    }
-}
+mod identity_rewrite;
 
-impl TryFrom<AssemblyJointWire> for AssemblyJoint {
-    type Error = &'static str;
-
-    fn try_from(wire: AssemblyJointWire) -> Result<Self, Self::Error> {
-        let AssemblyJointWire {
-            id,
-            kind,
-            operands,
-            frames,
-            offset_frames,
-            suppressed,
-            detached,
-            angle,
-            translation_offset,
-            distance,
-            distance2,
-            angular_limits,
-            linear_limits,
-            properties: _,
-            native_ref,
-        } = wire;
-        let mut joint = if kind == JointKind::Grounded {
-            if angle.is_some()
-                || translation_offset.is_some()
-                || distance.is_some()
-                || distance2.is_some()
-                || angular_limits.is_some()
-                || linear_limits.is_some()
-            {
-                return Err("grounded joint cannot carry scalar fields");
-            }
-            if detached[1] {
-                return Err("grounded joint cannot detach a second connector");
-            }
-            let [operand] = operands
-                .try_into()
-                .map_err(|_| "grounded joint must contain one operand")?;
-            let [frame] = frames
-                .try_into()
-                .map_err(|_| "grounded joint must contain one frame")?;
-            let offset_frame = match offset_frames.as_slice() {
-                [] => None,
-                [offset] => Some(*offset),
-                _ => return Err("grounded joint must contain zero or one offset frame"),
-            };
-            Self::grounded(
-                id,
-                JointConnector {
-                    operand,
-                    frame,
-                    detached: detached[0],
-                },
-                offset_frame,
-            )
-        } else {
-            let kind = PairedJointKind::from_wire(
-                kind,
-                JointScalars {
-                    angle,
-                    translation_offset,
-                    distance,
-                    distance2,
-                    angular_limits,
-                    linear_limits,
-                },
-            )?;
-            let [first_operand, second_operand] = operands
-                .try_into()
-                .map_err(|_| "paired joint must contain two operands")?;
-            let [first_frame, second_frame] = frames
-                .try_into()
-                .map_err(|_| "paired joint must contain two frames")?;
-            let offset_frames = if offset_frames.is_empty() {
-                None
-            } else {
-                Some(
-                    <Vec<Transform> as TryInto<[Transform; 2]>>::try_into(offset_frames)
-                        .map_err(|_| "paired joint must contain zero or two offset frames")?,
-                )
-            };
-            Self::paired(
-                id,
-                kind,
-                [
-                    JointConnector {
-                        operand: first_operand,
-                        frame: first_frame,
-                        detached: detached[0],
-                    },
-                    JointConnector {
-                        operand: second_operand,
-                        frame: second_frame,
-                        detached: detached[1],
-                    },
-                ],
-                offset_frames,
-            )
-        };
-        joint.suppressed = suppressed;
-        joint.native_ref = native_ref;
-        Ok(joint)
-    }
-}
-
-impl Serialize for AssemblyJoint {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        AssemblyJointWire::from(self).serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for AssemblyJoint {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        AssemblyJointWire::deserialize(deserializer)?
-            .try_into()
-            .map_err(serde::de::Error::custom)
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for AssemblyJoint {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "AssemblyJoint".into()
-    }
-
-    fn schema_id() -> std::borrow::Cow<'static, str> {
-        concat!(module_path!(), "::AssemblyJoint").into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        AssemblyJointWire::json_schema(generator)
-    }
-}
+mod serialization;

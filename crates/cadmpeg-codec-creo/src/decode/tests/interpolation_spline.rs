@@ -2,62 +2,116 @@
 //! Tests: interpolation spline.
 
 use crate::decode::analytic::equations::PlaneEquation;
-use crate::decode::feature_history::{
-    class_942_boundary_surface_entity_graph, draft_neutral_plane_selection,
-    feature_allows_linear_extrusion, feature_is_sheet_extrusion, feature_surface_transitions,
-    filled_surface_feature_definition, named_feature_definition, new_sheet_output_surface_id,
-    numbered_feature_name_has_family, preceding_features_establish_body,
-    reference_named_feature_definition, schema_feature_definition, section_profile_ref,
+use crate::decode::feature_history::draft::{
+    class_942_boundary_surface_entity_graph, feature_allows_linear_extrusion,
+    feature_is_sheet_extrusion, numbered_feature_name_has_family,
+    preceding_features_establish_body, schema_feature_definition,
     section_sweep_allows_linear_extrusion, section_sweep_boolean_operation,
-    surface_transition_dependencies, sweep_output_kind, thicken_plane_offset,
 };
-use crate::decode::holes::{
-    circular_sweep_cylinder_from_cap_outlines, circular_sweep_feature_definition,
-    cylinder_from_single_cap_outline, extrusion_extent_and_direction,
-    hole_cylinder_from_cap_outlines, hole_extent_and_direction, hole_placement,
-    CircularSweepGeometry, ExtrusionSpan,
+use crate::decode::feature_history::knit::{
+    draft_neutral_plane_selection, feature_surface_transitions, filled_surface_feature_definition,
+    surface_transition_dependencies, thicken_plane_offset,
 };
+use crate::decode::feature_history::named::{
+    named_feature_definition, reference_named_feature_definition,
+};
+use crate::decode::feature_history::outputs::{new_sheet_output_surface_id, sweep_output_kind};
+use crate::decode::holes::placement::ExtrusionSpan;
+use crate::decode::holes::sweep::extrusion_extent_and_direction;
 use crate::decode::sketch_transfer::recipe::{
     current_additive_feature_recipe, current_feature_recipe, current_feature_recipe_parent,
 };
-use crate::decode::sketch_transfer::skamp_constraints::sketch_constraint_loci_compatible;
-use crate::decode::sweep::{
-    arcs_intersect, circular_section_profile_from_cylinder, connected_sketch_profile_vertices,
-    extrusion_brep_side_surface, extrusion_cap_pcurve, extrusion_profile_signed_area,
-    extrusion_side_uvs, line_arc_intersect, ordered_extrusion_profiles, profile_segments_intersect,
-    profile_strictly_contains, resolved_sketch_profiles, ExtrusionProfile,
+use crate::decode::sweep::nurbs::extrusion_brep_side_surface;
+use crate::decode::sweep::profiles::ProfileEntity;
+use crate::decode::sweep::profiles::{
+    arcs_intersect, extrusion_cap_pcurve, extrusion_side_uvs, line_arc_intersect,
+    ordered_extrusion_profiles, profile_segments_intersect, profile_strictly_contains,
+    resolved_sketch_profiles, ExtrusionProfile,
 };
 use crate::decode::uniqueness::unique_feature_profile_definition;
 use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    Angle, AngularTermination, BooleanOp, ChamferSpec, EdgeSelection, ExtrudeDirection,
+    edge_treatments::ChamferSpec, AngularTermination, BooleanOp, EdgeSelection, ExtrudeDirection,
     ExtrudeExtent, ExtrudeSide, FaceSelection, Feature, FeatureDefinition as IrFeatureDefinition,
-    FeatureId as IrFeatureId, Length, LinearTermination, PathRef, ProfileRef, SurfaceBoundary,
-    ThickenSide, UnresolvedFamily,
+    FeatureId as IrFeatureId, FeatureOperation as IrFeatureOperation, LinearTermination, PathRef,
+    PlanarProfileRef, ProfileRef, SurfaceBoundary, ThickenSide, UnresolvedFamily,
 };
-use cadmpeg_ir::geometry::{PcurveGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    pcurve::PcurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+};
 use cadmpeg_ir::ids::{BodyId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{
-    Sketch, SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchEntityUse,
-    SketchGeometry, SketchId, SketchLocus,
+    Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
+    SketchGeometryDefinition, SketchId,
 };
 use cadmpeg_ir::topology::BodyKind;
 use std::collections::BTreeMap;
 
+fn draft_neutral_plane_selection_with_service(
+    scan: &crate::container::ContainerScan<'_>,
+    feature_id: u32,
+) -> FaceSelection {
+    crate::decode::with_test_decode_ctx(|ctx| draft_neutral_plane_selection(ctx, scan, feature_id))
+        .expect("service profile admits draft neutral plane selection")
+}
+
+fn thicken_plane_offset_with_service(
+    transitions: &[(u32, u32)],
+    planes: &BTreeMap<u32, PlaneEquation>,
+    rows: &[crate::surface::SurfaceRow],
+) -> Option<(f64, ThickenSide)> {
+    crate::decode::with_test_decode_ctx(|ctx| thicken_plane_offset(ctx, transitions, planes, rows))
+        .expect("service profile admits thicken plane offsets")
+}
+
+fn feature_surface_transitions_with_service(
+    feature_id: u32,
+    tables: &[crate::feature::entity::FeatureEntityTable],
+    rows: &[crate::surface::SurfaceRow],
+) -> Option<Vec<(u32, u32)>> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        feature_surface_transitions(ctx, feature_id, tables, rows)
+    })
+    .expect("service profile admits surface transitions")
+}
+
+fn surface_transition_dependencies_with_service(
+    feature_id: u32,
+    tables: &[crate::feature::entity::FeatureEntityTable],
+    rows: &[crate::surface::SurfaceRow],
+) -> Vec<u32> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        surface_transition_dependencies(ctx, feature_id, tables, rows)
+    })
+    .expect("service profile admits transition dependencies")
+}
+
 const EPS_FULL_TURN: f64 = 1e-12;
+
+fn finite_local_system(values: [f64; 12]) -> cadmpeg_ir::units::FiniteVector<12> {
+    cadmpeg_ir::units::FiniteVector::new(values).expect("finite local system fixture")
+}
 
 #[test]
 // These checked constructors must accept the explicit test fixtures.
 #[allow(clippy::unwrap_used)]
 fn interpolation_spline_remains_a_closed_extrusion_profile() {
-    let sketch_id = SketchId("creo:model:sketch#spline".to_string());
-    let spline_id = SketchEntityId("creo:model:sketch_entity#spline".to_string());
-    let first_line_id = SketchEntityId("creo:model:sketch_entity#first-line".to_string());
-    let second_line_id = SketchEntityId("creo:model:sketch_entity#second-line".to_string());
-    let spline = SketchGeometry::Nurbs {
-        curve: cadmpeg_ir::geometry::PcurveNurbs::new(
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let sketch_id = SketchId::mint("creo:model:sketch#spline".to_string()).unwrap();
+    let spline_id = SketchEntityId::mint("creo:model:sketch_entity#spline".to_string()).unwrap();
+    let first_line_id =
+        SketchEntityId::mint("creo:model:sketch_entity#first-line".to_string()).unwrap();
+    let second_line_id =
+        SketchEntityId::mint("creo:model:sketch_entity#second-line".to_string()).unwrap();
+    let spline = SketchGeometry::nurbs(
+        cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             3,
             vec![2.0, 2.0, 2.0, 2.0, 5.0, 5.0, 5.0, 5.0],
             vec![
@@ -69,24 +123,27 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
             Some(vec![1.0, 0.75, 0.75, 1.0]),
             false,
         )
+        .expect("fixture pcurve construction admission")
         .unwrap(),
-    };
-    let first_line = SketchGeometry::Line {
+    );
+    let first_line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
         start: Point2::new(0.0, 1.0),
         end: Point2::new(0.0, 0.0),
-    };
-    let second_line = SketchGeometry::Line {
+    })
+    .unwrap();
+    let second_line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
         start: Point2::new(0.0, 0.0),
         end: Point2::new(1.0, 0.0),
-    };
+    })
+    .unwrap();
     let mut ir = CadIr::empty();
     ir.model.sketches.push(Sketch {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved,
-        profiles: vec![vec![
+        placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved {},
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![vec![
             SketchEntityUse {
                 entity: spline_id.clone(),
                 reversed: false,
@@ -99,7 +156,8 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
                 entity: second_line_id.clone(),
                 reversed: false,
             },
-        ]],
+        ]])
+        .unwrap(),
         native_ref: None,
     });
     for (id, geometry) in [
@@ -112,54 +170,104 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
             .push(SketchEntity::new(id, sketch_id.clone(), geometry));
     }
 
-    let profiles = resolved_sketch_profiles(&ir, &sketch_id, 1).expect("spline profile");
-    assert_eq!(profiles[0][0].2, [1.0, 0.0]);
-    assert_eq!(profiles[0][0].3, [0.0, 1.0]);
-    let (ordered, area) = ordered_extrusion_profiles(profiles.clone()).expect("closed spline");
-    assert_eq!(ordered, profiles);
+    let profiles = crate::decode::with_test_decode_ctx(|ctx| {
+        resolved_sketch_profiles(
+            ctx,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            &sketch_id,
+            1,
+        )
+    })
+    .expect("resource admission")
+    .expect("spline profile");
+    assert_eq!(profiles[0][0].start(), [1.0, 0.0]);
+    assert_eq!(profiles[0][0].end(), [0.0, 1.0]);
+    let ordered = ordered_extrusion_profiles(&ctx, profiles.clone())
+        .expect("service ordering resources")
+        .expect("closed spline");
+    let area = ordered[0].area();
+    assert_eq!(
+        ordered
+            .iter()
+            .map(|profile| profile.entities().clone())
+            .collect::<Vec<_>>(),
+        profiles
+    );
     assert!(area > 0.0);
-    assert!(profile_strictly_contains(&profiles[0], [0.2, 0.2]));
-    assert!(!profile_strictly_contains(&profiles[0], [2.0, 2.0]));
-    let diagonal = (
-        SketchGeometry::Nurbs {
-            curve: cadmpeg_ir::geometry::PcurveNurbs::new(
+    assert!(profile_strictly_contains(&ctx, &profiles[0], [0.2, 0.2]).expect("service containment"));
+    assert!(
+        !profile_strictly_contains(&ctx, &profiles[0], [2.0, 2.0]).expect("service containment")
+    );
+    let diagonal = ProfileEntity::new(
+        &ctx,
+        SketchGeometry::nurbs(
+            cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
                 None,
                 false,
             )
+            .expect("fixture pcurve construction admission")
             .unwrap(),
-        },
+        ),
         false,
-        [0.0, 0.0],
-        [1.0, 1.0],
-    );
-    let crossing_line = (
-        SketchGeometry::Line {
+    )
+    .expect("service profile resources")
+    .expect("valid profile entity");
+    let crossing_line = ProfileEntity::new(
+        &ctx,
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 1.0),
             end: Point2::new(1.0, 0.0),
-        },
+        })
+        .unwrap(),
         false,
-        [0.0, 1.0],
-        [1.0, 0.0],
+    )
+    .expect("service profile resources")
+    .expect("valid profile entity");
+    assert!(
+        profile_segments_intersect(&ctx, &diagonal, &crossing_line, 1.0e-9, [None, None])
+            .expect("service intersection resources")
     );
-    assert!(profile_segments_intersect(
-        &diagonal,
-        &crossing_line,
-        1.0e-9
-    ));
 
     for reversed in [false, true] {
         let start = if reversed { [0.0, 1.0] } else { [1.0, 0.0] };
         let end = if reversed { [1.0, 0.0] } else { [0.0, 1.0] };
-        let pcurve = extrusion_cap_pcurve(&spline, reversed, start, end);
+        let pcurve = crate::decode::with_test_decode_ctx(|ctx| {
+            extrusion_cap_pcurve(
+                ctx,
+                &spline,
+                reversed,
+                start,
+                end,
+                &"spline extrusion cap fixture",
+                &mut crate::lane_refusal::LaneRefusals::new(),
+            )
+        })
+        .expect("resource admission")
+        .unwrap();
         let PcurveGeometry::Nurbs { nurbs } = &pcurve else {
             panic!("spline cap pcurve is not NURBS");
         };
-        assert_eq!(nurbs.weights(), Some(&[1.0, 0.75, 0.75, 1.0][..]));
-        let first = cadmpeg_ir::eval::pcurve_uv(&pcurve, 2.0).expect("spline start");
-        let last = cadmpeg_ir::eval::pcurve_uv(&pcurve, 5.0).expect("spline end");
+        assert_eq!(
+            nurbs.pole_rows().weights(),
+            Some(vec![1.0, 0.75, 0.75, 1.0])
+        );
+        let first = cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &pcurve,
+            2.0,
+        )
+        .expect("spline start");
+        let last = cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &pcurve,
+            5.0,
+        )
+        .expect("spline end");
         assert!((first.u - start[0]).abs() < 1.0e-12);
         assert!((first.v - start[1]).abs() < 1.0e-12);
         assert!((last.u - end[0]).abs() < 1.0e-12);
@@ -170,10 +278,7 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
                 reversed,
                 start,
                 end,
-                ExtrusionSpan {
-                    lower: -2.0,
-                    upper: 3.0,
-                },
+                ExtrusionSpan::new(-2.0, 3.0).expect("valid span fixture"),
             ),
             [
                 [[2.0, 0.0], [5.0, 0.0]],
@@ -184,45 +289,70 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
         );
     }
 
-    let transform = crate::placement::FeatureSectionTransform {
-        definition_id: 1,
-        feature_id: Some(1),
-        origin: [10.0, 20.0, 30.0],
-        u_axis: [1.0, 0.0, 0.0],
-        v_axis: [0.0, 1.0, 0.0],
-        normal: [0.0, 0.0, 1.0],
-        offset: 0,
-    };
+    let transform = crate::placement::FeatureSectionTransform::new(
+        1,
+        Some(1),
+        [10.0, 20.0, 30.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        0,
+    )
+    .expect("valid section frame");
+    let mut refusal = crate::lane_refusal::LaneRefusals::new();
+    let mut diagnostics =
+        crate::lane_refusal::LaneRefusalContext::new(&"spline side surface fixture", &mut refusal);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test decode context");
     let side = extrusion_brep_side_surface(
+        &ctx,
         &transform,
         &spline,
         false,
-        [1.0, 0.0],
-        [0.0, 1.0],
-        ExtrusionSpan {
-            lower: -2.0,
-            upper: 3.0,
-        },
+        [[1.0, 0.0], [0.0, 1.0]],
+        ExtrusionSpan::new(-2.0, 3.0).expect("valid span fixture"),
+        &mut diagnostics,
     )
+    .expect("spline side surface resources")
     .expect("spline side surface");
-    let SurfaceGeometry::Nurbs(side) = side else {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(side)) = side else {
         panic!("spline side surface is not NURBS");
     };
     assert_eq!((side.u_degree(), side.v_degree()), (3, 1));
-    assert_eq!(side.u_knots(), [2.0, 2.0, 2.0, 2.0, 5.0, 5.0, 5.0, 5.0]);
-    assert_eq!(side.v_knots(), [0.0, 0.0, 1.0, 1.0]);
-    assert_eq!(side.control_points()[0], Point3::new(11.0, 20.0, 28.0));
-    assert_eq!(side.control_points()[1], Point3::new(11.0, 20.0, 33.0));
-    assert_eq!(side.control_points()[6], Point3::new(10.0, 21.0, 28.0));
-    assert_eq!(side.control_points()[7], Point3::new(10.0, 21.0, 33.0));
     assert_eq!(
-        side.weights(),
-        Some(&[1.0, 1.0, 0.75, 0.75, 0.75, 0.75, 1.0, 1.0][..])
+        side.u_knots().as_slice(),
+        [2.0, 2.0, 2.0, 2.0, 5.0, 5.0, 5.0, 5.0]
+    );
+    assert_eq!(side.v_knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(
+        side.poles().into_iter().next().unwrap(),
+        Point3::new(11.0, 20.0, 28.0)
+    );
+    assert_eq!(
+        side.poles().into_iter().nth(1).unwrap(),
+        Point3::new(11.0, 20.0, 33.0)
+    );
+    assert_eq!(
+        side.poles().into_iter().nth(6).unwrap(),
+        Point3::new(10.0, 21.0, 28.0)
+    );
+    assert_eq!(
+        side.poles().into_iter().nth(7).unwrap(),
+        Point3::new(10.0, 21.0, 33.0)
+    );
+    assert_eq!(
+        side.pole_grid().weights().map(|rows| rows.concat()),
+        Some([1.0, 1.0, 0.75, 0.75, 0.75, 0.75, 1.0, 1.0].to_vec())
     );
 }
 
 #[test]
 fn extrusion_profiles_require_one_oppositely_oriented_hole() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
     let rectangle = |minimum: [f64; 2], maximum: [f64; 2], clockwise: bool| {
         let mut points = [
             minimum,
@@ -237,35 +367,47 @@ fn extrusion_profiles_require_one_oppositely_oriented_hole() {
             .map(|index| {
                 let start = points[index];
                 let end = points[(index + 1) % 4];
-                (
-                    SketchGeometry::Line {
+                ProfileEntity::new(
+                    &ctx,
+                    SketchGeometry::try_from(SketchGeometryDefinition::Line {
                         start: Point2::new(start[0], start[1]),
                         end: Point2::new(end[0], end[1]),
-                    },
+                    })
+                    .expect("valid test fixture"),
                     false,
-                    start,
-                    end,
                 )
+                .expect("service profile resources")
+                .expect("valid profile entity")
             })
             .collect::<ExtrusionProfile>()
     };
     let outer = rectangle([-2.0, -2.0], [2.0, 2.0], false);
     let hole = rectangle([-1.0, -1.0], [1.0, 1.0], true);
-    let (profiles, outer_area) = ordered_extrusion_profiles(vec![hole.clone(), outer.clone()])
+    let profiles = ordered_extrusion_profiles(&ctx, vec![hole.clone(), outer.clone()])
+        .expect("service ordering resources")
         .expect("strict outer and hole");
-    assert_eq!(profiles[0], outer);
+    let outer_area = profiles[0].area();
+    assert_eq!(profiles[0].entities(), &outer);
     assert!(outer_area > 0.0);
-    assert!(extrusion_profile_signed_area(&profiles[1]).expect("hole area") < 0.0);
+    assert!(profiles[1].area() < 0.0);
 
-    assert!(ordered_extrusion_profiles(vec![
-        rectangle([-2.0, -2.0], [2.0, 2.0], false),
-        rectangle([-1.0, -1.0], [1.0, 1.0], false),
-    ])
+    assert!(ordered_extrusion_profiles(
+        &ctx,
+        vec![
+            rectangle([-2.0, -2.0], [2.0, 2.0], false),
+            rectangle([-1.0, -1.0], [1.0, 1.0], false),
+        ]
+    )
+    .expect("service ordering resources")
     .is_none());
-    assert!(ordered_extrusion_profiles(vec![
-        rectangle([-2.0, -2.0], [2.0, 2.0], false),
-        rectangle([1.0, -1.0], [3.0, 1.0], true),
-    ])
+    assert!(ordered_extrusion_profiles(
+        &ctx,
+        vec![
+            rectangle([-2.0, -2.0], [2.0, 2.0], false),
+            rectangle([1.0, -1.0], [3.0, 1.0], true),
+        ]
+    )
+    .expect("service ordering resources")
     .is_none());
 
     let circular_hole = [
@@ -278,26 +420,32 @@ fn extrusion_profiles_require_one_oppositely_oriented_hole() {
         ),
     ]
     .into_iter()
-    .map(|(end_angle, start_angle, start, end)| {
-        (
-            SketchGeometry::Arc {
+    .map(|(end_angle, start_angle, _, _)| {
+        ProfileEntity::new(
+            &ctx,
+            SketchGeometry::try_from(SketchGeometryDefinition::Arc {
                 center: Point2::new(0.0, 0.0),
-                radius: Length(0.5),
-                start_angle: Angle(start_angle),
-                end_angle: Angle(end_angle),
-            },
+                radius: Length::new(0.5).expect("finite length fixture"),
+                start_angle: Angle::new(start_angle).expect("finite angle fixture"),
+                end_angle: Angle::new(end_angle).expect("finite angle fixture"),
+            })
+            .expect("valid test fixture"),
             true,
-            start,
-            end,
         )
+        .expect("service profile resources")
+        .expect("valid profile entity")
     })
     .collect::<ExtrusionProfile>();
-    let (profiles, _) = ordered_extrusion_profiles(vec![
-        circular_hole,
-        rectangle([-2.0, -2.0], [2.0, 2.0], false),
-    ])
+    let profiles = ordered_extrusion_profiles(
+        &ctx,
+        vec![circular_hole, rectangle([-2.0, -2.0], [2.0, 2.0], false)],
+    )
+    .expect("service ordering resources")
     .expect("arc-bounded hole");
-    assert!(matches!(profiles[1][0].0, SketchGeometry::Arc { .. }));
+    assert!(matches!(
+        profiles[1].entities()[0].geometry(),
+        crate::decode::sweep::profiles::ProfileGeometry::Arc { .. }
+    ));
 }
 
 #[test]
@@ -307,21 +455,25 @@ fn extrusion_profile_intersections_include_analytic_tangency() {
         [[-2.0, 1.0], [2.0, 1.0]],
         full_upper_circle,
         1.0e-9,
+        [None, None]
     ));
     assert!(!line_arc_intersect(
         [[-2.0, 1.1], [2.0, 1.1]],
         full_upper_circle,
         1.0e-9,
+        [None, None]
     ));
     assert!(arcs_intersect(
         full_upper_circle,
         ([2.0, 0.0], 1.0, std::f64::consts::PI, std::f64::consts::PI),
         1.0e-9,
+        [None, None]
     ));
     assert!(!arcs_intersect(
         full_upper_circle,
         ([3.0, 0.0], 1.0, std::f64::consts::PI, std::f64::consts::PI),
         1.0e-9,
+        [None, None]
     ));
 }
 
@@ -343,7 +495,8 @@ fn equal_opposite_cap_planes_define_symmetric_extent() {
             ExtrudeExtent::Symmetric {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(8.0)
+                        length: cadmpeg_ir::scalar::NonZeroLength::new(8.0)
+                            .expect("nonzero length fixture")
                     },
                     draft: None,
                 }
@@ -355,7 +508,7 @@ fn equal_opposite_cap_planes_define_symmetric_extent() {
 
 #[test]
 fn cap_proof_classifies_section_sweeps_without_overriding_revolves() {
-    use crate::feature::FeatureRecipeKind::{Extrude, Revolve};
+    use crate::feature::operations::FeatureRecipeKind::{Extrude, Revolve};
 
     assert!(section_sweep_allows_linear_extrusion(
         Some(SchemaClass::Cut),
@@ -382,14 +535,14 @@ fn cap_proof_classifies_section_sweeps_without_overriding_revolves() {
 
 #[test]
 fn unresolved_display_state_family_blocks_schema_sweep_fallback() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features
         .operations
-        .push(crate::feature::FeatureOperation {
+        .push(crate::feature::operations::FeatureOperation {
             feature_id: 917,
-            kind: crate::feature::OperationKind::Native,
+            kind: crate::feature::operations::OperationKind::Native,
             name: crate::feature::operations::OperationName::Derived,
-            recipe: crate::feature::RecipeResolution::None,
+            recipe: crate::feature::operations::RecipeResolution::None,
             display_state_conflict: true,
             depdb: Some(crate::feature::operations::DepdbPrefix {
                 schema: crate::feature::schema::SchemaClass::Protrusion,
@@ -400,24 +553,24 @@ fn unresolved_display_state_family_blocks_schema_sweep_fallback() {
         });
 
     assert!(!feature_allows_linear_extrusion(&scan, 917));
-    scan.features.operations[0].kind = crate::feature::OperationKind::Extrude;
+    scan.features.operations[0].kind = crate::feature::operations::OperationKind::Extrude;
     assert!(feature_allows_linear_extrusion(&scan, 917));
 }
 
 #[test]
 fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features
         .operations
-        .push(crate::feature::FeatureOperation {
+        .push(crate::feature::operations::FeatureOperation {
             feature_id: 942,
-            kind: crate::feature::OperationKind::Stored("Surface".to_string()),
+            kind: crate::feature::operations::OperationKind::Stored("Surface".to_string()),
             name: crate::feature::operations::OperationName::Stored {
                 bytes: b"Surface id 942".to_vec(),
                 keyword: crate::feature::operations::IdKeyword::Id,
                 prefix: None,
             },
-            recipe: crate::feature::RecipeResolution::None,
+            recipe: crate::feature::operations::RecipeResolution::None,
             display_state_conflict: false,
             depdb: Some(crate::feature::operations::DepdbPrefix {
                 schema: crate::feature::schema::SchemaClass::Surface,
@@ -428,7 +581,7 @@ fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
         });
     scan.features
         .reference_names
-        .push(crate::feature::FeatureReferenceName {
+        .push(crate::feature::operations::FeatureReferenceName {
             feature_id: 942,
             name_bytes: b"Extrude 1".to_vec(),
             own_reference_id: 1,
@@ -443,19 +596,22 @@ fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
         Some(BodyKind::Sheet)
     );
     assert!(matches!(
-        schema_feature_definition(
+        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(
+            ctx,
             &scan,
             &CadIr::empty(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
             942,
             Some(SchemaClass::Surface),
             "Surface"
-        ),
-        IrFeatureDefinition::Extrude {
-            profile: ProfileRef::Unresolved(_),
+        ))
+        .expect("valid test fixture"),
+        IrFeatureDefinition::Operation(IrFeatureOperation::Extrude {
+            profile: ProfileRef::Planar(PlanarProfileRef::Unresolved(_)),
             op: BooleanOp::NewBody,
             solid: Some(false),
             ..
-        }
+        })
     ));
 
     scan.features.reference_names[0].name_bytes = b"Boundary Blend 1".to_vec();
@@ -466,33 +622,36 @@ fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
         None
     );
     assert!(matches!(
-        schema_feature_definition(
+        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(
+            ctx,
             &scan,
             &CadIr::empty(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
             942,
             Some(SchemaClass::Surface),
             "Surface"
-        ),
-        IrFeatureDefinition::Unresolved {
+        ))
+        .expect("valid test fixture"),
+        IrFeatureDefinition::Operation(IrFeatureOperation::Unresolved {
             family: UnresolvedFamily::BoundarySurface
-        }
+        })
     ));
 }
 
 #[test]
 fn class_942_schema_state_precedes_surface_body_tree_fallback() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features
         .operations
-        .push(crate::feature::FeatureOperation {
+        .push(crate::feature::operations::FeatureOperation {
             feature_id: 942,
-            kind: crate::feature::OperationKind::Stored("Surface".to_string()),
+            kind: crate::feature::operations::OperationKind::Stored("Surface".to_string()),
             name: crate::feature::operations::OperationName::Stored {
                 bytes: b"Surface id 942".to_vec(),
                 keyword: crate::feature::operations::IdKeyword::Id,
                 prefix: None,
             },
-            recipe: crate::feature::RecipeResolution::None,
+            recipe: crate::feature::operations::RecipeResolution::None,
             display_state_conflict: false,
             depdb: Some(crate::feature::operations::DepdbPrefix {
                 schema: crate::feature::schema::SchemaClass::Surface,
@@ -503,25 +662,25 @@ fn class_942_schema_state_precedes_surface_body_tree_fallback() {
         });
 
     assert!(matches!(
-        schema_feature_definition(&scan, &CadIr::empty(), 942, Some(SchemaClass::Surface), "Surface"),
-        IrFeatureDefinition::Native { kind, .. } if kind.as_str() == "Surface"
+        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(ctx, &scan, &CadIr::empty(), &crate::decode::source_carriers::SourceUnitCarriers::default(), 942, Some(SchemaClass::Surface), "Surface")).expect("valid test fixture"),
+        IrFeatureDefinition::Operation(IrFeatureOperation::Native { kind, .. }) if kind.as_str() == "Surface"
     ));
 }
 
 #[test]
 fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features
         .operations
-        .push(crate::feature::FeatureOperation {
+        .push(crate::feature::operations::FeatureOperation {
             feature_id: 942,
-            kind: crate::feature::OperationKind::Stored("Surface".to_string()),
+            kind: crate::feature::operations::OperationKind::Stored("Surface".to_string()),
             name: crate::feature::operations::OperationName::Stored {
                 bytes: b"Surface id 942".to_vec(),
                 keyword: crate::feature::operations::IdKeyword::Id,
                 prefix: None,
             },
-            recipe: crate::feature::RecipeResolution::None,
+            recipe: crate::feature::operations::RecipeResolution::None,
             display_state_conflict: false,
             depdb: Some(crate::feature::operations::DepdbPrefix {
                 schema: crate::feature::schema::SchemaClass::Surface,
@@ -532,45 +691,45 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
         });
     scan.features
         .reference_names
-        .push(crate::feature::FeatureReferenceName {
+        .push(crate::feature::operations::FeatureReferenceName {
             feature_id: 942,
             name_bytes: b"Extrude 1".to_vec(),
             own_reference_id: 1,
             reference_type: 0,
             offset: 0,
         });
-    scan.features
-        .section_transforms
-        .push(crate::placement::FeatureSectionTransform {
-            definition_id: 1,
-            feature_id: Some(942),
-            origin: [0.0, 0.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
-            v_axis: [0.0, 1.0, 0.0],
-            normal: [0.0, 0.0, 1.0],
-            offset: 0,
-        });
-    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
-        payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+    scan.features.section_transforms.push(
+        crate::placement::FeatureSectionTransform::new(
+            1,
+            Some(942),
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            0,
+        )
+        .expect("valid section frame"),
+    );
+    let entry =
+        |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
+            payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
 
-        entity_id,
-        class_id,
-        prefixed: false,
-        offset: 0,
-        end_offset: 0,
-        is_surface: false,
-    };
+            entity_id,
+            prefixed: false,
+            offset: 0,
+            end_offset: 0,
+        };
     scan.features.entity_tables.push(
-        crate::feature::FeatureEntityTable {
-            feature_id: 942,
-            table_class_id: 29,
-            entries: vec![
+        crate::feature::entity::FeatureEntityTable::new(
+            942,
+            29,
+            vec![
                 entry(31, 204, None),
                 entry(32, 203, None),
                 entry(33, 200, Some(11)),
             ],
-            offset: 0,
-        }
+            &std::collections::BTreeSet::new(),
+            0,
+        )
         .with_surface_ids([31, 32, 33]),
     );
     let row = |id| crate::surface::SurfaceRow {
@@ -580,24 +739,27 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
         reversed: false,
         boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
-        offset: id as usize,
+        offset: usize::try_from(id).expect("fixture index fits usize"),
     };
     scan.surfaces.rows.extend([row(31), row(32), row(33)]);
     let plane = |id, z| Surface {
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, z),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, z),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("valid PlaneSurface fixture"),
+        )),
         source_object: None,
     };
     let mut ir = CadIr::empty();
     ir.model.surfaces.extend([plane(31, 2.0), plane(32, 8.0)]);
 
     assert!(matches!(
-        schema_feature_definition(&scan, &ir, 942, Some(SchemaClass::Surface), "Surface"),
-        IrFeatureDefinition::Extrude {
+        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(ctx, &scan, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(), 942, Some(SchemaClass::Surface), "Surface")).expect("valid test fixture"),
+        IrFeatureDefinition::Operation(IrFeatureOperation::Extrude {
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                 vector: direction,
                 ..
@@ -605,7 +767,7 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(6.0),
+                        length: actual_length,
                     },
                     ..
                 }
@@ -613,7 +775,7 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
             op: BooleanOp::NewBody,
             solid: Some(false),
             ..
-        } if direction == Vector3::new(0.0, 0.0, 1.0)
+        }) if (direction == Vector3::new(0.0, 0.0, 1.0)) && actual_length.get() == 6.0
     ));
 }
 
@@ -626,59 +788,65 @@ fn numbered_reference_name_selects_only_its_exact_feature_family() {
     assert!(!numbered_feature_name_has_family("GThicken 1", "Thicken"));
     assert!(matches!(
         reference_named_feature_definition("Boundary Blend 1"),
-        Some(IrFeatureDefinition::Unresolved {
-            family: UnresolvedFamily::BoundarySurface
-        })
+        Some(IrFeatureDefinition::Operation(
+            IrFeatureOperation::Unresolved {
+                family: UnresolvedFamily::BoundarySurface
+            }
+        ))
     ));
     assert!(matches!(
         reference_named_feature_definition("Thicken 1"),
-        Some(IrFeatureDefinition::Thicken {
-            faces: FaceSelection::Unresolved,
-            thickness: None,
-            side: None,
-        })
+        Some(IrFeatureDefinition::Operation(
+            IrFeatureOperation::Thicken {
+                faces: FaceSelection::Unresolved,
+                thickness: None,
+                side: None,
+            }
+        ))
     ));
     assert!(reference_named_feature_definition("Fill 1").is_none());
     assert!(matches!(
         reference_named_feature_definition("Merge 2"),
-        Some(IrFeatureDefinition::KnitSurface {
-            faces: FaceSelection::Unresolved,
-            merge_entities: Some(true),
-            create_solid: Some(false),
-            gap_tolerance: None,
-        })
+        Some(IrFeatureDefinition::Operation(
+            IrFeatureOperation::KnitSurface {
+                faces: FaceSelection::Unresolved,
+                merge_entities: Some(true),
+                create_solid: Some(false),
+                gap_tolerance: None,
+            }
+        ))
     ));
     assert!(reference_named_feature_definition("Extrude 2").is_none());
 }
 
 #[test]
 fn feature_surface_transitions_require_complete_unique_predecessor_chains() {
-    let entry = |entity_id, class_id, related_entity_id| crate::feature::FeatureEntityTableEntry {
-        payload: crate::feature::entry_payload(
-            class_id,
-            None,
-            related_entity_id,
-            related_entity_id.map(|_| 0),
-        ),
+    let entry =
+        |entity_id, class_id, related_entity_id| crate::feature::entity::FeatureEntityTableEntry {
+            payload: crate::feature::entity::entry_payload(
+                class_id,
+                None,
+                related_entity_id,
+                related_entity_id.map(|_| 0),
+            ),
 
-        entity_id,
-        class_id,
-        prefixed: true,
-        offset: entity_id as usize,
-        end_offset: entity_id as usize,
-        is_surface: false,
-    };
-    let table = crate::feature::FeatureEntityTable {
-        feature_id: 17,
-        table_class_id: 80,
-        entries: vec![
+            entity_id,
+            prefixed: true,
+            offset: usize::try_from(entity_id).expect("fixture index fits usize"),
+            end_offset: usize::try_from(entity_id).expect("fixture index fits usize"),
+        };
+    let table = crate::feature::entity::FeatureEntityTable::new(
+        17,
+        80,
+        vec![
             entry(101, 214, Some(11)),
             entry(201, 210, Some(101)),
             entry(102, 214, Some(12)),
             entry(202, 210, Some(102)),
         ],
-        offset: 0,
-    }
+        &std::collections::BTreeSet::new(),
+        0,
+    )
     .with_surface_ids([201, 202]);
     let row = |id, feature_id| crate::surface::SurfaceRow {
         id,
@@ -687,59 +855,75 @@ fn feature_surface_transitions_require_complete_unique_predecessor_chains() {
         reversed: false,
         boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
-        offset: id as usize,
+        offset: usize::try_from(id).expect("fixture index fits usize"),
     };
     let rows = vec![row(11, 3), row(12, 4), row(201, 17), row(202, 17)];
 
     assert_eq!(
-        feature_surface_transitions(17, std::slice::from_ref(&table), &rows),
+        feature_surface_transitions_with_service(17, std::slice::from_ref(&table), &rows),
         Some(vec![(11, 201), (12, 202)])
     );
 
     let mut partial = table.clone();
     partial.entries.pop();
-    assert_eq!(feature_surface_transitions(17, &[partial], &rows), None);
+    assert_eq!(
+        feature_surface_transitions_with_service(17, &[partial], &rows),
+        None
+    );
 
     let mut conflicting = table.clone();
-    conflicting.entries[3].payload = crate::feature::EntryPayload::Related {
-        entity: 101,
-        state: crate::feature::RelatedState::Zero,
-    };
-    assert_eq!(feature_surface_transitions(17, &[conflicting], &rows), None);
+    conflicting.entries[3].payload = crate::feature::entity::EntryPayload::Related(
+        crate::feature::entity::RelatedPayload::new(
+            crate::feature::entity::RelatedClass::Class210,
+            101,
+            crate::feature::entity::RelatedState::Zero,
+        )
+        .expect("valid related fixture"),
+    );
+    assert_eq!(
+        feature_surface_transitions_with_service(17, &[conflicting], &rows),
+        None
+    );
     let mut wrong_predecessor_class = table.clone();
-    wrong_predecessor_class.entries[0].class_id = 219;
+    wrong_predecessor_class.entries[0].payload = crate::feature::entity::EntryPayload::Related(
+        crate::feature::entity::RelatedPayload::new(
+            crate::feature::entity::RelatedClass::Class219,
+            11,
+            crate::feature::entity::RelatedState::Zero,
+        )
+        .expect("valid related fixture"),
+    );
     wrong_predecessor_class
         .entries
         .push(entry(999, 214, Some(888)));
     assert_eq!(
-        feature_surface_transitions(17, &[wrong_predecessor_class], &rows),
+        feature_surface_transitions_with_service(17, &[wrong_predecessor_class], &rows),
         None
     );
     assert_eq!(
-        surface_transition_dependencies(17, std::slice::from_ref(&table), &rows),
+        surface_transition_dependencies_with_service(17, std::slice::from_ref(&table), &rows),
         [3, 4]
     );
 }
 
 #[test]
 fn draft_neutral_plane_requires_one_owned_class_209_plane() {
-    let entry = |entity_id, class_id| crate::feature::FeatureEntityTableEntry {
-        payload: crate::feature::entry_payload(class_id, None, None, None),
+    let entry = |entity_id, class_id| crate::feature::entity::FeatureEntityTableEntry {
+        payload: crate::feature::entity::entry_payload(class_id, None, None, None),
 
         entity_id,
-        class_id,
         prefixed: true,
-        offset: entity_id as usize,
-        end_offset: entity_id as usize,
-        is_surface: false,
+        offset: usize::try_from(entity_id).expect("fixture index fits usize"),
+        end_offset: usize::try_from(entity_id).expect("fixture index fits usize"),
     };
-    let table = |entries: Vec<crate::feature::FeatureEntityTableEntry>, surface_ids| {
-        crate::feature::FeatureEntityTable {
-            feature_id: 225,
-            table_class_id: 29,
+    let table = |entries: Vec<crate::feature::entity::FeatureEntityTableEntry>, surface_ids| {
+        crate::feature::entity::FeatureEntityTable::new(
+            225,
+            29,
             entries,
-            offset: 0,
-        }
+            &std::collections::BTreeSet::new(),
+            0,
+        )
         .with_surface_ids(surface_ids)
     };
     let row = |id, kind: crate::surface::SurfaceKind, feature_id| crate::surface::SurfaceRow {
@@ -749,9 +933,9 @@ fn draft_neutral_plane_requires_one_owned_class_209_plane() {
         reversed: false,
         boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
-        offset: id as usize,
+        offset: usize::try_from(id).expect("fixture index fits usize"),
     };
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features
         .entity_tables
         .push(table(vec![entry(226, 209)], vec![226]));
@@ -759,13 +943,13 @@ fn draft_neutral_plane_requires_one_owned_class_209_plane() {
         .rows
         .push(row(226, crate::surface::SurfaceKind::Plane, 225));
     assert_eq!(
-        draft_neutral_plane_selection(&scan, 225),
+        draft_neutral_plane_selection_with_service(&scan, 225),
         FaceSelection::Native("creo:visibgeom:surface#226".to_string())
     );
 
     scan.features.entity_tables[0].mark_surface_ids([]);
     assert_eq!(
-        draft_neutral_plane_selection(&scan, 225),
+        draft_neutral_plane_selection_with_service(&scan, 225),
         FaceSelection::Unresolved
     );
     scan.features.entity_tables[0].mark_surface_ids([226]);
@@ -776,33 +960,32 @@ fn draft_neutral_plane_requires_one_owned_class_209_plane() {
         .rows
         .push(row(227, crate::surface::SurfaceKind::Plane, 225));
     assert_eq!(
-        draft_neutral_plane_selection(&scan, 225),
+        draft_neutral_plane_selection_with_service(&scan, 225),
         FaceSelection::Unresolved
     );
 }
 
 #[test]
 fn draft_neutral_plane_rejects_foreign_or_non_plane_surface_rows() {
-    let table = crate::feature::FeatureEntityTable {
-        feature_id: 225,
-        table_class_id: 64,
-        entries: vec![crate::feature::FeatureEntityTableEntry {
+    let table = crate::feature::entity::FeatureEntityTable::new(
+        225,
+        64,
+        vec![crate::feature::entity::FeatureEntityTableEntry {
             entity_id: 226,
-            class_id: 209,
-            payload: crate::feature::entry_payload(209, None, None, None),
+            payload: crate::feature::entity::entry_payload(209, None, None, None),
             prefixed: true,
             offset: 0,
             end_offset: 0,
-            is_surface: false,
         }],
-        offset: 0,
-    }
+        &std::collections::BTreeSet::new(),
+        0,
+    )
     .with_surface_ids([226]);
     for (kind, owner) in [
         (crate::surface::SurfaceKind::Cylinder, 225),
         (crate::surface::SurfaceKind::Plane, 224),
     ] {
-        let mut scan = crate::container::scan_bytes(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.features.entity_tables.push(table.clone());
         scan.surfaces.rows.push(crate::surface::SurfaceRow {
             id: 226,
@@ -814,7 +997,7 @@ fn draft_neutral_plane_rejects_foreign_or_non_plane_surface_rows() {
             offset: 0,
         });
         assert_eq!(
-            draft_neutral_plane_selection(&scan, 225),
+            draft_neutral_plane_selection_with_service(&scan, 225),
             FaceSelection::Unresolved
         );
     }
@@ -837,7 +1020,7 @@ fn thicken_plane_offsets_require_parallel_agreeing_oriented_distances() {
         reversed,
         boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
-        offset: id as usize,
+        offset: usize::try_from(id).expect("fixture index fits usize"),
     };
     let mut rows = vec![
         row(11, true),
@@ -847,205 +1030,242 @@ fn thicken_plane_offsets_require_parallel_agreeing_oriented_distances() {
     ];
 
     assert_eq!(
-        thicken_plane_offset(&transitions, &planes, &rows),
+        thicken_plane_offset_with_service(&transitions, &planes, &rows),
         Some((5.0, ThickenSide::Reverse))
     );
 
     planes.get_mut(&201).expect("plane").origin[1] = 7.0;
     planes.get_mut(&202).expect("plane").origin[0] = 9.0;
     assert_eq!(
-        thicken_plane_offset(&transitions, &planes, &rows),
+        thicken_plane_offset_with_service(&transitions, &planes, &rows),
         Some((5.0, ThickenSide::Forward))
     );
 
     planes.get_mut(&202).expect("plane").origin[0] = -2.0;
-    assert_eq!(thicken_plane_offset(&transitions, &planes, &rows), None);
+    assert_eq!(
+        thicken_plane_offset_with_service(&transitions, &planes, &rows),
+        None
+    );
 
     planes.get_mut(&202).expect("plane").origin[0] = -1.0;
     planes.get_mut(&202).expect("plane").normal = [0.0, 1.0, 0.0];
-    assert_eq!(thicken_plane_offset(&transitions, &planes, &rows), None);
+    assert_eq!(
+        thicken_plane_offset_with_service(&transitions, &planes, &rows),
+        None
+    );
 
     planes.get_mut(&202).expect("plane").normal = [1.0, 0.0, 0.0];
     rows[3].reversed = false;
-    assert_eq!(thicken_plane_offset(&transitions, &planes, &rows), None);
+    assert_eq!(
+        thicken_plane_offset_with_service(&transitions, &planes, &rows),
+        None
+    );
 }
 
 #[test]
 fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
-    let definition = crate::feature::FeatureDefinition {
-        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
-            schema_id: std::num::NonZeroU32::new(822),
-            owner_feature_id: Some(822),
-        },
-        body: Vec::new(),
-        parameter_frames: Vec::new(),
-        outlines: Vec::new(),
-        variables: None,
-        segments: None,
-        trim_entities: None,
-        trim_vertices: None,
-        order_table: None,
-        section_3d: Some(crate::feature::FeatureSection3d {
-            sketch_plane_entity_id: None,
-            sketch_plane_flip: None,
-            reference_planes: crate::feature::definitions::ReferencePlanes::Named(Vec::new()),
-            reference_plane_datum_geometry_id: None,
-            orientation: crate::feature::FeatureSectionOrientation::default(),
-            dimension_ids: Vec::new(),
-            offset: 90,
-        }),
-        dimensions: None,
-        relations: None,
-        saved_section: None,
-        offset: 80,
-    };
-    let transform = crate::placement::FeatureSectionTransform {
-        definition_id: 822,
-        feature_id: Some(822),
-        origin: [0.0; 3],
-        u_axis: [1.0, 0.0, 0.0],
-        v_axis: [0.0, 1.0, 0.0],
-        normal: [0.0, 0.0, 1.0],
-        offset: 90,
-    };
-
-    let mismatched_transform = crate::placement::FeatureSectionTransform {
-        feature_id: Some(900),
-        ..transform.clone()
-    };
-    assert_eq!(
-        unique_feature_profile_definition(
-            std::slice::from_ref(&definition),
-            std::slice::from_ref(&transform),
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let definition = crate::feature::definitions::FeatureDefinition {
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(822),
+                owner_feature_id: Some(822),
+            },
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: None,
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: Some(crate::feature::definitions::FeatureSection3d {
+                sketch_plane_entity_id: None,
+                sketch_plane_flip: None,
+                reference_planes: crate::feature::definitions::ReferencePlanes::Named(Vec::new()),
+                reference_plane_datum_geometry_id: None,
+                orientation: crate::feature::definitions::FeatureSectionOrientation::default(),
+                dimension_ids: Vec::new(),
+                offset: 90,
+            }),
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 80,
+        };
+        let transform = crate::placement::FeatureSectionTransform::new(
             822,
+            Some(822),
+            [0.0; 3],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            90,
         )
-        .map(|definition| definition.identity.id()),
-        Some(822)
-    );
-    assert_eq!(
-        unique_feature_profile_definition(std::slice::from_ref(&definition), &[], 822)
+        .expect("valid section frame");
+
+        let mismatched_transform = crate::placement::FeatureSectionTransform::new(
+            transform.definition_id,
+            Some(900),
+            transform.origin(),
+            transform.u_axis(),
+            transform.v_axis(),
+            transform.offset,
+        )
+        .expect("valid section frame");
+        assert_eq!(
+            unique_feature_profile_definition(
+                ctx,
+                std::slice::from_ref(&definition),
+                std::slice::from_ref(&transform),
+                822,
+            )
+            .expect("admitted unique lookup")
             .map(|definition| definition.identity.id()),
-        Some(822)
-    );
-    assert!(
-        unique_feature_profile_definition(&[definition.clone(), definition.clone()], &[], 822,)
-            .is_none()
-    );
-    assert!(unique_feature_profile_definition(
-        std::slice::from_ref(&definition),
-        &[transform.clone(), transform.clone()],
-        822,
-    )
-    .is_none());
-    assert_eq!(
-        unique_feature_profile_definition(
-            std::slice::from_ref(&definition),
-            std::slice::from_ref(&mismatched_transform),
+            Some(822)
+        );
+        assert_eq!(
+            unique_feature_profile_definition(ctx, std::slice::from_ref(&definition), &[], 822)
+                .expect("admitted unique lookup")
+                .map(|definition| definition.identity.id()),
+            Some(822)
+        );
+        assert!(unique_feature_profile_definition(
+            ctx,
+            &[definition.clone(), definition.clone()],
+            &[],
             822,
         )
-        .map(|definition| definition.identity.id()),
-        Some(822)
-    );
+        .expect("admitted unique lookup")
+        .is_none());
+        assert!(unique_feature_profile_definition(
+            ctx,
+            std::slice::from_ref(&definition),
+            &[transform.clone(), transform.clone()],
+            822,
+        )
+        .expect("admitted unique lookup")
+        .is_none());
+        assert_eq!(
+            unique_feature_profile_definition(
+                ctx,
+                std::slice::from_ref(&definition),
+                std::slice::from_ref(&mismatched_transform),
+                822,
+            )
+            .expect("admitted unique lookup")
+            .map(|definition| definition.identity.id()),
+            Some(822)
+        );
 
-    let mismatched_section_transform = crate::placement::FeatureSectionTransform {
-        definition_id: 900,
-        feature_id: Some(822),
-        ..transform
-    };
-    assert!(unique_feature_profile_definition(
-        std::slice::from_ref(&definition),
-        std::slice::from_ref(&mismatched_section_transform),
-        822,
-    )
-    .is_none());
+        let mismatched_section_transform = crate::placement::FeatureSectionTransform::new(
+            900,
+            Some(822),
+            transform.origin(),
+            transform.u_axis(),
+            transform.v_axis(),
+            transform.offset,
+        )
+        .expect("valid section frame");
+        assert!(unique_feature_profile_definition(
+            ctx,
+            std::slice::from_ref(&definition),
+            std::slice::from_ref(&mismatched_section_transform),
+            822,
+        )
+        .expect("admitted unique lookup")
+        .is_none());
 
-    let mut scan = crate::container::scan_bytes(Vec::new());
-    scan.features.definitions.push(definition);
-    let mut ir = CadIr::empty();
-    for kind in ["Revolve", "Revolve 2"] {
-        assert!(matches!(
-            named_feature_definition(&scan, &ir, 822, kind),
-            Some(IrFeatureDefinition::Revolve {
-                ref construction,
-                op: BooleanOp::Unresolved,
-            }) if matches!(construction.profile(), Some(ProfileRef::Native(profile))
-                if profile == "creo:featdefs:sketch#822")
-                && construction.axis().is_none()
-                && construction.extent().is_none()
-        ));
-    }
-
-    scan.features
-        .revolution_extents
-        .push(crate::feature::FeatureRevolutionExtent {
-            feature_id: 822,
-            offset: 1,
-        });
-    assert!(matches!(
-        named_feature_definition(&scan, &ir, 822, "Revolve"),
-        Some(IrFeatureDefinition::Revolve {
-            ref construction,
-            ..
-        }) if matches!(construction.extent(), Some(cadmpeg_ir::features::RevolveExtent::OneSided {
-                    termination: AngularTermination::Angle { angle: Angle(value) },
-                }) if (*value - std::f64::consts::TAU).abs() < EPS_FULL_TURN)
-    ));
-
-    let sketch = SketchId("creo:model:sketch#822".to_string());
-    ir.model.sketches.push(Sketch {
-        id: sketch.clone(),
-        name: None,
-        configuration: None,
-        visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved,
-        profiles: Vec::new(),
-        native_ref: Some("creo:featdefs:sketch#822".to_string()),
-    });
-    assert!(matches!(
-        filled_surface_feature_definition(&scan, &ir, 822),
-        IrFeatureDefinition::FilledSurface {
-            boundary: SurfaceBoundary::Path(PathRef::Sketch(boundary)),
-            ..
-        } if boundary == sketch
-    ));
-
-    scan.features
-        .definitions
-        .push(scan.features.definitions[0].clone());
-    assert!(matches!(
-        filled_surface_feature_definition(&scan, &ir, 822),
-        IrFeatureDefinition::FilledSurface {
-            boundary: SurfaceBoundary::Edges(EdgeSelection::Unresolved),
-            ..
+        let mut scan = crate::test_support::empty_container_scan();
+        scan.features.definitions.push(definition);
+        let mut ir = CadIr::empty();
+        for kind in ["Revolve", "Revolve 2"] {
+            assert!(matches!(
+                crate::decode::with_test_decode_ctx(|ctx| named_feature_definition(ctx, &scan, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(), 822, kind)),
+                Ok(Some(IrFeatureDefinition::Operation(IrFeatureOperation::Revolve {
+                    ref construction,
+                    op: BooleanOp::Unresolved,
+                }))) if matches!(construction.profile(), Some(PlanarProfileRef::Native(profile))
+                    if profile == "creo:featdefs:sketch#822")
+                    && construction.axis().is_none()
+                    && construction.extent().is_none()
+            ));
         }
-    ));
+
+        scan.features
+            .revolution_extents
+            .push(crate::feature::rows::FeatureRevolutionExtent {
+                feature_id: 822,
+                offset: 1,
+            });
+        assert!(matches!(
+            crate::decode::with_test_decode_ctx(|ctx| named_feature_definition(ctx, &scan, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(), 822, "Revolve")),
+            Ok(Some(IrFeatureDefinition::Operation(IrFeatureOperation::Revolve {
+                ref construction,
+                ..
+            }))) if matches!(construction.extent(), Some(cadmpeg_ir::features::RevolveExtent::OneSided {
+                        termination: AngularTermination::Angle { angle: value },
+                    }) if (value.get() - std::f64::consts::TAU).abs() < EPS_FULL_TURN)
+        ));
+
+        let sketch =
+            SketchId::mint("creo:model:sketch#822".to_string()).expect("valid test fixture");
+        ir.model.sketches.push(Sketch {
+            id: sketch.clone(),
+            name: None,
+            configuration: None,
+            visible: None,
+            placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved {},
+            profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
+            native_ref: Some("creo:featdefs:sketch#822".to_string()),
+        });
+        assert!(matches!(
+            crate::decode::with_test_decode_ctx(|ctx| filled_surface_feature_definition(ctx, &scan, &ir, 822)).expect("filled surface admitted"),
+            IrFeatureDefinition::Operation(IrFeatureOperation::FilledSurface {
+                boundary: SurfaceBoundary::Path(PathRef::Sketch(boundary)),
+                ..
+            }) if boundary == sketch
+        ));
+
+        scan.features
+            .definitions
+            .push(scan.features.definitions[0].clone());
+        assert!(matches!(
+            crate::decode::with_test_decode_ctx(|ctx| filled_surface_feature_definition(
+                ctx, &scan, &ir, 822
+            ))
+            .expect("filled surface admitted"),
+            IrFeatureDefinition::Operation(IrFeatureOperation::FilledSurface {
+                boundary: SurfaceBoundary::Edges(EdgeSelection::Unresolved),
+                ..
+            })
+        ));
+    });
 }
 
 #[test]
 fn named_linear_sweep_reuses_materialized_cap_extent() {
-    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
-        payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+    let entry =
+        |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
+            payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
 
-        entity_id,
-        class_id,
-        prefixed: false,
-        offset: 0,
-        end_offset: 0,
-        is_surface: false,
-    };
+            entity_id,
+            prefixed: false,
+            offset: 0,
+            end_offset: 0,
+        };
     let entries = vec![
         entry(31, 204, None),
         entry(32, 203, None),
         entry(33, 200, Some(11)),
     ];
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.entity_tables.push(
-        crate::feature::FeatureEntityTable {
-            feature_id: 7,
-            table_class_id: 29,
+        crate::feature::entity::FeatureEntityTable::new(
+            7,
+            29,
             entries,
-            offset: 0,
-        }
+            &std::collections::BTreeSet::new(),
+            0,
+        )
         .with_surface_ids([31, 32]),
     );
     let row = |id| crate::surface::SurfaceRow {
@@ -1060,17 +1280,20 @@ fn named_linear_sweep_reuses_materialized_cap_extent() {
     scan.surfaces.rows.extend([row(31), row(32)]);
     let plane = |id, z| Surface {
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, z),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, z),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("valid PlaneSurface fixture"),
+        )),
         source_object: None,
     };
     let mut ir = CadIr::empty();
     ir.model.surfaces.extend([plane(31, 2.0), plane(32, 8.0)]);
 
-    let IrFeatureDefinition::Extrude {
+    let IrFeatureDefinition::Operation(IrFeatureOperation::Extrude {
         direction: ExtrudeDirection::Explicit {
             vector: direction, ..
         },
@@ -1083,33 +1306,47 @@ fn named_linear_sweep_reuses_materialized_cap_extent() {
                     },
             },
         ..
-    } = named_feature_definition(&scan, &ir, 7, "Protrusion").expect("named sweep")
+    }) = crate::decode::with_test_decode_ctx(|ctx| {
+        named_feature_definition(
+            ctx,
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            7,
+            "Protrusion",
+        )
+    })
+    .expect("a named sweep states no blank key")
+    .expect("named sweep")
     else {
         panic!("named sweep did not resolve the cap extent");
     };
     assert_eq!(direction, Vector3::new(0.0, 0.0, 1.0));
-    assert_eq!(length, Length(6.0));
+    assert_eq!(
+        length,
+        cadmpeg_ir::scalar::NonZeroLength::new(6.0).expect("nonzero length fixture")
+    );
 }
 
 #[test]
 fn boundary_surface_entity_graph_requires_the_complete_generated_chain() {
-    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
-        payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+    let entry =
+        |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
+            payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
 
-        entity_id,
-        class_id,
-        prefixed: true,
-        offset: 0,
-        end_offset: 0,
-        is_surface: false,
-    };
-    let table = |table_class_id, entries: Vec<crate::feature::FeatureEntityTableEntry>| {
-        crate::feature::FeatureEntityTable {
-            feature_id: 144,
+            entity_id,
+            prefixed: true,
+            offset: 0,
+            end_offset: 0,
+        };
+    let table = |table_class_id, entries: Vec<crate::feature::entity::FeatureEntityTableEntry>| {
+        crate::feature::entity::FeatureEntityTable::new(
+            144,
             table_class_id,
             entries,
-            offset: 0,
-        }
+            &std::collections::BTreeSet::new(),
+            0,
+        )
         .with_surface_ids((table_class_id == 29).then_some(145))
     };
     let tables = vec![
@@ -1153,23 +1390,23 @@ fn boundary_surface_entity_graph_requires_the_complete_generated_chain() {
 
 #[test]
 fn new_sheet_output_requires_an_owned_output_surface() {
-    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
-        payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+    let entry =
+        |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
+            payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
 
-        entity_id,
-        class_id,
-        prefixed: true,
-        offset: 0,
-        end_offset: 0,
-        is_surface: false,
-    };
-    let table = |table_class_id, entries: Vec<crate::feature::FeatureEntityTableEntry>| {
-        crate::feature::FeatureEntityTable {
-            feature_id: 144,
+            entity_id,
+            prefixed: true,
+            offset: 0,
+            end_offset: 0,
+        };
+    let table = |table_class_id, entries: Vec<crate::feature::entity::FeatureEntityTableEntry>| {
+        crate::feature::entity::FeatureEntityTable::new(
+            144,
             table_class_id,
             entries,
-            offset: 0,
-        }
+            &std::collections::BTreeSet::new(),
+            0,
+        )
         .with_surface_ids((table_class_id == 29).then_some(145))
     };
     let tables = vec![
@@ -1202,7 +1439,7 @@ fn new_sheet_output_requires_an_owned_output_surface() {
 
 #[test]
 fn stored_section_sweep_family_defines_boolean_operation() {
-    use crate::feature::FeatureRecipeEffect::{Cut, Protrude};
+    use crate::feature::operations::FeatureRecipeEffect::{Cut, Protrude};
 
     assert_eq!(
         section_sweep_boolean_operation(Some(Protrude), "Körper", false, true),
@@ -1248,7 +1485,7 @@ fn stored_section_sweep_family_defines_boolean_operation() {
 
 #[test]
 fn datum_feature_uses_its_unique_transferred_plane_carrier() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 6,
         kind: crate::surface::SurfaceKind::Plane,
@@ -1261,29 +1498,56 @@ fn datum_feature_uses_its_unique_transferred_plane_carrier() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 1.0, 0.0),
-            normal: Vector3::new(0.0, 1.0, 0.0),
-            u_axis: Vector3::new(0.0, 0.0, 1.0),
-        },
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+            )
+            .expect("valid PlaneSurface fixture"),
+        )),
         source_object: None,
     });
 
     assert_eq!(
-        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::DatumPlane), "Datum Plane"),
-        IrFeatureDefinition::DatumPlane {
-            origin: Point3::new(0.0, 1.0, 0.0),
-            normal: Vector3::new(0.0, 1.0, 0.0),
-            u_axis: Vector3::new(0.0, 0.0, 1.0),
-        }
+        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(
+            ctx,
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            5,
+            Some(SchemaClass::DatumPlane),
+            "Datum Plane"
+        ))
+        .expect("valid test fixture"),
+        IrFeatureDefinition::Operation(IrFeatureOperation::DatumPlane {
+            frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+                Point3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0)
+            )
+            .expect("valid test fixture"),
+        })
     );
     assert_eq!(
-        schema_feature_definition(&scan, &ir, 5, None, "Native Feature"),
-        IrFeatureDefinition::DatumPlane {
-            origin: Point3::new(0.0, 1.0, 0.0),
-            normal: Vector3::new(0.0, 1.0, 0.0),
-            u_axis: Vector3::new(0.0, 0.0, 1.0),
-        }
+        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(
+            ctx,
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            5,
+            None,
+            "Native Feature"
+        ))
+        .expect("valid test fixture"),
+        IrFeatureDefinition::Operation(IrFeatureOperation::DatumPlane {
+            frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+                Point3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0)
+            )
+            .expect("valid test fixture"),
+        })
     );
 
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
@@ -1296,20 +1560,38 @@ fn datum_feature_uses_its_unique_transferred_plane_carrier() {
         offset: 1,
     });
     assert_eq!(
-        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::DatumPlane), "Datum Plane"),
-        IrFeatureDefinition::Unresolved {
+        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(
+            ctx,
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            5,
+            Some(SchemaClass::DatumPlane),
+            "Datum Plane"
+        ))
+        .expect("valid test fixture"),
+        IrFeatureDefinition::Operation(IrFeatureOperation::Unresolved {
             family: UnresolvedFamily::DatumPlane
-        }
+        })
     );
     assert!(matches!(
-        schema_feature_definition(&scan, &ir, 5, None, "Native Feature"),
-        IrFeatureDefinition::Native { .. }
+        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(
+            ctx,
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            5,
+            None,
+            "Native Feature"
+        ))
+        .expect("valid test fixture"),
+        IrFeatureDefinition::Operation(IrFeatureOperation::Native { .. })
     ));
 }
 
 #[test]
 fn datum_feature_preserves_its_unique_transferred_plane_chart() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 6,
         kind: crate::surface::SurfaceKind::Plane,
@@ -1322,49 +1604,55 @@ fn datum_feature_preserves_its_unique_transferred_plane_chart() {
     scan.planes.outlines.push(crate::surface::OutlinePlane {
         surface_id: 6,
         origin: [0.0, 1.0, 0.0],
-        normal: [0.0, 1.0, 0.0],
-        u_axis: [0.0, 0.0, 1.0],
+        normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+        u_axis: cadmpeg_ir::units::UnitVector3::Z_AXIS,
         offset: 1,
     });
 
     assert_eq!(
-        schema_feature_definition(
+        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(
+            ctx,
             &scan,
             &CadIr::empty(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
             5,
             Some(SchemaClass::DatumPlane),
             "Datum Plane",
-        ),
-        IrFeatureDefinition::DatumPlane {
-            origin: Point3::new(0.0, 1.0, 0.0),
-            normal: Vector3::new(0.0, 1.0, 0.0),
-            u_axis: Vector3::new(0.0, 0.0, 1.0),
-        }
+        ))
+        .expect("valid test fixture"),
+        IrFeatureDefinition::Operation(IrFeatureOperation::DatumPlane {
+            frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+                Point3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0)
+            )
+            .expect("valid test fixture"),
+        })
     );
 }
 
 #[test]
 fn datum_feature_uses_its_unique_complete_local_system() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features
         .definitions
-        .push(crate::feature::FeatureDefinition {
+        .push(crate::feature::definitions::FeatureDefinition {
             identity: crate::feature::definitions::DefinitionIdentity::Parsed {
                 schema_id: std::num::NonZeroU32::new(5),
                 owner_feature_id: Some(5),
             },
             body: Vec::new(),
             parameter_frames: vec![
-                crate::feature::FeatureParameterFrame {
-                    kind: crate::feature::FeatureParameterFrameKind::LocalSystem,
+                crate::feature::definitions::FeatureParameterFrame {
+                    kind: crate::feature::definitions::FeatureParameterFrameKind::LocalSystem,
                     body: Vec::new(),
-                    decoded_values: Some([
+                    decoded_values: Some(finite_local_system([
                         1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 2.0, 3.0, 4.0, 5.0,
-                    ]),
+                    ])),
                     offset: 1,
                 },
-                crate::feature::FeatureParameterFrame {
-                    kind: crate::feature::FeatureParameterFrameKind::LocalSystem,
+                crate::feature::definitions::FeatureParameterFrame {
+                    kind: crate::feature::definitions::FeatureParameterFrameKind::LocalSystem,
                     body: vec![0xff],
                     decoded_values: None,
                     offset: 2,
@@ -1384,43 +1672,49 @@ fn datum_feature_uses_its_unique_complete_local_system() {
         });
 
     assert_eq!(
-        schema_feature_definition(
+        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(
+            ctx,
             &scan,
             &CadIr::empty(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
             5,
             Some(SchemaClass::DatumPlane),
             "Datum Plane"
-        ),
-        IrFeatureDefinition::DatumPlane {
-            origin: Point3::new(3.0, 4.0, 5.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        }
+        ))
+        .expect("valid test fixture"),
+        IrFeatureDefinition::Operation(IrFeatureOperation::DatumPlane {
+            frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+                Point3::new(3.0, 4.0, 5.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0)
+            )
+            .expect("valid test fixture"),
+        })
     );
 }
 
 #[test]
 fn coordinate_system_feature_uses_its_unique_complete_local_system() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features
         .definitions
-        .push(crate::feature::FeatureDefinition {
+        .push(crate::feature::definitions::FeatureDefinition {
             identity: crate::feature::definitions::DefinitionIdentity::Parsed {
                 schema_id: std::num::NonZeroU32::new(7),
                 owner_feature_id: Some(7),
             },
             body: Vec::new(),
             parameter_frames: vec![
-                crate::feature::FeatureParameterFrame {
-                    kind: crate::feature::FeatureParameterFrameKind::LocalSystem,
+                crate::feature::definitions::FeatureParameterFrame {
+                    kind: crate::feature::definitions::FeatureParameterFrameKind::LocalSystem,
                     body: Vec::new(),
-                    decoded_values: Some([
+                    decoded_values: Some(finite_local_system([
                         0.0, 2.0, 0.0, -3.0, 0.0, 0.0, 0.0, 0.0, 4.0, 5.0, 6.0, 7.0,
-                    ]),
+                    ])),
                     offset: 1,
                 },
-                crate::feature::FeatureParameterFrame {
-                    kind: crate::feature::FeatureParameterFrameKind::LocalSystem,
+                crate::feature::definitions::FeatureParameterFrame {
+                    kind: crate::feature::definitions::FeatureParameterFrameKind::LocalSystem,
                     body: vec![0xff],
                     decoded_values: None,
                     offset: 2,
@@ -1440,37 +1734,45 @@ fn coordinate_system_feature_uses_its_unique_complete_local_system() {
         });
 
     assert_eq!(
-        schema_feature_definition(
+        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(
+            ctx,
             &scan,
             &CadIr::empty(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
             7,
             Some(SchemaClass::CoordinateSystem),
             "PRT_CSYS_DEF"
-        ),
-        IrFeatureDefinition::DatumCoordinateSystem {
-            origin: Point3::new(5.0, 6.0, 7.0),
-            x_axis: Vector3::new(0.0, 1.0, 0.0),
-            y_axis: Vector3::new(-1.0, 0.0, 0.0),
-            z_axis: Vector3::new(0.0, 0.0, 1.0),
-        }
+        ))
+        .expect("valid test fixture"),
+        IrFeatureDefinition::Operation(IrFeatureOperation::DatumCoordinateSystem {
+            frame: cadmpeg_ir::features::FeatureCoordinateFrame::new(
+                Point3::new(5.0, 6.0, 7.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(-1.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0)
+            )
+            .expect("valid test fixture")
+        })
     );
 }
 
 #[test]
 fn coordinate_system_feature_rejects_a_reflected_local_system() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features
         .definitions
-        .push(crate::feature::FeatureDefinition {
+        .push(crate::feature::definitions::FeatureDefinition {
             identity: crate::feature::definitions::DefinitionIdentity::Parsed {
                 schema_id: std::num::NonZeroU32::new(7),
                 owner_feature_id: Some(7),
             },
             body: Vec::new(),
-            parameter_frames: vec![crate::feature::FeatureParameterFrame {
-                kind: crate::feature::FeatureParameterFrameKind::LocalSystem,
+            parameter_frames: vec![crate::feature::definitions::FeatureParameterFrame {
+                kind: crate::feature::definitions::FeatureParameterFrameKind::LocalSystem,
                 body: Vec::new(),
-                decoded_values: Some([1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0, 5.0, 6.0, 7.0]),
+                decoded_values: Some(finite_local_system([
+                    1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0, 5.0, 6.0, 7.0,
+                ])),
                 offset: 1,
             }],
             outlines: Vec::new(),
@@ -1487,108 +1789,197 @@ fn coordinate_system_feature_rejects_a_reflected_local_system() {
         });
 
     assert_eq!(
-        schema_feature_definition(
+        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(
+            ctx,
             &scan,
             &CadIr::empty(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
             7,
             Some(SchemaClass::CoordinateSystem),
             "PRT_CSYS_DEF"
-        ),
-        IrFeatureDefinition::Unresolved {
+        ))
+        .expect("valid test fixture"),
+        IrFeatureDefinition::Operation(IrFeatureOperation::Unresolved {
             family: UnresolvedFamily::DatumCoordinateSystem
-        }
+        })
+    );
+}
+
+#[test]
+fn coordinate_system_feature_rejects_a_local_system_outside_the_record_tolerance() {
+    let mut scan = crate::test_support::empty_container_scan();
+    scan.features
+        .definitions
+        .push(crate::feature::definitions::FeatureDefinition {
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(7),
+                owner_feature_id: Some(7),
+            },
+            body: Vec::new(),
+            parameter_frames: vec![crate::feature::definitions::FeatureParameterFrame {
+                kind: crate::feature::definitions::FeatureParameterFrameKind::LocalSystem,
+                body: Vec::new(),
+                decoded_values: Some(finite_local_system([
+                    1.0, 0.0, 0.0, 1.0e-10, 1.0, 0.0, 0.0, 0.0, 1.0, 5.0, 6.0, 7.0,
+                ])),
+                offset: 1,
+            }],
+            outlines: Vec::new(),
+            variables: None,
+            segments: None,
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 0,
+        });
+
+    // The normalized columns reach the IR frame constructor as unit vectors whose largest
+    // pairwise dot is 1.0e-10, and that constructor admits them.
+    assert!(cadmpeg_ir::features::FeatureCoordinateFrame::new(
+        Point3::new(5.0, 6.0, 7.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        Vector3::new(1.0e-10, 1.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0)
+    )
+    .is_some());
+    // The record is written to a tighter bound, so the feature stays unresolved.
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(
+            ctx,
+            &scan,
+            &CadIr::empty(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            7,
+            Some(SchemaClass::CoordinateSystem),
+            "PRT_CSYS_DEF"
+        ))
+        .expect("valid test fixture"),
+        IrFeatureDefinition::Operation(IrFeatureOperation::Unresolved {
+            family: UnresolvedFamily::DatumCoordinateSystem
+        })
     );
 }
 
 #[test]
 fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
-    let feature = |definition, outputs| Feature {
+    let feature = |definition, outputs: Vec<cadmpeg_ir::ids::BodyId>| Feature {
         id: IrFeatureId::mint("creo:model:feature#1".to_string()).expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs,
-        definition,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+            definition,
+            cadmpeg_ir::features::DistinctMembers::try_from(
+                outputs,
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .expect("distinct output fixture"),
+        ),
         native_ref: None,
     };
     let mut ir = CadIr::empty();
     ir.model.features.push(feature(
-        IrFeatureDefinition::Chamfer {
-            groups: vec![cadmpeg_ir::features::ChamferGroup {
-                edges: EdgeSelection::Unresolved,
-                spec: ChamferSpec::Unresolved,
-            }],
+        IrFeatureDefinition::Operation(IrFeatureOperation::Chamfer {
+            groups: cadmpeg_ir::features::NonEmptyMembers::one(
+                cadmpeg_ir::features::edge_treatments::ChamferGroup {
+                    edges: EdgeSelection::Unresolved,
+                    spec: ChamferSpec::Unresolved { form: None },
+                },
+            ),
             flip_direction: false,
-        },
+        }),
         Vec::new(),
     ));
     assert!(!preceding_features_establish_body(&ir));
 
-    ir.model.features[0].outputs =
-        vec![BodyId::mint("creo:model:body#1".to_string()).expect("identity grammar")];
+    ir.model.features[0].evaluation.set_outputs(
+        cadmpeg_ir::features::DistinctMembers::try_from(
+            vec![BodyId::mint("creo:model:body#1".to_string()).expect("identity grammar")],
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("distinct output fixture"),
+    );
     assert!(preceding_features_establish_body(&ir));
 
     ir.model.features[0] = feature(
-        IrFeatureDefinition::Extrude {
-            profile: ProfileRef::Native("creo:section#1".to_string()),
-            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+        IrFeatureDefinition::Operation(IrFeatureOperation::Extrude {
+            profile: ProfileRef::Planar(PlanarProfileRef::Native("creo:section#1".to_string())),
+            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(1.0),
+                        length: cadmpeg_ir::scalar::NonZeroLength::new(1.0)
+                            .expect("nonzero length fixture"),
                     },
                     draft: None,
                 },
             },
             op: BooleanOp::NewBody,
-            start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
+            start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
             solid: Some(true),
             face_maker: None,
             inner_wire_taper: None,
             length_along_profile_normal: None,
             allow_multi_profile_faces: None,
-        },
+        }),
         Vec::new(),
     );
     assert!(preceding_features_establish_body(&ir));
     ir.model.features[0].suppressed = Some(true);
     assert!(!preceding_features_establish_body(&ir));
     ir.model.features[0].suppressed = Some(false);
-    let IrFeatureDefinition::Extrude { op, .. } = &mut ir.model.features[0].definition else {
-        unreachable!();
-    };
-    *op = BooleanOp::Join;
+    ir.model.features[0].evaluation.edit(|definition, _| {
+        let IrFeatureDefinition::Operation(IrFeatureOperation::Extrude { op, .. }) = definition
+        else {
+            unreachable!();
+        };
+        *op = BooleanOp::Join;
+    });
     assert!(!preceding_features_establish_body(&ir));
 }
 
 #[test]
 fn current_feature_state_controls_recipe_and_parent_projection() {
-    let operation = |recipe, parent_feature_id, offset| crate::feature::FeatureOperation {
-        feature_id: 6,
-        kind: crate::feature::OperationKind::Stored("Sweep".to_string()),
-        name: crate::feature::operations::OperationName::Derived,
-        recipe: crate::feature::RecipeResolution::Resolved(recipe),
-        display_state_conflict: false,
-        depdb: Some(crate::feature::operations::DepdbPrefix {
-            schema: crate::feature::schema::SchemaClass::Protrusion,
-            parent: parent_feature_id,
-        }),
-        offset,
-        state_offset: offset,
-    };
-    let historical = operation(crate::feature::FeatureRecipe::ProtrudeExtrude, 4, 10);
-    let current = operation(crate::feature::FeatureRecipe::ProtrudeRevolve, 5, 20);
+    let operation =
+        |recipe, parent_feature_id, offset| crate::feature::operations::FeatureOperation {
+            feature_id: 6,
+            kind: crate::feature::operations::OperationKind::Stored("Sweep".to_string()),
+            name: crate::feature::operations::OperationName::Derived,
+            recipe: crate::feature::operations::RecipeResolution::Resolved(recipe),
+            display_state_conflict: false,
+            depdb: Some(crate::feature::operations::DepdbPrefix {
+                schema: crate::feature::schema::SchemaClass::Protrusion,
+                parent: parent_feature_id,
+            }),
+            offset,
+            state_offset: offset,
+        };
+    let historical = operation(
+        crate::feature::operations::FeatureRecipe::ProtrudeExtrude,
+        4,
+        10,
+    );
+    let current = operation(
+        crate::feature::operations::FeatureRecipe::ProtrudeRevolve,
+        5,
+        20,
+    );
     let states = [historical, current.clone()];
     assert_ne!(states[0].recipe.resolved(), states[1].recipe.resolved());
     assert_ne!(states[0].parent_feature_id(), states[1].parent_feature_id());
     assert_eq!(
         current_feature_recipe(std::slice::from_ref(&current), 6),
-        Some(crate::feature::FeatureRecipe::ProtrudeRevolve)
+        Some(crate::feature::operations::FeatureRecipe::ProtrudeRevolve)
     );
     assert_eq!(
         current_feature_recipe_parent(std::slice::from_ref(&current), 6),
@@ -1596,363 +1987,14 @@ fn current_feature_state_controls_recipe_and_parent_projection() {
     );
     assert_eq!(
         current_additive_feature_recipe(std::slice::from_ref(&current), 6),
-        Some(crate::feature::FeatureRecipeKind::Revolve)
+        Some(crate::feature::operations::FeatureRecipeKind::Revolve)
     );
     let mut cut = current;
-    cut.recipe =
-        crate::feature::RecipeResolution::Resolved(crate::feature::FeatureRecipe::CutRevolve);
+    cut.recipe = crate::feature::operations::RecipeResolution::Resolved(
+        crate::feature::operations::FeatureRecipe::CutRevolve,
+    );
     assert_eq!(
         current_additive_feature_recipe(std::slice::from_ref(&cut), 6),
         None
     );
-}
-
-#[test]
-fn circular_sweep_projects_profile_direction_and_extent() {
-    let sweep = CircularSweepGeometry {
-        cylinder_ids: vec![12, 13],
-        section_definition_id: None,
-        direction: [0.0, 0.0, -1.0],
-        extent: ExtrudeExtent::OneSided {
-            side: ExtrudeSide {
-                termination: LinearTermination::Blind {
-                    length: Length(6.5),
-                },
-                draft: None,
-            },
-        },
-        geometry: SurfaceGeometry::Cylinder {
-            origin: Point3::new(2.0, 3.0, 4.0),
-            axis: Vector3::new(0.0, 0.0, -1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 1.5,
-        },
-    };
-
-    assert_eq!(
-        circular_sweep_feature_definition(
-            ProfileRef::Sketch(SketchId("creo:model:sketch#917".to_string())),
-            &sweep,
-            BooleanOp::Join,
-            Some(true),
-        ),
-        IrFeatureDefinition::Extrude {
-            profile: ProfileRef::Sketch(SketchId("creo:model:sketch#917".to_string())),
-            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
-                vector: Vector3::new(0.0, 0.0, -1.0),
-                source: None,
-            },
-            extent: ExtrudeExtent::OneSided {
-                side: ExtrudeSide {
-                    termination: LinearTermination::Blind {
-                        length: Length(6.5),
-                    },
-                    draft: None,
-                },
-            },
-            op: BooleanOp::Join,
-            start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
-            solid: Some(true),
-            face_maker: None,
-            inner_wire_taper: None,
-            length_along_profile_normal: None,
-            allow_multi_profile_faces: None,
-        }
-    );
-}
-
-#[test]
-fn circular_sweep_cylinder_recovers_its_section_profile() {
-    let transform = crate::placement::FeatureSectionTransform {
-        definition_id: 917,
-        feature_id: Some(40),
-        origin: [1.0, 2.0, 3.0],
-        u_axis: [0.0, 0.0, -1.0],
-        v_axis: [1.0, 0.0, 0.0],
-        normal: [0.0, -1.0, 0.0],
-        offset: 20,
-    };
-    let cylinder = SurfaceGeometry::Cylinder {
-        origin: Point3::new(5.0, -14.0, 1.0),
-        axis: Vector3::new(0.0, 1.0, 0.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 4.5,
-    };
-
-    assert_eq!(
-        circular_section_profile_from_cylinder(&transform, &cylinder),
-        Some(([2.0, 4.0], 4.5))
-    );
-    let mut off_axis = cylinder.clone();
-    let SurfaceGeometry::Cylinder { axis, .. } = &mut off_axis else {
-        unreachable!();
-    };
-    *axis = Vector3::new(1.0, 0.0, 0.0);
-    assert_eq!(
-        circular_section_profile_from_cylinder(&transform, &off_axis),
-        None
-    );
-}
-
-#[test]
-fn typed_center_locus_requires_a_circular_geometry_family() {
-    let entity = SketchEntityId("creo:test:entity#1".into());
-    let definition = SketchConstraintDefinition::CoincidentLoci {
-        loci: vec![SketchLocus::Center(entity.clone())],
-    };
-    let unresolved = BTreeMap::from([(
-        entity.clone(),
-        SketchGeometry::Native {
-            native_kind: "solver_only_section_entity".into(),
-        },
-    )]);
-    assert!(!sketch_constraint_loci_compatible(&definition, &unresolved));
-
-    let native_arc = BTreeMap::from([(
-        entity.clone(),
-        SketchGeometry::Native {
-            native_kind: "arc".into(),
-        },
-    )]);
-    assert!(sketch_constraint_loci_compatible(&definition, &native_arc));
-
-    let native_line = BTreeMap::from([(
-        entity.clone(),
-        SketchGeometry::Native {
-            native_kind: "line".into(),
-        },
-    )]);
-    assert!(!sketch_constraint_loci_compatible(
-        &definition,
-        &native_line
-    ));
-
-    let resolved = BTreeMap::from([(
-        entity,
-        SketchGeometry::Circle {
-            center: Point2::new(0.0, 0.0),
-            radius: Length(1.0),
-        },
-    )]);
-    assert!(sketch_constraint_loci_compatible(&definition, &resolved));
-}
-
-#[test]
-fn section_profile_prefers_a_resolved_sketch_chain() {
-    let mut ir = CadIr::empty();
-    ir.model.sketches.push(Sketch {
-        id: SketchId("creo:model:sketch#offset:40".to_string()),
-        name: None,
-        configuration: None,
-        visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: Vec::new(),
-        native_ref: Some("creo:featdefs:sketch#offset:40".to_string()),
-    });
-    assert_eq!(
-        section_profile_ref(&ir, "creo:featdefs:sketch#offset:40".to_string()),
-        ProfileRef::Native("creo:featdefs:sketch#offset:40".to_string())
-    );
-
-    ir.model.sketches[0].profiles.push(vec![SketchEntityUse {
-        entity: SketchEntityId("creo:featdefs:sketch_entity#offset:40:4".to_string()),
-        reversed: false,
-    }]);
-    assert_eq!(
-        section_profile_ref(&ir, "creo:featdefs:sketch#offset:40".to_string()),
-        ProfileRef::Sketch(SketchId("creo:model:sketch#offset:40".to_string()))
-    );
-    assert_eq!(
-        section_profile_ref(&ir, "creo:featdefs:sketch#918".to_string()),
-        ProfileRef::Native("creo:featdefs:sketch#918".to_string())
-    );
-}
-
-#[test]
-fn connected_profile_vertices_include_open_chain_terminals() {
-    let sketch_id = SketchId("creo:model:sketch#917".to_string());
-    let entity_id =
-        |external_id| SketchEntityId(format!("creo:featdefs:sketch_entity#917:{external_id}"));
-    let mut ir = CadIr::empty();
-    ir.model.sketches.push(Sketch {
-        id: sketch_id.clone(),
-        name: None,
-        configuration: None,
-        visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved,
-        profiles: vec![vec![
-            SketchEntityUse {
-                entity: entity_id(1),
-                reversed: false,
-            },
-            SketchEntityUse {
-                entity: entity_id(2),
-                reversed: true,
-            },
-        ]],
-        native_ref: None,
-    });
-    ir.model.sketch_entities.extend([
-        SketchEntity::new(
-            entity_id(1),
-            sketch_id.clone(),
-            SketchGeometry::Line {
-                start: Point2::new(0.0, 0.0),
-                end: Point2::new(1.0, 0.0),
-            },
-        ),
-        SketchEntity::new(
-            entity_id(2),
-            sketch_id.clone(),
-            SketchGeometry::Line {
-                start: Point2::new(1.0, 1.0),
-                end: Point2::new(1.0, 0.0),
-            },
-        ),
-    ]);
-
-    assert_eq!(
-        connected_sketch_profile_vertices(&ir, &sketch_id),
-        vec![(0, vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]])]
-    );
-
-    if let SketchGeometry::Line { start, .. } = &mut ir.model.sketch_entities[1].geometry {
-        *start = Point2::new(0.0, 0.0);
-    } else {
-        unreachable!();
-    }
-    assert_eq!(
-        connected_sketch_profile_vertices(&ir, &sketch_id),
-        vec![(0, vec![[0.0, 0.0], [1.0, 0.0]])]
-    );
-
-    if let SketchGeometry::Line { end, .. } = &mut ir.model.sketch_entities[1].geometry {
-        *end = Point2::new(2.0, 0.0);
-    } else {
-        unreachable!();
-    }
-    assert!(connected_sketch_profile_vertices(&ir, &sketch_id).is_empty());
-}
-
-#[test]
-fn ordered_hole_cap_planes_define_blind_direction_and_depth() {
-    assert_eq!(
-        hole_extent_and_direction([
-            ([2.0, -21.0, -0.75], [1.0, 0.0, 0.0]),
-            ([5.0, -22.5, 0.75], [-1.0, 0.0, 0.0]),
-        ]),
-        Some((
-            [1.0, 0.0, 0.0],
-            LinearTermination::Blind {
-                length: Length(3.0),
-            },
-        ))
-    );
-    assert_eq!(
-        hole_extent_and_direction([
-            ([0.0, 0.5, 0.0], [0.0, 1.0, 0.0]),
-            ([0.0, -0.5, 0.0], [0.0, 1.0, 0.0]),
-        ]),
-        Some((
-            [-0.0, -1.0, -0.0],
-            LinearTermination::Blind {
-                length: Length(1.0),
-            },
-        ))
-    );
-    assert_eq!(
-        hole_extent_and_direction([
-            ([0.0; 3], [1.0, 0.0, 0.0]),
-            ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
-        ]),
-        None
-    );
-
-    assert_eq!(
-        hole_placement([
-            (902, [0.0, 0.0, 0.85], [0.0, 0.0, 1.0]),
-            (905, [0.0, 0.0, 7.35], [0.0, 0.0, -1.0]),
-        ]),
-        Some((
-            902,
-            [0.0, 0.0, 1.0],
-            LinearTermination::Blind {
-                length: Length(6.5),
-            },
-        ))
-    );
-    assert_eq!(
-        hole_placement([
-            (902, [0.0; 3], [0.0, 0.0, 1.0]),
-            (905, [0.0, 0.0, 1.0], [0.0, 0.0, -1.0]),
-            (908, [0.0, 0.0, 2.0], [0.0, 0.0, -1.0]),
-        ]),
-        None
-    );
-    assert!(matches!(
-        hole_cylinder_from_cap_outlines([
-            (
-                902,
-                [0.0, 0.0, 0.85],
-                [0.0, 0.0, 1.0],
-                [[-1.5, 17.5, 0.85], [1.5, 20.5, 0.85]],
-            ),
-            (
-                905,
-                [0.0, 0.0, 7.35],
-                [0.0, 0.0, -1.0],
-                [[-1.5, 17.5, 7.35], [1.5, 20.5, 7.35]],
-            ),
-        ]),
-        Some(SurfaceGeometry::Cylinder { origin, axis, radius, .. })
-            if origin == Point3::new(0.0, 19.0, 0.85)
-                && axis == Vector3::new(0.0, 0.0, 1.0)
-                && radius == 1.5
-    ));
-    assert!(hole_cylinder_from_cap_outlines([
-        (
-            902,
-            [0.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0],
-            [[-1.0, -2.0, 0.0], [1.0, 2.0, 0.0]],
-        ),
-        (
-            905,
-            [0.0, 0.0, 1.0],
-            [0.0, 0.0, -1.0],
-            [[-1.0, -2.0, 1.0], [1.0, 2.0, 1.0]],
-        ),
-    ])
-    .is_none());
-    assert!(matches!(
-        circular_sweep_cylinder_from_cap_outlines([
-            (
-                828,
-                [0.0, 4.0, 0.0],
-                [0.0, 1.0, 0.0],
-                Some([[-13.25, 4.0, -0.75], [-11.75, 4.0, 0.75]]),
-            ),
-            (831, [0.0, -4.0, 0.0], [0.0, 1.0, 0.0], None,),
-        ]),
-        Some(SurfaceGeometry::Cylinder { origin, axis, radius, .. })
-            if origin == Point3::new(-12.5, 4.0, 0.0)
-                && axis == Vector3::new(0.0, -1.0, 0.0)
-                && radius == 0.75
-    ));
-    assert!(matches!(
-        cylinder_from_single_cap_outline((
-            46,
-            [0.0, 16.0, 0.0],
-            [0.0, 1.0, 0.0],
-            Some([[-4.45, 16.0, -4.45], [4.45, 16.0, 4.45]]),
-        )),
-        Some(SurfaceGeometry::Cylinder { origin, axis, radius, .. })
-            if origin == Point3::new(0.0, 16.0, 0.0)
-                && axis == Vector3::new(0.0, 1.0, 0.0)
-                && radius == 4.45
-    ));
 }

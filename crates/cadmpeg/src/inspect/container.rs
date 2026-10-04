@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Container member listing (ZIP or CFB) and exact member extraction.
 
-use std::fmt::Write as _;
-
 use anyhow::{Context, Result};
 use cadmpeg_container::compound::{CompoundAllocation, CompoundEntry, CompoundSnapshot};
 use cadmpeg_container::{ArchiveSnapshot, EntryRecord};
@@ -10,15 +8,29 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLim
 
 const CFB_MAGIC: [u8; 8] = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
 
-fn allocation_label(allocation: CompoundAllocation) -> &'static str {
-    match allocation {
-        CompoundAllocation::Regular => "fat",
-        CompoundAllocation::Mini => "mini-fat",
+enum ContainerKind {
+    Cfb,
+    Zip,
+}
+
+fn detect(bytes: &[u8]) -> ContainerKind {
+    if bytes.starts_with(&CFB_MAGIC) {
+        ContainerKind::Cfb
+    } else {
+        ContainerKind::Zip
     }
 }
 
+/// An empty stream owns no sectors, so it has no allocation.
+fn allocation_label(allocation: Option<CompoundAllocation>) -> Option<&'static str> {
+    allocation.map(|allocation| match allocation {
+        CompoundAllocation::Regular => "fat",
+        CompoundAllocation::Mini => "mini-fat",
+    })
+}
+
 /// Container members listed from a ZIP archive or a CFB file.
-pub enum Listing {
+pub(in crate::inspect) enum Listing {
     /// ZIP central-directory entries.
     Zip(Vec<EntryRecord>),
     /// CFB directory rows (storages and streams).
@@ -31,7 +43,7 @@ pub enum Listing {
 ///
 /// Returns an error when the bytes exceed the resource-limit profile or the
 /// ZIP central directory or CFB directory does not parse.
-pub fn list(bytes: &[u8], limits: ResourceLimits) -> Result<Listing> {
+pub(super) fn list(bytes: &[u8], limits: ResourceLimits) -> Result<Listing> {
     let arena = DecodeArena::new();
     let policy = DecodePolicy {
         limits,
@@ -39,12 +51,17 @@ pub fn list(bytes: &[u8], limits: ResourceLimits) -> Result<Listing> {
     };
     let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
         .context("the file does not fit the resource-limit profile")?;
-    if bytes.starts_with(&CFB_MAGIC) {
-        let snapshot = CompoundSnapshot::new(&ctx, root).context("reading the CFB directory")?;
-        Ok(Listing::Cfb(snapshot.entries().to_vec()))
-    } else {
-        let snapshot = ArchiveSnapshot::new(root).context("reading the ZIP central directory")?;
-        Ok(Listing::Zip(snapshot.entries().to_vec()))
+    match detect(bytes) {
+        ContainerKind::Cfb => {
+            let snapshot =
+                CompoundSnapshot::new(&ctx, root).context("reading the CFB directory")?;
+            Ok(Listing::Cfb(snapshot.entries().to_vec()))
+        }
+        ContainerKind::Zip => {
+            let snapshot =
+                ArchiveSnapshot::new(&ctx, root).context("reading the ZIP central directory")?;
+            Ok(Listing::Zip(snapshot.entries().to_vec()))
+        }
     }
 }
 
@@ -59,7 +76,7 @@ pub fn list(bytes: &[u8], limits: ResourceLimits) -> Result<Listing> {
 /// Returns an error when the bytes are not a supported container within the
 /// limit profile, when no stream or entry has exactly `name`, or when opening
 /// the member fails structural, size, or integrity checks.
-pub fn extract(bytes: &[u8], limits: ResourceLimits, name: &str) -> Result<Vec<u8>> {
+pub(super) fn extract(bytes: &[u8], limits: ResourceLimits, name: &str) -> Result<Vec<u8>> {
     let arena = DecodeArena::new();
     let policy = DecodePolicy {
         limits,
@@ -67,24 +84,30 @@ pub fn extract(bytes: &[u8], limits: ResourceLimits, name: &str) -> Result<Vec<u
     };
     let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
         .context("the file does not fit the resource-limit profile")?;
-    if bytes.starts_with(&CFB_MAGIC) {
-        let snapshot = CompoundSnapshot::new(&ctx, root).context("reading the CFB directory")?;
-        let entry = snapshot.stream(name).ok_or_else(|| {
-            anyhow::anyhow!("{}", missing_compound_member_message(&snapshot, name))
-        })?;
-        let view = snapshot
-            .open(&ctx, entry)
-            .with_context(|| format!("opening stream {}", shell_quote(name)))?;
-        return Ok(view.window().to_vec());
+    match detect(bytes) {
+        ContainerKind::Cfb => {
+            let snapshot =
+                CompoundSnapshot::new(&ctx, root).context("reading the CFB directory")?;
+            let entry = snapshot.stream(name).ok_or_else(|| {
+                anyhow::anyhow!("{}", missing_compound_member_message(&snapshot, name))
+            })?;
+            let view = snapshot
+                .open(&ctx, entry)
+                .with_context(|| format!("opening stream {}", shell_quote(name)))?;
+            Ok(view.window().to_vec())
+        }
+        ContainerKind::Zip => {
+            let snapshot =
+                ArchiveSnapshot::new(&ctx, root).context("reading the ZIP central directory")?;
+            let entry = snapshot
+                .entry(name)
+                .ok_or_else(|| anyhow::anyhow!("{}", missing_member_message(&snapshot, name)))?;
+            let view = snapshot
+                .open(&ctx, &entry.name)
+                .with_context(|| format!("opening entry {}", shell_quote(name)))?;
+            Ok(view.window().to_vec())
+        }
     }
-    let snapshot = ArchiveSnapshot::new(root).context("reading the ZIP central directory")?;
-    let entry = snapshot
-        .entry(name)
-        .ok_or_else(|| anyhow::anyhow!("{}", missing_member_message(&snapshot, name)))?;
-    let view = snapshot
-        .open(&ctx, &entry.name)
-        .with_context(|| format!("opening entry {}", shell_quote(name)))?;
-    Ok(view.window().to_vec())
 }
 
 fn missing_compound_member_message(snapshot: &CompoundSnapshot<'_>, name: &str) -> String {
@@ -161,7 +184,7 @@ fn missing_member_message(snapshot: &ArchiveSnapshot<'_>, name: &str) -> String 
 /// Fusion `.f3d` entry names hold `[` and `]`, which a shell expands as a glob
 /// character class. Single quotes suppress every expansion, and an embedded
 /// single quote is closed, escaped, and reopened.
-pub fn shell_quote(name: &str) -> String {
+fn shell_quote(name: &str) -> String {
     let mut out = String::with_capacity(name.len() + 2);
     out.push('\'');
     for c in name.chars() {
@@ -179,7 +202,7 @@ pub fn shell_quote(name: &str) -> String {
 ///
 /// Names are raw strings here — shell quoting belongs to the table
 /// rendering, not to JSON.
-pub fn render_json(listing: &Listing) -> String {
+pub(super) fn render_json(listing: &Listing) -> Result<String> {
     let (container_kind, entries): (&str, Vec<serde_json::Value>) = match listing {
         Listing::Zip(entries) => (
             "zip",
@@ -226,25 +249,22 @@ pub fn render_json(listing: &Listing) -> String {
         "container_kind": container_kind,
         "entries": entries,
     });
-    let mut rendered = crate::commands::reporting::command_report_json("inspect", &payload)
-        .expect("the command report serializes");
+    let mut rendered = crate::commands::reporting::command_report_json("inspect", &payload)?;
     rendered.push('\n');
-    rendered
+    Ok(rendered)
 }
 
 /// Formats an entry listing as an aligned table.
-pub fn render(listing: &Listing) -> String {
+pub(super) fn render(listing: &Listing) -> String {
+    let mut rows = Vec::new();
     match listing {
         Listing::Zip(entries) => {
-            let mut out = String::new();
-            let _ = writeln!(
-                out,
+            rows.push(format!(
                 "{:>10}  {:>10}  {:>12}  {:>12}  {:>8}  {:>10}  name",
                 "header", "data", "packed", "unpacked", "method", "crc32"
-            );
+            ));
             for entry in entries {
-                let _ = writeln!(
-                    out,
+                rows.push(format!(
                     "0x{:08x}  0x{:08x}  {:>12}  {:>12}  {:>8}  0x{:08x}  {}",
                     entry.header_start,
                     entry.data_start,
@@ -253,49 +273,45 @@ pub fn render(listing: &Listing) -> String {
                     entry.compression.label(),
                     entry.crc32,
                     shell_quote(&entry.name)
-                );
+                ));
             }
-            out
         }
-        Listing::Cfb(rows) => {
-            let mut out = String::new();
-            let _ = writeln!(
-                out,
+        Listing::Cfb(entries) => {
+            rows.push(format!(
                 "{:>4}  {:>8}  {:>12}  {:>8}  path",
                 "id", "kind", "size", "alloc"
-            );
-            for entry in rows {
+            ));
+            for entry in entries {
                 let (kind, size, allocation) = match entry {
                     CompoundEntry::Storage(_) => ("storage", String::new(), ""),
                     CompoundEntry::Stream(stream) => (
                         "stream",
                         stream.logical_size().to_string(),
-                        allocation_label(stream.allocation()),
+                        allocation_label(stream.allocation()).unwrap_or(""),
                     ),
                 };
-                let _ = writeln!(
-                    out,
+                rows.push(format!(
                     "{:>4}  {:>8}  {:>12}  {:>8}  {}",
                     entry.directory_id(),
                     kind,
                     size,
                     allocation,
                     shell_quote(entry.path())
-                );
+                ));
             }
-            out
         }
     }
+    let mut out = rows.join("\n");
+    out.push('\n');
+    out
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    const CFB_SECTOR: usize = 512;
-    const CFB_FREE: u32 = 0xffff_ffff;
-    const CFB_END: u32 = 0xffff_fffe;
-    const CFB_FAT: u32 = 0xffff_fffd;
+    use super::{extract, list, shell_quote, Listing};
+    use cadmpeg_container::compound::CompoundEntry;
+    use cadmpeg_core::decode::ResourceLimits;
+    use cadmpeg_test_support::compound::compound_fixture;
 
     #[test]
     fn quotes_plain_names() {
@@ -341,79 +357,5 @@ mod tests {
             .find(|entry| entry.path() == "Payload")
             .expect("Payload row");
         assert!(matches!(payload, CompoundEntry::Stream(stream) if stream.logical_size() == 4096));
-    }
-
-    fn compound_fixture() -> Vec<u8> {
-        let mut file = vec![0_u8; CFB_SECTOR * 11];
-        file[..8].copy_from_slice(&[0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
-        put_u16(&mut file, 24, 0x003e);
-        put_u16(&mut file, 26, 3);
-        put_u16(&mut file, 28, 0xfffe);
-        put_u16(&mut file, 30, 9);
-        put_u16(&mut file, 32, 6);
-        put_u32(&mut file, 44, 1);
-        put_u32(&mut file, 48, 0);
-        put_u32(&mut file, 56, 4096);
-        put_u32(&mut file, 60, CFB_END);
-        put_u32(&mut file, 68, CFB_END);
-        for index in 0..109 {
-            put_u32(&mut file, 76 + index * 4, CFB_FREE);
-        }
-        put_u32(&mut file, 76, 9);
-        let directory = sector_mut(&mut file, 0);
-        for entry in directory.chunks_exact_mut(128) {
-            entry[68..80].fill(0xff);
-        }
-        directory_entry(directory, 0, "Root Entry", 5, 1, CFB_END, 0);
-        directory_entry(directory, 1, "Payload", 2, CFB_FREE, 1, 4096);
-        for sector in 1..=8 {
-            sector_mut(&mut file, sector).fill(0x5a);
-        }
-        let fat = sector_mut(&mut file, 9);
-        fat.fill(0xff);
-        put_u32(fat, 0, CFB_END);
-        for sector in 1..8 {
-            put_u32(fat, sector * 4, (sector + 1) as u32);
-        }
-        put_u32(fat, 8 * 4, CFB_END);
-        put_u32(fat, 9 * 4, CFB_FAT);
-        file
-    }
-
-    fn directory_entry(
-        directory: &mut [u8],
-        index: usize,
-        name: &str,
-        object_type: u8,
-        child: u32,
-        start: u32,
-        size: u64,
-    ) {
-        let entry = &mut directory[index * 128..(index + 1) * 128];
-        let units = name.encode_utf16().collect::<Vec<_>>();
-        for (offset, unit) in units.iter().enumerate() {
-            put_u16(entry, offset * 2, *unit);
-        }
-        put_u16(entry, 64, ((units.len() + 1) * 2) as u16);
-        entry[66] = object_type;
-        entry[67] = 1;
-        put_u32(entry, 68, CFB_FREE);
-        put_u32(entry, 72, CFB_FREE);
-        put_u32(entry, 76, child);
-        put_u32(entry, 116, start);
-        entry[120..128].copy_from_slice(&size.to_le_bytes());
-    }
-
-    fn sector_mut(file: &mut [u8], sector: usize) -> &mut [u8] {
-        let start = (sector + 1) * CFB_SECTOR;
-        &mut file[start..start + CFB_SECTOR]
-    }
-
-    fn put_u16(bytes: &mut [u8], offset: usize, value: u16) {
-        bytes[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
-    }
-
-    fn put_u32(bytes: &mut [u8], offset: usize, value: u32) {
-        bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
     }
 }

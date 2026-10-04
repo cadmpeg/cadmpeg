@@ -6,6 +6,8 @@
 //! crate's `src/layout.rs` constants. Neither validates; both assume the table
 //! already passed `validate`.
 
+mod read_set;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::io::Write as IoWrite;
@@ -24,54 +26,59 @@ use crate::{
 /// Render a layout file as the markdown page the specification links to.
 pub(crate) fn render(file: &LayoutFile) -> String {
     let mut out = String::new();
-    let _ = writeln!(
+    render_into(&mut out, file).expect("a String write cannot fail");
+    out
+}
+
+fn render_into(out: &mut String, file: &LayoutFile) -> std::fmt::Result {
+    writeln!(
         out,
         "<!-- Generated from docs/layouts/{}.toml by",
         file.format
-    );
-    let _ = writeln!(
+    )?;
+    writeln!(
         out,
         "     crates/cadmpeg/tests/layout_tables.rs. Do not edit by hand;"
-    );
-    let _ = writeln!(
+    )?;
+    writeln!(
         out,
         "     run `UPDATE_LAYOUT_DOCS=1 cargo test -p cadmpeg --test layout_tables`. -->"
-    );
-    let _ = writeln!(out);
-    let _ = writeln!(out, "# `{}` record layouts", file.format);
-    let _ = writeln!(out);
-    let _ = writeln!(out, "Source of truth: [`{0}`](../../{0}).", file.spec);
-    let _ = writeln!(out, "Table source: `docs/layouts/{}.toml`.", file.format);
+    )?;
+    writeln!(out)?;
+    writeln!(out, "# `{}` record layouts", file.format)?;
+    writeln!(out)?;
+    writeln!(out, "Source of truth: [`{0}`](../../{0}).", file.spec)?;
+    writeln!(out, "Table source: `docs/layouts/{}.toml`.", file.format)?;
     if !file.note.trim().is_empty() {
-        let _ = writeln!(out);
-        let _ = writeln!(out, "{}", file.note.trim());
+        writeln!(out)?;
+        writeln!(out, "{}", file.note.trim())?;
     }
 
     if !file.types.is_empty() {
-        let _ = writeln!(out, "\n## Composite types\n");
-        let _ = writeln!(out, "| Type | Bytes | Endianness | Meaning |");
-        let _ = writeln!(out, "| ---- | ----: | ---------- | ------- |");
+        writeln!(out, "\n## Composite types\n")?;
+        writeln!(out, "| Type | Bytes | Endianness | Meaning |")?;
+        writeln!(out, "| ---- | ----: | ---------- | ------- |")?;
         for decl in &file.types {
-            let _ = writeln!(
+            writeln!(
                 out,
                 "| `{}` | {} | {} | {} |",
                 decl.name,
                 decl.bytes,
                 decl.endianness,
                 cell(&decl.note)
-            );
+            )?;
         }
     }
 
     if !file.tokens.is_empty() {
-        let _ = writeln!(out, "\n## Tag inventory\n");
-        let _ = writeln!(out, "| Tag | Name | Payload | Meaning | Spec |");
-        let _ = writeln!(out, "| --- | ---- | ------: | ------- | ---- |");
+        writeln!(out, "\n## Tag inventory\n")?;
+        writeln!(out, "| Tag | Name | Payload | Meaning | Spec |")?;
+        writeln!(out, "| --- | ---- | ------: | ------- | ---- |")?;
         for token in &file.tokens {
             let payload = token
                 .payload_bytes
                 .map_or_else(|| "variable".to_string(), |n| format!("{n} B"));
-            let _ = writeln!(
+            writeln!(
                 out,
                 "| `{}` | {} | {} | {} | §{} |",
                 token.tag,
@@ -79,12 +86,12 @@ pub(crate) fn render(file: &LayoutFile) -> String {
                 payload,
                 cell(&token.note),
                 token.section
-            );
+            )?;
         }
     }
 
     for record in &file.records {
-        let _ = writeln!(out, "\n## `{}`\n", record.name);
+        writeln!(out, "\n## `{}`\n", record.name)?;
         let kind = match record.kind {
             RecordKind::Byte => "byte offsets",
             RecordKind::Slot => "ordered slots (no stated byte offsets)",
@@ -93,13 +100,13 @@ pub(crate) fn render(file: &LayoutFile) -> String {
         let size = record
             .size
             .map_or_else(|| "not stated".to_string(), |s| format!("{s} B"));
-        let _ = writeln!(
+        writeln!(
             out,
             "Spec §{} · layout: {kind} · size: {size}",
             record.section
-        );
+        )?;
         if !record.dialects.is_empty() {
-            let _ = writeln!(
+            writeln!(
                 out,
                 "\nDialects: {}",
                 record
@@ -108,36 +115,36 @@ pub(crate) fn render(file: &LayoutFile) -> String {
                     .map(|id| format!("`{id}`"))
                     .collect::<Vec<_>>()
                     .join(", ")
-            );
+            )?;
         }
         if !record.note.trim().is_empty() {
-            let _ = writeln!(out, "\n{}", record.note.trim());
+            writeln!(out, "\n{}", record.note.trim())?;
         }
         if !record.parsed_by.is_empty() {
-            let _ = writeln!(out, "\nParsed by:");
+            writeln!(out, "\nParsed by:")?;
             for path in &record.parsed_by {
-                let _ = writeln!(out, "- `{path}`");
+                writeln!(out, "- `{path}`")?;
             }
         }
-        let _ = writeln!(out);
+        writeln!(out)?;
         match record.kind {
             RecordKind::Byte => {
-                let _ = writeln!(
+                writeln!(
                     out,
                     "| Offset | Size | Field | Type | Endian | Src | Meaning |"
-                );
-                let _ = writeln!(
+                )?;
+                writeln!(
                     out,
                     "| -----: | ---: | ----- | ---- | ------ | --- | ------- |"
-                );
+                )?;
             }
             RecordKind::Slot => {
-                let _ = writeln!(out, "| # | Slot | Type | Endian | Src | Meaning |");
-                let _ = writeln!(out, "| -: | ---- | ---- | ------ | --- | ------- |");
+                writeln!(out, "| # | Slot | Type | Endian | Src | Meaning |")?;
+                writeln!(out, "| -: | ---- | ---- | ------ | --- | ------- |")?;
             }
             RecordKind::Column => {
-                let _ = writeln!(out, "| Columns | Field | Type | Src | Meaning |");
-                let _ = writeln!(out, "| ------- | ----- | ---- | --- | ------- |");
+                writeln!(out, "| Columns | Field | Type | Src | Meaning |")?;
+                writeln!(out, "| ------- | ----- | ---- | --- | ------- |")?;
             }
         }
         let custom: BTreeMap<String, u64> = file
@@ -164,7 +171,7 @@ pub(crate) fn render(file: &LayoutFile) -> String {
                 cell(&field.note)
             };
             if let Some(raw) = &field.value {
-                let _ = write!(meaning, " · value `{raw}`");
+                write!(meaning, " · value `{raw}`")?;
             }
             match record.kind {
                 RecordKind::Byte => {
@@ -183,7 +190,7 @@ pub(crate) fn render(file: &LayoutFile) -> String {
                 }
                 RecordKind::Slot => {
                     rows.push((
-                        index as u64,
+                        cadmpeg_core::decode::u64_from_index(index),
                         format!(
                             "| {index} | `{}` | `{}` | {endian} | {src} | {meaning} |",
                             field.name, field.ty
@@ -210,51 +217,51 @@ pub(crate) fn render(file: &LayoutFile) -> String {
             rows.sort_by_key(|(key, _)| *key);
         }
         for (_, row) in &rows {
-            let _ = writeln!(out, "{row}");
+            writeln!(out, "{row}")?;
         }
         if !record.gaps.is_empty() {
-            let _ = writeln!(out, "\nUnstated regions:\n");
+            writeln!(out, "\nUnstated regions:\n")?;
             for gap in &record.gaps {
-                let _ = writeln!(
+                writeln!(
                     out,
                     "- `{}..{}` ({} B): {}",
                     gap.offset,
                     gap.offset + gap.size,
                     gap.size,
                     gap.note.trim()
-                );
+                )?;
             }
         }
         if !record.discrepancies.is_empty() {
-            let _ = writeln!(out, "\n**Discrepancies:**\n");
+            writeln!(out, "\n**Discrepancies:**\n")?;
             for item in &record.discrepancies {
-                let _ = writeln!(out, "- {}", item.note.trim());
+                writeln!(out, "- {}", item.note.trim())?;
             }
         }
         if !record.code.is_empty() {
-            let _ = writeln!(out, "\nCross-checked against code:\n");
+            writeln!(out, "\nCross-checked against code:\n")?;
             for check in &record.code {
-                let _ = writeln!(out, "- `{}` — {}", check.path, check.note.trim());
+                writeln!(out, "- `{}` — {}", check.path, check.note.trim())?;
             }
         }
     }
 
     if !file.not_applicable.is_empty() {
-        let _ = writeln!(out, "\n## Not tabulated\n");
-        let _ = writeln!(out, "| Area | Spec | Reason |");
-        let _ = writeln!(out, "| ---- | ---- | ------ |");
+        writeln!(out, "\n## Not tabulated\n")?;
+        writeln!(out, "| Area | Spec | Reason |")?;
+        writeln!(out, "| ---- | ---- | ------ |")?;
         for entry in &file.not_applicable {
-            let _ = writeln!(
+            writeln!(
                 out,
                 "| {} | §{} | {} |",
                 cell(&entry.area),
                 entry.section,
                 cell(&entry.reason)
-            );
+            )?;
         }
     }
 
-    out
+    Ok(())
 }
 
 /// Escape a value for a markdown table cell.
@@ -350,7 +357,32 @@ fn fence_text(text: &str) -> String {
 }
 
 /// Turn one validated table into the checked-in `layout.rs` source.
-pub(crate) fn emit_layout_rs(file: &LayoutFile) -> Result<String, Vec<String>> {
+pub(crate) fn emit_layout_rs(
+    file: &LayoutFile,
+    source_root: &std::path::Path,
+) -> Result<String, Vec<String>> {
+    let reads = read_set::layout_reads(source_root).map_err(|error| vec![error])?;
+    emit_layout_source(file, &reads).map_err(|failure| match failure {
+        EmitFailure::Invalid(errors) => errors,
+        EmitFailure::Format(error) => vec![error.to_string()],
+    })
+}
+
+/// Why one layout module could not be emitted.
+enum EmitFailure {
+    /// The layout file states a name or an offset the emitter refuses.
+    Invalid(Vec<String>),
+    /// The emitter could not write its output.
+    Format(std::fmt::Error),
+}
+
+impl From<std::fmt::Error> for EmitFailure {
+    fn from(error: std::fmt::Error) -> Self {
+        Self::Format(error)
+    }
+}
+
+fn emit_layout_source(file: &LayoutFile, reads: &read_set::Reads) -> Result<String, EmitFailure> {
     let mut errors = Vec::new();
     let mut omitted = Vec::new();
     let mut modules = String::new();
@@ -411,15 +443,20 @@ pub(crate) fn emit_layout_rs(file: &LayoutFile) -> Result<String, Vec<String>> {
             } else {
                 format!("`{}`", field.ty)
             };
-            let _ = writeln!(
-                fields_out,
-                "    /// Offset of `{0}` ({ty_part}). Spec §{1}.",
-                field.name, record.section
-            );
-            let _ = writeln!(
-                fields_out,
-                "    pub(crate) const {const_name}: usize = {offset};"
-            );
+            if reads.contains(&record.name, &const_name) {
+                writeln!(
+                    fields_out,
+                    "    /// Offset of `{0}` ({ty_part}). Spec §{1}.",
+                    field.name, record.section
+                )?;
+                if reads.test_only(&record.name, &const_name) {
+                    writeln!(fields_out, "    #[cfg(test)]")?;
+                }
+                writeln!(
+                    fields_out,
+                    "    pub(crate) const {const_name}: usize = {offset};"
+                )?;
+            }
             if let Some(raw) = &field.value {
                 let value_name = format!("{const_name}_VALUE");
                 if !seen.insert(value_name.clone()) {
@@ -433,40 +470,47 @@ pub(crate) fn emit_layout_rs(file: &LayoutFile) -> Result<String, Vec<String>> {
                 let width = type_width(&field.ty, &custom).ok().flatten();
                 match decode_field_value(raw, &field.ty, width) {
                     Ok(binding) => {
-                        let _ = writeln!(
-                            fields_out,
-                            "    /// Stated value of `{0}` (`{1}`). Spec §{2}.",
-                            field.name, field.ty, record.section
-                        );
-                        let _ =
-                            writeln!(fields_out, "    pub(crate) const {value_name}: {binding};");
+                        if reads.contains(&record.name, &value_name) {
+                            writeln!(
+                                fields_out,
+                                "    /// Stated value of `{0}` (`{1}`). Spec §{2}.",
+                                field.name, field.ty, record.section
+                            )?;
+                            if reads.test_only(&record.name, &value_name) {
+                                writeln!(fields_out, "    #[cfg(test)]")?;
+                            }
+                            writeln!(fields_out, "    pub(crate) const {value_name}: {binding};")?;
+                        }
                     }
                     Err(message) => errors.push(format!("{at}: {message}")),
                 }
             }
         }
 
-        let _ = writeln!(
+        if fields_out.is_empty() && !reads.contains(&record.name, "LEN") {
+            continue;
+        }
+        writeln!(
             modules,
             "/// Byte offsets for the `{}` record.",
             record.name
-        );
-        let _ = writeln!(modules, "///");
+        )?;
+        writeln!(modules, "///")?;
         match record.size {
             Some(size) => {
-                let _ = writeln!(
+                writeln!(
                     modules,
                     "/// Spec §{}. Record length {size} B.",
                     record.section
-                );
+                )?;
             }
             None => {
-                let _ = writeln!(modules, "/// Spec §{}.", record.section);
+                writeln!(modules, "/// Spec §{}.", record.section)?;
             }
         }
         if !record.dialects.is_empty() {
-            let _ = writeln!(modules, "///");
-            let _ = writeln!(
+            writeln!(modules, "///")?;
+            writeln!(
                 modules,
                 "/// Dialects: {}.",
                 record
@@ -475,30 +519,33 @@ pub(crate) fn emit_layout_rs(file: &LayoutFile) -> Result<String, Vec<String>> {
                     .map(|id| format!("`{id}`"))
                     .collect::<Vec<_>>()
                     .join(", ")
-            );
+            )?;
         }
         if !record.note.trim().is_empty() {
-            let _ = writeln!(modules, "///");
-            let _ = writeln!(modules, "/// ```text");
-            let _ = writeln!(modules, "/// {}", fence_text(&record.note));
-            let _ = writeln!(modules, "/// ```");
+            writeln!(modules, "///")?;
+            writeln!(modules, "/// ```text")?;
+            writeln!(modules, "/// {}", fence_text(&record.note))?;
+            writeln!(modules, "/// ```")?;
         }
-        let _ = writeln!(modules, "pub(crate) mod {} {{", record.name);
-        if let Some(size) = record.size {
-            let _ = writeln!(
+        writeln!(modules, "pub(crate) mod {} {{", record.name)?;
+        if let Some(size) = record.size.filter(|_| reads.contains(&record.name, "LEN")) {
+            writeln!(
                 modules,
                 "    /// Record length in bytes. Spec §{}.",
                 record.section
-            );
-            let _ = writeln!(modules, "    pub(crate) const LEN: usize = {size};");
+            )?;
+            if reads.test_only(&record.name, "LEN") {
+                writeln!(modules, "    #[cfg(test)]")?;
+            }
+            writeln!(modules, "    pub(crate) const LEN: usize = {size};")?;
         }
         modules.push_str(&fields_out);
-        let _ = writeln!(modules, "}}");
-        let _ = writeln!(modules);
+        writeln!(modules, "}}")?;
+        writeln!(modules)?;
     }
 
     if !errors.is_empty() {
-        return Err(errors);
+        return Err(EmitFailure::Invalid(errors));
     }
 
     let mut token_mod = String::new();
@@ -510,28 +557,33 @@ pub(crate) fn emit_layout_rs(file: &LayoutFile) -> Result<String, Vec<String>> {
         let Some(name) = token_const_name(&token.name) else {
             continue;
         };
-        token_consts.push((name, value, token));
+        if reads.contains("token", &name) {
+            token_consts.push((name, value, token));
+        }
     }
     if !token_consts.is_empty() {
-        let _ = writeln!(token_mod, "/// Tag constants from the table inventory.");
-        let _ = writeln!(token_mod, "pub(crate) mod token {{");
+        writeln!(token_mod, "/// Tag constants from the table inventory.")?;
+        writeln!(token_mod, "pub(crate) mod token {{")?;
         for (name, value, token) in &token_consts {
-            let _ = writeln!(
+            writeln!(
                 token_mod,
                 "    /// `{}` (`{}`). Spec §{}.",
                 token.name, token.tag, token.section
-            );
+            )?;
+            if reads.test_only("token", name) {
+                writeln!(token_mod, "    #[cfg(test)]")?;
+            }
             match value {
                 TokenConst::Bytes(bytes) => {
-                    let _ = writeln!(
+                    writeln!(
                         token_mod,
                         "    pub(crate) const {name}: [u8; {}] = {};",
                         bytes.len(),
                         rust_byte_array(bytes)
-                    );
+                    )?;
                 }
                 other => {
-                    let _ = writeln!(
+                    writeln!(
                         token_mod,
                         "    pub(crate) const {name}: {} = {};",
                         rust_token_ty(other),
@@ -542,43 +594,38 @@ pub(crate) fn emit_layout_rs(file: &LayoutFile) -> Result<String, Vec<String>> {
                             TokenConst::U64(v) => rust_hex(*v, 16),
                             TokenConst::Bytes(_) => unreachable!(),
                         }
-                    );
+                    )?;
                 }
             }
         }
-        let _ = writeln!(token_mod, "}}");
-        let _ = writeln!(token_mod);
+        writeln!(token_mod, "}}")?;
+        writeln!(token_mod)?;
     }
 
     let mut out = String::new();
-    let _ = writeln!(out, "// SPDX-License-Identifier: Apache-2.0");
-    let _ = writeln!(
+    writeln!(out, "// SPDX-License-Identifier: Apache-2.0")?;
+    writeln!(
         out,
         "//! Byte-offset and value constants generated from `docs/layouts/{}.toml`.",
         file.format
-    );
-    let _ = writeln!(out, "//!");
-    let _ = writeln!(out, "//! Do not edit by hand. Regenerate with:");
-    let _ = writeln!(
+    )?;
+    writeln!(out, "//!")?;
+    writeln!(out, "//! Do not edit by hand. Regenerate with:")?;
+    writeln!(
         out,
         "//! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`."
-    );
-    let _ = writeln!(out);
-    let _ = writeln!(
-        out,
-        "#![allow(dead_code)] // Not every generated constant is referenced yet."
-    );
-    let _ = writeln!(out);
+    )?;
+    writeln!(out)?;
     if !omitted.is_empty() {
-        let _ = writeln!(
+        writeln!(
             out,
             "// Records omitted because the table declares a contradiction."
-        );
-        let _ = writeln!(out, "//");
+        )?;
+        writeln!(out, "//")?;
         for line in &omitted {
-            let _ = writeln!(out, "{line}");
+            writeln!(out, "{line}")?;
         }
-        let _ = writeln!(out);
+        writeln!(out)?;
     }
     out.push_str(&token_mod);
     out.push_str(modules.trim_end());
@@ -614,3 +661,77 @@ fn rustfmt_source(src: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::emit_layout_rs;
+    use crate::LayoutFile;
+
+    #[test]
+    fn layout_emission_filters_records_values_tokens_and_test_reads(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let file: LayoutFile = toml::from_str(
+            r#"
+schema = 1
+format = "demo"
+spec = "demo.md"
+[[record]]
+name = "header"
+kind = "byte"
+section = "1"
+anchor = "header"
+size = 2
+[[record.field]]
+name = "magic"
+type = "u8"
+offset = 0
+value = 7
+source = "spec"
+anchor = "magic"
+[[record.field]]
+name = "unread"
+type = "u8"
+offset = 1
+source = "spec"
+anchor = "unread"
+[[record]]
+name = "unread_record"
+kind = "byte"
+section = "1"
+anchor = "unread record"
+size = 1
+[[record.field]]
+name = "value"
+type = "u8"
+offset = 0
+source = "spec"
+anchor = "value"
+[[token]]
+tag = "0x01"
+name = "used tag"
+note = "tag"
+section = "1"
+anchor = "tag"
+[[token]]
+tag = "0x02"
+name = "unused tag"
+note = "tag"
+section = "1"
+anchor = "tag"
+"#,
+        )?;
+        let temporary = tempfile::tempdir()?;
+        std::fs::write(temporary.path().join("lib.rs"), "use crate::layout::{header as h, token}; const M: u8 = h::MAGIC_VALUE; const T: u8 = token::USED_TAG; #[cfg(test)] mod tests { const L: usize = super::h::LEN; }")?;
+        let rendered =
+            emit_layout_rs(&file, temporary.path()).map_err(|errors| errors.join("\n"))?;
+        assert!(rendered.contains("pub(crate) const MAGIC_VALUE: u8 = 7;"));
+        assert!(rendered.contains("pub(crate) const USED_TAG: u8 = 1;"));
+        assert!(rendered.contains("#[cfg(test)]\n    pub(crate) const LEN: usize = 2;"));
+        assert!(!rendered.contains("const MAGIC:"));
+        assert!(!rendered.contains("UNREAD"));
+        assert!(!rendered.contains("mod unread_record"));
+        assert!(!rendered.contains("UNUSED_TAG"));
+        assert!(!rendered.contains("allow("));
+        Ok(())
+    }
+}

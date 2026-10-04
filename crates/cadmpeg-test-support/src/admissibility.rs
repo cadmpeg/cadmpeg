@@ -1,0 +1,124 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Frozen accept/reject fixtures for the legacy full-validator predicates.
+//!
+//! Tests retain accepted and rejected cases for the full neutral validator
+//! and the full annotation validator with `ArenaOrder` removed. Codec admission
+//! uses the Check subsets defined by each production route.
+
+use cadmpeg_ir::ids::{PointId, RegionId, ShellId, VertexId};
+use cadmpeg_ir::topology::{Point, Shell, Vertex};
+use cadmpeg_ir::CadIr;
+
+/// Failure while assembling a frozen admissibility fixture.
+#[derive(Debug, thiserror::Error)]
+pub enum FixtureError {
+    /// An identity component or key was not admissible.
+    #[error(transparent)]
+    Identity(#[from] cadmpeg_ir::ids::IdentityError),
+    /// A topological carrier rejected its payload.
+    #[error("fixture geometry is invalid: {0}")]
+    Geometry(&'static str),
+}
+
+/// Empty document: accepted by the full neutral validator.
+pub fn accepted_empty() -> CadIr {
+    CadIr::empty()
+}
+
+/// Vertex → missing point: rejected (`ReferentialIntegrity`).
+pub fn rejected_missing_point(prefix: &str) -> Result<CadIr, FixtureError> {
+    let mut ir = CadIr::empty();
+    ir.model.vertices.push(Vertex {
+        id: VertexId::mint(format!("{prefix}:vertex#0"))?,
+        point: PointId::mint(format!("{prefix}:point#missing"))?,
+        tolerance: None,
+    });
+    Ok(ir)
+}
+
+/// Shell → missing region: rejected (`ReferentialIntegrity` / topology).
+pub fn rejected_missing_region(prefix: &str) -> Result<CadIr, FixtureError> {
+    let mut ir = CadIr::empty();
+    let point = PointId::mint(format!("{prefix}:point#0"))?;
+    let vertex = VertexId::mint(format!("{prefix}:vertex#0"))?;
+    let position =
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0))
+            .ok_or(Point::NON_FINITE_POSITION)
+            .map_err(FixtureError::Geometry)?;
+    ir.model
+        .points
+        .push(Point::new(point.clone(), position, None));
+    ir.model.vertices.push(Vertex {
+        id: vertex.clone(),
+        point,
+        tolerance: None,
+    });
+    ir.model.shells.push(Shell::with_free_vertex(
+        ShellId::mint(format!("{prefix}:shell#0"))?,
+        RegionId::mint(format!("{prefix}:region#missing"))?,
+        vertex,
+    ));
+    Ok(ir)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{accepted_empty, rejected_missing_point, rejected_missing_region};
+    use cadmpeg_ir::annotations::Annotations;
+    use cadmpeg_ir::report::check::Check;
+    use cadmpeg_ir::validate::{validate_neutral, validate_neutral_with_annotations};
+    use cadmpeg_ir::CadIr;
+
+    /// Frozen legacy Rhino draft predicate: full annotations validation minus `ArenaOrder`.
+    fn rhino_draft_gate(ir: &CadIr, annotations: &Annotations) -> bool {
+        let mut validation = validate_neutral_with_annotations(ir, annotations, Vec::new())
+            .expect("resource allocation did not fail");
+        validation
+            .findings
+            .retain(|finding| finding.check != Check::ArenaOrder);
+        validation.is_ok()
+    }
+
+    /// Frozen legacy Rhino instance predicate: full neutral validation.
+    fn rhino_instance_gate(ir: &CadIr) -> bool {
+        validate_neutral(ir, Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    }
+
+    #[test]
+    fn freeze_accepted_empty_under_legacy_predicates() {
+        let ir = accepted_empty();
+        let annotations = Annotations::default();
+        assert!(validate_neutral(&ir, Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok());
+        assert!(rhino_draft_gate(&ir, &annotations));
+        assert!(rhino_instance_gate(&ir));
+    }
+
+    #[test]
+    fn freeze_rejected_missing_point_under_legacy_predicates() {
+        let ir = rejected_missing_point("test:model").expect("valid identity");
+        let annotations = Annotations::default();
+        let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+        assert!(!report.is_ok(), "{report:?}");
+        assert!(report
+            .findings
+            .iter()
+            .any(|f| f.check == Check::ReferentialIntegrity));
+        assert!(!rhino_draft_gate(&ir, &annotations));
+        assert!(!rhino_instance_gate(&ir));
+    }
+
+    #[test]
+    fn freeze_rejected_missing_region_under_legacy_predicates() {
+        let ir = rejected_missing_region("test:model").expect("valid identity");
+        let annotations = Annotations::default();
+        assert!(!validate_neutral(&ir, Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok());
+        assert!(!rhino_draft_gate(&ir, &annotations));
+        assert!(!rhino_instance_gate(&ir));
+    }
+}

@@ -25,7 +25,6 @@ mod coverage;
 mod decode;
 mod detect;
 mod dialect;
-#[allow(dead_code)] // Loss catalog is consumed by tests.
 mod loss;
 
 include!("dialect/registry_ids.rs");
@@ -42,8 +41,17 @@ pub struct SatCodec;
 impl CodecBackend for SatCodec {
     const FORMAT: FormatId = FormatId::new(FORMAT);
 
-    fn detect_impl(&self, prefix: &[u8]) -> Confidence {
-        detect::confidence(prefix)
+    fn detect_impl(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        prefix: cadmpeg_core::decode::View<'_>,
+    ) -> Result<Confidence, cadmpeg_core::CodecError> {
+        let prefix = prefix.window();
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(prefix.len()),
+            "detect input",
+        )?;
+        Ok(detect::confidence(prefix))
     }
 
     fn inspect_impl(

@@ -400,6 +400,42 @@ class TestGeneratedIds(unittest.TestCase):
     def rows(self, body: str = GOOD_ROW) -> list[dict]:
         return tomllib.loads(_registry(body))["dialect"]
 
+    def generate(self, rows, source="DEMO_ONE; FORMAT;", owners=None):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            directory = root / "crates/demo/src"
+            directory.mkdir(parents=True)
+            (directory / "lib.rs").write_text(source, encoding="utf-8")
+            return checker.generated_id_modules(root, rows, self.OWNER if owners is None else owners)
+
+    def test_generated_ids_follow_source_reads(self):
+        unknown = GOOD_ROW.replace('id = "demo:one"', 'id = "demo:unknown"')
+        unknown += 'unknown_kind = "detect-unreachable"\n'
+        outputs, failures = self.generate(self.rows(GOOD_ROW + unknown), 'DEMO_ONE; FORMAT; // DEMO_UNKNOWN\n "DEMO_UNKNOWN";')
+        self.assertEqual(failures, [])
+        content = outputs[self.OWNER["demo"].path]
+        self.assertIn("DEMO_ONE", content)
+        self.assertNotIn("DEMO_UNKNOWN", content)
+        self.assertNotIn("allow", content)
+
+    def test_generated_ids_mark_test_only_reads(self):
+        outputs, failures = self.generate(self.rows(), '#[cfg(test)] mod tests { const ID: usize = DEMO_ONE; }')
+        self.assertEqual(failures, [])
+        content = outputs[self.OWNER["demo"].path]
+        self.assertIn("#[cfg(test)]\npub(crate) const DEMO_ONE", content)
+        self.assertNotIn("const FORMAT", content)
+
+    def test_generated_ids_do_not_read_their_own_output(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / self.OWNER["demo"].path
+            path.parent.mkdir(parents=True)
+            path.write_text("DEMO_ONE; FORMAT;", encoding="utf-8")
+            (path.parents[1] / "lib.rs").write_text("", encoding="utf-8")
+            outputs, failures = checker.generated_id_modules(root, self.rows(), self.OWNER)
+            self.assertEqual(failures, [])
+            self.assertNotIn("DEMO_ONE", outputs[self.OWNER["demo"].path])
+
     def test_constant_names_are_derived_from_the_complete_id(self):
         self.assertEqual(
             checker.rust_constant_name("iges:5.3-fixed-ascii"),
@@ -407,19 +443,19 @@ class TestGeneratedIds(unittest.TestCase):
         )
 
     def test_generated_module_owns_the_registry_literal(self):
-        outputs, failures = checker.generated_id_modules(self.rows(), self.OWNER)
+        outputs, failures = self.generate(self.rows())
         self.assertEqual(failures, [])
         content = outputs[self.OWNER["demo"].path]
         self.assertIn('pub(crate) const FORMAT: &str = "demo";', content)
         self.assertIn(
-            'pub(crate) const DEMO_ONE: DialectId = DialectId::pinned("demo:one");',
+            'pub(crate) const DEMO_ONE: DialectId = cadmpeg_core::dialect_id!("demo:one");',
             content,
         )
 
-    def test_detect_unreachable_rows_are_still_generated(self):
+    def test_detect_unreachable_rows_with_reads_are_generated(self):
         unknown = GOOD_ROW.replace('id = "demo:one"', 'id = "demo:unknown"')
         unknown += 'unknown_kind = "detect-unreachable"\n'
-        outputs, failures = checker.generated_id_modules(self.rows(unknown), self.OWNER)
+        outputs, failures = self.generate(self.rows(unknown), "DEMO_UNKNOWN; FORMAT;")
         self.assertEqual(failures, [])
         self.assertIn("DEMO_UNKNOWN", outputs[self.OWNER["demo"].path])
 
@@ -429,6 +465,7 @@ class TestGeneratedIds(unittest.TestCase):
             path = root / self.OWNER["demo"].path
             path.parent.mkdir(parents=True)
             path.write_text("stale\n", encoding="utf-8")
+            (path.parents[1] / "lib.rs").write_text("DEMO_ONE; FORMAT;", encoding="utf-8")
             failures = checker.check_generated_id_modules(
                 root, self.rows(), self.OWNER
             )
@@ -441,13 +478,13 @@ class TestGeneratedIds(unittest.TestCase):
         )
 
     def test_each_row_format_requires_one_owner(self):
-        _, failures = checker.generated_id_modules(self.rows(), {})
+        _, failures = self.generate(self.rows(), owners={})
         self.assertEqual(failures, ["format demo: no generated dialect-id owner"])
 
     def test_owner_without_rows_fails(self):
         owners = dict(self.OWNER)
         owners["unused"] = checker.GeneratedIdOwner(Path("unused.rs"), "pub(crate)")
-        _, failures = checker.generated_id_modules(self.rows(), owners)
+        _, failures = self.generate(self.rows(), owners=owners)
         self.assertEqual(
             failures,
             ["format unused: generated dialect-id owner has no registry rows"],
@@ -456,9 +493,7 @@ class TestGeneratedIds(unittest.TestCase):
     def test_normalized_constant_names_must_not_collide(self):
         second = GOOD_ROW.replace("demo:one", "demo:one.two")
         third = GOOD_ROW.replace("demo:one", "demo:one-two")
-        _, failures = checker.generated_id_modules(
-            self.rows(second + third), self.OWNER
-        )
+        _, failures = self.generate(self.rows(second + third))
         self.assertEqual(
             failures,
             ["demo:one-two: generated constant DEMO_ONE_TWO collides with demo:one.two"],

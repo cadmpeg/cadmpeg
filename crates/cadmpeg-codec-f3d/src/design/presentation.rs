@@ -7,27 +7,9 @@ use crate::bytes::is_guid_prefix;
 pub(crate) const GUID_LEN: usize = 36;
 const POST_2015_SUFFIX: &str = "_Post2015";
 
-/// Parsed identity of one serialized visual-appearance record.
-///
-/// Records in one visual family share the GUID prefix. Each appended
-/// `_Post2015` marker advances to a distinct record in that family.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct VisualToken<'a> {
-    guid: &'a str,
-    post_2015_revisions: usize,
-}
-
-impl VisualToken<'_> {
-    /// Whether two tokens identify the same visual-appearance record.
-    pub(crate) fn matches(self, other: Self) -> bool {
-        self.guid.eq_ignore_ascii_case(other.guid)
-            && self.post_2015_revisions == other.post_2015_revisions
-    }
-}
-
 /// Parse a visual token as a GUID followed by zero or more `_Post2015`
 /// revision markers.
-pub(crate) fn visual_token(value: &str) -> Option<VisualToken<'_>> {
+pub(crate) fn visual_token(value: &str) -> Option<usize> {
     if !is_guid_prefix(value) {
         return None;
     }
@@ -37,10 +19,7 @@ pub(crate) fn visual_token(value: &str) -> Option<VisualToken<'_>> {
         suffix = rest;
         post_2015_revisions += 1;
     }
-    suffix.is_empty().then_some(VisualToken {
-        guid: &value[..GUID_LEN],
-        post_2015_revisions,
-    })
+    suffix.is_empty().then_some(post_2015_revisions)
 }
 
 /// Stable Design type of a body record that owns its presentation envelope.
@@ -64,7 +43,7 @@ pub(crate) const BROWSER_NODE_BASE_TYPE_GUID: &str = "CB844AB6-240D-4fc9-9C9F-36
 pub(crate) const BROWSER_NODE_TYPE_VERSION: u32 = 2;
 
 /// Marker that opens a bare-owner body presentation envelope.
-pub(crate) const BODY_PRESENTATION_MATERIAL_ENVELOPE_ID: &str =
+pub(super) const BODY_PRESENTATION_MATERIAL_ENVELOPE_ID: &str =
     "D87FBE62-3B12-4CA8-9014-BAD31ABDB101";
 /// Physical-material library identifier in a body presentation envelope.
 pub(crate) const PHYSICAL_MATERIAL_LIBRARY_ID: &str = "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C";
@@ -77,7 +56,7 @@ pub(crate) const MODERN_APPEARANCE_LIBRARY_IDS: [&str; 2] = [
 ];
 
 /// Whether a token names a physical material rather than one of its aspects.
-pub(crate) fn is_physical_material_token(value: &str) -> bool {
+pub(super) fn is_physical_material_token(value: &str) -> bool {
     value.starts_with("PrismMaterial") && !value.contains("_physmat_aspects")
 }
 
@@ -92,8 +71,8 @@ mod tests {
         let revised_case_variant =
             super::visual_token("11111111-2222-3333-4444-555555555555_post2015_post2015");
 
-        assert!(!base.matches(revised));
-        assert_eq!(revised.post_2015_revisions, 2);
+        assert_ne!(base, revised);
+        assert_eq!(revised, 2);
         assert!(revised_case_variant.is_none());
         assert!(super::visual_token("11111111-2222-3333-4444-555555555555_unrecognized").is_none());
     }

@@ -2,12 +2,16 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::features::{FeatureDefinition, FeatureId, HoleKind, Length};
-use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
+use cadmpeg_ir::features::{holes::HoleKind, FeatureDefinition, FeatureId, FeatureOperation};
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometry, SketchId};
+use cadmpeg_ir::sketches::{
+    SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
+};
 
+use crate::records::FeatureSource;
+use crate::records::ObjectId;
 use crate::records::{
     FeatureHistory, FeatureInputGeneratedSurfaceIdentity, FeatureInputLane, FeatureInputName,
 };
@@ -47,30 +51,36 @@ fn profile_reference_plane_payload(with_component_frame: bool) -> Vec<u8> {
 
 fn model_hole() -> cadmpeg_ir::features::Feature {
     cadmpeg_ir::features::Feature {
-        id: FeatureId::mint("hole").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#hole").expect("identity grammar"),
         ordinal: 0,
         name: Some("Hole".into()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::default(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Hole {
-            profile: None,
-            profile_filter: None,
-            face: None,
-            direction: None,
-            placements: None,
-            construction: cadmpeg_ir::features::HoleConstruction::form(HoleKind::Simple),
-            exit_kind: None,
-            diameter: Some(Length(4.0)),
-            extent: None,
-            bottom: None,
-            taper_angle: None,
-            allow_multi_profile_faces: None,
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Hole {
+                profile: None,
+                profile_filter: None,
+                face: None,
+                direction: None,
+                placements: None,
+                shape: cadmpeg_ir::features::holes::HoleShape::new(
+                    cadmpeg_ir::features::holes::HoleConstruction::form(HoleKind::Simple),
+                    None,
+                    Some(cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap()),
+                )
+                .unwrap(),
+
+                extent: None,
+                bottom: None,
+                taper_angle: None,
+                allow_multi_profile_faces: None,
+            }),
+        ),
         native_ref: Some("native-hole".into()),
     }
 }
@@ -87,7 +97,7 @@ fn native_history() -> FeatureHistory {
             parent: "history".into(),
             xml_tag: "HoleWizard".into(),
             tree_parent: None,
-            source_id: Some("7".into()),
+            source_id: FeatureSource::from_value(7),
             ordinal: 0,
             name: "Hole".into(),
             kind: "HoleWizard".into(),
@@ -109,7 +119,7 @@ fn lane() -> FeatureInputLane {
         ordinal,
         offset: u64::from(ordinal),
         type_prefix: [0xc3, 0x80, 0xc5, 0],
-        feature_source_id: 7,
+        feature_source_id: 7_u32.try_into().unwrap(),
         local_identity: 2,
         components: Vec::new(),
     };
@@ -140,7 +150,7 @@ fn lane_with_position_reference(position_source: u32) -> FeatureInputLane {
         ordinal: 0,
         offset: 0,
         value: "Hole".into(),
-        object_id: Some(7),
+        object_id: ObjectId::from_value(7),
     });
     let trailer = 6 + "Hole".encode_utf16().count() * 2;
     lane.native_payload[trailer..trailer + 8].copy_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0x40]);
@@ -153,25 +163,30 @@ fn lane_with_position_reference(position_source: u32) -> FeatureInputLane {
 fn cylinder(id: usize, x: f64) -> Surface {
     Surface {
         id: SurfaceId::mint(format!("test:model:entity#surface-{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Cylinder {
-            origin: Point3::new(x, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 2.0,
-        },
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                Point3::new(x, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                2.0,
+            )
+            .unwrap(),
+        )),
         source_object: None,
     }
 }
 
 fn profile_line(sketch: &SketchId, ordinal: usize, start: Point2, end: Point2) -> SketchEntity {
     SketchEntity::new(
-        SketchEntityId(format!("profile-line-{ordinal}")),
+        SketchEntityId::mint(format!("synthetic:test:id#profile-line-{ordinal}")).unwrap(),
         sketch.clone(),
-        SketchGeometry::Line { start, end },
+        SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }).unwrap(),
     )
 }
 
+mod admission;
 mod axial_profile;
+mod feature_ranges;
 mod hole_axis;
 mod position;
 mod writer;

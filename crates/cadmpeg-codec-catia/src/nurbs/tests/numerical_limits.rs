@@ -1,0 +1,553 @@
+// SPDX-License-Identifier: Apache-2.0
+
+use crate::nurbs::{
+    circular_helix_cache, quintic_jet_bspline, reverse_curve_geometry, reverse_knots,
+    reverse_nurbs_curve, reverse_pcurve_geometry, CurveGeometry, LaneRefusals, PcurveGeometry,
+    PcurveNurbs, SolvedCurveGeometry,
+};
+use cadmpeg_ir::geometry::{
+    nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
+    ProceduralCurveDefinition,
+};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
+
+const RELATIVE_ROUNDOFF: f64 = 32.0 * f64::EPSILON;
+
+#[test]
+fn pole_count_refuses_unrepresentable_degree_successor() {
+    assert_eq!(crate::nurbs::pole_count(&[u32::MAX], u32::MAX), None);
+}
+
+#[test]
+fn reversed_nurbs_copies_refuse_low_collection_and_retained_limits() {
+    let curve = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        None,
+        false,
+    )
+    .expect("fixture constructor admission")
+    .expect("linear model curve");
+    let retained = crate::test_support::with_retained_limit(0, |ctx| {
+        reverse_nurbs_curve(ctx, &curve, [0.0, 1.0])
+    });
+    assert!(
+        matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_reverse_curve_poles")
+    );
+    let collection = crate::test_support::with_collection_limit(0, |ctx| {
+        reverse_nurbs_curve(ctx, &curve, [0.0, 1.0])
+    });
+    assert!(
+        matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_reverse_curve_poles")
+    );
+    let pcurve = PcurveGeometry::Nurbs {
+        nurbs: PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("fixture pcurve construction admission")
+        .expect("linear pcurve"),
+    };
+    let retained = crate::test_support::with_retained_limit(0, |ctx| {
+        reverse_pcurve_geometry(
+            ctx,
+            &pcurve,
+            [0.0, 1.0],
+            &mut LaneRefusals::new(),
+            "test pcurve",
+        )
+    });
+    assert!(
+        matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_reverse_knots")
+    );
+    let collection = crate::test_support::with_collection_limit(0, |ctx| {
+        reverse_pcurve_geometry(
+            ctx,
+            &pcurve,
+            [0.0, 1.0],
+            &mut LaneRefusals::new(),
+            "test pcurve",
+        )
+    });
+    assert!(
+        matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_reverse_knots")
+    );
+    let reversed = crate::test_support::with_service_context(|ctx| {
+        reverse_nurbs_curve(ctx, &curve, [0.0, 1.0])
+    })
+    .expect("service profile admits reverse copy")
+    .expect("valid reversed curve");
+    assert_eq!(
+        reversed
+            .control_points()
+            .first()
+            .copied()
+            .map(cadmpeg_ir::features::FinitePoint3::get),
+        Some(Point3::new(1.0, 0.0, 0.0))
+    );
+}
+
+#[test]
+fn reversal_preserves_large_parameter_offsets_and_endpoint_values() {
+    for range in [[1e16, 1e16 + 2.0], [1e308, 1.1e308], [-1.1e308, -1e308]] {
+        let [lower, upper] = range;
+        let knots = vec![lower, lower, upper, upper];
+        let source = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            1,
+            knots.clone(),
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("fixture constructor admission")
+        .expect("linear model curve");
+        let reversed = crate::test_support::with_service_context(|ctx| {
+            reverse_nurbs_curve(ctx, &source, range)
+        })
+        .expect("service profile admits reverse copy")
+        .expect("finite reflected knots");
+        assert_eq!(reversed.knots().as_slice(), knots);
+        assert_eq!(
+            crate::test_support::with_service_context(|ctx| reverse_nurbs_curve(
+                ctx, &reversed, range
+            ))
+            .expect("service profile admits reverse copy")
+            .expect("double reversal"),
+            source
+        );
+        let model = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(source));
+        let mut refusal = LaneRefusals::new();
+        let (reversed, reversed_range) = crate::test_support::with_service_context(|ctx| {
+            reverse_curve_geometry(ctx, &model, range, &mut refusal, "offset curve")
+        })
+        .expect("service profile admits range operation")
+        .expect("reversed curve");
+        assert_eq!(reversed_range, range);
+        let pcurve = PcurveGeometry::Nurbs {
+            nurbs: PcurveNurbs::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                1,
+                knots,
+                vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+                None,
+                false,
+            )
+            .expect("fixture pcurve construction admission")
+            .expect("linear pcurve"),
+        };
+        let reversed_pcurve = crate::test_support::with_service_context(|ctx| {
+            reverse_pcurve_geometry(ctx, &pcurve, range, &mut refusal, "offset pcurve")
+        })
+        .expect("service profile admits range operation")
+        .expect("reversed pcurve");
+        for (parameter, expected_x) in [(lower, 1.0), (upper, 0.0)] {
+            assert_eq!(
+                cadmpeg_ir::eval::decode::curve_point(
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                    &reversed,
+                    parameter
+                )
+                .map(cadmpeg_ir::features::FinitePoint3::get),
+                Ok(Point3::new(expected_x, 0.0, 0.0))
+            );
+            assert_eq!(
+                cadmpeg_ir::eval::decode::pcurve_uv(
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                    &reversed_pcurve,
+                    parameter
+                )
+                .map(cadmpeg_ir::units::FinitePoint2::get),
+                Ok(Point2::new(expected_x, 0.0))
+            );
+        }
+        assert!(refusal.take_notes().is_empty());
+    }
+}
+
+#[test]
+fn wide_finite_nurbs_ranges_reverse_and_normalize_without_a_finite_width() {
+    let range = [-f64::MAX, f64::MAX];
+    let knots = vec![range[0], range[0], range[1], range[1]];
+    let curve = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            1,
+            knots.clone(),
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("fixture constructor admission")
+        .expect("wide finite curve"),
+    ));
+    let pcurve = PcurveGeometry::Nurbs {
+        nurbs: PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            1,
+            knots,
+            vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("fixture pcurve construction admission")
+        .expect("wide finite pcurve"),
+    };
+    let mut refusal = LaneRefusals::new();
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| crate::nurbs::canonical_model_curve_range(
+            ctx,
+            &curve,
+            range,
+            &mut refusal,
+            "wide curve"
+        ))
+        .expect("service profile admits range operation"),
+        Some(range)
+    );
+    let (reversed, reversed_range) = crate::test_support::with_service_context(|ctx| {
+        reverse_curve_geometry(ctx, &curve, range, &mut refusal, "wide curve")
+    })
+    .expect("service profile admits range operation")
+    .expect("wide model curve reversal");
+    assert_eq!(reversed_range, range);
+    let reversed_pcurve = crate::test_support::with_service_context(|ctx| {
+        reverse_pcurve_geometry(ctx, &pcurve, range, &mut refusal, "wide pcurve")
+    })
+    .expect("service profile admits range operation")
+    .expect("wide pcurve reversal");
+    for (parameter, expected) in [(range[0], 1.0), (range[1], 0.0)] {
+        assert_eq!(
+            cadmpeg_ir::eval::decode::curve_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &reversed,
+                parameter
+            )
+            .map(|point| point.get().x),
+            Ok(expected)
+        );
+        assert_eq!(
+            cadmpeg_ir::eval::decode::pcurve_uv(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &reversed_pcurve,
+                parameter
+            )
+            .map(|point| point.get().u),
+            Ok(expected)
+        );
+    }
+    assert!(refusal.take_notes().is_empty());
+}
+
+#[test]
+fn wide_finite_line_pcurve_range_reverses_when_its_origin_is_finite() {
+    let range = [-f64::MAX, f64::MAX];
+    let line = PcurveGeometry::Line(
+        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+            Point2::new(0.0, 0.0),
+            Point2::new(0.25, 0.0),
+        )
+        .expect("finite line pcurve"),
+    );
+    let mut refusal = LaneRefusals::new();
+    let reversed = crate::test_support::with_service_context(|ctx| {
+        reverse_pcurve_geometry(ctx, &line, range, &mut refusal, "wide line")
+    })
+    .expect("service profile admits range operation")
+    .expect("finite wide line reversal");
+    let PcurveGeometry::Line(reversed) = reversed else {
+        panic!("line carrier");
+    };
+    assert_eq!(reversed.origin().as_raw().u, 0.0);
+    assert_eq!(reversed.direction().as_raw().u, -0.25);
+    assert!(refusal.take_notes().is_empty());
+}
+
+#[test]
+fn reflected_knots_include_exterior_knots_and_canonical_zero() {
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| reverse_knots(
+            ctx,
+            &[1e16 - 2.0, 1e16, 1e16 + 2.0, 1e16 + 4.0],
+            [1e16, 1e16 + 2.0]
+        ))
+        .expect("service profile admits reverse knots"),
+        vec![1e16 - 2.0, 1e16, 1e16 + 2.0, 1e16 + 4.0]
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| reverse_knots(
+            ctx,
+            &[-0.0, 1.0],
+            [0.0, 1.0]
+        ))
+        .expect("service profile admits reverse knots")[0]
+            .to_bits(),
+        0.0_f64.to_bits()
+    );
+}
+
+#[test]
+fn line_pcurve_reversal_does_not_need_a_finite_endpoint_sum() {
+    let source = PcurveGeometry::Line(
+        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+            Point2::new(0.0, 0.0),
+            Point2::new(0.25, 0.0),
+        )
+        .expect("line pcurve"),
+    );
+    let range = [1e308, 1.1e308];
+    let reversed = crate::test_support::with_service_context(|ctx| {
+        reverse_pcurve_geometry(ctx, &source, range, &mut LaneRefusals::new(), "large line")
+    })
+    .expect("service profile admits range operation")
+    .expect("finite reflected origin");
+    for (from, to) in [(range[0], range[1]), (range[1], range[0])] {
+        let original = cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &source,
+            from,
+        )
+        .expect("source point");
+        let reverse = cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &reversed,
+            to,
+        )
+        .expect("reversed point");
+        assert!((reverse.u / original.u - 1.0).abs() < RELATIVE_ROUNDOFF);
+        assert_eq!(reverse.v, 0.0);
+    }
+}
+
+fn bilinear_surface(points: Vec<Vec<Point3>>, weights: Vec<Vec<f64>>) -> NurbsSurface {
+    NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceLanes::new(points, Some(weights)),
+        false,
+    )
+    .expect("fixture constructor admission")
+    .expect("bilinear surface")
+}
+
+#[test]
+fn isocurve_is_invariant_under_common_weight_scale() {
+    for scale in [1.0, 1e308, 1e-200, f64::from_bits(1), -1e308] {
+        let surface = bilinear_surface(
+            vec![
+                vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 1.0, 0.0)],
+                vec![Point3::new(4.0, 0.0, 0.0), Point3::new(4.0, 1.0, 0.0)],
+            ],
+            vec![vec![scale; 2]; 2],
+        );
+        for (fix_u, expected) in [
+            (
+                true,
+                [Point3::new(3.0, 0.0, 0.0), Point3::new(3.0, 1.0, 0.0)],
+            ),
+            (
+                false,
+                [Point3::new(2.0, 0.5, 0.0), Point3::new(4.0, 0.5, 0.0)],
+            ),
+        ] {
+            let curve = cadmpeg_ir::eval::nurbs_surface_isocurve(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &surface,
+                if fix_u {
+                    cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U
+                } else {
+                    cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::V
+                },
+                0.5,
+            )
+            .expect("resource allocation did not fail")
+            .expect("finite isocurve at any common weight scale");
+            assert_eq!(curve.control_points(), expected);
+            let weights = curve.weights().expect("rational isocurve");
+            assert_eq!(weights[0].get() / weights[1].get(), 1.0);
+        }
+    }
+}
+
+#[test]
+fn isocurve_preserves_weight_ratios_between_output_poles() {
+    for scale in [1.0, 1e307, f64::from_bits(1)] {
+        let surface = bilinear_surface(
+            vec![
+                vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 1.0, 0.0)],
+                vec![Point3::new(4.0, 0.0, 0.0), Point3::new(4.0, 1.0, 0.0)],
+            ],
+            vec![vec![scale, 2.0 * scale], vec![2.0 * scale, 4.0 * scale]],
+        );
+        let curve = cadmpeg_ir::eval::nurbs_surface_isocurve(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &surface,
+            cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
+            0.5,
+        )
+        .expect("resource allocation did not fail")
+        .expect("finite isocurve");
+        let weights = curve.weights().expect("rational isocurve");
+        assert!((weights[1].get() / weights[0].get() - 2.0).abs() < RELATIVE_ROUNDOFF);
+        for (pole, y) in curve.control_points().iter().zip([0.0, 1.0]) {
+            assert!((pole.x - 10.0 / 3.0).abs() < RELATIVE_ROUNDOFF);
+            assert_eq!(pole.y, y);
+        }
+    }
+}
+
+#[test]
+fn isocurve_keeps_finite_maximum_coordinates() {
+    let surface = bilinear_surface(
+        vec![vec![Point3::new(f64::MAX, 0.0, 0.0); 2]; 2],
+        vec![vec![1e200; 2]; 2],
+    );
+    let curve = cadmpeg_ir::eval::nurbs_surface_isocurve(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &surface,
+        cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
+        0.5,
+    )
+    .expect("resource allocation did not fail")
+    .expect("constant finite surface");
+    assert_eq!(curve.control_points(), [Point3::new(f64::MAX, 0.0, 0.0); 2]);
+}
+
+#[test]
+fn quintic_jet_handles_spans_whose_square_overflows_or_underflows() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits input limit");
+    let h = 1e160;
+    let (_, controls) = quintic_jet_bspline(
+        &ctx,
+        5,
+        &[0.0, h],
+        &[[0.0; 3], [1.0, 0.0, 0.0]],
+        &[[1.0 / h, 0.0, 0.0]; 2],
+        &[[0.0; 3]; 2],
+    )
+    .expect("service resource budget")
+    .expect("finite linear controls");
+    for (control, expected_x) in controls.iter().zip([0.0, 0.2, 0.4, 0.6, 0.8, 1.0]) {
+        assert!((control[0] - expected_x).abs() < RELATIVE_ROUNDOFF);
+        assert_eq!(&control[1..], &[0.0, 0.0]);
+    }
+    for (h, acceleration, expected) in [
+        (
+            2.0_f64.powi(600),
+            2.0_f64.powi(-1000),
+            2.0_f64.powi(200) / 20.0,
+        ),
+        (
+            2.0_f64.powi(-600),
+            2.0_f64.powi(1000),
+            2.0_f64.powi(-200) / 20.0,
+        ),
+        (2.0, f64::MAX, f64::MAX / 5.0),
+    ] {
+        let (_, controls) = quintic_jet_bspline(
+            &ctx,
+            5,
+            &[0.0, h],
+            &[[0.0; 2]; 2],
+            &[[0.0; 2]; 2],
+            &[[acceleration, 0.0]; 2],
+        )
+        .expect("service resource budget")
+        .expect("finite curvature offsets");
+        for control in &controls[2..4] {
+            assert!((control[0] / expected - 1.0).abs() < RELATIVE_ROUNDOFF);
+            assert_eq!(control[1], 0.0);
+        }
+    }
+}
+
+#[test]
+fn quintic_jet_refuses_before_each_control_and_knot_allocation() {
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        quintic_jet_bspline(
+            ctx,
+            5,
+            &[0.0, 1.0],
+            &[[0.0, 0.0], [1.0, 0.0]],
+            &[[1.0, 0.0]; 2],
+            &[[0.0, 0.0]; 2],
+        )
+    };
+    assert!(crate::test_support::with_service_context(run)
+        .expect("service resource budget")
+        .is_some());
+    for (cap, operation) in [
+        (0, "catia quintic jet controls"),
+        (6, "catia quintic jet knots"),
+        (18, "catia quintic jet finite controls"),
+    ] {
+        assert!(matches!(
+            crate::test_support::with_collection_limit(cap, run),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == operation
+        ));
+    }
+}
+
+#[test]
+fn helix_cache_computes_finite_sagitta_without_doubling_radius() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits input limit");
+    for (radius, sweep, tolerance) in [
+        (f64::MAX, 1.0, f64::MAX),
+        (1e308, 1e-155, 1e-4),
+        (1e308, 1e-165, 1e-4),
+    ] {
+        let definition = ProceduralCurveDefinition::Helix(
+            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+                [0.0, sweep],
+                cadmpeg_ir::geometry::HelixFrame {
+                    center: Point3::new(0.0, 0.0, 0.0),
+                    major: Vector3::new(radius, 0.0, 0.0),
+                    minor: Vector3::new(0.0, radius, 0.0),
+                    pitch: Vector3::new(0.0, 0.0, 1.0),
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                },
+                0.0,
+                None,
+            )
+            .expect("circular helix"),
+        );
+        let cache = circular_helix_cache(
+            &ctx,
+            &definition,
+            cadmpeg_ir::scalar::PositiveReal::new(tolerance).expect("positive fixture tolerance"),
+            &mut LaneRefusals::new(),
+            "large helix",
+        )
+        .expect("service resource budget")
+        .expect("finite cache and sagitta");
+        assert!(cache.fit_tolerance.get() > 0.0 && cache.fit_tolerance.get() <= tolerance);
+        let step = sweep
+            / cadmpeg_core::convert::f64_from_index(cache.curve.control_points().len() - 1)
+                .expect("fixture index is exactly representable");
+        // For a tiny angle, sagitta/r is step^2/8 to relative roundoff.
+        // Divide before comparing so the reference does not square the angle.
+        let expected = if step < 1e-100 {
+            (radius * step) * (step / 8.0)
+        } else {
+            radius * (1.0 - (step / 2.0).cos())
+        };
+        assert!((cache.fit_tolerance.get() / expected - 1.0).abs() < RELATIVE_ROUNDOFF);
+    }
+}

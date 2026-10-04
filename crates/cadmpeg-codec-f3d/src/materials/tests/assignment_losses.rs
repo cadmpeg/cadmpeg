@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use crate::materials::tests::appearance_loss_report;
+use crate::materials::tests::material_losses;
+use crate::materials::tests::opaque_appearance;
 
 #[test]
 fn appearance_loss_stands_when_no_asset_decodes() {

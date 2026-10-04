@@ -3,14 +3,51 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+use cadmpeg_test_support::wire;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::loss::CatiaLossCode;
-use crate::test_support::*;
+use crate::test_support::test_b5::{
+    append_b5_record, b5_closed_triangle_stream, b5_closed_triangle_stream_over_edges,
+    b5_closed_triangle_stream_with_native_vertex_chain, b5_object_ref,
+};
+use crate::test_support::test_container::object_main_catpart;
 use crate::variant::Variant;
 use crate::CatiaCodec;
+
+#[test]
+fn b5_route_propagates_topology_entity_refusal() {
+    let mut stream = b5_closed_triangle_stream();
+    append_b5_record(
+        &mut stream,
+        0x5e,
+        900,
+        &[
+            0x85, 0x81, 0x18, 0x85, 0x03, 0x18, 0x85, 0x03, 0x81, 0x81, 0x2a,
+        ],
+    );
+    append_b5_record(&mut stream, 0x5d, 901, &[0x81, 0x81, 0x04]);
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_entities = 1;
+    let error = CatiaCodec
+        .decode(
+            &mut Cursor::new(object_main_catpart(&stream)),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        )
+        .expect_err("retained source consumes the sole entity allowance");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+                && limit.operation == "admit CATIA family model entity"
+    ));
+}
 
 #[test]
 fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
@@ -24,10 +61,19 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
         ],
     );
     append_b5_record(&mut stream, 0x5d, 901, &[0x81, 0x81, 0x04]);
-    crate::families::b5::graph::parse(&stream).expect("generated B5 topology");
+    crate::test_support::with_service_context(|ctx| {
+        crate::families::b5::graph::parse(ctx, &stream, &mut crate::nurbs::LaneRefusals::new())
+    })
+    .expect("service resource budget")
+    .expect("generated B5 topology");
     let file = object_main_catpart(&stream);
     assert_eq!(
-        crate::container::scan_bytes(file.clone()).variant,
+        crate::test_support::with_service_context(|ctx| crate::container::scan_bytes(
+            ctx,
+            file.clone()
+        ))
+        .expect("service resource budget")
+        .variant,
         Variant::FloatPackedInnerNoFbb
     );
 
@@ -44,13 +90,13 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
     assert!(result.ir().model.surfaces.iter().all(|surface| {
         surface.source_object.as_ref().is_some_and(|source| {
             source.format == cadmpeg_ir::CodecFormat::Catia
-                && source.object_id.starts_with("cgm-surface:")
+                && source.object_id.as_str().starts_with("cgm-surface:")
         })
     }));
     assert!(result.ir().model.curves.iter().all(|curve| {
         curve.source_object.as_ref().is_some_and(|source| {
             source.format == cadmpeg_ir::CodecFormat::Catia
-                && source.object_id.starts_with("cgm-edge:")
+                && source.object_id.as_str().starts_with("cgm-edge:")
         })
     }));
     assert_eq!(result.ir().model.procedural_curves.len(), 3);
@@ -59,81 +105,94 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
             curve.definition(),
             cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
                 ref family,
-            } if family.context().sides[0].surface.is_some()
-                && family.context().sides[0].pcurve.is_some()
-                && family.context().sides[1].surface.is_none()
+            } if family.context().sides()[0].surface.is_some()
+                && family.context().sides()[0].pcurve.is_some()
+                && family.context().sides()[1].surface.is_none()
         )
     }));
     assert_eq!(result.ir().model.vertices.len(), 3);
     assert_eq!(result.ir().model.pcurves.len(), 3);
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::RESOLVED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::RESOLVED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::RESOLVED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_05_COUNT),
-        1
-    );
-    assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::RESOLVED_OBJECT_STREAM_UNCOUNTED_FACE_COUNT),
-        0
-    );
-    assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_2A_COUNT),
-        1
-    );
-    assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_TERMINAL_CONTROL_04_COUNT
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::RESOLVED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_05_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_05_COUNT
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::RESOLVED_OBJECT_STREAM_UNCOUNTED_FACE_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_2A_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::RESOLVED_OBJECT_STREAM_EXTENDED_LOOP_METADATA_COUNT),
+        wire::coverage_count(
+            result.report(),
+            (crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_TERMINAL_CONTROL_04_COUNT)
+                .as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_05_COUNT.as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::RESOLVED_OBJECT_STREAM_EXTENDED_LOOP_METADATA_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::RESOLVED_OBJECT_STREAM_CLASS_21_PCURVE_SUFFIX_SCALAR_COUNT
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::RESOLVED_OBJECT_STREAM_CLASS_21_PCURVE_SUFFIX_SCALAR_COUNT.as_str()
         ),
         3
     );
-    assert!(result
-        .ir()
-        .model
-        .pcurves
-        .iter()
-        .all(|pcurve| pcurve.parameter_range() == Some([0.0, 1.0])));
+    assert!(result.ir().model.pcurves.iter().all(|pcurve| pcurve
+        .parameter_range()
+        .map(cadmpeg_ir::units::FiniteVector::get)
+        == Some([0.0, 1.0])));
     assert!(result.report().losses.iter().all(|loss| {
         !matches!(
             loss.code.category(),
-            cadmpeg_ir::report::LossCategory::Geometry | cadmpeg_ir::report::LossCategory::Topology
+            cadmpeg_ir::report::loss::LossCategory::Geometry
+                | cadmpeg_ir::report::loss::LossCategory::Topology
         ) || loss.severity != cadmpeg_ir::report::Severity::Blocking
     }));
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
 #[test]
 fn decode_float_packed_stream_transfers_a_complete_native_vertex_chain() {
     let stream = b5_closed_triangle_stream_with_native_vertex_chain();
-    let graph = crate::families::b5::graph::parse(&stream).expect("generated B5 topology");
+    let graph = crate::test_support::with_service_context(|ctx| {
+        crate::families::b5::graph::parse(ctx, &stream, &mut crate::nurbs::LaneRefusals::new())
+    })
+    .expect("service resource budget")
+    .expect("generated B5 topology");
     assert!(graph.complete);
     assert_eq!(graph.vertex_incidence_links.len(), 3);
     assert_eq!(graph.parameter_incidences.len(), 3);
@@ -141,7 +200,8 @@ fn decode_float_packed_stream_transfers_a_complete_native_vertex_chain() {
     assert_eq!(graph.edge_parameter_incidences.len(), 3);
     assert_eq!(
         graph
-            .logical_vertices
+            .vertices
+            .logical_vertices()
             .iter()
             .map(|vertex| vertex.object_id)
             .collect::<Vec<_>>(),
@@ -149,9 +209,10 @@ fn decode_float_packed_stream_transfers_a_complete_native_vertex_chain() {
     );
     assert_eq!(
         graph
-            .logical_vertices
+            .vertices
+            .logical_vertices()
             .iter()
-            .map(|vertex| vertex.point)
+            .map(|vertex| crate::test_support::test_b5::coordinates(vertex.point))
             .collect::<Vec<_>>(),
         vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
     );
@@ -169,10 +230,12 @@ fn decode_float_packed_stream_transfers_a_complete_native_vertex_chain() {
     assert!(result.report().losses.iter().all(|loss| {
         !matches!(
             loss.code.category(),
-            cadmpeg_ir::report::LossCategory::Geometry | cadmpeg_ir::report::LossCategory::Topology
+            cadmpeg_ir::report::loss::LossCategory::Geometry
+                | cadmpeg_ir::report::loss::LossCategory::Topology
         ) || loss.severity != cadmpeg_ir::report::Severity::Blocking
     }));
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -194,7 +257,11 @@ fn decode_float_packed_stream_transfers_topology_under_decimal_object_ids() {
         ],
     );
     append_b5_record(&mut stream, 0x5d, 901, &[0x81, 0x81, 0x04]);
-    crate::families::b5::graph::parse(&stream).expect("generated B5 topology");
+    crate::test_support::with_service_context(|ctx| {
+        crate::families::b5::graph::parse(ctx, &stream, &mut crate::nurbs::LaneRefusals::new())
+    })
+    .expect("service resource budget")
+    .expect("generated B5 topology");
 
     let result = CatiaCodec
         .decode(
@@ -223,10 +290,12 @@ fn decode_float_packed_stream_transfers_topology_under_decimal_object_ids() {
     assert!(result.report().losses.iter().all(|loss| {
         !matches!(
             loss.code.category(),
-            cadmpeg_ir::report::LossCategory::Geometry | cadmpeg_ir::report::LossCategory::Topology
+            cadmpeg_ir::report::loss::LossCategory::Geometry
+                | cadmpeg_ir::report::loss::LossCategory::Topology
         ) || loss.severity != cadmpeg_ir::report::Severity::Blocking
     }));
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 

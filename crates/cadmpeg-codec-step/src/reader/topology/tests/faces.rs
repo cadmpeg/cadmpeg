@@ -4,17 +4,21 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use crate::ids::kind;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
-use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+};
 use cadmpeg_ir::math::{Point3, Vector3};
 
+use crate::export::write_step;
 use crate::ids;
 use crate::loss::StepLossCode;
-use crate::test_support::export;
-use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
+use crate::test_support::exchange::export;
+use crate::{StepCodec, StepSchema, StepWriteOptions};
 
 #[test]
 fn base_face_with_polygon_loop_gets_an_inferred_plane() {
@@ -42,18 +46,17 @@ fn base_face_with_polygon_loop_gets_an_inferred_plane() {
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-29")
         .expect("implicit face plane");
-    let SurfaceGeometry::Plane {
-        origin,
-        normal,
-        u_axis,
-    } = &surface.geometry
-    else {
+    let Some(SolvedSurfaceGeometry::Plane(plane_surface)) = surface.geometry.solved() else {
         panic!("implicit face did not produce a plane");
     };
+    let origin = plane_surface.origin();
+    let normal = plane_surface.frame().axis().as_raw();
+    let u_axis = plane_surface.frame().reference().as_raw();
     assert_eq!(*normal, Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(*origin, Point3::new(10.0 / 3.0, 10.0 / 3.0, 0.0));
     assert_eq!(*u_axis, Vector3::new(1.0, 0.0, 0.0));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -71,9 +74,11 @@ fn implicit_face_plane_uses_poly_loop_orientation_and_rejects_non_planar_points(
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-8")
         .expect("base implicit plane");
-    let SurfaceGeometry::Plane { normal, origin, .. } = base_surface.geometry else {
+    let Some(SolvedSurfaceGeometry::Plane(plane_surface)) = base_surface.geometry.solved() else {
         panic!("base face did not produce a plane");
     };
+    let origin = plane_surface.origin().get();
+    let normal = *plane_surface.frame().axis().as_raw();
     assert_eq!(normal, Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(origin, Point3::new(2.0, 1.5, 0.0));
 
@@ -107,9 +112,11 @@ fn implicit_face_plane_uses_poly_loop_orientation_and_rejects_non_planar_points(
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-8")
         .expect("reversed implicit plane");
-    let SurfaceGeometry::Plane { normal, .. } = reversed_surface.geometry else {
+    let Some(SolvedSurfaceGeometry::Plane(plane_surface)) = reversed_surface.geometry.solved()
+    else {
         panic!("reversed face did not produce a plane");
     };
+    let normal = *plane_surface.frame().axis().as_raw();
     assert_eq!(normal, Vector3::new(0.0, 0.0, -1.0));
 
     let non_planar = source.replace(
@@ -143,12 +150,22 @@ fn complex_face_bound_partials_keep_attributes_when_reordered() {
     assert_eq!(decoded.ir().model.faces.len(), 1);
     assert_eq!(decoded.ir().model.loops.len(), 1);
     assert_eq!(
-        decoded.ir().model.loops[0].boundary_role_in(&decoded.ir().model.faces),
+        decoded
+            .ir()
+            .model
+            .faces
+            .iter()
+            .find(|face| face.id == decoded.ir().model.loops[0].face)
+            .map(|face| face.loop_role(&decoded.ir().model.loops[0].id))
+            .unwrap_or_default(),
         cadmpeg_ir::topology::LoopBoundaryRole::Outer
     );
     assert!(decoded.ir().model.surfaces.iter().any(|surface| {
         surface.id.as_str() == "step:data:surface#implicit-face-8"
-            && matches!(surface.geometry, SurfaceGeometry::Plane { .. })
+            && matches!(
+                surface.geometry,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
+            )
     }));
 
     let reordered = source.replace(
@@ -166,15 +183,26 @@ fn complex_face_bound_partials_keep_attributes_when_reordered() {
     assert_eq!(reordered.ir().model.bodies.len(), 1);
     assert_eq!(reordered.ir().model.loops.len(), 1);
     assert_eq!(
-        reordered.ir().model.loops[0].boundary_role_in(&reordered.ir().model.faces),
+        reordered
+            .ir()
+            .model
+            .faces
+            .iter()
+            .find(|face| face.id == reordered.ir().model.loops[0].face)
+            .map(|face| face.loop_role(&reordered.ir().model.loops[0].id))
+            .unwrap_or_default(),
         cadmpeg_ir::topology::LoopBoundaryRole::Outer
     );
     assert!(reordered.ir().model.surfaces.iter().any(|surface| {
         surface.id.as_str() == "step:data:surface#implicit-face-8"
-            && matches!(surface.geometry, SurfaceGeometry::Plane { .. })
+            && matches!(
+                surface.geometry,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
+            )
     }));
     let validation =
-        cadmpeg_ir::validate_neutral(reordered.ir(), reordered.report().losses.clone());
+        cadmpeg_ir::validate_neutral(reordered.ir(), reordered.report().losses.clone())
+            .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -229,7 +257,7 @@ fn non_planar_base_face_is_rejected_without_an_inferred_surface() {
         .any(|surface| surface.id.as_str() == "step:data:surface#implicit-face-29"));
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::TopologyRootRejected.kind()
-            && loss.severity == cadmpeg_ir::Severity::Error
+            && loss.severity == cadmpeg_ir::report::Severity::Error
     }));
 }
 
@@ -255,8 +283,12 @@ fn complex_outer_face_bound_uses_inherited_attributes() {
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#28")
         .expect("explicit face plane");
-    assert!(matches!(surface.geometry, SurfaceGeometry::Plane { .. }));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(matches!(
+        surface.geometry,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
+    ));
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -283,12 +315,15 @@ fn implicit_face_plane_uses_all_coplanar_poly_loops() {
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-29")
         .expect("implicit face plane");
-    let SurfaceGeometry::Plane { normal, origin, .. } = surface.geometry else {
+    let Some(SolvedSurfaceGeometry::Plane(plane_surface)) = surface.geometry.solved() else {
         panic!("implicit face did not produce a plane");
     };
+    let origin = plane_surface.origin().get();
+    let normal = *plane_surface.frame().axis().as_raw();
     assert_eq!(normal, Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(origin, Point3::new(17.0 / 6.0, 17.0 / 6.0, 0.0));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -324,9 +359,15 @@ fn implicit_face_plane_is_independent_of_coplanar_bound_set_order() {
     assert_eq!(first_surface.geometry, reordered_surface.geometry);
     assert_eq!(first.ir().model.bodies.len(), 1);
     assert_eq!(reordered.ir().model.bodies.len(), 1);
-    assert!(cadmpeg_ir::validate_neutral(first.ir(), first.report().losses.clone()).is_ok());
     assert!(
-        cadmpeg_ir::validate_neutral(reordered.ir(), reordered.report().losses.clone()).is_ok()
+        cadmpeg_ir::validate_neutral(first.ir(), first.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
+    assert!(
+        cadmpeg_ir::validate_neutral(reordered.ir(), reordered.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
     );
 }
 
@@ -424,15 +465,17 @@ fn implicit_face_plane_keeps_base_orientation_across_oriented_face() {
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-34")
         .expect("implicit face plane");
-    let SurfaceGeometry::Plane { normal, .. } = surface.geometry else {
+    let Some(SolvedSurfaceGeometry::Plane(plane_surface)) = surface.geometry.solved() else {
         panic!("implicit face did not produce a plane");
     };
+    let normal = *plane_surface.frame().axis().as_raw();
     assert_eq!(normal, Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(
         decoded.ir().model.faces[0].sense,
         cadmpeg_ir::topology::Sense::Forward
     );
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -458,7 +501,8 @@ fn oriented_face_subtype_composes_face_orientation() {
         .coedges
         .iter()
         .all(|coedge| coedge.sense == cadmpeg_ir::topology::Sense::Reversed));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -487,7 +531,8 @@ fn nested_oriented_faces_compose_back_to_the_base_orientation() {
         .coedges
         .iter()
         .all(|coedge| coedge.sense == cadmpeg_ir::topology::Sense::Forward));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -507,7 +552,8 @@ fn subface_subtype_reuses_parent_surface_and_own_bounds() {
 
     assert_eq!(decoded.ir().model.bodies.len(), 1);
     assert_eq!(decoded.ir().model.faces.len(), 1);
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -528,9 +574,13 @@ fn complex_advanced_face_uses_its_explicit_surface_carrier() {
     assert_eq!(decoded.ir().model.bodies.len(), 1);
     assert!(decoded.ir().model.surfaces.iter().any(|surface| {
         surface.id.as_str() == "step:data:surface#28"
-            && matches!(surface.geometry, SurfaceGeometry::Cylinder { .. })
+            && matches!(
+                surface.geometry,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_))
+            )
     }));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -562,7 +612,8 @@ fn connected_face_sub_set_validates_and_uses_its_own_members() {
         .losses
         .iter()
         .any(|loss| loss.message.contains("CONNECTED_FACE_SUB_SET #34")));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -571,7 +622,7 @@ pub(crate) fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
     use cadmpeg_ir::ids::LoopId;
     use cadmpeg_ir::topology::Loop;
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let face = ir.model.faces[0].id.clone();
     let vertex = ir.model.vertices[0].id.clone();
     let inner = LoopId::mint("zzzz:test:loop#inner").expect("identity grammar");
@@ -583,12 +634,20 @@ pub(crate) fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
             pcurves: Vec::new(),
         },
     });
-    ir.model.faces[0].loops.push(inner);
+    let face_loops = ir.model.faces[0]
+        .loops
+        .iter()
+        .cloned()
+        .chain(std::iter::once(inner))
+        .collect();
+    ir.model.faces[0].loops = cadmpeg_ir::topology::FaceLoops::unspecified(face_loops);
     let output = export(&ir);
-    let (exchange, diagnostics) = crate::parse::parse(output.as_bytes()).unwrap();
+    let (exchange, diagnostics) =
+        crate::test_support::with_service_context(output.as_bytes(), crate::parse::parse_inner)
+            .unwrap();
     assert!(diagnostics.is_empty());
     let (face_step, outer_bound, inner_bound, outer_loop) = exchange
-        .records
+        .records()
         .iter()
         .find_map(|(&face_step, record)| {
             let partial = record.partials.first();
@@ -607,8 +666,8 @@ pub(crate) fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
             let crate::parse::Value::Reference(second) = bounds[1] else {
                 return None;
             };
-            let first_record = exchange.records.get(&first)?.partials.first();
-            let second_record = exchange.records.get(&second)?.partials.first();
+            let first_record = exchange.records().get(&first)?.partials.first();
+            let second_record = exchange.records().get(&second)?.partials.first();
             let (outer, inner) = if first_record.name == "FACE_OUTER_BOUND" {
                 (first, second)
             } else if second_record.name == "FACE_OUTER_BOUND" {
@@ -616,10 +675,10 @@ pub(crate) fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
             } else {
                 return None;
             };
-            let crate::parse::Value::Reference(outer_loop) = exchange.records.get(&outer)?.partials
-                [0]
-            .parameters
-            .get(1)?
+            let crate::parse::Value::Reference(outer_loop) =
+                exchange.records().get(&outer)?.partials[0]
+                    .parameters
+                    .get(1)?
             else {
                 return None;
             };
@@ -638,11 +697,21 @@ pub(crate) fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
         .model
         .faces
         .iter()
-        .find(|face| face.id.as_str() == ids::data("face", face_step))
+        .find(|face| face.id.as_str() == ids::data(kind!("face"), face_step).as_str())
         .expect("decoded face");
     assert_eq!(
-        face.loops[0].as_str(),
-        ids::data("loop", format!("{outer_loop}-face-{face_step}"))
+        face.loops
+            .iter()
+            .next()
+            .expect("a decoded face states a loop")
+            .as_str(),
+        ids::data(
+            kind!("loop"),
+            cadmpeg_ir::ids::IdentityKey::from(outer_loop)
+                .dash(crate::ids::key_word!("face"))
+                .dash(face_step),
+        )
+        .as_str()
     );
 }
 
@@ -694,7 +763,16 @@ fn duplicate_face_outer_bound_witnesses_reject_topology_in_any_order() {
         );
         let links = unknowns
             .iter()
-            .map(|record| (record.id.as_str().to_owned(), record.links.clone()))
+            .map(|record| {
+                (
+                    record.id.as_str().to_owned(),
+                    record
+                        .links
+                        .iter()
+                        .map(|link| link.as_str().to_owned())
+                        .collect::<Vec<_>>(),
+                )
+            })
             .collect::<BTreeMap<_, _>>();
         assert_eq!(
             links,
@@ -749,9 +827,9 @@ fn duplicate_face_outer_bound_witnesses_reject_topology_in_any_order() {
 
 #[test]
 fn failed_face_bounds_do_not_duplicate_the_shared_surface() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.faces[0].surface = ir.model.faces[1].surface.clone();
-    ir.model.faces[0].loops.clear();
+    ir.model.faces[0].loops = cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new());
     let output = export(&ir);
     // Five face-owned surfaces remain after sharing, and the displaced carrier
     // is retained once as standalone construction geometry.
@@ -793,6 +871,41 @@ fn advanced_face_name_transfers_through_inherited_representation_item() {
 }
 
 #[test]
+fn face_name_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let source = export(&unit_cube().expect("unit cube fixture is admitted"));
+    let named = source.replacen("ADVANCED_FACE('", "ADVANCED_FACE('budgeted face ", 1);
+    assert_ne!(named, source, "STEP export contains an advanced face");
+    let (exchange, _) =
+        crate::test_support::with_service_context(named.as_bytes(), crate::parse::parse_inner)
+            .expect("valid named-face exchange");
+    let arena = DecodeArena::new();
+    let refused = {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            "step_string_text",
+            |limit| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = limit;
+                let (ctx, _) = DecodeContext::from_root_bytes(named.as_bytes(), &arena, &policy)
+                    .expect("root fits retained policy");
+                let mut ir = cadmpeg_ir::document::CadIr::empty();
+                crate::reader::geometry::decode(&exchange, &mut ir, &ctx)?;
+                let index = crate::reader::index::CarrierIndex::from_ir(&ir, &ctx)?;
+                super::super::decode(&exchange, &mut ir, &index, &ctx)?;
+                Ok::<(), CodecError>(())
+            },
+        );
+        matches!(Err::<(), CodecError>(error), Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::RetainedBytes
+                    && refusal.operation == "step_string_text")
+    };
+    assert!(refused, "no retained limit refused the advanced face name");
+}
+
+#[test]
 fn complex_advanced_face_name_uses_representation_item_partial() {
     let source = String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")
@@ -831,7 +944,7 @@ fn unsupported_mandatory_carriers_preserve_topology_as_unknown() {
             .iter()
             .find(|curve| curve.id.as_str() == "step:data:curve#16")
             .map(|curve| &curve.geometry),
-        Some(CurveGeometry::Unknown { record: Some(record) })
+        Some(CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: Some(record) }))
             if record.as_str() == "step:data:unsupported_curve#16"
     ));
     assert!(matches!(
@@ -842,7 +955,7 @@ fn unsupported_mandatory_carriers_preserve_topology_as_unknown() {
             .iter()
             .find(|surface| surface.id.as_str() == "step:data:surface#28")
             .map(|surface| &surface.geometry),
-        Some(SurfaceGeometry::Unknown { record: Some(record) })
+        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: Some(record) }))
             if record.as_str() == "step:data:unsupported_surface#28"
     ));
     assert!(decoded
@@ -850,7 +963,8 @@ fn unsupported_mandatory_carriers_preserve_topology_as_unknown() {
         .losses
         .iter()
         .all(|loss| !loss.message.contains("conflicts with decoded topology")));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -877,9 +991,10 @@ fn unsupported_surface_carrier_on_face_surface_preserves_topology_as_unknown() {
             .iter()
             .find(|surface| surface.id.as_str() == "step:data:surface#28")
             .map(|surface| &surface.geometry),
-        Some(SurfaceGeometry::Unknown { record: Some(record) })
+        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: Some(record) }))
             if record.as_str() == "step:data:unsupported_surface#28"
     ));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }

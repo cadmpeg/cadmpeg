@@ -28,121 +28,121 @@
           "definition": {
             "degree": 5,
             "kind": "rolling_ball_jet",
-            "knots": [
-              0.0,
-              1.0
-            ],
-            "multiplicities": [
-              6,
-              6
-            ],
-            "sites": [
+            "stations": [
               {
-                "angle": 1.5707963267948966,
-                "center": {
-                  "x": 0.0,
-                  "y": 0.0,
-                  "z": 0.0
-                },
-                "first_derivative": {
-                  "angle": 0.0,
+                "knot": 0.0,
+                "multiplicity": 6,
+                "site": {
+                  "angle": 1.5707963267948966,
                   "center": {
                     "x": 0.0,
                     "y": 0.0,
                     "z": 0.0
                   },
+                  "first_derivative": {
+                    "angle": 0.0,
+                    "center": {
+                      "x": 0.0,
+                      "y": 0.0,
+                      "z": 0.0
+                    },
+                    "first_limit": {
+                      "x": 0.0,
+                      "y": 0.0,
+                      "z": 0.0
+                    },
+                    "second_limit": {
+                      "x": 0.0,
+                      "y": 0.0,
+                      "z": 0.0
+                    }
+                  },
                   "first_limit": {
-                    "x": 0.0,
+                    "x": 1.0,
                     "y": 0.0,
                     "z": 0.0
+                  },
+                  "second_derivative": {
+                    "angle": 0.0,
+                    "center": {
+                      "x": 0.0,
+                      "y": 0.0,
+                      "z": 0.0
+                    },
+                    "first_limit": {
+                      "x": 0.0,
+                      "y": 0.0,
+                      "z": 0.0
+                    },
+                    "second_limit": {
+                      "x": 0.0,
+                      "y": 0.0,
+                      "z": 0.0
+                    }
                   },
                   "second_limit": {
                     "x": 0.0,
-                    "y": 0.0,
+                    "y": 1.0,
                     "z": 0.0
                   }
-                },
-                "first_limit": {
-                  "x": 1.0,
-                  "y": 0.0,
-                  "z": 0.0
-                },
-                "second_derivative": {
-                  "angle": 0.0,
-                  "center": {
-                    "x": 0.0,
-                    "y": 0.0,
-                    "z": 0.0
-                  },
-                  "first_limit": {
-                    "x": 0.0,
-                    "y": 0.0,
-                    "z": 0.0
-                  },
-                  "second_limit": {
-                    "x": 0.0,
-                    "y": 0.0,
-                    "z": 0.0
-                  }
-                },
-                "second_limit": {
-                  "x": 0.0,
-                  "y": 1.0,
-                  "z": 0.0
                 }
               },
               {
-                "angle": 1.5707963267948966,
-                "center": {
-                  "x": 0.0,
-                  "y": 0.0,
-                  "z": 0.0
-                },
-                "first_derivative": {
-                  "angle": 0.0,
+                "knot": 1.0,
+                "multiplicity": 6,
+                "site": {
+                  "angle": 1.5707963267948966,
                   "center": {
                     "x": 0.0,
                     "y": 0.0,
                     "z": 0.0
                   },
+                  "first_derivative": {
+                    "angle": 0.0,
+                    "center": {
+                      "x": 0.0,
+                      "y": 0.0,
+                      "z": 0.0
+                    },
+                    "first_limit": {
+                      "x": 0.0,
+                      "y": 0.0,
+                      "z": 0.0
+                    },
+                    "second_limit": {
+                      "x": 0.0,
+                      "y": 0.0,
+                      "z": 0.0
+                    }
+                  },
                   "first_limit": {
-                    "x": 0.0,
+                    "x": 2.0,
                     "y": 0.0,
                     "z": 0.0
+                  },
+                  "second_derivative": {
+                    "angle": 0.0,
+                    "center": {
+                      "x": 0.0,
+                      "y": 0.0,
+                      "z": 0.0
+                    },
+                    "first_limit": {
+                      "x": 0.0,
+                      "y": 0.0,
+                      "z": 0.0
+                    },
+                    "second_limit": {
+                      "x": 0.0,
+                      "y": 0.0,
+                      "z": 0.0
+                    }
                   },
                   "second_limit": {
                     "x": 0.0,
-                    "y": 0.0,
+                    "y": 2.0,
                     "z": 0.0
                   }
-                },
-                "first_limit": {
-                  "x": 2.0,
-                  "y": 0.0,
-                  "z": 0.0
-                },
-                "second_derivative": {
-                  "angle": 0.0,
-                  "center": {
-                    "x": 0.0,
-                    "y": 0.0,
-                    "z": 0.0
-                  },
-                  "first_limit": {
-                    "x": 0.0,
-                    "y": 0.0,
-                    "z": 0.0
-                  },
-                  "second_limit": {
-                    "x": 0.0,
-                    "y": 0.0,
-                    "z": 0.0
-                  }
-                },
-                "second_limit": {
-                  "x": 0.0,
-                  "y": 2.0,
-                  "z": 0.0
                 }
               }
             ]
@@ -249,15 +249,16 @@
         "stream_count": "2",
         "vertex_records": "0"
       },
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": "admitted",
-          "dialect": "catia:float-packed-inner-no-fbb",
-          "format": "catia"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "dialect": "catia:float-packed-inner-no-fbb"
+          }
         }
-      },
-      "format": "catia"
+      }
     },
     "tolerances": {
       "angular": 1e-10,
@@ -268,7 +269,6 @@
     }
   },
   "report": {
-    "container_only": false,
     "coverage": {
       "ambiguous_formula_parameter_dependency_count": 0,
       "ambiguous_relation_program_parameter_dependency_count": 0,
@@ -611,24 +611,26 @@
       "unresolved_unreferenced_relation_expression_count": 0,
       "unselected_object_stream_run_count": 0
     },
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "admitted",
-        "dialect": "catia:float-packed-inner-no-fbb",
-        "format": "catia"
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "dialect": "catia:float-packed-inner-no-fbb"
+        }
       }
     },
-    "format": "catia",
-    "geometry_transferred": true,
     "losses": [
       {
         "code": {
           "code": "topology.b5-graph-unclosed",
           "kind": "topology_not_transferred",
-          "namespace": "catia"
+          "namespace": "catia",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
-        "message": "Object-stream and consolidated NURBS carriers were decoded, but the face/loop/pcurve/edge graph did not close.",
+        "message": "Object-stream and consolidated NURBS carriers were decoded, but the face/loop/pcurve/edge graph did not close. Unclosed b5 03 5f face records, by object id (0): . The records stay inside retained record catia:payload:unknown#freeform.",
         "severity": "blocking"
       }
     ],
@@ -637,53 +639,54 @@
       "nested V5_CFV2 at file offset 16 with a CATIA_V5 CB0001 directory of 2 stream(s)",
       "reconstructed BREP stream from MainDataStream + SurfacicReps: 0 FBB group(s) containing 0 face row(s), 0 vertex record(s), 0 edge-table delimiter(s)",
       "container-level enumeration; `decode` applies the identified storage family's standard, freeform, E5, zero-entity, or metadata-fallback route"
-    ]
+    ],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {
       "exactness": {
         "catia:a8-rolling-ball:surf#0": {
-          "entity": "unknown"
+          "entity": "unknown",
+          "scope": "entity"
         },
         "catia:payload:unknown#freeform": {
           "entity": "unknown",
           "fields": {
             "links": "derived"
-          }
+          },
+          "scope": "entity"
         }
       },
       "provenance": {
         "catia:a8-rolling-ball:construction#0": {
           "offset": 32,
-          "stream": 2,
+          "stream": "catia:object_stream_a8_03_32",
           "tag": "object_id:12345678:multiplicities:[6, 6]"
         },
         "catia:a8-rolling-ball:surf#0": {
           "offset": 32,
-          "stream": 1,
+          "stream": "catia:object_stream_a8_03_32_cache",
           "tag": "object_id:12345678"
         },
         "catia:payload:unknown#freeform": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "catia:float-packed-inner-no-fbb"
         }
-      },
-      "streams": [
-        "catia:MainDataStream+SurfacicReps",
-        "catia:object_stream_a8_03_32_cache",
-        "catia:object_stream_a8_03_32"
-      ]
+      }
     },
-    "retained_records": [
-      {
-        "byte_len": 576,
-        "data": "qAMyNAIAAHhWNBIACRUAAAkMAAAAAAAAAAAAAAAAAADwPxkZAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGC1EVPsh+T8AAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYLURU+yH5PwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-        "id": "catia:payload:unknown#freeform",
+    "retained_records": {
+      "catia:payload:unknown#freeform": {
+        "bytes": {
+          "data": "qAMyNAIAAHhWNBIACRUAAAkMAAAAAAAAAAAAAAAAAADwPxkZAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGC1EVPsh+T8AAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYLURU+yH5PwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "retention": "inline"
+        },
         "offset": 0,
-        "sha256": "1e59b1e2f240aa4efee1e2bb3d5c6c7677a27389251cf7375429c2cb17f5874e",
         "stream": "catia:MainDataStream+SurfacicReps"
       }
-    ]
+    }
   }
 }

@@ -1,23 +1,5 @@
 {
   "container_kind": "sldprt-blocks",
-  "dialects": {
-    "extra": [
-      {
-        "admission": "admitted",
-        "declared": {
-          "carrier": "block@54:Contents/Config-0-Partition+0",
-          "schema": "SCH_SW_33103_11000"
-        },
-        "dialect": "parasolid:sch-sw-33103",
-        "format": "parasolid"
-      }
-    ],
-    "primary": {
-      "admission": "residual",
-      "dialect": "sldprt:unknown",
-      "format": "sldprt"
-    }
-  },
   "entries": [
     {
       "attributes": {
@@ -26,11 +8,11 @@
         "sha256": "cc1cdcbcf0bdb70801a2f0777e9f9c85571461df7f96d1d3f1476f420df37e38",
         "type_id": "0x00000010"
       },
-      "compressed_size": 10,
       "compression": "deflate",
+      "expanded": 8,
       "name": "PreviewPNG",
       "role": "block",
-      "uncompressed_size": 8
+      "stored": 10
     },
     {
       "attributes": {
@@ -41,42 +23,66 @@
         "sha256": "cec7bd4b62b96e490c6ba53b11475dfd3dd4ee3c42eefe748ddf9f734cbdfd27",
         "type_id": "0x00000020"
       },
-      "compressed_size": 45,
       "compression": "deflate",
+      "expanded": 49,
       "name": "Contents/Config-0-Partition",
       "role": "block",
-      "uncompressed_size": 49
+      "stored": 45
     },
     {
       "attributes": {
         "offset": "199",
         "type_id": "0x00000030"
       },
-      "compressed_size": 0,
       "compression": "none",
       "name": "[Content_Types].xml",
       "role": "directory-entry",
-      "uncompressed_size": 2
+      "size": {
+        "form": "payload_only",
+        "payload": 2
+      }
     },
     {
       "attributes": {
         "logical_len": "90",
         "offset": "152"
       },
-      "compressed_size": 0,
       "compression": "none",
       "name": "Contents/DisplayLists",
       "role": "cache-cell",
-      "uncompressed_size": 0
+      "size": {
+        "form": "payload_only",
+        "payload": 90
+      }
     }
   ],
-  "format": "sldprt",
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [
+        {
+          "admission": "admitted",
+          "declared": {
+            "carrier": "block@54:Contents/Config-0-Partition+0",
+            "schema": "SCH_SW_33103_11000"
+          },
+          "dialect": "parasolid:sch-sw-33103"
+        }
+      ],
+      "primary": {
+        "admission": "residual",
+        "dialect": "sldprt:unknown"
+      }
+    }
+  },
   "losses": [
     {
       "code": {
         "code": "source.dialect-unverified",
         "kind": "source_dialect_unverified",
-        "namespace": "sldprt"
+        "namespace": "sldprt",
+        "scope": "namespaced",
+        "strict_floor": "warning"
       },
       "message": "the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on the `sldprt:unknown` residual path without substituting a declared dialect grammar: the feature-operation form-code padding filter is not applied, and an operation code binds only where the four- and eight-byte candidates agree. Agreement is consistency, not a declaration.",
       "severity": "warning"

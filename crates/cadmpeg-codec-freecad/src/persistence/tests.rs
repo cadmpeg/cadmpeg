@@ -1,20 +1,562 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Document.xml persistence-graph unit tests.
+use cadmpeg_test_support::wire;
 
-use crate::test_support::*;
+use crate::test_support::test_archive::{archive, archive_entries};
+use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
+
 use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
+#[test]
+fn persistence_invalid_xml_diagnostic_refuses_at_retained_limit() {
+    let bytes = b"<Document";
+    crate::test_support::assert_retained_refusal_at(bytes, "FCStd persistence diagnostic", |ctx| {
+        super::parse_with_context(bytes, "4", ctx)
+    });
+}
+
+#[test]
+fn persistence_object_identity_refuses_at_retained_limit() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Body"/></Objects><ObjectData Count="1"><Object name="Body"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let id_len = crate::native::native_id("object", "Body").len();
+    assert_retained_operation(
+        &parse_with_retained_limit(
+            document,
+            cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<super::ObjectRecord>()
+                    + "Body".len()
+                    + "Part::Feature".len()
+                    + id_len,
+            ) - 1,
+        ),
+        "FreeCAD native identity",
+    );
+}
+
+#[test]
+fn persistence_object_data_name_refuses_at_matching_retained_limit() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Body"/></Objects><ObjectData Count="1"><Object name="Body"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    // One object-data hash allocation: four buckets, four control bytes,
+    // sixteen trailing controls and at most fifteen alignment bytes.
+    let lookup = 4 * std::mem::size_of::<(String, roxmltree::Node<'_, '_>)>() + 4 + 31;
+    let nodes = 2 * document.bytes().filter(|byte| *byte == b'<').count() + 2;
+    let attributes = document.bytes().filter(|byte| *byte == b'=').count();
+    // Core XML admission keeps its tree bound live during graph construction.
+    let xml = (2 * nodes + 4) * (128 + 64)
+        + (2 * attributes + 16) * (128 * 2)
+        + (2 + 4) * (64 + 2)
+        + (2 * nodes + 4) * 2
+        + (nodes + attributes + 1) * 32
+        + 8 * document.len()
+        + 1024;
+    policy.limits.max_materialized_bytes =
+        cadmpeg_core::decode::u64_from_index(xml + lookup + "Body".len() - 1);
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy)
+            .expect("source context");
+    assert!(
+        matches!(super::parse_with_context(document.as_bytes(), "4", &ctx),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+                && limit.operation == "FCStd object data name")
+    );
+}
+
+#[test]
+fn persistence_property_identity_refuses_at_retained_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let owner = "fcstd:native:object#Body";
+    let expected = crate::native::native_child_id("property", owner, "Shape");
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert!(
+        matches!(crate::native::native_child_id_charged(&ctx, "property", owner, "Shape"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD native child identity")
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(&[], |ctx| {
+            crate::native::native_child_id_charged(ctx, "property", owner, "Shape")
+                .expect("admitted ID")
+        }),
+        expected
+    );
+}
+
+#[test]
+fn persistence_extension_identity_refuses_at_retained_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let owner = "fcstd:native:object#Body";
+    let child = "2:Proxy";
+    let expected = crate::native::native_child_id("extension", owner, child);
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index("2".len() + child.len() + expected.len()) - 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert!(matches!(super::extension_id(&ctx, owner, "Proxy", 2),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD native child identity"));
+    assert_eq!(
+        crate::test_support::with_service_context(&[], |ctx| {
+            super::extension_id(ctx, owner, "Proxy", 2).expect("admitted ID")
+        }),
+        expected
+    );
+}
+
+#[test]
+fn persistence_extension_order_refuses_at_retained_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    let error = super::extension_id(&ctx, "fcstd:native:object#Body", "Proxy", 2)
+        .expect_err("extension order text must be admitted");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
+        if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && failure.operation == "FCStd extension order text"),
+        "{error:?}"
+    );
+}
+
+fn parse_with_retained_limit(document: &str, limit: u64) -> cadmpeg_core::CodecError {
+    let service_arena = cadmpeg_core::decode::DecodeArena::new();
+    let service_policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (service_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        document.as_bytes(),
+        &service_arena,
+        &service_policy,
+    )
+    .expect("service persistence context");
+    super::parse_with_context(document.as_bytes(), "4", &service_ctx)
+        .expect("service profile admits the persistence fixture");
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = limit;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy)
+            .expect("persistence test context");
+    super::parse_with_context(document.as_bytes(), "4", &ctx)
+        .err()
+        .expect("retained copy must be refused")
+}
+
+fn assert_retained_operation(error: &cadmpeg_core::CodecError, operation: &str) {
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.operation == operation
+    ));
+}
+
+fn assert_persistence_diagnostic_refusal(document: &str, expected: &str) {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let service = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &service)
+            .expect("source bytes are within policy");
+    let admitted = super::parse_with_context(document.as_bytes(), "4", &ctx)
+        .err()
+        .expect("fixture must be malformed");
+    assert!(
+        matches!(admitted, cadmpeg_core::CodecError::Malformed(_)),
+        "{admitted:?}"
+    );
+    assert!(admitted.to_string().contains(expected), "{admitted:?}");
+
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    let mut limit = 0;
+    for _ in 0..128 {
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            document.as_bytes(),
+            &arena,
+            &policy,
+        )
+        .expect("source bytes are within policy");
+        let error = super::parse_with_context(document.as_bytes(), "4", &ctx)
+            .err()
+            .expect("diagnostic must refuse below its retained need");
+        let cadmpeg_core::CodecError::ResourceLimit(failure) = error else {
+            panic!("diagnostic was reached without a retained refusal: {error:?}");
+        };
+        assert_eq!(
+            failure.dimension,
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes
+        );
+        if failure.operation == "FCStd persistence diagnostic" {
+            let exact = failure.used + failure.additional - 1;
+            policy.limits.max_retained_bytes = exact;
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                document.as_bytes(),
+                &arena,
+                &policy,
+            )
+            .expect("source bytes are within policy");
+            assert_retained_operation(
+                &super::parse_with_context(document.as_bytes(), "4", &ctx)
+                    .err()
+                    .expect("one byte below diagnostic need must refuse"),
+                "FCStd persistence diagnostic",
+            );
+            return;
+        }
+        let next = failure.used + failure.additional;
+        assert!(next > limit, "{failure:?}");
+        limit = next;
+    }
+    panic!("diagnostic admission was not reached: {expected}");
+}
+
+#[test]
+fn persistence_document_diagnostics_refuse_at_retained_limit() {
+    let cases = [
+        ("<Document SchemaVersion=\"4\"><ObjectData Count=\"0\"/></Document>",
+            "has no Objects section"),
+        ("<Document SchemaVersion=\"4\"><Objects/><ObjectData Count=\"0\"/></Document>",
+            "Objects Count is missing or invalid"),
+        ("<Document SchemaVersion=\"4\"><Objects Count=\"1\"><Object name=\"A\" type=\"T\"/></Objects><ObjectData Count=\"2\"><Object name=\"A\"/><Object name=\"A\"/></ObjectData></Document>",
+            "duplicate ObjectData name A"),
+        ("<Document SchemaVersion=\"4\"><Objects Count=\"2\"><Object name=\"A\" type=\"T\"/><Object name=\"A\" type=\"T\"/></Objects><ObjectData Count=\"1\"><Object name=\"A\"/></ObjectData></Document>",
+            "duplicate object declaration name A"),
+        ("<Document SchemaVersion=\"4\"><Objects Count=\"1\"><Object name=\"A\" type=\"T\"/></Objects><ObjectData Count=\"1\"><Object name=\"A\"><Extensions Count=\"0\"/><Extensions Count=\"0\"/></Object></ObjectData></Document>",
+            "multiple direct Extensions containers"),
+        ("<Document SchemaVersion=\"4\"><Objects Count=\"1\"><Object name=\"A\" type=\"T\"/></Objects><ObjectData Count=\"1\"><Object name=\"A\"><Properties Count=\"0\"/><Properties Count=\"0\"/></Object></ObjectData></Document>",
+            "multiple direct Properties containers"),
+        ("<Document SchemaVersion=\"4\"><Objects Count=\"1\"><Object name=\"A\" type=\"T\"/></Objects><ObjectData Count=\"1\"><Object name=\"A\"><Properties Count=\"0\"/><Extensions Count=\"0\"/></Object></ObjectData></Document>",
+            "writes Properties before Extensions"),
+        ("<Document SchemaVersion=\"4\"><Objects Count=\"1\"><Object name=\"A\" type=\"T\"/></Objects><ObjectData Count=\"1\"><Object name=\"A\"><Extensions Count=\"2\"><Extension name=\"E\" type=\"T\"/><Extension name=\"E\" type=\"U\"/></Extensions></Object></ObjectData></Document>",
+            "duplicate extension name E"),
+        ("<Document SchemaVersion=\"4\"><Objects Count=\"1\"><Object name=\"A\" type=\"T\"/></Objects><ObjectData Count=\"1\"><Object name=\"A\"><Extensions Count=\"2\"><Extension name=\"E\" type=\"T\"/><Extension name=\"F\" type=\"T\"/></Extensions></Object></ObjectData></Document>",
+            "duplicate extension type T"),
+        ("<Document SchemaVersion=\"4\"><Objects Count=\"1\"><Object name=\"A\" type=\"T\"/></Objects><ObjectData Count=\"1\"><Object name=\"A\"><Properties Count=\"2\"><Property name=\"P\" type=\"T\"/><Property name=\"P\" type=\"T\"/></Properties></Object></ObjectData></Document>",
+            "duplicate property name P"),
+        ("<Document SchemaVersion=\"4\"><Objects Count=\"1\"><Object name=\"A\" type=\"T\"/></Objects><ObjectData Count=\"1\"><Object name=\"A\"><Properties Count=\"1\"><Property name=\"L\" type=\"App::PropertyLink\"><Link value=\"A\" Object=\"A\"/></Property></Properties></Object></ObjectData></Document>",
+            "unsupported link carrier Object"),
+    ];
+    for (document, expected) in cases {
+        assert_persistence_diagnostic_refusal(document, expected);
+    }
+}
+
+#[test]
+fn persistence_link_diagnostics_refuse_at_retained_limit() {
+    let cases = [
+        ("<Property name=\"L\" type=\"App::PropertyLink\"/>",
+            "App::PropertyLink requires one Link value"),
+        ("<Property name=\"L\" type=\"App::PropertyLinkList\"><LinkList count=\"bad\"/></Property>",
+            "App::PropertyLinkList count is invalid"),
+        ("<Property name=\"L\" type=\"App::PropertyLinkSub\"><LinkSub value=\"A\" count=\"1\"><Sub/></LinkSub></Property>",
+            "Sub element has no value attribute"),
+        ("<Property name=\"L\" type=\"App::PropertyXLink\"><XLink file=\"\" name=\"A\" Object=\"A\"/></Property>",
+            "unsupported link carrier Object"),
+    ];
+    for (property, expected) in cases {
+        let document = format!(
+            "<Document SchemaVersion=\"4\"><Objects Count=\"1\"><Object name=\"A\" type=\"T\"/></Objects><ObjectData Count=\"1\"><Object name=\"A\"><Properties Count=\"1\">{property}</Properties></Object></ObjectData></Document>"
+        );
+        assert_persistence_diagnostic_refusal(&document, expected);
+    }
+}
+
+#[test]
+fn x62_persistence_object_collection_is_admitted_before_allocation() {
+    let document = r#"<Document SchemaVersion="4"><Objects Count="1"><Object name="A" type="Part::Feature"/></Objects><ObjectData Count="1"><Object name="A"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    assert_persistence_collection_at_operation(document, "FCStd object declarations");
+}
+
+#[test]
+fn dependency_lookup_refuses_on_collection_limit() {
+    let document = r#"<Document SchemaVersion="4"><Objects Count="1" Dependencies="1"><ObjectDeps Name="A" Count="0"/><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"/></ObjectData></Document>"#;
+    assert_persistence_collection_at_operation(document, "FCStd dependency lookup");
+}
+
+fn assert_persistence_collection_at_operation(document: &str, operation: &str) {
+    crate::test_support::with_service_context(document.as_bytes(), |ctx| {
+        super::parse_with_context(document.as_bytes(), "4", ctx)
+            .expect("service profile admits the persistence fixture");
+    });
+    crate::test_support::assert_collection_refusal_at(document.as_bytes(), operation, |ctx| {
+        super::parse_with_context(document.as_bytes(), "4", ctx)
+    });
+}
+
+#[test]
+fn extension_type_set_refuses_at_matching_collection_limit() {
+    let document = r#"<Document SchemaVersion="4"><Objects Count="1"><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"><Extensions Count="1"><Extension name="E" type="T"/></Extensions></Object></ObjectData></Document>"#;
+    assert_persistence_collection_at_operation(document, "FCStd extension type set");
+}
+
+#[test]
+fn extension_identity_lookup_refuses_at_matching_collection_limit() {
+    let document = r#"<Document SchemaVersion="4"><Objects Count="1"><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"><Extensions Count="1"><Extension name="E" type="T"/></Extensions></Object></ObjectData></Document>"#;
+    assert_persistence_collection_at_operation(document, "FCStd extension identity lookup");
+}
+
+#[test]
+fn extension_owner_refuses_at_matching_retained_limit() {
+    let document = r#"<Document SchemaVersion="4"><Objects Count="1"><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"><Extensions Count="1"><Extension name="E" type="T"/></Extensions></Object></ObjectData></Document>"#;
+    crate::test_support::assert_retained_refusal_at(
+        document.as_bytes(),
+        "FCStd extension owner",
+        |ctx| super::parse_with_context(document.as_bytes(), "4", ctx),
+    );
+}
+
+fn assert_link_collection_at_operation(xml: &str, type_name: &str, operation: &str) {
+    let document = roxmltree::Document::parse(xml).expect("valid link XML");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    for limit in 0..12 {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &policy)
+                .expect("link XML fits input policy");
+        let result = super::parse_link_targets(document.root_element(), type_name, &ctx);
+        if matches!(result,
+            Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+                if refusal.operation == operation
+                    && refusal.used + refusal.additional == limit + 1)
+        {
+            return;
+        }
+    }
+    panic!("{operation} was not reached under a matching link limit");
+}
+
+#[test]
+fn singleton_link_target_refuses_at_matching_collection_limit() {
+    assert_link_collection_at_operation(
+        "<Property><Link value=\"A\"/></Property>",
+        "App::PropertyLink",
+        "FCStd link target records",
+    );
+}
+
+#[test]
+fn link_list_nodes_refuse_at_matching_collection_limit() {
+    assert_link_collection_at_operation(
+        "<Property><LinkList count=\"1\"><Link value=\"A\"/></LinkList></Property>",
+        "App::PropertyLinkList",
+        "FCStd link nodes",
+    );
+}
+
+#[test]
+fn link_list_targets_refuse_at_matching_collection_limit() {
+    assert_link_collection_at_operation(
+        "<Property><LinkList count=\"1\"><Link value=\"A\"/></LinkList></Property>",
+        "App::PropertyLinkList",
+        "FCStd link target or subelement records",
+    );
+}
+
+#[test]
+fn link_sub_subelements_refuse_at_matching_collection_limit() {
+    assert_link_collection_at_operation(
+        "<Property><LinkSub value=\"A\" count=\"1\"><Sub value=\"Face1\"/></LinkSub></Property>",
+        "App::PropertyLinkSub",
+        "FCStd link target or subelement records",
+    );
+}
+
+#[test]
+fn cross_document_link_target_refuses_at_matching_collection_limit() {
+    assert_link_collection_at_operation(
+        "<Property><XLink/></Property>",
+        "App::PropertyXLink",
+        "FCStd link target records",
+    );
+}
+
+#[test]
+fn cross_document_link_list_refuses_at_matching_collection_limit() {
+    assert_link_collection_at_operation(
+        "<Property><XLinkSubList count=\"1\"><XLink/></XLinkSubList></Property>",
+        "App::PropertyXLinkSubList",
+        "FCStd link target or subelement records",
+    );
+}
+
+#[test]
+fn extension_name_set_refuses_on_collection_limit() {
+    let document = r#"<Document SchemaVersion="4"><Objects Count="1"><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"><Extensions Count="1"><Extension name="E" type="T"/></Extensions></Object></ObjectData></Document>"#;
+    assert_persistence_collection_at_operation(document, "FCStd extension name set");
+}
+
+#[test]
+fn x62_persistence_extension_collection_is_admitted_before_allocation() {
+    let document = r#"<Document SchemaVersion="4"><Objects Count="1"><Object name="A" type="Part::Feature"/></Objects><ObjectData Count="1"><Object name="A"><Extensions Count="1"><Extension name="E" type="T"/></Extensions><Properties Count="0"/></Object></ObjectData></Document>"#;
+    assert_persistence_collection_at_operation(document, "FCStd extension nodes");
+}
+
+#[test]
+fn x62_persistence_property_collection_is_admitted_before_allocation() {
+    let document = r#"<Document SchemaVersion="4"><Objects Count="1"><Object name="A" type="Part::Feature"/></Objects><ObjectData Count="1"><Object name="A"><Properties Count="1"><Property name="P" type="T"/></Properties></Object></ObjectData></Document>"#;
+    assert_persistence_collection_at_operation(document, "FCStd property nodes");
+}
+
+#[test]
+fn x62_persistence_value_collection_is_admitted_before_allocation() {
+    let document = r#"<Document SchemaVersion="4"><Properties Count="1"><Property name="P" type="App::PropertyString"><String value="x"/></Property></Properties><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    assert_persistence_collection_at_operation(document, "FCStd property value records");
+}
+
+#[test]
+fn x63_object_xml_copy_is_charged_before_allocation() {
+    let document = r#"<Document SchemaVersion="4"><Objects Count="1"><Object name="A" type="Part::Feature"/></Objects><ObjectData Count="1"><Object name="A"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    crate::test_support::assert_retained_refusal_at(
+        document.as_bytes(),
+        "FCStd object XML",
+        |ctx| super::parse_with_context(document.as_bytes(), "4", ctx),
+    );
+}
+
+#[test]
+fn x63_decode_counts_object_copies_in_retained_budget() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object name="A" type="Part::Feature"/></Objects><ObjectData Count="1"><Object name="A"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let bytes = archive(document);
+    FcstdCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .expect("service profile admits the object");
+
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(document.len());
+    let mut error = None;
+    for _ in 0..256 {
+        let refused = FcstdCodec
+            .decode(&mut Cursor::new(&bytes), &options)
+            .expect_err("object text copies consume the retained budget before entry retention");
+        let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+            &refused
+        else {
+            panic!("expected retained refusal: {refused:?}");
+        };
+        assert_eq!(
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes
+        );
+        if limit.operation == "retain FCStd entry" {
+            let exact = limit.used + limit.additional - 1;
+            options.policy.limits.max_retained_bytes = exact;
+            error = Some(
+                FcstdCodec
+                    .decode(&mut Cursor::new(&bytes), &options)
+                    .expect_err("one byte below entry need refuses"),
+            );
+            break;
+        }
+        let next = limit.used + limit.additional;
+        assert!(next > options.policy.limits.max_retained_bytes);
+        options.policy.limits.max_retained_bytes = next;
+    }
+    let error = error.expect("entry charge reached within fixture admissions");
+    assert!(
+        matches!(
+            &error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                    && limit.operation == "retain FCStd entry"
+        ),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn x63_extension_xml_copy_is_charged_after_its_object_copy() {
+    let object_data = r#"<Object name="A"><Extensions Count="1"><Extension name="E" type="T"/></Extensions><Properties Count="0"/></Object>"#;
+    let document = format!(
+        r#"<Document SchemaVersion="4"><Objects Count="1"><Object name="A" type="Part::Feature"/></Objects><ObjectData Count="1">{object_data}</ObjectData></Document>"#
+    );
+    crate::test_support::assert_retained_refusal_at(
+        document.as_bytes(),
+        "FCStd extension XML",
+        |ctx| super::parse_with_context(document.as_bytes(), "4", ctx),
+    );
+}
+
+#[test]
+fn x63_transient_and_persisted_property_xml_copies_are_charged() {
+    let transient = r#"<Document SchemaVersion="4"><Properties Count="0" TransientCount="1"><_Property name="P" type="T"/></Properties><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    crate::test_support::assert_retained_refusal_at(
+        transient.as_bytes(),
+        "FCStd transient property XML",
+        |ctx| super::parse_with_context(transient.as_bytes(), "4", ctx),
+    );
+    let persisted = r#"<Document SchemaVersion="4"><Properties Count="1"><Property name="P" type="T"/></Properties><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    crate::test_support::assert_retained_refusal_at(
+        persisted.as_bytes(),
+        "FCStd persisted property XML",
+        |ctx| super::parse_with_context(persisted.as_bytes(), "4", ctx),
+    );
+}
+
+#[test]
+fn x63_nested_value_xml_charges_the_actual_copied_bytes() {
+    let document = r#"<Document SchemaVersion="4"><Properties Count="1"><Property name="P" type="App::PropertyString"><String value="x"/></Property></Properties><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    assert_retained_operation(
+        &parse_with_retained_limit(
+            document,
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<crate::native::ValueRecord>())
+                + 1
+                + cadmpeg_core::decode::u64_from_index("App::PropertyString".len())
+                + 6
+                + 5
+                + 1,
+        ),
+        "FCStd value XML",
+    );
+}
+
+#[test]
+fn x63_link_target_attribute_copy_is_charged() {
+    let value = r#"<Link value="A"/>"#;
+    let document = format!(
+        r#"<Document SchemaVersion="4"><Properties Count="1"><Property name="P" type="App::PropertyLink">{value}</Property></Properties><Objects Count="0"/><ObjectData Count="0"/></Document>"#
+    );
+    let prior_copies = "P".len()
+        + "App::PropertyLink".len()
+        + "Link".len()
+        + "value".len()
+        + "A".len()
+        + value.len();
+    assert_retained_operation(
+        &parse_with_retained_limit(
+            &document,
+            cadmpeg_core::decode::u64_from_index(
+                prior_copies
+                    + std::mem::size_of::<crate::native::ValueRecord>()
+                    + std::mem::size_of::<Option<crate::native::LinkTarget>>(),
+            ),
+        ),
+        "FCStd link object",
+    );
+}
+
 fn parse_document_graph(document: &str) -> Result<super::Graph, cadmpeg_core::CodecError> {
-    let facts =
-        crate::container::parse_document(document.as_bytes()).map_err(|error| match error {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy)?;
+    let (_facts, schema_version) = crate::container::parse_document(&ctx, document.as_bytes())
+        .map_err(|error| match error {
             cadmpeg_core::CodecError::WrongFormat(message) => {
                 cadmpeg_core::CodecError::Malformed(message)
             }
             error => error,
         })?;
-    super::parse_with_context(document.as_bytes(), &facts, None)
+    super::parse_with_context(document.as_bytes(), &schema_version, &ctx)
 }
 
 #[test]
@@ -47,10 +589,10 @@ pub(crate) fn schema_three_uses_the_object_envelope_and_defaults_file_version() 
     assert_eq!(objects[0].type_name, "App::FeaturePython");
     assert_eq!(properties.len(), 2);
     assert_eq!(
-        properties[1].links()[0].object(),
-        Some(objects[0].id.as_str())
+        properties[1].links()[0].as_ref().expect("link").object(),
+        Some(objects[0].id().as_str())
     );
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
 
 #[test]
@@ -76,17 +618,17 @@ pub(crate) fn schema_two_uses_the_feature_envelope_and_common_property_grammar()
     assert_eq!(
         objects
             .iter()
-            .map(|object| object.name.as_str())
+            .map(|object| object.name().as_str())
             .collect::<Vec<_>>(),
         ["First", "Second"]
     );
     assert_eq!(properties.len(), 2);
     assert_eq!(
-        properties[1].links()[0].object(),
-        Some(objects[0].id.as_str())
+        properties[1].links()[0].as_ref().expect("link").object(),
+        Some(objects[0].id().as_str())
     );
     assert!(objects.iter().all(|object| object.persistent_id.is_none()));
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
 
 #[test]
@@ -228,7 +770,12 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         .arena_as::<crate::native::ExtensionRecord>("extensions")
         .expect("extensions");
     assert_eq!(objects.len(), 2);
-    assert_eq!(objects[0].dependency_allow_partial, Some(2));
+    assert_eq!(
+        objects[0]
+            .dependency_allow_partial
+            .map(std::num::NonZeroU64::get),
+        Some(2)
+    );
     assert_eq!(objects[1].dependency_allow_partial, None);
     assert_eq!(extensions.len(), 1);
     assert_eq!(extensions[0].owner, "fcstd:native:object#Body");
@@ -244,11 +791,14 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         .expect("support");
     assert_eq!(support.owner, "fcstd:native:object#Body");
     assert_eq!(
-        support.links()[0].object(),
+        support.links()[0].as_ref().expect("link").object(),
         Some("fcstd:native:object#Sketch")
     );
     assert_eq!(support.family, crate::native::PropertyFamily::Link);
-    assert_eq!(support.links()[0].subelements, vec!["Face1"]);
+    assert_eq!(
+        support.links()[0].as_ref().expect("link").subelements(),
+        vec!["Face1"]
+    );
     let crate::native::PropertyBody::Persisted { dynamic, .. } = &support.body else {
         panic!("support property is not persisted");
     };
@@ -259,10 +809,10 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         .expect("members");
     assert_eq!(members.links().len(), 2);
     assert_eq!(
-        members.links()[0].object(),
+        members.links()[0].as_ref().expect("link").object(),
         Some("fcstd:native:object#Sketch")
     );
-    assert_eq!(members.links()[1].object(), None);
+    assert!(members.links()[1].is_none());
     let transient = properties
         .iter()
         .find(|property| property.name == "TransientState")
@@ -284,60 +834,58 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         .arena_as::<crate::brep::ShapePayloadRecord>("shape_payloads")
         .expect("shape payloads");
     assert_eq!(shape_payloads.len(), 1);
-    assert_eq!(
-        shape_payloads[0]
-            .payload
-            .shape_set()
-            .map(|facts| facts.topology_version),
-        Some(1)
-    );
+    assert_eq!(shape_payloads[0].payload.topology_version(), Some(1));
     assert!(result.report().geometry_transferred());
     assert_eq!(result.ir().model.curves.len(), 8);
     match &result.ir().model.curves[0].geometry {
-        cadmpeg_ir::geometry::CurveGeometry::Line { origin, direction } => {
+        cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
+            let origin = line_curve.origin().get();
+            let direction = *line_curve.direction().as_raw();
             assert_eq!([origin.x, origin.y, origin.z], [10.0, 20.0, 30.0]);
             assert_eq!([direction.x, direction.y, direction.z], [1.0, 0.0, 0.0]);
         }
         other => panic!("unexpected curve {other:?}"),
     }
     match &result.ir().model.curves[1].geometry {
-        cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) => {
+        cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
             assert_eq!(nurbs.degree(), 2);
             assert_eq!(nurbs.control_points().len(), 3);
-            assert_eq!(nurbs.knots(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+            assert_eq!(nurbs.knots().as_slice(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
             assert!(nurbs.weights().is_none());
         }
         other => panic!("unexpected curve {other:?}"),
     }
     assert_eq!(result.ir().model.procedural_curves.len(), 2);
     match result.ir().model.procedural_curves[0].definition() {
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
-            parameter_range, ..
-        } => assert_eq!(*parameter_range, [0.0, 5.0]),
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(definition_payload) => {
+            let parameter_range = definition_payload.parameter_range();
+            assert_eq!(parameter_range.endpoints(), [0.0, 5.0]);
+        }
         other => panic!("unexpected trimmed construction {other:?}"),
     }
     match result.ir().model.procedural_curves[1].definition() {
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset {
-            distance,
-            side:
-                cadmpeg_ir::geometry::OffsetSide::Direction {
-                    direction,
-                    support: None,
-                },
-            ..
-        } => {
-            assert_eq!(*distance, 2.0);
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset(payload) => {
+            let distance = wire::field::<f64>(&payload, "distance");
+            let cadmpeg_ir::geometry::OffsetSide::Direction {
+                direction,
+                support: None,
+            } = payload.side()
+            else {
+                panic!("unexpected offset construction {payload:?}");
+            };
+            assert_eq!(distance, 2.0);
             assert_eq!([direction.x, direction.y, direction.z], [0.0, 0.0, 1.0]);
         }
         other => panic!("unexpected offset construction {other:?}"),
     }
     assert_eq!(result.ir().model.surfaces.len(), 7);
     match &result.ir().model.surfaces[0].geometry {
-        cadmpeg_ir::geometry::SurfaceGeometry::Plane {
-            origin,
-            normal,
-            u_axis,
-        } => {
+        cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            plane_surface,
+        )) => {
+            let origin = plane_surface.origin();
+            let normal = plane_surface.frame().axis().as_raw();
+            let u_axis = plane_surface.frame().reference().as_raw();
             assert_eq!([origin.x, origin.y, origin.z], [0.0, 0.0, 0.0]);
             assert_eq!([normal.x, normal.y, normal.z], [0.0, 0.0, 1.0]);
             assert_eq!([u_axis.x, u_axis.y, u_axis.z], [1.0, 0.0, 0.0]);
@@ -347,34 +895,35 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     assert_eq!(result.ir().model.procedural_surfaces.len(), 4);
     assert!(matches!(
         result.ir().model.procedural_surfaces[0].definition(),
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { .. }
+        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(_)
     ));
-    assert!(matches!(
-        result.ir().model.procedural_surfaces[1].definition(),
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
-            parameter_interval: None,
-            ..
+    assert!(
+        match result.ir().model.procedural_surfaces[1].definition() {
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(matched_payload) =>
+                matches!((&matched_payload.parameter_interval(),), (None,)),
+            _ => false,
         }
-    ));
-    assert!(matches!(
-        result.ir().model.procedural_surfaces[2].definition(),
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset {
-            u_sense: None,
-            v_sense: None,
-            ..
+    );
+    assert!(
+        match result.ir().model.procedural_surfaces[2].definition() {
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset(matched_payload) => matches!(
+                (matched_payload.u_sense(), matched_payload.v_sense(),),
+                (None, None,)
+            ),
+            _ => false,
         }
-    ));
+    );
     assert!(matches!(
         result.ir().model.procedural_surfaces[3].definition(),
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset { .. }
+        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset(_)
     ));
     match &result.ir().model.surfaces[1].geometry {
-        cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs) => {
+        cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
             assert_eq!((nurbs.u_degree(), nurbs.v_degree()), (1, 1));
             assert_eq!((nurbs.u_count(), nurbs.v_count()), (2, 2));
-            assert_eq!(nurbs.control_points().len(), 4);
-            assert_eq!(nurbs.u_knots(), [0.0, 0.0, 1.0, 1.0]);
-            assert_eq!(nurbs.v_knots(), [0.0, 0.0, 1.0, 1.0]);
+            assert_eq!(nurbs.poles().len(), 4);
+            assert_eq!(nurbs.u_knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
+            assert_eq!(nurbs.v_knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
             assert!(nurbs.weights().is_none());
         }
         other => panic!("unexpected surface {other:?}"),
@@ -385,7 +934,9 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     assert!(result.ir().model.tessellations[0].body.is_none());
     assert!(result.ir().model.tessellations[0].faces.is_empty());
     assert_eq!(
-        result.ir().model.tessellations[0].chordal_deflection,
+        result.ir().model.tessellations[0]
+            .chordal_deflection()
+            .map(cadmpeg_ir::scalar::NonNegativeReal::get),
         Some(0.01)
     );
     let entries = namespace
@@ -393,22 +944,27 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         .expect("entries");
     let payload_entry = entries
         .iter()
-        .find(|entry| entry.name == "Payload.bin")
+        .find(|entry| entry.name() == "Payload.bin")
         .expect("payload entry");
-    assert_eq!(payload_entry.referenced_by, vec![payload.id.clone()]);
-    assert_eq!(payload_entry.data, b"payload");
+    assert_eq!(payload_entry.referenced_by(), vec![payload.id.clone()]);
+    assert_eq!(payload_entry.data(), b"payload");
     let ledger = namespace
         .arena_as::<crate::native::LogicalSpan>("logical_ledger")
         .expect("logical ledger");
     for entry in &entries {
         let mut spans = ledger
             .iter()
-            .filter(|span| span.entry == entry.name)
+            .filter(|span| span.entry == entry.name())
             .collect::<Vec<_>>();
-        spans.sort_by_key(|span| span.start);
-        assert_eq!(spans.first().map(|span| span.start), Some(0));
-        assert_eq!(spans.last().map(|span| span.end), Some(entry.byte_len()));
-        assert!(spans.windows(2).all(|pair| pair[0].end == pair[1].start));
+        spans.sort_by_key(|span| span.span.start());
+        assert_eq!(spans.first().map(|span| span.span.start()), Some(0));
+        assert_eq!(
+            spans.last().map(|span| span.span.end()),
+            Some(entry.byte_len())
+        );
+        assert!(spans
+            .windows(2)
+            .all(|pair| pair[0].span.end() == pair[1].span.start()));
     }
     assert!(ledger
         .iter()
@@ -444,7 +1000,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     assert!(coverage[0]
         .named_opaque_entries
         .contains(&"Payload.bin".to_owned()));
-    let findings = crate::validate_native(result.ir());
+    let findings = crate::test_support::validate_native(result.ir());
     assert!(findings.is_empty(), "{findings:#?}");
 
     let mut corrupted = result.ir().clone();
@@ -456,25 +1012,19 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     corrupted
         .native
         .namespace_mut("fcstd")
-        .set_arena("logical_ledger", &missing_payload)
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "logical_ledger",
+            &missing_payload,
+        )
         .expect("replace logical ledger");
-    assert!(crate::validate_native(&corrupted).iter().any(|finding| {
-        finding
-            .message
-            .contains("logical ledger omits nonempty entry Payload.bin")
-    }));
-
-    let mut corrupted = result.ir().clone();
-    let mut invalid_objects = objects.clone();
-    invalid_objects[0].dependency_allow_partial = Some(0);
-    corrupted
-        .native
-        .namespace_mut("fcstd")
-        .set_arena("objects", &invalid_objects)
-        .expect("replace objects");
-    assert!(crate::validate_native(&corrupted)
+    assert!(crate::test_support::validate_native(&corrupted)
         .iter()
-        .any(|finding| finding.message.contains("invalid partial-load capability")));
+        .any(|finding| {
+            finding
+                .message
+                .contains("logical ledger omits nonempty entry Payload.bin")
+        }));
 }
 
 #[test]
@@ -586,9 +1136,13 @@ fn native_validation_rejects_duplicate_extension_identity() {
     corrupted
         .native
         .namespace_mut("fcstd")
-        .set_arena("extensions", &extensions)
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "extensions",
+            &extensions,
+        )
         .expect("replace extensions");
-    let findings = crate::validate_native(&corrupted);
+    let findings = crate::test_support::validate_native(&corrupted);
     assert!(findings.iter().any(|finding| {
         finding.message.contains("duplicate FCStd native identity")
             || finding.message.contains("duplicates extension name")
@@ -622,11 +1176,191 @@ fn unknown_property_runtime_names_do_not_select_a_family_by_substring() {
 fn empty_and_absent_xlink_file_attributes_decode_to_one_typed_value() {
     let link = |markup: &str| {
         let parsed = roxmltree::Document::parse(markup).expect("parse XLink markup");
-        super::xlink(parsed.root_element()).expect("decode XLink")
+        crate::test_support::with_service_context(markup.as_bytes(), |ctx| {
+            super::xlink(parsed.root_element(), ctx).expect("decode XLink")
+        })
     };
     let empty = link(r#"<XLink file="" name="Body"/>"#);
     let absent = link(r#"<XLink name="Body"/>"#);
     assert_eq!(empty, absent);
-    assert_eq!(empty.document, None);
+    let empty = empty.as_ref().expect("link");
+    assert_eq!(empty.document(), None);
     assert_eq!(empty.document_attribute(), None);
+}
+
+#[test]
+fn both_xlink_list_property_types_use_xlink_sub_list_carriers() {
+    for type_name in ["App::PropertyXLinkList", "App::PropertyXLinkSubList"] {
+        let markup = format!(
+            r#"<Property name="References" type="{type_name}"><XLinkSubList count="2"><XLink name="Local"/><XLink file="parts.FCStd" name="Remote" sub="Face1"/></XLinkSubList></Property>"#
+        );
+        let xml = roxmltree::Document::parse(&markup).unwrap();
+        let links = crate::test_support::with_service_context(markup.as_bytes(), |ctx| {
+            super::parse_link_targets(xml.root_element(), type_name, ctx).unwrap()
+        });
+        assert_eq!(links.len(), 2);
+        let first = links[0].as_ref().expect("first link");
+        let second = links[1].as_ref().expect("second link");
+        assert_eq!(first.object(), Some("Local"));
+        assert_eq!(first.document_name(), None);
+        assert_eq!(second.object(), Some("Remote"));
+        assert_eq!(second.document_name(), Some("parts.FCStd"));
+        assert_eq!(second.subelements(), ["Face1"]);
+        let invalid = markup.replace("XLinkSubList", "XLinkList");
+        let xml = roxmltree::Document::parse(&invalid).unwrap();
+        assert!(crate::test_support::with_service_context(
+            invalid.as_bytes(),
+            |ctx| { super::parse_link_targets(xml.root_element(), type_name, ctx).is_err() }
+        ));
+    }
+}
+
+#[test]
+fn link_child_framing_precedes_collection_admission() {
+    for xml in [
+        r#"<Links count="0"><Link/><Link/><Link/></Links>"#,
+        r#"<Links count="1000000"/>"#,
+        r#"<Links count="1"><Sub/></Links>"#,
+    ] {
+        let tree = roxmltree::Document::parse(xml).expect("framed XML");
+        crate::test_support::with_service_context(xml.as_bytes(), |ctx| {
+            ctx.charge_collection_items(
+                ctx.policy().limits.max_collection_items,
+                "consume link-node allowance",
+            )
+            .expect("leave no node collection allowance");
+            let result =
+                super::counted_children(tree.root_element(), "Link", "App::PropertyLinkList", ctx);
+            assert!(matches!(
+                result,
+                Err(cadmpeg_core::CodecError::Malformed(_))
+            ));
+        });
+    }
+}
+
+#[test]
+fn link_child_scan_propagates_work_refusal() {
+    let xml = r#"<Links count="0"><Link/></Links>"#;
+    let tree = roxmltree::Document::parse(xml).expect("framed XML");
+    crate::test_support::with_service_context(xml.as_bytes(), |ctx| {
+        let refusal = ctx.refuse_codec_limit("test link work", 0, 1);
+        let error =
+            super::counted_children(tree.root_element(), "Link", "App::PropertyLinkList", ctx)
+                .err()
+                .expect("fused context");
+        assert_eq!(error.to_string(), refusal.to_string());
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+    });
+}
+
+#[test]
+fn object_declaration_framing_precedes_collection_admission() {
+    for document in [
+        r#"<Document><Objects Count="0"><Object name="A"/><Object name="B"/></Objects><ObjectData Count="0"/></Document>"#,
+        r#"<Document><Objects Count="1000000"/><ObjectData Count="0"/></Document>"#,
+    ] {
+        let xml = roxmltree::Document::parse(document).expect("framed XML");
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            document.as_bytes(),
+            &arena,
+            &policy,
+        )
+        .expect("root");
+        assert!(matches!(
+            super::parse_document(document, &xml, crate::dialect::FcstdDialect::Schema4, &ctx),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
+    }
+}
+
+#[test]
+fn duplicate_object_name_comparisons_admit_prefix_bytes() {
+    let prefix = "a".repeat(10000);
+    let document = format!(
+        r#"<Document><Objects Count="2"><Object name="{prefix}A" type="Part::Feature"/><Object name="{prefix}B" type="Part::Feature"/></Objects><ObjectData Count="2"><Object name="{prefix}A"/><Object name="{prefix}B"/></ObjectData></Document>"#
+    );
+    let xml = roxmltree::Document::parse(&document).expect("XML");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 60000;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy)
+            .expect("root");
+    let error = super::parse_document(&document, &xml, crate::dialect::FcstdDialect::Schema4, &ctx)
+        .err()
+        .expect("prefix comparisons exceed allowance");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "FCStd duplicate object names" && Some(limit) == ctx.resource_refusal())
+    );
+}
+
+#[test]
+fn duplicate_property_name_comparisons_admit_lookup_and_prefix_bytes() {
+    let prefix = "a".repeat(10000);
+    let document = format!(
+        r#"<Properties Count="2"><Property name="{prefix}A" type="App::PropertyString"/><Property name="{prefix}B" type="App::PropertyString"/></Properties>"#
+    );
+    let xml = roxmltree::Document::parse(&document).expect("XML");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 100;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy)
+            .expect("root");
+    let error = super::parse_properties(
+        &document,
+        xml.root_element(),
+        "owner",
+        &mut Vec::new(),
+        &ctx,
+    )
+    .expect_err("prefix comparisons exceed allowance");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "FCStd duplicate property names" && Some(limit) == ctx.resource_refusal())
+    );
+}
+
+#[test]
+fn object_ceiling_is_resource_refusal() {
+    let document = r#"<Document><Objects Count="2"><Object name="A"/><Object name="B"/></Objects><ObjectData Count="2"><Object name="A"/><Object name="B"/></ObjectData></Document>"#;
+    let xml = roxmltree::Document::parse(document).expect("XML");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_entities = 1;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy)
+            .expect("root");
+    let error = super::parse_document(document, &xml, crate::dialect::FcstdDialect::Schema4, &ctx)
+        .err()
+        .expect("object ceiling");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "FCStd object count" && limit.limit == 1
+            && limit.used + limit.additional == 2 && Some(limit) == ctx.resource_refusal())
+    );
+}
+
+#[test]
+fn retained_property_xml_ceiling_is_resource_refusal() {
+    let payload = "a".repeat(6 * 1024 * 1024);
+    let document = format!(
+        r#"<Properties Count="1"><Property name="P" type="App::PropertyString"><Outer><Middle><Leaf>{payload}</Leaf></Middle></Outer></Property></Properties>"#
+    );
+    let xml = roxmltree::Document::parse(&document).expect("XML");
+    crate::test_support::with_service_context(document.as_bytes(), |ctx| {
+        let error =
+            super::parse_properties(&document, xml.root_element(), "owner", &mut Vec::new(), ctx)
+                .expect_err("cumulative descendant XML ceiling");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "FCStd property retained value XML"
+                && limit.limit == 16 * 1024 * 1024 && Some(limit) == ctx.resource_refusal())
+        );
+    });
 }

@@ -110,7 +110,7 @@ anchor = "a little-endian count followed by packed-color records"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-freecad/src/gui.rs"
-contains = "read_counted(count.into(), 4, View::u32_le)"
+contains = ".counted(count.into(), 4)"
 note = "The parser bounds each packed-colour record at 4 bytes after the little-endian count prefix."
 
 [[record]]

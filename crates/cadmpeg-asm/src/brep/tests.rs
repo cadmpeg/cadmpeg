@@ -2,27 +2,131 @@
 #![allow(clippy::default_trait_access)]
 //! Unit tests for B-rep topology decode, geometry recognition, and
 //! procedural carrier classification.
+use cadmpeg_test_support::edit;
+
+use super::emit::{emit_attributes, emit_edges, CurveSenseRefs};
 use super::geometry::{
-    analytic_procedural_surface, edge_pcurve_parameter_ranges, is_asm_stream_delimiter,
-    is_known_record_head, pcurve_ranges_on_domain, point_vector, rational_four_arc_circle,
+    analytic_procedural_surface as decode_analytic_procedural_surface,
+    edge_pcurve_parameter_ranges, is_asm_stream_delimiter, is_known_record_head,
+    pcurve_ranges_on_domain, point_vector,
+    rational_four_arc_circle as decode_rational_four_arc_circle,
 };
-use super::topology::{shell_faces, shell_wire_roots, subshell_ancestor_shells};
-use super::*;
+use super::records::{self, BodyNativeKey};
+use super::topology::{
+    classify_edge_curve_senses, shell_faces, shell_wire_roots, subshell_ancestor_shells,
+};
+use super::{
+    decode_with_purpose, id, inherited_attribute_target, AsmBrep, DecodePurpose, Reachable,
+};
+use crate::ids::IdFormat;
 use crate::kernel_header::RefWidth;
 use crate::nurbs;
 use crate::sab::{Record, Token};
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::attributes::SourceAttribute;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::{EdgeId, FaceId, LoopId, RegionId, ShellId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Loop, Shell};
+use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 
-const FORMAT: IdFormat<'static> = IdFormat("f3d");
+const FORMAT: IdFormat = crate::asm_format!("f3d");
 
-fn exact_circle_directrix() -> cadmpeg_ir::geometry::NurbsCurve {
+fn analytic_procedural_surface(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    definition: &nurbs::proc_surface::DecodedProceduralSurfaceDefinition,
+) -> Option<SurfaceGeometry> {
+    decode_analytic_procedural_surface(ctx, definition)
+        .transpose()
+        .expect("resource allocation")
+}
+
+fn rational_four_arc_circle(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
+) -> Option<(Point3, Vector3, Vector3, f64)> {
+    decode_rational_four_arc_circle(ctx, curve)
+        .transpose()
+        .expect("resource allocation")
+}
+
+#[test]
+fn rational_circle_homogeneous_poles_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 8;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = decode_rational_four_arc_circle(&ctx, &exact_circle_directrix())
+        .expect("valid circle")
+        .expect_err("nine poles exceed eight items");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected collection refusal: {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn subtype_definition_index_refuses_collection_limit_before_construction() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let records = [Record {
+        index: 0,
+        name: "mystery".into(),
+        tokens: vec![
+            Token::SubtypeOpen,
+            Token::Ident("node".into()),
+            Token::SubtypeClose,
+        ]
+        .into(),
+        offset: 0,
+        len: 0,
+    }];
+    let bytes = [0_u8];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let error = super::decode_with_header(
+        &ctx,
+        &records,
+        &bytes,
+        None,
+        "stream",
+        FORMAT,
+        DecodePurpose::Model,
+    )
+    .err()
+    .expect("subtype definition exceeds one collection slot");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected resource refusal, got {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(limit.operation, "index ASM subtype definitions");
+
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    super::decode_with_header(
+        &ctx,
+        &records,
+        &bytes,
+        None,
+        "stream",
+        FORMAT,
+        DecodePurpose::Model,
+    )
+    .expect("service profile admits subtype definition");
+}
+
+fn exact_circle_directrix() -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
     let center = Point3::new(2.0, 3.0, 4.0);
     let point = |x, y| Point3::new(center.x + x, center.y + y, center.z);
-    cadmpeg_ir::geometry::NurbsCurve::new(
+    cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 4.0],
         vec![
@@ -49,11 +153,19 @@ fn exact_circle_directrix() -> cadmpeg_ir::geometry::NurbsCurve {
         ]),
         false,
     )
+    .expect("fixture constructor admission")
     .unwrap()
 }
 
 #[test]
 fn exact_circle_extrusion_reduces_to_cylinder_only_along_normal() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     let definition =
         |direction| nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Extrusion {
             directrix: exact_circle_directrix(),
@@ -62,35 +174,52 @@ fn exact_circle_extrusion_reduces_to_cylinder_only_along_normal() {
             native_position: Point3::new(0.0, 0.0, 0.0),
             revision_form: None,
         };
-    let Some(SurfaceGeometry::Cylinder {
-        origin,
-        axis,
-        ref_direction,
-        radius,
-    }) = analytic_procedural_surface(&definition(Vector3::new(0.0, 0.0, -8.0)))
+    let Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))) =
+        analytic_procedural_surface(&resource_ctx, &definition(Vector3::new(0.0, 0.0, -8.0)))
     else {
         panic!("exact circle extrusion did not reduce")
     };
-    assert!(point_vector(Point3::new(2.0, 3.0, 4.0), origin).norm() < 1.0e-12);
-    assert_eq!(axis, Vector3::new(0.0, 0.0, -1.0));
+    let origin = cylinder_surface.origin();
+    let axis = cylinder_surface.frame().axis().as_raw();
+    let ref_direction = cylinder_surface.frame().reference().as_raw();
+    let radius = cylinder_surface.radius().get();
+    assert!(point_vector(Point3::new(2.0, 3.0, 4.0), origin.get()).norm() < 1.0e-12);
+    assert_eq!(*axis, Vector3::new(0.0, 0.0, -1.0));
     assert!((ref_direction.x - 1.0).abs() < 1.0e-12);
     assert!(ref_direction.y.abs() < 1.0e-12);
     assert!(ref_direction.z.abs() < 1.0e-12);
     assert!((radius - 5.0).abs() < 1.0e-12);
-    assert!(analytic_procedural_surface(&definition(Vector3::new(1.0, 0.0, 8.0))).is_none());
+    assert!(
+        analytic_procedural_surface(&resource_ctx, &definition(Vector3::new(1.0, 0.0, 8.0)))
+            .is_none()
+    );
     let mut approximate = exact_circle_directrix();
     approximate
-        .edit_control_points(|points| points[3].x += 1.0e-5)
+        .try_map_control_points(
+            |index, point| {
+                let mut point = point.get();
+                if index == 3 {
+                    point.x += 1.0e-5;
+                }
+                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            },
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("pole edit admission")
         .unwrap();
-    assert!(rational_four_arc_circle(&approximate).is_none());
+    assert!(rational_four_arc_circle(&resource_ctx, &approximate).is_none());
 }
 
-fn degree_elevated_circle() -> cadmpeg_ir::geometry::NurbsCurve {
+fn degree_elevated_circle() -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
     let quadratic = exact_circle_directrix();
     let weights = quadratic.weights().unwrap();
     let homogeneous = |index: usize| {
         let point = quadratic.control_points()[index];
-        let weight = weights[index] * 7.0;
+        let weight = weights[index].get() * 7.0;
         [point.x * weight, point.y * weight, point.z * weight, weight]
     };
     let combine = |first: [f64; 4], first_scale: f64, second: [f64; 4], second_scale: f64| {
@@ -130,7 +259,8 @@ fn degree_elevated_circle() -> cadmpeg_ir::geometry::NurbsCurve {
             )
         })
         .unzip();
-    cadmpeg_ir::geometry::NurbsCurve::new(
+    cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         3,
         vec![
             0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 3.0, 4.0, 4.0, 4.0, 4.0,
@@ -139,25 +269,53 @@ fn degree_elevated_circle() -> cadmpeg_ir::geometry::NurbsCurve {
         Some(weights),
         false,
     )
+    .expect("fixture constructor admission")
     .unwrap()
 }
 
 #[test]
 fn exact_circle_recognition_is_projective_and_degree_invariant() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     let mut scaled = exact_circle_directrix();
-    scaled
-        .edit_weights(|weights| {
-            for weight in weights {
-                *weight *= 7.0;
-            }
+    let scaled_weights = scaled.weights().map(|weights| {
+        weights
+            .into_iter()
+            .map(|weight| weight.get() * 7.0)
+            .collect()
+    });
+    {
+        let replacement = cadmpeg_ir::geometry::nurbs::NurbsPoles3::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            scaled.pole_rows().raw_points(),
+            scaled_weights,
+        )
+        .expect("fixture pole pairing admission")
+        .expect("scaled weights are finite and non-zero");
+        edit::replace(&mut scaled, |previous| {
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::new(
+                &cadmpeg_test_support::service_decode_context(),
+                previous.degree(),
+                previous.knots().to_vec(),
+                replacement,
+                previous.periodic(),
+            )
+            .expect("fixture final NURBS admission")
         })
-        .unwrap();
-    assert!(rational_four_arc_circle(&scaled).is_some());
+    }
+    .unwrap();
+    assert!(rational_four_arc_circle(&resource_ctx, &scaled).is_some());
 
     let mut elevated = degree_elevated_circle();
-    assert!(rational_four_arc_circle(&elevated).is_some());
+    assert!(rational_four_arc_circle(&resource_ctx, &elevated).is_some());
     assert!(matches!(
         analytic_procedural_surface(
+            &resource_ctx,
             &nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Extrusion {
                 directrix: elevated.clone(),
                 parameter_interval: [0.0, 4.0],
@@ -166,44 +324,68 @@ fn exact_circle_recognition_is_projective_and_degree_invariant() {
                 revision_form: None,
             }
         ),
-        Some(SurfaceGeometry::Cylinder { .. })
+        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_)))
     ));
     elevated
-        .edit_control_points(|points| points[5].x += 1.0e-5)
+        .try_map_control_points(
+            |index, point| {
+                let mut point = point.get();
+                if index == 5 {
+                    point.x += 1.0e-5;
+                }
+                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            },
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("pole edit admission")
         .unwrap();
-    assert!(rational_four_arc_circle(&elevated).is_none());
+    assert!(rational_four_arc_circle(&resource_ctx, &elevated).is_none());
 }
 
 fn plane(origin: Point3, normal: Vector3, u_axis: Vector3) -> SurfaceGeometry {
-    SurfaceGeometry::Plane {
-        origin,
-        normal,
-        u_axis,
-    }
+    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, normal, u_axis).unwrap(),
+    ))
 }
 
 fn cylinder(origin: Point3, axis: Vector3, radius: f64) -> SurfaceGeometry {
-    SurfaceGeometry::Cylinder {
-        origin,
-        axis,
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius,
-    }
+    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+            origin,
+            axis,
+            Vector3::new(1.0, 0.0, 0.0),
+            radius,
+        )
+        .unwrap(),
+    ))
 }
 
-fn linear_spine(points: Vec<Point3>) -> cadmpeg_ir::geometry::NurbsCurve {
-    cadmpeg_ir::geometry::NurbsCurve::new(
+fn linear_spine(points: Vec<Point3>) -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
+    cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         points,
         None,
         false,
     )
+    .expect("fixture constructor admission")
     .unwrap()
 }
 
 #[test]
 fn constant_circular_plane_plane_blend_reduces_to_tangent_cylinder() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     let mut definition = nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Blend {
         supports: Box::new([
             Some(plane(
@@ -222,23 +404,21 @@ fn constant_circular_plane_plane_blend_reduces_to_tangent_cylinder() {
             Point3::new(2.0, 2.0, 0.0),
             Point3::new(2.0, 2.0, 7.0),
         ])),
-        radius: cadmpeg_ir::geometry::BlendRadiusLaw::Constant {
-            signed_radius: -2.0,
-        },
+        radius_offsets: [-2.0, -2.0],
         cross_section: cadmpeg_ir::geometry::BlendCrossSection::Circular,
         native: None,
     };
-    assert!(matches!(
-        analytic_procedural_surface(&definition),
-        Some(SurfaceGeometry::Cylinder {
-            origin,
-            axis,
-            radius,
-            ..
-        }) if origin == Point3::new(2.0, 2.0, -4.0)
-            && axis == Vector3::new(0.0, 0.0, 1.0)
-            && radius == 2.0
-    ));
+    assert!(
+        matches!(analytic_procedural_surface(&resource_ctx, &definition), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)))
+                if {
+                    let origin = cylinder_surface.origin();
+        let axis = cylinder_surface.frame().axis().as_raw();
+        let radius = cylinder_surface.radius().get();
+                    origin.get() == Point3::new(2.0, 2.0, -4.0)
+                        && *axis == Vector3::new(0.0, 0.0, 1.0)
+                        && radius == 2.0
+                })
+    );
 
     let nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Blend {
         spine: Some(spine), ..
@@ -247,22 +427,51 @@ fn constant_circular_plane_plane_blend_reduces_to_tangent_cylinder() {
         unreachable!()
     };
     spine
-        .edit_control_points(|points| points[1].x = 2.1)
+        .try_map_control_points(
+            |index, point| {
+                let mut point = point.get();
+                if index == 1 {
+                    point.x = 2.1;
+                }
+                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            },
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("pole edit admission")
         .unwrap();
-    assert!(analytic_procedural_surface(&definition).is_none());
+    assert!(analytic_procedural_surface(&resource_ctx, &definition).is_none());
 }
 
 #[test]
 fn constant_circular_plane_cylinder_blend_reduces_to_tangent_torus() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     let mut circle = exact_circle_directrix();
     circle
-        .edit_control_points(|points| {
-            for point in points {
+        .try_map_control_points(
+            |_, point| {
+                let mut point = point.get();
                 point.x -= 2.0;
                 point.y -= 3.0;
                 point.z -= 3.0;
-            }
-        })
+                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            },
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("pole edit admission")
         .unwrap();
     let mut definition = nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Blend {
         supports: Box::new([
@@ -278,26 +487,25 @@ fn constant_circular_plane_cylinder_blend_reduces_to_tangent_torus() {
             )),
         ]),
         spine: Some(circle),
-        radius: cadmpeg_ir::geometry::BlendRadiusLaw::Constant {
-            signed_radius: -2.0,
-        },
+        radius_offsets: [-2.0, -2.0],
         cross_section: cadmpeg_ir::geometry::BlendCrossSection::Circular,
         native: None,
     };
-    assert!(matches!(
-        analytic_procedural_surface(&definition),
-        Some(SurfaceGeometry::Torus {
-            center,
-            axis,
-            ref_direction,
-            major_radius,
-            minor_radius,
-        }) if center == Point3::new(0.0, 0.0, 1.0)
-            && axis == Vector3::new(0.0, 0.0, 1.0)
-            && ref_direction == Vector3::new(1.0, 0.0, 0.0)
-            && major_radius == 5.0
-            && minor_radius == -2.0
-    ));
+    assert!(
+        matches!(analytic_procedural_surface(&resource_ctx, &definition), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)))
+                if {
+                    let center = torus_surface.center();
+        let axis = torus_surface.frame().axis().as_raw();
+        let ref_direction = torus_surface.frame().reference().as_raw();
+        let major_radius = torus_surface.major_radius().get();
+        let minor_radius = torus_surface.minor_radius().get();
+                    *center == Point3::new(0.0, 0.0, 1.0)
+                        && *axis == Vector3::new(0.0, 0.0, 1.0)
+                        && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                        && major_radius == 5.0
+                        && minor_radius == -2.0
+                })
+    );
 
     let nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Blend { supports, .. } =
         &mut definition
@@ -306,10 +514,14 @@ fn constant_circular_plane_cylinder_blend_reduces_to_tangent_torus() {
     };
     supports[0] = Some(plane(
         Point3::new(0.0, 0.0, -1.0),
-        Vector3::new(0.0, 1.0, 1.0),
+        Vector3::new(
+            0.0,
+            std::f64::consts::FRAC_1_SQRT_2,
+            std::f64::consts::FRAC_1_SQRT_2,
+        ),
         Vector3::new(1.0, 0.0, 0.0),
     ));
-    assert!(analytic_procedural_surface(&definition).is_none());
+    assert!(analytic_procedural_surface(&resource_ctx, &definition).is_none());
 }
 
 #[test]
@@ -425,21 +637,30 @@ fn saved_top_level_edge_projects_as_a_wire_body() {
     bytes.extend_from_slice(&2u32.to_le_bytes());
     bytes.extend_from_slice(&0u32.to_le_bytes());
 
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("fixture is within the service input limit");
     let brep = decode_with_purpose(
+        &ctx,
         &records,
         &bytes,
         "BREP.saved-edge.smbh",
         FORMAT,
         DecodePurpose::Model,
-    );
+    )
+    .expect("valid BREP tolerances");
 
     assert_eq!(brep.bodies.len(), 1);
     assert_eq!(brep.bodies[0].kind, cadmpeg_ir::topology::BodyKind::Wire);
     assert_eq!(brep.regions.len(), 1);
     assert_eq!(brep.shells.len(), 1);
     assert_eq!(
-        brep.shells[0].wire_edges,
-        vec![EdgeId::mint(id(FORMAT, 1)).expect("identity grammar")]
+        brep.shells[0].wire_edges(),
+        vec![EdgeId::mint(id(FORMAT, 1).into_string()).expect("identity grammar")]
     );
     assert_eq!(brep.edges.len(), 1);
     assert_eq!(brep.vertices.len(), 2);
@@ -510,6 +731,14 @@ fn standard_attribute_chain_uses_forward_links_and_first_exact_color() {
     };
     use cadmpeg_ir::attributes::AttributeTarget;
 
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
+
     let record = |index, name: &str, next, payload: Vec<Token>| {
         let mut tokens = vec![
             Token::Ref(-1),
@@ -577,11 +806,16 @@ fn standard_attribute_chain_uses_forward_links_and_first_exact_color() {
     ];
     let by_index = attributes
         .iter()
-        .map(|attribute| (attribute.index as i64, attribute))
+        .map(|attribute| {
+            let index = i64::try_from(attribute.index).expect("index fits");
+            (index, attribute)
+        })
         .collect::<HashMap<_, _>>();
 
-    let (carrier, decoded) =
-        attribute_chain_color_carrier(&entity, |index| by_index.get(&index).copied()).unwrap();
+    let (carrier, decoded) = attribute_chain_color_carrier(&entity, by_index.len(), |index| {
+        by_index.get(&index).copied()
+    })
+    .unwrap();
     assert_eq!(carrier.index, 5);
     assert_eq!(
         decoded.carrier,
@@ -589,10 +823,10 @@ fn standard_attribute_chain_uses_forward_links_and_first_exact_color() {
     );
     assert_eq!(
         (
-            decoded.color.r,
-            decoded.color.g,
-            decoded.color.b,
-            decoded.color.a,
+            decoded.color.r(),
+            decoded.color.g(),
+            decoded.color.b(),
+            decoded.color.a(),
         ),
         (64.0 / 255.0, 128.0 / 255.0, 192.0 / 255.0, 1.0)
     );
@@ -600,13 +834,15 @@ fn standard_attribute_chain_uses_forward_links_and_first_exact_color() {
     let mut emitted = HashSet::new();
     let mut source = Vec::new();
     collect_attributes(
+        &resource_ctx,
         &entity,
         &AttributeTarget::Face(FaceId::mint("test:model:face#0").expect("identity grammar")),
         &by_index,
         &mut emitted,
         &mut source,
         FORMAT,
-    );
+    )
+    .expect("finite attribute values");
     assert_eq!(
         source
             .iter()
@@ -629,6 +865,14 @@ fn legacy_attribute_chain_uses_second_field_forward_link() {
         attribute_chain_color_carrier, attribute_chain_name, collect_attributes,
     };
     use cadmpeg_ir::attributes::AttributeTarget;
+
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
 
     let entity = Record {
         index: 0,
@@ -673,28 +917,34 @@ fn legacy_attribute_chain_uses_second_field_forward_link() {
     };
     let by_index = HashMap::from([(1, &color), (2, &name)]);
 
-    let (carrier, decoded) =
-        attribute_chain_color_carrier(&entity, |index| by_index.get(&index).copied()).unwrap();
+    let (carrier, decoded) = attribute_chain_color_carrier(&entity, by_index.len(), |index| {
+        by_index.get(&index).copied()
+    })
+    .unwrap();
     assert_eq!(carrier.index, 1);
     assert_eq!(
         decoded.carrier,
         super::attributes::DirectColorCarrier::NormalizedRgb { fields: [4, 5, 6] }
     );
     assert_eq!(
-        attribute_chain_name(&entity, &by_index).as_deref(),
+        attribute_chain_name(&resource_ctx, &entity, &by_index)
+            .unwrap()
+            .as_deref(),
         Some("legacy face")
     );
 
     let mut emitted = HashSet::new();
     let mut source = Vec::new();
     collect_attributes(
+        &resource_ctx,
         &entity,
         &AttributeTarget::Face(FaceId::mint("test:model:face#0").expect("identity grammar")),
         &by_index,
         &mut emitted,
         &mut source,
         FORMAT,
-    );
+    )
+    .expect("finite attribute values");
     assert_eq!(
         source
             .iter()
@@ -711,6 +961,14 @@ fn legacy_attribute_chain_uses_second_field_forward_link() {
 fn shell_and_loop_attribute_chains_retain_their_native_owners() {
     use cadmpeg_ir::attributes::AttributeTarget;
 
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
+
     let record = |index, name: &str, tokens: Vec<Token>| Record {
         index,
         name: name.into(),
@@ -726,23 +984,27 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
         record(3, "shell", vec![Token::Ref(1)]),
         record(4, "loop", vec![Token::Ref(2)]),
     ];
+    let face_id = FaceId::mint("test:model:face#0").expect("identity grammar");
     let mut brep = AsmBrep {
-        shells: vec![Shell {
-            id: ShellId::mint(id(FORMAT, 3)).expect("identity grammar"),
-            region: RegionId::mint("test:model:region#0").expect("identity grammar"),
-            faces: Vec::new(),
-            wire_edges: Vec::new(),
-            free_vertices: Vec::new(),
-        }],
+        shells: vec![Shell::new(
+            ShellId::mint(id(FORMAT, 3).into_string()).expect("identity grammar"),
+            RegionId::mint("test:model:region#0").expect("identity grammar"),
+            vec![face_id.clone()],
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap()],
         loops: vec![Loop {
-            id: LoopId::mint(id(FORMAT, 4)).expect("identity grammar"),
-            face: FaceId::mint("test:model:face#0").expect("identity grammar"),
+            id: LoopId::mint(id(FORMAT, 4).into_string()).expect("identity grammar"),
+            face: face_id,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                 cadmpeg_ir::topology::LoopRing::new(
+                    &cadmpeg_test_support::service_decode_context(),
                     vec![cadmpeg_ir::ids::CoedgeId::mint("test:model:coedge#0")
                         .expect("identity grammar")],
                     Vec::new(),
                 )
+                .expect("fixture ring admission")
                 .expect("valid loop ring"),
             ),
         }],
@@ -750,7 +1012,7 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
     };
     let by_index = records
         .iter()
-        .map(|record| (record.index as i64, record))
+        .map(|record| (i64::try_from(record.index).expect("index fits"), record))
         .collect();
     let reach = Reachable {
         loops: HashSet::from([4]),
@@ -758,13 +1020,25 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
     };
 
     assert_eq!(
-        emit_attributes(&mut brep, &records, &by_index, &reach, FORMAT),
+        emit_attributes(
+            &resource_ctx,
+            &mut brep,
+            &records,
+            &by_index,
+            &reach,
+            FORMAT
+        )
+        .expect("finite attribute values"),
         HashSet::from([1, 2])
     );
     assert!(brep.attributes.iter().any(|attribute| attribute.target
-        == AttributeTarget::Shell(ShellId::mint(id(FORMAT, 3)).expect("identity grammar"))));
+        == AttributeTarget::Shell(
+            ShellId::mint(id(FORMAT, 3).into_string()).expect("identity grammar")
+        )));
     assert!(brep.attributes.iter().any(|attribute| attribute.target
-        == AttributeTarget::Loop(LoopId::mint(id(FORMAT, 4)).expect("identity grammar"))));
+        == AttributeTarget::Loop(
+            LoopId::mint(id(FORMAT, 4).into_string()).expect("identity grammar")
+        )));
 }
 
 #[test]
@@ -772,6 +1046,14 @@ fn lump_named_attributes_bind_to_their_owning_body() {
     use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
     use cadmpeg_ir::ids::BodyId;
     use cadmpeg_ir::topology::{Body, BodyKind, Region};
+
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
 
     let record = |index, name: &str, tokens: Vec<Token>| Record {
         index,
@@ -814,21 +1096,21 @@ fn lump_named_attributes_bind_to_their_owning_body() {
     ];
     let by_index = records
         .iter()
-        .map(|record| (record.index as i64, record))
+        .map(|record| (i64::try_from(record.index).expect("index fits"), record))
         .collect();
-    let body_id = BodyId::mint(id(FORMAT, 1)).expect("identity grammar");
+    let body_id = BodyId::mint(id(FORMAT, 1).into_string()).expect("identity grammar");
     let mut brep = AsmBrep {
         bodies: vec![Body {
             id: body_id.clone(),
             kind: BodyKind::Sheet,
-            regions: vec![RegionId::mint(id(FORMAT, 2)).expect("identity grammar")],
+            regions: vec![RegionId::mint(id(FORMAT, 2).into_string()).expect("identity grammar")],
             transform: None,
             name: None,
             color: None,
             visible: None,
         }],
         regions: vec![Region {
-            id: RegionId::mint(id(FORMAT, 2)).expect("identity grammar"),
+            id: RegionId::mint(id(FORMAT, 2).into_string()).expect("identity grammar"),
             body: body_id.clone(),
             shells: Vec::new(),
         }],
@@ -836,12 +1118,14 @@ fn lump_named_attributes_bind_to_their_owning_body() {
     };
 
     let emitted = emit_attributes(
+        &resource_ctx,
         &mut brep,
         &records,
         &by_index,
         &Reachable::default(),
         FORMAT,
-    );
+    )
+    .expect("finite attribute values");
 
     assert_eq!(emitted, HashSet::from([3]));
     assert_eq!(
@@ -869,7 +1153,7 @@ fn lump_named_attributes_bind_to_their_owning_body() {
 
 fn ident(bytes: &mut Vec<u8>, name: &str) {
     bytes.push(0x0d);
-    bytes.push(name.len() as u8);
+    bytes.push(u8::try_from(name.len()).expect("test value fits"));
     bytes.extend_from_slice(name.as_bytes());
 }
 
@@ -896,25 +1180,97 @@ fn generated_subshell_hierarchy_flattens_faces_onto_shell() {
     record(&mut bytes, "face", &[-1, -1, -1, -1]); // 4
     record(&mut bytes, "face", &[-1, -1, -1, -1]); // 5
 
-    let records = crate::sab::frame(&bytes, 0, bytes.len(), RefWidth::Eight)
+    let records = crate::test_support::sab::frame(&bytes, 0, bytes.len(), RefWidth::Eight)
         .expect("generated subshell bytes must frame");
     let by_index = records
         .iter()
-        .map(|record| (record.index as i64, record))
+        .map(|record| (i64::try_from(record.index).expect("index fits"), record))
         .collect::<HashMap<_, _>>();
     let kept = [4, 5].into_iter().collect::<HashSet<_>>();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
 
     assert_eq!(
-        shell_faces(&records[1], &by_index, &kept, FORMAT),
+        shell_faces(&ctx, &records[1], &by_index, &kept, FORMAT).unwrap(),
         vec![
             FaceId::mint("f3d:brep:entity#4").expect("identity grammar"),
             FaceId::mint("f3d:brep:entity#5").expect("identity grammar")
         ]
     );
     assert_eq!(
-        subshell_ancestor_shells(&records, &by_index).get(&3),
+        subshell_ancestor_shells(&ctx, &records, &by_index)
+            .unwrap()
+            .get(&3),
         Some(&1)
     );
+}
+
+#[test]
+fn subshell_ancestor_shells_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let mut bytes = Vec::new();
+    record(&mut bytes, "asmheader", &[]);
+    record(&mut bytes, "shell", &[-1, -1, -1, -1, -1, -1, -1, -1]);
+    record(&mut bytes, "subshell", &[-1, -1, -1, 1]);
+    let records = crate::test_support::sab::frame(&bytes, 0, bytes.len(), RefWidth::Eight)
+        .expect("generated subshell bytes must frame");
+    let by_index = records
+        .iter()
+        .map(|record| (i64::try_from(record.index).expect("index fits"), record))
+        .collect();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let error = subshell_ancestor_shells(&ctx, &records, &by_index)
+        .expect_err("one ancestor exceeds zero items");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected collection refusal: {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn classify_edge_curve_senses_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let records = [Record {
+        index: 1,
+        name: "edge".into(),
+        tokens: vec![
+            Token::Ref(-1),
+            Token::Ref(-1),
+            Token::Ref(-1),
+            Token::Ref(-1),
+            Token::Ref(-1),
+            Token::Ref(-1),
+            Token::Ref(-1),
+            Token::Ref(-1),
+            Token::Ref(2),
+            Token::Enum(0),
+        ]
+        .into(),
+        offset: 0,
+        len: 0,
+    }];
+    let mut reach = Reachable::default();
+    reach.edges.insert(1);
+    reach.curves.insert(2);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = classify_edge_curve_senses(&ctx, &records, &reach)
+        .expect_err("one curve sense exceeds zero items");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected collection refusal: {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
 }
 
 #[test]
@@ -928,13 +1284,20 @@ fn subshell_wires_project_onto_the_nearest_shell() {
     record(&mut bytes, "wire", &[]); // 5
     record(&mut bytes, "wire", &[]); // 6
 
-    let records = crate::sab::frame(&bytes, 0, bytes.len(), RefWidth::Eight)
+    let records = crate::test_support::sab::frame(&bytes, 0, bytes.len(), RefWidth::Eight)
         .expect("generated subshell-wire bytes must frame");
     let by_index = records
         .iter()
-        .map(|record| (record.index as i64, record))
+        .map(|record| (i64::try_from(record.index).expect("index fits"), record))
         .collect::<HashMap<_, _>>();
-    assert_eq!(shell_wire_roots(&records[1], &by_index), [4, 5, 6]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert_eq!(
+        shell_wire_roots(&ctx, &records[1], &by_index).unwrap(),
+        [4, 5, 6]
+    );
 }
 
 #[test]
@@ -964,7 +1327,8 @@ fn reversed_edge_negates_its_pcurve_validation_interval() {
         edge_pcurve_parameter_ranges(&edge),
         Some([[-0.55, -0.60], [0.55, 0.60]])
     );
-    let candidate = cadmpeg_ir::geometry::PcurveNurbs::new(
+    let candidate = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![
@@ -974,6 +1338,7 @@ fn reversed_edge_negates_its_pcurve_validation_interval() {
         None,
         false,
     )
+    .expect("fixture pcurve construction admission")
     .unwrap();
     assert_eq!(
         pcurve_ranges_on_domain(&candidate, Some(&edge)),
@@ -1006,7 +1371,7 @@ fn carrierless_edge_retains_raw_parameter_range_without_a_domain() {
     let records = [edge];
     let by_index = records
         .iter()
-        .map(|record| (record.index as i64, record))
+        .map(|record| (i64::try_from(record.index).expect("index fits"), record))
         .collect::<HashMap<_, _>>();
     let mut brep = AsmBrep::default();
     let reach = Reachable {
@@ -1014,20 +1379,101 @@ fn carrierless_edge_retains_raw_parameter_range_without_a_domain() {
         vertices: HashSet::from([2, 3]),
         ..Reachable::default()
     };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
 
     emit_edges(
+        &ctx,
         &mut brep,
         &records,
         &by_index,
         &reach,
-        &HashSet::new(),
-        &HashSet::new(),
+        CurveSenseRefs {
+            reversed_curve_refs: &HashSet::new(),
+            forward_curve_refs: &HashSet::new(),
+        },
         FORMAT,
-    );
+    )
+    .expect("valid edge tolerance");
 
     assert_eq!(brep.edges.len(), 1);
-    assert_eq!(brep.edges[0].curve, None);
-    assert_eq!(brep.edges[0].param_range, Some([1.0, 0.0]));
+    assert_eq!(brep.edges[0].curve(), None);
+    assert_eq!(
+        brep.edges[0]
+            .param_range()
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([1.0, 0.0])
+    );
+}
+
+#[test]
+fn tolerant_edge_tail_admits_only_nonnegative_finite_source_tolerance() {
+    for (source_tolerance, expected_tolerance, expected_tails) in [
+        (0.5, Some(0.5 * crate::nurbs::reader::LEN_TO_MM), 1),
+        (-1.0, None, 0),
+        (f64::NAN, None, 0),
+    ] {
+        let edge = Record {
+            index: 1,
+            name: "tedge".into(),
+            tokens: vec![
+                Token::Ref(-1),
+                Token::Long(-1),
+                Token::Ref(-1),
+                Token::Ref(2),
+                Token::Double(1.0),
+                Token::Ref(3),
+                Token::Double(0.0),
+                Token::Ref(-1),
+                Token::Ref(-1),
+                Token::False,
+                Token::False,
+                Token::Double(source_tolerance),
+                Token::Long(2_250_003),
+                Token::Long(7),
+            ]
+            .into(),
+            offset: 0,
+            len: 0,
+        };
+        let records = [edge];
+        let by_index = records
+            .iter()
+            .map(|record| (i64::try_from(record.index).expect("index fits"), record))
+            .collect::<HashMap<_, _>>();
+        let reach = Reachable {
+            edges: HashSet::from([1]),
+            vertices: HashSet::from([2, 3]),
+            ..Reachable::default()
+        };
+        let mut brep = AsmBrep::default();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        emit_edges(
+            &ctx,
+            &mut brep,
+            &records,
+            &by_index,
+            &reach,
+            CurveSenseRefs {
+                reversed_curve_refs: &HashSet::new(),
+                forward_curve_refs: &HashSet::new(),
+            },
+            FORMAT,
+        )
+        .expect("edge emission");
+        assert_eq!(
+            brep.edges[0]
+                .tolerance
+                .map(cadmpeg_ir::scalar::PositiveReal::get),
+            expected_tolerance
+        );
+        assert_eq!(brep.tolerant_edge_tails.len(), expected_tails);
+    }
 }
 
 #[test]
@@ -1050,7 +1496,11 @@ fn append_preserves_body_ordinals_within_each_source_brep() {
     first.body_native_keys.push(key("first"));
     let mut second = AsmBrep::default();
     second.body_native_keys.push(key("second"));
-    first.append(second);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test decode context");
+    first.append(&ctx, second).expect("append source BREP");
     assert_eq!(first.body_native_keys.len(), 2);
     assert_eq!(first.body_native_keys[0].body_ordinal, 0);
     assert_eq!(first.body_native_keys[1].body_ordinal, 0);
@@ -1063,3 +1513,431 @@ fn append_preserves_body_ordinals_within_each_source_brep() {
         Some("second")
     );
 }
+
+/// The ASM join maps are projections of the key records, not wire keys: a
+/// document that restates one is refused by name, and a document without it
+/// reads.
+#[test]
+fn a_restated_join_map_names_no_wire_key() {
+    let brep = AsmBrep::default();
+    let value = serde_value::to_value(&brep).expect("AsmBrep serializes");
+    AsmBrep::deserialize(value.clone()).expect("the key records alone read");
+    for restated in ["face_keys", "body_keys"] {
+        let serde_value::Value::Map(mut fields) = value.clone() else {
+            panic!("AsmBrep serializes as a map");
+        };
+        fields.insert(
+            serde_value::Value::String(restated.to_string()),
+            serde_value::Value::Map(std::collections::BTreeMap::new()),
+        );
+        let Err(error) = AsmBrep::deserialize(serde_value::Value::Map(fields)) else {
+            panic!("a restated join map is an unknown field");
+        };
+        let error = error.to_string();
+        assert!(error.contains(restated), "{error}");
+    }
+}
+
+/// The projections the readers build come from one place.
+#[test]
+fn the_join_projections_read_the_key_records() {
+    let face = FaceId::mint("asm:test:face#1".to_string()).expect("identity grammar");
+    let mut brep = AsmBrep::default();
+    let namespace = records::identity::NativeRecordNamespace::new(crate::asm_format!("f3d"));
+    brep.face_native_keys.push(records::FaceNativeKey {
+        source_namespace: namespace,
+        record_index: 1,
+        face: face.clone(),
+        asm_face_key: Some(7),
+    });
+    assert_eq!(
+        super::key_maps::face_keys(&brep.face_native_keys),
+        std::collections::HashMap::from([(face, 7)])
+    );
+}
+
+#[test]
+fn circle_recognition_is_invariant_under_common_weight_scale() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
+    for curve in [exact_circle_directrix(), degree_elevated_circle()] {
+        for scale in [1e-200, 1.0, 1e200] {
+            let rescaled = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                curve.degree(),
+                curve.knots().to_vec(),
+                curve.pole_rows().raw_points(),
+                Some(
+                    curve
+                        .weights()
+                        .unwrap()
+                        .iter()
+                        .map(|w| w.get() * scale)
+                        .collect(),
+                ),
+                false,
+            )
+            .expect("fixture constructor admission")
+            .unwrap();
+            assert!(rational_four_arc_circle(&resource_ctx, &rescaled).is_some());
+        }
+    }
+    let curve = exact_circle_directrix();
+    for scale in [1e-200, 1.0, 1e200] {
+        let polynomial = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            curve.degree(),
+            curve.knots().to_vec(),
+            curve.pole_rows().raw_points(),
+            Some(vec![scale; 9]),
+            false,
+        )
+        .expect("fixture constructor admission")
+        .unwrap();
+        assert!(rational_four_arc_circle(&resource_ctx, &polynomial).is_none());
+    }
+}
+
+#[test]
+fn a_non_finite_attribute_double_is_refused() {
+    use super::attributes::source_attribute;
+    use cadmpeg_ir::attributes::AttributeTarget;
+
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
+
+    let record = Record {
+        index: 1,
+        name: "real-st-attrib".into(),
+        tokens: vec![
+            Token::Ref(-1),
+            Token::Long(-1),
+            Token::Ref(-1),
+            Token::Ref(-1),
+            Token::Ref(0),
+            Token::Double(f64::NAN),
+        ]
+        .into(),
+        offset: 0,
+        len: 0,
+    };
+    let error = source_attribute(&resource_ctx, &record, AttributeTarget::Document, FORMAT)
+        .expect_err("a NaN attribute double is refused");
+    assert_eq!(
+        error.to_string(),
+        "malformed container: attribute record 1 (real-st-attrib) holds a non-finite number"
+    );
+}
+
+#[test]
+fn attribute_values_refuse_collection_limit() {
+    use super::attributes::source_attribute;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::attributes::AttributeTarget;
+
+    let record = Record {
+        index: 1,
+        name: "real-st-attrib".into(),
+        tokens: vec![Token::Double(1.0)].into(),
+        offset: 0,
+        len: 0,
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = source_attribute(&ctx, &record, AttributeTarget::Document, FORMAT)
+        .expect_err("one attribute value exceeds zero items");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected collection refusal: {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn attribute_chain_tracking_refuses_collection_limit() {
+    use super::attributes::collect_attributes;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::attributes::AttributeTarget;
+
+    let entity = Record {
+        index: 0,
+        name: "face".into(),
+        tokens: vec![Token::Ref(1)].into(),
+        offset: 0,
+        len: 0,
+    };
+    let attribute = Record {
+        index: 1,
+        name: "rgb_color-st-attrib".into(),
+        tokens: vec![Token::Ref(-1)].into(),
+        offset: 0,
+        len: 0,
+    };
+    let by_index = HashMap::from([(1, &attribute)]);
+    let mut emitted = HashSet::new();
+    let mut out = Vec::new();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = collect_attributes(
+        &ctx,
+        &entity,
+        &AttributeTarget::Document,
+        &by_index,
+        &mut emitted,
+        &mut out,
+        FORMAT,
+    )
+    .expect_err("one attribute chain member exceeds zero items");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected collection refusal: {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(limit.operation, "ASM attribute chain");
+}
+
+#[test]
+fn attribute_chain_name_refuses_retained_limit() {
+    use super::attributes::attribute_chain_name;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let entity = Record {
+        index: 0,
+        name: "face".into(),
+        tokens: vec![Token::Ref(1)].into(),
+        offset: 0,
+        len: 0,
+    };
+    let attribute = Record {
+        index: 1,
+        name: "string_attrib-name_attrib-gen-attrib".into(),
+        tokens: vec![
+            Token::Ref(-1),
+            Token::Str("name".into()),
+            Token::Str("x".into()),
+        ]
+        .into(),
+        offset: 0,
+        len: 0,
+    };
+    let by_index = HashMap::from([(1, &attribute)]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = attribute_chain_name(&ctx, &entity, &by_index)
+        .expect_err("one name byte exceeds zero retained bytes");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected retained refusal: {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn body_classification_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::ids::BodyId;
+    use cadmpeg_ir::topology::Region;
+
+    let mut brep = AsmBrep::default();
+    brep.regions.push(Region {
+        id: RegionId::from(id(FORMAT, 1)),
+        body: BodyId::from(id(FORMAT, 2)),
+        shells: vec![ShellId::from(id(FORMAT, 3))],
+    });
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::geometry::classify_body_kinds(&ctx, &mut brep)
+        .expect_err("one shell association exceeds zero items");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected collection refusal: {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(limit.operation, "ASM shell bodies");
+}
+
+#[test]
+fn loss_kind_count_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut kinds = std::collections::BTreeMap::new();
+    let error = super::count_kind(&ctx, &mut kinds, "one")
+        .expect_err("one distinct loss kind exceeds zero items");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected collection refusal: {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn brep_append_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::ids::BodyId;
+    use cadmpeg_ir::topology::Region;
+
+    let mut whole = AsmBrep::default();
+    let mut part = AsmBrep::default();
+    part.regions.push(Region {
+        id: RegionId::from(id(FORMAT, 1)),
+        body: BodyId::from(id(FORMAT, 2)),
+        shells: Vec::new(),
+    });
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = whole
+        .append(&ctx, part)
+        .expect_err("one region exceeds zero items");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected collection refusal: {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(limit.operation, "ASM append regions");
+}
+
+#[test]
+fn stats_merge_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let mut whole = super::stats::Stats::default();
+    let mut part = super::stats::Stats::default();
+    part.unknown_surface_kinds.insert("unknown".into(), 1);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = whole
+        .merge(&ctx, part)
+        .expect_err("one kind exceeds zero items");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected collection refusal: {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(limit.operation, "ASM merge loss kinds");
+}
+
+#[test]
+fn collect_owned_ids_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use serde_value::Value;
+
+    let value = Value::Map(std::collections::BTreeMap::from([(
+        Value::String("id".into()),
+        Value::String("f3d:brep:entity#1".into()),
+    )]));
+    let mut owned = HashSet::new();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::collect_owned_ids(&ctx, &value, &mut owned)
+        .expect_err("one owned id exceeds zero items");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected collection refusal: {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn collect_references_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use serde_value::Value;
+
+    let value = Value::String("f3d:brep:entity#1".into());
+    let owned = HashSet::from(["f3d:brep:entity#1".into()]);
+    let mut references = HashSet::new();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::collect_references(&ctx, &value, &owned, &mut references)
+        .expect_err("one reference exceeds zero items");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected collection refusal: {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn collect_entity_adjacency_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use serde_value::Value;
+
+    let entity = Value::Map(std::collections::BTreeMap::from([
+        (Value::String("id".into()), Value::String("owner".into())),
+        (
+            Value::String("peer".into()),
+            Value::String("referenced".into()),
+        ),
+    ]));
+    let value = Value::Map(std::collections::BTreeMap::from([(
+        Value::String("bodies".into()),
+        Value::Seq(vec![entity]),
+    )]));
+    let owned = HashSet::from(["referenced".into()]);
+    let mut adjacency = HashMap::new();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::collect_entity_adjacency(&ctx, &value, &owned, &mut adjacency)
+        .expect_err("adjacency owner exceeds one reference slot");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected collection refusal: {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(limit.operation, "ASM adjacency owners");
+}
+
+#[test]
+fn remap_owned_ids_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use serde_value::Value;
+
+    let mut value = Value::Map(std::collections::BTreeMap::from([(
+        Value::String("field".into()),
+        Value::I64(1),
+    )]));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::remap_owned_ids(&ctx, &mut value, &HashMap::new())
+        .expect_err("one remapped field exceeds zero items");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected collection refusal: {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+}
+
+mod attribute_limits;

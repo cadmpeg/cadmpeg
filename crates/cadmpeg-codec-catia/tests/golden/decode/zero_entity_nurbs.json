@@ -38,255 +38,271 @@
       "surfaces": [
         {
           "geometry": {
-            "control_points": [
-              {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              {
-                "x": 2.0,
-                "y": 0.0,
-                "z": 2.0
-              },
-              {
-                "x": 3.0,
-                "y": 0.0,
-                "z": 3.0
-              },
-              {
-                "x": 4.0,
-                "y": 0.0,
-                "z": 4.0
-              },
-              {
-                "x": 5.0,
-                "y": 0.0,
-                "z": 5.0
-              },
-              {
-                "x": 6.0,
-                "y": 0.0,
-                "z": 6.0
-              },
-              {
-                "x": 7.0,
-                "y": 1.0,
-                "z": 0.0
-              },
-              {
-                "x": 8.0,
-                "y": 1.0,
-                "z": 1.0
-              },
-              {
-                "x": 9.0,
-                "y": 1.0,
-                "z": 2.0
-              },
-              {
-                "x": 10.0,
-                "y": 1.0,
-                "z": 3.0
-              },
-              {
-                "x": 11.0,
-                "y": 1.0,
-                "z": 4.0
-              },
-              {
-                "x": 12.0,
-                "y": 1.0,
-                "z": 5.0
-              },
-              {
-                "x": 13.0,
-                "y": 1.0,
-                "z": 6.0
-              },
-              {
-                "x": 14.0,
-                "y": 2.0,
-                "z": 0.0
-              },
-              {
-                "x": 15.0,
-                "y": 2.0,
-                "z": 1.0
-              },
-              {
-                "x": 16.0,
-                "y": 2.0,
-                "z": 2.0
-              },
-              {
-                "x": 17.0,
-                "y": 2.0,
-                "z": 3.0
-              },
-              {
-                "x": 18.0,
-                "y": 2.0,
-                "z": 4.0
-              },
-              {
-                "x": 19.0,
-                "y": 2.0,
-                "z": 5.0
-              },
-              {
-                "x": 20.0,
-                "y": 2.0,
-                "z": 6.0
-              },
-              {
-                "x": 21.0,
-                "y": 3.0,
-                "z": 0.0
-              },
-              {
-                "x": 22.0,
-                "y": 3.0,
-                "z": 1.0
-              },
-              {
-                "x": 23.0,
-                "y": 3.0,
-                "z": 2.0
-              },
-              {
-                "x": 24.0,
-                "y": 3.0,
-                "z": 3.0
-              },
-              {
-                "x": 25.0,
-                "y": 3.0,
-                "z": 4.0
-              },
-              {
-                "x": 26.0,
-                "y": 3.0,
-                "z": 5.0
-              },
-              {
-                "x": 27.0,
-                "y": 3.0,
-                "z": 6.0
-              },
-              {
-                "x": 28.0,
-                "y": 4.0,
-                "z": 0.0
-              },
-              {
-                "x": 29.0,
-                "y": 4.0,
-                "z": 1.0
-              },
-              {
-                "x": 30.0,
-                "y": 4.0,
-                "z": 2.0
-              },
-              {
-                "x": 31.0,
-                "y": 4.0,
-                "z": 3.0
-              },
-              {
-                "x": 32.0,
-                "y": 4.0,
-                "z": 4.0
-              },
-              {
-                "x": 33.0,
-                "y": 4.0,
-                "z": 5.0
-              },
-              {
-                "x": 34.0,
-                "y": 4.0,
-                "z": 6.0
-              },
-              {
-                "x": 35.0,
-                "y": 5.0,
-                "z": 0.0
-              },
-              {
-                "x": 36.0,
-                "y": 5.0,
-                "z": 1.0
-              },
-              {
-                "x": 37.0,
-                "y": 5.0,
-                "z": 2.0
-              },
-              {
-                "x": 38.0,
-                "y": 5.0,
-                "z": 3.0
-              },
-              {
-                "x": 39.0,
-                "y": 5.0,
-                "z": 4.0
-              },
-              {
-                "x": 40.0,
-                "y": 5.0,
-                "z": 5.0
-              },
-              {
-                "x": 41.0,
-                "y": 5.0,
-                "z": 6.0
-              },
-              {
-                "x": 42.0,
-                "y": 6.0,
-                "z": 0.0
-              },
-              {
-                "x": 43.0,
-                "y": 6.0,
-                "z": 1.0
-              },
-              {
-                "x": 44.0,
-                "y": 6.0,
-                "z": 2.0
-              },
-              {
-                "x": 45.0,
-                "y": 6.0,
-                "z": 3.0
-              },
-              {
-                "x": 46.0,
-                "y": 6.0,
-                "z": 4.0
-              },
-              {
-                "x": 47.0,
-                "y": 6.0,
-                "z": 5.0
-              },
-              {
-                "x": 48.0,
-                "y": 6.0,
-                "z": 6.0
-              }
-            ],
             "kind": "nurbs",
-            "u_count": 7,
+            "poles": {
+              "form": "polynomial",
+              "rows": [
+                [
+                  {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 1.0,
+                    "y": 0.0,
+                    "z": 1.0
+                  },
+                  {
+                    "x": 2.0,
+                    "y": 0.0,
+                    "z": 2.0
+                  },
+                  {
+                    "x": 3.0,
+                    "y": 0.0,
+                    "z": 3.0
+                  },
+                  {
+                    "x": 4.0,
+                    "y": 0.0,
+                    "z": 4.0
+                  },
+                  {
+                    "x": 5.0,
+                    "y": 0.0,
+                    "z": 5.0
+                  },
+                  {
+                    "x": 6.0,
+                    "y": 0.0,
+                    "z": 6.0
+                  }
+                ],
+                [
+                  {
+                    "x": 7.0,
+                    "y": 1.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 8.0,
+                    "y": 1.0,
+                    "z": 1.0
+                  },
+                  {
+                    "x": 9.0,
+                    "y": 1.0,
+                    "z": 2.0
+                  },
+                  {
+                    "x": 10.0,
+                    "y": 1.0,
+                    "z": 3.0
+                  },
+                  {
+                    "x": 11.0,
+                    "y": 1.0,
+                    "z": 4.0
+                  },
+                  {
+                    "x": 12.0,
+                    "y": 1.0,
+                    "z": 5.0
+                  },
+                  {
+                    "x": 13.0,
+                    "y": 1.0,
+                    "z": 6.0
+                  }
+                ],
+                [
+                  {
+                    "x": 14.0,
+                    "y": 2.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 15.0,
+                    "y": 2.0,
+                    "z": 1.0
+                  },
+                  {
+                    "x": 16.0,
+                    "y": 2.0,
+                    "z": 2.0
+                  },
+                  {
+                    "x": 17.0,
+                    "y": 2.0,
+                    "z": 3.0
+                  },
+                  {
+                    "x": 18.0,
+                    "y": 2.0,
+                    "z": 4.0
+                  },
+                  {
+                    "x": 19.0,
+                    "y": 2.0,
+                    "z": 5.0
+                  },
+                  {
+                    "x": 20.0,
+                    "y": 2.0,
+                    "z": 6.0
+                  }
+                ],
+                [
+                  {
+                    "x": 21.0,
+                    "y": 3.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 22.0,
+                    "y": 3.0,
+                    "z": 1.0
+                  },
+                  {
+                    "x": 23.0,
+                    "y": 3.0,
+                    "z": 2.0
+                  },
+                  {
+                    "x": 24.0,
+                    "y": 3.0,
+                    "z": 3.0
+                  },
+                  {
+                    "x": 25.0,
+                    "y": 3.0,
+                    "z": 4.0
+                  },
+                  {
+                    "x": 26.0,
+                    "y": 3.0,
+                    "z": 5.0
+                  },
+                  {
+                    "x": 27.0,
+                    "y": 3.0,
+                    "z": 6.0
+                  }
+                ],
+                [
+                  {
+                    "x": 28.0,
+                    "y": 4.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 29.0,
+                    "y": 4.0,
+                    "z": 1.0
+                  },
+                  {
+                    "x": 30.0,
+                    "y": 4.0,
+                    "z": 2.0
+                  },
+                  {
+                    "x": 31.0,
+                    "y": 4.0,
+                    "z": 3.0
+                  },
+                  {
+                    "x": 32.0,
+                    "y": 4.0,
+                    "z": 4.0
+                  },
+                  {
+                    "x": 33.0,
+                    "y": 4.0,
+                    "z": 5.0
+                  },
+                  {
+                    "x": 34.0,
+                    "y": 4.0,
+                    "z": 6.0
+                  }
+                ],
+                [
+                  {
+                    "x": 35.0,
+                    "y": 5.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 36.0,
+                    "y": 5.0,
+                    "z": 1.0
+                  },
+                  {
+                    "x": 37.0,
+                    "y": 5.0,
+                    "z": 2.0
+                  },
+                  {
+                    "x": 38.0,
+                    "y": 5.0,
+                    "z": 3.0
+                  },
+                  {
+                    "x": 39.0,
+                    "y": 5.0,
+                    "z": 4.0
+                  },
+                  {
+                    "x": 40.0,
+                    "y": 5.0,
+                    "z": 5.0
+                  },
+                  {
+                    "x": 41.0,
+                    "y": 5.0,
+                    "z": 6.0
+                  }
+                ],
+                [
+                  {
+                    "x": 42.0,
+                    "y": 6.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 43.0,
+                    "y": 6.0,
+                    "z": 1.0
+                  },
+                  {
+                    "x": 44.0,
+                    "y": 6.0,
+                    "z": 2.0
+                  },
+                  {
+                    "x": 45.0,
+                    "y": 6.0,
+                    "z": 3.0
+                  },
+                  {
+                    "x": 46.0,
+                    "y": 6.0,
+                    "z": 4.0
+                  },
+                  {
+                    "x": 47.0,
+                    "y": 6.0,
+                    "z": 5.0
+                  },
+                  {
+                    "x": 48.0,
+                    "y": 6.0,
+                    "z": 6.0
+                  }
+                ]
+              ]
+            },
             "u_degree": 3,
             "u_knots": [
               0.0,
@@ -302,7 +318,6 @@
               1.0
             ],
             "u_periodic": false,
-            "v_count": 7,
             "v_degree": 3,
             "v_knots": [
               0.0,
@@ -400,15 +415,16 @@
         "outer_dir_offset": "0",
         "preview_count": "0"
       },
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": "admitted",
-          "dialect": "catia:zero-entity",
-          "format": "catia"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "dialect": "catia:zero-entity"
+          }
         }
-      },
-      "format": "catia"
+      }
     },
     "tolerances": {
       "angular": 1e-10,
@@ -419,7 +435,6 @@
     }
   },
   "report": {
-    "container_only": false,
     "coverage": {
       "ambiguous_formula_parameter_dependency_count": 0,
       "ambiguous_relation_program_parameter_dependency_count": 0,
@@ -762,22 +777,24 @@
       "unresolved_storage_record_count": 0,
       "unresolved_unreferenced_relation_expression_count": 0
     },
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "admitted",
-        "dialect": "catia:zero-entity",
-        "format": "catia"
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "dialect": "catia:zero-entity"
+        }
       }
     },
-    "format": "catia",
-    "geometry_transferred": true,
     "losses": [
       {
         "code": {
           "code": "topology.zero-entity-not-transferred",
           "kind": "topology_not_transferred",
-          "namespace": "catia"
+          "namespace": "catia",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "Zero-entity loop members bind their face-local support occurrences, but support-to-oriented-use, oriented-use-to-incidence, physical endpoint, and body/shell bindings remain unresolved; no neutral topology was transferred.",
         "severity": "blocking"
@@ -788,7 +805,11 @@
       "no nested V5_CFV2 sub-container (outer-preamble record families only)",
       "record-family census: 1 a9 03, 0 e5 0d 03",
       "container-level enumeration; `decode` applies the identified storage family's standard, freeform, E5, zero-entity, or metadata-fallback route"
-    ]
+    ],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {
@@ -797,35 +818,32 @@
           "entity": "unknown",
           "fields": {
             "links": "derived"
-          }
+          },
+          "scope": "entity"
         }
       },
       "provenance": {
         "catia:payload:unknown#zero-entity": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:CATPart",
           "tag": "catia:zero-entity"
         },
         "catia:zero-entity:surf#0": {
           "offset": 16,
-          "stream": 1,
+          "stream": "catia:zero_entity_a9_03",
           "tag": "analytic_surface"
         }
-      },
-      "streams": [
-        "catia:CATPart",
-        "catia:zero_entity_a9_03"
-      ]
+      }
     },
-    "retained_records": [
-      {
-        "byte_len": 1359,
-        "data": "VjVfQ0ZWMgAAAAAAAAAAAKkDNMgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADQPwAAAAAAAOA/AAAAAAAA6D8AAAAAAADwPxAEAAAAEAEAAAAQAQAAABABAAAAEAQAAAAQAQAAABABAAAABAAAAAAAAAAAAAAAAAAA0D8AAAAAAADgPwAAAAAAAOg/AAAAAAAA8D8QBAAAABABAAAAEAEAAAAQAQAAABAEAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAAAAAAAAAPA/AAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAACEAAAAAAAAAAAAAAAAAAAAhAAAAAAAAAEEAAAAAAAAAAAAAAAAAAABBAAAAAAAAAFEAAAAAAAAAAAAAAAAAAABRAAAAAAAAAGEAAAAAAAAAAAAAAAAAAABhAAAAAAAAAHEAAAAAAAADwPwAAAAAAAAAAAAAAAAAAIEAAAAAAAADwPwAAAAAAAPA/AAAAAAAAIkAAAAAAAADwPwAAAAAAAABAAAAAAAAAJEAAAAAAAADwPwAAAAAAAAhAAAAAAAAAJkAAAAAAAADwPwAAAAAAABBAAAAAAAAAKEAAAAAAAADwPwAAAAAAABRAAAAAAAAAKkAAAAAAAADwPwAAAAAAABhAAAAAAAAALEAAAAAAAAAAQAAAAAAAAAAAAAAAAAAALkAAAAAAAAAAQAAAAAAAAPA/AAAAAAAAMEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAMUAAAAAAAAAAQAAAAAAAAAhAAAAAAAAAMkAAAAAAAAAAQAAAAAAAABBAAAAAAAAAM0AAAAAAAAAAQAAAAAAAABRAAAAAAAAANEAAAAAAAAAAQAAAAAAAABhAAAAAAAAANUAAAAAAAAAIQAAAAAAAAAAAAAAAAAAANkAAAAAAAAAIQAAAAAAAAPA/AAAAAAAAN0AAAAAAAAAIQAAAAAAAAABAAAAAAAAAOEAAAAAAAAAIQAAAAAAAAAhAAAAAAAAAOUAAAAAAAAAIQAAAAAAAABBAAAAAAAAAOkAAAAAAAAAIQAAAAAAAABRAAAAAAAAAO0AAAAAAAAAIQAAAAAAAABhAAAAAAAAAPEAAAAAAAAAQQAAAAAAAAAAAAAAAAAAAPUAAAAAAAAAQQAAAAAAAAPA/AAAAAAAAPkAAAAAAAAAQQAAAAAAAAABAAAAAAAAAP0AAAAAAAAAQQAAAAAAAAAhAAAAAAAAAQEAAAAAAAAAQQAAAAAAAABBAAAAAAACAQEAAAAAAAAAQQAAAAAAAABRAAAAAAAAAQUAAAAAAAAAQQAAAAAAAABhAAAAAAACAQUAAAAAAAAAUQAAAAAAAAAAAAAAAAAAAQkAAAAAAAAAUQAAAAAAAAPA/AAAAAACAQkAAAAAAAAAUQAAAAAAAAABAAAAAAAAAQ0AAAAAAAAAUQAAAAAAAAAhAAAAAAACAQ0AAAAAAAAAUQAAAAAAAABBAAAAAAAAAREAAAAAAAAAUQAAAAAAAABRAAAAAAACAREAAAAAAAAAUQAAAAAAAABhAAAAAAAAARUAAAAAAAAAYQAAAAAAAAAAAAAAAAACARUAAAAAAAAAYQAAAAAAAAPA/AAAAAAAARkAAAAAAAAAYQAAAAAAAAABAAAAAAACARkAAAAAAAAAYQAAAAAAAAAhAAAAAAAAAR0AAAAAAAAAYQAAAAAAAABBAAAAAAACAR0AAAAAAAAAYQAAAAAAAABRAAAAAAAAASEAAAAAAAAAYQAAAAAAAABhA",
-        "id": "catia:payload:unknown#zero-entity",
+    "retained_records": {
+      "catia:payload:unknown#zero-entity": {
+        "bytes": {
+          "data": "VjVfQ0ZWMgAAAAAAAAAAAKkDNMgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADQPwAAAAAAAOA/AAAAAAAA6D8AAAAAAADwPxAEAAAAEAEAAAAQAQAAABABAAAAEAQAAAAQAQAAABABAAAABAAAAAAAAAAAAAAAAAAA0D8AAAAAAADgPwAAAAAAAOg/AAAAAAAA8D8QBAAAABABAAAAEAEAAAAQAQAAABAEAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAAAAAAAAAPA/AAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAACEAAAAAAAAAAAAAAAAAAAAhAAAAAAAAAEEAAAAAAAAAAAAAAAAAAABBAAAAAAAAAFEAAAAAAAAAAAAAAAAAAABRAAAAAAAAAGEAAAAAAAAAAAAAAAAAAABhAAAAAAAAAHEAAAAAAAADwPwAAAAAAAAAAAAAAAAAAIEAAAAAAAADwPwAAAAAAAPA/AAAAAAAAIkAAAAAAAADwPwAAAAAAAABAAAAAAAAAJEAAAAAAAADwPwAAAAAAAAhAAAAAAAAAJkAAAAAAAADwPwAAAAAAABBAAAAAAAAAKEAAAAAAAADwPwAAAAAAABRAAAAAAAAAKkAAAAAAAADwPwAAAAAAABhAAAAAAAAALEAAAAAAAAAAQAAAAAAAAAAAAAAAAAAALkAAAAAAAAAAQAAAAAAAAPA/AAAAAAAAMEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAMUAAAAAAAAAAQAAAAAAAAAhAAAAAAAAAMkAAAAAAAAAAQAAAAAAAABBAAAAAAAAAM0AAAAAAAAAAQAAAAAAAABRAAAAAAAAANEAAAAAAAAAAQAAAAAAAABhAAAAAAAAANUAAAAAAAAAIQAAAAAAAAAAAAAAAAAAANkAAAAAAAAAIQAAAAAAAAPA/AAAAAAAAN0AAAAAAAAAIQAAAAAAAAABAAAAAAAAAOEAAAAAAAAAIQAAAAAAAAAhAAAAAAAAAOUAAAAAAAAAIQAAAAAAAABBAAAAAAAAAOkAAAAAAAAAIQAAAAAAAABRAAAAAAAAAO0AAAAAAAAAIQAAAAAAAABhAAAAAAAAAPEAAAAAAAAAQQAAAAAAAAAAAAAAAAAAAPUAAAAAAAAAQQAAAAAAAAPA/AAAAAAAAPkAAAAAAAAAQQAAAAAAAAABAAAAAAAAAP0AAAAAAAAAQQAAAAAAAAAhAAAAAAAAAQEAAAAAAAAAQQAAAAAAAABBAAAAAAACAQEAAAAAAAAAQQAAAAAAAABRAAAAAAAAAQUAAAAAAAAAQQAAAAAAAABhAAAAAAACAQUAAAAAAAAAUQAAAAAAAAAAAAAAAAAAAQkAAAAAAAAAUQAAAAAAAAPA/AAAAAACAQkAAAAAAAAAUQAAAAAAAAABAAAAAAAAAQ0AAAAAAAAAUQAAAAAAAAAhAAAAAAACAQ0AAAAAAAAAUQAAAAAAAABBAAAAAAAAAREAAAAAAAAAUQAAAAAAAABRAAAAAAACAREAAAAAAAAAUQAAAAAAAABhAAAAAAAAARUAAAAAAAAAYQAAAAAAAAAAAAAAAAACARUAAAAAAAAAYQAAAAAAAAPA/AAAAAAAARkAAAAAAAAAYQAAAAAAAAABAAAAAAACARkAAAAAAAAAYQAAAAAAAAAhAAAAAAAAAR0AAAAAAAAAYQAAAAAAAABBAAAAAAACAR0AAAAAAAAAYQAAAAAAAABRAAAAAAAAASEAAAAAAAAAYQAAAAAAAABhA",
+          "retention": "inline"
+        },
         "offset": 0,
-        "sha256": "fb372ff67654b39bfa604bba00740e8f48013782abfe24d738acb962a9942f20",
         "stream": "catia:CATPart"
       }
-    ]
+    }
   }
 }

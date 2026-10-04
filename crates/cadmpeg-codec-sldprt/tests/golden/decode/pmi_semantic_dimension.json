@@ -19,27 +19,21 @@
         {
           "edge": "sldprt:brep:edge#40",
           "id": "sldprt:brep:coedge#30",
-          "next": "sldprt:brep:coedge#31",
           "owner_loop": "sldprt:brep:loop#20",
-          "previous": "sldprt:brep:coedge#32",
           "radial_next": "sldprt:brep:coedge#30",
           "sense": "forward"
         },
         {
           "edge": "sldprt:brep:edge#41",
           "id": "sldprt:brep:coedge#31",
-          "next": "sldprt:brep:coedge#32",
           "owner_loop": "sldprt:brep:loop#20",
-          "previous": "sldprt:brep:coedge#30",
           "radial_next": "sldprt:brep:coedge#31",
           "sense": "forward"
         },
         {
           "edge": "sldprt:brep:edge#42",
           "id": "sldprt:brep:coedge#32",
-          "next": "sldprt:brep:coedge#30",
           "owner_loop": "sldprt:brep:loop#20",
-          "previous": "sldprt:brep:coedge#31",
           "radial_next": "sldprt:brep:coedge#32",
           "sense": "forward"
         }
@@ -54,7 +48,9 @@
             "sldprt:model:feature#247:0": {
               "definition": {
                 "definition": "sketch",
-                "space": "planar"
+                "sketch": {
+                  "space": "planar"
+                }
               },
               "evaluation": {
                 "kind": "active"
@@ -77,16 +73,19 @@
       "drawings": [],
       "edges": [
         {
+          "carrier": {},
           "end": "sldprt:brep:vertex#51",
           "id": "sldprt:brep:edge#40",
           "start": "sldprt:brep:vertex#50"
         },
         {
+          "carrier": {},
           "end": "sldprt:brep:vertex#52",
           "id": "sldprt:brep:edge#41",
           "start": "sldprt:brep:vertex#51"
         },
         {
+          "carrier": {},
           "end": "sldprt:brep:vertex#50",
           "id": "sldprt:brep:edge#42",
           "start": "sldprt:brep:vertex#52"
@@ -95,9 +94,12 @@
       "faces": [
         {
           "id": "sldprt:brep:face#10",
-          "loops": [
-            "sldprt:brep:loop#20"
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "sldprt:brep:loop#20"
+            ]
+          },
           "sense": "forward",
           "shell": "sldprt:brep:shell#0",
           "surface": "sldprt:brep:surf#10"
@@ -107,7 +109,9 @@
         {
           "definition": {
             "definition": "sketch",
-            "space": "planar"
+            "sketch": {
+              "space": "planar"
+            }
           },
           "id": "sldprt:model:feature#247:0",
           "name": "Sketch1",
@@ -119,12 +123,14 @@
       ],
       "loops": [
         {
-          "boundary_role": "unspecified",
-          "coedges": [
-            "sldprt:brep:coedge#30",
-            "sldprt:brep:coedge#31",
-            "sldprt:brep:coedge#32"
-          ],
+          "boundary": {
+            "coedges": [
+              "sldprt:brep:coedge#30",
+              "sldprt:brep:coedge#31",
+              "sldprt:brep:coedge#32"
+            ],
+            "kind": "ring"
+          },
           "face": "sldprt:brep:face#10",
           "id": "sldprt:brep:loop#20"
         }
@@ -199,10 +205,13 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [
-            "sldprt:brep:face#10"
-          ],
           "id": "sldprt:brep:shell#0",
+          "members": [
+            {
+              "id": "sldprt:brep:face#10",
+              "kind": "face"
+            }
+          ],
           "region": "sldprt:brep:region#0"
         }
       ],
@@ -345,8 +354,8 @@
         "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_configuration_snapshot_synthesized": "sldprt:model:configuration#partition:0",
         "sldprt_native_configuration_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "sldprt_native_history_sha256": "60b76159cc83ada9797a76df14e46f6765fac90c27b9c36708bbe809dfae54bd",
-        "sldprt_native_parameter_sha256": "1718f0d95d62a12ee309b49e3becbe96555ccada9473b4780220b214ad6edca2",
+        "sldprt_native_history_sha256": "3f1b83d3007f70241ae9c82676c94e2e7c23803e4e15e09d5fab1c6aee9ff90d",
+        "sldprt_native_parameter_sha256": "0d5b01b911f52744f4cab180930fd1872c81085936a0933075ead8ea084da550",
         "sldprt_native_sketch_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
         "sldprt_neutral_configuration_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_neutral_feature_local_sha256": "<elided: digest over tolerantly compared geometry>",
@@ -354,25 +363,25 @@
         "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>"
       },
-      "dialects": {
-        "extra": [
-          {
-            "admission": "admitted",
-            "declared": {
-              "carrier": "block@8:Contents/Config-0-Partition+0",
-              "schema": "SCH_SW_33103_11000"
-            },
-            "dialect": "parasolid:sch-sw-33103",
-            "format": "parasolid"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [
+            {
+              "admission": "admitted",
+              "declared": {
+                "carrier": "block@8:Contents/Config-0-Partition+0",
+                "schema": "SCH_SW_33103_11000"
+              },
+              "dialect": "parasolid:sch-sw-33103"
+            }
+          ],
+          "primary": {
+            "admission": "residual",
+            "dialect": "sldprt:unknown"
           }
-        ],
-        "primary": {
-          "admission": "residual",
-          "dialect": "sldprt:unknown",
-          "format": "sldprt"
         }
-      },
-      "format": "sldprt"
+      }
     },
     "tolerances": {
       "angular": 1e-10,
@@ -383,33 +392,32 @@
     }
   },
   "report": {
-    "container_only": false,
-    "dialects": {
-      "extra": [
-        {
-          "admission": "admitted",
-          "declared": {
-            "carrier": "block@8:Contents/Config-0-Partition+0",
-            "schema": "SCH_SW_33103_11000"
-          },
-          "dialect": "parasolid:sch-sw-33103",
-          "format": "parasolid"
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [
+          {
+            "admission": "admitted",
+            "declared": {
+              "carrier": "block@8:Contents/Config-0-Partition+0",
+              "schema": "SCH_SW_33103_11000"
+            },
+            "dialect": "parasolid:sch-sw-33103"
+          }
+        ],
+        "primary": {
+          "admission": "residual",
+          "dialect": "sldprt:unknown"
         }
-      ],
-      "primary": {
-        "admission": "residual",
-        "dialect": "sldprt:unknown",
-        "format": "sldprt"
       }
     },
-    "format": "sldprt",
-    "geometry_transferred": true,
     "losses": [
       {
         "code": {
           "code": "topology.body-hierarchy-derived",
           "kind": "topology_gauge_substituted",
-          "namespace": "sldprt"
+          "namespace": "sldprt",
+          "scope": "namespaced"
         },
         "message": "No body record was available; one body/region/shell hierarchy was derived.",
         "severity": "warning"
@@ -418,7 +426,9 @@
         "code": {
           "code": "source.dialect-unverified",
           "kind": "source_dialect_unverified",
-          "namespace": "sldprt"
+          "namespace": "sldprt",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on the `sldprt:unknown` residual path without substituting a declared dialect grammar: the feature-operation form-code padding filter is not applied, and an operation code binds only where the four- and eight-byte candidates agree. Agreement is consistency, not a declaration.",
         "severity": "warning"
@@ -427,7 +437,8 @@
         "code": {
           "code": "config.inferred-without-native",
           "kind": "feature_history_retained",
-          "namespace": "sldprt"
+          "namespace": "sldprt",
+          "scope": "namespaced"
         },
         "message": "1 configuration state(s) are inferred from geometry partitions without native configuration definitions.",
         "severity": "warning"
@@ -436,7 +447,8 @@
         "code": {
           "code": "feature.typed-operand-incomplete",
           "kind": "feature_history_retained",
-          "namespace": "sldprt"
+          "namespace": "sldprt",
+          "scope": "namespaced"
         },
         "message": "1 typed feature(s) retain native or unresolved required operation operands.",
         "severity": "warning"
@@ -446,194 +458,195 @@
       "outer version word: 0x00000004; 3 CRC-validated block(s), 0 tail-directory entry/entries, 0 cache-cell(s), 0 compound stream(s)",
       "active Parasolid B-rep candidate: Contents/Config-0-Partition (544 bytes, schema SCH_SW_33103_11000)",
       "Parasolid body streams supply the typed topology and analytic carriers used by decode"
-    ]
+    ],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {
       "exactness": {
         "sldprt:brep:body#0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "sldprt:brep:region#0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "sldprt:brep:shell#0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "sldprt:brep:surf#10": {
-          "entity": "byte_exact",
           "fields": {
             "geometry.u_axis": "derived"
-          }
+          },
+          "scope": "fields"
         }
       },
       "provenance": {
         "sldprt:brep:body#0": {
           "offset": 0,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "synthetic_grouping"
         },
         "sldprt:brep:coedge#30": {
           "offset": 146,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_11"
         },
         "sldprt:brep:coedge#31": {
           "offset": 169,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_11"
         },
         "sldprt:brep:coedge#32": {
           "offset": 192,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_11"
         },
         "sldprt:brep:edge#40": {
           "offset": 215,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_10"
         },
         "sldprt:brep:edge#41": {
           "offset": 245,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_10"
         },
         "sldprt:brep:edge#42": {
           "offset": 275,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_10"
         },
         "sldprt:brep:face#10": {
           "offset": 91,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_0e"
         },
         "sldprt:brep:loop#20": {
           "offset": 130,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_0f"
         },
         "sldprt:brep:point#60": {
           "offset": 383,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_1d"
         },
         "sldprt:brep:point#61": {
           "offset": 423,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_1d"
         },
         "sldprt:brep:point#62": {
           "offset": 463,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_1d"
         },
         "sldprt:brep:region#0": {
           "offset": 0,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "synthetic_grouping"
         },
         "sldprt:brep:shell#0": {
           "offset": 0,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "synthetic_grouping"
         },
         "sldprt:brep:surf#10": {
           "offset": 0,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "compact_surface"
         },
         "sldprt:brep:vertex#50": {
           "offset": 305,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_12"
         },
         "sldprt:brep:vertex#51": {
           "offset": 331,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_12"
         },
         "sldprt:brep:vertex#52": {
           "offset": 357,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_12"
         },
         "sldprt:file:block#247": {
           "offset": 247,
-          "stream": 1,
+          "stream": "Contents/Keywords",
           "tag": "unknown"
         },
         "sldprt:file:block#347": {
           "offset": 347,
-          "stream": 2,
+          "stream": "Contents/PMISemanticDataDB",
           "tag": "unqlite"
         },
         "sldprt:file:block#8": {
           "offset": 8,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "parasolid"
         },
         "sldprt:file:source-image#0": {
           "offset": 0,
-          "stream": 3,
+          "stream": "source",
           "tag": "source_image"
         },
         "sldprt:history:feature#247:0": {
           "offset": 10,
-          "stream": 1,
+          "stream": "Contents/Keywords",
           "tag": "Sketch"
         },
         "sldprt:history:feature-history#247": {
           "offset": 0,
-          "stream": 1,
+          "stream": "Contents/Keywords",
           "tag": "Keywords"
         },
         "sldprt:pmi:dimension#01234567-89ab-cdef-0123-456789abcdef": {
           "offset": 100,
-          "stream": 2,
+          "stream": "Contents/PMISemanticDataDB",
           "tag": "messagepack_dim_sem_data"
         }
-      },
-      "streams": [
-        "Contents/Config-0-Partition",
-        "Contents/Keywords",
-        "Contents/PMISemanticDataDB",
-        "source"
-      ]
+      }
     },
-    "retained_records": [
-      {
-        "byte_len": 544,
-        "data": "UFMAAAAOcGFydGl0aW9uIGJvZHkAABJTQ0hfU1dfMzMxMDNfMTEwMDAAMgBkAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA4ACgAAAAAAAMK8ko+ZbgAAAAAAAAAUAAAAZCsAAAAAAAAAAAAAAA8AFAAAAAAAAAAeAAoAAAARAB4AAAAUAAAAHwAyAAAAKAAAAAArABEAHwAAABQAAAAgADMAAAApAAAAACsAEQAgAAAAFAAAAB4ANAAAACoAAAAAKwAQACgAAAAAAADCvJKPmW4AAAAAAAAAAAAAAAAAAAAQACkAAAAAAADCvJKPmW4AAAAAAAAAAAAAAAAAAAAQACoAAAAAAADCvJKPmW4AAAAAAAAAAAAAAAAAAAASADIAAAAAAAAAAAAAAAAAPMK8ko+ZbgAAABIAMwAAAAAAAAAAAAAAAAA9wrySj5luAAAAEgA0AAAAAAAAAAAAAAAAAD7CvJKPmW4AAAAdADwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHQA9AAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB0APgAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAA==",
-        "id": "sldprt:file:block#8",
+    "retained_records": {
+      "sldprt:file:block#247": {
+        "bytes": {
+          "data": "PEtleXdvcmRzPjxTa2V0Y2ggTmFtZT0iU2tldGNoMSIgVHlwZT0iUHJvZmlsZUZlYXR1cmUiLz48L0tleXdvcmRzPg==",
+          "retention": "inline"
+        },
         "offset": 0,
-        "sha256": "3660d0ac9ce4b3ae64f1237e1010509cb1f03acd6c0a30c6e0f67332bd763b71",
-        "stream": "Contents/Config-0-Partition"
-      },
-      {
-        "byte_len": 67,
-        "data": "PEtleXdvcmRzPjxTa2V0Y2ggTmFtZT0iU2tldGNoMSIgVHlwZT0iUHJvZmlsZUZlYXR1cmUiLz48L0tleXdvcmRzPg==",
-        "id": "sldprt:file:block#247",
-        "offset": 0,
-        "sha256": "babf7e38baa147f4489ffef19d624ed0dfce42db5bf1a4582b4d9863bd5e6fee",
         "stream": "Contents/Keywords"
       },
-      {
-        "byte_len": 301,
-        "data": "dW5xbGl0ZQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAxMjM0NTY3LTg5YWItY2RlZi0wMTIzLTQ1Njc4OWFiY2RlZoeoYW5ub1R5cGUBp2NhZFRleHSqRDFAU2tldGNoMahkaW1JdGVtc5GHpWNsYXNzqkRpbVNlbURhdGGqZGltU3ViVHlwZaZMaW5lYXKnaXNCYXNpY8OsaXNJbnNwZWN0aW9uwq9pc1JlZmVyZW5jZU9ubHnDrHZhbFByZWNpc2lvbgOldmFsdWXLP5mZmZmZmZqnZGltVGV4dKkyNS4wMDAgbW2nZGltVHlwZQCoaURTdHJpbmepbmF0aXZlLWlkqHJlc2VydmVkwA==",
-        "id": "sldprt:file:block#347",
+      "sldprt:file:block#347": {
+        "bytes": {
+          "data": "dW5xbGl0ZQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAxMjM0NTY3LTg5YWItY2RlZi0wMTIzLTQ1Njc4OWFiY2RlZoeoYW5ub1R5cGUBp2NhZFRleHSqRDFAU2tldGNoMahkaW1JdGVtc5GHpWNsYXNzqkRpbVNlbURhdGGqZGltU3ViVHlwZaZMaW5lYXKnaXNCYXNpY8OsaXNJbnNwZWN0aW9uwq9pc1JlZmVyZW5jZU9ubHnDrHZhbFByZWNpc2lvbgOldmFsdWXLP5mZmZmZmZqnZGltVGV4dKkyNS4wMDAgbW2nZGltVHlwZQCoaURTdHJpbmepbmF0aXZlLWlkqHJlc2VydmVkwA==",
+          "retention": "inline"
+        },
         "offset": 0,
-        "sha256": "23fe8ad82b26a6239a6c55db9a8a19151226214bc13d2c9cc11cba30363d5066",
         "stream": "Contents/PMISemanticDataDB"
       },
-      {
-        "byte_len": 615,
-        "data": "AQAAAAAAAAQUAAYACAAgAAAAALDRBLoAAAAgAgAAGwAAADT25kdW5kc38jT25maWdtID0gUWJ0eWR5b25gsIZmBg4CtILCrJLMnMz1NIyk+pZGAQCnb2iA8Ojzc2NjQwjjc0NDAwYDBiSGFAAdoMRAL7D6g0BuBj4IIwDu2Z1D8zDyoqwsDAkIJsCT9YCATkwBoEGeSgyuQZjBgYGDQgrhJkkIcKKzAYMzAwaMKEFaDCcgwmDAwMWhBhAYg2NLthQACiG6cs2BAcskJgRyGADVyVENhdCGCLJANyGgLYwWVkGWxwhB4qkGWwRebiDHNZBjtswujqARQABgAIAEIAAAB8ppc9OQAAAEMAAAARAAAANPbmR1bmRzfytFaXd/YnRjez8U6tLM8vSim2swnOTi1JzlDwS8xNtVWCcAyVFEIqC1JtlQKK8tMyc1LdUhNLSotSlfTtbPThGgEUAAYACABJAAAAaJgzMtgAAAAtAQAAGgAAADT25kdW5kc38gXUlDVW1hbmR5Y2RBZHFkQknc5NSsNAGMbxihfxApGkWj9WFcmmICimF3g781RfOvMmzkyCOUHXLnVfk4aCVxC79FIyPYL/5Q8eeGp5MRww+m9pNj47n1xcJlfXtEiUxjKJlESLFGXdk0g5byscdYr0HK9hyLObYoWgnrNes50FWP+23ihD3g852wI2p0CDZlvUizj9vGMBuY79LXlW+x37mfgKKnApP1/sH7GEgyjci2n3u4bMg4Niz6UcbxoyNX6n74c+Os02vtiOJ6dpmp5Ye5C2wqjnvAiO5WkrFLhBwrp38HAN9Pcf",
-        "id": "sldprt:file:source-image#0",
+      "sldprt:file:block#8": {
+        "bytes": {
+          "data": "UFMAAAAOcGFydGl0aW9uIGJvZHkAABJTQ0hfU1dfMzMxMDNfMTEwMDAAMgBkAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA4ACgAAAAAAAMK8ko+ZbgAAAAAAAAAUAAAAZCsAAAAAAAAAAAAAAA8AFAAAAAAAAAAeAAoAAAARAB4AAAAUAAAAHwAyAAAAKAAAAAArABEAHwAAABQAAAAgADMAAAApAAAAACsAEQAgAAAAFAAAAB4ANAAAACoAAAAAKwAQACgAAAAAAADCvJKPmW4AAAAAAAAAAAAAAAAAAAAQACkAAAAAAADCvJKPmW4AAAAAAAAAAAAAAAAAAAAQACoAAAAAAADCvJKPmW4AAAAAAAAAAAAAAAAAAAASADIAAAAAAAAAAAAAAAAAPMK8ko+ZbgAAABIAMwAAAAAAAAAAAAAAAAA9wrySj5luAAAAEgA0AAAAAAAAAAAAAAAAAD7CvJKPmW4AAAAdADwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHQA9AAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB0APgAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAA==",
+          "retention": "inline"
+        },
         "offset": 0,
-        "sha256": "241f5cb389c38cf3bd80786b48d8f29c2678a5c8c18a1a56bb5bf13d0114a13d",
-        "stream": "sldprt"
+        "stream": "Contents/Config-0-Partition"
+      },
+      "sldprt:file:source-image#0": {
+        "bytes": {
+          "data": "AQAAAAAAAAQUAAYACAAgAAAAALDRBLoAAAAgAgAAGwAAADT25kdW5kc38jT25maWdtID0gUWJ0eWR5b25gsIZmBg4CtILCrJLMnMz1NIyk+pZGAQCnb2iA8Ojzc2NjQwjjc0NDAwYDBiSGFAAdoMRAL7D6g0BuBj4IIwDu2Z1D8zDyoqwsDAkIJsCT9YCATkwBoEGeSgyuQZjBgYGDQgrhJkkIcKKzAYMzAwaMKEFaDCcgwmDAwMWhBhAYg2NLthQACiG6cs2BAcskJgRyGADVyVENhdCGCLJANyGgLYwWVkGWxwhB4qkGWwRebiDHNZBjtswujqARQABgAIAEIAAAB8ppc9OQAAAEMAAAARAAAANPbmR1bmRzfytFaXd/YnRjez8U6tLM8vSim2swnOTi1JzlDwS8xNtVWCcAyVFEIqC1JtlQKK8tMyc1LdUhNLSotSlfTtbPThGgEUAAYACABJAAAAaJgzMtgAAAAtAQAAGgAAADT25kdW5kc38gXUlDVW1hbmR5Y2RBZHFkQknc5NSsNAGMbxihfxApGkWj9WFcmmICimF3g781RfOvMmzkyCOUHXLnVfk4aCVxC79FIyPYL/5Q8eeGp5MRww+m9pNj47n1xcJlfXtEiUxjKJlESLFGXdk0g5byscdYr0HK9hyLObYoWgnrNes50FWP+23ihD3g852wI2p0CDZlvUizj9vGMBuY79LXlW+x37mfgKKnApP1/sH7GEgyjci2n3u4bMg4Niz6UcbxoyNX6n74c+Os02vtiOJ6dpmp5Ye5C2wqjnvAiO5WkrFLhBwrp38HAN9Pcf",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "source"
       }
-    ]
+    }
   }
 }

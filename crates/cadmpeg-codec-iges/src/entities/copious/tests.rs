@@ -1,20 +1,192 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
+use cadmpeg_test_support::wire;
+
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 use crate::directory::UseFlag;
 
+use std::collections::BTreeSet;
 use std::io::Cursor;
 
-use cadmpeg_core::decode::DecodeMode;
-use cadmpeg_core::decode::ResourceDimension;
+use cadmpeg_core::decode::{
+    DecodeArena, DecodeContext, DecodeMode, DecodePolicy, ResourceDimension,
+};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 
 use crate::loss::IgesLossCode;
-use crate::test_support::*;
+use crate::test_support::test_curves_and_surfaces::copious_data_file;
+use crate::test_support::test_owned::{
+    owned_test_file, owned_test_file_with_global, owned_test_file_with_global_and_line_fonts,
+    OwnedTestEntity,
+};
 use crate::IgesCodec;
 
-use super::presentation_use_flag_valid;
+use super::{
+    has_forbidden_form_63_duplicate, has_form_63_self_intersection, presentation_use_flag_valid,
+    CopiousProjectionOutcome,
+};
+
+#[test]
+fn copious_merge_refuses_free_vertex_growth() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let vertex = crate::ids::vertex(&crate::ids::Stem::directory(1_u32));
+    let outcome = CopiousProjectionOutcome {
+        decoded: BTreeSet::default(),
+        losses: Vec::new(),
+        wire_edges: Vec::new(),
+        free_vertices: vec![vertex],
+    };
+    let result = outcome.merge_into(
+        &mut BTreeSet::default(),
+        &mut Vec::new(),
+        &mut Vec::new(),
+        &mut Vec::new(),
+        &ctx,
+    );
+    assert!(
+        matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.operation == "iges merged free vertex slots")
+    );
+}
+
+fn assert_copious_collection_refusal(bytes: &[u8], operation: &str) {
+    let mut cap = 0_u64;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let result = IgesCodec.decode(
+            &mut Cursor::new(bytes),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        );
+        match result {
+            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                if limit.operation == operation {
+                    return;
+                }
+                let next = limit.used.checked_add(limit.additional).unwrap();
+                assert!(next > cap, "limit did not advance from {cap}: {limit:?}");
+                cap = next;
+            }
+            other => panic!("did not reach {operation} at cap {cap}: {other:?}"),
+        }
+    }
+    panic!("did not reach {operation} within 4096 admission boundaries");
+}
+
+fn assert_copious_retained_refusal(bytes: &[u8], operation: &str) {
+    let mut cap = 0_u64;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        let result = IgesCodec.decode(
+            &mut Cursor::new(bytes),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        );
+        match result {
+            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+                if limit.operation == operation {
+                    return;
+                }
+                let next = limit.used.checked_add(limit.additional).unwrap();
+                assert!(next > cap, "limit did not advance from {cap}: {limit:?}");
+                cap = next;
+            }
+            other => panic!("did not reach {operation} at cap {cap}: {other:?}"),
+        }
+    }
+    panic!("did not reach {operation} within 4096 admission boundaries");
+}
+
+#[test]
+fn copious_identity_copies_refuse_retained_byte_limit() {
+    let bytes = copious_data_file(12, b"106,2,3,0,0,0,1,0,0,1,2,0;", "00000000");
+    IgesCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_copious_retained_refusal(&bytes, "iges copious identity copy");
+}
+
+#[test]
+fn copious_projection_losses_refuse_slot_and_message_limits() {
+    let bytes = copious_data_file(12, b"106,2,0;", "00000000");
+    assert_copious_collection_refusal(&bytes, "iges entity loss slots");
+    assert_copious_retained_refusal(&bytes, "iges entity loss message");
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("tuple count is outside 1..=1000000")));
+}
+
+#[test]
+fn copious_tuple_and_path_arrays_refuse_collection_limits() {
+    let bytes = copious_data_file(12, b"106,2,3,0,0,0,1,0,0,1,2,0;", "00000000");
+    for operation in [
+        "iges copious parameter index",
+        "iges copious directory index",
+        "iges copious tuple values",
+        "iges copious definition points",
+        "iges copious positioned points",
+        "iges copious path points",
+        "iges copious knots",
+        "iges copious finite knots",
+        "iges copious admitted knots",
+        "iges copious neutral curves",
+        "iges copious neutral edges",
+        "iges copious wire edges",
+        "iges copious decoded sequences",
+    ] {
+        assert_copious_collection_refusal(&bytes, operation);
+    }
+}
+
+#[test]
+fn copious_form63_scratch_indices_refuse_collection_limits() {
+    let points = [
+        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+        cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
+        cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0),
+        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+    ];
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    for (resolution, operation) in [
+        (0.0, "iges copious exact-point index"),
+        (0.001, "iges copious proximity cells"),
+    ] {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = has_forbidden_form_63_duplicate(&points, resolution, &ctx).unwrap_err();
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == operation)
+        );
+    }
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = has_form_63_self_intersection(&points, &ctx).unwrap_err();
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "iges copious planar points")
+    );
+
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert!(!has_forbidden_form_63_duplicate(&points, 0.001, &ctx).unwrap());
+    assert!(!has_form_63_self_intersection(&points, &ctx).unwrap());
+}
 
 #[test]
 fn presentation_copious_forms_require_the_annotation_use_flag() {
@@ -112,19 +284,31 @@ fn decode_projects_copious_linear_paths_with_segment_parameters() {
         )
         .unwrap();
 
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(path) = &result.ir().model.curves[0].geometry
+    let Some(SolvedCurveGeometry::Nurbs(path)) = result.ir().model.curves[0].geometry.solved()
     else {
         panic!("expected a degree-one path carrier");
     };
     assert_eq!(path.degree(), 1);
-    assert_eq!(path.knots(), [0.0, 0.0, 1.0, 2.0, 2.0]);
+    assert_eq!(path.knots().as_slice(), [0.0, 0.0, 1.0, 2.0, 2.0]);
     assert_eq!(
-        cadmpeg_ir::eval::nurbs_curve_point(1, path.knots(), path.control_points(), None, 1.5),
+        cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            path,
+            1.5
+        )
+        .ok()
+        .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0))
     );
-    assert_eq!(result.ir().model.edges[0].param_range, Some([0.0, 2.0]));
+    assert_eq!(
+        result.ir().model.edges[0]
+            .param_range()
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.0, 2.0])
+    );
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -209,13 +393,14 @@ fn decode_preserves_coincident_segments_in_a_copious_linear_path() {
         )
         .unwrap();
 
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(path) = &result.ir().model.curves[0].geometry
+    let Some(SolvedCurveGeometry::Nurbs(path)) = result.ir().model.curves[0].geometry.solved()
     else {
         panic!("expected a degree-one path carrier");
     };
     assert_eq!(path.control_points()[0], path.control_points()[1]);
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -232,7 +417,7 @@ fn decode_preserves_crossing_segments_in_a_copious_linear_path() {
         )
         .unwrap();
 
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(path) = &result.ir().model.curves[0].geometry
+    let Some(SolvedCurveGeometry::Nurbs(path)) = result.ir().model.curves[0].geometry.solved()
     else {
         panic!("expected a degree-one path carrier");
     };
@@ -260,13 +445,19 @@ fn decode_closes_form_63_with_the_global_minimum_resolution() {
             "{gap}"
         );
         if decoded {
-            assert_eq!(result.ir().model.edges[0].tolerance, Some(0.001));
+            assert_eq!(
+                result.ir().model.edges[0]
+                    .tolerance
+                    .map(cadmpeg_ir::scalar::PositiveReal::get),
+                Some(0.001)
+            );
             assert_eq!(
                 result.ir().model.edges[0].start,
                 result.ir().model.edges[0].end
             );
             assert!(result.report().losses.is_empty());
-            let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+            let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+                .expect("resource allocation did not fail");
             assert!(validation.is_ok(), "{:#?}", validation.findings);
         } else {
             assert!(result.report().losses.iter().any(|loss| loss
@@ -337,14 +528,20 @@ fn decode_rejects_a_copious_interpretation_that_disagrees_with_its_form() {
         })
         .expect("copious-data projection loss");
     let provenance = loss.provenance.as_ref().expect("Directory provenance");
-    assert_eq!(provenance.format(), "iges");
-    assert_eq!(provenance.stream(), Some("iges"));
+    assert_eq!(wire::field::<String>(&provenance, "format"), "iges");
+    assert_eq!(
+        wire::field_or_default::<Option<String>>(&provenance, "stream").as_deref(),
+        Some("iges")
+    );
     assert_eq!(provenance.tag.as_deref(), Some("directory_entry:D1"));
-    assert_eq!(bytes[provenance.offset as usize + 72], b'D');
+    assert_eq!(
+        bytes[usize::try_from(provenance.offset).expect("test offset fits memory") + 72],
+        b'D'
+    );
     let transfer = &result.report().transfer_ledger.entries[0];
     assert_eq!(transfer.source, "D1");
     assert_eq!(
-        transfer.note(),
+        wire::field_or_default::<Option<String>>(&(transfer.outcome), "note").as_deref(),
         Some("native record retained; semantic projection omitted with an attributed loss")
     );
 }
@@ -466,9 +663,35 @@ fn decode_separates_copious_points_vectors_and_presentation_forms() {
         .iter()
         .any(|loss| loss.code == IgesLossCode::DisplayDataNotProjected.kind()));
     assert_eq!(
-        witness.report().transfer_ledger.entries[0].note(),
+        wire::field_or_default::<Option<String>>(
+            &(witness.report().transfer_ledger.entries[0].outcome),
+            "note"
+        )
+        .as_deref(),
         Some("native record retained; semantic projection omitted with an attributed loss")
     );
-    let validation = cadmpeg_ir::validate_neutral(witness.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(witness.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn copious_closed_path_intersection_refuses_work() {
+    let points = [
+        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+        cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
+        cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0),
+        cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
+        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+    ];
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    crate::test_support::with_policy_context(&[], &policy, |ctx| {
+        assert!(matches!(has_form_63_self_intersection(&points, ctx),
+            Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "iges planar self-intersection comparisons"));
+    });
+    crate::test_support::with_service_context(&[], |ctx| {
+        assert!(!has_form_63_self_intersection(&points, ctx).unwrap());
+    });
 }

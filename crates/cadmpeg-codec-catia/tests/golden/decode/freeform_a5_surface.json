@@ -38,30 +38,36 @@
       "surfaces": [
         {
           "geometry": {
-            "control_points": [
-              {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              {
-                "x": 2.0,
-                "y": 1.0,
-                "z": 0.0
-              },
-              {
-                "x": 3.0,
-                "y": 1.0,
-                "z": 1.0
-              }
-            ],
             "kind": "nurbs",
-            "u_count": 2,
+            "poles": {
+              "form": "polynomial",
+              "rows": [
+                [
+                  {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 1.0,
+                    "y": 0.0,
+                    "z": 1.0
+                  }
+                ],
+                [
+                  {
+                    "x": 2.0,
+                    "y": 1.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 3.0,
+                    "y": 1.0,
+                    "z": 1.0
+                  }
+                ]
+              ]
+            },
             "u_degree": 1,
             "u_knots": [
               0.0,
@@ -70,7 +76,6 @@
               1.0
             ],
             "u_periodic": false,
-            "v_count": 2,
             "v_degree": 1,
             "v_knots": [
               0.0,
@@ -161,15 +166,16 @@
         "stream_count": "2",
         "vertex_records": "0"
       },
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": "admitted",
-          "dialect": "catia:float-packed-inner-no-fbb",
-          "format": "catia"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "dialect": "catia:float-packed-inner-no-fbb"
+          }
         }
-      },
-      "format": "catia"
+      }
     },
     "tolerances": {
       "angular": 1e-10,
@@ -180,7 +186,6 @@
     }
   },
   "report": {
-    "container_only": false,
     "coverage": {
       "ambiguous_formula_parameter_dependency_count": 0,
       "ambiguous_relation_program_parameter_dependency_count": 0,
@@ -523,24 +528,26 @@
       "unresolved_unreferenced_relation_expression_count": 0,
       "unselected_object_stream_run_count": 0
     },
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "admitted",
-        "dialect": "catia:float-packed-inner-no-fbb",
-        "format": "catia"
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "dialect": "catia:float-packed-inner-no-fbb"
+        }
       }
     },
-    "format": "catia",
-    "geometry_transferred": true,
     "losses": [
       {
         "code": {
           "code": "topology.b5-graph-unclosed",
           "kind": "topology_not_transferred",
-          "namespace": "catia"
+          "namespace": "catia",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
-        "message": "Object-stream and consolidated NURBS carriers were decoded, but the face/loop/pcurve/edge graph did not close.",
+        "message": "Object-stream and consolidated NURBS carriers were decoded, but the face/loop/pcurve/edge graph did not close. Unclosed b5 03 5f face records, by object id (0): . The records stay inside retained record catia:payload:unknown#freeform.",
         "severity": "blocking"
       }
     ],
@@ -549,7 +556,11 @@
       "nested V5_CFV2 at file offset 16 with a CATIA_V5 CB0001 directory of 2 stream(s)",
       "reconstructed BREP stream from MainDataStream + SurfacicReps: 0 FBB group(s) containing 0 face row(s), 0 vertex record(s), 0 edge-table delimiter(s)",
       "container-level enumeration; `decode` applies the identified storage family's standard, freeform, E5, zero-entity, or metadata-fallback route"
-    ]
+    ],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {
@@ -558,35 +569,32 @@
           "entity": "unknown",
           "fields": {
             "links": "derived"
-          }
+          },
+          "scope": "entity"
         }
       },
       "provenance": {
         "catia:a8:surf#0": {
           "offset": 32,
-          "stream": 1,
+          "stream": "catia:object_stream_a8_03",
           "tag": "freeform:frame_offset:0000000032"
         },
         "catia:payload:unknown#freeform": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "catia:float-packed-inner-no-fbb"
         }
-      },
-      "streams": [
-        "catia:MainDataStream+SurfacicReps",
-        "catia:object_stream_a8_03"
-      ]
+      }
     },
-    "retained_records": [
-      {
-        "byte_len": 285,
-        "data": "pQM0FAEAAAAFCQwAAAAAAAAAAAAAAAAAAPA/BQkMAAAAAAAAAAAAAAAAAADwPwEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAQAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAIQAAAAAAAAPA/AAAAAAAA8D8FBQUFAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAAAAAAAAA8D8AAAAAAADwPwAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAAEBAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAEABwcA",
-        "id": "catia:payload:unknown#freeform",
+    "retained_records": {
+      "catia:payload:unknown#freeform": {
+        "bytes": {
+          "data": "pQM0FAEAAAAFCQwAAAAAAAAAAAAAAAAAAPA/BQkMAAAAAAAAAAAAAAAAAADwPwEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAQAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAIQAAAAAAAAPA/AAAAAAAA8D8FBQUFAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAAAAAAAAA8D8AAAAAAADwPwAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAAEBAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAEABwcA",
+          "retention": "inline"
+        },
         "offset": 0,
-        "sha256": "7e57371680433a13a008f5d299786e128113596d3ffed3088a1b35f421ec7dbc",
         "stream": "catia:MainDataStream+SurfacicReps"
       }
-    ]
+    }
   }
 }

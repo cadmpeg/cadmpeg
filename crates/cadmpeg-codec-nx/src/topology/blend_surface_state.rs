@@ -2,35 +2,39 @@
 //! Checked rolling-ball supports and source-admitted offset pairs.
 
 use crate::framing::xmt_reference::{NonNullXmt, XmtTarget};
+use cadmpeg_ir::scalar::{FiniteReal, Magnification, NonZeroLength, NonZeroReal};
 use serde::{Deserialize, Serialize};
 
 const EPS_SOURCE_OFFSET_METRES: f64 = 1.0e-9;
-const METRES_TO_MM: f64 = 1000.0;
+const METRES_TO_MM: f64 = Magnification::MILLIMETERS_PER_METER.get();
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "[f64; 2]", into = "[f64; 2]")]
-struct BlendOffsets([f64; 2]);
+struct BlendOffsets([NonZeroLength; 2]);
 
 impl BlendOffsets {
+    /// Admit the metre offsets as unit-free nonzero scalars, then convert them
+    /// to model lengths. The scale cannot round a nonzero offset to zero.
     fn from_metres(offsets: [f64; 2]) -> Result<Self, &'static str> {
-        if offsets
-            .iter()
-            .any(|value| !value.is_finite() || *value == 0.0)
-            || (offsets[0].abs() - offsets[1].abs()).abs() > EPS_SOURCE_OFFSET_METRES
-        {
-            return Err("offsets: require finite nonzero offsets with equal source magnitudes");
+        const SOURCE: &str = "offsets: require finite nonzero offsets with equal source magnitudes";
+        let [Some(first), Some(second)] = offsets.map(NonZeroReal::new) else {
+            return Err(SOURCE);
+        };
+        if (first.get().abs() - second.get().abs()).abs() > EPS_SOURCE_OFFSET_METRES {
+            return Err(SOURCE);
         }
-        let millimetres = offsets.map(|value| value * METRES_TO_MM);
-        if millimetres.iter().any(|value| !value.is_finite()) {
+        let [Some(first), Some(second)] =
+            [first, second].map(|offset| NonZeroLength::new(offset.get() * METRES_TO_MM))
+        else {
             return Err("offsets: model distances must be finite");
-        }
-        Ok(Self(millimetres))
+        };
+        Ok(Self([first, second]))
     }
 }
 
 impl From<BlendOffsets> for [f64; 2] {
     fn from(offsets: BlendOffsets) -> Self {
-        offsets.0
+        offsets.0.map(NonZeroLength::get)
     }
 }
 
@@ -38,12 +42,9 @@ impl TryFrom<[f64; 2]> for BlendOffsets {
     type Error = &'static str;
 
     fn try_from(offsets: [f64; 2]) -> Result<Self, Self::Error> {
-        if offsets
-            .iter()
-            .any(|value| !value.is_finite() || *value == 0.0)
-        {
+        let [Some(first), Some(second)] = offsets.map(NonZeroLength::new) else {
             return Err("offsets: model distances must be finite and nonzero");
-        }
+        };
         let (first_min, first_max) = source_interval(offsets[0].abs())
             .ok_or("offsets: first model distance has no source-float preimage")?;
         let (second_min, second_max) = source_interval(offsets[1].abs())
@@ -58,7 +59,7 @@ impl TryFrom<[f64; 2]> for BlendOffsets {
         if distance > EPS_SOURCE_OFFSET_METRES {
             return Err("offsets: no source pair has equal magnitudes within the source tolerance");
         }
-        Ok(Self(offsets))
+        Ok(Self([first, second]))
     }
 }
 
@@ -100,11 +101,11 @@ pub(crate) struct BlendSurfaceState {
     supports: [NonNullXmt; 2],
     spine: Option<XmtTarget>,
     offsets: BlendOffsets,
-    thumb_weights: [f64; 2],
+    thumb_weights: [FiniteReal; 2],
 }
 
 impl BlendSurfaceState {
-    pub(crate) fn from_metres(
+    pub(super) fn from_metres(
         supports: [u32; 2],
         spine: u32,
         offsets: [f64; 2],
@@ -130,14 +131,14 @@ impl BlendSurfaceState {
             NonNullXmt::try_from(supports[1])
                 .map_err(|_| "support_xmts: second support must be non-null")?,
         ];
-        if thumb_weights.iter().any(|value| !value.is_finite()) {
+        let [Some(first), Some(second)] = thumb_weights.map(FiniteReal::new) else {
             return Err("thumb_weights: must be finite");
-        }
+        };
         Ok(Self {
             supports,
             spine: XmtTarget::from_wire(spine),
             offsets,
-            thumb_weights,
+            thumb_weights: [first, second],
         })
     }
 
@@ -150,9 +151,14 @@ impl BlendSurfaceState {
     pub(crate) fn offsets(&self) -> [f64; 2] {
         self.offsets.into()
     }
+    /// The signed model offset at the first support, a finite nonzero
+    /// millimetre distance.
+    pub(crate) fn first_offset(&self) -> NonZeroLength {
+        self.offsets.0[0]
+    }
     #[cfg(test)]
     pub(crate) fn thumb_weights(&self) -> [f64; 2] {
-        self.thumb_weights
+        self.thumb_weights.map(FiniteReal::get)
     }
 }
 
@@ -170,7 +176,7 @@ impl From<BlendSurfaceState> for StateWire {
             support_xmts: state.support_xmts(),
             spine_xmt: state.spine_xmt(),
             offsets: state.offsets,
-            thumb_weights: state.thumb_weights,
+            thumb_weights: state.thumb_weights.map(FiniteReal::get),
         }
     }
 }
@@ -193,6 +199,35 @@ mod tests {
         source_interval, BlendOffsets, BlendSurfaceState, EPS_SOURCE_OFFSET_METRES, METRES_TO_MM,
     };
 
+    /// The metre gate refuses a non-finite, zero or unequal offset with the
+    /// source text before the conversion; the conversion refuses only an
+    /// offset that overflows, and a subnormal offset stays nonzero.
+    #[test]
+    fn blend_offsets_refuse_source_conditions_before_model_overflow() {
+        const SOURCE: &str = "offsets: require finite nonzero offsets with equal source magnitudes";
+        for offsets in [
+            [0.0, 0.003],
+            [-0.0, 0.0],
+            [f64::NAN, 0.003],
+            [f64::INFINITY, f64::INFINITY],
+            [0.003, 0.004],
+            [f64::MAX, 0.0],
+        ] {
+            assert_eq!(
+                BlendOffsets::from_metres(offsets),
+                Err(SOURCE),
+                "{offsets:?}"
+            );
+        }
+        assert_eq!(
+            BlendOffsets::from_metres([f64::MAX, -f64::MAX]),
+            Err("offsets: model distances must be finite")
+        );
+        let smallest = BlendOffsets::from_metres([f64::from_bits(1), -f64::from_bits(1)]).unwrap();
+        let model: [f64; 2] = smallest.into();
+        assert!(model.iter().all(|value| *value != 0.0));
+    }
+
     #[test]
     fn model_offsets_retain_source_tolerance_after_rounding() {
         let source = [0.003, 0.003 + EPS_SOURCE_OFFSET_METRES];
@@ -204,6 +239,22 @@ mod tests {
             serde_json::from_str::<BlendOffsets>(&json).unwrap(),
             offsets
         );
+    }
+
+    #[test]
+    fn the_first_offset_is_the_admitted_signed_model_distance() {
+        for source in [
+            [-0.003, 0.003],
+            [0.0025, 0.0025],
+            [f64::from_bits(1), -f64::from_bits(1)],
+        ] {
+            let state = BlendSurfaceState::from_metres([6, 7], 1, source, [1.0, 1.0]).unwrap();
+            assert_eq!(
+                state.first_offset().get().to_bits(),
+                state.offsets()[0].to_bits()
+            );
+            assert_eq!(state.offsets()[0], source[0] * METRES_TO_MM);
+        }
     }
 
     #[test]

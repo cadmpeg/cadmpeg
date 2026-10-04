@@ -1,36 +1,59 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use crate::scalar;
+use crate::surface::decode_positional_cone_frame;
+use crate::surface::prototype_cone_frame;
+use crate::surface::terminal_cone_half_angle_layout;
+use crate::surface::ApexConeHalfAngle;
+use crate::surface::PositionalConeFrame;
+use crate::surface::SurfaceNamedParameter;
+use crate::surface::SurfaceNamedValue;
+use crate::surface::SurfacePrototypeFamily;
+use crate::surface::SurfacePrototypeRecord;
+
+const EPS_FRAME_COMPONENT: f64 = 1.0e-12;
 
 #[test]
 fn positional_cone_frame_rejects_nonfinite_or_invalid_components() {
-    let valid = PositionalConeFrame {
-        apex: [0.0, 1.0, 2.0],
-        axis: [0.0, 1.0, 0.0],
-        ref_direction: [1.0, 0.0, 0.0],
-        half_angle: std::f64::consts::FRAC_PI_4,
-    };
-    assert!(valid.is_valid());
+    let valid = PositionalConeFrame::new(
+        [0.0, 1.0, 2.0],
+        [0.0, 1.0, 0.0],
+        [1.0, 0.0, 0.0],
+        ApexConeHalfAngle::new(std::f64::consts::FRAC_PI_4).expect("apex cone half angle"),
+    )
+    .expect("valid positional cone frame");
 
-    let mut nonfinite_apex = valid;
-    nonfinite_apex.apex[1] = f64::NAN;
-    assert!(!nonfinite_apex.is_valid());
+    assert!(PositionalConeFrame::new(
+        {
+            let mut value = valid.frame().origin();
+            value[1] = f64::NAN;
+            value
+        },
+        valid.frame().axis(),
+        valid.frame().ref_direction(),
+        valid.half_angle
+    )
+    .is_none());
 
-    let mut zero_angle = valid;
-    zero_angle.half_angle = 0.0;
-    assert!(!zero_angle.is_valid());
+    assert!(ApexConeHalfAngle::new(0.0).is_none());
 
-    let mut non_unit_axis = valid;
-    non_unit_axis.axis = [0.0, 2.0, 0.0];
-    assert!(!non_unit_axis.is_valid());
+    assert!(PositionalConeFrame::new(
+        valid.frame().origin(),
+        [0.0, 2.0, 0.0],
+        valid.frame().ref_direction(),
+        valid.half_angle
+    )
+    .is_none());
 
-    let mut non_orthogonal_reference = valid;
-    non_orthogonal_reference.ref_direction = [0.0, 1.0, 0.0];
-    assert!(!non_orthogonal_reference.is_valid());
+    assert!(PositionalConeFrame::new(
+        valid.frame().origin(),
+        valid.frame().axis(),
+        [0.0, 1.0, 0.0],
+        valid.half_angle
+    )
+    .is_none());
 
-    let mut right_angle = valid;
-    right_angle.half_angle = std::f64::consts::FRAC_PI_2;
-    assert!(!right_angle.is_valid());
+    assert!(ApexConeHalfAngle::new(std::f64::consts::FRAC_PI_2).is_none());
 }
 
 #[test]
@@ -45,10 +68,10 @@ fn positional_cone_frame_requires_complete_support_apex_and_angle() {
     ];
     let frame = decode_positional_cone_frame(&body, &scalar::ScalarCache::default())
         .expect("complete positional cone");
-    assert_eq!(frame.apex, [37.01, 0.0, 0.0]);
-    assert_eq!(frame.axis, [-1.0, -0.0, -0.0]);
-    assert_eq!(frame.ref_direction, [-0.0, -0.0, -1.0]);
-    assert!((frame.half_angle - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12);
+    assert_eq!(frame.frame().origin(), [37.01, 0.0, 0.0]);
+    assert_eq!(frame.frame().axis(), [-1.0, -0.0, -0.0]);
+    assert_eq!(frame.frame().ref_direction(), [-0.0, -0.0, -1.0]);
+    assert!((frame.half_angle.get().get() - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12);
 
     let angle = terminal_cone_half_angle_layout(&body).expect("terminal half-angle");
     let mut local_system_body = vec![0xf9, 0x04, 0x03];
@@ -65,7 +88,7 @@ fn positional_cone_frame_requires_complete_support_apex_and_angle() {
             },
             SurfaceNamedParameter {
                 name: "half_angle".to_string(),
-                value: SurfaceNamedValue::ScalarSequence(vec![angle.value]),
+                value: SurfaceNamedValue::ScalarSequence(vec![angle.value.get().get()]),
                 body: body[angle.start..].to_vec(),
                 offset: 0,
                 value_offset: 0,
@@ -95,12 +118,12 @@ fn positional_cone_frame_decodes_complete_planar_envelopes() {
     for body in [&unreferenced[..], &referenced[..]] {
         let frame = decode_positional_cone_frame(body, &scalar::ScalarCache::default())
             .expect("complete planar-envelope cone");
-        assert_eq!(frame.apex[0], 0.0);
-        assert!((frame.apex[1] + 19.389_817_409_565_175).abs() < 1.0e-12);
-        assert_eq!(frame.apex[2], 0.0);
-        assert_eq!(frame.axis, [0.0, 1.0, 0.0]);
-        assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
-        assert!((frame.half_angle - 0.636_540_466_818_335).abs() < 1.0e-12);
+        assert_eq!(frame.frame().origin()[0], 0.0);
+        assert!((frame.frame().origin()[1] + 19.389_817_409_565_175).abs() < EPS_FRAME_COMPONENT);
+        assert_eq!(frame.frame().origin()[2], 0.0);
+        assert_eq!(frame.frame().axis(), [0.0, 1.0, 0.0]);
+        assert_eq!(frame.frame().ref_direction(), [1.0, 0.0, 0.0]);
+        assert!((frame.half_angle.get().get() - 0.636_540_466_818_335).abs() < 1.0e-12);
     }
 
     let mut inconsistent = unreferenced;

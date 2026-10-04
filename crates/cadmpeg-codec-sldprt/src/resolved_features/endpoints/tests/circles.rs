@@ -4,8 +4,13 @@ use super::super::super::relation_loci::same_dimension_length;
 use super::super::super::{
     CLASS_MARKER, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER,
 };
-use super::super::*;
 use crate::records::{SketchInputEntity, SketchInputKind, SketchRelationKind};
+use crate::resolved_features::endpoints::coordinate_circle_radius;
+use crate::resolved_features::endpoints::coordinate_roster_full_circle;
+use crate::resolved_features::endpoints::equal_index_coordinate_roster_full_circle;
+use crate::resolved_features::endpoints::extended_geometry_full_circle;
+use crate::resolved_features::endpoints::legacy_coordinate_circle_radius;
+use cadmpeg_core::decode::u64_from_index;
 
 #[test]
 fn current_coordinate_circle_uses_its_complete_square_handle_grid() {
@@ -23,18 +28,17 @@ fn current_coordinate_circle_uses_its_complete_square_handle_grid() {
     payload[82..86].copy_from_slice(&1u32.to_le_bytes());
     payload[92..96].copy_from_slice(&(-2i32).to_le_bytes());
     payload[142..142 + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
-    let entity = |id: &str, ordinal, offset, kind, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind,
-        state_value: None,
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, ordinal, offset, kind, coordinates_m: Option<[f64; 2]>| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, ordinal, offset, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.state_value = None;
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let center = entity("center", 0, 0, SketchInputKind::Arc, Some([2.0, 3.0]));
     let points = [
@@ -50,8 +54,8 @@ fn current_coordinate_circle_uses_its_complete_square_handle_grid() {
     .map(|(index, point)| {
         entity(
             &format!("point-{index}"),
-            index as u32 + 1,
-            index as u64 + 143,
+            u32::try_from(index).unwrap() + 1,
+            u64_from_index(index) + 143,
             SketchInputKind::Point,
             Some(point),
         )
@@ -61,12 +65,27 @@ fn current_coordinate_circle_uses_its_complete_square_handle_grid() {
     entities.extend(points);
     let markers = entities.iter().collect::<Vec<_>>();
     assert_eq!(
-        coordinate_circle_radius(&payload, &center, &markers),
+        coordinate_circle_radius(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &center,
+            &markers
+        )
+        .unwrap(),
         Some(1.0)
     );
-    entities[6].coordinates_m = Some([3.0, 5.0]);
+    entities[6].coordinates_m = cadmpeg_ir::units::FiniteVector::new([3.0, 5.0]);
     let markers = entities.iter().collect::<Vec<_>>();
-    assert_eq!(coordinate_circle_radius(&payload, &center, &markers), None);
+    assert_eq!(
+        coordinate_circle_radius(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &center,
+            &markers
+        )
+        .unwrap(),
+        None
+    );
 }
 
 #[test]
@@ -90,19 +109,20 @@ fn legacy_coordinate_circle_uses_its_trailing_radial_point() {
     payload[110..116].copy_from_slice(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff]);
     payload[158..162].copy_from_slice(&21u32.to_le_bytes());
     payload[162..].copy_from_slice(LEGACY_SKETCH_MARKER);
-    let entity = |id: &str, ordinal, offset, object_index, kind, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("profile".into()),
-        ordinal,
-        offset,
-        object_index,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
-    };
+    let entity =
+        |id: &str, ordinal, offset, object_index, kind, coordinates_m: Option<[f64; 2]>| {
+            let marker_id: String = id.into();
+            let marker_parent: String = "lane".into();
+            let mut constructed_marker =
+                SketchInputEntity::new(marker_id, marker_parent, ordinal, offset, kind);
+            constructed_marker.feature_ref = Some("profile".into());
+            constructed_marker = constructed_marker.with_test_identity(object_index, None);
+            constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+            constructed_marker.coordinates_m =
+                coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+            constructed_marker.links = None;
+            constructed_marker
+        };
     let circle = entity(
         "circle",
         10,
@@ -120,13 +140,23 @@ fn legacy_coordinate_circle_uses_its_trailing_radial_point() {
         Some([0.049, 0.012]),
     );
 
-    assert!(
-        legacy_coordinate_circle_radius(&payload, &circle, &[&circle, &radial])
-            .is_some_and(|radius| same_dimension_length(radius, 0.012))
-    );
+    assert!(legacy_coordinate_circle_radius(
+        &cadmpeg_test_support::service_decode_context(),
+        &payload,
+        &circle,
+        &[&circle, &radial]
+    )
+    .unwrap()
+    .is_some_and(|radius| same_dimension_length(radius, 0.012)));
     payload[158..162].copy_from_slice(&22u32.to_le_bytes());
     assert_eq!(
-        legacy_coordinate_circle_radius(&payload, &circle, &[&circle, &radial]),
+        legacy_coordinate_circle_radius(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &circle,
+            &[&circle, &radial]
+        )
+        .unwrap(),
         None
     );
 }
@@ -150,18 +180,17 @@ fn extended_full_circle_uses_center_and_radial_point_roster() {
         0xff,
     ]);
     payload[104..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
-    let entity = |id: &str, offset, kind, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, offset, kind, coordinates_m: Option<[f64; 2]>| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let entities = [
         entity("center", 1, SketchInputKind::Point, Some([0.0, 0.0])),
@@ -172,12 +201,24 @@ fn extended_full_circle_uses_center_and_radial_point_roster() {
     let markers = entities.iter().collect::<Vec<_>>();
 
     assert_eq!(
-        coordinate_roster_full_circle(&payload, &entities[3], &markers),
+        coordinate_roster_full_circle(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[3],
+            &markers
+        )
+        .unwrap(),
         Some(([0.0, 0.0], 4.0))
     );
     payload[58..60].copy_from_slice(&1u16.to_le_bytes());
     assert_eq!(
-        coordinate_roster_full_circle(&payload, &entities[3], &markers),
+        coordinate_roster_full_circle(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[3],
+            &markers
+        )
+        .unwrap(),
         None
     );
 }
@@ -202,18 +243,17 @@ fn extended_geometry_kind_one_full_circle_uses_explicit_center_index() {
         0xff,
     ]);
     payload[104..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
-    let entity = |id: &str, offset, kind, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, offset, kind, coordinates_m: Option<[f64; 2]>| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let entities = [
         entity("circle", 0, SketchInputKind::LineOrCircle, None),
@@ -224,18 +264,36 @@ fn extended_geometry_kind_one_full_circle_uses_explicit_center_index() {
     let markers = entities.iter().collect::<Vec<_>>();
 
     assert_eq!(
-        extended_geometry_full_circle(&payload, &entities[0], &markers),
+        extended_geometry_full_circle(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[0],
+            &markers
+        )
+        .unwrap(),
         Some(([0.0, 0.0], 4.0))
     );
     payload[76..78].copy_from_slice(&2u16.to_le_bytes());
     assert_eq!(
-        extended_geometry_full_circle(&payload, &entities[0], &markers),
+        extended_geometry_full_circle(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[0],
+            &markers
+        )
+        .unwrap(),
         None
     );
     payload[76..78].copy_from_slice(&1u16.to_le_bytes());
     payload[58..60].copy_from_slice(&1u16.to_le_bytes());
     assert_eq!(
-        extended_geometry_full_circle(&payload, &entities[0], &markers),
+        extended_geometry_full_circle(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[0],
+            &markers
+        )
+        .unwrap(),
         None
     );
 }
@@ -260,18 +318,18 @@ fn extended_profile_circle_accepts_one_unambiguous_radial_interpretation() {
         0xff,
     ]);
     payload[104..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
-    let entity = |id: &str, offset, object_index, kind, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset,
-        object_index,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, offset, object_index, kind, coordinates_m: Option<[f64; 2]>| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker = constructed_marker.with_test_identity(object_index, None);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let entities = [
         entity(
@@ -300,29 +358,44 @@ fn extended_profile_circle_accepts_one_unambiguous_radial_interpretation() {
     let markers = entities.iter().collect::<Vec<_>>();
 
     assert_eq!(
-        super::compact_profile_full_circle(&payload, &entities[3], &markers),
+        super::compact_profile_full_circle(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[3],
+            &markers
+        )
+        .unwrap(),
         Some(([0.0, 0.0], 3.0))
     );
     payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
     payload[17..21].copy_from_slice(&2u32.to_le_bytes());
     payload[104..].copy_from_slice(SKETCH_MARKER);
     let mut current_circle = entities[3].clone();
-    current_circle.kind = SketchInputKind::Arc;
+    current_circle.reclassify(SketchInputKind::Arc);
     assert_eq!(
-        super::compact_profile_full_circle(&payload, &current_circle, &markers),
+        super::compact_profile_full_circle(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &current_circle,
+            &markers
+        )
+        .unwrap(),
         Some(([0.0, 0.0], 3.0))
     );
     payload[17..21].copy_from_slice(&1u32.to_le_bytes());
     let mut current_kind_one_entities = entities.clone();
-    current_kind_one_entities[1].object_index = None;
+    current_kind_one_entities[1] = current_kind_one_entities[1]
+        .with_test_identity(None, current_kind_one_entities[1].local_id());
     let current_kind_one_markers = current_kind_one_entities.iter().collect::<Vec<_>>();
     let current_kind_one_circle = &current_kind_one_entities[3];
     assert_eq!(
         super::compact_profile_full_circle(
+            &cadmpeg_test_support::service_decode_context(),
             &payload,
             current_kind_one_circle,
             &current_kind_one_markers,
-        ),
+        )
+        .unwrap(),
         Some(([0.0, 0.0], 3.0))
     );
     payload[17..21].copy_from_slice(&2u32.to_le_bytes());
@@ -331,7 +404,13 @@ fn extended_profile_circle_accepts_one_unambiguous_radial_interpretation() {
     payload[56..60].copy_from_slice(&[0x01, 0x00, 0x01, 0x00]);
     payload[104..].copy_from_slice(LEGACY_SKETCH_MARKER);
     assert_eq!(
-        super::equal_index_coordinate_roster_full_circle(&payload, &current_circle, &markers,),
+        super::equal_index_coordinate_roster_full_circle(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &current_circle,
+            &markers,
+        )
+        .unwrap(),
         Some(([0.0, 0.0], 3.0))
     );
     payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
@@ -341,10 +420,16 @@ fn extended_profile_circle_accepts_one_unambiguous_radial_interpretation() {
     payload[104..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
 
     let mut conflicting = entities.clone();
-    conflicting[1].coordinates_m = Some([4.0, 0.0]);
+    conflicting[1].coordinates_m = cadmpeg_ir::units::FiniteVector::new([4.0, 0.0]);
     let markers = conflicting.iter().collect::<Vec<_>>();
     assert_eq!(
-        super::compact_profile_full_circle(&payload, &conflicting[3], &markers),
+        super::compact_profile_full_circle(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &conflicting[3],
+            &markers
+        )
+        .unwrap(),
         None
     );
 }
@@ -376,18 +461,17 @@ fn current_profile_circle_dimension_uses_one_based_radial_roster() {
     payload[134..145].copy_from_slice(b"sgCircleDim");
     payload[145..].copy_from_slice(SKETCH_MARKER);
 
-    let entity = |id: &str, offset, kind, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, offset, kind, coordinates_m: Option<[f64; 2]>| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let center = entity("center", 10, SketchInputKind::Point, Some([0.0, 0.0]));
     let radial = entity("radial", 20, SketchInputKind::Point, Some([3.0, 4.0]));
@@ -396,18 +480,36 @@ fn current_profile_circle_dimension_uses_one_based_radial_roster() {
     let markers = entities.iter().collect::<Vec<_>>();
 
     assert_eq!(
-        super::current_profile_circle_dimension(&payload, &entities[2], &markers),
+        super::current_profile_circle_dimension(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[2],
+            &markers
+        )
+        .unwrap(),
         Some(([0.0, 0.0], 5.0))
     );
     payload[134] = b'x';
     assert_eq!(
-        super::current_profile_circle_dimension(&payload, &entities[2], &markers),
+        super::current_profile_circle_dimension(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[2],
+            &markers
+        )
+        .unwrap(),
         None
     );
     payload[134] = b's';
     payload[58..60].copy_from_slice(&3u16.to_le_bytes());
     assert_eq!(
-        super::current_profile_circle_dimension(&payload, &entities[2], &markers),
+        super::current_profile_circle_dimension(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[2],
+            &markers
+        )
+        .unwrap(),
         None
     );
     payload[58..60].copy_from_slice(&2u16.to_le_bytes());
@@ -418,7 +520,13 @@ fn current_profile_circle_dimension_uses_one_based_radial_roster() {
     ];
     let zero_markers = zero_radius.iter().collect::<Vec<_>>();
     assert_eq!(
-        super::current_profile_circle_dimension(&payload, &zero_radius[2], &zero_markers),
+        super::current_profile_circle_dimension(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &zero_radius[2],
+            &zero_markers
+        )
+        .unwrap(),
         None
     );
 }
@@ -455,18 +563,17 @@ fn compact_legacy_repeated_radial_records_define_full_circles() {
     }
     payload[205..213].fill(0);
     payload[circle_offset..].copy_from_slice(&record);
-    let entity = |id: &str, offset, kind, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, offset, kind, coordinates_m: Option<[f64; 2]>| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let entities = [
         entity("center", 0, SketchInputKind::Point, Some([0.0, 0.0])),
@@ -480,7 +587,7 @@ fn compact_legacy_repeated_radial_records_define_full_circles() {
         ),
         entity(
             "circle",
-            circle_offset as u64,
+            u64_from_index(circle_offset),
             SketchInputKind::LineOrCircle,
             None,
         ),
@@ -488,7 +595,13 @@ fn compact_legacy_repeated_radial_records_define_full_circles() {
     let markers = entities.iter().collect::<Vec<_>>();
 
     assert_eq!(
-        super::compact_legacy_profile_full_circle(&payload, &entities[4], &markers),
+        super::compact_legacy_profile_full_circle(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[4],
+            &markers
+        )
+        .unwrap(),
         Some(([0.0, 0.0], 12.0))
     );
 
@@ -500,12 +613,24 @@ fn compact_legacy_repeated_radial_records_define_full_circles() {
     payload[circle_offset + 118..circle_offset + 120].copy_from_slice(&11u16.to_le_bytes());
     payload[circle_offset + 120..circle_offset + 131].copy_from_slice(b"sgCircleDim");
     assert_eq!(
-        super::compact_legacy_profile_full_circle(&payload, &entities[4], &markers),
+        super::compact_legacy_profile_full_circle(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[4],
+            &markers
+        )
+        .unwrap(),
         Some(([0.0, 0.0], 5.5))
     );
     payload[circle_offset + 120] = b'x';
     assert_eq!(
-        super::compact_legacy_profile_full_circle(&payload, &entities[4], &markers),
+        super::compact_legacy_profile_full_circle(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[4],
+            &markers
+        )
+        .unwrap(),
         None
     );
 }
@@ -574,18 +699,17 @@ fn compact_legacy_terminal_diameter_circle_uses_embedded_coordinate_roster() {
     payload[circle_offset + 108..circle_offset + 110].copy_from_slice(&11u16.to_le_bytes());
     payload[circle_offset + 110..circle_offset + 121].copy_from_slice(b"sgCircleDim");
 
-    let entity = |id: &str, offset: u64, kind, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, offset: u64, kind, coordinates_m: Option<[f64; 2]>| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let entities = [
         entity("center", 0, SketchInputKind::Point, Some([0.03, 0.005])),
@@ -594,15 +718,19 @@ fn compact_legacy_terminal_diameter_circle_uses_embedded_coordinate_roster() {
         entity("radial", 516, SketchInputKind::Point, Some([0.03, -0.0048])),
         entity(
             "circle",
-            circle_offset as u64,
+            u64_from_index(circle_offset),
             SketchInputKind::LineOrCircle,
             None,
         ),
     ];
     let markers = entities.iter().collect::<Vec<_>>();
-    let Some((center, radius)) =
-        super::compact_legacy_terminal_diameter_circle(&payload, &entities[4], &markers)
-    else {
+    let Some((center, radius)) = super::compact_legacy_terminal_diameter_circle(
+        &cadmpeg_test_support::service_decode_context(),
+        &payload,
+        &entities[4],
+        &markers,
+    )
+    .unwrap() else {
         panic!("terminal circle did not resolve");
     };
     assert_eq!(center, [0.03, 0.005]);
@@ -610,7 +738,13 @@ fn compact_legacy_terminal_diameter_circle_uses_embedded_coordinate_roster() {
 
     payload[circle_offset + 44..circle_offset + 46].copy_from_slice(&1u16.to_le_bytes());
     assert_eq!(
-        super::compact_legacy_terminal_diameter_circle(&payload, &entities[4], &markers),
+        super::compact_legacy_terminal_diameter_circle(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[4],
+            &markers
+        )
+        .unwrap(),
         None
     );
 }
@@ -683,18 +817,17 @@ fn sole_out_of_roster_packed_curve_closes_one_open_profile_chain() {
         payload[curve_offset + 72..curve_offset + 76].copy_from_slice(&identity.to_le_bytes());
     }
     payload[328..].copy_from_slice(LEGACY_SKETCH_MARKER);
-    let entity = |id: &str, offset, kind, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, offset, kind, coordinates_m: Option<[f64; 2]>| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let entities = [
         entity("point-0", 0, SketchInputKind::Point, Some([0.0, 0.0])),
@@ -707,13 +840,25 @@ fn sole_out_of_roster_packed_curve_closes_one_open_profile_chain() {
     let markers = entities.iter().collect::<Vec<_>>();
 
     assert_eq!(
-        super::implicit_profile_chain_closure_endpoints(&payload, &entities[5], &markers),
+        super::implicit_profile_chain_closure_endpoints(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[5],
+            &markers
+        )
+        .unwrap(),
         Some([[0.0, 0.0], [1.0, 1.0]])
     );
 
     payload[176 + 48..176 + 52].copy_from_slice(&[0, 0, 1, 0]);
     assert_eq!(
-        super::implicit_profile_chain_closure_endpoints(&payload, &entities[5], &markers),
+        super::implicit_profile_chain_closure_endpoints(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[5],
+            &markers
+        )
+        .unwrap(),
         None
     );
 }
@@ -736,18 +881,17 @@ fn equal_index_coordinate_roster_carries_center_and_following_radial_point() {
         cell.copy_from_slice(&(-2i32).to_le_bytes());
     }
     payload[104..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
-    let marker = |id: &str, offset, coordinates_m, kind| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let marker = |id: &str, offset, coordinates_m: Option<[f64; 2]>, kind| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let circle = marker("circle", 0, None, SketchInputKind::Arc);
     let points = [
@@ -760,12 +904,24 @@ fn equal_index_coordinate_roster_carries_center_and_following_radial_point() {
         .collect::<Vec<_>>();
 
     assert_eq!(
-        equal_index_coordinate_roster_full_circle(&payload, &circle, &markers),
+        equal_index_coordinate_roster_full_circle(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &circle,
+            &markers
+        )
+        .unwrap(),
         Some(([1.0, 1.0], 2.0))
     );
     payload[35..39].copy_from_slice(&[0x00, 0x00, 0x04, 0x00]);
     assert_eq!(
-        equal_index_coordinate_roster_full_circle(&payload, &circle, &markers),
+        equal_index_coordinate_roster_full_circle(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &circle,
+            &markers
+        )
+        .unwrap(),
         Some(([1.0, 1.0], 2.0))
     );
     payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
@@ -773,7 +929,13 @@ fn equal_index_coordinate_roster_carries_center_and_following_radial_point() {
     payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
     payload[104..104 + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
     assert_eq!(
-        equal_index_coordinate_roster_full_circle(&payload, &circle, &markers),
+        equal_index_coordinate_roster_full_circle(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &circle,
+            &markers
+        )
+        .unwrap(),
         Some(([1.0, 1.0], 2.0))
     );
 }
@@ -794,18 +956,17 @@ fn dimensioned_extended_full_circle_uses_center_and_radial_point_roster() {
     payload.extend_from_slice(CLASS_MARKER);
     payload.extend_from_slice(&11u16.to_le_bytes());
     payload.extend_from_slice(b"moDimText_c");
-    let marker = |id: &str, offset, coordinates_m, kind| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let marker = |id: &str, offset, coordinates_m: Option<[f64; 2]>, kind| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let circle = marker("circle", 0, None, SketchInputKind::Arc);
     let points = [
@@ -818,7 +979,13 @@ fn dimensioned_extended_full_circle_uses_center_and_radial_point_roster() {
         .collect::<Vec<_>>();
 
     assert_eq!(
-        equal_index_coordinate_roster_full_circle(&payload, &circle, &markers),
+        equal_index_coordinate_roster_full_circle(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &circle,
+            &markers
+        )
+        .unwrap(),
         Some(([1.0, 1.0], 2.0))
     );
     let mut tagged = payload[..72].to_vec();
@@ -829,22 +996,46 @@ fn dimensioned_extended_full_circle_uses_center_and_radial_point_roster() {
     tagged.extend_from_slice(&1u32.to_le_bytes());
     tagged.extend_from_slice(&[0x1f, 0x81, 0xff, 0xfe, 0xff, 0x06]);
     assert_eq!(
-        equal_index_coordinate_roster_full_circle(&tagged, &circle, &markers),
+        equal_index_coordinate_roster_full_circle(
+            &cadmpeg_test_support::service_decode_context(),
+            &tagged,
+            &circle,
+            &markers
+        )
+        .unwrap(),
         Some(([1.0, 1.0], 2.0))
     );
     tagged[80] = 0x34;
     assert_eq!(
-        equal_index_coordinate_roster_full_circle(&tagged, &circle, &markers),
+        equal_index_coordinate_roster_full_circle(
+            &cadmpeg_test_support::service_decode_context(),
+            &tagged,
+            &circle,
+            &markers
+        )
+        .unwrap(),
         Some(([1.0, 1.0], 2.0))
     );
     tagged[72] = 0;
     assert_eq!(
-        equal_index_coordinate_roster_full_circle(&tagged, &circle, &markers),
+        equal_index_coordinate_roster_full_circle(
+            &cadmpeg_test_support::service_decode_context(),
+            &tagged,
+            &circle,
+            &markers
+        )
+        .unwrap(),
         None
     );
     payload[72] = 0;
     assert_eq!(
-        equal_index_coordinate_roster_full_circle(&payload, &circle, &markers),
+        equal_index_coordinate_roster_full_circle(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &circle,
+            &markers
+        )
+        .unwrap(),
         None
     );
 }
@@ -872,18 +1063,17 @@ fn wide_legacy_full_circle_uses_adjacent_center_and_radial_markers() {
     payload[104..108].copy_from_slice(&6u32.to_le_bytes());
     payload[108..112].copy_from_slice(&3u32.to_le_bytes());
     payload[112..].copy_from_slice(LEGACY_SKETCH_MARKER);
-    let entity = |id: &str, offset, kind, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, offset, kind, coordinates_m: Option<[f64; 2]>| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let entities = [
         entity("unrelated", 1, SketchInputKind::Point, Some([9.0, 9.0])),
@@ -894,21 +1084,39 @@ fn wide_legacy_full_circle_uses_adjacent_center_and_radial_markers() {
     let markers = entities.iter().collect::<Vec<_>>();
 
     assert_eq!(
-        super::wide_coordinate_roster_full_circle(&payload, &entities[3], &markers),
+        super::wide_coordinate_roster_full_circle(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[3],
+            &markers
+        )
+        .unwrap(),
         Some(([2.0, 3.0], 5.0))
     );
     payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
     payload[17..21].copy_from_slice(&2u32.to_le_bytes());
     payload[112..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
     let mut extended_circle = entities[3].clone();
-    extended_circle.kind = SketchInputKind::LineOrCircle;
+    extended_circle.reclassify(SketchInputKind::LineOrCircle);
     assert_eq!(
-        super::wide_coordinate_roster_full_circle(&payload, &extended_circle, &markers),
+        super::wide_coordinate_roster_full_circle(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &extended_circle,
+            &markers
+        )
+        .unwrap(),
         Some(([2.0, 3.0], 5.0))
     );
     payload[104..108].copy_from_slice(&3u32.to_le_bytes());
     assert_eq!(
-        super::wide_coordinate_roster_full_circle(&payload, &extended_circle, &markers),
+        super::wide_coordinate_roster_full_circle(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &extended_circle,
+            &markers
+        )
+        .unwrap(),
         Some(([2.0, 3.0], 5.0))
     );
     payload[104..108].copy_from_slice(&6u32.to_le_bytes());
@@ -920,19 +1128,32 @@ fn wide_legacy_full_circle_uses_adjacent_center_and_radial_markers() {
     terminal[142..153].copy_from_slice(b"sgCircleDim");
     terminal[64..68].copy_from_slice(&[0x03, 0x00, 0x03, 0x00]);
     let mut terminal_entities = entities.clone();
-    terminal_entities[0].kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
+    terminal_entities[0].reclassify(SketchInputKind::Relation(SketchRelationKind::Horizontal));
     let terminal_markers = terminal_entities.iter().collect::<Vec<_>>();
     assert_eq!(
-        super::wide_coordinate_roster_full_circle(&terminal, &extended_circle, &terminal_markers,),
+        super::wide_coordinate_roster_full_circle(
+            &cadmpeg_test_support::service_decode_context(),
+            &terminal,
+            &extended_circle,
+            &terminal_markers,
+        )
+        .unwrap(),
         Some(([2.0, 3.0], 5.0))
     );
     terminal[64..68].copy_from_slice(&[0x01, 0x00, 0x01, 0x00]);
     terminal[84..86].copy_from_slice(&[0; 2]);
     let mut direct_entities = entities.clone();
-    direct_entities[2].object_index = Some(1);
+    direct_entities[2] =
+        direct_entities[2].with_test_identity(Some(1), direct_entities[2].local_id());
     let direct_markers = direct_entities.iter().collect::<Vec<_>>();
     assert_eq!(
-        super::wide_coordinate_roster_full_circle(&terminal, &extended_circle, &direct_markers,),
+        super::wide_coordinate_roster_full_circle(
+            &cadmpeg_test_support::service_decode_context(),
+            &terminal,
+            &extended_circle,
+            &direct_markers,
+        )
+        .unwrap(),
         Some(([2.0, 3.0], 5.0))
     );
     let mut short_terminal = payload[..102].to_vec();
@@ -944,20 +1165,34 @@ fn wide_legacy_full_circle_uses_adjacent_center_and_radial_markers() {
     short_terminal[134..145].copy_from_slice(b"sgCircleDim");
     assert_eq!(
         super::wide_coordinate_roster_full_circle(
+            &cadmpeg_test_support::service_decode_context(),
             &short_terminal,
             &extended_circle,
             &direct_markers,
-        ),
+        )
+        .unwrap(),
         Some(([2.0, 3.0], 5.0))
     );
     terminal[133] = 1;
     assert_eq!(
-        super::wide_coordinate_roster_full_circle(&terminal, &extended_circle, &terminal_markers,),
+        super::wide_coordinate_roster_full_circle(
+            &cadmpeg_test_support::service_decode_context(),
+            &terminal,
+            &extended_circle,
+            &terminal_markers,
+        )
+        .unwrap(),
         None
     );
     payload[66..68].copy_from_slice(&3u16.to_le_bytes());
     assert_eq!(
-        super::wide_coordinate_roster_full_circle(&payload, &entities[3], &markers),
+        super::wide_coordinate_roster_full_circle(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[3],
+            &markers
+        )
+        .unwrap(),
         None
     );
 }
@@ -984,18 +1219,17 @@ fn legacy_profile_radial_circle_requires_one_selected_radial_locus() {
     payload[104..108].copy_from_slice(&2u32.to_le_bytes());
     payload[108..112].copy_from_slice(&2u32.to_le_bytes());
     payload[112..].copy_from_slice(LEGACY_SKETCH_MARKER);
-    let entity = |id: &str, offset, kind, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, offset, kind, coordinates_m: Option<[f64; 2]>| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let entities = [
         entity("center", 1, SketchInputKind::LineOrCircle, Some([0.0, 0.0])),
@@ -1006,12 +1240,24 @@ fn legacy_profile_radial_circle_requires_one_selected_radial_locus() {
     let markers = entities.iter().collect::<Vec<_>>();
 
     assert_eq!(
-        super::legacy_profile_radial_circle(&payload, &entities[3], &markers),
+        super::legacy_profile_radial_circle(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[3],
+            &markers
+        )
+        .unwrap(),
         Some(([0.0, 0.0], 3.0))
     );
     payload[64..68].copy_from_slice(&[0x02, 0x00, 0x02, 0x00]);
     assert_eq!(
-        super::legacy_profile_radial_circle(&payload, &entities[3], &markers),
+        super::legacy_profile_radial_circle(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[3],
+            &markers
+        )
+        .unwrap(),
         None
     );
 
@@ -1019,7 +1265,13 @@ fn legacy_profile_radial_circle_requires_one_selected_radial_locus() {
     payload[64..68].copy_from_slice(&[0x03, 0x00, 0x03, 0x00]);
     payload[104..128].fill(0);
     assert_eq!(
-        super::legacy_profile_radial_circle(&payload, &entities[3], &markers),
+        super::legacy_profile_radial_circle(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[3],
+            &markers
+        )
+        .unwrap(),
         Some(([0.0, 0.0], 4.0))
     );
 }
@@ -1034,18 +1286,17 @@ fn extended_coordinate_ellipse_uses_its_complete_corner_grid() {
     payload[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
     payload[27..29].copy_from_slice(&1u16.to_le_bytes());
     payload[134..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
-    let entity = |id: &str, ordinal, offset, kind, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind,
-        state_value: None,
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, ordinal, offset, kind, coordinates_m: Option<[f64; 2]>| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, ordinal, offset, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.state_value = None;
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let ellipse = entity("ellipse", 0, 0, SketchInputKind::Arc, Some([2.0, 3.0]));
     let points = [
@@ -1059,8 +1310,8 @@ fn extended_coordinate_ellipse_uses_its_complete_corner_grid() {
     .map(|(index, point)| {
         entity(
             &format!("point-{index}"),
-            index as u32 + 1,
-            index as u64 + 134,
+            u32::try_from(index).unwrap() + 1,
+            u64_from_index(index) + 134,
             SketchInputKind::Point,
             Some(point),
         )
@@ -1069,20 +1320,27 @@ fn extended_coordinate_ellipse_uses_its_complete_corner_grid() {
     let mut entities = vec![ellipse.clone()];
     entities.extend(points);
     let markers = entities.iter().collect::<Vec<_>>();
-    assert!(
-        super::coordinate_ellipse_axes(&payload, &ellipse, &markers).is_some_and(
-            |(axis, major, minor)| {
-                axis == [1.0, 0.0]
-                    && same_dimension_length(major, 4.0)
-                    && same_dimension_length(minor, 1.0)
-            }
-        )
-    );
+    assert!(super::coordinate_ellipse_axes(
+        &cadmpeg_test_support::service_decode_context(),
+        &payload,
+        &ellipse,
+        &markers
+    )
+    .unwrap()
+    .is_some_and(|(axis, major, minor)| {
+        axis == [1.0, 0.0] && same_dimension_length(major, 4.0) && same_dimension_length(minor, 1.0)
+    }));
 
-    entities[4].coordinates_m = Some([6.0, 5.0]);
+    entities[4].coordinates_m = cadmpeg_ir::units::FiniteVector::new([6.0, 5.0]);
     let markers = entities.iter().collect::<Vec<_>>();
     assert_eq!(
-        super::coordinate_ellipse_axes(&payload, &ellipse, &markers),
+        super::coordinate_ellipse_axes(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &ellipse,
+            &markers
+        )
+        .unwrap(),
         None
     );
 }

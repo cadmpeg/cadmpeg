@@ -1,12 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Semantic writer tests.
+
 #![allow(clippy::unwrap_used)]
+
+use cadmpeg_test_support::EditableDecodeResult;
+
+use crate::container;
+use crate::test_support::container::make_block;
+use crate::test_support::container::sldprt_with_body;
+use crate::test_support::history::resolved_feature_classes_with_ids;
+use crate::test_support::native::sldprt_native;
+use crate::test_support::native::update_sldprt_native;
+use crate::test_support::parasolid::triangle_body;
+const EPS_SCALAR_ROUND_TRIP: f64 = 1.0e-12;
 
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
 use crate::SldprtCodec;
 
 const EPS_PARTIAL_REVOLUTION_ANGLE: f64 = 1.0e-12;
@@ -17,7 +28,7 @@ const EPS_TWO_SIDED_REVOLUTION_SECOND_ANGLE: f64 = 1.0e-12;
 
 #[test]
 fn semantic_writer_round_trips_reference_coordinate_system() {
-    use cadmpeg_ir::features::FeatureDefinition;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -26,51 +37,53 @@ fn semantic_writer_round_trips_reference_coordinate_system() {
         "Contents/Keywords",
         br#"<Keywords><CoordinateSystem Name="Fixture" Type="ReferenceCoordinateSystem" id="28" Origin="1mm,2mm,3mm" XAxis="1,0,0" YAxis="0,1,0" ZAxis="0,0,1"/></Keywords>"#,
     ));
+    let source_partition =
+        container::select_active_parasolid_site(&crate::test_support::container::scan(&source))
+            .unwrap()
+            .section
+            .payload()
+            .to_vec();
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
-        decoded.ir().model.features[0].definition,
-        FeatureDefinition::DatumCoordinateSystem {
-            origin: Point3 {
+        decoded.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem { frame }) if matches!(frame.origin().get(), Point3 {
                 x: 1.0,
                 y: 2.0,
                 z: 3.0
-            },
-            x_axis: Vector3 {
+            }) && matches!(*frame.x_axis().as_raw(), Vector3 {
                 x: 1.0,
                 y: 0.0,
                 z: 0.0
-            },
-            y_axis: Vector3 {
+            }) && matches!(*frame.y_axis().as_raw(), Vector3 {
                 x: 0.0,
                 y: 1.0,
                 z: 0.0
-            },
-            z_axis: Vector3 {
+            }) && matches!(*frame.z_axis().as_raw(), Vector3 {
                 x: 0.0,
                 y: 0.0,
                 z: 1.0
-            },
-        }
+            })
     ));
 
     {
         let mut ir_edit = decoded.ir_mut();
-        let FeatureDefinition::DatumCoordinateSystem {
-            origin,
-            x_axis,
-            y_axis,
-            z_axis,
-        } = &mut ir_edit.model.features[0].definition
-        else {
-            panic!("typed reference coordinate system");
-        };
-        *origin = Point3::new(4.0, 5.0, 6.0);
-        *x_axis = Vector3::new(0.0, 1.0, 0.0);
-        *y_axis = Vector3::new(-1.0, 0.0, 0.0);
-        *z_axis = Vector3::new(0.0, 0.0, 1.0);
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem { frame }) =
+                definition
+            else {
+                panic!("typed reference coordinate system");
+            };
+            *frame = cadmpeg_ir::features::FeatureCoordinateFrame::new(
+                Point3::new(4.0, 5.0, 6.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(-1.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+            )
+            .unwrap();
+        });
     }
 
     let mut encoded = Vec::new();
@@ -80,6 +93,12 @@ fn semantic_writer_round_trips_reference_coordinate_system() {
         &mut encoded,
     )
     .unwrap();
+    let output_scan = crate::test_support::container::scan(&encoded);
+    let output_partition = container::select_active_parasolid_site(&output_scan)
+        .unwrap()
+        .section
+        .payload();
+    assert_eq!(output_partition, source_partition);
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -91,35 +110,30 @@ fn semantic_writer_round_trips_reference_coordinate_system() {
     assert_eq!(feature.properties["YAxis"], "-1,0,0");
     assert_eq!(feature.properties["ZAxis"], "0,0,1");
     assert!(matches!(
-        regenerated.ir().model.features[0].definition,
-        FeatureDefinition::DatumCoordinateSystem {
-            origin: Point3 {
+        regenerated.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem { frame }) if matches!(frame.origin().get(), Point3 {
                 x: 4.0,
                 y: 5.0,
                 z: 6.0
-            },
-            x_axis: Vector3 {
+            }) && matches!(*frame.x_axis().as_raw(), Vector3 {
                 x: 0.0,
                 y: 1.0,
                 z: 0.0
-            },
-            y_axis: Vector3 {
+            }) && matches!(*frame.y_axis().as_raw(), Vector3 {
                 x: -1.0,
                 y: 0.0,
                 z: 0.0
-            },
-            z_axis: Vector3 {
+            }) && matches!(*frame.z_axis().as_raw(), Vector3 {
                 x: 0.0,
                 y: 0.0,
                 z: 1.0
-            },
-        }
+            })
     ));
 }
 
 #[test]
 fn semantic_writer_round_trips_equation_driven_curve() {
-    use cadmpeg_ir::features::FeatureDefinition;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -130,47 +144,40 @@ fn semantic_writer_round_trips_equation_driven_curve() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
-        &decoded.ir().model.features[0].definition,
-        FeatureDefinition::EquationCurve {
-            parameter,
-            x_expression,
-            y_expression,
-            z_expression,
-            start,
-            end,
-        } if parameter == "t"
-            && x_expression == "10*cos(t)"
-            && y_expression == "10*sin(t)"
-            && z_expression == "t"
-            && *start == 0.0
-            && (*end - std::f64::consts::TAU).abs() < 1.0e-12
+        decoded.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::EquationCurve { curve })
+            if curve.parameter() == "t"
+            && curve.x_expression() == "10*cos(t)"
+            && curve.y_expression() == "10*sin(t)"
+            && curve.z_expression() == "t"
+            && curve.domain().lower() == 0.0
+            && (curve.domain().upper() - std::f64::consts::TAU).abs() < 1.0e-12
     ));
 
     {
         let mut ir_edit = decoded.ir_mut();
-        let FeatureDefinition::EquationCurve {
-            parameter,
-            x_expression,
-            y_expression,
-            z_expression,
-            start,
-            end,
-        } = &mut ir_edit.model.features[0].definition
-        else {
-            panic!("typed equation curve");
-        };
-        *parameter = "u".into();
-        *x_expression = "u".into();
-        *y_expression = "u^2".into();
-        *z_expression = "u^3".into();
-        *start = -2.0;
-        *end = 3.0;
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::EquationCurve { curve }) =
+                definition
+            else {
+                panic!("typed equation curve");
+            };
+            *curve = cadmpeg_ir::features::FeatureEquationCurve::new(
+                "u".into(),
+                "u".into(),
+                "u^2".into(),
+                "u^3".into(),
+                -2.0,
+                3.0,
+            )
+            .unwrap();
+        });
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -190,25 +197,23 @@ fn semantic_writer_round_trips_equation_driven_curve() {
     assert_eq!(feature.properties["End"], "3");
     assert_eq!(feature.properties["Closed"], "false");
     assert!(matches!(
-        &regenerated.ir().model.features[0].definition,
-        FeatureDefinition::EquationCurve {
-            parameter,
-            x_expression,
-            y_expression,
-            z_expression,
-            start: -2.0,
-            end: 3.0,
-        } if parameter == "u"
-            && x_expression == "u"
-            && y_expression == "u^2"
-            && z_expression == "u^3"
+        regenerated.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::EquationCurve { curve })
+            if curve.domain().lower() == -2.0 && curve.domain().upper() == 3.0
+            && curve.parameter() == "u"
+            && curve.x_expression() == "u"
+            && curve.y_expression() == "u^2"
+            && curve.z_expression() == "u^3"
     ));
 }
 
 #[test]
 fn semantic_writer_round_trips_helix() {
-    use cadmpeg_ir::features::{FeatureDefinition, HelixPitch, HelixShape, Length};
     use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::{
+        features::{FeatureDefinition, FeatureOperation, HelixShape},
+        scalar::NonZeroLength,
+    };
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -219,54 +224,58 @@ fn semantic_writer_round_trips_helix() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
-        decoded.ir().model.features[0].definition,
-        FeatureDefinition::Helix {
-            axis_origin: Point3 {
-                x: 1.0,
-                y: 2.0,
-                z: 3.0
-            },
-            axis_direction: Vector3 {
-                x: 0.0,
-                y: 0.0,
-                z: 1.0
-            },
-            radius: Length(4.0),
+        decoded.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Helix {
+            axis_origin: checked_geometry_1,
+            axis_direction: checked_geometry_2,
+            radius: actual_radius,
             shape: HelixShape::Cylindrical {
                 pitch,
             },
-            revolutions: 3.5,
+            revolutions,
             clockwise: true,
             ..
-        } if pitch.get() == Length(-2.0)
+        }) if (revolutions.get() == 3.5 && (pitch.get() == -2.0) && actual_radius.get() == 4.0) && matches!(checked_geometry_1.get(), Point3 {
+                x: 1.0,
+                y: 2.0,
+                z: 3.0
+            }) && matches!(checked_geometry_2.get(), Vector3 {
+                x: 0.0,
+                y: 0.0,
+                z: 1.0
+            })
     ));
 
     {
         let mut ir_edit = decoded.ir_mut();
-        let FeatureDefinition::Helix {
-            axis_origin,
-            axis_direction,
-            radius,
-            shape: HelixShape::Cylindrical { pitch },
-            revolutions,
-            clockwise,
-            ..
-        } = &mut ir_edit.model.features[0].definition
-        else {
-            panic!("typed helix");
-        };
-        *axis_origin = Point3::new(4.0, 5.0, 6.0);
-        *axis_direction = Vector3::new(0.0, 1.0, 0.0);
-        *radius = Length(7.0);
-        *pitch = HelixPitch::new(Length(8.0)).unwrap();
-        *revolutions = 9.25;
-        *clockwise = false;
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::Helix {
+                axis_origin,
+                axis_direction,
+                radius,
+                shape: HelixShape::Cylindrical { pitch },
+                revolutions,
+                clockwise,
+                ..
+            }) = definition
+            else {
+                panic!("typed helix");
+            };
+            *axis_origin =
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0)).unwrap();
+            *axis_direction =
+                cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap();
+            *radius = cadmpeg_ir::scalar::PositiveLength::new(7.0).unwrap();
+            *pitch = NonZeroLength::new(8.0).unwrap();
+            *revolutions = cadmpeg_ir::scalar::PositiveReal::new(9.25).unwrap();
+            *clockwise = false;
+        });
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -286,31 +295,34 @@ fn semantic_writer_round_trips_helix() {
     assert_eq!(feature.parameters["Pitch"], "8mm");
     assert_eq!(feature.parameters["Revolutions"], "9.25");
     assert!(matches!(
-        regenerated.ir().model.features[0].definition,
-        FeatureDefinition::Helix {
-            axis_origin: Point3 {
+        regenerated.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Helix {
+            axis_origin: checked_geometry_1,
+            axis_direction: checked_geometry_2,
+            radius: actual_radius,
+            shape: HelixShape::Cylindrical { pitch },
+            revolutions,
+            clockwise: false,
+            ..
+        }) if (revolutions.get() == 9.25 && (pitch.get() == 8.0) && actual_radius.get() == 7.0) && matches!(checked_geometry_1.get(), Point3 {
                 x: 4.0,
                 y: 5.0,
                 z: 6.0
-            },
-            axis_direction: Vector3 {
+            }) && matches!(checked_geometry_2.get(), Vector3 {
                 x: 0.0,
                 y: 1.0,
                 z: 0.0
-            },
-            radius: Length(7.0),
-            shape: HelixShape::Cylindrical { pitch },
-            revolutions: 9.25,
-            clockwise: false,
-            ..
-        } if pitch.get() == Length(8.0)
+            })
     ));
 }
 
 #[test]
 fn semantic_writer_round_trips_slash_named_helix() {
-    use cadmpeg_ir::features::{FeatureDefinition, HelixPitch, HelixShape, Length};
     use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::{
+        features::{FeatureDefinition, FeatureOperation, HelixShape},
+        scalar::NonZeroLength,
+    };
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -326,41 +338,45 @@ fn semantic_writer_round_trips_slash_named_helix() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
-        decoded.ir().model.features[0].definition,
-        FeatureDefinition::Helix {
-            radius: Length(4.0),
+        decoded.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Helix {
+            radius: actual_radius,
             shape: HelixShape::Cylindrical { pitch },
-            revolutions: 3.5,
+            revolutions,
             ..
-        } if pitch.get() == Length(2.0)
+        }) if revolutions.get() == 3.5 && (pitch.get() == 2.0) && actual_radius.get() == 4.0
     ));
 
     {
         let mut ir_edit = decoded.ir_mut();
-        let FeatureDefinition::Helix {
-            axis_origin,
-            axis_direction,
-            radius,
-            shape: HelixShape::Cylindrical { pitch },
-            revolutions,
-            clockwise,
-            ..
-        } = &mut ir_edit.model.features[0].definition
-        else {
-            panic!("typed helix");
-        };
-        *axis_origin = Point3::new(4.0, 5.0, 6.0);
-        *axis_direction = Vector3::new(0.0, 1.0, 0.0);
-        *radius = Length(7.0);
-        *pitch = HelixPitch::new(Length(8.0)).unwrap();
-        *revolutions = 9.25;
-        *clockwise = true;
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::Helix {
+                axis_origin,
+                axis_direction,
+                radius,
+                shape: HelixShape::Cylindrical { pitch },
+                revolutions,
+                clockwise,
+                ..
+            }) = definition
+            else {
+                panic!("typed helix");
+            };
+            *axis_origin =
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0)).unwrap();
+            *axis_direction =
+                cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap();
+            *radius = cadmpeg_ir::scalar::PositiveLength::new(7.0).unwrap();
+            *pitch = NonZeroLength::new(8.0).unwrap();
+            *revolutions = cadmpeg_ir::scalar::PositiveReal::new(9.25).unwrap();
+            *clockwise = true;
+        });
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -381,7 +397,10 @@ fn semantic_writer_round_trips_slash_named_helix() {
 
 #[test]
 fn semantic_writer_round_trips_native_axis_helix() {
-    use cadmpeg_ir::features::{Angle, FeatureDefinition, Length};
+    use cadmpeg_ir::{
+        features::{FeatureDefinition, FeatureOperation},
+        scalar::{Angle, Length},
+    };
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -398,49 +417,53 @@ fn semantic_writer_round_trips_native_axis_helix() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let feature = &decoded.ir().model.features[0];
     let native_ref = feature.native_ref.as_deref().unwrap();
     assert!(matches!(
-        &feature.definition,
-        FeatureDefinition::HelixNativeAxis {
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::HelixNativeAxis {
             axis_native_ref,
-            axial_rise: Length(3200.0),
-            pitch: Length(12800.0),
-            revolutions: 0.25,
-            start_angle: Angle(0.0),
+            axial_rise: actual_axial_rise,
+            pitch: actual_pitch,
+            revolutions,
+            start_angle: Angle::ZERO,
             clockwise: false,
-        } if axis_native_ref == native_ref
+        }) if revolutions.get() == 0.25 && (axis_native_ref == native_ref) && actual_axial_rise.get() == 3200.0 && actual_pitch.get() == 12800.0
     ));
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.message
             == "1 typed feature(s) retain native or unresolved required operation operands."
     }));
-    let findings = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).findings;
+    let findings = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+        .expect("resource allocation did not fail")
+        .findings;
     assert!(findings.is_empty(), "{findings:#?}");
 
     {
         let mut ir_edit = decoded.ir_mut();
-        let FeatureDefinition::HelixNativeAxis {
-            axial_rise,
-            pitch,
-            revolutions,
-            start_angle,
-            clockwise,
-            ..
-        } = &mut ir_edit.model.features[0].definition
-        else {
-            panic!("typed native-axis helix");
-        };
-        *axial_rise = Length(4000.0);
-        *pitch = Length(16000.0);
-        *revolutions = 0.5;
-        *start_angle = Angle(std::f64::consts::FRAC_PI_2);
-        *clockwise = true;
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::HelixNativeAxis {
+                axial_rise,
+                pitch,
+                revolutions,
+                start_angle,
+                clockwise,
+                ..
+            }) = definition
+            else {
+                panic!("typed native-axis helix");
+            };
+            *axial_rise = Length::new(4000.0).unwrap();
+            *pitch = Length::new(16000.0).unwrap();
+            *revolutions = cadmpeg_ir::scalar::PositiveReal::new(0.5).unwrap();
+            *start_angle = Angle::new(std::f64::consts::FRAC_PI_2).unwrap();
+            *clockwise = true;
+        });
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -457,21 +480,21 @@ fn semantic_writer_round_trips_native_axis_helix() {
     assert_eq!(native.parameters["D7"], "90°");
     assert_eq!(native.properties["Clockwise"], "true");
     assert!(matches!(
-        regenerated.ir().model.features[0].definition,
-        FeatureDefinition::HelixNativeAxis {
-            axial_rise: Length(4000.0),
-            pitch: Length(16000.0),
-            revolutions: 0.5,
-            start_angle: Angle(value),
+        regenerated.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::HelixNativeAxis {
+            axial_rise: actual_axial_rise,
+            pitch: actual_pitch,
+            revolutions,
+            start_angle: value,
             clockwise: true,
             ..
-        } if (value - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
+        }) if revolutions.get() == 0.5 && ((value.get() - std::f64::consts::FRAC_PI_2).abs() < EPS_SCALAR_ROUND_TRIP) && actual_axial_rise.get() == 4000.0 && actual_pitch.get() == 16000.0
     ));
 }
 
 #[test]
 fn semantic_writer_rejects_embedded_helix_geometry_edits() {
-    use cadmpeg_ir::features::{FeatureDefinition, Length};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -488,16 +511,17 @@ fn semantic_writer_rejects_embedded_helix_geometry_edits() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
         update_sldprt_native(&mut ir_edit, |native| {
             let description = b"boundary_polyline mesh";
             let schema = b"SCH_3201255_32001_13006";
             let mut stream = b"PS\0\0".to_vec();
-            stream.extend((description.len() as u16).to_be_bytes());
+            stream
+                .extend((u16::try_from(description.len()).expect("length fits u16")).to_be_bytes());
             stream.extend(description);
-            stream.push(schema.len() as u8);
+            stream.push(u8::try_from(schema.len()).expect("length fits u8"));
             stream.extend(schema);
             stream.extend([0xff, 0xff, 0xff, 0xff, 0x00, 0x22]);
             stream.extend((65u32 * 3).to_be_bytes());
@@ -516,16 +540,27 @@ fn semantic_writer_rejects_embedded_helix_geometry_edits() {
             native.feature_input_lanes[0].native_payload.extend(stream);
         });
         let native = sldprt_native(&ir_edit);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         crate::resolved_features::holes::project_helix_axes(
+            &ctx,
             &mut ir_edit.model.features,
             &native.feature_histories,
             &native.feature_input_lanes,
-        );
-        let FeatureDefinition::Helix { radius, .. } = &mut ir_edit.model.features[0].definition
-        else {
-            panic!("embedded helix geometry");
-        };
-        *radius = Length(9.0);
+        )
+        .unwrap();
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::Helix { radius, .. }) = definition
+            else {
+                panic!("embedded helix geometry");
+            };
+            *radius = cadmpeg_ir::scalar::PositiveLength::new(9.0).unwrap();
+        });
     }
 
     let error = crate::test_support::plan_inherited_write(
@@ -544,7 +579,12 @@ fn semantic_writer_rejects_embedded_helix_geometry_edits() {
 
 #[test]
 fn semantic_writer_round_trips_wrap() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length, ProfileRef, WrapMode};
+    use cadmpeg_ir::{
+        features::{
+            FaceSelection, FeatureDefinition, FeatureOperation, PlanarProfileRef, WrapMode,
+        },
+        scalar::PositiveLength,
+    };
 
     let base_bytes = sldprt_with_body(&triangle_body());
     let base = SldprtCodec
@@ -562,34 +602,36 @@ fn semantic_writer_round_trips_wrap() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let face_id = decoded.ir().model.faces[0].id.clone();
     assert!(matches!(
-        &decoded.ir().model.features[0].definition,
-        FeatureDefinition::Wrap {
-            profile: ProfileRef::Faces(faces),
+        decoded.ir().model.features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Wrap {
+            profile,
             face: FaceSelection::Resolved { faces: targets, native },
-            mode: WrapMode::Emboss { depth: Length(2.0) },
-        } if faces == std::slice::from_ref(&face_id) && targets == std::slice::from_ref(&face_id) && native == &face
-    ));
+            mode: WrapMode::Emboss { depth: actual_depth },
+        }) if matches!((profile,), (PlanarProfileRef::Faces(faces),) if (faces == std::slice::from_ref(&face_id) && targets == std::slice::from_ref(&face_id) && native == &face) && actual_depth.get() == 2.0)));
 
     {
         let mut ir_edit = decoded.ir_mut();
-        let FeatureDefinition::Wrap {
-            profile,
-            face,
-            mode,
-        } = &mut ir_edit.model.features[0].definition
-        else {
-            panic!("typed wrap");
-        };
-        *profile = ProfileRef::Faces(vec![face_id.clone()]);
-        *face = FaceSelection::Faces(vec![face_id.clone()]);
-        *mode = WrapMode::Deboss { depth: Length(3.5) };
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::Wrap {
+                profile,
+                face,
+                mode,
+            }) = definition
+            else {
+                panic!("typed wrap");
+            };
+            *profile = cadmpeg_ir::features::PlanarProfileRef::Faces(vec![face_id.clone()]);
+            *face = FaceSelection::Faces(vec![face_id.clone()]);
+            *mode = WrapMode::Deboss {
+                depth: PositiveLength::new(3.5).unwrap(),
+            };
+        });
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -605,24 +647,27 @@ fn semantic_writer_round_trips_wrap() {
     assert_eq!(native.properties["Method"], "Spline");
     assert_eq!(native.parameters["Depth"], "3.5mm");
     assert!(matches!(
-        regenerated.ir().model.features[0].definition,
-        FeatureDefinition::Wrap {
-            mode: WrapMode::Deboss { depth: Length(3.5) },
+        regenerated.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Wrap {
+            mode: WrapMode::Deboss { depth: actual_depth },
             ..
-        }
+        }) if actual_depth.get() == 3.5
     ));
 
     let scribed = regenerated;
-    let mut scribed = cadmpeg_test_support::EditableDecodeResult::from(scribed);
+    let mut scribed = EditableDecodeResult::from(scribed);
     {
         let mut ir_edit = scribed.ir_mut();
-        let FeatureDefinition::Wrap { mode, .. } = &mut ir_edit.model.features[0].definition else {
-            panic!("typed wrap");
-        };
-        *mode = WrapMode::Scribe;
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::Wrap { mode, .. }) = definition
+            else {
+                panic!("typed wrap");
+            };
+            *mode = WrapMode::Scribe;
+        });
     }
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         scribed.ir(),
         scribed.source_fidelity(),
         &mut encoded,
@@ -635,18 +680,21 @@ fn semantic_writer_round_trips_wrap() {
     assert_eq!(native.properties["Mode"], "Scribe");
     assert!(!native.parameters.contains_key("Depth"));
     assert!(matches!(
-        scribed.ir().model.features[0].definition,
-        FeatureDefinition::Wrap {
+        scribed.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Wrap {
             mode: WrapMode::Scribe,
             ..
-        }
+        })
     ));
 }
 
 #[test]
 fn semantic_writer_round_trips_move_copy_body() {
-    use cadmpeg_ir::features::{Angle, AxisAngle, BodySelection, FeatureDefinition};
     use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::{
+        features::{AxisAngle, BodySelection, FeatureDefinition, FeatureOperation},
+        scalar::Angle,
+    };
 
     let base_bytes = sldprt_with_body(&triangle_body());
     let base = SldprtCodec
@@ -664,46 +712,59 @@ fn semantic_writer_round_trips_move_copy_body() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let body_id = decoded.ir().model.bodies[0].id.clone();
     assert!(matches!(
-        &decoded.ir().model.features[0].definition,
-        FeatureDefinition::MoveBody {
+        decoded.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::MoveBody {
             bodies: BodySelection::Resolved { bodies, native },
-            translation: Vector3 { x: 1.0, y: 2.0, z: 3.0 },
+            translation: geometry_1,
             rotation: Some(AxisAngle {
-                origin: Point3 { x: 4.0, y: 5.0, z: 6.0 },
-                direction: Vector3 { x: 0.0, y: 0.0, z: 1.0 },
-                angle: Angle(angle),
+                origin: geometry_2,
+                direction: geometry_3,
+                angle,
             }),
             copies: 2,
-        } if bodies == std::slice::from_ref(&body_id) && native == &body
-            && (*angle - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
+        }) if ( bodies.as_slice() == std::slice::from_ref(&body_id) && native == &body
+            && (angle.get() - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12) && matches!(geometry_1.get(), Vector3 { x: 1.0, y: 2.0, z: 3.0 }) && matches!(geometry_2.get(), Point3 { x: 4.0, y: 5.0, z: 6.0 }) && matches!(geometry_3.get(), Vector3 { x: 0.0, y: 0.0, z: 1.0 })
     ));
 
     {
         let mut ir_edit = decoded.ir_mut();
-        let FeatureDefinition::MoveBody {
-            bodies,
-            translation,
-            rotation,
-            copies,
-        } = &mut ir_edit.model.features[0].definition
-        else {
-            panic!("typed body motion");
-        };
-        *bodies = BodySelection::Bodies(vec![body_id.clone()]);
-        *translation = Vector3::new(-7.0, 8.0, 9.0);
-        *rotation = Some(AxisAngle {
-            origin: Point3::new(10.0, 11.0, 12.0),
-            direction: Vector3::new(0.0, 1.0, 0.0),
-            angle: Angle(0.25),
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::MoveBody {
+                bodies,
+                translation,
+                rotation,
+                copies,
+            }) = definition
+            else {
+                panic!("typed body motion");
+            };
+            *bodies = BodySelection::Bodies(
+                cadmpeg_ir::features::DistinctMembers::try_from(
+                    vec![body_id.clone()],
+                    &cadmpeg_test_support::service_decode_context(),
+                )
+                .expect("distinct bodies"),
+            );
+            *translation =
+                cadmpeg_ir::features::FiniteVector3::new(Vector3::new(-7.0, 8.0, 9.0)).unwrap();
+            *rotation = Some(AxisAngle {
+                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(10.0, 11.0, 12.0))
+                    .unwrap(),
+                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                    0.0, 1.0, 0.0,
+                ))
+                .unwrap(),
+                angle: Angle::new(0.25).unwrap(),
+            });
+            *copies = 3;
         });
-        *copies = 3;
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -722,20 +783,22 @@ fn semantic_writer_round_trips_move_copy_body() {
     assert_eq!(native.parameters["Rotation"], "0.25rad");
 
     let translated = regenerated;
-    let mut translated = cadmpeg_test_support::EditableDecodeResult::from(translated);
+    let mut translated = EditableDecodeResult::from(translated);
     {
         let mut ir_edit = translated.ir_mut();
-        let FeatureDefinition::MoveBody {
-            rotation, copies, ..
-        } = &mut ir_edit.model.features[0].definition
-        else {
-            panic!("typed body motion");
-        };
-        *rotation = None;
-        *copies = 0;
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::MoveBody {
+                rotation, copies, ..
+            }) = definition
+            else {
+                panic!("typed body motion");
+            };
+            *rotation = None;
+            *copies = 0;
+        });
     }
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         translated.ir(),
         translated.source_fidelity(),
         &mut encoded,
@@ -750,18 +813,21 @@ fn semantic_writer_round_trips_move_copy_body() {
     assert!(!native.properties.contains_key("RotationAxis"));
     assert!(!native.parameters.contains_key("Rotation"));
     assert!(matches!(
-        translated.ir().model.features[0].definition,
-        FeatureDefinition::MoveBody {
+        translated.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::MoveBody {
             rotation: None,
             copies: 0,
             ..
-        }
+        })
     ));
 }
 
 #[test]
 fn semantic_writer_round_trips_offset_surface() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length};
+    use cadmpeg_ir::{
+        features::{FaceSelection, FeatureDefinition, FeatureOperation},
+        scalar::Length,
+    };
 
     let base_bytes = sldprt_with_body(&triangle_body());
     let base = SldprtCodec
@@ -779,29 +845,31 @@ fn semantic_writer_round_trips_offset_surface() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let face_id = decoded.ir().model.faces[0].id.clone();
     assert!(matches!(
-        &decoded.ir().model.features[0].definition,
-        FeatureDefinition::OffsetSurface {
+        decoded.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
             faces: FaceSelection::Resolved { faces, native },
-            distance: Some(Length(2.0)),
-        } if faces == std::slice::from_ref(&face_id) && native == &face
+            distance: Some(actual_distance),
+        }) if (faces == std::slice::from_ref(&face_id) && native == &face) && actual_distance.get() == 2.0
     ));
 
     {
         let mut ir_edit = decoded.ir_mut();
-        let FeatureDefinition::OffsetSurface { faces, distance } =
-            &mut ir_edit.model.features[0].definition
-        else {
-            panic!("typed offset surface");
-        };
-        *faces = FaceSelection::Faces(vec![face_id.clone()]);
-        *distance = Some(Length(-3.5));
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::OffsetSurface { faces, distance }) =
+                definition
+            else {
+                panic!("typed offset surface");
+            };
+            *faces = FaceSelection::Faces(vec![face_id.clone()]);
+            *distance = Some(Length::new(-3.5).unwrap());
+        });
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -815,17 +883,17 @@ fn semantic_writer_round_trips_offset_surface() {
     assert_eq!(native.properties["Knit"], "true");
     assert_eq!(native.parameters["Distance"], "-3.5mm");
     assert!(matches!(
-        regenerated.ir().model.features[0].definition,
-        FeatureDefinition::OffsetSurface {
-            distance: Some(Length(-3.5)),
+        regenerated.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
+            distance: Some(actual_distance),
             ..
-        }
+        }) if actual_distance.get() == -3.5
     ));
 }
 
 #[test]
 fn semantic_writer_round_trips_knit_surface() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length};
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
 
     let base_bytes = sldprt_with_body(&triangle_body());
     let base = SldprtCodec
@@ -843,37 +911,39 @@ fn semantic_writer_round_trips_knit_surface() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let face_id = decoded.ir().model.faces[0].id.clone();
     assert!(matches!(
-        &decoded.ir().model.features[0].definition,
-        FeatureDefinition::KnitSurface {
+        decoded.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::KnitSurface {
             faces: FaceSelection::Resolved { faces, native },
             merge_entities: Some(false),
             create_solid: Some(false),
-            gap_tolerance: Some(Length(0.01)),
-        } if faces == std::slice::from_ref(&face_id) && native == &face
+            gap_tolerance: Some(actual_gap_tolerance),
+        }) if (faces == std::slice::from_ref(&face_id) && native == &face) && actual_gap_tolerance.get() == 0.01
     ));
 
     {
         let mut ir_edit = decoded.ir_mut();
-        let FeatureDefinition::KnitSurface {
-            faces,
-            merge_entities,
-            create_solid,
-            gap_tolerance,
-        } = &mut ir_edit.model.features[0].definition
-        else {
-            panic!("typed knit surface");
-        };
-        *faces = FaceSelection::Faces(vec![face_id.clone()]);
-        *merge_entities = Some(true);
-        *create_solid = Some(true);
-        *gap_tolerance = None;
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::KnitSurface {
+                faces,
+                merge_entities,
+                create_solid,
+                gap_tolerance,
+            }) = definition
+            else {
+                panic!("typed knit surface");
+            };
+            *faces = FaceSelection::Faces(vec![face_id.clone()]);
+            *merge_entities = Some(true);
+            *create_solid = Some(true);
+            *gap_tolerance = None;
+        });
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -889,19 +959,19 @@ fn semantic_writer_round_trips_knit_surface() {
     assert_eq!(native.properties["CheckGeometry"], "true");
     assert!(!native.parameters.contains_key("GapTolerance"));
     assert!(matches!(
-        regenerated.ir().model.features[0].definition,
-        FeatureDefinition::KnitSurface {
+        regenerated.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::KnitSurface {
             merge_entities: Some(true),
             create_solid: Some(true),
             gap_tolerance: None,
             ..
-        }
+        })
     ));
 }
 
 #[test]
 fn semantic_writer_round_trips_cut_with_surface() {
-    use cadmpeg_ir::features::{BodySelection, FaceSelection, FeatureDefinition};
+    use cadmpeg_ir::features::{BodySelection, FaceSelection, FeatureDefinition, FeatureOperation};
 
     let base_bytes = sldprt_with_body(&triangle_body());
     let base = SldprtCodec
@@ -920,36 +990,44 @@ fn semantic_writer_round_trips_cut_with_surface() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let body_id = decoded.ir().model.bodies[0].id.clone();
     let face_id = decoded.ir().model.faces[0].id.clone();
     assert!(matches!(
-        &decoded.ir().model.features[0].definition,
-        FeatureDefinition::CutWithSurface {
+        decoded.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::CutWithSurface {
             targets: BodySelection::Resolved { bodies, native: body_native },
             tools: FaceSelection::Resolved { faces, native: face_native },
             reverse: Some(false),
-        } if bodies == std::slice::from_ref(&body_id) && body_native == &body
+        }) if bodies.as_slice() == std::slice::from_ref(&body_id) && body_native == &body
             && faces == std::slice::from_ref(&face_id) && face_native == &face
     ));
 
     {
         let mut ir_edit = decoded.ir_mut();
-        let FeatureDefinition::CutWithSurface {
-            targets,
-            tools,
-            reverse,
-        } = &mut ir_edit.model.features[0].definition
-        else {
-            panic!("typed surface cut");
-        };
-        *targets = BodySelection::Bodies(vec![body_id.clone()]);
-        *tools = FaceSelection::Faces(vec![face_id.clone()]);
-        *reverse = Some(true);
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::CutWithSurface {
+                targets,
+                tools,
+                reverse,
+            }) = definition
+            else {
+                panic!("typed surface cut");
+            };
+            *targets = BodySelection::Bodies(
+                cadmpeg_ir::features::DistinctMembers::try_from(
+                    vec![body_id.clone()],
+                    &cadmpeg_test_support::service_decode_context(),
+                )
+                .expect("distinct bodies"),
+            );
+            *tools = FaceSelection::Faces(vec![face_id.clone()]);
+            *reverse = Some(true);
+        });
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -964,17 +1042,17 @@ fn semantic_writer_round_trips_cut_with_surface() {
     assert_eq!(native.properties["Reverse"], "true");
     assert_eq!(native.properties["ConsumeTool"], "false");
     assert!(matches!(
-        regenerated.ir().model.features[0].definition,
-        FeatureDefinition::CutWithSurface {
+        regenerated.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::CutWithSurface {
             reverse: Some(true),
             ..
-        }
+        })
     ));
 }
 
 #[test]
 fn semantic_writer_preserves_missing_cut_with_surface_side_flag() {
-    use cadmpeg_ir::features::{BodySelection, FaceSelection, FeatureDefinition};
+    use cadmpeg_ir::features::{BodySelection, FaceSelection, FeatureDefinition, FeatureOperation};
 
     let base_bytes = sldprt_with_body(&triangle_body());
     let base = SldprtCodec
@@ -990,16 +1068,18 @@ fn semantic_writer_preserves_missing_cut_with_surface_side_flag() {
     );
     let mut source = base_bytes;
     source.extend(make_block(0x42, "Contents/Keywords", xml.as_bytes()));
-    let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .unwrap();
+    let decoded = EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap(),
+    );
     assert!(matches!(
-        decoded.ir().model.features[0].definition,
-        FeatureDefinition::CutWithSurface {
+        decoded.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::CutWithSurface {
             targets: BodySelection::Resolved { .. },
             tools: FaceSelection::Resolved { .. },
             reverse: None,
-        }
+        })
     ));
 
     let mut encoded = Vec::new();
@@ -1015,15 +1095,37 @@ fn semantic_writer_preserves_missing_cut_with_surface_side_flag() {
     let native = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert!(!native.properties.contains_key("Reverse"));
     assert!(matches!(
-        regenerated.ir().model.features[0].definition,
-        FeatureDefinition::CutWithSurface { reverse: None, .. }
+        regenerated.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::CutWithSurface { reverse: None, .. })
     ));
 }
 
 #[test]
 fn semantic_writer_round_trips_filled_surface() {
+    filled_surface_round_trip(cadmpeg_ir::features::FilledSurfaceContinuityState::uniform(
+        cadmpeg_ir::features::SurfaceContinuity::Curvature,
+    ));
+}
+
+#[test]
+fn semantic_writer_accepts_all_equal_per_boundary_continuity() {
+    for conditions in [
+        vec![cadmpeg_ir::features::SurfaceContinuity::Curvature],
+        vec![cadmpeg_ir::features::SurfaceContinuity::Curvature; 2],
+    ] {
+        filled_surface_round_trip(
+            cadmpeg_ir::features::FilledSurfaceContinuityState::per_boundary(
+                cadmpeg_ir::features::NonEmptyMembers::try_from(conditions).unwrap(),
+            ),
+        );
+    }
+}
+
+fn filled_surface_round_trip(
+    edited_continuity: cadmpeg_ir::features::FilledSurfaceContinuityState,
+) {
     use cadmpeg_ir::features::{
-        EdgeSelection, FaceSelection, FeatureDefinition, SurfaceContinuity,
+        EdgeSelection, FaceSelection, FeatureDefinition, FeatureOperation, SurfaceContinuity,
     };
 
     let base_bytes = sldprt_with_body(&triangle_body());
@@ -1043,44 +1145,44 @@ fn semantic_writer_round_trips_filled_surface() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let edge_id = decoded.ir().model.edges[0].id.clone();
     let face_id = decoded.ir().model.faces[0].id.clone();
     assert!(matches!(
-        &decoded.ir().model.features[0].definition,
-        FeatureDefinition::FilledSurface {
+        decoded.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::FilledSurface {
             boundary: cadmpeg_ir::features::SurfaceBoundary::Edges(EdgeSelection::Resolved { edges, native: edge_native }),
             support_faces: FaceSelection::Resolved { faces, native: face_native },
             continuity,
             merge_result: Some(false),
-        } if continuity.uniform_value() == Some(SurfaceContinuity::Tangent)
+        }) if continuity.uniform_value() == Some(SurfaceContinuity::Tangent)
             && edges == std::slice::from_ref(&edge_id) && edge_native == &edge
             && faces == std::slice::from_ref(&face_id) && face_native == &face
     ));
 
     {
         let mut ir_edit = decoded.ir_mut();
-        let FeatureDefinition::FilledSurface {
-            boundary,
-            support_faces,
-            continuity,
-            merge_result,
-        } = &mut ir_edit.model.features[0].definition
-        else {
-            panic!("typed filled surface");
-        };
-        *boundary = cadmpeg_ir::features::SurfaceBoundary::Edges(EdgeSelection::Edges(vec![
-            edge_id.clone(),
-        ]));
-        *support_faces = FaceSelection::Faces(vec![face_id.clone()]);
-        *continuity = cadmpeg_ir::features::FilledSurfaceContinuityState::uniform(
-            SurfaceContinuity::Curvature,
-        );
-        *merge_result = Some(true);
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::FilledSurface {
+                boundary,
+                support_faces,
+                continuity,
+                merge_result,
+            }) = definition
+            else {
+                panic!("typed filled surface");
+            };
+            *boundary = cadmpeg_ir::features::SurfaceBoundary::Edges(EdgeSelection::Edges(vec![
+                edge_id.clone(),
+            ]));
+            *support_faces = FaceSelection::Faces(vec![face_id.clone()]);
+            *continuity = edited_continuity;
+            *merge_result = Some(true);
+        });
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1096,18 +1198,20 @@ fn semantic_writer_round_trips_filled_surface() {
     assert_eq!(native.properties["MergeResult"], "true");
     assert_eq!(native.properties["Optimize"], "true");
     assert!(matches!(
-        regenerated.ir().model.features[0].definition,
-        FeatureDefinition::FilledSurface {
+        regenerated.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::FilledSurface {
             ref continuity,
             merge_result: Some(true),
             ..
-        } if continuity.uniform_value() == Some(SurfaceContinuity::Curvature)
+        }) if continuity.uniform_value() == Some(SurfaceContinuity::Curvature)
     ));
 }
 
 #[test]
 fn semantic_writer_round_trips_trim_surface() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, PathRef, TrimRegion};
+    use cadmpeg_ir::features::{
+        FaceSelection, FeatureDefinition, FeatureOperation, PathRef, TrimRegion,
+    };
 
     let base_bytes = sldprt_with_body(&triangle_body());
     let base = SldprtCodec
@@ -1126,34 +1230,39 @@ fn semantic_writer_round_trips_trim_surface() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let edge_id = decoded.ir().model.edges[0].id.clone();
     let face_id = decoded.ir().model.faces[0].id.clone();
     assert!(matches!(
-        &decoded.ir().model.features[0].definition,
-        FeatureDefinition::TrimSurface {
+        decoded.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::TrimSurface {
             faces: FaceSelection::Resolved { faces, native },
             tool: PathRef::Edges(edges),
             keep: TrimRegion::Inside,
             ..
-        } if faces == std::slice::from_ref(&face_id) && native == &face && edges == std::slice::from_ref(&edge_id)
+        }) if faces == std::slice::from_ref(&face_id) && native == &face && edges == std::slice::from_ref(&edge_id)
     ));
 
     {
         let mut ir_edit = decoded.ir_mut();
-        let FeatureDefinition::TrimSurface {
-            faces, tool, keep, ..
-        } = &mut ir_edit.model.features[0].definition
-        else {
-            panic!("typed trim surface");
-        };
-        *faces = FaceSelection::Faces(vec![face_id.clone()]);
-        *tool = PathRef::Edges(vec![edge_id.clone()]);
-        *keep = TrimRegion::Outside;
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::TrimSurface {
+                faces,
+                tool,
+                keep,
+                ..
+            }) = definition
+            else {
+                panic!("typed trim surface");
+            };
+            *faces = FaceSelection::Faces(vec![face_id.clone()]);
+            *tool = PathRef::Edges(vec![edge_id.clone()]);
+            *keep = TrimRegion::Outside;
+        });
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1168,17 +1277,19 @@ fn semantic_writer_round_trips_trim_surface() {
     assert_eq!(native.properties["Keep"], "Outside");
     assert_eq!(native.properties["Split"], "false");
     assert!(matches!(
-        regenerated.ir().model.features[0].definition,
-        FeatureDefinition::TrimSurface {
+        regenerated.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::TrimSurface {
             keep: TrimRegion::Outside,
             ..
-        }
+        })
     ));
 }
 
 #[test]
 fn semantic_writer_round_trips_extend_surface() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length, SurfaceExtension};
+    use cadmpeg_ir::features::{
+        FaceSelection, FeatureDefinition, FeatureOperation, SurfaceExtension,
+    };
 
     let base_bytes = sldprt_with_body(&triangle_body());
     let base = SldprtCodec
@@ -1196,34 +1307,36 @@ fn semantic_writer_round_trips_extend_surface() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let face_id = decoded.ir().model.faces[0].id.clone();
     assert!(matches!(
-        &decoded.ir().model.features[0].definition,
-        FeatureDefinition::ExtendSurface {
+        decoded.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
             faces: FaceSelection::Resolved { faces, native },
-            distance: Some(Length(2.0)),
+            distance: Some(actual_distance),
             method: SurfaceExtension::Natural,
-        } if faces == std::slice::from_ref(&face_id) && native == &face
+        }) if (faces == std::slice::from_ref(&face_id) && native == &face) && actual_distance.get() == 2.0
     ));
 
     {
         let mut ir_edit = decoded.ir_mut();
-        let FeatureDefinition::ExtendSurface {
-            faces,
-            distance,
-            method,
-        } = &mut ir_edit.model.features[0].definition
-        else {
-            panic!("typed extended surface");
-        };
-        *faces = FaceSelection::Faces(vec![face_id.clone()]);
-        *distance = Some(Length(4.5));
-        *method = SurfaceExtension::Linear;
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
+                faces,
+                distance,
+                method,
+            }) = definition
+            else {
+                panic!("typed extended surface");
+            };
+            *faces = FaceSelection::Faces(vec![face_id.clone()]);
+            *distance = Some(cadmpeg_ir::scalar::PositiveLength::new(4.5).unwrap());
+            *method = SurfaceExtension::Linear;
+        });
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1238,19 +1351,19 @@ fn semantic_writer_round_trips_extend_surface() {
     assert_eq!(native.properties["CornerMode"], "Merge");
     assert_eq!(native.parameters["Distance"], "4.5mm");
     assert!(matches!(
-        regenerated.ir().model.features[0].definition,
-        FeatureDefinition::ExtendSurface {
-            distance: Some(Length(4.5)),
+        regenerated.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
+            distance: Some(actual_distance),
             method: SurfaceExtension::Linear,
             ..
-        }
+        }) if actual_distance.get() == 4.5
     ));
 }
 
 #[test]
 fn semantic_writer_round_trips_all_ruled_surface_modes() {
     use cadmpeg_ir::features::{
-        EdgeSelection, FaceSelection, FeatureDefinition, Length, RuledSurfaceMode,
+        EdgeSelection, FaceSelection, FeatureDefinition, FeatureOperation, RuledSurfaceMode,
     };
     use cadmpeg_ir::math::Vector3;
 
@@ -1271,43 +1384,45 @@ fn semantic_writer_round_trips_all_ruled_surface_modes() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let edge_id = decoded.ir().model.edges[0].id.clone();
     let face_id = decoded.ir().model.faces[0].id.clone();
     assert!(matches!(
-        &decoded.ir().model.features[0].definition,
-        FeatureDefinition::RuledSurface {
+        decoded.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::RuledSurface {
             edges: EdgeSelection::Resolved { edges, native: edge_native },
             support_faces: FaceSelection::Resolved { faces, native: face_native },
             mode: RuledSurfaceMode::Direction {
-                direction: Vector3 { x: 0.0, y: 0.0, z: 1.0 },
-                distance: Length(2.0),
+                direction: geometry_1,
+                distance: actual_distance,
             },
             ..
-        } if edges == std::slice::from_ref(&edge_id) && edge_native == &edge
-            && faces == std::slice::from_ref(&face_id) && face_native == &face
+        }) if ( (edges == std::slice::from_ref(&edge_id) && edge_native == &edge
+            && faces == std::slice::from_ref(&face_id) && face_native == &face) && actual_distance.get() == 2.0) && matches!(geometry_1.get(), Vector3 { x: 0.0, y: 0.0, z: 1.0 })
     ));
 
     {
         let mut ir_edit = decoded.ir_mut();
-        let FeatureDefinition::RuledSurface {
-            edges,
-            support_faces,
-            mode,
-            ..
-        } = &mut ir_edit.model.features[0].definition
-        else {
-            panic!("typed ruled surface");
-        };
-        *edges = EdgeSelection::Edges(vec![edge_id.clone()]);
-        *support_faces = FaceSelection::Faces(vec![face_id.clone()]);
-        *mode = RuledSurfaceMode::Normal {
-            distance: Length(3.0),
-        };
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::RuledSurface {
+                edges,
+                support_faces,
+                mode,
+                ..
+            }) = definition
+            else {
+                panic!("typed ruled surface");
+            };
+            *edges = EdgeSelection::Edges(vec![edge_id.clone()]);
+            *support_faces = FaceSelection::Faces(vec![face_id.clone()]);
+            *mode = RuledSurfaceMode::Normal {
+                distance: cadmpeg_ir::scalar::PositiveLength::new(3.0).unwrap(),
+            };
+        });
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1316,7 +1431,7 @@ fn semantic_writer_round_trips_all_ruled_surface_modes() {
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let mut regenerated = cadmpeg_test_support::EditableDecodeResult::from(regenerated);
+    let mut regenerated = EditableDecodeResult::from(regenerated);
     let native = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(native.properties["Mode"], "Normal");
     assert!(!native.properties.contains_key("Direction"));
@@ -1325,17 +1440,19 @@ fn semantic_writer_round_trips_all_ruled_surface_modes() {
 
     {
         let mut ir_edit = regenerated.ir_mut();
-        let FeatureDefinition::RuledSurface { mode, .. } =
-            &mut ir_edit.model.features[0].definition
-        else {
-            panic!("typed ruled surface");
-        };
-        *mode = RuledSurfaceMode::Tangent {
-            distance: Length(4.0),
-        };
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::RuledSurface { mode, .. }) =
+                definition
+            else {
+                panic!("typed ruled surface");
+            };
+            *mode = RuledSurfaceMode::Tangent {
+                distance: cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap(),
+            };
+        });
     }
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         regenerated.ir(),
         regenerated.source_fidelity(),
         &mut encoded,
@@ -1345,19 +1462,19 @@ fn semantic_writer_round_trips_all_ruled_surface_modes() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        tangent.ir().model.features[0].definition,
-        FeatureDefinition::RuledSurface {
+        tangent.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::RuledSurface {
             mode: RuledSurfaceMode::Tangent {
-                distance: Length(4.0)
+                distance: actual_distance
             },
             ..
-        }
+        }) if actual_distance.get() == 4.0
     ));
 }
 
 #[test]
 fn semantic_writer_round_trips_projected_curve() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, PathRef};
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation, PathRef};
     use cadmpeg_ir::math::Vector3;
 
     let base_bytes = sldprt_with_body(&triangle_body());
@@ -1377,40 +1494,42 @@ fn semantic_writer_round_trips_projected_curve() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let edge_id = decoded.ir().model.edges[0].id.clone();
     let face_id = decoded.ir().model.faces[0].id.clone();
     assert!(matches!(
-        &decoded.ir().model.features[0].definition,
-        FeatureDefinition::ProjectedCurve {
+        decoded.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::ProjectedCurve {
             source: PathRef::Edges(edges),
             target_faces: FaceSelection::Resolved { faces, native },
-            direction: cadmpeg_ir::features::CurveProjectionDirection::Vector(Vector3 { x: 0.0, y: 0.0, z: 1.0 }),
+            direction: cadmpeg_ir::features::CurveProjectionDirection::Vector(checked_geometry_1),
             bidirectional: Some(false),
-        } if edges == std::slice::from_ref(&edge_id) && faces == std::slice::from_ref(&face_id) && native == &face
+        }) if (edges == std::slice::from_ref(&edge_id) && faces == std::slice::from_ref(&face_id) && native == &face) && matches!(checked_geometry_1.get(), Vector3 { x: 0.0, y: 0.0, z: 1.0 })
     ));
 
     {
         let mut ir_edit = decoded.ir_mut();
-        let FeatureDefinition::ProjectedCurve {
-            source,
-            target_faces,
-            direction,
-            bidirectional,
-        } = &mut ir_edit.model.features[0].definition
-        else {
-            panic!("typed projected curve");
-        };
-        *source = PathRef::Edges(vec![edge_id.clone()]);
-        *target_faces = FaceSelection::Faces(vec![face_id.clone()]);
-        *direction = cadmpeg_ir::features::CurveProjectionDirection::State(
-            cadmpeg_ir::features::CurveProjectionDirectionState::TargetNormal,
-        );
-        *bidirectional = Some(true);
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::ProjectedCurve {
+                source,
+                target_faces,
+                direction,
+                bidirectional,
+            }) = definition
+            else {
+                panic!("typed projected curve");
+            };
+            *source = PathRef::Edges(vec![edge_id.clone()]);
+            *target_faces = FaceSelection::Faces(vec![face_id.clone()]);
+            *direction = cadmpeg_ir::features::CurveProjectionDirection::State(
+                cadmpeg_ir::features::CurveProjectionDirectionState::TargetNormal,
+            );
+            *bidirectional = Some(true);
+        });
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1426,20 +1545,20 @@ fn semantic_writer_round_trips_projected_curve() {
     assert_eq!(native.properties["Simplify"], "true");
     assert!(!native.properties.contains_key("Direction"));
     assert!(matches!(
-        regenerated.ir().model.features[0].definition,
-        FeatureDefinition::ProjectedCurve {
+        regenerated.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::ProjectedCurve {
             direction: cadmpeg_ir::features::CurveProjectionDirection::State(
                 cadmpeg_ir::features::CurveProjectionDirectionState::TargetNormal
             ),
             bidirectional: Some(true),
             ..
-        }
+        })
     ));
 }
 
 #[test]
 fn semantic_writer_round_trips_ordered_composite_curve() {
-    use cadmpeg_ir::features::{FeatureDefinition, PathRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PathRef};
 
     let base_bytes = sldprt_with_body(&triangle_body());
     let base = SldprtCodec
@@ -1458,13 +1577,13 @@ fn semantic_writer_round_trips_ordered_composite_curve() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let first_id = decoded.ir().model.edges[0].id.clone();
     let second_id = decoded.ir().model.edges[1].id.clone();
     assert!(matches!(
-        &decoded.ir().model.features[0].definition,
-        FeatureDefinition::CompositeCurve { segments, closed: false }
-            if segments == &vec![
+        decoded.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::CompositeCurve { segments, closed: false })
+            if segments.as_slice() == [
                 PathRef::Edges(vec![first_id.clone()]),
                 PathRef::Edges(vec![second_id.clone()]),
             ]
@@ -1472,20 +1591,22 @@ fn semantic_writer_round_trips_ordered_composite_curve() {
 
     {
         let mut ir_edit = decoded.ir_mut();
-        let FeatureDefinition::CompositeCurve { segments, closed } =
-            &mut ir_edit.model.features[0].definition
-        else {
-            panic!("typed composite curve");
-        };
-        *segments = vec![
-            PathRef::Edges(vec![second_id.clone()]),
-            PathRef::Edges(vec![first_id.clone()]),
-        ];
-        *closed = true;
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::CompositeCurve { segments, closed }) = definition else {
+                panic!("typed composite curve");
+            };
+            *segments = vec![
+                PathRef::Edges(vec![second_id.clone()]),
+                PathRef::Edges(vec![first_id.clone()]),
+            ]
+            .try_into()
+            .unwrap();
+            *closed = true;
+        });
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1502,9 +1623,9 @@ fn semantic_writer_round_trips_ordered_composite_curve() {
     assert_eq!(native.properties["Closed"], "true");
     assert_eq!(native.properties["Simplify"], "true");
     assert!(matches!(
-        &regenerated.ir().model.features[0].definition,
-        FeatureDefinition::CompositeCurve { segments, closed: true }
-            if segments == &vec![
+        regenerated.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::CompositeCurve { segments, closed: true })
+            if segments.as_slice() == [
                 PathRef::Edges(vec![second_id]),
                 PathRef::Edges(vec![first_id]),
             ]
@@ -1514,7 +1635,7 @@ fn semantic_writer_round_trips_ordered_composite_curve() {
 #[test]
 fn semantic_writer_round_trips_typed_revolution() {
     use cadmpeg_ir::features::{
-        Angle, AngularTermination, BooleanOp, FeatureDefinition, RevolveExtent,
+        AngularTermination, BooleanOp, FeatureDefinition, FeatureOperation, RevolveExtent,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -1527,46 +1648,50 @@ fn semantic_writer_round_trips_typed_revolution() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
-        &decoded.ir().model.features[0].definition,
-        FeatureDefinition::Revolve {
+        decoded.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Revolve {
             construction,
             op: BooleanOp::Join,
-        } if construction.profile().is_none()
+        }) if construction.profile().is_none()
             && construction.axis().is_some_and(|axis| matches!(axis,
                 cadmpeg_ir::features::RevolutionAxis {
-                    origin: Point3 { x: 10.0, y: 20.0, z: 30.0 },
-                    direction: Vector3 { x: 0.0, y: 1.0, z: 0.0 },
+                    origin: geometry_1,
+                    direction: geometry_2,
                     ..
-                }))
+                } if matches!(geometry_1.get(), Point3 { x: 10.0, y: 20.0, z: 30.0 }) && matches!(geometry_2.get(), Vector3 { x: 0.0, y: 1.0, z: 0.0 })))
             && matches!(construction.extent(), Some(RevolveExtent::OneSided {
-                    termination: AngularTermination::Angle { angle: Angle(value) },
-                }) if (*value - std::f64::consts::PI).abs() < EPS_PARTIAL_REVOLUTION_ANGLE)
+                    termination: AngularTermination::Angle { angle: value },
+                }) if (value.get() - std::f64::consts::PI).abs() < EPS_PARTIAL_REVOLUTION_ANGLE)
     ));
 
     {
         let mut ir_edit = decoded.ir_mut();
-        let FeatureDefinition::Revolve { construction, op } =
-            &mut ir_edit.model.features[0].definition
+        let updated_ir_edit_evaluation = &mut ir_edit.model.features[0].evaluation;
+        let mut updated_ir_edit_definition = updated_ir_edit_evaluation.definition().clone();
+        let FeatureDefinition::Operation(FeatureOperation::Revolve { construction, op }) =
+            &mut updated_ir_edit_definition
         else {
             panic!("typed revolution feature");
         };
         let Some(axis) = construction.axis_mut() else {
             panic!("resolved revolution axis");
         };
-        axis.origin = Point3::new(1.0, 2.0, 3.0);
-        axis.direction = Vector3::new(0.0, 0.0, 1.0);
-        construction.set_extent(Some(RevolveExtent::OneSided {
+        axis.origin = cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap();
+        axis.direction =
+            cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap();
+        *construction.extent_mut().expect("fixture extent") = RevolveExtent::OneSided {
             termination: AngularTermination::Angle {
-                angle: Angle(std::f64::consts::FRAC_PI_2),
+                angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::FRAC_PI_2).unwrap(),
             },
-        }));
+        };
         *op = BooleanOp::Cut;
+        updated_ir_edit_evaluation.set_definition(updated_ir_edit_definition);
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1587,7 +1712,7 @@ fn semantic_writer_round_trips_typed_revolution() {
 
 #[test]
 fn semantic_writer_retains_partial_native_revolution_construction() {
-    use cadmpeg_ir::features::{BooleanOp, FeatureDefinition};
+    use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -1600,27 +1725,27 @@ fn semantic_writer_retains_partial_native_revolution_construction() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
-        &decoded.ir().model.features[0].definition,
-        FeatureDefinition::Revolve {
+        decoded.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Revolve {
             construction,
             op: BooleanOp::Unresolved,
-        } if construction.profile().is_none()
+        }) if construction.profile().is_none()
             && construction.axis().is_some_and(|axis| matches!(axis,
                 cadmpeg_ir::features::RevolutionAxis {
-                    origin: Point3 {
+                    origin: geometry_1,
+                    direction: geometry_2,
+                    ..
+                } if matches!(geometry_1.get(), Point3 {
                         x: 1.0,
                         y: 2.0,
                         z: 3.0
-                    },
-                    direction: Vector3 {
+                    }) && matches!(geometry_2.get(), Vector3 {
                         x: 0.0,
                         y: 0.0,
                         z: 1.0
-                    },
-                    ..
-                }))
+                    })))
             && construction.extent().is_none()
     ));
     let mut detached = decoded.ir().clone();
@@ -1654,11 +1779,11 @@ fn semantic_writer_retains_partial_native_revolution_construction() {
     assert!(!native.properties.contains_key("Operation"));
     assert!(!native.parameters.contains_key("Angle"));
     assert!(matches!(
-        regenerated.ir().model.features[0].definition,
-        FeatureDefinition::Revolve {
+        regenerated.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Revolve {
             ref construction,
             op: BooleanOp::Unresolved,
-        } if construction.axis().is_some()
+        }) if construction.axis().is_some()
             && construction.profile().is_none()
             && construction.extent().is_none()
     ));
@@ -1667,7 +1792,7 @@ fn semantic_writer_retains_partial_native_revolution_construction() {
 #[test]
 fn semantic_writer_round_trips_all_revolution_extents() {
     use cadmpeg_ir::features::{
-        Angle, AngularTermination, BooleanOp, FeatureDefinition, ProfileRef, RevolveExtent,
+        AngularTermination, BooleanOp, FeatureDefinition, FeatureOperation, RevolveExtent,
     };
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -1679,56 +1804,61 @@ fn semantic_writer_round_trips_all_revolution_extents() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let profile_feature = decoded.ir().model.features[0].id.clone();
     assert!(matches!(
-        &decoded.ir().model.features[1].definition,
-        FeatureDefinition::Revolve {
+        decoded.ir().model.features[1].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Revolve {
             construction,
             op: BooleanOp::Join,
-        } if matches!(construction.profile(), Some(ProfileRef::Feature(profile)) if profile == &profile_feature)
+        }) if matches!(construction.profile(), Some(cadmpeg_ir::features::PlanarProfileRef::Feature(profile)) if profile == &profile_feature)
             && matches!(construction.extent(), Some(RevolveExtent::OneSided {
-                    termination: AngularTermination::Angle { angle: Angle(value) },
-                }) if (*value - 90f64.to_radians()).abs() < EPS_REVERSED_REVOLUTION_ANGLE)
+                    termination: AngularTermination::Angle { angle: value },
+                }) if (value.get() - 90f64.to_radians()).abs() < EPS_REVERSED_REVOLUTION_ANGLE)
     ));
     assert!(matches!(
-        decoded.ir().model.features[2].definition,
-        FeatureDefinition::Revolve {
+        decoded.ir().model.features[2].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Revolve {
             ref construction,
             op: BooleanOp::NewBody,
-        } if matches!(construction.extent(), Some(RevolveExtent::Symmetric {
-                    termination: AngularTermination::Angle { angle: Angle(value) },
-                }) if (*value - std::f64::consts::PI).abs() < EPS_SYMMETRIC_REVOLUTION_ANGLE)
+        }) if matches!(construction.extent(), Some(RevolveExtent::Symmetric {
+                    termination: AngularTermination::Angle { angle: value },
+                }) if (value.get() - std::f64::consts::PI).abs() < EPS_SYMMETRIC_REVOLUTION_ANGLE)
     ));
     assert!(matches!(
-        decoded.ir().model.features[3].definition,
-        FeatureDefinition::Revolve {
+        decoded.ir().model.features[3].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Revolve {
             ref construction,
             op: BooleanOp::Cut,
-        } if matches!(construction.extent(), Some(RevolveExtent::TwoSided {
-                    first: AngularTermination::Angle { angle: Angle(first) },
-                    second: AngularTermination::Angle { angle: Angle(second) },
-                }) if (*first - 30f64.to_radians()).abs()
+        }) if matches!(construction.extent(), Some(RevolveExtent::TwoSided {
+                    first: AngularTermination::Angle { angle: first },
+                    second: AngularTermination::Angle { angle: second },
+                }) if (first.get() - 30f64.to_radians()).abs()
                     < EPS_TWO_SIDED_REVOLUTION_FIRST_ANGLE
-                    && (*second - 60f64.to_radians()).abs()
+                    && (second.get() - 60f64.to_radians()).abs()
                         < EPS_TWO_SIDED_REVOLUTION_SECOND_ANGLE)
     ));
 
     {
         let mut ir_edit = decoded.ir_mut();
-        let FeatureDefinition::Revolve { construction, op } =
-            &mut ir_edit.model.features[3].definition
+        let updated_ir_edit_evaluation = &mut ir_edit.model.features[3].evaluation;
+        let mut updated_ir_edit_definition = updated_ir_edit_evaluation.definition().clone();
+        let FeatureDefinition::Operation(FeatureOperation::Revolve { construction, op }) =
+            &mut updated_ir_edit_definition
         else {
             panic!("typed revolution");
         };
-        construction.set_extent(Some(RevolveExtent::OneSided {
-            termination: AngularTermination::Angle { angle: Angle(0.75) },
-        }));
+        *construction.extent_mut().expect("fixture extent") = RevolveExtent::OneSided {
+            termination: AngularTermination::Angle {
+                angle: cadmpeg_ir::scalar::PositiveAngle::new(0.75).unwrap(),
+            },
+        };
         *op = BooleanOp::Intersect;
+        updated_ir_edit_evaluation.set_definition(updated_ir_edit_definition);
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,

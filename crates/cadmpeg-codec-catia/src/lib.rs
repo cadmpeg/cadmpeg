@@ -38,47 +38,52 @@
 //! Byte-level format semantics are documented in
 //! [`docs/formats/catia.md`](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md).
 
-pub(crate) mod analytic;
+mod analytic;
 mod appearance;
-pub(crate) mod assemble;
+mod assemble;
 mod boundary_roles;
-pub(crate) mod catalog;
-pub(crate) mod container;
-pub(crate) mod coverage;
-pub(crate) mod decode;
-pub(crate) mod design_feature;
-pub(crate) mod dialect;
-pub(crate) mod entity_table;
-pub(crate) mod families;
-pub(crate) mod formula;
+mod catalog;
+mod checked;
+mod container;
+mod coverage;
+mod decode;
+mod design_feature;
+mod dialect;
+mod entity_table;
+mod families;
+mod formula;
+mod ids;
 /// Byte-offset constants generated from `docs/layouts/catia.toml`.
-pub(crate) mod layout;
-pub(crate) mod legacy_entity;
-#[allow(dead_code)] // Loss catalog is consumed by tests and the writer.
-pub(crate) mod loss;
-pub(crate) mod native;
-pub(crate) mod nurbs;
-pub(crate) mod object_graph;
-pub(crate) mod pmi;
-pub(crate) mod sketch;
-pub(crate) mod solve;
-pub(crate) mod value_block;
-pub(crate) mod variant;
-pub(crate) mod wire;
+mod layout;
+mod legacy_entity;
+// Loss catalog is consumed by tests and the writer.
+mod loss;
+mod math;
+mod native;
+mod nurbs;
+mod object_graph;
+mod pmi;
+mod resource;
+mod sketch;
+mod solve;
+mod unique_index;
+mod value_block;
+mod variant;
+mod wire;
 
 #[doc(hidden)]
 pub mod fuzz;
 
 /// Maximum number of exact rational-quadratic spans materialized for one
 /// angular curve or surface direction from untrusted native parameters.
-pub(crate) const MAX_EXACT_ARC_SPANS: usize = 4_096;
+const MAX_EXACT_ARC_SPANS: f64 = 4_096.0;
 
 /// Maximum number of control points materialized for one NURBS surface from
 /// untrusted native cardinalities.
-pub(crate) const MAX_NURBS_SURFACE_CONTROL_POINTS: usize = 1_000_000;
+const MAX_NURBS_SURFACE_CONTROL_POINTS: usize = 1_000_000;
 
 /// Multiplies two NURBS surface dimensions within the materialization limit.
-pub(crate) fn nurbs_surface_control_count(u_count: usize, v_count: usize) -> Option<usize> {
+fn nurbs_surface_control_count(u_count: usize, v_count: usize) -> Option<usize> {
     u_count
         .checked_mul(v_count)
         .filter(|count| *count <= MAX_NURBS_SURFACE_CONTROL_POINTS)
@@ -96,21 +101,30 @@ pub struct CatiaCodec;
 impl CodecBackend for CatiaCodec {
     const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
 
-    fn detect_impl(&self, prefix: &[u8]) -> Confidence {
+    fn detect_impl(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        prefix: cadmpeg_core::decode::View<'_>,
+    ) -> Result<Confidence, cadmpeg_core::CodecError> {
+        let prefix = prefix.window();
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(prefix.len()),
+            "detect input",
+        )?;
         if container::looks_like_catia(prefix) {
-            Confidence::High
+            Ok(Confidence::High)
         } else {
-            Confidence::No
+            Ok(Confidence::No)
         }
     }
 
     fn inspect_impl(
         &self,
-        _ctx: &DecodeContext<'_>,
+        ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        let scan = container::scan_bytes(root.window());
-        Ok(container::summarize(&scan))
+        let scan = container::scan_bytes(ctx, root.window())?;
+        container::summarize(ctx, &scan)
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
@@ -123,4 +137,4 @@ mod golden_tests;
 #[cfg(test)]
 mod integration_tests;
 #[cfg(test)]
-pub(crate) mod test_support;
+mod test_support;

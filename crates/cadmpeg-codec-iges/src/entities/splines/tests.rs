@@ -3,15 +3,105 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::ResourceDimension;
+use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
+use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 use cadmpeg_ir::math::Point3;
 
 use crate::loss::IgesLossCode;
-use crate::test_support::*;
+use crate::test_support::test_curves_and_surfaces::{
+    nonlinear_parametric_spline_curve_file, nonlinear_parametric_spline_surface_file,
+    parametric_spline_curve_file, parametric_spline_curve_file_with_parameters,
+    parametric_spline_curve_file_with_parameters_and_resolution, parametric_spline_surface_file,
+};
+use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 use crate::IgesCodec;
+
+fn assert_spline_collection_refusal(bytes: &[u8], operation: &str) {
+    let mut cap = 0_u64;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        match IgesCodec.decode(
+            &mut Cursor::new(bytes),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        ) {
+            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                if limit.operation == operation {
+                    return;
+                }
+                cap = limit.used + limit.additional;
+            }
+            other => panic!("expected spline collection refusal at {operation}: {other:?}"),
+        }
+    }
+    panic!("spline collection refusal was not reached: {operation}");
+}
+
+#[test]
+fn spline_identity_copies_refuse_retained_byte_limit() {
+    let bytes = parametric_spline_curve_file();
+    IgesCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .unwrap();
+    let mut cap = 0_u64;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        match IgesCodec.decode(
+            &mut Cursor::new(&bytes),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        ) {
+            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+                if limit.operation == "iges splines identity copy" {
+                    return;
+                }
+                cap = limit.used.checked_add(limit.additional).unwrap();
+            }
+            Ok(_) => panic!("spline identity refusal was not reached at cap {cap}"),
+            Err(error) => panic!("expected spline identity refusal: {error:?}"),
+        }
+    }
+    panic!("spline identity refusal was not reached within 4096 boundaries");
+}
+
+#[test]
+fn spline_projection_refuses_unadmitted_knots_rows_slots_and_losses() {
+    let curve = parametric_spline_curve_file();
+    for operation in [
+        "iges spline curve knots",
+        "iges spline curve admitted knots",
+        "iges spline neutral point slots",
+        "iges spline neutral vertex slots",
+        "iges spline neutral curve slots",
+        "iges spline neutral edge slots",
+        "iges spline wire edge slots",
+        "iges entity loss slots",
+    ] {
+        assert_spline_collection_refusal(&curve, operation);
+    }
+    let surface = parametric_spline_surface_file();
+    for operation in [
+        "iges spline surface u knots",
+        "iges spline surface v knots",
+        "iges spline surface admitted u knots",
+        "iges spline surface admitted v knots",
+        "iges spline surface pole rows",
+        "iges spline surface pole row controls",
+        "iges spline neutral surface slots",
+    ] {
+        assert_spline_collection_refusal(&surface, operation);
+    }
+}
 
 fn type_112_parameters(
     continuity: i64,
@@ -92,23 +182,30 @@ fn decode_converts_bicubic_power_patches_to_an_exact_nurbs_surface() {
         )
         .unwrap();
 
-    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(surface) =
-        &result.ir().model.surfaces[0].geometry
+    let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
+        result.ir().model.surfaces[0].geometry.solved()
     else {
         panic!("expected a bicubic NURBS carrier");
     };
     assert_eq!((surface.u_degree(), surface.v_degree()), (3, 3));
     assert_eq!((surface.u_count(), surface.v_count()), (4, 4));
     assert_eq!(
-        cadmpeg_ir::eval::nurbs_surface_point(surface, 0.25, 0.75),
-        Some(cadmpeg_ir::math::Point3::new(0.25, 0.75, 0.0))
+        cadmpeg_ir::eval::decode::nurbs_surface_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            surface,
+            0.25,
+            0.75
+        )
+        .map(cadmpeg_ir::features::FinitePoint3::get),
+        Ok(cadmpeg_ir::math::Point3::new(0.25, 0.75, 0.0))
     );
     assert!(result
         .report()
         .losses
         .iter()
         .any(|loss| loss.code == IgesLossCode::SplineHeaderNotTransferred.kind()));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -121,33 +218,39 @@ fn decode_converts_piecewise_power_splines_to_exact_cubic_nurbs() {
         )
         .unwrap();
 
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &result.ir().model.curves[0].geometry
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = result.ir().model.curves[0].geometry.solved()
     else {
         panic!("expected a cubic NURBS carrier");
     };
     assert_eq!(nurbs.degree(), 3);
     assert_eq!(
-        nurbs.knots(),
+        nurbs.knots().as_slice(),
         [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 2.0]
     );
     assert_eq!(nurbs.control_points().len(), 7);
     assert_eq!(
-        cadmpeg_ir::eval::nurbs_curve_point(
-            nurbs.degree(),
-            nurbs.knots(),
-            nurbs.control_points(),
-            None,
-            1.5,
-        ),
+        cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            nurbs,
+            1.5
+        )
+        .ok()
+        .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(1.5, 0.0, 0.0))
     );
-    assert_eq!(result.ir().model.edges[0].param_range, Some([0.0, 2.0]));
+    assert_eq!(
+        result.ir().model.edges[0]
+            .param_range()
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.0, 2.0])
+    );
     assert!(result
         .report()
         .losses
         .iter()
         .any(|loss| loss.code == IgesLossCode::SplineHeaderNotTransferred.kind()));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -159,14 +262,13 @@ fn decode_converts_nonzero_cubic_power_terms_on_a_nonunit_interval() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let CurveGeometry::Nurbs(nurbs) = &result.ir().model.curves[0].geometry else {
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = result.ir().model.curves[0].geometry.solved()
+    else {
         panic!("expected a cubic NURBS carrier");
     };
-    let point = cadmpeg_ir::eval::nurbs_curve_point(
-        nurbs.degree(),
-        nurbs.knots(),
-        nurbs.control_points(),
-        None,
+    let point = cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        nurbs,
         3.25,
     )
     .expect("converted curve evaluates");
@@ -187,12 +289,20 @@ fn decode_converts_nonzero_bicubic_cross_terms_on_nonunit_intervals() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let SurfaceGeometry::Nurbs(surface) = &result.ir().model.surfaces[0].geometry else {
+    let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
+        result.ir().model.surfaces[0].geometry.solved()
+    else {
         panic!("expected a bicubic NURBS carrier");
     };
     assert_eq!(
-        cadmpeg_ir::eval::nurbs_surface_point(surface, 1.5, -0.75),
-        Some(Point3::new(95.496_093_75, 268.464_843_75, -95.496_093_75,))
+        cadmpeg_ir::eval::decode::nurbs_surface_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            surface,
+            1.5,
+            -0.75
+        )
+        .map(cadmpeg_ir::features::FinitePoint3::get),
+        Ok(Point3::new(95.496_093_75, 268.464_843_75, -95.496_093_75,))
     );
     assert!(result
         .report()

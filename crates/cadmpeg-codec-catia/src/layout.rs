@@ -4,8 +4,6 @@
 //! Do not edit by hand. Regenerate with:
 //! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`.
 
-#![allow(dead_code)] // Not every generated constant is referenced yet.
-
 // Records omitted because the table declares a contradiction.
 //
 // - `e5_record_frame` (size_mismatch): The enumerated header fields total 14 bytes but the same sentence states the record stride as `payload_size + 13`, which implies a 13-byte header. The parser follows both at once: it advances by `size + 13` yet decodes carrier fields from record `+14`, and checks the `0xff` edge-use lead byte at record `+13`. The spec does not say which of the two numbers is authoritative.
@@ -14,17 +12,6 @@
 pub(crate) mod token {
     /// `named stream block` (`FINJPL  `). Spec §4.
     pub(crate) const NAMED_STREAM_BLOCK: [u8; 8] = *b"FINJPL  ";
-    /// `source-schema string catalog` (`7C 02`). Spec §4.
-    pub(crate) const SOURCE_SCHEMA_STRING_CATALOG: [u8; 2] = [0x7c, 0x02];
-    /// `literal float data` (`7C D9`). Spec §4.
-    pub(crate) const LITERAL_FLOAT_DATA: [u8; 2] = [0x7c, 0xd9];
-    /// `standard edge-table delimiter` (`10 24 04 ff ff 00 00 00`). Spec §4.
-    pub(crate) const STANDARD_EDGE_TABLE_DELIMITER: [u8; 8] =
-        [0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00];
-    /// `vertex XYZ record` (`05 08 01`). Spec §4.
-    pub(crate) const VERTEX_XYZ_RECORD: [u8; 3] = [0x05, 0x08, 0x01];
-    /// `zero-entity record family` (`a9 03`). Spec §4.
-    pub(crate) const ZERO_ENTITY_RECORD_FAMILY: [u8; 2] = [0xa9, 0x03];
     /// `E5 record family` (`E5 0D 03`). Spec §4.
     pub(crate) const E5_RECORD_FAMILY: [u8; 3] = [0xe5, 0x0d, 0x03];
 }
@@ -37,10 +24,6 @@ pub(crate) mod token {
 /// `directory_offset + directory_length == file_size`. The parser reads only the magic and the two directory words; the fill and flag regions are never read.
 /// ```
 pub(crate) mod outer_header {
-    /// Record length in bytes. Spec §3.1.
-    pub(crate) const LEN: usize = 64;
-    /// Offset of `magic` (`bytes[8]`). Spec §3.1.
-    pub(crate) const MAGIC: usize = 0;
     /// Stated value of `magic` (`bytes[8]`). Spec §3.1.
     pub(crate) const MAGIC_VALUE: [u8; 8] = *b"V5_CFV2\0";
     /// Offset of `directory_offset` (`u32`, big-endian). Spec §3.1.
@@ -49,10 +32,6 @@ pub(crate) mod outer_header {
     pub(crate) const DIRECTORY_LENGTH: usize = 12;
     /// Offset of `fill_ff` (`bytes[8]`). Spec §3.1.
     pub(crate) const FILL_FF: usize = 16;
-    /// Offset of `fill_00` (`bytes[32]`). Spec §3.1.
-    pub(crate) const FILL_00: usize = 24;
-    /// Offset of `hdr_flags` (`bytes[8]`). Spec §3.1.
-    pub(crate) const HDR_FLAGS: usize = 56;
 }
 
 /// Byte offsets for the `inner_header` record.
@@ -65,8 +44,6 @@ pub(crate) mod outer_header {
 pub(crate) mod inner_header {
     /// Record length in bytes. Spec §3.2.
     pub(crate) const LEN: usize = 16;
-    /// Offset of `magic` (`bytes[8]`). Spec §3.2.
-    pub(crate) const MAGIC: usize = 0;
     /// Offset of `directory_offset_delta` (`u32`, big-endian). Spec §3.2.
     pub(crate) const DIRECTORY_OFFSET_DELTA: usize = 8;
     /// Offset of `directory_length` (`u32`, big-endian). Spec §3.2.
@@ -81,8 +58,6 @@ pub(crate) mod inner_header {
 /// Descriptor-relative. `k` extent structs of 20 bytes each follow at ds+0x54. The standard name form ends at the three-byte tail ds-3..ds (`00 00 00`); the legacy form starts at ds+0x10 and ends with the same UTF-16LE terminator, with zero fill through ds+0x50.
 /// ```
 pub(crate) mod stream_descriptor_header {
-    /// Record length in bytes. Spec §3.4.
-    pub(crate) const LEN: usize = 84;
     /// Offset of `logical_stream_length` (`u32`, big-endian). Spec §3.4.
     pub(crate) const LOGICAL_STREAM_LENGTH: usize = 12;
     /// Offset of `extent_count` (`u32`, big-endian). Spec §3.4.
@@ -139,8 +114,6 @@ pub(crate) mod vertex_roster_row {
 pub(crate) mod freeform_surface_core {
     /// Record length in bytes. Spec §3.5.
     pub(crate) const LEN: usize = 47;
-    /// Offset of `tag` (`u24`, little-endian). Spec §3.5.
-    pub(crate) const TAG: usize = 0;
     /// Offset of `zero_run` (`bytes[3]`). Spec §3.5.
     pub(crate) const ZERO_RUN: usize = 3;
     /// Offset of `bounds` (`f32[10]`, little-endian). Spec §3.5.
@@ -159,16 +132,8 @@ pub(crate) mod freeform_surface_core {
 pub(crate) mod analytic_surface_plane {
     /// Record length in bytes. Spec §5.8.
     pub(crate) const LEN: usize = 49;
-    /// Offset of `target_tag` (`u24`, little-endian). Spec §5.8.
-    pub(crate) const TARGET_TAG: usize = 0;
-    /// Offset of `zero` (`u8`). Spec §5.8.
-    pub(crate) const ZERO: usize = 3;
-    /// Offset of `prebyte` (`u8`). Spec §5.8.
-    pub(crate) const PREBYTE: usize = 4;
     /// Offset of `marker` (`bytes[2]`). Spec §5.8.
     pub(crate) const MARKER: usize = 5;
-    /// Offset of `kind` (`u8`). Spec §5.8.
-    pub(crate) const KIND: usize = 7;
     /// Offset of `sign` (`i8`). Spec §5.8.
     pub(crate) const SIGN: usize = 48;
 }
@@ -183,16 +148,6 @@ pub(crate) mod analytic_surface_plane {
 pub(crate) mod analytic_surface_cylinder {
     /// Record length in bytes. Spec §5.8.
     pub(crate) const LEN: usize = 73;
-    /// Offset of `target_tag` (`u24`, little-endian). Spec §5.8.
-    pub(crate) const TARGET_TAG: usize = 0;
-    /// Offset of `zero` (`u8`). Spec §5.8.
-    pub(crate) const ZERO: usize = 3;
-    /// Offset of `prebyte` (`u8`). Spec §5.8.
-    pub(crate) const PREBYTE: usize = 4;
-    /// Offset of `marker` (`bytes[2]`). Spec §5.8.
-    pub(crate) const MARKER: usize = 5;
-    /// Offset of `kind` (`u8`). Spec §5.8.
-    pub(crate) const KIND: usize = 7;
     /// Offset of `sign` (`i8`). Spec §5.8.
     pub(crate) const SIGN: usize = 72;
 }
@@ -203,16 +158,6 @@ pub(crate) mod analytic_surface_cylinder {
 pub(crate) mod analytic_surface_cone {
     /// Record length in bytes. Spec §5.8.
     pub(crate) const LEN: usize = 73;
-    /// Offset of `target_tag` (`u24`, little-endian). Spec §5.8.
-    pub(crate) const TARGET_TAG: usize = 0;
-    /// Offset of `zero` (`u8`). Spec §5.8.
-    pub(crate) const ZERO: usize = 3;
-    /// Offset of `prebyte` (`u8`). Spec §5.8.
-    pub(crate) const PREBYTE: usize = 4;
-    /// Offset of `marker` (`bytes[2]`). Spec §5.8.
-    pub(crate) const MARKER: usize = 5;
-    /// Offset of `kind` (`u8`). Spec §5.8.
-    pub(crate) const KIND: usize = 7;
     /// Offset of `sign` (`i8`). Spec §5.8.
     pub(crate) const SIGN: usize = 72;
 }
@@ -223,16 +168,6 @@ pub(crate) mod analytic_surface_cone {
 pub(crate) mod analytic_surface_sphere {
     /// Record length in bytes. Spec §5.8.
     pub(crate) const LEN: usize = 65;
-    /// Offset of `target_tag` (`u24`, little-endian). Spec §5.8.
-    pub(crate) const TARGET_TAG: usize = 0;
-    /// Offset of `zero` (`u8`). Spec §5.8.
-    pub(crate) const ZERO: usize = 3;
-    /// Offset of `prebyte` (`u8`). Spec §5.8.
-    pub(crate) const PREBYTE: usize = 4;
-    /// Offset of `marker` (`bytes[2]`). Spec §5.8.
-    pub(crate) const MARKER: usize = 5;
-    /// Offset of `kind` (`u8`). Spec §5.8.
-    pub(crate) const KIND: usize = 7;
     /// Offset of `sign` (`i8`). Spec §5.8.
     pub(crate) const SIGN: usize = 64;
 }
@@ -243,16 +178,6 @@ pub(crate) mod analytic_surface_sphere {
 pub(crate) mod analytic_surface_torus {
     /// Record length in bytes. Spec §5.8.
     pub(crate) const LEN: usize = 77;
-    /// Offset of `target_tag` (`u24`, little-endian). Spec §5.8.
-    pub(crate) const TARGET_TAG: usize = 0;
-    /// Offset of `zero` (`u8`). Spec §5.8.
-    pub(crate) const ZERO: usize = 3;
-    /// Offset of `prebyte` (`u8`). Spec §5.8.
-    pub(crate) const PREBYTE: usize = 4;
-    /// Offset of `marker` (`bytes[2]`). Spec §5.8.
-    pub(crate) const MARKER: usize = 5;
-    /// Offset of `kind` (`u8`). Spec §5.8.
-    pub(crate) const KIND: usize = 7;
     /// Offset of `sign` (`i8`). Spec §5.8.
     pub(crate) const SIGN: usize = 76;
 }
@@ -267,8 +192,6 @@ pub(crate) mod analytic_surface_torus {
 pub(crate) mod a_family_frame {
     /// Record length in bytes. Spec §6.
     pub(crate) const LEN: usize = 7;
-    /// Offset of `family` (`u8`). Spec §6.
-    pub(crate) const FAMILY: usize = 0;
     /// Offset of `flag` (`u8`). Spec §6.
     pub(crate) const FLAG: usize = 1;
     /// Offset of `class` (`u8`). Spec §6.
@@ -287,56 +210,8 @@ pub(crate) mod a_family_frame {
 pub(crate) mod b_family_frame {
     /// Record length in bytes. Spec §6.
     pub(crate) const LEN: usize = 4;
-    /// Offset of `family` (`u8`). Spec §6.
-    pub(crate) const FAMILY: usize = 0;
-    /// Offset of `flag` (`u8`). Spec §6.
-    pub(crate) const FLAG: usize = 1;
-    /// Offset of `class` (`u8`). Spec §6.
-    pub(crate) const CLASS: usize = 2;
     /// Offset of `payload_len` (`u8`). Spec §6.
     pub(crate) const PAYLOAD_LEN: usize = 3;
-}
-
-/// Byte offsets for the `a8_object_stream_frame` record.
-///
-/// Spec §6.6. Record length 11 B.
-///
-/// ```text
-/// `frame_flag` is `03`, `13`, or `83`. References inside the payload are compact tokens selecting an id width (`18` selects u16, `38` selects u24).
-/// ```
-pub(crate) mod a8_object_stream_frame {
-    /// Record length in bytes. Spec §6.6.
-    pub(crate) const LEN: usize = 11;
-    /// Offset of `family` (`u8`). Spec §6.6.
-    pub(crate) const FAMILY: usize = 0;
-    /// Offset of `frame_flag` (`u8`). Spec §6.6.
-    pub(crate) const FRAME_FLAG: usize = 1;
-    /// Offset of `class` (`u8`). Spec §6.6.
-    pub(crate) const CLASS: usize = 2;
-    /// Offset of `payload_len` (`u32`, little-endian). Spec §6.6.
-    pub(crate) const PAYLOAD_LEN: usize = 3;
-    /// Offset of `object_id` (`u32`, little-endian). Spec §6.6.
-    pub(crate) const OBJECT_ID: usize = 7;
-}
-
-/// Byte offsets for the `surface_of_revolution_b2_03_2d` record.
-///
-/// Spec §5.15. Record length 174 B.
-///
-/// ```text
-/// Three normalized relations hold to f64 bit-equality: `angular_lo/scale==0.5`, `(angular_hi−angular_lo)/scale==2π`, and `mean/scale==π+0.5`.
-/// ```
-pub(crate) mod surface_of_revolution_b2_03_2d {
-    /// Record length in bytes. Spec §5.15.
-    pub(crate) const LEN: usize = 174;
-    /// Offset of `reference_token` (`u8`). Spec §5.15.
-    pub(crate) const REFERENCE_TOKEN: usize = 5;
-    /// Offset of `profile_allocation_identity` (`u16`, little-endian). Spec §5.15.
-    pub(crate) const PROFILE_ALLOCATION_IDENTITY: usize = 6;
-    /// Offset of `frame` (`f64[12]`, little-endian). Spec §5.15.
-    pub(crate) const FRAME: usize = 8;
-    /// Offset of `bounds` (`f64[4]`, little-endian). Spec §5.15.
-    pub(crate) const BOUNDS: usize = 104;
 }
 
 /// Byte offsets for the `a9_03_frame` record.
@@ -365,8 +240,6 @@ pub(crate) mod a9_03_frame {
 /// Each tagged allocation value is one tag byte plus a little-endian u32, so the five values run at stride 5.
 /// ```
 pub(crate) mod zero_entity_edge_stride_5e1a {
-    /// Record length in bytes. Spec §8.
-    pub(crate) const LEN: usize = 38;
     /// Offset of `tagged_one_prefix` (`bytes[5]`). Spec §8.
     pub(crate) const TAGGED_ONE_PREFIX: usize = 7;
     /// Offset of `allocations` (`bytes[25]`). Spec §8.
@@ -407,34 +280,6 @@ pub(crate) mod zero_entity_pcurve_2171 {
     pub(crate) const POLES: usize = 93;
 }
 
-/// Byte offsets for the `zero_entity_34c8_pole_grid` record.
-///
-/// Spec §8. Record length 1176 B.
-///
-/// ```text
-/// This sub-layout starts at the carrier-relative pole-grid offset +167. The variable knot and dimension lanes before it are bounded by this fixed continuation boundary.
-/// ```
-pub(crate) mod zero_entity_34c8_pole_grid {
-    /// Record length in bytes. Spec §8.
-    pub(crate) const LEN: usize = 1176;
-    /// Offset of `poles` (`f64[147]`, little-endian). Spec §8.
-    pub(crate) const POLES: usize = 0;
-}
-
-/// Byte offsets for the `zero_entity_345e_pole_grid` record.
-///
-/// Spec §8. Record length 840 B.
-///
-/// ```text
-/// This sub-layout starts at the carrier-relative pole-grid offset +141. The variable knot and dimension lanes before it are bounded by this fixed continuation boundary.
-/// ```
-pub(crate) mod zero_entity_345e_pole_grid {
-    /// Record length in bytes. Spec §8.
-    pub(crate) const LEN: usize = 840;
-    /// Offset of `poles` (`f64[105]`, little-endian). Spec §8.
-    pub(crate) const POLES: usize = 0;
-}
-
 /// Byte offsets for the `value_block_7c0b` record.
 ///
 /// Spec §7.4. Record length 6 B.
@@ -445,8 +290,6 @@ pub(crate) mod zero_entity_345e_pole_grid {
 pub(crate) mod value_block_7c0b {
     /// Record length in bytes. Spec §7.4.
     pub(crate) const LEN: usize = 6;
-    /// Offset of `marker` (`bytes[2]`). Spec §7.4.
-    pub(crate) const MARKER: usize = 0;
     /// Offset of `declared_len` (`u32`, little-endian). Spec §7.4.
     pub(crate) const DECLARED_LEN: usize = 2;
 }
@@ -487,8 +330,6 @@ pub(crate) mod outer_alias_row {
 pub(crate) mod fbb_face_row {
     /// Record length in bytes. Spec §7.4.
     pub(crate) const LEN: usize = 8;
-    /// Offset of `marker` (`bytes[4]`). Spec §7.4.
-    pub(crate) const MARKER: usize = 0;
     /// Offset of `alpha` (`u8`). Spec §7.4.
     pub(crate) const ALPHA: usize = 4;
     /// Offset of `blue` (`u8`). Spec §7.4.

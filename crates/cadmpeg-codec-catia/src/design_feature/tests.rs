@@ -3,59 +3,54 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
-use super::*;
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use super::{
+    assign_native_operation_parameter_values, normalize_parameter_names, transfer_design_features,
+    DesignFeatureTransfer,
+};
+use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::{
+    Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId, UnresolvedFamily,
+};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::Cursor;
 
 use crate::native::entity_record::{CatiaEntityRecord, CatiaEntityRecordBody};
 use crate::native::{
-    CatiaDefinitionChainValue, CatiaDefinitionValue, CatiaDesignClass, CatiaDesignObjectRelation,
-    CatiaDesignObjectRelationSource, CatiaEntityEvaluation, CatiaEntityEvaluationEncoding,
-    CatiaEntitySchemaValue, CatiaEntitySuffixPayload, CatiaEntitySuffixSchemaValue,
-    CatiaObjectGraph, CatiaObjectOwner, CatiaObjectRecordReferenceSource,
+    CatiaDesignClass, CatiaDesignObject, CatiaDesignObjectRelation,
+    CatiaDesignObjectRelationSource, CatiaNative, CatiaObjectGraph, CatiaObjectOwner,
+    CatiaObjectRecord, CatiaObjectRecordReferenceSource,
 };
 use crate::object_graph::HeadToken;
 use crate::object_graph::ObjectPayload;
-use crate::test_support::*;
+use crate::object_graph::PayloadField;
+use crate::test_support::test_formula::standard_catpart_with_definition_value;
+use crate::test_support::test_object_graph::{
+    catalog_stream, design_object, entity_backed_object_graph, object_graph_from_records,
+    object_graph_record, standard_catpart_with_design_class,
+    standard_catpart_with_visualization_values_only, value_block_stream,
+};
 use crate::CatiaCodec;
 
+mod definitions;
 mod range;
 mod reference_planes;
 
-fn design_object(id: &str, owner_design_object: Option<&str>) -> CatiaDesignObject {
-    CatiaDesignObject {
-        id: id.to_string(),
-        parent: "graph".to_string(),
-        ordinal: 0,
-        first_field_byte_offset: 0,
-        owner_entity_id: 0,
-        owner_record: None,
-        owner_design_object: owner_design_object.map(str::to_string),
-        owner_class: None,
-        owner_storage_ref: None,
-        fields: Vec::new(),
-        field_classes: Vec::new(),
-        definition_values: Vec::new(),
-        definition_chain_values: Vec::new(),
-        relations: Vec::new(),
-        parallel_reference_table: None,
-    }
-}
-
 fn feature(id: &str, native_ref: &str) -> Feature {
     Feature {
-        id: FeatureId::mint(id).expect("identity grammar"),
+        id: FeatureId::mint(format!("synthetic:test:id#{id}")).expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::StoredGeometry,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+        ),
         native_ref: Some(native_ref.to_string()),
     }
 }
@@ -68,7 +63,7 @@ fn payload_relation(target_object: &str, payload_offset: u64) -> CatiaDesignObje
             payload_offset,
             container: CatiaObjectRecordReferenceSource::Field,
         },
-        target_entity_id: payload_offset as u32,
+        target_entity_id: u32::try_from(payload_offset).expect("fixture value fits u32"),
         target_field: "target-field".to_string(),
         target_class: None,
         target_design_object: Some(target_object.to_string()),
@@ -125,9 +120,9 @@ fn object_record(
         class: match (class_name, class_entry) {
             (None, None) => None,
             (class_name, class_entry) => Some(crate::native::CatiaObjectClass {
-                class_ref: 0,
-                class_name: class_name.map(str::to_string),
-                class_entry: class_entry.map(str::to_string),
+                ordinal: 0,
+                name: class_name.map(str::to_string),
+                entry: class_entry.map(str::to_string),
             }),
         },
         storage: None,
@@ -169,13 +164,13 @@ fn entity_record(
 
 #[test]
 fn compact_self_owned_operation_root_remains_an_identity_anchor() {
-    let mut object = design_object("operation-object", None);
+    let mut object = design_object("synthetic:test:object#operation-object", None);
     object.owner_entity_id = 1;
     object.owner_record = Some("operation-record".to_string());
 
     let mut record = object_record(
         "operation-record",
-        Some("operation-object"),
+        Some("synthetic:test:object#operation-object"),
         Some(1),
         Some(1),
         Some("Prism_ThickThin2"),
@@ -190,12 +185,12 @@ fn compact_self_owned_operation_root_remains_an_identity_anchor() {
         HeadToken::Reference(1),
     ];
     if let Some(class) = &mut record.class {
-        class.class_ref = 7;
+        class.ordinal = 7;
     } else {
         record.class = Some(crate::native::CatiaObjectClass {
-            class_ref: 7,
-            class_name: None,
-            class_entry: None,
+            ordinal: 7,
+            name: None,
+            entry: None,
         });
     }
 
@@ -215,7 +210,15 @@ fn compact_self_owned_operation_root_remains_an_identity_anchor() {
     };
     let mut ir = CadIr::empty();
 
-    let transfer = transfer_design_features(&mut ir, &native, None);
+    let transfer = crate::test_support::with_service_context(|ctx| {
+        transfer_design_features(
+            ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
+    .unwrap();
 
     assert!(ir.model.features.is_empty());
     assert!(transfer.native_operation_records.is_empty());
@@ -223,13 +226,13 @@ fn compact_self_owned_operation_root_remains_an_identity_anchor() {
 
 #[test]
 fn malformed_compact_root_does_not_promote_an_operation() {
-    let mut object = design_object("operation-object", None);
+    let mut object = design_object("synthetic:test:object#operation-object", None);
     object.owner_entity_id = 1;
     object.owner_record = Some("operation-record".to_string());
 
     let mut record = object_record(
         "operation-record",
-        Some("operation-object"),
+        Some("synthetic:test:object#operation-object"),
         Some(1),
         Some(1),
         Some("Prism_ThickThin2"),
@@ -245,12 +248,12 @@ fn malformed_compact_root_does_not_promote_an_operation() {
         HeadToken::Literal(0),
     ];
     if let Some(class) = &mut record.class {
-        class.class_ref = 7;
+        class.ordinal = 7;
     } else {
         record.class = Some(crate::native::CatiaObjectClass {
-            class_ref: 7,
-            class_name: None,
-            class_entry: None,
+            ordinal: 7,
+            name: None,
+            entry: None,
         });
     }
 
@@ -270,7 +273,15 @@ fn malformed_compact_root_does_not_promote_an_operation() {
     };
     let mut ir = CadIr::empty();
 
-    let transfer = transfer_design_features(&mut ir, &native, None);
+    let transfer = crate::test_support::with_service_context(|ctx| {
+        transfer_design_features(
+            ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
+    .unwrap();
 
     assert!(ir.model.features.is_empty());
     assert!(transfer.native_operation_records.is_empty());
@@ -278,16 +289,16 @@ fn malformed_compact_root_does_not_promote_an_operation() {
 
 fn parameter(id: &str, native_ref: &str) -> cadmpeg_ir::features::DesignParameter {
     cadmpeg_ir::features::DesignParameter {
-        id: ParameterId::mint(id.to_string()).expect("identity grammar"),
+        id: ParameterId::mint(format!("synthetic:test:id#{id}")).expect("identity grammar"),
         owner: None,
         ordinal: 99,
         name: id.to_string(),
         expression: "1 mm".to_string(),
         display: None,
         value: Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length(1.0),
+            cadmpeg_ir::scalar::Length::new(1.0).unwrap(),
         )),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some(native_ref.to_string()),
@@ -295,31 +306,436 @@ fn parameter(id: &str, native_ref: &str) -> cadmpeg_ir::features::DesignParamete
 }
 
 #[test]
+fn feature_transfer_lookup_refuses_collection_limit() {
+    let native = CatiaNative {
+        design_objects: vec![design_object("synthetic:test:object#one", None)],
+        ..CatiaNative::default()
+    };
+    let mut ir = CadIr::empty();
+    let refused = crate::test_support::with_collection_limit(0, |ctx| {
+        transfer_design_features(
+            ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_feature_transfer_objects")
+    );
+    let service = crate::test_support::with_service_context(|ctx| {
+        transfer_design_features(
+            ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
+    .expect("service profile admits feature lookup");
+    assert!(service.feature_ids.is_empty());
+}
+
+#[test]
+fn principal_and_reference_features_refuse_collection_limit() {
+    let object = design_object("synthetic:test:object#plane", None);
+    let record = object_record("plane-record", None, None, None, None, None);
+    let principal = super::PrincipalPlaneCandidate {
+        object: &object,
+        declarations: vec![&record],
+        plane: cadmpeg_ir::features::PrincipalPlane::Top,
+        declaration_class: "xy-plane",
+    };
+    let mut ir = CadIr::empty();
+    let mut transfer = DesignFeatureTransfer::default();
+    let refused = crate::test_support::with_collection_limit(0, |ctx| {
+        super::transfer_principal_plane(ctx, &mut ir, &mut transfer, principal)
+    });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_principal_features")
+    );
+    let principal = super::PrincipalPlaneCandidate {
+        object: &object,
+        declarations: vec![&record],
+        plane: cadmpeg_ir::features::PrincipalPlane::Top,
+        declaration_class: "xy-plane",
+    };
+    crate::test_support::with_service_context(|ctx| {
+        super::transfer_principal_plane(ctx, &mut ir, &mut transfer, principal)
+    })
+    .expect("service profile admits principal plane");
+    assert_eq!(ir.model.features.len(), 1);
+
+    let reference = super::ReferencePlaneCandidate {
+        object: &object,
+        owner_record: &record,
+        kind: "GSMPlaneOffset",
+    };
+    let mut reference_ir = CadIr::empty();
+    let mut reference_transfer = DesignFeatureTransfer::default();
+    let refused = crate::test_support::with_collection_limit(0, |ctx| {
+        super::transfer_reference_plane(ctx, &mut reference_ir, &mut reference_transfer, &reference)
+    });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_reference_features")
+    );
+    crate::test_support::with_service_context(|ctx| {
+        super::transfer_reference_plane(ctx, &mut reference_ir, &mut reference_transfer, &reference)
+    })
+    .expect("service profile admits reference plane");
+    assert_eq!(reference_ir.model.features.len(), 1);
+}
+
+#[test]
+fn principal_plane_declaration_list_refuses_collection_limit() {
+    let mut object = design_object("synthetic:test:object#plane", None);
+    object.owner_record = Some("plane-record".to_string());
+    object.fields.push("plane-record".to_string());
+    let record = object_record("plane-record", None, None, None, None, None);
+    let records = HashMap::from([(record.id.as_str(), &record)]);
+    let refused = crate::test_support::with_collection_limit(0, |ctx| {
+        super::principal_plane_candidate(ctx, &object, &records)
+    });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_principal_plane_declarations")
+    );
+    let service = crate::test_support::with_service_context(|ctx| {
+        super::principal_plane_candidate(ctx, &object, &records)
+    })
+    .expect("service profile admits declaration scan");
+    assert!(service.is_none());
+}
+
+#[test]
+fn sketch_and_operation_feature_rows_refuse_collection_limit() {
+    let native = sketch_owner_native();
+    let sketch_object = &native.design_objects[0];
+    let sketch_record = &native.object_graphs[0].records[0];
+    let mut ir = CadIr::empty();
+    let mut transfer = DesignFeatureTransfer::default();
+    let refused = crate::test_support::with_collection_limit(0, |ctx| {
+        super::transfer_sketch(ctx, &mut ir, &mut transfer, sketch_object, sketch_record)
+    });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_design_sketches")
+    );
+    crate::test_support::with_service_context(|ctx| {
+        super::transfer_sketch(ctx, &mut ir, &mut transfer, sketch_object, sketch_record)
+    })
+    .expect("service profile admits sketch feature");
+    assert_eq!(ir.model.sketches.len(), 1);
+    assert_eq!(ir.model.features.len(), 1);
+
+    let operation_object = design_object("synthetic:test:object#operation", None);
+    let operation_record = object_record("operation-record", None, None, None, None, None);
+    let candidate = super::NativeOperationCandidate {
+        object: &operation_object,
+        owner_record: &operation_record,
+        kind: super::NativeOperationClass::EdgeFillet,
+    };
+    let records = HashMap::from([(operation_record.id.as_str(), &operation_record)]);
+    let entities = HashMap::new();
+    let objects = HashMap::from([(operation_object.id.as_str(), &operation_object)]);
+    let object_ids = HashSet::new();
+    let sources = super::NativeOperationSources {
+        object_records: &records,
+        entities: &entities,
+        design_objects: &objects,
+        object_ids: &object_ids,
+    };
+    let mut operation_ir = CadIr::empty();
+    let mut operation_transfer = DesignFeatureTransfer::default();
+    let refused = crate::test_support::with_collection_limit(1, |ctx| {
+        super::transfer_native_operation(
+            ctx,
+            &mut operation_ir,
+            &mut operation_transfer,
+            &candidate,
+            &sources,
+        )
+    });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_operation_features")
+    );
+    crate::test_support::with_service_context(|ctx| {
+        super::transfer_native_operation(
+            ctx,
+            &mut operation_ir,
+            &mut operation_transfer,
+            &candidate,
+            &sources,
+        )
+    })
+    .expect("service profile admits native operation");
+    assert_eq!(operation_ir.model.features.len(), 1);
+}
+
+#[test]
+fn feature_parameter_name_indexes_refuse_collection_limit() {
+    let mut ir = CadIr::empty();
+    let mut value = parameter("one", "native");
+    value.name = "Length".to_string();
+    ir.model.parameters.push(value);
+    let refused = crate::test_support::with_collection_limit(0, |ctx| {
+        normalize_parameter_names(ctx, &mut ir)
+    });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_parameter_reserved_scopes")
+    );
+    crate::test_support::with_service_context(|ctx| normalize_parameter_names(ctx, &mut ir))
+        .expect("service profile admits name indexes");
+    assert_eq!(ir.model.parameters[0].name, "Length");
+}
+
+#[test]
+fn native_operation_parameter_map_refuses_retained_limit() {
+    let mut ir = CadIr::empty();
+    let mut owner = feature("owner", "native");
+    owner
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::Native {
+            kind: cadmpeg_ir::features::NativeFeatureKind::Other("Custom".to_string()),
+            parameters: BTreeMap::new(),
+        }));
+    ir.model.features.push(owner);
+    let mut value = parameter("one", "native-parameter");
+    value.name = "Length".to_string();
+    ir.model.parameters.push(value);
+    let owners = HashMap::from([(
+        ir.model.parameters[0].id.clone(),
+        ir.model.features[0].id.clone(),
+    )]);
+    let refused = crate::test_support::with_retained_limit(0, |ctx| {
+        assign_native_operation_parameter_values(ctx, &mut ir, &owners)
+    });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_feature_operation_parameter_name")
+    );
+    crate::test_support::with_service_context(|ctx| {
+        assign_native_operation_parameter_values(ctx, &mut ir, &owners)
+    })
+    .expect("service profile admits operation values");
+    let FeatureDefinition::Operation(FeatureOperation::Native { parameters, .. }) =
+        ir.model.features[0].evaluation.definition()
+    else {
+        panic!("expected native operation")
+    };
+    assert_eq!(parameters.get("Length").map(String::as_str), Some("1 mm"));
+}
+
+#[test]
+fn exact_parameter_owner_lookup_refuses_collection_limit() {
+    let object_id = "synthetic:test:object#owner";
+    let native = CatiaNative {
+        object_graphs: vec![CatiaObjectGraph {
+            id: "graph".to_string(),
+            byte_offset: 0,
+            byte_len: 0,
+            finjpl_segment: None,
+            outer_container: None,
+            catalog_byte_offset: None,
+            catalog: None,
+            records: vec![object_record(
+                "owner-record",
+                Some(object_id),
+                Some(1),
+                None,
+                None,
+                None,
+            )],
+        }],
+        entity_records: vec![entity_record("owner-entity", "owner-record", 0, 1)],
+        design_objects: vec![design_object(object_id, None)],
+        ..CatiaNative::default()
+    };
+    let feature_id = FeatureId::mint("synthetic:test:id#owner").expect("identity grammar");
+    let transfer = DesignFeatureTransfer {
+        feature_ids: HashMap::from([(object_id.to_string(), feature_id.clone())]),
+        ..DesignFeatureTransfer::default()
+    };
+    let mut ir = CadIr::empty();
+    ir.model.parameters.push(parameter("one", "owner-entity"));
+    let refused = crate::test_support::with_collection_limit(0, |ctx| {
+        transfer.assign_parameter_owners(ctx, &mut ir, &native)
+    });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_feature_owner_entities")
+    );
+    crate::test_support::with_service_context(|ctx| {
+        transfer.assign_parameter_owners(ctx, &mut ir, &native)
+    })
+    .expect("service profile admits owner indexes");
+    assert_eq!(ir.model.parameters[0].owner.as_ref(), Some(&feature_id));
+}
+
+#[test]
+fn feature_dependency_lookup_refuses_collection_limit() {
+    let object_id = "synthetic:test:object#owner";
+    let native = CatiaNative {
+        design_objects: vec![design_object(object_id, None)],
+        ..CatiaNative::default()
+    };
+    let transfer = DesignFeatureTransfer::default();
+    let mut ir = CadIr::empty();
+    ir.model.features.push(feature("owner", object_id));
+    let refused = crate::test_support::with_collection_limit(0, |ctx| {
+        transfer.assign_feature_dependencies(ctx, &mut ir, &native)
+    });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_feature_dependency_objects")
+    );
+    crate::test_support::with_service_context(|ctx| {
+        transfer.assign_feature_dependencies(ctx, &mut ir, &native)
+    })
+    .expect("service profile admits dependency indexes");
+    assert!(ir.model.features[0].dependencies.is_empty());
+}
+
+#[test]
+fn native_operation_owned_object_rows_refuse_collection_limit() {
+    let object = design_object("synthetic:test:object#operation", None);
+    let objects = HashMap::from([(object.id.as_str(), &object)]);
+    let records = HashMap::new();
+    let entities = HashMap::new();
+    let operation_ids = HashSet::new();
+    let refused = crate::test_support::with_collection_limit(0, |ctx| {
+        super::native_operation_definition_properties(
+            ctx,
+            &object,
+            &records,
+            &entities,
+            &objects,
+            &operation_ids,
+        )
+    });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_feature_operation_owned_objects")
+    );
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        super::native_operation_definition_properties(
+            ctx,
+            &object,
+            &records,
+            &entities,
+            &objects,
+            &operation_ids,
+        )
+    })
+    .expect("service profile admits operation owner rows");
+    assert!(admitted.source_properties.is_empty());
+}
+
+#[test]
+fn native_operation_property_values_refuse_retained_limit() {
+    let value = crate::native::CatiaEntitySchemaValue {
+        offset: 7,
+        ordinal: 1,
+        entry: "catalog-entry".to_string(),
+        value: "Length".to_string(),
+    };
+    let prefix = cadmpeg_core::nonblank_literal!("catia_definition_value_0");
+    let refused = crate::test_support::with_retained_limit(0, |ctx| {
+        super::insert_schema_value_properties(ctx, &mut BTreeMap::new(), &prefix, &value)
+    });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_feature_property_key")
+    );
+    let properties = crate::test_support::with_service_context(|ctx| {
+        let mut properties = BTreeMap::new();
+        super::insert_schema_value_properties(ctx, &mut properties, &prefix, &value)
+            .expect("service profile admits operation properties");
+        properties
+    });
+    assert_eq!(
+        properties
+            .get("catia_definition_value_0_entry")
+            .map(String::as_str),
+        Some("catalog-entry")
+    );
+    assert_eq!(
+        properties
+            .get("catia_definition_value_0_value")
+            .map(String::as_str),
+        Some("Length")
+    );
+}
+
+#[test]
+fn native_sweep_unresolved_references_refuse_retained_limit() {
+    let refused = crate::test_support::with_retained_limit(0, |ctx| {
+        super::native_operation_definition(
+            ctx,
+            super::NativeOperationClass::SweepThickThin1,
+            "synthetic:test:object#sweep",
+        )
+    });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_feature_sweep_shape_ref")
+    );
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        super::native_operation_definition(
+            ctx,
+            super::NativeOperationClass::SweepThickThin1,
+            "synthetic:test:object#sweep",
+        )
+    })
+    .expect("service profile admits unresolved sweep refs");
+    assert!(matches!(
+        admitted,
+        FeatureDefinition::Operation(FeatureOperation::Sweep { .. })
+    ));
+}
+
+#[test]
 fn assigns_only_prior_payload_feature_dependencies_in_relation_order() {
-    let mut source = design_object("source-object", None);
+    let mut source = design_object("synthetic:test:object#source-object", None);
     let mut unresolved = payload_relation("unresolved-object", 6);
     unresolved.target_design_object = None;
     source.relations = vec![
-        payload_relation("first-object", 0),
-        payload_relation("first-object", 1),
-        payload_relation("second-child", 2),
-        payload_relation("forward-object", 3),
-        storage_relation("storage-object"),
-        payload_relation("source-object", 5),
+        payload_relation("synthetic:test:object#first-object", 0),
+        payload_relation("synthetic:test:object#first-object", 1),
+        payload_relation("synthetic:test:object#second-child", 2),
+        payload_relation("synthetic:test:object#forward-object", 3),
+        storage_relation("synthetic:test:object#storage-object"),
+        payload_relation("synthetic:test:object#source-object", 5),
         unresolved,
-        payload_relation("broken-object", 7),
-        payload_relation("cycle-first", 8),
+        payload_relation("synthetic:test:object#broken-object", 7),
+        payload_relation("synthetic:test:object#cycle-first", 8),
     ];
-    let broken = design_object("broken-object", Some("missing-object"));
-    let cycle_first = design_object("cycle-first", Some("cycle-second"));
-    let cycle_second = design_object("cycle-second", Some("cycle-first"));
+    let broken = design_object(
+        "synthetic:test:object#broken-object",
+        Some("missing-object"),
+    );
+    let cycle_first = design_object(
+        "synthetic:test:object#cycle-first",
+        Some("synthetic:test:object#cycle-second"),
+    );
+    let cycle_second = design_object(
+        "synthetic:test:object#cycle-second",
+        Some("synthetic:test:object#cycle-first"),
+    );
     let native = CatiaNative {
         design_objects: vec![
-            design_object("first-object", None),
-            design_object("second-object", None),
-            design_object("second-child", Some("second-object")),
-            design_object("forward-object", None),
-            design_object("storage-object", None),
+            design_object("synthetic:test:object#first-object", None),
+            design_object("synthetic:test:object#second-object", None),
+            design_object(
+                "synthetic:test:object#second-child",
+                Some("synthetic:test:object#second-object"),
+            ),
+            design_object("synthetic:test:object#forward-object", None),
+            design_object("synthetic:test:object#storage-object", None),
             broken,
             cycle_first,
             cycle_second,
@@ -329,11 +745,15 @@ fn assigns_only_prior_payload_feature_dependencies_in_relation_order() {
     };
     let mut ir = CadIr::empty();
     for (id, native_ref, ordinal) in [
-        ("first-feature", "first-object", 10),
-        ("second-feature", "second-object", 15),
-        ("source-feature", "source-object", 20),
-        ("forward-feature", "forward-object", 30),
-        ("storage-feature", "storage-object", 5),
+        ("first-feature", "synthetic:test:object#first-object", 10),
+        ("second-feature", "synthetic:test:object#second-object", 15),
+        ("source-feature", "synthetic:test:object#source-object", 20),
+        (
+            "forward-feature",
+            "synthetic:test:object#forward-object",
+            30,
+        ),
+        ("storage-feature", "synthetic:test:object#storage-object", 5),
     ] {
         let mut item = feature(id, native_ref);
         item.ordinal = ordinal;
@@ -342,58 +762,63 @@ fn assigns_only_prior_payload_feature_dependencies_in_relation_order() {
     let transfer = DesignFeatureTransfer {
         feature_ids: HashMap::from([
             (
-                "first-object".to_string(),
-                FeatureId::mint("first-feature").expect("identity grammar"),
+                "synthetic:test:object#first-object".to_string(),
+                FeatureId::mint("synthetic:test:id#first-feature").expect("identity grammar"),
             ),
             (
-                "second-object".to_string(),
-                FeatureId::mint("second-feature").expect("identity grammar"),
+                "synthetic:test:object#second-object".to_string(),
+                FeatureId::mint("synthetic:test:id#second-feature").expect("identity grammar"),
             ),
             (
-                "source-object".to_string(),
-                FeatureId::mint("source-feature").expect("identity grammar"),
+                "synthetic:test:object#source-object".to_string(),
+                FeatureId::mint("synthetic:test:id#source-feature").expect("identity grammar"),
             ),
             (
-                "forward-object".to_string(),
-                FeatureId::mint("forward-feature").expect("identity grammar"),
+                "synthetic:test:object#forward-object".to_string(),
+                FeatureId::mint("synthetic:test:id#forward-feature").expect("identity grammar"),
             ),
             (
-                "storage-object".to_string(),
-                FeatureId::mint("storage-feature").expect("identity grammar"),
+                "synthetic:test:object#storage-object".to_string(),
+                FeatureId::mint("synthetic:test:id#storage-feature").expect("identity grammar"),
             ),
         ]),
         ..DesignFeatureTransfer::default()
     };
 
-    transfer.assign_feature_dependencies(&mut ir, &native);
+    crate::test_support::with_service_context(|ctx| {
+        transfer.assign_feature_dependencies(ctx, &mut ir, &native)
+    })
+    .unwrap();
 
     let source = ir
         .model
         .features
         .iter()
-        .find(|feature| feature.id == FeatureId::mint("source-feature").expect("identity grammar"))
+        .find(|feature| {
+            feature.id
+                == FeatureId::mint("synthetic:test:id#source-feature").expect("identity grammar")
+        })
         .unwrap();
     assert_eq!(
-        source.dependencies,
+        source.dependencies.as_slice(),
         [
-            FeatureId::mint("first-feature").expect("identity grammar"),
-            FeatureId::mint("second-feature").expect("identity grammar")
+            FeatureId::mint("synthetic:test:id#first-feature").expect("identity grammar"),
+            FeatureId::mint("synthetic:test:id#second-feature").expect("identity grammar")
         ]
     );
-    assert!(
-        ir.model
-            .features
-            .iter()
-            .filter(|feature| feature.id
-                != FeatureId::mint("source-feature").expect("identity grammar"))
-            .all(|feature| feature.dependencies.is_empty())
-    );
+    assert!(ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| feature.id
+            != FeatureId::mint("synthetic:test:id#source-feature").expect("identity grammar"))
+        .all(|feature| feature.dependencies.is_empty()));
 }
 
 #[test]
 fn transfers_admitted_native_operations_with_exact_parentage() {
     let mut parent = native_operation_object(
-        "parent-object",
+        "synthetic:test:object#parent-object",
         None,
         1,
         "parent-record",
@@ -402,8 +827,8 @@ fn transfers_admitted_native_operations_with_exact_parentage() {
     );
     parent.first_field_byte_offset = 10;
     let mut child = native_operation_object(
-        "child-object",
-        Some("parent-object"),
+        "synthetic:test:object#child-object",
+        Some("synthetic:test:object#parent-object"),
         2,
         "child-record",
         "EdgeFillet",
@@ -431,7 +856,7 @@ fn transfers_admitted_native_operations_with_exact_parentage() {
                 ),
                 object_record(
                     "child-record",
-                    Some("parent-object"),
+                    Some("synthetic:test:object#parent-object"),
                     Some(2),
                     Some(1),
                     Some("EdgeFillet"),
@@ -443,26 +868,34 @@ fn transfers_admitted_native_operations_with_exact_parentage() {
     };
     let mut ir = CadIr::empty();
 
-    let transfer = transfer_design_features(&mut ir, &native, None);
+    let transfer = crate::test_support::with_service_context(|ctx| {
+        transfer_design_features(
+            ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
+    .unwrap();
 
     assert_eq!(ir.model.features.len(), 2);
     assert_eq!(ir.model.features[0].ordinal, 10);
     assert_eq!(ir.model.features[1].ordinal, 20);
     assert_eq!(
         ir.model.feature_parent(&ir.model.features[1].id),
-        Some(&FeatureId::mint("parent-object:feature").expect("identity grammar"))
+        Some(&FeatureId::mint("synthetic:test:feature#parent-object").expect("identity grammar"))
     );
     assert!(matches!(
-        ir.model.features[0].definition,
-        FeatureDefinition::Unresolved {
+        ir.model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::Extrude
-        }
+        })
     ));
     assert!(matches!(
-        ir.model.features[1].definition,
-        FeatureDefinition::Unresolved {
+        ir.model.features[1].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::Fillet
-        }
+        })
     ));
     assert!(ir
         .model
@@ -474,27 +907,180 @@ fn transfers_admitted_native_operations_with_exact_parentage() {
         HashSet::from(["parent-record".to_string(), "child-record".to_string()])
     );
     assert_eq!(
-        transfer.consumed_records(),
+        transfer.consumed_records().cloned().collect::<HashSet<_>>(),
         transfer.native_operation_records
     );
 }
 
 #[test]
+fn design_feature_entity_limit_refuses_before_feature_push() {
+    let native = CatiaNative {
+        design_objects: vec![native_operation_object(
+            "synthetic:test:object#operation-object",
+            None,
+            1,
+            "operation-record",
+            "EdgeFillet",
+            "operation-entry",
+        )],
+        object_graphs: vec![CatiaObjectGraph {
+            id: "graph".to_string(),
+            byte_offset: 0,
+            byte_len: 0,
+            finjpl_segment: None,
+            outer_container: None,
+            catalog_byte_offset: None,
+            catalog: None,
+            records: vec![object_record(
+                "operation-record",
+                None,
+                Some(1),
+                None,
+                Some("EdgeFillet"),
+                Some("operation-entry"),
+            )],
+        }],
+        ..CatiaNative::default()
+    };
+    let mut ir = CadIr::empty();
+    let error = crate::test_support::with_entity_limit(0, |ctx| {
+        transfer_design_features(
+            ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    });
+    let Err(error) = error else {
+        panic!("one design feature exceeds zero entities");
+    };
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+            && limit.operation == "admit CATIA design feature")
+    );
+    assert!(ir.model.features.is_empty());
+}
+
+fn sketch_owner_native() -> CatiaNative {
+    CatiaNative {
+        design_objects: vec![native_operation_object(
+            "synthetic:test:object#sketch-object",
+            None,
+            1,
+            "sketch-record",
+            "Sketch",
+            "sketch-entry",
+        )],
+        object_graphs: vec![CatiaObjectGraph {
+            id: "graph".to_string(),
+            byte_offset: 0,
+            byte_len: 0,
+            finjpl_segment: None,
+            outer_container: None,
+            catalog_byte_offset: None,
+            catalog: None,
+            records: vec![object_record(
+                "sketch-record",
+                None,
+                Some(1),
+                None,
+                Some("Sketch"),
+                Some("sketch-entry"),
+            )],
+        }],
+        ..CatiaNative::default()
+    }
+}
+
+#[test]
+fn design_sketch_entity_limit_refuses_before_sketch_push() {
+    let native = sketch_owner_native();
+    let mut ir = CadIr::empty();
+    let error = crate::test_support::with_entity_limit(0, |ctx| {
+        transfer_design_features(
+            ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    });
+    let Err(error) = error else {
+        panic!("one sketch exceeds zero entities");
+    };
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+            && limit.operation == "admit CATIA design sketch")
+    );
+    assert!(ir.model.sketches.is_empty());
+}
+
+#[test]
+fn design_sketch_feature_limit_refuses_before_feature_push() {
+    let native = sketch_owner_native();
+    let mut ir = CadIr::empty();
+    let error = crate::test_support::with_entity_limit(1, |ctx| {
+        transfer_design_features(
+            ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    });
+    let Err(error) = error else {
+        panic!("sketch and feature exceed one entity");
+    };
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+            && limit.operation == "admit CATIA design feature")
+    );
+    assert_eq!(ir.model.sketches.len(), 1);
+    assert!(ir.model.features.is_empty());
+}
+
+#[test]
 fn maps_each_admitted_operation_class_to_its_neutral_family() {
     let cases = [
-        ("prism-one", "Prism_ThickThin1", "prism-one-record", 1_u32),
-        ("prism-two", "Prism_ThickThin2", "prism-two-record", 2_u32),
         (
-            "end-limit",
+            "synthetic:test:object#prism-one",
+            "Prism_ThickThin1",
+            "prism-one-record",
+            1_u32,
+        ),
+        (
+            "synthetic:test:object#prism-two",
+            "Prism_ThickThin2",
+            "prism-two-record",
+            2_u32,
+        ),
+        (
+            "synthetic:test:object#end-limit",
             "Prism_EndLimit_Length",
             "end-limit-record",
             3_u32,
         ),
-        ("revolution", "Revol_ThickThin1", "revolution-record", 4_u32),
-        ("sweep", "Sweep_ThickThin1", "sweep-record", 5_u32),
-        ("fillet", "EdgeFillet", "fillet-record", 6_u32),
         (
-            "circular-pattern",
+            "synthetic:test:object#revolution",
+            "Revol_ThickThin1",
+            "revolution-record",
+            4_u32,
+        ),
+        (
+            "synthetic:test:object#sweep",
+            "Sweep_ThickThin1",
+            "sweep-record",
+            5_u32,
+        ),
+        (
+            "synthetic:test:object#fillet",
+            "EdgeFillet",
+            "fillet-record",
+            6_u32,
+        ),
+        (
+            "synthetic:test:object#circular-pattern",
             "CircPattern_RadialNumber",
             "circular-pattern-record",
             7_u32,
@@ -512,7 +1098,7 @@ fn maps_each_admitted_operation_class_to_its_neutral_family() {
                 kind,
                 &format!("{kind}-entry"),
             );
-            object.first_field_byte_offset = (ordinal as u64) * 10;
+            object.first_field_byte_offset = (cadmpeg_core::decode::u64_from_index(ordinal)) * 10;
             object
         })
         .collect::<Vec<_>>();
@@ -545,63 +1131,79 @@ fn maps_each_admitted_operation_class_to_its_neutral_family() {
     };
     let mut ir = CadIr::empty();
 
-    transfer_design_features(&mut ir, &native, None);
+    crate::test_support::with_service_context(|ctx| {
+        transfer_design_features(
+            ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
+    .unwrap();
 
     assert_eq!(ir.model.features.len(), cases.len());
     for feature in &ir.model.features {
         match feature.source_tag.as_deref() {
             Some("Prism_EndLimit_Length" | "Prism_ThickThin1" | "Prism_ThickThin2") => {
                 assert!(matches!(
-                    feature.definition,
-                    FeatureDefinition::Unresolved {
+                    feature.evaluation.definition(),
+                    FeatureDefinition::Operation(FeatureOperation::Unresolved {
                         family: UnresolvedFamily::Extrude
-                    }
+                    })
                 ));
             }
             Some("Revol_ThickThin1") => {
                 assert!(matches!(
-                    feature.definition,
-                    FeatureDefinition::Unresolved {
+                    feature.evaluation.definition(),
+                    FeatureDefinition::Operation(FeatureOperation::Unresolved {
                         family: UnresolvedFamily::Revolve
-                    }
+                    })
                 ));
             }
             Some("Sweep_ThickThin1") => {
-                let FeatureDefinition::Sweep {
-                    section,
-                    path,
-                    mode,
-                    ..
-                } = &feature.definition
+                let FeatureDefinition::Operation(FeatureOperation::Sweep { shape, path, .. }) =
+                    feature.evaluation.definition()
                 else {
                     panic!("expected a typed unresolved sweep");
                 };
-                assert!(matches!(
-                    section,
-                    cadmpeg_ir::features::SweepSection::Unresolved(Some(_))
-                ));
+                let mode = shape.mode();
+                assert!((match shape {
+                    cadmpeg_ir::features::SweepShape::Unresolved { section, .. }
+                    | cadmpeg_ir::features::SweepShape::Surface { section, .. } =>
+                        section.unresolved_native(),
+                    cadmpeg_ir::features::SweepShape::Solid { section, .. } =>
+                        section.unresolved_native(),
+                })
+                .is_some());
                 assert!(matches!(
                     path,
                     Some(cadmpeg_ir::features::PathRef::Unresolved(_))
                 ));
-                assert!(matches!(mode, cadmpeg_ir::features::SweepMode::Unresolved));
+                assert!(matches!(
+                    mode,
+                    cadmpeg_ir::features::SweepMode::Unresolved {}
+                ));
             }
             Some("EdgeFillet") => {
                 assert!(matches!(
-                    feature.definition,
-                    FeatureDefinition::Unresolved {
+                    feature.evaluation.definition(),
+                    FeatureDefinition::Operation(FeatureOperation::Unresolved {
                         family: UnresolvedFamily::Fillet
-                    }
+                    })
                 ));
             }
             Some("CircPattern_RadialNumber") => {
-                let FeatureDefinition::Pattern { seeds, pattern } = &feature.definition else {
+                let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) =
+                    feature.evaluation.definition()
+                else {
                     panic!("expected a typed unresolved circular pattern");
                 };
                 assert!(seeds.is_empty());
                 assert!(matches!(
-                    pattern,
-                    cadmpeg_ir::features::PatternKind::UnresolvedCircular
+                    (pattern).definition(),
+                    cadmpeg_ir::features::patterns::PatternTransform::Unresolved {
+                        form: Some(cadmpeg_ir::features::patterns::PatternForm::Circular)
+                    }
                 ));
             }
             other => panic!("unexpected operation source tag: {other:?}"),
@@ -610,419 +1212,9 @@ fn maps_each_admitted_operation_class_to_its_neutral_family() {
 }
 
 #[test]
-fn transfers_exact_definition_values_as_typed_feature_properties() {
-    let mut operation = native_operation_object(
-        "operation-object",
-        None,
-        1,
-        "operation-record",
-        "Prism_ThickThin1",
-        "operation-entry",
-    );
-    operation
-        .definition_values
-        .push("definition-entity".to_string());
-    operation.fields.push("definition-record".to_string());
-    let mut definition_entity = entity_record("definition-entity", "definition-record", 20, 1);
-    definition_entity.value_production = Some(
-        crate::native::entity_record::CatiaEntityValueProduction::DefinitionValue(
-            CatiaDefinitionValue {
-                definition: CatiaEntitySchemaValue {
-                    offset: 4,
-                    ordinal: 2,
-                    entry: "definition-entry".to_string(),
-                    value: "Mirror".to_string(),
-                },
-                payload: CatiaEntitySuffixPayload::Evaluation {
-                    opcode_offset: 8,
-                    evaluation: CatiaEntityEvaluation::Scalar {
-                        bits: 12.5_f64.to_bits(),
-                    },
-                    encoding: CatiaEntityEvaluationEncoding::Direct,
-                },
-                schema_selection: None,
-            },
-        ),
-    );
-    let native = CatiaNative {
-        design_objects: vec![operation],
-        object_graphs: vec![CatiaObjectGraph {
-            id: "graph".to_string(),
-            byte_offset: 0,
-            byte_len: 0,
-            finjpl_segment: None,
-            outer_container: None,
-            catalog_byte_offset: None,
-            catalog: None,
-            records: vec![
-                object_record(
-                    "operation-record",
-                    None,
-                    Some(1),
-                    None,
-                    Some("Prism_ThickThin1"),
-                    Some("operation-entry"),
-                ),
-                object_record(
-                    "definition-record",
-                    Some("operation-object"),
-                    Some(1),
-                    Some(1),
-                    None,
-                    None,
-                ),
-            ],
-        }],
-        entity_records: vec![definition_entity],
-        ..CatiaNative::default()
-    };
-    let mut ir = CadIr::empty();
-
-    let transfer = transfer_design_features(&mut ir, &native, None);
-
-    assert!(matches!(
-        ir.model.features[0].definition,
-        FeatureDefinition::Unresolved {
-            family: UnresolvedFamily::Extrude
-        }
-    ));
-    assert_eq!(
-        &ir.model.features[0].source_properties,
-        &BTreeMap::from([
-            (
-                "catia_definition_value_0_definition_entry".to_string(),
-                "definition-entry".to_string(),
-            ),
-            (
-                "catia_definition_value_0_definition_offset".to_string(),
-                "4".to_string(),
-            ),
-            (
-                "catia_definition_value_0_definition_ordinal".to_string(),
-                "2".to_string(),
-            ),
-            (
-                "catia_definition_value_0_definition_value".to_string(),
-                "Mirror".to_string(),
-            ),
-            (
-                "catia_definition_value_0_entity".to_string(),
-                "definition-entity".to_string(),
-            ),
-            (
-                "catia_definition_value_0_payload_encoding".to_string(),
-                "direct".to_string(),
-            ),
-            (
-                "catia_definition_value_0_payload_evaluation".to_string(),
-                "scalar".to_string(),
-            ),
-            (
-                "catia_definition_value_0_payload_evaluation_bits".to_string(),
-                format!("{:016x}", 12.5_f64.to_bits()),
-            ),
-            (
-                "catia_definition_value_0_payload_kind".to_string(),
-                "evaluation".to_string(),
-            ),
-            (
-                "catia_definition_value_0_payload_opcode_offset".to_string(),
-                "8".to_string(),
-            ),
-        ])
-    );
-    assert_eq!(transfer.native_operation_definition_value_count, 1);
-    assert_eq!(
-        transfer.native_operation_definition_value_records,
-        HashSet::from(["definition-record".to_string()])
-    );
-    assert_eq!(
-        transfer.consumed_records(),
-        HashSet::from([
-            "operation-record".to_string(),
-            "definition-record".to_string()
-        ])
-    );
-}
-
-#[test]
-fn transfers_exact_definition_chains_as_typed_feature_properties() {
-    let mut operation = native_operation_object(
-        "operation-object",
-        None,
-        1,
-        "operation-record",
-        "Prism_ThickThin1",
-        "operation-entry",
-    );
-    operation
-        .definition_chain_values
-        .push("definition-chain-entity".to_string());
-    operation.fields.push("definition-chain-record".to_string());
-    let mut chain_entity =
-        entity_record("definition-chain-entity", "definition-chain-record", 20, 1);
-    chain_entity.value_production = Some(
-        crate::native::entity_record::CatiaEntityValueProduction::DefinitionChainValue(
-            CatiaDefinitionChainValue {
-                selector: CatiaEntitySchemaValue {
-                    offset: 4,
-                    ordinal: 2,
-                    entry: "selector-entry".to_string(),
-                    value: "Length".to_string(),
-                },
-                role: CatiaEntitySchemaValue {
-                    offset: 8,
-                    ordinal: 3,
-                    entry: "role-entry".to_string(),
-                    value: "UnsupportedRole".to_string(),
-                },
-                value: CatiaEntitySuffixSchemaValue::Evaluation {
-                    opcode_offset: 12,
-                    evaluation: CatiaEntityEvaluation::Scalar {
-                        bits: 12.5_f64.to_bits(),
-                    },
-                },
-            },
-        ),
-    );
-    let native = CatiaNative {
-        design_objects: vec![operation],
-        object_graphs: vec![CatiaObjectGraph {
-            id: "graph".to_string(),
-            byte_offset: 0,
-            byte_len: 0,
-            finjpl_segment: None,
-            outer_container: None,
-            catalog_byte_offset: None,
-            catalog: None,
-            records: vec![
-                object_record(
-                    "operation-record",
-                    None,
-                    Some(1),
-                    None,
-                    Some("Prism_ThickThin1"),
-                    Some("operation-entry"),
-                ),
-                object_record(
-                    "definition-chain-record",
-                    Some("operation-object"),
-                    Some(1),
-                    Some(1),
-                    None,
-                    None,
-                ),
-            ],
-        }],
-        entity_records: vec![chain_entity],
-        ..CatiaNative::default()
-    };
-    let mut ir = CadIr::empty();
-
-    let transfer = transfer_design_features(&mut ir, &native, None);
-
-    assert!(matches!(
-        ir.model.features[0].definition,
-        FeatureDefinition::Unresolved {
-            family: UnresolvedFamily::Extrude
-        }
-    ));
-    assert_eq!(
-        &ir.model.features[0].source_properties,
-        &BTreeMap::from([
-            (
-                "catia_definition_chain_value_0_entity".to_string(),
-                "definition-chain-entity".to_string(),
-            ),
-            (
-                "catia_definition_chain_value_0_role_entry".to_string(),
-                "role-entry".to_string(),
-            ),
-            (
-                "catia_definition_chain_value_0_role_offset".to_string(),
-                "8".to_string(),
-            ),
-            (
-                "catia_definition_chain_value_0_role_ordinal".to_string(),
-                "3".to_string(),
-            ),
-            (
-                "catia_definition_chain_value_0_role_value".to_string(),
-                "UnsupportedRole".to_string(),
-            ),
-            (
-                "catia_definition_chain_value_0_selector_entry".to_string(),
-                "selector-entry".to_string(),
-            ),
-            (
-                "catia_definition_chain_value_0_selector_offset".to_string(),
-                "4".to_string(),
-            ),
-            (
-                "catia_definition_chain_value_0_selector_ordinal".to_string(),
-                "2".to_string(),
-            ),
-            (
-                "catia_definition_chain_value_0_selector_value".to_string(),
-                "Length".to_string(),
-            ),
-            (
-                "catia_definition_chain_value_0_value_evaluation".to_string(),
-                "scalar".to_string(),
-            ),
-            (
-                "catia_definition_chain_value_0_value_evaluation_bits".to_string(),
-                format!("{:016x}", 12.5_f64.to_bits()),
-            ),
-            (
-                "catia_definition_chain_value_0_value_kind".to_string(),
-                "evaluation".to_string(),
-            ),
-            (
-                "catia_definition_chain_value_0_value_opcode_offset".to_string(),
-                "12".to_string(),
-            ),
-        ])
-    );
-    assert_eq!(transfer.native_operation_definition_chain_value_count, 1);
-    assert_eq!(
-        transfer.native_operation_definition_chain_value_records,
-        HashSet::from(["definition-chain-record".to_string()])
-    );
-    assert_eq!(
-        transfer.consumed_records(),
-        HashSet::from([
-            "operation-record".to_string(),
-            "definition-chain-record".to_string()
-        ])
-    );
-}
-
-#[test]
-fn transfers_definition_chains_from_exact_operation_owner_descendants() {
-    let mut operation = native_operation_object(
-        "operation-object",
-        None,
-        1,
-        "operation-record",
-        "Prism_ThickThin1",
-        "operation-entry",
-    );
-    operation.first_field_byte_offset = 10;
-    let mut descendant = design_object("descendant-object", Some("operation-object"));
-    descendant.first_field_byte_offset = 20;
-    descendant
-        .definition_chain_values
-        .push("descendant-chain-entity".to_string());
-    let mut descendant_entity =
-        entity_record("descendant-chain-entity", "descendant-record", 30, 2);
-    descendant_entity.value_production = Some(
-        crate::native::entity_record::CatiaEntityValueProduction::DefinitionChainValue(
-            CatiaDefinitionChainValue {
-                selector: CatiaEntitySchemaValue {
-                    offset: 2,
-                    ordinal: 4,
-                    entry: "selector-entry".to_string(),
-                    value: "Length".to_string(),
-                },
-                role: CatiaEntitySchemaValue {
-                    offset: 7,
-                    ordinal: 5,
-                    entry: "role-entry".to_string(),
-                    value: "UnsupportedRole".to_string(),
-                },
-                value: CatiaEntitySuffixSchemaValue::Atom { value: 3 },
-            },
-        ),
-    );
-    let native = CatiaNative {
-        design_objects: vec![operation, descendant],
-        object_graphs: vec![CatiaObjectGraph {
-            id: "graph".to_string(),
-            byte_offset: 0,
-            byte_len: 0,
-            finjpl_segment: None,
-            outer_container: None,
-            catalog_byte_offset: None,
-            catalog: None,
-            records: vec![object_record(
-                "operation-record",
-                None,
-                Some(1),
-                None,
-                Some("Prism_ThickThin1"),
-                Some("operation-entry"),
-            )],
-        }],
-        entity_records: vec![descendant_entity],
-        ..CatiaNative::default()
-    };
-    let mut ir = CadIr::empty();
-
-    let transfer = transfer_design_features(&mut ir, &native, None);
-
-    assert!(matches!(
-        ir.model.features[0].definition,
-        FeatureDefinition::Unresolved {
-            family: UnresolvedFamily::Extrude
-        }
-    ));
-    assert_eq!(
-        &ir.model.features[0].source_properties,
-        &BTreeMap::from([
-            (
-                "catia_definition_chain_value_0_entity".to_string(),
-                "descendant-chain-entity".to_string(),
-            ),
-            (
-                "catia_definition_chain_value_0_role_entry".to_string(),
-                "role-entry".to_string(),
-            ),
-            (
-                "catia_definition_chain_value_0_role_offset".to_string(),
-                "7".to_string(),
-            ),
-            (
-                "catia_definition_chain_value_0_role_ordinal".to_string(),
-                "5".to_string(),
-            ),
-            (
-                "catia_definition_chain_value_0_role_value".to_string(),
-                "UnsupportedRole".to_string(),
-            ),
-            (
-                "catia_definition_chain_value_0_selector_entry".to_string(),
-                "selector-entry".to_string(),
-            ),
-            (
-                "catia_definition_chain_value_0_selector_offset".to_string(),
-                "2".to_string(),
-            ),
-            (
-                "catia_definition_chain_value_0_selector_ordinal".to_string(),
-                "4".to_string(),
-            ),
-            (
-                "catia_definition_chain_value_0_selector_value".to_string(),
-                "Length".to_string(),
-            ),
-            (
-                "catia_definition_chain_value_0_value_kind".to_string(),
-                "atom".to_string(),
-            ),
-            (
-                "catia_definition_chain_value_0_value_atom".to_string(),
-                "3".to_string(),
-            ),
-        ])
-    );
-    assert_eq!(transfer.native_operation_definition_chain_value_count, 1);
-}
-
-#[test]
 fn orders_exact_feature_parameters_by_serialized_field_position() {
     let operation = native_operation_object(
-        "operation-object",
+        "synthetic:test:object#operation-object",
         None,
         1,
         "operation-record",
@@ -1039,7 +1231,7 @@ fn orders_exact_feature_parameters_by_serialized_field_position() {
     );
     let mut late_parameter_record = object_record(
         "late-parameter-record",
-        Some("operation-object"),
+        Some("synthetic:test:object#operation-object"),
         Some(3),
         Some(1),
         None,
@@ -1051,7 +1243,7 @@ fn orders_exact_feature_parameters_by_serialized_field_position() {
     }
     let mut early_parameter_record = object_record(
         "early-parameter-record",
-        Some("operation-object"),
+        Some("synthetic:test:object#operation-object"),
         Some(2),
         Some(1),
         None,
@@ -1094,8 +1286,19 @@ fn orders_exact_feature_parameters_by_serialized_field_position() {
     document_parameter.ordinal = 2;
     ir.model.parameters.push(document_parameter);
 
-    let transfer = transfer_design_features(&mut ir, &native, None);
-    transfer.assign_parameter_owners(&mut ir, &native);
+    let transfer = crate::test_support::with_service_context(|ctx| {
+        transfer_design_features(
+            ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
+    .unwrap();
+    crate::test_support::with_service_context(|ctx| {
+        transfer.assign_parameter_owners(ctx, &mut ir, &native)
+    })
+    .unwrap();
 
     assert_eq!(
         ir.model
@@ -1109,17 +1312,26 @@ fn orders_exact_feature_parameters_by_serialized_field_position() {
             .collect::<Vec<_>>(),
         vec![
             (
-                ParameterId::mint("late-parameter".to_string()).expect("identity grammar"),
-                Some(FeatureId::mint("operation-object:feature").expect("identity grammar")),
+                ParameterId::mint("synthetic:test:id#late-parameter".to_string())
+                    .expect("identity grammar"),
+                Some(
+                    FeatureId::mint("synthetic:test:feature#operation-object")
+                        .expect("identity grammar")
+                ),
                 1,
             ),
             (
-                ParameterId::mint("early-parameter".to_string()).expect("identity grammar"),
-                Some(FeatureId::mint("operation-object:feature").expect("identity grammar")),
+                ParameterId::mint("synthetic:test:id#early-parameter".to_string())
+                    .expect("identity grammar"),
+                Some(
+                    FeatureId::mint("synthetic:test:feature#operation-object")
+                        .expect("identity grammar")
+                ),
                 0,
             ),
             (
-                ParameterId::mint("document-parameter".to_string()).expect("identity grammar"),
+                ParameterId::mint("synthetic:test:id#document-parameter".to_string())
+                    .expect("identity grammar"),
                 None,
                 0,
             ),
@@ -1129,11 +1341,11 @@ fn orders_exact_feature_parameters_by_serialized_field_position() {
         &ir.model.features[0].source_properties,
         &BTreeMap::from([
             (
-                "catia_parameter_early-parameter".to_string(),
+                cadmpeg_core::nonblank_literal!("catia_parameter_early-parameter"),
                 "1 mm".to_string()
             ),
             (
-                "catia_parameter_late-parameter".to_string(),
+                cadmpeg_core::nonblank_literal!("catia_parameter_late-parameter"),
                 "1 mm".to_string()
             ),
         ])
@@ -1143,7 +1355,7 @@ fn orders_exact_feature_parameters_by_serialized_field_position() {
 #[test]
 fn assigns_a_nested_parameter_to_the_nearest_operation() {
     let mut parent = native_operation_object(
-        "parent-operation",
+        "synthetic:test:object#parent-operation",
         None,
         1,
         "parent-record",
@@ -1152,8 +1364,8 @@ fn assigns_a_nested_parameter_to_the_nearest_operation() {
     );
     parent.first_field_byte_offset = 10;
     let mut child = native_operation_object(
-        "child-operation",
-        Some("parent-operation"),
+        "synthetic:test:object#child-operation",
+        Some("synthetic:test:object#parent-operation"),
         2,
         "child-record",
         "Prism_ThickThin2",
@@ -1170,7 +1382,7 @@ fn assigns_a_nested_parameter_to_the_nearest_operation() {
     );
     let child_record = object_record(
         "child-record",
-        Some("parent-operation"),
+        Some("synthetic:test:object#parent-operation"),
         Some(2),
         Some(1),
         Some("Prism_ThickThin2"),
@@ -1178,7 +1390,7 @@ fn assigns_a_nested_parameter_to_the_nearest_operation() {
     );
     let mut parameter_record = object_record(
         "parameter-record",
-        Some("child-operation"),
+        Some("synthetic:test:object#child-operation"),
         Some(3),
         Some(2),
         None,
@@ -1207,14 +1419,28 @@ fn assigns_a_nested_parameter_to_the_nearest_operation() {
         .parameters
         .push(parameter("parameter", "parameter-entity"));
 
-    let transfer = transfer_design_features(&mut ir, &native, None);
-    transfer.assign_parameter_owners(&mut ir, &native);
+    let transfer = crate::test_support::with_service_context(|ctx| {
+        transfer_design_features(
+            ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
+    .unwrap();
+    crate::test_support::with_service_context(|ctx| {
+        transfer.assign_parameter_owners(ctx, &mut ir, &native)
+    })
+    .unwrap();
 
-    let child_feature = FeatureId::mint("child-operation:feature").expect("identity grammar");
+    let child_feature =
+        FeatureId::mint("synthetic:test:feature#child-operation").expect("identity grammar");
     assert_eq!(ir.model.parameters[0].owner, Some(child_feature.clone()));
     assert_eq!(
         ir.model.feature_parent(&ir.model.features[1].id),
-        Some(&FeatureId::mint("parent-operation:feature").expect("identity grammar"))
+        Some(
+            &FeatureId::mint("synthetic:test:feature#parent-operation").expect("identity grammar")
+        )
     );
     assert_eq!(
         ir.model.features[1]
@@ -1229,20 +1455,22 @@ fn assigns_a_nested_parameter_to_the_nearest_operation() {
 fn native_parameter_map_uses_disambiguated_names_when_source_names_collide() {
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
-        id: FeatureId::mint("feature").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: Some("Prism_ThickThin1".to_string()),
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Native {
-            kind: "Prism_ThickThin1".into(),
-            parameters: BTreeMap::new(),
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Native {
+                kind: "Prism_ThickThin1".into(),
+                parameters: BTreeMap::new(),
+            }),
+        ),
         native_ref: Some("native-feature".to_string()),
     });
     let mut first = parameter("first", "first-native");
@@ -1251,29 +1479,44 @@ fn native_parameter_map_uses_disambiguated_names_when_source_names_collide() {
     second.name = "Length".to_string();
     ir.model.parameters.extend([first, second]);
 
-    normalize_parameter_names(&mut ir);
-    assign_native_operation_parameter_values(
-        &mut ir,
-        &HashMap::from([
-            (
-                ParameterId::mint("first".to_string()).expect("identity grammar"),
-                FeatureId::mint("feature").expect("identity grammar"),
-            ),
-            (
-                ParameterId::mint("second".to_string()).expect("identity grammar"),
-                FeatureId::mint("feature").expect("identity grammar"),
-            ),
-        ]),
-    );
+    crate::test_support::with_service_context(|ctx| normalize_parameter_names(ctx, &mut ir))
+        .unwrap();
+    crate::test_support::with_service_context(|ctx| {
+        assign_native_operation_parameter_values(
+            ctx,
+            &mut ir,
+            &HashMap::from([
+                (
+                    ParameterId::mint("synthetic:test:id#first".to_string())
+                        .expect("identity grammar"),
+                    FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
+                ),
+                (
+                    ParameterId::mint("synthetic:test:id#second".to_string())
+                        .expect("identity grammar"),
+                    FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
+                ),
+            ]),
+        )
+    })
+    .unwrap();
 
-    let FeatureDefinition::Native { parameters, .. } = &ir.model.features[0].definition else {
+    let FeatureDefinition::Operation(FeatureOperation::Native { parameters, .. }) =
+        ir.model.features[0].evaluation.definition()
+    else {
         panic!("expected an opaque native operation");
     };
     assert_eq!(
         parameters,
         &BTreeMap::from([
-            ("Length".to_string(), "1 mm".to_string()),
-            ("Length#1".to_string(), "1 mm".to_string()),
+            (
+                cadmpeg_core::nonblank_literal!("Length"),
+                "1 mm".to_string()
+            ),
+            (
+                cadmpeg_core::nonblank_literal!("Length#1"),
+                "1 mm".to_string()
+            ),
         ])
     );
 }
@@ -1282,20 +1525,22 @@ fn native_parameter_map_uses_disambiguated_names_when_source_names_collide() {
 fn native_parameter_map_retains_circular_pattern_values_in_source_properties() {
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
-        id: FeatureId::mint("pattern-feature").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#pattern-feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: Some("CircPattern_RadialNumber".to_string()),
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Pattern {
-            seeds: Vec::new(),
-            pattern: cadmpeg_ir::features::PatternKind::UnresolvedCircular,
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Pattern {
+                seeds: Vec::new(),
+                pattern: cadmpeg_ir::features::patterns::PatternKind::UNRESOLVED_CIRCULAR,
+            }),
+        ),
         native_ref: Some("pattern-feature".to_string()),
     });
     let mut value = parameter("pattern-parameter", "pattern-native");
@@ -1303,14 +1548,20 @@ fn native_parameter_map_retains_circular_pattern_values_in_source_properties() {
     value.expression = "3".to_string();
     ir.model.parameters.push(value);
 
-    normalize_parameter_names(&mut ir);
-    assign_native_operation_parameter_values(
-        &mut ir,
-        &HashMap::from([(
-            ParameterId::mint("pattern-parameter".to_string()).expect("identity grammar"),
-            FeatureId::mint("pattern-feature").expect("identity grammar"),
-        )]),
-    );
+    crate::test_support::with_service_context(|ctx| normalize_parameter_names(ctx, &mut ir))
+        .unwrap();
+    crate::test_support::with_service_context(|ctx| {
+        assign_native_operation_parameter_values(
+            ctx,
+            &mut ir,
+            &HashMap::from([(
+                ParameterId::mint("synthetic:test:id#pattern-parameter".to_string())
+                    .expect("identity grammar"),
+                FeatureId::mint("synthetic:test:id#pattern-feature").expect("identity grammar"),
+            )]),
+        )
+    })
+    .unwrap();
 
     assert_eq!(
         ir.model.features[0]
@@ -1323,7 +1574,7 @@ fn native_parameter_map_retains_circular_pattern_values_in_source_properties() {
 
 #[test]
 fn disambiguates_parameter_names_without_hiding_a_later_source_name() {
-    let owner = FeatureId::mint("feature").expect("identity grammar");
+    let owner = FeatureId::mint("synthetic:test:id#feature").expect("identity grammar");
     let mut ir = CadIr::empty();
     let mut first = parameter("first", "first-native");
     first.owner = Some(owner.clone());
@@ -1338,7 +1589,8 @@ fn disambiguates_parameter_names_without_hiding_a_later_source_name() {
         .parameters
         .extend([first, second, later_source_name]);
 
-    normalize_parameter_names(&mut ir);
+    crate::test_support::with_service_context(|ctx| normalize_parameter_names(ctx, &mut ir))
+        .unwrap();
 
     assert_eq!(
         ir.model
@@ -1360,7 +1612,7 @@ fn disambiguates_parameter_names_without_hiding_a_later_source_name() {
 #[test]
 fn does_not_promote_an_unadmitted_helper_owner_class() {
     let object = native_operation_object(
-        "helper-object",
+        "synthetic:test:object#helper-object",
         None,
         1,
         "helper-record",
@@ -1390,7 +1642,15 @@ fn does_not_promote_an_unadmitted_helper_owner_class() {
     };
     let mut ir = CadIr::empty();
 
-    let transfer = transfer_design_features(&mut ir, &native, None);
+    let transfer = crate::test_support::with_service_context(|ctx| {
+        transfer_design_features(
+            ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
+    .unwrap();
 
     assert!(ir.model.features.is_empty());
     assert!(transfer.native_operation_records.is_empty());
@@ -1410,19 +1670,27 @@ fn pattern_schema_definition_does_not_create_a_feature_instance() {
         .definition
         .value = "CircPattern".to_string();
     if let Some(class) = &mut native.object_graphs[0].records[0].class {
-        class.class_name = Some("Element1".to_string());
+        class.name = Some("Element1".to_string());
     } else {
         native.object_graphs[0].records[0].class = Some(crate::native::CatiaObjectClass {
-            class_ref: 0,
-            class_name: Some("Element1".to_string()),
-            class_entry: None,
+            ordinal: 0,
+            name: Some("Element1".to_string()),
+            entry: None,
         });
     }
 
     let mut ir = CadIr::empty();
-    let transfer = crate::design_feature::transfer_design_features(&mut ir, &native, None);
+    let transfer = crate::test_support::with_service_context(|ctx| {
+        crate::design_feature::transfer_design_features(
+            ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
+    .unwrap();
     assert!(ir.model.features.is_empty());
-    assert!(transfer.consumed_records().is_empty());
+    assert!(transfer.consumed_records().next().is_none());
 }
 
 #[test]
@@ -1446,11 +1714,19 @@ fn prt_sketch_schema_field_does_not_create_a_feature_instance() {
     );
 
     let mut ir = CadIr::empty();
-    let transfer = crate::design_feature::transfer_design_features(&mut ir, &native, None);
+    let transfer = crate::test_support::with_service_context(|ctx| {
+        crate::design_feature::transfer_design_features(
+            ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
+    .unwrap();
 
     assert!(ir.model.features.is_empty());
     assert!(ir.model.sketches.is_empty());
-    assert!(transfer.consumed_records().is_empty());
+    assert!(transfer.consumed_records().next().is_none());
 }
 
 #[test]
@@ -1477,13 +1753,13 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
         .find(|record| record.id == owner_record_id)
         .expect("mutable synthetic owner declaration record");
     if let Some(class) = &mut owner_record_mut.class {
-        class.class_name = Some("Sketch".to_string());
-        class.class_entry = Some(owner_class_entry.clone());
+        class.name = Some("Sketch".to_string());
+        class.entry = Some(owner_class_entry.clone());
     } else {
         owner_record_mut.class = Some(crate::native::CatiaObjectClass {
-            class_ref: 0,
-            class_name: Some("Sketch".to_string()),
-            class_entry: Some(owner_class_entry.clone()),
+            ordinal: 0,
+            name: Some("Sketch".to_string()),
+            entry: Some(owner_class_entry.clone()),
         });
     }
 
@@ -1499,7 +1775,15 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
     });
 
     let mut ir = CadIr::empty();
-    let transfer = crate::design_feature::transfer_design_features(&mut ir, &native, None);
+    let transfer = crate::test_support::with_service_context(|ctx| {
+        crate::design_feature::transfer_design_features(
+            ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
+    .unwrap();
 
     let parameter_entity = native
         .entity_records
@@ -1517,42 +1801,50 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
     ir.model
         .parameters
         .push(cadmpeg_ir::features::DesignParameter {
-            id: cadmpeg_ir::features::ParameterId::mint("synthetic:parameter".to_string())
-                .expect("identity grammar"),
+            id: cadmpeg_ir::features::ParameterId::mint(
+                "synthetic:test:id#synthetic:parameter".to_string(),
+            )
+            .expect("identity grammar"),
             owner: None,
             ordinal: 0,
             name: "Value".to_string(),
             expression: String::new(),
             display: None,
             value: None,
-            dependencies: Vec::new(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             properties: std::collections::BTreeMap::new(),
             pmi: None,
             native_ref: Some(parameter_entity.id.clone()),
         });
-    transfer.assign_parameter_owners(&mut ir, &native);
+    crate::test_support::with_service_context(|ctx| {
+        transfer.assign_parameter_owners(ctx, &mut ir, &native)
+    })
+    .unwrap();
 
     assert_eq!(ir.model.sketches.len(), 1);
     assert!(matches!(
-        ir.model.features[0].definition,
-        cadmpeg_ir::features::FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(_))
-        }
+        ir.model.features[0].evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(_))
+            }
+        )
     ));
     assert!(ir.model.sketches[0].profiles.is_empty());
     assert_eq!(
         ir.model.sketches[0].placement,
-        cadmpeg_ir::sketches::SketchPlacement::Unresolved
+        cadmpeg_ir::sketches::SketchPlacement::Unresolved {}
     );
     assert_eq!(
         ir.model.parameters[0].owner,
-        Some(
-            cadmpeg_ir::features::FeatureId::mint(crate::design_feature::neutral_history_id(
+        Some(cadmpeg_ir::features::FeatureId::from(
+            crate::test_support::with_service_context(|ctx| crate::ids::neutral_history_id(
+                ctx,
                 &native.design_objects[0].id,
-                "feature"
-            ),)
+                &cadmpeg_ir::identity_component!("feature")
+            ))
             .expect("identity grammar")
-        )
+        ))
     );
     assert_eq!(
         transfer.sketch_owner_records,
@@ -1560,346 +1852,5 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
     );
 }
 
-#[test]
-fn incompatible_exact_feature_candidates_on_one_object_remain_unresolved() {
-    let records = [
-        object_graph_record(&[0x12, 0x84, 0x84], &[0xfe]),
-        object_graph_record(&[0x12, 0x84, 0x84], &[0xfe]),
-        object_graph_record(&[0x04, 0x01, 0x85, 0x85], &[0xfe]),
-    ];
-    let mut bytes = entity_backed_object_graph(&records, &[2, 3, 4]);
-    bytes.extend(catalog_stream(&[
-        "CATCatalogManager",
-        "catalogManager",
-        "catalogLinks",
-        "",
-        "xy-plane",
-        "Sketch",
-    ]));
-    let native = crate::native::CatiaNative::decode(&bytes);
-
-    let candidate = native
-        .design_objects
-        .iter()
-        .find(|object| object.owner_entity_id == 4)
-        .expect("synthetic dual-candidate object");
-    assert_eq!(candidate.field_classes[0].name, "xy-plane");
-    assert_eq!(candidate.owner_entity_id, 4);
-    assert_eq!(
-        candidate
-            .owner_class
-            .as_ref()
-            .map(|class| class.name.as_str()),
-        Some("Sketch")
-    );
-    assert_eq!(
-        candidate.owner_design_object,
-        Some(native.design_objects[1].id.clone())
-    );
-
-    let mut ir = CadIr::empty();
-    let transfer = crate::design_feature::transfer_design_features(&mut ir, &native, None);
-
-    assert!(ir.model.features.is_empty());
-    assert!(ir.model.sketches.is_empty());
-    assert!(transfer.consumed_records().is_empty());
-    assert!(transfer.feature_ids.is_empty());
-}
-
-#[test]
-fn parameter_owner_follows_one_exact_child_design_object() {
-    let mut native = crate::native::CatiaNative::decode(&standard_catpart_with_definition_value(
-        &[0x00, 0x08, 0x32, 4, 0, 0, 0],
-        &[0xfe],
-        &[0xd1, 0x67, 0x88, 0x81, 0xbd, 0xe8, 0x81, 0x49],
-    ));
-    let owner_record = native
-        .object_graphs
-        .iter()
-        .flat_map(|graph| graph.records.iter())
-        .find(|record| record.design_object.is_some())
-        .expect("synthetic owner declaration record")
-        .clone();
-    let owner_record_id = owner_record.id.clone();
-    let owner_design_object = owner_record.design_object.clone();
-    let owner_class_entry = "synthetic-sketch-class".to_string();
-    let owner_record_mut = native
-        .object_graphs
-        .iter_mut()
-        .flat_map(|graph| graph.records.iter_mut())
-        .find(|record| record.id == owner_record_id)
-        .expect("mutable synthetic owner declaration record");
-    if let Some(class) = &mut owner_record_mut.class {
-        class.class_name = Some("Sketch".to_string());
-        class.class_entry = Some(owner_class_entry.clone());
-    } else {
-        owner_record_mut.class = Some(crate::native::CatiaObjectClass {
-            class_ref: 0,
-            class_name: Some("Sketch".to_string()),
-            class_entry: Some(owner_class_entry.clone()),
-        });
-    }
-
-    let feature_object = native
-        .design_objects
-        .first_mut()
-        .expect("synthetic design object");
-    feature_object.owner_record = Some(owner_record_id);
-    feature_object.owner_design_object = owner_design_object.clone();
-    feature_object.owner_class = Some(crate::native::CatiaDesignClass {
-        entry: owner_class_entry,
-        name: "Sketch".to_string(),
-    });
-    let feature_id = feature_object.id.clone();
-
-    let child_record_id = "synthetic-child-record".to_string();
-    let child_entity_id = "synthetic-child-entity".to_string();
-    let mut child_record = owner_record.clone();
-    child_record.id.clone_from(&child_record_id);
-    child_record.entity = Some(crate::native::CatiaObjectEntity {
-        record: child_entity_id.clone(),
-        id: 2,
-    });
-    child_record.owner = Some(crate::native::CatiaObjectOwner::Entity(2));
-    child_record.design_object = Some("synthetic-child-object".to_string());
-    native.object_graphs[0].records.push(child_record);
-
-    let mut child_entity = native.entity_records[0].clone();
-    child_entity.id.clone_from(&child_entity_id);
-    child_entity.object_record = child_record_id.clone();
-    child_entity.entity_id = 2;
-    child_entity.ordinal = native.entity_records.len() as u64;
-    native.entity_records.push(child_entity);
-
-    let mut child_object = native.design_objects[0].clone();
-    child_object.id = "synthetic-child-object".to_string();
-    child_object.ordinal += 1;
-    child_object.first_field_byte_offset += 1;
-    child_object.owner_entity_id = 2;
-    child_object.owner_record = Some(child_record_id);
-    child_object.owner_design_object = Some(feature_id.clone());
-    child_object.owner_class = None;
-    child_object.owner_storage_ref = None;
-    child_object.fields = vec!["synthetic-child-record".to_string()];
-    child_object.field_classes.clear();
-    child_object.definition_values.clear();
-    child_object.definition_chain_values.clear();
-    child_object.relations.clear();
-    child_object.parallel_reference_table = None;
-    native.design_objects.push(child_object);
-
-    let mut ir = CadIr::empty();
-    let transfer = crate::design_feature::transfer_design_features(&mut ir, &native, None);
-    ir.model
-        .parameters
-        .push(cadmpeg_ir::features::DesignParameter {
-            id: cadmpeg_ir::features::ParameterId::mint("synthetic:child-parameter".to_string())
-                .expect("identity grammar"),
-            owner: None,
-            ordinal: 0,
-            name: "Value".to_string(),
-            expression: String::new(),
-            display: None,
-            value: None,
-            dependencies: Vec::new(),
-            properties: std::collections::BTreeMap::new(),
-            pmi: None,
-            native_ref: Some(child_entity_id),
-        });
-
-    transfer.assign_parameter_owners(&mut ir, &native);
-
-    assert_eq!(ir.model.features.len(), 1);
-    assert_eq!(
-        ir.model.parameters[0].owner,
-        Some(
-            cadmpeg_ir::features::FeatureId::mint(crate::design_feature::neutral_history_id(
-                &feature_id,
-                "feature"
-            ),)
-            .expect("identity grammar")
-        )
-    );
-}
-
-#[test]
-fn complete_standalone_principal_plane_declarations_transfer_one_history_node() {
-    use cadmpeg_ir::features::{FeatureDefinition, PrincipalPlane};
-
-    for (class, plane) in [
-        ("xy-plane", PrincipalPlane::Top),
-        ("yz-plane", PrincipalPlane::Right),
-        ("zx-plane", PrincipalPlane::Front),
-    ] {
-        let records = [
-            object_graph_record(&[0x12, 0x82, 0x84], &[0xfe]),
-            object_graph_record(&[0x12, 0x82, 0x84], &[0xfe]),
-        ];
-        let mut bytes = entity_backed_object_graph(&records, &[2, 3]);
-        bytes.extend(catalog_stream(&[
-            "CATCatalogManager",
-            "catalogManager",
-            "catalogLinks",
-            "",
-            class,
-        ]));
-        let native = crate::native::CatiaNative::decode(&bytes);
-        let mut ir = CadIr::empty();
-
-        let transfer = crate::design_feature::transfer_design_features(&mut ir, &native, None);
-
-        assert!(ir.model.sketches.is_empty());
-        assert_eq!(ir.model.features.len(), 1);
-        assert_eq!(
-            ir.model.features[0].definition,
-            FeatureDefinition::DatumPrincipalPlane { plane }
-        );
-        assert_eq!(ir.model.features[0].source_tag.as_deref(), Some(class));
-        assert_eq!(
-            ir.model.features[0].ordinal,
-            native.design_objects[0].first_field_byte_offset
-        );
-        assert_eq!(
-            transfer.principal_plane_records,
-            native.design_objects[0].fields.iter().cloned().collect()
-        );
-
-        let mut excluded_ir = CadIr::empty();
-        let excluded = crate::design_feature::transfer_design_features(
-            &mut excluded_ir,
-            &native,
-            Some(&std::collections::HashSet::new()),
-        );
-        assert!(excluded_ir.model.features.is_empty());
-        assert!(excluded.consumed_records().is_empty());
-    }
-}
-
-#[test]
-fn mixed_or_payload_bearing_principal_plane_fields_do_not_transfer() {
-    for (records, catalog) in [
-        (
-            vec![
-                object_graph_record(&[0x12, 0x82, 0x84], &[0xfe]),
-                object_graph_record(&[0x12, 0x82, 0x85], &[0xfe]),
-            ],
-            vec![
-                "CATCatalogManager",
-                "catalogManager",
-                "catalogLinks",
-                "",
-                "xy-plane",
-                "yz-plane",
-            ],
-        ),
-        (
-            vec![
-                object_graph_record(&[0x12, 0x82, 0x84], &[0xfe]),
-                object_graph_record(&[0x12, 0x82, 0x84], &[0x80, 0xfe]),
-            ],
-            vec![
-                "CATCatalogManager",
-                "catalogManager",
-                "catalogLinks",
-                "",
-                "xy-plane",
-            ],
-        ),
-    ] {
-        let mut bytes = entity_backed_object_graph(&records, &[2, 3]);
-        bytes.extend(catalog_stream(&catalog));
-        let native = crate::native::CatiaNative::decode(&bytes);
-        let mut ir = CadIr::empty();
-
-        let transfer = crate::design_feature::transfer_design_features(&mut ir, &native, None);
-
-        assert!(ir.model.features.is_empty());
-        assert!(transfer.principal_plane_records.is_empty());
-    }
-}
-
-#[test]
-fn design_field_vocabulary_distinguishes_equal_names_from_distinct_entries() {
-    let mut bytes = object_graph_from_records(&[
-        object_graph_record(&[0x12, 0x82, 0x84], &[0xfe]),
-        object_graph_record(&[0x12, 0x82, 0x85], &[0xfe]),
-    ]);
-    bytes.extend(value_block_stream(&[0x81]));
-    bytes.extend(catalog_stream(&[
-        "CATCatalogManager",
-        "catalogManager",
-        "catalogLinks",
-        "",
-        "Feature",
-        "Feature",
-    ]));
-
-    let native = crate::native::CatiaNative::decode(&bytes);
-    let classes = &native.design_objects[0].field_classes;
-
-    assert_eq!(classes.len(), 2);
-    assert_eq!(classes[0].name, classes[1].name);
-    assert_ne!(classes[0].entry, classes[1].entry);
-}
-
-#[test]
-fn visualization_values_do_not_assert_missing_design_intent() {
-    let decoded = CatiaCodec
-        .decode(
-            &mut Cursor::new(standard_catpart_with_visualization_values_only()),
-            &DecodeOptions::default(),
-        )
-        .expect("decode visualization-only values");
-
-    assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::report::LossCategory::Attribute
-            && loss.message.contains("schema-selected presentation value")
-    }));
-    assert!(decoded
-        .report()
-        .losses
-        .iter()
-        .all(|loss| loss.code.category() != cadmpeg_ir::report::LossCategory::DesignIntent));
-}
-
-#[test]
-fn decode_does_not_promote_field_class_names_to_features() {
-    for class in [
-        "Groove",
-        "GSMHelix",
-        "CircPattern_RadialNumber",
-        "GSMPlaneAngle",
-        "GSMPlaneOffset",
-    ] {
-        let decoded = CatiaCodec
-            .decode(
-                &mut Cursor::new(standard_catpart_with_design_class(class)),
-                &DecodeOptions::default(),
-            )
-            .expect("decode field-class vocabulary");
-
-        assert!(decoded.ir().model.features.is_empty());
-        let native = crate::native::CatiaNative::load(
-            decoded
-                .ir()
-                .native
-                .namespace("catia")
-                .expect("CATIA native namespace"),
-        )
-        .expect("load retained field-class vocabulary");
-        assert_eq!(
-            native.design_objects[0]
-                .field_classes
-                .iter()
-                .map(|class| class.name.as_str())
-                .collect::<Vec<_>>(),
-            ["CurrentFeature", class]
-        );
-        assert!(decoded.report().losses.iter().any(|loss| {
-            loss.code.category() == cadmpeg_ir::report::LossCategory::DesignIntent
-                && loss.message.contains("neutral features")
-        }));
-    }
-}
-
+mod feature_identity;
 mod parentage;

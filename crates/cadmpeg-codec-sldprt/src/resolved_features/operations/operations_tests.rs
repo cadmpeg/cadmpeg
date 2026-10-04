@@ -1,22 +1,178 @@
 //! Tests for the `operations` module.
 
-use super::*;
+use super::{
+    enrich_history_split_lines, extrusion_operation, feature_inline_operation,
+    feature_inline_operation_fields, feature_operation_code, inherit_configuration_operations,
+    revolution_operation, SPLIT_LINE_MODE_PROPERTY, SPLIT_LINE_PROJECTION_MODE,
+    SPLIT_LINE_TOOL_PROPERTY,
+};
+use crate::records::FeatureSource;
+use crate::records::ObjectId;
 use crate::records::{
     Feature, FeatureHistory, FeatureInputClass, FeatureInputLane, FeatureInputName,
 };
 use cadmpeg_ir::features::BooleanOp;
 use std::collections::BTreeMap;
 
+fn split_line_limit_input() -> (Vec<FeatureHistory>, Vec<FeatureInputLane>) {
+    let histories = vec![FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![Feature {
+            id: "split".into(),
+            parent: "history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: FeatureSource::from_value(1),
+            ordinal: 0,
+            name: "Split Line".into(),
+            kind: "Split Line".into(),
+            input_class: Some("moPLine_c".into()),
+            suppressed: false,
+            parameters: BTreeMap::new(),
+            dimension_properties: BTreeMap::new(),
+            properties: BTreeMap::new(),
+            text: None,
+            content: Vec::new(),
+        }],
+    }];
+    let lanes = vec![FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: vec![0; 64],
+        classes: Vec::new(),
+        names: vec![FeatureInputName {
+            id: "name".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 20,
+            value: "Split Line".into(),
+            object_id: ObjectId::from_value(1),
+        }],
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    }];
+    (histories, lanes)
+}
+
+fn split_line_limit_error(
+    limit: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let (mut histories, lanes) = split_line_limit_input();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    limit(&mut policy);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+    enrich_history_split_lines(&ctx, &mut histories, &lanes)
+        .expect_err("split-line input exceeds the selected limit")
+}
+
+#[test]
+fn split_line_enrichment_refuses_collection_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let error = split_line_limit_error(|policy| policy.limits.max_collection_items = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "collect SLDPRT split-line objects")
+    );
+}
+
+#[test]
+fn split_line_enrichment_refuses_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain SLDPRT split-line observation ID",
+        |cap| {
+            Err::<(), cadmpeg_core::CodecError>(split_line_limit_error(|policy| {
+                policy.limits.max_retained_bytes = cap;
+            }))
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "retain SLDPRT split-line observation ID")
+    );
+}
+
+#[test]
+fn split_line_enrichment_refuses_work_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let error = split_line_limit_error(|policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "scan SLDPRT split-line objects")
+    );
+}
+
+#[test]
+fn feature_operation_binding_refuses_history_index_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let histories = [FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![Feature {
+            id: "native-extrude".into(),
+            parent: "history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: FeatureSource::from_value(1),
+            ordinal: 0,
+            name: "Extrude".into(),
+            kind: "operation".into(),
+            input_class: Some("moExtrusion_c".into()),
+            suppressed: false,
+            parameters: BTreeMap::new(),
+            dimension_properties: BTreeMap::new(),
+            properties: BTreeMap::new(),
+            text: None,
+            content: Vec::new(),
+        }],
+    }];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+    let error = super::bind_feature_operations(&ctx, &mut [], &histories, &[], None)
+        .expect_err("one history feature exceeds zero collection items");
+    assert!(matches!(error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "index SLDPRT extrusion history"));
+}
+
 #[test]
 fn split_line_projection_mode_requires_one_owned_project_class() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("test context");
     let native_feature = |id: &str, source: &str, class: &str| Feature {
         id: id.into(),
         parent: "history".into(),
         xml_tag: "Feature".into(),
         tree_parent: None,
-        source_id: Some(source.into()),
+        source_id: Some(FeatureSource::try_from(source).expect("test feature source id")),
         ordinal: source.parse().expect("required invariant"),
-        name: id.into(),
+        name: id.to_string(),
         kind: "Split Line".into(),
         input_class: Some(class.into()),
         suppressed: false,
@@ -26,7 +182,7 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
         text: None,
         content: Vec::new(),
     };
-    let dimensions = BTreeMap::from([("D1".into(), "2".into())]);
+    let dimensions = BTreeMap::from([(cadmpeg_core::nonblank_literal!("D1"), "2".into())]);
     let mut split = native_feature("split", "40", "moPLine_c");
     split.parameters.clone_from(&dimensions);
     let mut sketch = native_feature("sketch", "30", "moProfileFeature_c");
@@ -59,7 +215,7 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
                 ordinal: 0,
                 offset: 20,
                 value: "split".into(),
-                object_id: Some(40),
+                object_id: ObjectId::from_value(40),
             },
             FeatureInputName {
                 id: "next-name".into(),
@@ -67,7 +223,7 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
                 ordinal: 1,
                 offset: 150,
                 value: "next".into(),
-                object_id: Some(50),
+                object_id: ObjectId::from_value(50),
             },
         ],
         scalars: Vec::new(),
@@ -82,7 +238,8 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
     };
 
     let mut projected = vec![history.clone()];
-    enrich_history_split_lines(&mut projected, std::slice::from_ref(&lane));
+    enrich_history_split_lines(&ctx, &mut projected, std::slice::from_ref(&lane))
+        .expect("enrich split line");
     assert_eq!(
         projected[0].features[0]
             .properties
@@ -107,17 +264,17 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
         name: "moPLineProject_c".into(),
     });
     let mut ambiguous = vec![history.clone()];
-    enrich_history_split_lines(&mut ambiguous, &[ambiguous_lane]);
+    enrich_history_split_lines(&ctx, &mut ambiguous, &[ambiguous_lane]).expect("enrich split line");
     assert!(!ambiguous[0].features[0]
         .properties
         .contains_key(SPLIT_LINE_MODE_PROPERTY));
 
     let mut duplicate_sketch = history.features[1].clone();
     duplicate_sketch.id = "duplicate-sketch".into();
-    duplicate_sketch.source_id = Some("20".into());
+    duplicate_sketch.source_id = FeatureSource::from_value(20);
     history.features.insert(2, duplicate_sketch);
     let mut ambiguous_tool = vec![history];
-    enrich_history_split_lines(&mut ambiguous_tool, &[lane]);
+    enrich_history_split_lines(&ctx, &mut ambiguous_tool, &[lane]).expect("enrich split line");
     assert_eq!(
         ambiguous_tool[0].features[0]
             .properties
@@ -163,9 +320,9 @@ fn inline_operation_binds_join_and_cut_to_their_family_words() {
         id: "name".into(),
         parent: "lane".into(),
         ordinal: 0,
-        offset: name_offset as u64,
+        offset: cadmpeg_core::decode::u64_from_index(name_offset),
         value: value.into(),
-        object_id: Some(7),
+        object_id: ObjectId::from_value(7),
     };
     let mut lane = lane;
     lane.native_payload[name_offset - 6..name_offset - 2].copy_from_slice(&1u32.to_le_bytes());
@@ -312,8 +469,11 @@ fn ambiguous_form_code_padding_does_not_shift_the_code() {
         let mut payload = vec![0; 128];
         payload[code_offset..code_offset + 4].copy_from_slice(&code.to_le_bytes());
         payload[class_offset..class_offset + 4].copy_from_slice(&[0xff, 0xff, 0x01, 0x00]);
-        payload[class_offset + 4..class_offset + 6]
-            .copy_from_slice(&(class_name.len() as u16).to_le_bytes());
+        payload[class_offset + 4..class_offset + 6].copy_from_slice(
+            &u16::try_from(class_name.len())
+                .expect("class name length fits u16")
+                .to_le_bytes(),
+        );
         payload[class_offset + 6..name_offset].copy_from_slice(class_name.as_bytes());
         if padding == 4 {
             payload[class_offset - 12..class_offset - 8].copy_from_slice(&preceding.to_le_bytes());
@@ -329,7 +489,7 @@ fn ambiguous_form_code_padding_does_not_shift_the_code() {
                     id: "class".into(),
                     parent: "lane".into(),
                     ordinal: 0,
-                    offset: class_offset as u64,
+                    offset: cadmpeg_core::decode::u64_from_index(class_offset),
                     name: class_name.into(),
                 }],
                 names: Vec::new(),
@@ -347,9 +507,9 @@ fn ambiguous_form_code_padding_does_not_shift_the_code() {
                 id: "name".into(),
                 parent: "lane".into(),
                 ordinal: 0,
-                offset: name_offset as u64,
+                offset: cadmpeg_core::decode::u64_from_index(name_offset),
                 value: "Feature".into(),
-                object_id: Some(1),
+                object_id: ObjectId::from_value(1),
             },
         )
     };
@@ -408,9 +568,9 @@ fn ambiguous_form_code_padding_does_not_shift_the_code() {
         id: "compact-name".into(),
         parent: "compact-lane".into(),
         ordinal: 0,
-        offset: name_offset as u64,
+        offset: cadmpeg_core::decode::u64_from_index(name_offset),
         value: "Feature".into(),
-        object_id: Some(1),
+        object_id: ObjectId::from_value(1),
     };
 
     assert_eq!(
@@ -470,63 +630,80 @@ fn revolution_form_words_distinguish_new_body_and_join() {
 
 #[test]
 fn configuration_operation_fallback_fills_only_unresolved_matching_operations() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_ir::features::{
         AngularTermination, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
-        FeatureDefinition, Length, LinearTermination, ProfileRef, RevolutionAxis,
-        RevolveConstruction, RevolveExtent,
+        FeatureDefinition, FeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef,
+        RevolutionAxis, RevolveConstruction, RevolveExtent,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::sketches::SketchId;
 
-    let extrude = |op| FeatureDefinition::Extrude {
-        profile: ProfileRef::Sketch(SketchId("sketch".into())),
-        direction: ExtrudeDirection::ProfileNormal,
-        start: ExtrudeStart::ProfilePlane,
-        extent: ExtrudeExtent::OneSided {
-            side: ExtrudeSide {
-                termination: LinearTermination::Blind {
-                    length: Length(1.0),
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("test context");
+
+    let extrude = |op| {
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
+            profile: ProfileRef::Planar(PlanarProfileRef::Sketch(
+                SketchId::mint("synthetic:test:id#sketch").unwrap(),
+            )),
+            direction: ExtrudeDirection::ProfileNormal {},
+            start: ExtrudeStart::ProfilePlane {},
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: LinearTermination::Blind {
+                        length: cadmpeg_ir::scalar::NonZeroLength::new(1.0).unwrap(),
+                    },
+                    draft: None,
                 },
-                draft: None,
             },
-        },
-        op,
-        solid: Some(true),
-        face_maker: None,
-        inner_wire_taper: None,
-        length_along_profile_normal: None,
-        allow_multi_profile_faces: None,
+            op,
+            solid: Some(true),
+            face_maker: None,
+            inner_wire_taper: None,
+            length_along_profile_normal: None,
+            allow_multi_profile_faces: None,
+        })
     };
-    let revolve = |op| FeatureDefinition::Revolve {
-        construction: RevolveConstruction::new(
-            Some(ProfileRef::Sketch(SketchId("sketch".into()))),
-            Some(RevolutionAxis {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                direction: Vector3::new(0.0, 0.0, 1.0),
-                reference: None,
-            }),
-            Some(RevolveExtent::OneSided {
-                termination: AngularTermination::ThroughAll,
-            }),
-            Some(true),
-            None,
-            None,
-            None,
-        ),
-        op,
+    let revolve = |op| {
+        FeatureDefinition::Operation(FeatureOperation::Revolve {
+            construction: RevolveConstruction::Resolved {
+                profile: PlanarProfileRef::Sketch(
+                    SketchId::mint("synthetic:test:id#sketch").unwrap(),
+                ),
+                axis: RevolutionAxis {
+                    origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                        .unwrap(),
+                    direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                        0.0, 0.0, 1.0,
+                    ))
+                    .unwrap(),
+                    reference: None,
+                },
+                extent: RevolveExtent::OneSided {
+                    termination: AngularTermination::ThroughAll {},
+                },
+                solid: Some(true),
+                face_maker: None,
+                fuse_order: None,
+                allow_multi_profile_faces: None,
+            },
+            op,
+        })
     };
     let feature = |id: &str, native_ref: &str, definition| cadmpeg_ir::features::Feature {
         id: cadmpeg_ir::features::FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
     let native_feature = |id: &str, class: &str| Feature {
@@ -534,9 +711,9 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         parent: "history".into(),
         xml_tag: "Feature".into(),
         tree_parent: None,
-        source_id: Some("1".into()),
+        source_id: FeatureSource::from_value(1),
         ordinal: 0,
-        name: id.into(),
+        name: id.to_string(),
         kind: "operation".into(),
         input_class: Some(class.into()),
         suppressed: false,
@@ -558,39 +735,59 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         ],
     }];
     let base = vec![
-        feature("extrude", "native-extrude", extrude(BooleanOp::Cut)),
-        feature("revolve", "native-revolve", revolve(BooleanOp::Join)),
+        feature(
+            "synthetic:test:id#extrude",
+            "native-extrude",
+            extrude(BooleanOp::Cut),
+        ),
+        feature(
+            "synthetic:test:id#revolve",
+            "native-revolve",
+            revolve(BooleanOp::Join),
+        ),
     ];
     let mut configured = vec![
-        feature("extrude", "native-extrude", extrude(BooleanOp::Unresolved)),
-        feature("revolve", "native-revolve", revolve(BooleanOp::Unresolved)),
+        feature(
+            "synthetic:test:id#extrude",
+            "native-extrude",
+            extrude(BooleanOp::Unresolved),
+        ),
+        feature(
+            "synthetic:test:id#revolve",
+            "native-revolve",
+            revolve(BooleanOp::Unresolved),
+        ),
     ];
 
-    inherit_configuration_operations(&mut configured, &base, &histories, &[], None);
+    inherit_configuration_operations(&ctx, &mut configured, &base, &histories, &[], None)
+        .expect("bind configuration operations");
 
     assert!(matches!(
-        configured[0].definition,
-        FeatureDefinition::Extrude {
+        configured[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             op: BooleanOp::Cut,
             ..
-        }
+        })
     ));
     assert!(matches!(
-        configured[1].definition,
-        FeatureDefinition::Revolve {
+        configured[1].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Revolve {
             op: BooleanOp::Join,
             ..
-        }
+        })
     ));
 
-    configured[0].definition = extrude(BooleanOp::NewBody);
-    inherit_configuration_operations(&mut configured, &base, &histories, &[], None);
+    configured[0]
+        .evaluation
+        .set_definition(extrude(BooleanOp::NewBody));
+    inherit_configuration_operations(&ctx, &mut configured, &base, &histories, &[], None)
+        .expect("bind configuration operations");
     assert!(matches!(
-        configured[0].definition,
-        FeatureDefinition::Extrude {
+        configured[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             op: BooleanOp::NewBody,
             ..
-        }
+        })
     ));
 
     let mut operation_lane = FeatureInputLane {
@@ -610,7 +807,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
             ordinal: 0,
             offset: 52,
             value: "native-extrude".into(),
-            object_id: Some(1),
+            object_id: ObjectId::from_value(1),
         }],
         scalars: Vec::new(),
         relation_bindings: Vec::new(),
@@ -624,43 +821,47 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
     };
     operation_lane.native_payload[25..29].copy_from_slice(&11_u32.to_le_bytes());
     let mut inherited = vec![feature(
-        "extrude",
+        "synthetic:test:id#extrude",
         "native-extrude",
         extrude(BooleanOp::Unresolved),
     )];
     inherit_configuration_operations(
+        &ctx,
         &mut inherited,
         &base,
         &histories,
         &[operation_lane.clone()],
         Some(4),
-    );
+    )
+    .expect("bind configuration operations");
     assert!(matches!(
-        inherited[0].definition,
-        FeatureDefinition::Extrude {
+        inherited[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             op: BooleanOp::Cut,
             ..
-        }
+        })
     ));
 
     operation_lane.native_payload[25..29].copy_from_slice(&999_u32.to_le_bytes());
     let mut unresolved = vec![feature(
-        "extrude",
+        "synthetic:test:id#extrude",
         "native-extrude",
         extrude(BooleanOp::Unresolved),
     )];
     inherit_configuration_operations(
+        &ctx,
         &mut unresolved,
         &base,
         &histories,
         &[operation_lane],
         Some(4),
-    );
+    )
+    .expect("bind configuration operations");
     assert!(matches!(
-        unresolved[0].definition,
-        FeatureDefinition::Extrude {
+        unresolved[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             op: BooleanOp::Unresolved,
             ..
-        }
+        })
     ));
 }

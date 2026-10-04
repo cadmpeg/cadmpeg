@@ -2,7 +2,7 @@
 //! SLDPRT target resolution, write dispatch, and honesty checking.
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{EncodeInput, ExportBody, ResolvedWrite, WritePath};
+use cadmpeg_ir::codec::write::{target::ResolvedWrite, EncodeInput, ExportBody, WritePath};
 use cadmpeg_ir::Annotations;
 
 use crate::loss::SldprtLossCode;
@@ -122,8 +122,8 @@ fn finish(
     };
     ExportBody {
         bytes,
-        census: cadmpeg_ir::EntityCensus {
-            basis: cadmpeg_ir::CensusBasis::IrArenas,
+        census: cadmpeg_ir::report::export::EntityCensus {
+            basis: cadmpeg_ir::report::export::CensusBasis::IrArenas,
             counts: input.ir.census(),
         },
         write_path,

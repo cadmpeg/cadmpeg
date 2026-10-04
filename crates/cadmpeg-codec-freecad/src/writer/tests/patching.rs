@@ -4,13 +4,71 @@
 //! retained span can carry.
 
 use super::super::target::retained_baseline;
-use super::super::*;
-use crate::test_support::*;
+use crate::native::{PropertyRecord, ValueRecord};
+use crate::test_support::test_archive::{archive_entries, CORE_DESIGN_PRODUCT};
+use crate::writer::{serialize_property, serialize_value, validate_entry_names};
 use crate::FcstdCodec;
 use cadmpeg_ir::codec::write::Encoder;
-use cadmpeg_ir::codec::write::{EncodeInput, TargetRequest};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput};
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
+
+#[test]
+fn unsafe_entry_names_refuse_construction_and_duplicates_remain_writer_limits() {
+    crate::test_support::with_service_context(&[], |ctx| {
+        assert!(crate::native::EntryRecord::new(
+            ctx,
+            "test:native:entry#unsafe".into(),
+            "../Document.xml".into(),
+            cadmpeg_core::container::ContainerRole::Auxiliary,
+            Vec::new(),
+            Vec::new()
+        )
+        .is_err());
+    });
+    let entry = crate::test_support::entry_record(
+        "test:native:entry#document".into(),
+        "Document.xml".into(),
+        cadmpeg_core::container::ContainerRole::Auxiliary,
+        Vec::new(),
+        Vec::new(),
+    );
+    let duplicate_error = validate_entry_names(&[entry.clone(), entry])
+        .expect_err("duplicate output paths are refused");
+    assert!(matches!(
+        duplicate_error,
+        cadmpeg_core::CodecError::NotImplemented(_)
+    ));
+}
+
+#[test]
+fn x65_backslash_entry_is_refused_by_constructor_reader_and_native_record() {
+    crate::test_support::with_service_context(&[], |ctx| {
+        let error = crate::native::EntryRecord::new(
+            ctx,
+            "test:native:entry#backslash".into(),
+            r"..\outside".into(),
+            cadmpeg_core::container::ContainerRole::Auxiliary,
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect_err("constructor refuses backslash");
+        assert!(error.to_string().contains("unsafe ZIP entry path"));
+    });
+    let wire = serde_json::json!({"id": "test:native:entry#backslash", "name": r"..\outside", "role": "auxiliary", "byte_len": 0, "sha256": cadmpeg_ir::hash::sha256_hex(&[]), "referenced_by": [], "data": []});
+    let error = serde_json::from_value::<crate::native::EntryRecord>(wire)
+        .expect_err("native entry refuses backslash");
+    assert!(error.to_string().contains("unsafe ZIP entry path"));
+    let xml = b"<Document SchemaVersion=\"4\" FileVersion=\"1\"/>";
+    let bytes = archive_entries(&[("Document.xml", xml), (r"..\outside", b"payload")]);
+    let error = FcstdCodec
+        .inspect(
+            &mut Cursor::new(bytes),
+            &cadmpeg_core::decode::InspectOptions::default(),
+        )
+        .expect_err("reader refuses backslash");
+    assert!(error.to_string().contains("unsafe ZIP entry path"));
+}
 
 #[test]
 fn property_edits_use_value_order_when_raw_xml_is_identical() {
@@ -41,11 +99,9 @@ fn property_edits_use_value_order_when_raw_xml_is_identical() {
             dynamic: None,
         },
         order: 0,
-        raw_xml: format!(
+        xml: crate::native::RetainedXml::from_text(format!(
             r#"<Property name="Values" type="App::PropertyStringList">{raw_value}{raw_value}</Property>"#
-        ),
-        byte_start: 0,
-        byte_end: 0,
+        ), 0).unwrap(),
     };
     let output = String::from_utf8(serialize_property(&property).expect("required invariant"))
         .expect("required invariant");
@@ -135,15 +191,103 @@ fn writes_typed_property_edits_and_preserves_other_entries() {
         .expect("entries");
     for source in source_entries
         .iter()
-        .filter(|entry| entry.name != "Document.xml")
+        .filter(|entry| entry.name() != "Document.xml")
     {
         let output = output_entries
             .iter()
-            .find(|entry| entry.name == source.name)
+            .find(|entry| entry.name() == source.name())
             .expect("preserved entry");
-        assert_eq!(output.data, source.data, "{}", source.name);
+        assert_eq!(output.data(), source.data(), "{}", source.name());
     }
-    assert!(crate::validate_native(round_trip.ir()).is_empty());
+    assert!(crate::test_support::validate_native(round_trip.ir()).is_empty());
+}
+
+#[test]
+fn mutation_rejects_link_carrier_edits_without_changing_the_graph() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Owner"/><Object type="Part::Feature" name="Target"/></Objects>
+<ObjectData Count="2"><Object name="Owner"><Properties Count="1"><Property name="Support" type="App::PropertyLink"><Link value="Target"/></Property></Properties></Object><Object name="Target"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode link carrier");
+    let before = decoded
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("namespace")
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .expect("properties")
+        .iter()
+        .find(|property| property.name == "Support")
+        .expect("Support property")
+        .links()
+        .to_vec();
+    let mut edited = decoded.ir().clone();
+    let error = FcstdCodec
+        .set_property_value_attribute(
+            &mut edited,
+            crate::FcstdPropertyOwner::Object("Owner"),
+            "Support",
+            0,
+            "value",
+            "Missing",
+        )
+        .expect_err("link target mutation must refuse stale graph output");
+    assert!(error.to_string().contains("graph-aware serializer"));
+    let after = edited
+        .native
+        .namespace("fcstd")
+        .expect("namespace")
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .expect("properties")
+        .iter()
+        .find(|property| property.name == "Support")
+        .expect("Support property")
+        .links()
+        .to_vec();
+    assert_eq!(after, before);
+    assert!(crate::test_support::validate_native(&edited).is_empty());
+}
+
+#[test]
+fn writer_rejects_direct_link_carrier_graph_drift() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Owner"/><Object type="Part::Feature" name="Target"/></Objects>
+<ObjectData Count="2"><Object name="Owner"><Properties Count="1"><Property name="Support" type="App::PropertyLink"><Link value="Target"/></Property></Properties></Object><Object name="Target"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode link carrier");
+    let mut edited = decoded.ir().clone();
+    let namespace = edited.native.namespace_mut("fcstd");
+    let mut properties = namespace
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .expect("properties");
+    let support = properties
+        .iter_mut()
+        .find(|property| property.name == "Support")
+        .expect("Support property");
+    support.values_mut().expect("persisted property")[0]
+        .attributes
+        .insert("value".into(), "Missing".into());
+    namespace
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "properties",
+            &properties,
+        )
+        .expect("replace properties");
+
+    let error = FcstdCodec
+        .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
+        .expect_err("writer must check the written semantic graph");
+    assert!(error.to_string().contains("value or link graph"));
 }
 
 #[test]
@@ -190,7 +334,11 @@ pub(crate) fn writer_rejects_unserialized_declaration_and_stale_payload_edits() 
         .expect("objects");
     objects[0].type_name = "App::FeaturePython".into();
     namespace
-        .set_arena("objects", &objects)
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "objects",
+            &objects,
+        )
         .expect("replace objects");
     let error = FcstdCodec
         .plan(
@@ -214,7 +362,11 @@ pub(crate) fn writer_rejects_unserialized_declaration_and_stale_payload_edits() 
         .expect("entry bytes")
         .push(serde_json::json!(0));
     namespace
-        .set_arena("entries", &entries)
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "entries",
+            &entries,
+        )
         .expect("replace entries");
     let error = FcstdCodec
         .plan(EncodeInput::new(&stale_entry, None), TargetRequest::Inherit)

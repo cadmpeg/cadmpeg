@@ -9,10 +9,68 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::global::GlobalTable;
 use crate::loss::IgesLossCode;
-use crate::test_support::*;
+use crate::test_support::test_curves_and_surfaces::{direction_file, point_file};
+use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 use crate::IgesCodec;
 
 use super::{status, SourceStatus};
+
+#[test]
+fn directory_summary_refuses_group_and_note_limits_before_storage() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let entries = [crate::test_support::directory_target(1, 116)];
+    for (cap, operation) in [
+        (0, "iges directory summary groups"),
+        (1, "iges directory summary notes"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = super::summary_notes(&entries, &ctx);
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.used == cap
+                    && limit.additional == 1
+                    && limit.operation == operation
+        ));
+    }
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert_eq!(
+        super::summary_notes(&entries, &ctx).unwrap(),
+        ["entities=1", "entity.116.form.0=1"]
+    );
+}
+
+#[test]
+fn directory_entity_refuses_entity_limit_before_storage() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let bytes = point_file();
+    let scan = crate::test_support::scan(&bytes).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_entities = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let result = super::parse(&scan, GlobalTable::V5Later, &ctx);
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::Entities
+                && limit.used == 0
+                && limit.additional == 1
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    assert!(super::parse(&scan, GlobalTable::V5Later, &ctx).is_ok());
+}
 
 #[test]
 fn subordinate_switch_dependency_bits_follow_the_four_defined_values() {
@@ -22,8 +80,7 @@ fn subordinate_switch_dependency_bits_follow_the_four_defined_values() {
         (2, false, true),
         (3, true, true),
     ] {
-        let status =
-            SourceStatus::from_codes([0, subordinate, 0, 0], crate::global::GlobalTable::V5Later);
+        let status = SourceStatus::from_codes([0, subordinate, 0, 0]);
         assert_eq!(status.is_physically_dependent(), physical);
         assert_eq!(status.is_logically_dependent(), logical);
     }
@@ -37,8 +94,8 @@ fn entity_use_flag_range_follows_the_declared_dialect() {
         (GlobalTable::V5_0, 6, true),
         (GlobalTable::V5_0, 7, false),
     ] {
-        let status = SourceStatus::from_codes([0, 0, use_flag, 0], global_table);
-        assert_eq!(status.use_flag().is_some(), expected);
+        let status = SourceStatus::from_codes([0, 0, use_flag, 0]);
+        assert_eq!(status.use_flag(global_table).is_some(), expected);
     }
 }
 
@@ -48,7 +105,7 @@ fn early_dialects_left_pad_right_justified_status_numbers() {
         let status = status(*b"     201", global_table).unwrap();
         assert!(status.is_visible());
         assert_eq!(status.subordinate(), Some(Subordinate::Independent));
-        assert_eq!(status.use_flag(), Some(UseFlag::Definition));
+        assert_eq!(status.use_flag(global_table), Some(UseFlag::Definition));
         assert_eq!(status.hierarchy(), Some(Hierarchy::GlobalDefer));
     }
 
@@ -76,7 +133,8 @@ fn blank_directory_status_defaults_to_zero_fields() {
         "{:#?}",
         result.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -179,7 +237,8 @@ fn decode_treats_subordinate_switch_three_as_physically_dependent() {
         native.arenas()["directions"][0].fields()["physically_dependent"],
         true
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -187,7 +246,7 @@ fn decode_treats_subordinate_switch_three_as_physically_dependent() {
 fn residual_status_fields_preserve_numeric_wire_values() {
     for global_table in [GlobalTable::V4_0, GlobalTable::V5Later] {
         let parsed = status(*b"99999999", global_table).unwrap();
-        assert!(parsed.use_flag().is_none());
+        assert!(parsed.use_flag(global_table).is_none());
         assert!(!parsed.is_physically_dependent());
         assert!(!parsed.is_logically_dependent());
         assert_eq!(
@@ -202,8 +261,12 @@ fn residual_status_fields_preserve_numeric_wire_values() {
     }
     let early = status(*b"00000600", GlobalTable::V4_0).unwrap();
     let later = status(*b"00000600", GlobalTable::V5Later).unwrap();
-    assert!(early.use_flag().is_none());
-    assert_eq!(later.use_flag(), Some(UseFlag::Construction));
+    assert_eq!(early, later);
+    assert!(early.use_flag(GlobalTable::V4_0).is_none());
+    assert_eq!(
+        later.use_flag(GlobalTable::V5Later),
+        Some(UseFlag::Construction)
+    );
     assert_eq!(
         serde_json::to_value(early).unwrap(),
         serde_json::to_value(later).unwrap()

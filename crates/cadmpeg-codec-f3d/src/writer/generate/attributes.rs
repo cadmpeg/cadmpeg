@@ -5,8 +5,11 @@ use std::collections::HashMap;
 
 use crate::native::F3dNative;
 use crate::records::{
-    CreationTimestamp, PersistentDesignLink, PersistentSubentityTag, SketchCurveLink,
-    SKETCH_LINK_SENSE_UNCONSTRAINED,
+    recipes::CreationTimestamp,
+    sketch_links::{
+        PersistentDesignLink, PersistentSubentityTag, SketchCurveLink,
+        SKETCH_LINK_SENSE_UNCONSTRAINED,
+    },
 };
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::AttributeTarget;
@@ -18,29 +21,26 @@ use super::native_bytes::{
     native_subident,
 };
 
-pub(crate) struct AttributeIndex<'a> {
+struct IndexedTimestamp<'a> {
+    source: &'a CreationTimestamp,
+    ordinal: Option<usize>,
+}
+
+pub(super) struct AttributeIndex<'a> {
     creation_timestamps: &'a [CreationTimestamp],
     body_group_ordinals: HashMap<String, usize>,
     face_group_ordinals: HashMap<String, usize>,
     edge_group_ordinals: HashMap<String, usize>,
     sketch_ordinals: HashMap<String, usize>,
-    body_group_count: usize,
-    face_group_count: usize,
-    edge_group_count: usize,
     body_links: HashMap<&'a str, Vec<&'a PersistentDesignLink>>,
     face_tags: HashMap<&'a str, Vec<&'a PersistentSubentityTag>>,
     edge_tags: HashMap<&'a str, Vec<&'a PersistentSubentityTag>>,
-    body_timestamps: HashMap<&'a str, &'a CreationTimestamp>,
-    face_timestamps: HashMap<&'a str, &'a CreationTimestamp>,
-    edge_timestamps: HashMap<&'a str, &'a CreationTimestamp>,
-    coedge_timestamps: HashMap<&'a str, &'a CreationTimestamp>,
-    vertex_timestamps: HashMap<&'a str, &'a CreationTimestamp>,
+    body_timestamps: HashMap<&'a str, IndexedTimestamp<'a>>,
+    face_timestamps: HashMap<&'a str, IndexedTimestamp<'a>>,
+    edge_timestamps: HashMap<&'a str, IndexedTimestamp<'a>>,
+    coedge_timestamps: HashMap<&'a str, IndexedTimestamp<'a>>,
+    vertex_timestamps: HashMap<&'a str, IndexedTimestamp<'a>>,
     coedge_sketch_links: HashMap<&'a str, &'a SketchCurveLink>,
-    body_timestamp_ordinals: HashMap<&'a str, usize>,
-    face_timestamp_ordinals: HashMap<&'a str, usize>,
-    edge_timestamp_ordinals: HashMap<&'a str, usize>,
-    coedge_timestamp_ordinals: HashMap<&'a str, usize>,
-    vertex_timestamp_ordinals: HashMap<&'a str, usize>,
     body_keys: HashMap<&'a str, &'a cadmpeg_asm::brep::records::BodyNativeKey>,
     assigned_body_keys: HashMap<&'a str, u64>,
 }
@@ -48,23 +48,23 @@ pub(crate) struct AttributeIndex<'a> {
 /// Record-table starts of the face and coedge sections, which only a solid
 /// body target writes.
 #[derive(Clone, Copy)]
-pub(crate) struct SurfaceOwnerStarts {
-    pub(crate) face: i64,
-    pub(crate) coedge: i64,
+pub(super) struct SurfaceOwnerStarts {
+    pub(super) face: i64,
+    pub(super) coedge: i64,
 }
 
 /// Record-table starts used to write the owner field of generated attributes.
 #[derive(Clone, Copy)]
-pub(crate) struct AttributeOwnerStarts {
-    pub(crate) body: i64,
+pub(super) struct AttributeOwnerStarts {
+    pub(super) body: i64,
     /// Present only when the target has a face/coedge section.
-    pub(crate) surface: Option<SurfaceOwnerStarts>,
-    pub(crate) edge: i64,
-    pub(crate) vertex: i64,
+    pub(super) surface: Option<SurfaceOwnerStarts>,
+    pub(super) edge: i64,
+    pub(super) vertex: i64,
 }
 
 impl<'a> AttributeIndex<'a> {
-    pub(crate) fn new(target: &'a CadIr, native: &'a F3dNative) -> Result<Self, CodecError> {
+    pub(super) fn new(target: &'a CadIr, native: &'a F3dNative) -> Result<Self, CodecError> {
         let mut body_links: HashMap<_, Vec<_>> = HashMap::new();
         let mut body_keys = HashMap::new();
         for key in &native.body_native_keys {
@@ -121,19 +121,44 @@ impl<'a> AttributeIndex<'a> {
         for timestamp in &native.creation_timestamps {
             match &timestamp.target {
                 cadmpeg_ir::attributes::AttributeTarget::Body(id) => {
-                    body_timestamps.entry(id.as_str()).or_insert(timestamp);
+                    body_timestamps
+                        .entry(id.as_str())
+                        .or_insert(IndexedTimestamp {
+                            source: timestamp,
+                            ordinal: None,
+                        });
                 }
                 cadmpeg_ir::attributes::AttributeTarget::Face(id) => {
-                    face_timestamps.entry(id.as_str()).or_insert(timestamp);
+                    face_timestamps
+                        .entry(id.as_str())
+                        .or_insert(IndexedTimestamp {
+                            source: timestamp,
+                            ordinal: None,
+                        });
                 }
                 cadmpeg_ir::attributes::AttributeTarget::Edge(id) => {
-                    edge_timestamps.entry(id.as_str()).or_insert(timestamp);
+                    edge_timestamps
+                        .entry(id.as_str())
+                        .or_insert(IndexedTimestamp {
+                            source: timestamp,
+                            ordinal: None,
+                        });
                 }
                 cadmpeg_ir::attributes::AttributeTarget::Coedge(id) => {
-                    coedge_timestamps.entry(id.as_str()).or_insert(timestamp);
+                    coedge_timestamps
+                        .entry(id.as_str())
+                        .or_insert(IndexedTimestamp {
+                            source: timestamp,
+                            ordinal: None,
+                        });
                 }
                 cadmpeg_ir::attributes::AttributeTarget::Vertex(id) => {
-                    vertex_timestamps.entry(id.as_str()).or_insert(timestamp);
+                    vertex_timestamps
+                        .entry(id.as_str())
+                        .or_insert(IndexedTimestamp {
+                            source: timestamp,
+                            ordinal: None,
+                        });
                 }
                 _ => {}
             }
@@ -144,65 +169,22 @@ impl<'a> AttributeIndex<'a> {
                 coedge_sketch_links.entry(id.as_str()).or_insert(link);
             }
         }
-        let mut body_timestamp_ordinals = HashMap::new();
-        let mut face_timestamp_ordinals = HashMap::new();
-        let mut edge_timestamp_ordinals = HashMap::new();
-        let mut coedge_timestamp_ordinals = HashMap::new();
-        let mut vertex_timestamp_ordinals = HashMap::new();
         let mut split_ordinal = 0;
         macro_rules! split_timestamp_ordinals {
-            ($items:expr, $timestamps:expr, $ordinals:expr) => {
+            ($items:expr, $timestamps:expr) => {
                 for item in $items {
-                    if $timestamps.contains_key(item.id.as_str()) {
-                        $ordinals.insert(item.id.as_str(), split_ordinal);
+                    if let Some(timestamp) = $timestamps.get_mut(item.id.as_str()) {
+                        timestamp.ordinal = Some(split_ordinal);
                         split_ordinal += 1;
                     }
                 }
             };
         }
-        split_timestamp_ordinals!(
-            &target.model.bodies,
-            body_timestamps,
-            body_timestamp_ordinals
-        );
-        split_timestamp_ordinals!(
-            &target.model.faces,
-            face_timestamps,
-            face_timestamp_ordinals
-        );
-        split_timestamp_ordinals!(
-            &target.model.edges,
-            edge_timestamps,
-            edge_timestamp_ordinals
-        );
-        split_timestamp_ordinals!(
-            &target.model.coedges,
-            coedge_timestamps,
-            coedge_timestamp_ordinals
-        );
-        split_timestamp_ordinals!(
-            &target.model.vertices,
-            vertex_timestamps,
-            vertex_timestamp_ordinals
-        );
-        let body_group_count = target
-            .model
-            .bodies
-            .iter()
-            .filter(|body| body_links.contains_key(body.id.as_str()))
-            .count();
-        let face_group_count = target
-            .model
-            .faces
-            .iter()
-            .filter(|face| face_tags.contains_key(face.id.as_str()))
-            .count();
-        let edge_group_count = target
-            .model
-            .edges
-            .iter()
-            .filter(|edge| edge_tags.contains_key(edge.id.as_str()))
-            .count();
+        split_timestamp_ordinals!(&target.model.bodies, body_timestamps);
+        split_timestamp_ordinals!(&target.model.faces, face_timestamps);
+        split_timestamp_ordinals!(&target.model.edges, edge_timestamps);
+        split_timestamp_ordinals!(&target.model.coedges, coedge_timestamps);
+        split_timestamp_ordinals!(&target.model.vertices, vertex_timestamps);
         let body_group_ordinals = target
             .model
             .bodies
@@ -241,9 +223,6 @@ impl<'a> AttributeIndex<'a> {
             face_group_ordinals,
             edge_group_ordinals,
             sketch_ordinals,
-            body_group_count,
-            face_group_count,
-            edge_group_count,
             body_links,
             face_tags,
             edge_tags,
@@ -253,45 +232,49 @@ impl<'a> AttributeIndex<'a> {
             coedge_timestamps,
             vertex_timestamps,
             coedge_sketch_links,
-            body_timestamp_ordinals,
-            face_timestamp_ordinals,
-            edge_timestamp_ordinals,
-            coedge_timestamp_ordinals,
-            vertex_timestamp_ordinals,
             body_keys,
             assigned_body_keys,
         })
     }
 
-    fn timestamp(
+    fn body_group_count(&self) -> usize {
+        self.body_group_ordinals.len()
+    }
+
+    fn face_group_count(&self) -> usize {
+        self.face_group_ordinals.len()
+    }
+
+    fn edge_group_count(&self) -> usize {
+        self.edge_group_ordinals.len()
+    }
+
+    fn indexed_timestamp(
         &self,
         target: &cadmpeg_ir::attributes::AttributeTarget,
-    ) -> Option<&'a CreationTimestamp> {
+    ) -> Option<&IndexedTimestamp<'a>> {
         use cadmpeg_ir::attributes::AttributeTarget;
         match target {
-            AttributeTarget::Body(id) => self.body_timestamps.get(id.as_str()).copied(),
-            AttributeTarget::Face(id) => self.face_timestamps.get(id.as_str()).copied(),
-            AttributeTarget::Edge(id) => self.edge_timestamps.get(id.as_str()).copied(),
-            AttributeTarget::Coedge(id) => self.coedge_timestamps.get(id.as_str()).copied(),
-            AttributeTarget::Vertex(id) => self.vertex_timestamps.get(id.as_str()).copied(),
+            AttributeTarget::Body(id) => self.body_timestamps.get(id.as_str()),
+            AttributeTarget::Face(id) => self.face_timestamps.get(id.as_str()),
+            AttributeTarget::Edge(id) => self.edge_timestamps.get(id.as_str()),
+            AttributeTarget::Coedge(id) => self.coedge_timestamps.get(id.as_str()),
+            AttributeTarget::Vertex(id) => self.vertex_timestamps.get(id.as_str()),
             _ => None,
         }
     }
+    fn timestamp(&self, target: &AttributeTarget) -> Option<&'a CreationTimestamp> {
+        self.indexed_timestamp(target)
+            .map(|timestamp| timestamp.source)
+    }
 
-    fn timestamp_ordinal(&self, target: &cadmpeg_ir::attributes::AttributeTarget) -> Option<usize> {
-        use cadmpeg_ir::attributes::AttributeTarget;
-        match target {
-            AttributeTarget::Body(id) => self.body_timestamp_ordinals.get(id.as_str()).copied(),
-            AttributeTarget::Face(id) => self.face_timestamp_ordinals.get(id.as_str()).copied(),
-            AttributeTarget::Edge(id) => self.edge_timestamp_ordinals.get(id.as_str()).copied(),
-            AttributeTarget::Coedge(id) => self.coedge_timestamp_ordinals.get(id.as_str()).copied(),
-            AttributeTarget::Vertex(id) => self.vertex_timestamp_ordinals.get(id.as_str()).copied(),
-            _ => None,
-        }
+    fn timestamp_ordinal(&self, target: &AttributeTarget) -> Option<usize> {
+        self.indexed_timestamp(target)
+            .and_then(|timestamp| timestamp.ordinal)
     }
 }
 
-pub(crate) fn source_less_body_key(
+pub(super) fn source_less_body_key(
     index: &AttributeIndex<'_>,
     body: &Body,
     body_ordinal: usize,
@@ -313,31 +296,34 @@ pub(crate) fn source_less_body_key(
         .map_err(|_| CodecError::NotImplemented("F3D ASM body key exceeds i64::MAX".into()))
 }
 
+#[derive(Clone, Copy)]
+enum ColorOwner {
+    Body,
+    Face,
+}
+
 fn color_attribute_ref(
     model: &cadmpeg_ir::document::Model,
-    color: Option<Color>,
     ordinal: usize,
-    body: bool,
+    owner: ColorOwner,
     attribute_start: i64,
 ) -> Result<i64, CodecError> {
-    if color.is_none() {
-        return Ok(-1);
-    }
-    let preceding = if body {
-        model.bodies[..ordinal]
+    let preceding = match owner {
+        ColorOwner::Body => model.bodies[..ordinal]
             .iter()
             .filter(|body| body.color.is_some())
-            .count()
-    } else {
-        model
-            .bodies
-            .iter()
-            .filter(|body| body.color.is_some())
-            .count()
-            + model.faces[..ordinal]
+            .count(),
+        ColorOwner::Face => {
+            model
+                .bodies
                 .iter()
-                .filter(|face| face.color.is_some())
+                .filter(|body| body.color.is_some())
                 .count()
+                + model.faces[..ordinal]
+                    .iter()
+                    .filter(|face| face.color.is_some())
+                    .count()
+        }
     };
     native_record_index(attribute_start, preceding)
 }
@@ -353,7 +339,7 @@ fn persistent_links<'i, 'n>(
     }
 }
 
-pub(crate) fn persistent_subentity_tags<'i, 'n>(
+fn persistent_subentity_tags<'i, 'n>(
     index: &'i AttributeIndex<'n>,
     entity: &cadmpeg_ir::attributes::AttributeTarget,
 ) -> &'i [&'n PersistentSubentityTag] {
@@ -385,13 +371,13 @@ fn timestamp_attribute_ordinal(
 fn existing_source_less_attribute_count(target: &CadIr, index: &AttributeIndex<'_>) -> usize {
     source_less_color_count(target)
         + source_less_name_count(target)
-        + index.body_group_count
-        + index.face_group_count
-        + index.edge_group_count
+        + index.body_group_count()
+        + index.face_group_count()
+        + index.edge_group_count()
         + index.coedge_sketch_links.len()
 }
 
-pub(crate) fn timestamp_attribute_ref(
+pub(super) fn timestamp_attribute_ref(
     target: &CadIr,
     index: &AttributeIndex<'_>,
     entity: &cadmpeg_ir::attributes::AttributeTarget,
@@ -447,18 +433,7 @@ fn body_persistent_attribute_ref(
         return Ok(None);
     }
     let ordinal = index.body_group_ordinals[body.id.as_str()];
-    let color_count = target
-        .model
-        .bodies
-        .iter()
-        .filter(|body| body.color.is_some())
-        .count()
-        + target
-            .model
-            .faces
-            .iter()
-            .filter(|face| face.color.is_some())
-            .count();
+    let color_count = source_less_color_count(target);
     native_record_index(
         attribute_start,
         color_count + source_less_name_count(target) + ordinal,
@@ -484,35 +459,50 @@ fn body_name_attribute_ref(
     native_record_index(attribute_start, source_less_color_count(target) + ordinal).map(Some)
 }
 
-pub(crate) fn owner_color_or_body_tag_ref(
+/// A source-less attribute owner with a color/name/tag chain.
+#[derive(Clone, Copy)]
+pub(super) enum AttributeOwner<'a> {
+    Body(&'a Body),
+    Face(&'a Face),
+}
+
+pub(super) fn owner_attribute_ref(
     target: &CadIr,
     index: &AttributeIndex<'_>,
-    body: &Body,
-    body_ordinal: usize,
+    owner: AttributeOwner<'_>,
+    ordinal: usize,
     attribute_start: i64,
 ) -> Result<i64, CodecError> {
-    if body.color.is_some() {
-        return color_attribute_ref(
-            &target.model,
-            body.color,
-            body_ordinal,
-            true,
-            attribute_start,
-        );
+    let (has_color, color_owner) = match owner {
+        AttributeOwner::Body(body) => (body.color.is_some(), ColorOwner::Body),
+        AttributeOwner::Face(face) => (face.color.is_some(), ColorOwner::Face),
+    };
+    if has_color {
+        return color_attribute_ref(&target.model, ordinal, color_owner, attribute_start);
     }
-    if let Some(reference) = body_name_attribute_ref(target, body, attribute_start)? {
+    let name = match owner {
+        AttributeOwner::Body(body) => body_name_attribute_ref(target, body, attribute_start),
+        AttributeOwner::Face(face) => face_name_attribute_ref(target, face, attribute_start),
+    }?;
+    if let Some(reference) = name {
         return Ok(reference);
     }
-    if let Some(reference) = body_persistent_attribute_ref(target, index, body, attribute_start)? {
+    let persistent = match owner {
+        AttributeOwner::Body(body) => {
+            body_persistent_attribute_ref(target, index, body, attribute_start)
+        }
+        AttributeOwner::Face(face) => {
+            face_persistent_attribute_ref(target, index, face, attribute_start)
+        }
+    }?;
+    if let Some(reference) = persistent {
         return Ok(reference);
     }
-    Ok(timestamp_attribute_ref(
-        target,
-        index,
-        &cadmpeg_ir::attributes::AttributeTarget::Body(body.id.clone()),
-        attribute_start,
-    )?
-    .unwrap_or(-1))
+    let entity = match owner {
+        AttributeOwner::Body(body) => AttributeTarget::Body(body.id.clone()),
+        AttributeOwner::Face(face) => AttributeTarget::Face(face.id.clone()),
+    };
+    Ok(timestamp_attribute_ref(target, index, &entity, attribute_start)?.unwrap_or(-1))
 }
 
 fn face_persistent_attribute_ref(
@@ -529,7 +519,7 @@ fn face_persistent_attribute_ref(
         attribute_start,
         source_less_color_count(target)
             + source_less_name_count(target)
-            + index.body_group_count
+            + index.body_group_count()
             + ordinal,
     )
     .map(Some)
@@ -563,38 +553,7 @@ fn face_name_attribute_ref(
     .map(Some)
 }
 
-pub(crate) fn owner_color_or_face_tag_ref(
-    target: &CadIr,
-    index: &AttributeIndex<'_>,
-    face: &Face,
-    face_ordinal: usize,
-    attribute_start: i64,
-) -> Result<i64, CodecError> {
-    if face.color.is_some() {
-        return color_attribute_ref(
-            &target.model,
-            face.color,
-            face_ordinal,
-            false,
-            attribute_start,
-        );
-    }
-    if let Some(reference) = face_name_attribute_ref(target, face, attribute_start)? {
-        return Ok(reference);
-    }
-    if let Some(reference) = face_persistent_attribute_ref(target, index, face, attribute_start)? {
-        return Ok(reference);
-    }
-    Ok(timestamp_attribute_ref(
-        target,
-        index,
-        &cadmpeg_ir::attributes::AttributeTarget::Face(face.id.clone()),
-        attribute_start,
-    )?
-    .unwrap_or(-1))
-}
-
-pub(crate) fn edge_persistent_attribute_ref(
+pub(super) fn edge_persistent_attribute_ref(
     target: &CadIr,
     index: &AttributeIndex<'_>,
     edge: &Edge,
@@ -609,8 +568,8 @@ pub(crate) fn edge_persistent_attribute_ref(
         attribute_start,
         source_less_color_count(target)
             + source_less_name_count(target)
-            + index.body_group_count
-            + index.face_group_count
+            + index.body_group_count()
+            + index.face_group_count()
             + ordinal,
     )
     .map(Some)
@@ -664,15 +623,15 @@ fn coedge_sketch_attribute_ref(
         attribute_start,
         source_less_color_count(target)
             + source_less_name_count(target)
-            + index.body_group_count
-            + index.face_group_count
-            + index.edge_group_count
+            + index.body_group_count()
+            + index.face_group_count()
+            + index.edge_group_count()
             + preceding,
     )
     .map(Some)
 }
 
-pub(crate) fn sketch_link_attribute_ref(
+pub(super) fn sketch_link_attribute_ref(
     target: &CadIr,
     index: &AttributeIndex<'_>,
     coedge: &Coedge,
@@ -714,13 +673,16 @@ fn attribute_before_timestamp(
             if let Some(reference) = body_name_attribute_ref(target, body, attribute_start)? {
                 return Ok(reference);
             }
-            color_attribute_ref(
-                &target.model,
-                body.color,
-                owner_ordinal,
-                true,
-                attribute_start,
-            )
+            if body.color.is_none() {
+                Ok(-1)
+            } else {
+                color_attribute_ref(
+                    &target.model,
+                    owner_ordinal,
+                    ColorOwner::Body,
+                    attribute_start,
+                )
+            }
         }
         AttributeTarget::Face(id) => {
             let face = target
@@ -737,13 +699,16 @@ fn attribute_before_timestamp(
             if let Some(reference) = face_name_attribute_ref(target, face, attribute_start)? {
                 return Ok(reference);
             }
-            color_attribute_ref(
-                &target.model,
-                face.color,
-                owner_ordinal,
-                false,
-                attribute_start,
-            )
+            if face.color.is_none() {
+                Ok(-1)
+            } else {
+                color_attribute_ref(
+                    &target.model,
+                    owner_ordinal,
+                    ColorOwner::Face,
+                    attribute_start,
+                )
+            }
         }
         AttributeTarget::Edge(id) => {
             let edge = target
@@ -817,7 +782,7 @@ fn native_persistent_design_attribute(
     );
     for link in links {
         native_i64(records, kind);
-        native_string(records, &link.design_id)?;
+        native_string(records, link.design_id.as_str())?;
         for value in [link.design_reference, 0, 0] {
             native_i64(records, value);
         }
@@ -847,7 +812,7 @@ fn native_persistent_subentity_attribute(
     );
     for tag in tags {
         native_i64(records, tag.selector);
-        native_string(records, &tag.token)?;
+        native_string(records, tag.token.as_str())?;
         native_i64(records, 0);
         native_i64(
             records,
@@ -882,14 +847,15 @@ fn native_sketch_link_attribute(
             "{} {} {} 0 {} {}",
             link.sketch_curve_id,
             link.ref_b,
-            link.sense.unwrap_or(SKETCH_LINK_SENSE_UNCONSTRAINED),
+            link.sense
+                .map_or(SKETCH_LINK_SENSE_UNCONSTRAINED, i64::from),
             link.role,
             link.closure
         ),
     )
 }
 
-pub(crate) fn encode_source_less_attributes(
+pub(super) fn encode_source_less_attributes(
     records: &mut Vec<u8>,
     target: &CadIr,
     index: &AttributeIndex<'_>,
@@ -931,12 +897,6 @@ pub(crate) fn encode_source_less_attributes(
         }
     };
     for (ordinal, timestamp) in index.creation_timestamps.iter().enumerate() {
-        if !timestamp.unix_microseconds.is_finite() {
-            return Err(CodecError::malformed(format_args!(
-                "F3D creation timestamp {} is non-finite",
-                timestamp.id
-            )));
-        }
         if index.creation_timestamps[..ordinal]
             .iter()
             .any(|before| before.target == timestamp.target)
@@ -953,13 +913,12 @@ pub(crate) fn encode_source_less_attributes(
             )));
         }
     }
-    for (body_ordinal, body) in model
+    for (body_ordinal, body, color) in model
         .bodies
         .iter()
         .enumerate()
-        .filter(|(_, body)| body.color.is_some())
+        .filter_map(|(ordinal, body)| Some((ordinal, body, body.color?)))
     {
-        let color = body.color.expect("filtered colored body");
         let owner_target = AttributeTarget::Body(body.id.clone());
         let next = if let Some(reference) = body_name_attribute_ref(target, body, attribute_start)?
         {
@@ -979,10 +938,10 @@ pub(crate) fn encode_source_less_attributes(
         )?;
         records.push(0x11);
     }
-    for (face_ordinal, face, face_start) in faces
+    for (face_ordinal, face, face_start, color) in faces
         .iter()
         .copied()
-        .filter(|(_, face, _)| face.color.is_some())
+        .filter_map(|(ordinal, face, start)| Some((ordinal, face, start, face.color?)))
     {
         let owner_target = AttributeTarget::Face(face.id.clone());
         let next = if let Some(reference) = face_name_attribute_ref(target, face, attribute_start)?
@@ -997,17 +956,17 @@ pub(crate) fn encode_source_less_attributes(
         };
         native_color_attribute(
             records,
-            face.color.expect("filtered colored face"),
+            color,
             next,
             native_record_index(face_start, face_ordinal)?,
         )?;
         records.push(0x11);
     }
-    for (body_ordinal, body) in model
+    for (body_ordinal, body, name) in model
         .bodies
         .iter()
         .enumerate()
-        .filter(|(_, body)| body.name.is_some())
+        .filter_map(|(ordinal, body)| Some((ordinal, body, body.name.as_deref()?)))
     {
         let owner_target = AttributeTarget::Body(body.id.clone());
         let next = if let Some(reference) =
@@ -1017,26 +976,29 @@ pub(crate) fn encode_source_less_attributes(
         } else {
             timestamp_attribute_ref(target, index, &owner_target, attribute_start)?.unwrap_or(-1)
         };
-        let previous = color_attribute_ref(
-            &target.model,
-            body.color,
-            body_ordinal,
-            true,
-            attribute_start,
-        )?;
+        let previous = if body.color.is_none() {
+            -1
+        } else {
+            color_attribute_ref(
+                &target.model,
+                body_ordinal,
+                ColorOwner::Body,
+                attribute_start,
+            )?
+        };
         native_name_attribute(
             records,
-            body.name.as_deref().expect("filtered named body"),
+            name,
             next,
             previous,
             native_record_index(owners.body, body_ordinal)?,
         )?;
         records.push(0x11);
     }
-    for (face_ordinal, face, face_start) in faces
+    for (face_ordinal, face, face_start, name) in faces
         .iter()
         .copied()
-        .filter(|(_, face, _)| face.name.is_some())
+        .filter_map(|(ordinal, face, start)| Some((ordinal, face, start, face.name.as_deref()?)))
     {
         let owner_target = AttributeTarget::Face(face.id.clone());
         let next = if let Some(reference) =
@@ -1046,16 +1008,19 @@ pub(crate) fn encode_source_less_attributes(
         } else {
             timestamp_attribute_ref(target, index, &owner_target, attribute_start)?.unwrap_or(-1)
         };
-        let previous = color_attribute_ref(
-            &target.model,
-            face.color,
-            face_ordinal,
-            false,
-            attribute_start,
-        )?;
+        let previous = if face.color.is_none() {
+            -1
+        } else {
+            color_attribute_ref(
+                &target.model,
+                face_ordinal,
+                ColorOwner::Face,
+                attribute_start,
+            )?
+        };
         native_name_attribute(
             records,
-            face.name.as_deref().expect("filtered named face"),
+            name,
             next,
             previous,
             native_record_index(face_start, face_ordinal)?,
@@ -1077,12 +1042,13 @@ pub(crate) fn encode_source_less_attributes(
         let previous =
             if let Some(reference) = body_name_attribute_ref(target, body, attribute_start)? {
                 reference
+            } else if body.color.is_none() {
+                -1
             } else {
                 color_attribute_ref(
                     &target.model,
-                    body.color,
                     body_ordinal,
-                    true,
+                    ColorOwner::Body,
                     attribute_start,
                 )?
             };
@@ -1111,12 +1077,13 @@ pub(crate) fn encode_source_less_attributes(
         let previous =
             if let Some(reference) = face_name_attribute_ref(target, face, attribute_start)? {
                 reference
+            } else if face.color.is_none() {
+                -1
             } else {
                 color_attribute_ref(
                     &target.model,
-                    face.color,
                     face_ordinal,
-                    false,
+                    ColorOwner::Face,
                     attribute_start,
                 )?
             };
@@ -1216,7 +1183,7 @@ pub(crate) fn encode_source_less_attributes(
         );
         native_string(records, "Timestamp_attrib_def")?;
         native_i64(records, 1);
-        native_f64(records, timestamp.unix_microseconds);
+        native_f64(records, timestamp.unix_microseconds.get());
         records.push(0x11);
     }
     Ok(())
@@ -1230,7 +1197,7 @@ fn native_name_attribute(
     owner: i64,
 ) -> Result<(), CodecError> {
     if name.is_empty() {
-        return Err(CodecError::Malformed(
+        return Err(CodecError::NotImplemented(
             "source-less F3D display name must not be empty".into(),
         ));
     }
@@ -1252,16 +1219,7 @@ fn native_color_attribute(
     next: i64,
     owner: i64,
 ) -> Result<(), CodecError> {
-    let channels = [color.r, color.g, color.b, color.a];
-    if channels
-        .iter()
-        .any(|channel| !channel.is_finite() || !(0.0..=1.0).contains(channel))
-    {
-        return Err(CodecError::Malformed(
-            "source-less F3D color channels must be finite and in [0, 1]".into(),
-        ));
-    }
-    if color.a != 1.0 {
+    if color.a() != 1.0 {
         return Err(CodecError::NotImplemented(
             "source-less F3D direct color requires opaque RGB channels".into(),
         ));
@@ -1270,9 +1228,9 @@ fn native_color_attribute(
     native_subident(records, "st")?;
     native_ident(records, "attrib")?;
     native_attribute_base(records, next, -1, owner);
-    native_f64(records, f64::from(color.r));
-    native_f64(records, f64::from(color.g));
-    native_f64(records, f64::from(color.b));
+    native_f64(records, f64::from(color.r()));
+    native_f64(records, f64::from(color.g()));
+    native_f64(records, f64::from(color.b()));
     native_f64(records, 1.0);
     Ok(())
 }

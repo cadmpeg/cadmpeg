@@ -7,6 +7,7 @@ use super::type101_state::Type101State;
 use super::type38_state::Type38State;
 use super::type70_state::Type70State;
 use crate::framing::xmt_reference::NonNullXmt;
+use cadmpeg_ir::units::FiniteVector;
 use serde::{Deserialize, Serialize};
 
 /// Body of an inline schema declaration.
@@ -56,7 +57,7 @@ pub(crate) enum InlineSchemaFields {
         /// Non-null stream-local term-use reference.
         reference: NonNullXmt,
         /// Eleven finite binary64 state values.
-        numeric_values: TermUseValues,
+        numeric_values: FiniteVector<11>,
     },
 }
 
@@ -80,28 +81,10 @@ pub(crate) enum InlineBodyStateFields {
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "[f64; 11]", into = "[f64; 11]")]
-pub(crate) struct TermUseValues([f64; 11]);
-
-impl TryFrom<[f64; 11]> for TermUseValues {
-    type Error = &'static str;
-    fn try_from(values: [f64; 11]) -> Result<Self, Self::Error> {
-        if values.iter().any(|value| !value.is_finite()) {
-            return Err("numeric_values: require eleven finite values");
-        }
-        Ok(Self(values))
-    }
-}
-impl From<TermUseValues> for [f64; 11] {
-    fn from(values: TermUseValues) -> Self {
-        values.0
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{InlineSchemaFields, TermUseValues};
+    use super::InlineSchemaFields;
+    use cadmpeg_ir::units::FiniteVector;
 
     #[test]
     fn term_use_wire_preserves_values_and_rejects_nonfinite_construction() {
@@ -109,17 +92,21 @@ mod tests {
         let fields: InlineSchemaFields = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_string(&fields).unwrap(), json);
         for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-            assert!(TermUseValues::try_from([value; 11])
-                .unwrap_err()
-                .contains("numeric_values"));
+            assert!(FiniteVector::new([value; 11]).is_none());
         }
     }
 }
 
 /// Nonempty opaque revision state.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "Vec<u8>", into = "Vec<u8>")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "Vec<u8>")]
 pub(crate) struct BodyStateBytes(Vec<u8>);
+
+impl Serialize for BodyStateBytes {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.serialize(serializer)
+    }
+}
 
 impl TryFrom<Vec<u8>> for BodyStateBytes {
     type Error = &'static str;
@@ -130,15 +117,22 @@ impl TryFrom<Vec<u8>> for BodyStateBytes {
         Ok(Self(bytes))
     }
 }
+#[cfg(test)]
+std::thread_local! {
+    static BODY_STATE_INTO_WIRE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
 impl From<BodyStateBytes> for Vec<u8> {
     fn from(bytes: BodyStateBytes) -> Self {
+        BODY_STATE_INTO_WIRE_COUNT.with(|count| count.set(count.get() + 1));
         bytes.0
     }
 }
 
 #[cfg(test)]
 mod body_state_tests {
-    use super::InlineBodyStateFields;
+    use super::{BodyStateBytes, InlineBodyStateFields, BODY_STATE_INTO_WIRE_COUNT};
     #[test]
     fn body_wire_rejects_null_compact_references_and_empty_revisions() {
         for json in [
@@ -159,5 +153,29 @@ mod body_state_tests {
         )
         .unwrap_err();
         assert!(error.to_string().contains("state_bytes"));
+    }
+
+    #[test]
+    fn body_state_bytes_native_limit_refuses_before_owned_wire_conversion() {
+        #[derive(serde::Serialize)]
+        struct Record<'a> {
+            id: &'static str,
+            state_bytes: &'a BodyStateBytes,
+        }
+        let state_bytes = BodyStateBytes::try_from(vec![170, 187]).unwrap();
+        assert_eq!(
+            serde_json::to_vec(&state_bytes).unwrap(),
+            serde_json::to_vec(&Vec::<u8>::from(state_bytes.clone())).unwrap()
+        );
+        let record = Record {
+            id: "nx:deltas:body-state#0",
+            state_bytes: &state_bytes,
+        };
+        BODY_STATE_INTO_WIRE_COUNT.with(|count| count.set(0));
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::json!({"id": "nx:deltas:body-state#0", "state_bytes": [170, 187]}),
+        );
+        BODY_STATE_INTO_WIRE_COUNT.with(|count| assert_eq!(count.get(), 0));
     }
 }

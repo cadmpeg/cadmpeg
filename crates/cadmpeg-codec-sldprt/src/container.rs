@@ -7,14 +7,16 @@
 //! invariants, validates block CRC-32 values, inflates payloads, decodes stored
 //! section names, and extracts embedded Parasolid streams.
 
-use cadmpeg_core::container::{ContainerRole, EntryCompression};
+use cadmpeg_core::container::{CompressionMethod, ContainerRole, EntryStorage, VerbatimLabel};
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_container::compound::{CompoundEntry, CompoundPrefixProbe, CompoundSnapshot};
-use cadmpeg_container::compression::{inflate_bounded_probe, inflate_deflate, inflate_zlib_member};
+use cadmpeg_container::compression::{inflate_deflate_owned, inflate_zlib_member_owned};
 use cadmpeg_core::bytes::contains;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, View};
+use cadmpeg_core::decode::{
+    index_from_u32, u64_from_index, DecodeContext, ExpandSpec, ScopedReservation, View,
+};
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::hash::sha256_hex;
@@ -27,15 +29,14 @@ use crate::layout::tail_directory_entry as dir_ent;
 use crate::layout::zlb_wrapper_header as zlb_hdr;
 
 /// Marker shared by block, cache-cell, and directory frames.
-pub const MARKER: [u8; 6] = block_hdr::MARKER_VALUE;
+pub(crate) const MARKER: [u8; 6] = block_hdr::MARKER_VALUE;
 
-/// Upper bound on a single decompressed block, guarding a corrupt `uncomp_sz`
-/// from driving an unbounded allocation. Real part streams sit far below this.
+/// Resource ceiling on the expansion of one native block.
 const MAX_UNCOMP: usize = 512 * 1024 * 1024;
 
 /// Classified decompressed payload signature.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PayloadFamily {
+pub(crate) enum PayloadFamily {
     Parasolid,
     PngPreview,
     BmpThumbnail,
@@ -48,7 +49,7 @@ pub enum PayloadFamily {
 }
 
 impl PayloadFamily {
-    pub fn label(self) -> &'static str {
+    pub(crate) fn label(self) -> &'static str {
         match self {
             Self::Parasolid => "parasolid",
             Self::PngPreview => "png-preview",
@@ -66,7 +67,7 @@ impl PayloadFamily {
 /// Classify a decompressed block payload by signature.
 ///
 /// Unknown signatures return [`PayloadFamily::Unknown`].
-pub fn payload_family(payload: &[u8]) -> PayloadFamily {
+pub(crate) fn payload_family(payload: &[u8]) -> PayloadFamily {
     if payload.starts_with(&[0x89, 0x50, 0x4e, 0x47]) {
         PayloadFamily::PngPreview
     } else if is_bmp_thumbnail(payload) {
@@ -101,106 +102,138 @@ fn is_bmp_thumbnail(payload: &[u8]) -> bool {
     header_size == 40 && matches!(bits_per_pixel, 1 | 4 | 8 | 16 | 24 | 32)
 }
 
-/// Decode a nibble-swapped section name.
-///
-/// Returns `None` when any decoded byte falls outside printable ASCII.
-pub fn nibble_swap_name(raw: &[u8]) -> Option<String> {
-    let mut s = String::with_capacity(raw.len());
-    for &b in raw {
-        let swapped = b.rotate_left(4);
-        if !(0x20..0x7f).contains(&swapped) {
-            return None;
-        }
-        s.push(swapped as char);
+fn nibble_swap_name_charged(
+    ctx: &DecodeContext<'_>,
+    raw: &[u8],
+) -> Result<Option<String>, CodecError> {
+    let work = u64_from_index(raw.len()).checked_mul(3).ok_or_else(|| {
+        ctx.refuse_codec_limit("validate SLDPRT section name", u64::MAX, u64::MAX)
+    })?;
+    ctx.charge_work(work, "validate SLDPRT section name")?;
+    if !raw
+        .iter()
+        .all(|byte| (0x20..0x7f).contains(&byte.rotate_left(4)))
+    {
+        return Ok(None);
     }
-    Some(s)
+    let mut bytes = ctx.copy_retained(raw, "retain SLDPRT section name")?;
+    for byte in &mut bytes {
+        *byte = byte.rotate_left(4);
+    }
+    Ok(String::from_utf8(bytes).ok())
+}
+
+/// The admitted name of one compressed block.
+///
+/// Anonymous blocks retain a generated source owner while keeping their
+/// section classification absent. Named and anonymous blocks therefore share
+/// one owning value instead of carrying two writable copies of the name.
+#[derive(Debug, Clone)]
+pub(crate) enum BlockName {
+    Named(cadmpeg_ir::StreamName),
+    Anonymous(cadmpeg_ir::StreamName),
+}
+
+impl BlockName {
+    pub(crate) fn name(&self) -> Option<&str> {
+        match self {
+            Self::Named(name) => Some(name.as_str()),
+            Self::Anonymous(_) => None,
+        }
+    }
+
+    pub(crate) fn source_stream(&self) -> &cadmpeg_ir::StreamName {
+        match self {
+            Self::Named(name) | Self::Anonymous(name) => name,
+        }
+    }
 }
 
 /// One validated compressed block.
 #[derive(Debug, Clone)]
-pub struct Block {
+pub(crate) struct Block {
     /// Byte offset of the marker in the file.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Frame `type_id`.
-    pub type_id: u32,
+    pub(crate) type_id: u32,
     /// Compressed payload length.
-    pub comp_sz: u32,
-    /// OPC section name decoded from the preamble, when printable.
-    pub section: Option<String>,
+    pub(crate) comp_sz: u32,
+    /// OPC section name and admitted source owner.
+    pub(crate) section: BlockName,
     /// Payload family from its signature or extracted Parasolid streams.
-    pub family: PayloadFamily,
+    pub(crate) family: PayloadFamily,
     /// The decompressed payload bytes.
-    pub payload: Vec<u8>,
+    pub(crate) payload: Vec<u8>,
     /// Every located and header-validated Parasolid stream carried by this block.
-    pub ps_streams: Vec<crate::parasolid::ExtractedStream>,
+    pub(crate) ps_streams: Vec<crate::parasolid::ExtractedStream>,
 }
 
 impl Block {
     /// Decompressed payload length.
-    pub fn uncomp_sz(&self) -> usize {
+    pub(crate) fn uncomp_sz(&self) -> usize {
         self.payload.len()
     }
 }
 
 /// One tail-directory entry naming a section.
 #[derive(Debug, Clone)]
-pub struct DirectoryEntry {
+pub(crate) struct DirectoryEntry {
     /// Byte offset of the marker.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Frame `type_id`.
-    pub type_id: u32,
+    pub(crate) type_id: u32,
     /// The section's stored/uncompressed size.
-    pub size: u32,
+    pub(crate) size: u32,
     /// Decoded section name.
-    pub name: String,
+    pub(crate) name: String,
     /// Per-entry descriptor bytes at frame offset +26.
-    pub descriptor: [u8; 14],
+    pub(crate) descriptor: [u8; 14],
     /// File-level directory trailer following the encoded name.
-    pub trailer: [u8; 6],
+    pub(crate) trailer: [u8; 6],
 }
 
 /// One cache-cell section-index entry.
 #[derive(Debug, Clone)]
-pub struct CacheCell {
+pub(crate) struct CacheCell {
     /// Byte offset of the marker.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// The logical cell size `L`.
-    pub logical_len: u32,
+    pub(crate) logical_len: u32,
     /// Decoded section name.
-    pub name: String,
+    pub(crate) name: String,
 }
 
 /// One named stream in a Compound File Binary container.
 #[derive(Debug, Clone)]
-pub struct CompoundStream {
-    /// Storage-qualified stream path.
-    pub path: String,
+pub(crate) struct CompoundStream {
+    /// Storage-qualified stream path and admitted source owner.
+    pub(crate) path: cadmpeg_ir::StreamName,
     /// Unique directory entry identifier.
-    pub directory_id: u32,
+    pub(crate) directory_id: u32,
     /// First regular or mini sector identifier.
-    pub start_sector: u32,
+    pub(crate) start_sector: u32,
     /// Exact stream bytes.
-    pub payload: Vec<u8>,
+    pub(crate) payload: Vec<u8>,
     /// Inflated semantic bytes when the stream uses the `__ZLB` wrapper.
-    pub decoded_payload: Option<Vec<u8>>,
+    pub(crate) decoded_payload: Option<Vec<u8>>,
     /// Every located and header-validated Parasolid stream carried here.
-    pub ps_streams: Vec<crate::parasolid::ExtractedStream>,
+    pub(crate) ps_streams: Vec<crate::parasolid::ExtractedStream>,
 }
 
 /// Complete result of an outer-container scan.
-pub struct ContainerScan<'a> {
+pub(crate) struct ContainerScan<'a> {
     /// Complete source image for exact passthrough writing.
-    pub source_image: &'a [u8],
+    pub(crate) source_image: &'a [u8],
     /// Big-endian outer version word.
-    pub version: u32,
+    pub(crate) version: u32,
     /// CRC-validated compressed blocks, in file order.
-    pub blocks: Vec<Block>,
+    pub(crate) blocks: Vec<Block>,
     /// Tail directory entries, in file order.
-    pub directory: Vec<DirectoryEntry>,
+    pub(crate) directory: Vec<DirectoryEntry>,
     /// Cache-cell grid entries, in file order.
-    pub cache_cells: Vec<CacheCell>,
+    pub(crate) cache_cells: Vec<CacheCell>,
     /// Named streams when the source uses the Compound File Binary envelope.
-    pub compound_streams: Vec<CompoundStream>,
+    pub(crate) compound_streams: Vec<CompoundStream>,
     /// `swSolidWorks` XML facts parsed once from the retained sections.
     pub(crate) solidworks: SolidWorksEnvelopeScan,
 }
@@ -214,34 +247,39 @@ pub(crate) enum Section<'a> {
 impl<'a> Section<'a> {
     pub(crate) fn name(self) -> Option<&'a str> {
         match self {
-            Self::Block(block) => block.section.as_deref(),
-            Self::Compound(stream) => Some(&stream.path),
+            Self::Block(block) => block.section.name(),
+            Self::Compound(stream) => Some(stream.path.as_str()),
         }
     }
 
-    pub(crate) fn display_name(self) -> String {
+    fn display_name(self) -> String {
+        self.source_stream().as_str().to_owned()
+    }
+
+    pub(crate) fn source_stream(self) -> &'a cadmpeg_ir::StreamName {
         match self {
-            Self::Block(block) => block
-                .section
-                .clone()
-                .unwrap_or_else(|| format!("block@{}", block.offset)),
-            Self::Compound(stream) => stream.path.clone(),
+            Self::Block(block) => block.section.source_stream(),
+            Self::Compound(stream) => &stream.path,
         }
     }
 
     pub(crate) fn ordinal(self) -> usize {
         match self {
             Self::Block(block) => block.offset,
-            Self::Compound(stream) => stream.directory_id as usize,
+            Self::Compound(stream) => index_from_u32(stream.directory_id),
         }
     }
 
-    pub(crate) fn native_id(self) -> String {
+    pub(crate) fn native_id(self) -> cadmpeg_ir::ids::UnknownId {
         match self {
-            Self::Block(block) => format!("sldprt:file:block#{}", block.offset),
-            Self::Compound(stream) => {
-                format!("sldprt:file:compound-stream#{}", stream.directory_id)
-            }
+            Self::Block(block) => cadmpeg_ir::ids::UnknownId::compose(
+                &cadmpeg_ir::identity_namespace!("sldprt", "file", "block"),
+                block.offset,
+            ),
+            Self::Compound(stream) => cadmpeg_ir::ids::UnknownId::compose(
+                &cadmpeg_ir::identity_namespace!("sldprt", "file", "compound-stream"),
+                stream.directory_id,
+            ),
         }
     }
 
@@ -279,109 +317,105 @@ impl ContainerScan<'_> {
 const COMPOUND_FILE_MAGIC: [u8; 8] = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
 const WRAPPED_PAYLOAD_MAGIC: [u8; 16] = zlb_hdr::MAGIC_VALUE;
 
+pub(crate) fn contains_ascii_case_insensitive(haystack: &str, needle: &str) -> bool {
+    haystack
+        .as_bytes()
+        .windows(needle.len())
+        .any(|window| window.eq_ignore_ascii_case(needle.as_bytes()))
+}
+
 /// Test whether a prefix contains the container marker after its outer header.
 ///
 /// This structural check does not validate block framing or CRC-32.
-pub fn looks_like_sldprt(prefix: &[u8]) -> bool {
+pub(crate) fn looks_like_sldprt(
+    ctx: &DecodeContext<'_>,
+    prefix: &[u8],
+) -> Result<bool, CodecError> {
     if prefix.starts_with(&COMPOUND_FILE_MAGIC) {
-        return CompoundPrefixProbe::inspect(prefix)
-            .paths()
-            .is_some_and(|paths| {
-                paths.iter().any(|path| {
-                    path.rsplit('/')
-                        .next()
-                        .is_some_and(|name| name.eq_ignore_ascii_case("ISolidWorksInformation"))
-                })
-            });
+        let (probe, _storage) =
+            CompoundPrefixProbe::inspect_with_context(ctx, View::over_retained(prefix))?;
+        if let Some(paths) = probe.paths() {
+            for path in paths {
+                ctx.charge_work(
+                    u64_from_index(path.len()),
+                    "compare SolidWorks directory evidence",
+                )?;
+                ctx.charge_work(
+                    u64_from_index(path.len()),
+                    "scan SolidWorks directory basename",
+                )?;
+                if path
+                    .rsplit('/')
+                    .next()
+                    .is_some_and(|name| name.eq_ignore_ascii_case("ISolidWorksInformation"))
+                {
+                    return Ok(true);
+                }
+            }
+        }
+        return Ok(false);
     }
     if prefix.len() < outer_hdr::LEN + MARKER.len() {
-        return false;
+        return Ok(false);
     }
-    prefix[outer_hdr::LEN..]
+    ctx.charge_work(
+        u64_from_index(prefix.len() - outer_hdr::LEN),
+        "scan SolidWorks detection marker",
+    )?;
+    Ok(prefix[outer_hdr::LEN..]
         .windows(MARKER.len())
-        .any(|w| w == MARKER)
+        .any(|w| w == MARKER))
 }
 
-/// Scan an in-memory `.sldprt` image.
-///
-/// Truncated input produces a scan containing every structure that could be
-/// validated; missing outer-header bytes yield version zero.
-pub fn scan_bytes(bytes: &[u8]) -> ContainerScan<'_> {
-    if bytes.starts_with(&COMPOUND_FILE_MAGIC) {
-        let arena = DecodeArena::new();
-        let policy = DecodePolicy::default();
-        let compound_streams = DecodeContext::from_root_bytes(bytes, &arena, &policy)
-            .ok()
-            .and_then(|(ctx, root)| compound_streams(&ctx, root).ok())
-            .unwrap_or_default();
-        return completed_scan(
-            bytes,
-            0,
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            compound_streams,
-        );
-    }
-    let version = native_version(bytes);
-    let (blocks, directory, cache_cells) = match walk_native_markers(bytes, |off| {
-        Ok::<_, std::convert::Infallible>(try_block(bytes, off))
-    }) {
-        Ok(frames) => frames,
-        Err(never) => match never {},
-    };
-
-    completed_scan(bytes, version, blocks, directory, cache_cells, Vec::new())
-}
-
-fn completed_scan(
-    source_image: &[u8],
+fn completed_scan_charged<'a>(
+    ctx: &DecodeContext<'_>,
+    source_image: &'a [u8],
     version: u32,
     blocks: Vec<Block>,
     directory: Vec<DirectoryEntry>,
     cache_cells: Vec<CacheCell>,
     compound_streams: Vec<CompoundStream>,
-) -> ContainerScan<'_> {
-    let solidworks = scan_solidworks_envelopes(
-        blocks
-            .iter()
-            .map(|block| (block.section.as_deref(), block.payload.as_slice()))
-            .chain(compound_streams.iter().map(|stream| {
-                (
-                    Some(stream.path.as_str()),
-                    stream
-                        .decoded_payload
-                        .as_deref()
-                        .unwrap_or(stream.payload.as_slice()),
-                )
-            })),
-    );
-    ContainerScan {
+) -> Result<ContainerScan<'a>, CodecError> {
+    let mut scan = ContainerScan {
         source_image,
         version,
         blocks,
         directory,
         cache_cells,
         compound_streams,
-        solidworks,
-    }
-}
-
-fn native_version(bytes: &[u8]) -> u32 {
-    let mut view = View::over_retained(bytes);
-    view.seek(outer_hdr::VERSION)
-        .and_then(|()| view.u32_be())
-        .unwrap_or(0)
+        solidworks: SolidWorksEnvelopeScan::default(),
+    };
+    let solidworks = scan_solidworks_envelopes(
+        scan.sections()
+            .map(|section| (section.name(), section.payload())),
+        &ScanAdmission::Decode(ctx),
+    )?;
+    scan.solidworks = solidworks;
+    Ok(scan)
 }
 
 /// Every marker hit is tried as a block first (the CRC gate is effectively
 /// false-positive-free), then as a cache cell, then as a directory entry.
-type NativeWalk<E> = Result<(Vec<Block>, Vec<DirectoryEntry>, Vec<CacheCell>), E>;
+enum ScanAdmission<'a, 'ctx> {
+    Probe,
+    Decode(&'ctx DecodeContext<'a>),
+}
 
-fn walk_native_markers<E>(
+#[derive(Default)]
+struct NativeMarkers {
+    blocks: Vec<Block>,
+    directory: Vec<DirectoryEntry>,
+    cache_cells: Vec<CacheCell>,
+}
+
+fn walk_native_markers(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
-    mut try_one_block: impl FnMut(usize) -> Result<Option<RawBlock>, E>,
-) -> NativeWalk<E> {
+    mut try_one_block: impl FnMut(usize) -> Result<Option<RawBlock>, CodecError>,
+    mut try_one_cell: impl FnMut(usize) -> Result<Option<CacheCell>, CodecError>,
+    mut try_one_directory: impl FnMut(usize) -> Result<Option<DirectoryEntry>, CodecError>,
+) -> Result<NativeMarkers, CodecError> {
+    ctx.charge_work(u64_from_index(bytes.len()), "scan SLDPRT native markers")?;
     let mut blocks = Vec::new();
     let mut directory = Vec::new();
     let mut cache_cells = Vec::new();
@@ -392,102 +426,141 @@ fn walk_native_markers<E>(
             continue;
         }
         if let Some(block) = try_one_block(i)? {
-            i = block.offset + block_hdr::LEN + block.preamble_len + block.comp_sz as usize;
-            blocks.push(block.into_block());
+            i = block.offset + block_hdr::LEN + block.preamble_len + index_from_u32(block.comp_sz);
+            ctx.reserve_vec(&mut blocks, 1, "admit SLDPRT block")?;
+            ctx.charge_entities(1, "admit SLDPRT block")?;
+            blocks.push(block.into_block(ctx)?);
             continue;
         }
-        if let Some(cell) = try_cache_cell(bytes, i) {
+        if let Some(cell) = try_one_cell(i)? {
+            ctx.reserve_vec(&mut cache_cells, 1, "admit SLDPRT cache cell")?;
+            ctx.charge_entities(1, "admit SLDPRT cache cell")?;
             cache_cells.push(cell);
-        } else if let Some(entry) = try_directory_entry(bytes, i) {
+        } else if let Some(entry) = try_one_directory(i)? {
+            ctx.reserve_vec(&mut directory, 1, "admit SLDPRT directory entry")?;
+            ctx.charge_entities(1, "admit SLDPRT directory entry")?;
             directory.push(entry);
         }
         i += 1;
     }
-    Ok((blocks, directory, cache_cells))
+    Ok(NativeMarkers {
+        blocks,
+        directory,
+        cache_cells,
+    })
 }
 
 fn compound_stream(
+    ctx: &DecodeContext<'_>,
     path: String,
     directory_id: u32,
     start_sector: u32,
     bytes: Vec<u8>,
     decoded_bytes: Option<Vec<u8>>,
-) -> CompoundStream {
-    let ps_streams = crate::parasolid::extract_streams_with_offsets(&bytes);
-    CompoundStream {
+) -> Result<CompoundStream, CodecError> {
+    let semantic_payload = decoded_bytes.as_deref().unwrap_or(&bytes);
+    let ps_streams = crate::parasolid::extract_streams_with_offsets(semantic_payload, ctx)?;
+    let path = match cadmpeg_ir::StreamName::try_from(path) {
+        Ok(path) => path,
+        Err(_) => cadmpeg_ir::stream_name!("compound@").with_suffix(
+            ctx,
+            directory_id,
+            "compose annotation stream name",
+        )?,
+    };
+    Ok(CompoundStream {
         path,
         directory_id,
         start_sector,
         payload: bytes,
         decoded_payload: decoded_bytes,
         ps_streams,
-    }
+    })
 }
 
 /// Scans an in-memory image while routing inflate through the decode budget.
-pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan<'a>, CodecError> {
+pub(crate) fn scan<'a>(
+    ctx: &DecodeContext<'_>,
+    root: View<'a>,
+) -> Result<ContainerScan<'a>, CodecError> {
     if root.window().starts_with(&COMPOUND_FILE_MAGIC) {
         let compound_streams = compound_streams(ctx, root)?;
-        return Ok(completed_scan(
+        return completed_scan_charged(
+            ctx,
             root.window(),
             0,
             Vec::new(),
             Vec::new(),
             Vec::new(),
             compound_streams,
-        ));
+        );
     }
     let bytes = root.window();
-    let version = native_version(bytes);
-    let (blocks, directory, cache_cells) =
-        walk_native_markers(bytes, |off| try_block_budgeted(ctx, root, off))?;
-    Ok(completed_scan(
+    let mut envelope = root;
+    let mut header = envelope
+        .req_take_child(outer_hdr::LEN)
+        .map_err(|error| error.during("read SLDPRT native outer header"))?;
+    // discarded-value: the file ID precedes the required version field
+    let _ = header.req_take(outer_hdr::VERSION)?;
+    let version = header.req_u32_be()?;
+    let NativeMarkers {
+        blocks,
+        directory,
+        cache_cells,
+    } = walk_native_markers(
+        ctx,
+        bytes,
+        |off| try_block_budgeted(ctx, root, off),
+        |off| try_cache_cell_with(bytes, off, |raw| nibble_swap_name_charged(ctx, raw)),
+        |off| try_directory_entry_with(bytes, off, |raw| nibble_swap_name_charged(ctx, raw)),
+    )?;
+    completed_scan_charged(
+        ctx,
         bytes,
         version,
         blocks,
         directory,
         cache_cells,
         Vec::new(),
-    ))
+    )
 }
 
 /// CFB directory/FAT/open is [`CompoundSnapshot`]; ZLB unwrap and Parasolid
 /// extract stay codec-local because they are `SolidWorks` payload semantics, not
 /// CFB.
-fn compound_streams<'a>(
-    ctx: &DecodeContext<'a>,
-    root: View<'a>,
+fn compound_streams(
+    ctx: &DecodeContext<'_>,
+    root: View<'_>,
 ) -> Result<Vec<CompoundStream>, CodecError> {
     let snapshot = CompoundSnapshot::new(ctx, root)?;
-    snapshot
-        .entries()
-        .iter()
-        .filter_map(|entry| match entry {
-            CompoundEntry::Stream(stream) => Some(stream),
-            CompoundEntry::Storage(_) => None,
-        })
-        .map(|entry| {
-            let view = snapshot.open(ctx, entry)?;
-            let payload = ctx.copy_retained(
-                view.window(),
-                "retain SolidWorks CFB stream",
-                Some(view.location()),
-            )?;
-            let decoded = decode_wrapped_payload_budgeted(ctx, view)?;
-            Ok(compound_stream(
-                entry.path().to_owned(),
-                entry.id().directory_id(),
-                entry.start_sector(),
-                payload,
-                decoded,
-            ))
-        })
-        .collect()
+    let mut streams = Vec::new();
+    for entry in snapshot.entries() {
+        let CompoundEntry::Stream(entry) = entry else {
+            continue;
+        };
+        let view = snapshot.open(ctx, entry)?;
+        let payload = ctx.copy_retained(view.window(), "retain SolidWorks CFB stream")?;
+        let decoded = decode_wrapped_payload_budgeted(ctx, view)?;
+        let mut path = String::new();
+        ctx.try_reserve_retained_text(&mut path, entry.path().len(), "retain SLDPRT stream path")?;
+        path.push_str(entry.path());
+        let stream = compound_stream(
+            ctx,
+            path,
+            entry.id().directory_id(),
+            entry.start_sector(),
+            payload,
+            decoded,
+        )?;
+        ctx.reserve_vec(&mut streams, 1, "admit SLDPRT compound stream")?;
+        streams.push(stream);
+    }
+    Ok(streams)
 }
 
-fn decode_wrapped_payload_budgeted<'a>(
-    ctx: &DecodeContext<'a>,
-    source: View<'a>,
+fn decode_wrapped_payload_budgeted(
+    ctx: &DecodeContext<'_>,
+    source: View<'_>,
 ) -> Result<Option<Vec<u8>>, CodecError> {
     let payload = source.window();
     if payload.get(..WRAPPED_PAYLOAD_MAGIC.len()) != Some(&WRAPPED_PAYLOAD_MAGIC) {
@@ -517,7 +590,7 @@ fn decode_wrapped_payload_budgeted<'a>(
         return Ok(None);
     };
     let (decoded, consumed) =
-        match inflate_zlib_member(ctx, member, ExpandSpec::Exact(uncompressed_size)) {
+        match inflate_zlib_member_owned(ctx, member, ExpandSpec::Exact(uncompressed_size)) {
             Ok(result) => result,
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(_) => return Ok(None),
@@ -525,12 +598,7 @@ fn decode_wrapped_payload_budgeted<'a>(
     if consumed != compressed_size {
         return Ok(None);
     }
-    ctx.copy_retained(
-        decoded.window(),
-        "retain decoded SolidWorks CFB stream",
-        Some(source.location()),
-    )
-    .map(Some)
+    Ok(Some(decoded))
 }
 
 /// A block plus the preamble length needed to advance past it.
@@ -546,16 +614,31 @@ struct RawBlock {
 }
 
 impl RawBlock {
-    fn into_block(self) -> Block {
-        Block {
+    fn into_block(self, ctx: &DecodeContext<'_>) -> Result<Block, CodecError> {
+        let section = match self.section {
+            Some(name) => match cadmpeg_ir::StreamName::try_from(name) {
+                Ok(name) => BlockName::Named(name),
+                Err(_) => BlockName::Anonymous(cadmpeg_ir::stream_name!("block@").with_suffix(
+                    ctx,
+                    self.offset,
+                    "compose annotation stream name",
+                )?),
+            },
+            None => BlockName::Anonymous(cadmpeg_ir::stream_name!("block@").with_suffix(
+                ctx,
+                self.offset,
+                "compose annotation stream name",
+            )?),
+        };
+        Ok(Block {
             offset: self.offset,
             type_id: self.type_id,
             comp_sz: self.comp_sz,
-            section: self.section,
+            section,
             family: self.family,
             payload: self.payload,
             ps_streams: self.ps_streams,
-        }
+        })
     }
 }
 
@@ -575,14 +658,14 @@ fn read_block_frame(bytes: &[u8], off: usize) -> Option<(BlockFrame, usize, usiz
     let uncomp_sz = View::u32_le_at(bytes, off + block_hdr::UNCOMP_SZ)?;
     let pre_sz = View::u32_le_at(bytes, off + block_hdr::PRE_SZ)?;
 
-    let comp = comp_sz as usize;
-    let pre = pre_sz as usize;
-    let uncomp = uncomp_sz as usize;
-    if comp == 0 || uncomp == 0 || uncomp > MAX_UNCOMP {
+    let comp = index_from_u32(comp_sz);
+    let pre = index_from_u32(pre_sz);
+    if comp == 0 {
         return None;
     }
     let payload_start = off + block_hdr::LEN + pre;
     let payload_end = payload_start.checked_add(comp)?;
+    // discarded-value: the payload range is proven to lie in the block; ? states the refusal and the slice has no reader
     let _ = bytes.get(payload_start..payload_end)?;
     Some((
         BlockFrame {
@@ -598,61 +681,69 @@ fn read_block_frame(bytes: &[u8], off: usize) -> Option<(BlockFrame, usize, usiz
 }
 
 fn block_from_inflated(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     off: usize,
     frame: &BlockFrame,
     inflated: Vec<u8>,
-) -> Option<RawBlock> {
-    if inflated.len() != frame.uncomp_sz as usize {
-        return None;
+) -> Result<Option<RawBlock>, CodecError> {
+    if inflated.len() != index_from_u32(frame.uncomp_sz) {
+        return Ok(None);
     }
+    ctx.charge_work(u64_from_index(inflated.len()), "validate SLDPRT block CRC")?;
     if crc32fast::hash(&inflated) != frame.crc {
-        return None;
+        return Ok(None);
     }
 
-    let payload_start = off + block_hdr::LEN + frame.pre_sz as usize;
+    let payload_start = off + block_hdr::LEN + index_from_u32(frame.pre_sz);
     let preamble = bytes
         .get(off + block_hdr::LEN..payload_start)
         .unwrap_or(&[]);
-    let section = nibble_swap_name(preamble);
+    let section = nibble_swap_name_charged(ctx, preamble)?;
     // A Parasolid block is one from which a `PS\0\0` stream can be extracted (in
     // plain, wrapped, or nested form); otherwise fall back to a byte-signature
     // family label.
-    let ps_streams = crate::parasolid::extract_streams_with_offsets(&inflated);
+    let ps_streams = crate::parasolid::extract_streams_with_offsets(&inflated, ctx)?;
     let family = if ps_streams.is_empty() {
+        let work = u64_from_index(inflated.len())
+            .checked_mul(2)
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("classify SLDPRT block payload", u64::MAX, u64::MAX)
+            })?;
+        ctx.charge_work(work, "classify SLDPRT block payload")?;
         payload_family(&inflated)
     } else {
         PayloadFamily::Parasolid
     };
 
-    Some(RawBlock {
+    Ok(Some(RawBlock {
         offset: off,
         type_id: frame.type_id,
         comp_sz: frame.comp_sz,
-        preamble_len: frame.pre_sz as usize,
+        preamble_len: index_from_u32(frame.pre_sz),
         section,
         family,
         payload: inflated,
         ps_streams,
-    })
+    }))
 }
 
-fn try_block(bytes: &[u8], off: usize) -> Option<RawBlock> {
-    let (frame, payload_start, payload_end) = read_block_frame(bytes, off)?;
-    let payload = bytes.get(payload_start..payload_end)?;
-    let inflated = inflate_bounded_probe(payload, frame.uncomp_sz as usize)?;
-    block_from_inflated(bytes, off, &frame, inflated)
-}
-
-fn try_block_budgeted<'a>(
-    ctx: &DecodeContext<'a>,
-    root: View<'a>,
+fn try_block_budgeted(
+    ctx: &DecodeContext<'_>,
+    root: View<'_>,
     off: usize,
 ) -> Result<Option<RawBlock>, CodecError> {
     let bytes = root.window();
     let Some((frame, payload_start, payload_end)) = read_block_frame(bytes, off) else {
         return Ok(None);
     };
+    if index_from_u32(frame.uncomp_sz) > MAX_UNCOMP {
+        return Err(ctx.refuse_codec_limit(
+            "expand SLDPRT native block",
+            u64_from_index(MAX_UNCOMP),
+            u64::from(frame.uncomp_sz),
+        ));
+    }
     let Some(abs_start) = root.start().checked_add(payload_start) else {
         return Ok(None);
     };
@@ -662,157 +753,325 @@ fn try_block_budgeted<'a>(
     let Some(payload_view) = root.child(abs_start, abs_end) else {
         return Ok(None);
     };
-    let inflated = match inflate_deflate(
+    let inflated = match inflate_deflate_owned(
         ctx,
         payload_view,
         ExpandSpec::Exact(u64::from(frame.uncomp_sz)),
     ) {
-        Ok(view) => view.window().to_vec(),
+        Ok(view) => view,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => return Ok(None),
     };
-    Ok(block_from_inflated(bytes, off, &frame, inflated))
+    block_from_inflated(ctx, bytes, off, &frame, inflated)
 }
 
-/// Test a marker hit against the cache-cell relational invariant
-/// (`f@+10 == 2L`, `f@+14 == L/2`, `f@+18 == L`, `f@+22 == name_len`) plus a
-/// printable nibble-swapped name ([spec §2.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#12-cache-cell-section-index-grid)).
-fn try_cache_cell(bytes: &[u8], off: usize) -> Option<CacheCell> {
-    let two_l = View::u32_le_at(bytes, off + cache_hdr::TWO_L)?;
-    let half_l = View::u32_le_at(bytes, off + cache_hdr::HALF_L)?;
-    let l = View::u32_le_at(bytes, off + cache_hdr::L)?;
-    let name_len = View::u32_le_at(bytes, off + cache_hdr::NAME_LEN)?;
+fn try_cache_cell_with<E>(
+    bytes: &[u8],
+    off: usize,
+    name_from_bytes: impl FnOnce(&[u8]) -> Result<Option<String>, E>,
+) -> Result<Option<CacheCell>, E> {
+    let Some((two_l, half_l, l, name_len)) = (|| {
+        Some((
+            View::u32_le_at(bytes, off + cache_hdr::TWO_L)?,
+            View::u32_le_at(bytes, off + cache_hdr::HALF_L)?,
+            View::u32_le_at(bytes, off + cache_hdr::L)?,
+            View::u32_le_at(bytes, off + cache_hdr::NAME_LEN)?,
+        ))
+    })() else {
+        return Ok(None);
+    };
 
-    if l == 0 || two_l != l.wrapping_mul(2) || half_l != l / 2 {
-        return None;
+    if l == 0 || l.checked_mul(2) != Some(two_l) || half_l != l / 2 {
+        return Ok(None);
     }
     if name_len == 0 || name_len >= 500 {
-        return None;
+        return Ok(None);
     }
     let name_start = off + cache_hdr::LEN;
-    let raw = bytes.get(name_start..name_start + name_len as usize)?;
-    let name = nibble_swap_name(raw)?;
-    Some(CacheCell {
+    let Some(raw) = bytes.get(name_start..name_start + index_from_u32(name_len)) else {
+        return Ok(None);
+    };
+    let Some(name) = name_from_bytes(raw)? else {
+        return Ok(None);
+    };
+    Ok(Some(CacheCell {
         offset: off,
         logical_len: l,
         name,
-    })
+    }))
 }
 
-/// Test a marker hit against the tail-directory frame: two zero words at +10 and
-/// +18, a size at +14, a name length at +22, a 14-byte descriptor, then a
-/// printable nibble-swapped name ([spec §2.3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#13-tail-section-directory)).
-fn try_directory_entry(bytes: &[u8], off: usize) -> Option<DirectoryEntry> {
-    let type_id = View::u32_le_at(bytes, off + dir_ent::TYPE_ID)?;
-    let zero_a = View::u32_le_at(bytes, off + dir_ent::ZERO_AT_10)?;
-    let size = View::u32_le_at(bytes, off + dir_ent::SIZE)?;
-    let zero_b = View::u32_le_at(bytes, off + dir_ent::ZERO_AT_18)?;
-    let name_len = View::u32_le_at(bytes, off + dir_ent::NAME_LEN)?;
+fn try_directory_entry_with<E>(
+    bytes: &[u8],
+    off: usize,
+    name_from_bytes: impl FnOnce(&[u8]) -> Result<Option<String>, E>,
+) -> Result<Option<DirectoryEntry>, E> {
+    let Some((type_id, zero_a, size, zero_b, name_len)) = (|| {
+        Some((
+            View::u32_le_at(bytes, off + dir_ent::TYPE_ID)?,
+            View::u32_le_at(bytes, off + dir_ent::ZERO_AT_10)?,
+            View::u32_le_at(bytes, off + dir_ent::SIZE)?,
+            View::u32_le_at(bytes, off + dir_ent::ZERO_AT_18)?,
+            View::u32_le_at(bytes, off + dir_ent::NAME_LEN)?,
+        ))
+    })() else {
+        return Ok(None);
+    };
     if zero_a != 0 || zero_b != 0 {
-        return None;
+        return Ok(None);
     }
     if name_len == 0 || name_len >= 500 {
-        return None;
+        return Ok(None);
     }
     let name_start = off + dir_ent::LEN;
-    let raw = bytes.get(name_start..name_start + name_len as usize)?;
-    let name = nibble_swap_name(raw)?;
-    let descriptor = bytes
-        .get(off + dir_ent::DESCRIPTOR..off + dir_ent::LEN)?
-        .try_into()
-        .ok()?;
-    let trailer = bytes
-        .get(name_start + name_len as usize..name_start + name_len as usize + 6)?
-        .try_into()
-        .ok()?;
-    Some(DirectoryEntry {
+    let Some(raw) = bytes.get(name_start..name_start + index_from_u32(name_len)) else {
+        return Ok(None);
+    };
+    let Some(descriptor) = bytes
+        .get(off + dir_ent::DESCRIPTOR..off + dir_ent::LEN)
+        .and_then(|value| value.try_into().ok())
+    else {
+        return Ok(None);
+    };
+    let Some(trailer) = bytes
+        .get(name_start + index_from_u32(name_len)..name_start + index_from_u32(name_len) + 6)
+        .and_then(|value| value.try_into().ok())
+    else {
+        return Ok(None);
+    };
+    let Some(name) = name_from_bytes(raw)? else {
+        return Ok(None);
+    };
+    Ok(Some(DirectoryEntry {
         offset: off,
         type_id,
         size,
         name,
         descriptor,
         trailer,
-    })
+    }))
 }
 
 /// Convert a scan into the generic container inventory returned by
 /// [`cadmpeg_ir::Codec::inspect`].
-pub fn summarize(scan: &ContainerScan, dialects: DialectLayers) -> ContainerSummary {
+pub(crate) fn summarize(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+    dialects: DialectLayers,
+) -> Result<ContainerSummary, CodecError> {
     let mut entries = Vec::new();
 
     for b in &scan.blocks {
+        ctx.charge_work(
+            u64_from_index(b.payload.len()),
+            "hash SLDPRT inventory payload",
+        )?;
+        ctx.charge_retained(64, "retain SLDPRT inventory digest")?;
         let mut attributes = BTreeMap::new();
-        attributes.insert("offset".to_string(), b.offset.to_string());
-        attributes.insert("type_id".to_string(), format!("0x{:08x}", b.type_id));
-        attributes.insert("family".to_string(), b.family.label().to_string());
-        attributes.insert("sha256".to_string(), sha256_hex(&b.payload));
+        ctx.insert_btree_map(
+            &mut attributes,
+            ctx.format_retained(format_args!("offset"), "retain SLDPRT inventory key")?,
+            ctx.format_retained(
+                format_args!("{}", b.offset),
+                "retain SLDPRT inventory value",
+            )?,
+            "collect SLDPRT inventory attributes",
+        )?;
+        ctx.insert_btree_map(
+            &mut attributes,
+            ctx.format_retained(format_args!("type_id"), "retain SLDPRT inventory key")?,
+            ctx.format_retained(
+                format_args!("0x{:08x}", b.type_id),
+                "retain SLDPRT inventory value",
+            )?,
+            "collect SLDPRT inventory attributes",
+        )?;
+        ctx.insert_btree_map(
+            &mut attributes,
+            ctx.format_retained(format_args!("family"), "retain SLDPRT inventory key")?,
+            ctx.format_retained(
+                format_args!("{}", b.family.label()),
+                "retain SLDPRT inventory value",
+            )?,
+            "collect SLDPRT inventory attributes",
+        )?;
+        ctx.insert_btree_map(
+            &mut attributes,
+            ctx.format_retained(format_args!("sha256"), "retain SLDPRT inventory key")?,
+            sha256_hex(&b.payload),
+            "collect SLDPRT inventory attributes",
+        )?;
         if let Some(stream) = b.ps_streams.first() {
-            attributes.insert("parasolid_schema".to_string(), stream.header.schema.clone());
-            attributes.insert(
-                "parasolid_description".to_string(),
-                stream.header.description.clone(),
-            );
+            ctx.insert_btree_map(
+                &mut attributes,
+                ctx.format_retained(
+                    format_args!("parasolid_schema"),
+                    "retain SLDPRT inventory key",
+                )?,
+                ctx.format_retained(
+                    format_args!("{}", stream.header.schema.value()),
+                    "retain SLDPRT inventory value",
+                )?,
+                "collect SLDPRT inventory attributes",
+            )?;
+            ctx.insert_btree_map(
+                &mut attributes,
+                ctx.format_retained(
+                    format_args!("parasolid_description"),
+                    "retain SLDPRT inventory key",
+                )?,
+                ctx.format_retained(
+                    format_args!("{}", stream.header.description),
+                    "retain SLDPRT inventory value",
+                )?,
+                "collect SLDPRT inventory attributes",
+            )?;
         }
-        entries.push(ContainerEntry {
-            name: b
-                .section
-                .clone()
-                .unwrap_or_else(|| format!("block@{}", b.offset)),
-            role: ContainerRole::Block,
-            compression: EntryCompression::Deflate,
-            compressed_size: b.comp_sz as u64,
-            uncompressed_size: b.uncomp_sz() as u64,
-            attributes,
-        });
+        ctx.push_vec(
+            &mut entries,
+            ContainerEntry {
+                name: ctx.format_retained(
+                    format_args!("{}", b.section.source_stream().as_str()),
+                    "retain SLDPRT inventory name",
+                )?,
+                role: ContainerRole::Block,
+                storage: EntryStorage::Compressed {
+                    method: CompressionMethod::Deflate,
+                    stored: Some(u64::from(b.comp_sz)),
+                    expanded: Some(u64_from_index(b.uncomp_sz())),
+                },
+                attributes,
+            },
+            "collect SLDPRT inventory entries",
+        )?;
     }
 
     for d in &scan.directory {
         let mut attributes = BTreeMap::new();
-        attributes.insert("offset".to_string(), d.offset.to_string());
-        attributes.insert("type_id".to_string(), format!("0x{:08x}", d.type_id));
-        entries.push(ContainerEntry {
-            name: d.name.clone(),
-            role: ContainerRole::DirectoryEntry,
-            compression: EntryCompression::None,
-            compressed_size: 0,
-            uncompressed_size: d.size as u64,
-            attributes,
-        });
+        ctx.insert_btree_map(
+            &mut attributes,
+            ctx.format_retained(format_args!("offset"), "retain SLDPRT inventory key")?,
+            ctx.format_retained(
+                format_args!("{}", d.offset),
+                "retain SLDPRT inventory value",
+            )?,
+            "collect SLDPRT inventory attributes",
+        )?;
+        ctx.insert_btree_map(
+            &mut attributes,
+            ctx.format_retained(format_args!("type_id"), "retain SLDPRT inventory key")?,
+            ctx.format_retained(
+                format_args!("0x{:08x}", d.type_id),
+                "retain SLDPRT inventory value",
+            )?,
+            "collect SLDPRT inventory attributes",
+        )?;
+        ctx.push_vec(
+            &mut entries,
+            ContainerEntry {
+                name: ctx.format_retained(
+                    format_args!("{}", d.name.as_str()),
+                    "retain SLDPRT inventory name",
+                )?,
+                role: ContainerRole::DirectoryEntry,
+                storage: EntryStorage::payload_only(VerbatimLabel::None, u64::from(d.size)),
+                attributes,
+            },
+            "collect SLDPRT inventory entries",
+        )?;
     }
 
     for c in &scan.cache_cells {
         let mut attributes = BTreeMap::new();
-        attributes.insert("offset".to_string(), c.offset.to_string());
-        attributes.insert("logical_len".to_string(), c.logical_len.to_string());
-        entries.push(ContainerEntry {
-            name: c.name.clone(),
-            role: ContainerRole::CacheCell,
-            compression: EntryCompression::None,
-            compressed_size: 0,
-            uncompressed_size: 0,
-            attributes,
-        });
+        ctx.insert_btree_map(
+            &mut attributes,
+            ctx.format_retained(format_args!("offset"), "retain SLDPRT inventory key")?,
+            ctx.format_retained(
+                format_args!("{}", c.offset),
+                "retain SLDPRT inventory value",
+            )?,
+            "collect SLDPRT inventory attributes",
+        )?;
+        ctx.insert_btree_map(
+            &mut attributes,
+            ctx.format_retained(format_args!("logical_len"), "retain SLDPRT inventory key")?,
+            ctx.format_retained(
+                format_args!("{}", c.logical_len),
+                "retain SLDPRT inventory value",
+            )?,
+            "collect SLDPRT inventory attributes",
+        )?;
+        ctx.push_vec(
+            &mut entries,
+            ContainerEntry {
+                name: ctx.format_retained(
+                    format_args!("{}", c.name.as_str()),
+                    "retain SLDPRT inventory name",
+                )?,
+                role: ContainerRole::CacheCell,
+                storage: EntryStorage::payload_only(VerbatimLabel::None, u64::from(c.logical_len)),
+                attributes,
+            },
+            "collect SLDPRT inventory entries",
+        )?;
     }
 
     for stream in &scan.compound_streams {
+        let family_work = u64_from_index(stream.payload.len())
+            .checked_mul(2)
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("classify SLDPRT inventory payload", u64::MAX, u64::MAX)
+            })?;
+        ctx.charge_work(family_work, "classify SLDPRT inventory payload")?;
+        ctx.charge_work(
+            u64_from_index(stream.payload.len()),
+            "hash SLDPRT inventory payload",
+        )?;
+        ctx.charge_retained(64, "retain SLDPRT inventory digest")?;
         let mut attributes = BTreeMap::new();
-        attributes.insert("start_sector".to_string(), stream.start_sector.to_string());
-        attributes.insert("sha256".to_string(), sha256_hex(&stream.payload));
-        attributes.insert(
-            "family".to_string(),
-            payload_family(&stream.payload).label().to_string(),
-        );
-        entries.push(ContainerEntry {
-            name: stream.path.clone(),
-            role: ContainerRole::CompoundStream,
-            compression: EntryCompression::CompoundFile,
-            compressed_size: stream.payload.len() as u64,
-            uncompressed_size: stream.payload.len() as u64,
-            attributes,
-        });
+        ctx.insert_btree_map(
+            &mut attributes,
+            ctx.format_retained(format_args!("start_sector"), "retain SLDPRT inventory key")?,
+            ctx.format_retained(
+                format_args!("{}", stream.start_sector),
+                "retain SLDPRT inventory value",
+            )?,
+            "collect SLDPRT inventory attributes",
+        )?;
+        ctx.insert_btree_map(
+            &mut attributes,
+            ctx.format_retained(format_args!("sha256"), "retain SLDPRT inventory key")?,
+            sha256_hex(&stream.payload),
+            "collect SLDPRT inventory attributes",
+        )?;
+        ctx.insert_btree_map(
+            &mut attributes,
+            ctx.format_retained(format_args!("family"), "retain SLDPRT inventory key")?,
+            ctx.format_retained(
+                format_args!("{}", payload_family(&stream.payload).label()),
+                "retain SLDPRT inventory value",
+            )?,
+            "collect SLDPRT inventory attributes",
+        )?;
+        ctx.push_vec(
+            &mut entries,
+            ContainerEntry {
+                name: ctx.format_retained(
+                    format_args!("{}", stream.path.as_str()),
+                    "retain SLDPRT inventory name",
+                )?,
+                role: ContainerRole::CompoundStream,
+                storage: EntryStorage::verbatim(
+                    VerbatimLabel::Stored,
+                    u64_from_index(stream.payload.len()),
+                ),
+                attributes,
+            },
+            "collect SLDPRT inventory entries",
+        )?;
     }
 
-    ContainerSummary::classified(
+    Ok(ContainerSummary::classified(
         dialects,
         if scan.compound_streams.is_empty() {
             cadmpeg_ir::ContainerKind::SldprtBlocks
@@ -821,47 +1080,67 @@ pub fn summarize(scan: &ContainerScan, dialects: DialectLayers) -> ContainerSumm
         },
         entries,
         Vec::new(),
-        notes(scan),
-    )
+        notes_charged(ctx, scan)?,
+    ))
 }
 
-/// Describe the decoded container without constructing its entry inventory.
-pub(crate) fn notes(scan: &ContainerScan<'_>) -> Vec<String> {
-    let mut notes = vec![format!(
-        "outer version word: 0x{:08x}; {} CRC-validated block(s), {} tail-directory \
+const NO_ACTIVE_PARASOLID_NOTE: &str =
+    "no unique active Parasolid partition located; available B-rep sites remain decodable";
+
+pub(crate) fn notes_charged(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+) -> Result<Vec<String>, CodecError> {
+    let mut notes = ctx.collection_vec(3, "collect SLDPRT container notes")?;
+    notes.push(ctx.format_retained(
+        format_args!(
+            "outer version word: 0x{:08x}; {} CRC-validated block(s), {} tail-directory \
          entry/entries, {} cache-cell(s), {} compound stream(s)",
-        scan.version,
-        scan.blocks.len(),
-        scan.directory.len(),
-        scan.cache_cells.len(),
-        scan.compound_streams.len()
-    )];
-    match active_parasolid_summary(scan) {
-        Some((name, size, sch)) => notes.push(format!(
-            "active Parasolid B-rep candidate: {} ({} bytes, schema {})",
-            name, size, sch.schema
-        )),
-        None => notes.push(
-            "no unique active Parasolid partition located; available B-rep sites remain decodable"
-                .to_string(),
+            scan.version,
+            scan.blocks.len(),
+            scan.directory.len(),
+            scan.cache_cells.len(),
+            scan.compound_streams.len()
         ),
-    }
-    notes.push(
-        "Parasolid body streams supply the typed topology and analytic carriers used by decode"
-            .to_string(),
-    );
-    notes
+        "retain SLDPRT container note",
+    )?);
+    notes.push(match active_parasolid_summary(scan) {
+        Some((name, size, schema)) => ctx.format_retained(
+            format_args!(
+                "active Parasolid B-rep candidate: {} ({} bytes, schema {})",
+                name,
+                size,
+                schema.schema.value()
+            ),
+            "retain SLDPRT active site note",
+        )?,
+        None => ctx.format_retained(
+            format_args!("{NO_ACTIVE_PARASOLID_NOTE}"),
+            "retain SLDPRT active site note",
+        )?,
+    });
+    notes.push(ctx.format_retained(
+        format_args!(
+            "Parasolid body streams supply the typed topology and analytic carriers used by decode"
+        ),
+        "retain SLDPRT geometry note",
+    )?);
+    Ok(notes)
 }
 
 pub(crate) fn active_parasolid_summary<'a>(
     scan: &'a ContainerScan<'_>,
-) -> Option<(String, usize, &'a crate::parasolid::StreamHeader)> {
+) -> Option<(&'a str, usize, &'a crate::parasolid::StreamHeader)> {
     let selected = select_active_parasolid_site(scan)?;
-    Some((selected.name(), selected.payload.len(), selected.header))
+    Some((
+        selected.section.source_stream().as_str(),
+        selected.payload.len(),
+        selected.header,
+    ))
 }
 
 /// Test whether either outer envelope carries a framed Parasolid body stream.
-pub fn has_parasolid_body_stream(scan: &ContainerScan) -> bool {
+pub(crate) fn has_parasolid_body_stream(scan: &ContainerScan) -> bool {
     scan.blocks
         .iter()
         .flat_map(|block| &block.ps_streams)
@@ -885,6 +1164,10 @@ impl ActiveParasolidSite<'_> {
         self.section.display_name()
     }
 
+    pub(crate) fn source_stream(&self) -> &cadmpeg_ir::StreamName {
+        self.section.source_stream()
+    }
+
     pub(crate) fn site_key(&self) -> String {
         self.section.site_key()
     }
@@ -900,67 +1183,80 @@ pub(crate) fn select_active_parasolid_site<'a>(
     scan: &'a ContainerScan<'_>,
 ) -> Option<ActiveParasolidSite<'a>> {
     let active_configuration = active_configuration_index(scan);
-    let mut candidates = Vec::new();
+    let mut selected = None;
     for section in scan.sections() {
-        let name = section.name().unwrap_or("").to_ascii_lowercase();
-        let section_is_partition = name.contains("partition")
-            && !name.contains("ghost")
-            && !name.contains("deltas")
-            && !name.contains("resolvedfeatures");
-        let section_is_admissible = !name.contains("ghost")
-            && !name.contains("deltas")
-            && !name.contains("resolvedfeatures");
-        let body_streams = section
+        let name = section.name().unwrap_or("");
+        let section_is_partition = contains_ascii_case_insensitive(name, "partition")
+            && !contains_ascii_case_insensitive(name, "ghost")
+            && !contains_ascii_case_insensitive(name, "deltas")
+            && !contains_ascii_case_insensitive(name, "resolvedfeatures");
+        let section_is_admissible = !contains_ascii_case_insensitive(name, "ghost")
+            && !contains_ascii_case_insensitive(name, "deltas")
+            && !contains_ascii_case_insensitive(name, "resolvedfeatures");
+        let sole_body_stream = section
             .ps_streams()
             .iter()
-            .filter_map(|stream| {
-                crate::parasolid::is_body_stream(&stream.header)
-                    .then_some((stream.payload.as_slice(), &stream.header))
-            })
-            .collect::<Vec<_>>();
-        let sole_body_stream = body_streams.len() == 1;
-        for (payload, header) in body_streams {
-            let description = header.description.to_ascii_lowercase();
+            .filter(|stream| crate::parasolid::is_body_stream(&stream.header))
+            .count()
+            == 1;
+        for stream in section.ps_streams() {
+            if !crate::parasolid::is_body_stream(&stream.header) {
+                continue;
+            }
+            let description = &stream.header.description;
             if !section_is_admissible
-                || description.contains("ghost")
-                || description.contains("deltas")
-                || !(description.contains("partition") || sole_body_stream && section_is_partition)
+                || contains_ascii_case_insensitive(description, "ghost")
+                || contains_ascii_case_insensitive(description, "deltas")
+                || !(contains_ascii_case_insensitive(description, "partition")
+                    || sole_body_stream && section_is_partition)
                 || active_configuration.is_some_and(|active| {
                     section.name().and_then(configuration_index) != Some(active)
                 })
             {
                 continue;
             }
-            candidates.push(ActiveParasolidSite {
+            if selected.is_some() {
+                return None;
+            }
+            selected = Some(ActiveParasolidSite {
                 section,
-                payload,
-                header,
+                payload: &stream.payload,
+                header: &stream.header,
             });
         }
     }
-    (candidates.len() == 1).then(|| candidates.remove(0))
+    selected
 }
 
 pub(crate) fn configuration_index(section: &str) -> Option<usize> {
-    let start = section.to_ascii_lowercase().find("config-")? + "config-".len();
-    let digits = section[start..]
-        .chars()
-        .take_while(char::is_ascii_digit)
-        .collect::<String>();
-    (!digits.is_empty()).then(|| digits.parse().ok()).flatten()
+    let start = section
+        .as_bytes()
+        .windows(b"config-".len())
+        .position(|window| window.eq_ignore_ascii_case(b"config-"))?
+        + b"config-".len();
+    let digit_count = section.as_bytes()[start..]
+        .iter()
+        .take_while(|byte| byte.is_ascii_digit())
+        .count();
+    (digit_count > 0)
+        .then(|| section[start..start + digit_count].parse().ok())
+        .flatten()
 }
 
 pub(crate) fn active_configuration_index(scan: &ContainerScan) -> Option<usize> {
-    explicit_active_configuration_index(scan)
-        .or_else(|| manifest_active_configuration(scan).map(|(index, _)| index))
+    explicit_active_configuration_index(scan).or_else(|| {
+        scan.solidworks
+            .manifest_active_configuration
+            .unique_ref()
+            .map(|(index, _)| index)
+    })
 }
 
 /// Return the active configuration's unique manifest identity, when one
 /// manifest row provides it. A manifest with zero or several `YES` rows is
 /// deliberately not an index source.
-pub(crate) fn manifest_active_configuration(
-    scan: &ContainerScan<'_>,
-) -> Option<(usize, Option<String>)> {
+#[cfg(test)]
+fn manifest_active_configuration(scan: &ContainerScan<'_>) -> Option<(usize, Option<String>)> {
     scan.solidworks.manifest_active_configuration.unique()
 }
 
@@ -972,14 +1268,12 @@ fn is_features_manifest_name(name: Option<&str>) -> bool {
 /// Resolve a manifest row to its configuration name without depending on XML
 /// namespace prefixes or on the order of the model rows.
 fn manifest_configuration_name(
+    admission: &ScanAdmission<'_, '_>,
     document: &roxmltree::Document<'_>,
     row: roxmltree::Node<'_, '_>,
     id: &str,
-) -> Option<String> {
-    let direct = row
-        .attribute("swName")
-        .filter(|value| !value.is_empty())
-        .map(str::to_string);
+) -> Result<Option<String>, CodecError> {
+    let direct = row.attribute("swName").filter(|value| !value.is_empty());
     let model = row
         .attribute("swModelRef")
         .and_then(|reference| {
@@ -993,26 +1287,34 @@ fn manifest_configuration_name(
                     && node.attribute("swConfigurationId") == Some(id)
             })
         });
-    direct.or_else(|| {
+    let name = direct.or_else(|| {
         model
             .and_then(|node| node.attribute("swConfigurationName"))
             .filter(|value| !value.is_empty())
-            .map(str::to_string)
-    })
+    });
+    admission.copy_opt(name, "retain SLDPRT manifest configuration name")
 }
 
 fn explicit_active_configuration_index(scan: &ContainerScan<'_>) -> Option<usize> {
-    let active = active_configuration_name(scan)?;
-    let indices = scan.solidworks.configuration_source_indices.get(&active)?;
+    let active = active_configuration_name_ref(scan)?;
+    let indices = scan.solidworks.configuration_source_indices.get(active)?;
     (indices.len() == 1).then(|| indices[0])
 }
 
-pub(crate) fn active_configuration_name(scan: &ContainerScan<'_>) -> Option<String> {
-    manifest_active_configuration(scan)
+pub(crate) fn active_configuration_name_ref<'a>(scan: &'a ContainerScan<'_>) -> Option<&'a str> {
+    scan.solidworks
+        .manifest_active_configuration
+        .unique_ref()
         .and_then(|(_, name)| name)
         .or_else(|| {
             (scan.solidworks.configuration_names.len() == 1)
-                .then(|| scan.solidworks.configuration_names.iter().next().cloned())
+                .then(|| {
+                    scan.solidworks
+                        .configuration_names
+                        .iter()
+                        .next()
+                        .map(String::as_str)
+                })
                 .flatten()
         })
 }
@@ -1028,6 +1330,108 @@ pub(crate) fn xml_text(bytes: &[u8]) -> Option<String> {
         Some(String::from_utf16_lossy(&units))
     } else {
         std::str::from_utf8(bytes).ok().map(str::to_string)
+    }
+}
+
+pub(crate) struct EnvelopeText<'a> {
+    text: String,
+    _scope: Option<ScopedReservation<'a>>,
+}
+
+impl EnvelopeText<'_> {
+    pub(crate) fn as_str(&self) -> &str {
+        &self.text
+    }
+}
+
+impl ScanAdmission<'_, '_> {
+    fn text<'scope>(
+        &'scope self,
+        bytes: &[u8],
+    ) -> Result<Option<EnvelopeText<'scope>>, CodecError> {
+        match self {
+            Self::Probe => Ok(xml_text(bytes).map(|text| EnvelopeText { text, _scope: None })),
+            Self::Decode(ctx) => xml_text_charged(ctx, bytes, "materialize SLDPRT XML text"),
+        }
+    }
+
+    fn copy_str(&self, value: &str, operation: &'static str) -> Result<String, CodecError> {
+        match self {
+            Self::Probe => Ok(value.to_owned()),
+            Self::Decode(ctx) => {
+                let mut copy = String::new();
+                ctx.try_reserve_retained_text(&mut copy, value.len(), operation)?;
+                copy.push_str(value);
+                Ok(copy)
+            }
+        }
+    }
+
+    fn copy_opt(
+        &self,
+        value: Option<&str>,
+        operation: &'static str,
+    ) -> Result<Option<String>, CodecError> {
+        value
+            .map(|value| self.copy_str(value, operation))
+            .transpose()
+    }
+
+    fn charge_item(&self, operation: &'static str) -> Result<(), CodecError> {
+        if let Self::Decode(ctx) = self {
+            ctx.charge_collection_items(1, operation)?;
+        }
+        Ok(())
+    }
+
+    fn reserve_vec<T>(
+        &self,
+        values: &mut Vec<T>,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        if let Self::Decode(ctx) = self {
+            ctx.reserve_vec(values, 1, operation)?;
+        }
+        Ok(())
+    }
+
+    fn new_string(&self, bytes: usize, operation: &'static str) -> Result<String, CodecError> {
+        match self {
+            Self::Probe => Ok(String::with_capacity(bytes)),
+            Self::Decode(ctx) => {
+                let mut value = String::new();
+                ctx.try_reserve_retained_text(&mut value, bytes, operation)?;
+                Ok(value)
+            }
+        }
+    }
+}
+
+pub(crate) fn xml_text_charged<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    bytes: &[u8],
+    operation: &'static str,
+) -> Result<Option<EnvelopeText<'ctx>>, CodecError> {
+    ctx.charge_work(u64_from_index(bytes.len()), operation)?;
+    let bytes = bytes.strip_prefix(&[0x86]).unwrap_or(bytes);
+    if bytes.starts_with(&[0xff, 0xfe]) {
+        let utf16 = &bytes[2..];
+        let (text, scope) =
+            ctx.utf16le_lossy_scoped_text(utf16, utf16.len() / 2, false, operation)?;
+        Ok(Some(EnvelopeText {
+            text,
+            _scope: Some(scope),
+        }))
+    } else {
+        let Ok(source) = std::str::from_utf8(bytes) else {
+            return Ok(None);
+        };
+        let (mut text, scope) = ctx.scoped_string(source.len(), operation)?;
+        text.push_str(source);
+        Ok(Some(EnvelopeText {
+            text,
+            _scope: Some(scope),
+        }))
     }
 }
 
@@ -1080,9 +1484,15 @@ impl ManifestActiveConfiguration {
         }
     }
 
+    #[cfg(test)]
     fn unique(&self) -> Option<(usize, Option<String>)> {
+        self.unique_ref()
+            .map(|(index, name)| (index, name.map(str::to_owned)))
+    }
+
+    fn unique_ref(&self) -> Option<(usize, Option<&str>)> {
         match self {
-            Self::Unique(index, name) => Some((*index, name.clone())),
+            Self::Unique(index, name) => Some((*index, name.as_deref())),
             Self::Absent | Self::Ambiguous => None,
         }
     }
@@ -1090,19 +1500,36 @@ impl ManifestActiveConfiguration {
 
 fn scan_solidworks_envelopes<'a>(
     sections: impl IntoIterator<Item = (Option<&'a str>, &'a [u8])>,
-) -> SolidWorksEnvelopeScan {
+    admission: &ScanAdmission<'_, '_>,
+) -> Result<SolidWorksEnvelopeScan, CodecError> {
     let mut scan = SolidWorksEnvelopeScan::default();
     for (section, payload) in sections {
-        let Some(text) = xml_text(payload) else {
+        let Some(text) = admission.text(payload)? else {
             continue;
         };
-        let Ok(document) = roxmltree::Document::parse(&text) else {
-            continue;
+        let admitted;
+        let probe_document;
+        let document = match admission {
+            ScanAdmission::Decode(ctx) => {
+                admitted = match ctx.parse_xml(&text.text, "SLDPRT envelope XML tree") {
+                    Ok(tree) => tree,
+                    Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                    Err(_) => continue,
+                };
+                admitted.document()
+            }
+            ScanAdmission::Probe => {
+                probe_document = match roxmltree::Document::parse(&text.text) {
+                    Ok(document) => document,
+                    Err(_) => continue,
+                };
+                &probe_document
+            }
         };
         let root = document.root_element();
         if is_features_manifest_name(section) && root.tag_name().name() == "swSolidWorks" {
             scan.manifest_active_configuration
-                .merge(manifest_active_configuration_in(&document));
+                .merge(manifest_active_configuration_in(admission, document)?);
         }
         if root.tag_name().name().contains("Keywords") {
             for configuration in document
@@ -1121,26 +1548,41 @@ fn scan_solidworks_envelopes<'a>(
                 else {
                     continue;
                 };
-                scan.configuration_source_indices
-                    .entry(name.to_owned())
-                    .or_default()
-                    .push(index);
+                if let Some(indices) = scan.configuration_source_indices.get_mut(name) {
+                    admission
+                        .reserve_vec(indices, "collect SLDPRT configuration source indices")?;
+                    indices.push(index);
+                } else {
+                    admission.charge_item("collect SLDPRT configuration source names")?;
+                    let name =
+                        admission.copy_str(name, "retain SLDPRT configuration source name")?;
+                    let mut indices = Vec::new();
+                    admission
+                        .reserve_vec(&mut indices, "collect SLDPRT configuration source indices")?;
+                    indices.push(index);
+                    scan.configuration_source_indices.insert(name, indices);
+                }
             }
         }
         if root.tag_name().name() != "swSolidWorks" {
             continue;
         }
-        scan.configuration_names.extend(
-            root.descendants()
-                .filter(|node| node.has_tag_name("swModel"))
-                .filter_map(|node| node.attribute("swConfigurationName"))
-                .map(str::to_owned),
-        );
+        for name in root
+            .descendants()
+            .filter(|node| node.has_tag_name("swModel"))
+            .filter_map(|node| node.attribute("swConfigurationName"))
+        {
+            if !scan.configuration_names.contains(name) {
+                admission.charge_item("collect SLDPRT configuration names")?;
+                let name = admission.copy_str(name, "retain SLDPRT configuration name")?;
+                scan.configuration_names.insert(name);
+            }
+        }
         if scan.first.is_some() {
             continue;
         }
         let model = root.descendants().find(|node| node.has_tag_name("swModel"));
-        let mut configuration_attributes = BTreeMap::new();
+        let mut source_attributes = BTreeMap::new();
         for configuration in root
             .descendants()
             .filter(|node| node.has_tag_name("swConfiguration"))
@@ -1158,63 +1600,95 @@ fn scan_solidworks_envelopes<'a>(
                 ("swConfigurationAlternateName", "alternate_name"),
             ] {
                 if let Some(value) = configuration.attribute(source) {
-                    configuration_attributes.insert(
-                        format!("sw_configuration_{slot}_{target}"),
-                        value.to_owned(),
-                    );
+                    if !source_attributes.contains_key(&(slot, target)) {
+                        admission.charge_item("collect SLDPRT configuration attributes")?;
+                    }
+                    source_attributes.insert((slot, target), value);
                 }
             }
         }
+        let mut configuration_attributes = BTreeMap::new();
+        for ((slot, target), value) in source_attributes {
+            let length = "sw_configuration_".len() + slot.len() + 1 + target.len();
+            let mut key = admission.new_string(length, "retain SLDPRT configuration key")?;
+            key.push_str("sw_configuration_");
+            key.push_str(slot);
+            key.push('_');
+            key.push_str(target);
+            let value = admission.copy_str(value, "retain SLDPRT configuration value")?;
+            admission.charge_item("retain SLDPRT configuration attribute")?;
+            configuration_attributes.insert(key, value);
+        }
         scan.first = Some(SolidWorksEnvelope {
-            sw_version: root.attribute("swVersion").map(str::to_owned),
-            creation_time: root.attribute("swCreationTime").map(str::to_owned),
-            path: root.attribute("swPath").map(str::to_owned),
-            model_name: model
-                .and_then(|node| node.attribute("swName"))
-                .map(str::to_owned),
-            configuration_name: model
-                .and_then(|node| node.attribute("swConfigurationName"))
-                .map(str::to_owned),
+            sw_version: admission.copy_opt(root.attribute("swVersion"), "retain SLDPRT version")?,
+            creation_time: admission.copy_opt(
+                root.attribute("swCreationTime"),
+                "retain SLDPRT creation time",
+            )?,
+            path: admission.copy_opt(root.attribute("swPath"), "retain SLDPRT path")?,
+            model_name: admission.copy_opt(
+                model.and_then(|node| node.attribute("swName")),
+                "retain SLDPRT model name",
+            )?,
+            configuration_name: admission.copy_opt(
+                model.and_then(|node| node.attribute("swConfigurationName")),
+                "retain SLDPRT envelope configuration name",
+            )?,
             configuration_attributes,
         });
     }
-    scan
+    Ok(scan)
 }
 
 fn manifest_active_configuration_in(
+    admission: &ScanAdmission<'_, '_>,
     document: &roxmltree::Document<'_>,
-) -> ManifestActiveConfiguration {
-    let configurations = document
+) -> Result<ManifestActiveConfiguration, CodecError> {
+    let mut any_configuration = false;
+    let mut active = None;
+    for row in document
         .descendants()
         .filter(|node| node.is_element() && node.tag_name().name() == "swConfiguration")
-        .collect::<Vec<_>>();
-    if configurations.is_empty() {
-        return ManifestActiveConfiguration::Absent;
+    {
+        any_configuration = true;
+        if row.attribute("swMostRecentConfiguration") == Some("YES") {
+            if active.is_some() {
+                return Ok(ManifestActiveConfiguration::Ambiguous);
+            }
+            active = Some(row);
+        }
     }
-    let rows = configurations
-        .into_iter()
-        .filter(|node| node.attribute("swMostRecentConfiguration") == Some("YES"))
-        .collect::<Vec<_>>();
-    let [row] = rows.as_slice() else {
-        return ManifestActiveConfiguration::Ambiguous;
+    if !any_configuration {
+        return Ok(ManifestActiveConfiguration::Absent);
+    }
+    let Some(row) = active else {
+        return Ok(ManifestActiveConfiguration::Ambiguous);
     };
     let Some(id) = row.attribute("swID") else {
-        return ManifestActiveConfiguration::Ambiguous;
+        return Ok(ManifestActiveConfiguration::Ambiguous);
     };
     let Some(index) = (!id.is_empty() && id.bytes().all(|byte| byte.is_ascii_digit()))
         .then(|| id.parse::<usize>().ok())
         .flatten()
     else {
-        return ManifestActiveConfiguration::Ambiguous;
+        return Ok(ManifestActiveConfiguration::Ambiguous);
     };
-    ManifestActiveConfiguration::Unique(index, manifest_configuration_name(document, *row, id))
+    Ok(ManifestActiveConfiguration::Unique(
+        index,
+        manifest_configuration_name(admission, document, row, id)?,
+    ))
 }
 
 /// Returns the first parsed `swSolidWorks` envelope even if an attribute is absent.
 pub(crate) fn first_solidworks_envelope<'a>(
     payloads: impl IntoIterator<Item = &'a [u8]>,
 ) -> Option<SolidWorksEnvelope> {
-    scan_solidworks_envelopes(payloads.into_iter().map(|payload| (None, payload))).first
+    scan_solidworks_envelopes(
+        payloads.into_iter().map(|payload| (None, payload)),
+        &ScanAdmission::Probe,
+    )
+    .ok()
+    .and_then(|scan| scan.first)
 }
 
 pub(crate) fn solidworks_envelope<'a>(

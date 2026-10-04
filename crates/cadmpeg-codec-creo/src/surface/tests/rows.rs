@@ -1,7 +1,502 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use super::super::*;
+use super::counted_parameter_scalar_slots;
+use super::cross_section_parameter_records;
+use super::named_prototype_records;
+use super::parameter_records;
+use super::plane_local_systems_for_rows;
+use super::positional_spline_replay_body_end;
+use super::positional_spline_replay_prototype;
+use crate::scalar;
+use crate::surface::complete_surface_array_bounds as checked_complete_surface_array_bounds;
+use crate::surface::contour_records_for_rows;
+use crate::surface::counted_row_bounds as checked_counted_row_bounds;
+use crate::surface::cross_section_rows as checked_cross_section_rows;
+use crate::surface::cylinder_frame_readers::decode_compound_local_system_cylinder_frame;
+use crate::surface::decode_positional_spline_replay;
+use crate::surface::decode_tabulated_cylinder_frame;
+use crate::surface::plane_envelopes_for_rows;
+use crate::surface::positional_body_start;
+use crate::surface::prototype_count;
+use crate::surface::rows as checked_rows;
+use crate::surface::scalar_tokens;
+use crate::surface::spline_replay_shape;
+use crate::surface::surface_body_compound_close;
+use crate::surface::unique_surface_parameter;
+use crate::surface::unique_surface_row;
+use crate::surface::ScalarBodyRefusal;
+use crate::surface::SurfaceBodyBoundary;
+use crate::surface::SurfaceKind;
+use crate::surface::SurfaceNamedValue;
+use crate::surface::SurfacePrototypeFamily;
+use crate::surface::SurfaceRow;
+use crate::surface::TabulatedCylinderFrame;
+
+fn rows(payload: &[u8]) -> Vec<SurfaceRow> {
+    crate::decode::with_test_decode_ctx(|ctx| checked_rows(ctx, payload))
+        .expect("surface rows are admitted")
+}
+
+fn cross_section_rows(payload: &[u8]) -> Vec<SurfaceRow> {
+    crate::decode::with_test_decode_ctx(|ctx| checked_cross_section_rows(ctx, payload))
+        .expect("cross-section rows are admitted")
+}
+
+fn counted_row_bounds(payload: &[u8]) -> Vec<(SurfaceRow, usize)> {
+    crate::decode::with_test_decode_ctx(|ctx| checked_counted_row_bounds(ctx, payload))
+        .expect("counted row bounds are admitted")
+}
+
+fn complete_surface_array_bounds(payload: &[u8]) -> Vec<(usize, usize)> {
+    crate::decode::with_test_decode_ctx(|ctx| checked_complete_surface_array_bounds(ctx, payload))
+        .expect("surface array bounds are admitted")
+}
+
+fn surface_limit_result<T>(
+    payload: &[u8],
+    limit: u64,
+    decode: impl FnOnce(
+        &cadmpeg_core::decode::DecodeContext<'_>,
+        &[u8],
+    ) -> Result<T, cadmpeg_core::CodecError>,
+) -> Result<T, cadmpeg_core::CodecError> {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
+        .expect("row fixture fits the root-byte limit");
+    decode(&ctx, payload)
+}
+
+fn last_limit_before_counted_scalar_array(payload: &[u8]) -> u64 {
+    use cadmpeg_core::decode::ResourceDimension;
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        "creo scalar array values",
+        |ctx| {
+            crate::surface::named_prototype_records(
+                ctx,
+                payload,
+                &mut crate::lane_refusal::LaneRefusals::new(),
+            )
+        },
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else {
+        panic!("scalar array boundary must refuse");
+    };
+    refusal.limit
+}
+
+#[test]
+fn surface_rows_refuse_before_row_vector_growth() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let payload = [7, 0x22, 4, 0x01, 0, 0];
+    let error = surface_limit_result(&payload, 0, checked_rows)
+        .expect_err("one row needs one collection item");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo surface rows")
+    );
+}
+
+#[test]
+fn surface_row_id_nodes_refuse_before_btree_insertion() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let payload = [7, 0x22, 4, 0x01, 0, 0];
+    let error = surface_limit_result(&payload, 1, checked_rows)
+        .expect_err("one unique row ID needs a BTree node");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo surface row ID nodes")
+    );
+    assert_eq!(
+        surface_limit_result(&payload, 2, checked_rows)
+            .expect("row and ID admitted")
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn surface_framed_rows_refuse_before_result_growth() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let payload = b"srf_array\0\xf8\x01\x07\x22\x04\x01\x00\x00";
+    let error = surface_limit_result(payload, 2, checked_rows)
+        .expect_err("framed row needs a collection item");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo framed surface rows")
+    );
+    assert_eq!(
+        surface_limit_result(payload, 3, checked_rows)
+            .expect("frame admitted")
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn counted_surface_row_bounds_refuse_before_result_growth() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let payload = b"srf_array\0\xf8\x01\x07\x22\x04\x01\x00\x00";
+    let error = surface_limit_result(payload, 3, checked_counted_row_bounds)
+        .expect_err("counted row bound needs a collection item");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo counted surface row bounds")
+    );
+    assert_eq!(
+        surface_limit_result(payload, 4, checked_counted_row_bounds)
+            .expect("bound admitted")
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn complete_surface_array_bounds_refuse_before_result_growth() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let payload = b"srf_array\0\xf8\x01\x07\x22\x04\x01\x00\x00";
+    let error = surface_limit_result(payload, 3, checked_complete_surface_array_bounds)
+        .expect_err("complete frame needs a collection item");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo complete surface array bounds")
+    );
+    assert_eq!(
+        surface_limit_result(payload, 4, checked_complete_surface_array_bounds)
+            .expect("bound admitted")
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn named_prototype_scan_refuses_each_vector_boundary() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let payload = b"srf_prim_ptr(torus)\0\xe0\x01radius1\0\x18\xe3";
+    for (limit, operation) in [
+        (0, "creo named prototype field positions"),
+        (2, "creo named prototype field ranges"),
+        (3, "creo named prototype frames"),
+    ] {
+        let error = surface_limit_result(payload, limit, |ctx, input| {
+            crate::surface::named_prototype_frames(ctx, input).map(|frames| frames.len())
+        })
+        .expect_err("named prototype scan needs another collection item");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == operation)
+        );
+    }
+    assert_eq!(
+        surface_limit_result(payload, 4, |ctx, input| {
+            crate::surface::named_prototype_frames(ctx, input).map(|frames| frames.len())
+        })
+        .expect("named prototype scan admitted"),
+        1
+    );
+}
+
+#[test]
+fn prototype_parameter_spans_refuse_before_row_filter_growth() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let payload = b"srf_prim_ptr(torus)\0\xe0\x01radius1\0\x18\xe3";
+    let error = surface_limit_result(payload, 4, checked_rows)
+        .expect_err("one named parameter needs a span item");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo prototype parameter spans")
+    );
+    assert!(surface_limit_result(payload, 5, checked_rows)
+        .expect("span admitted")
+        .is_empty());
+}
+
+#[test]
+fn unknown_prototype_family_refuses_before_name_copy() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let payload = b"srf_prim_ptr(foobar)\0";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 5;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
+        .expect("prototype fixture fits the root-byte limit");
+    let error = crate::surface::named_prototype_frames(&ctx, payload)
+        .expect_err("six-byte family name needs a retained copy");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo prototype family name")
+    );
+    let frames = crate::decode::with_test_decode_ctx(|ctx| {
+        crate::surface::named_prototype_frames(ctx, payload)
+    })
+    .expect("unknown family admitted under service policy");
+    assert_eq!(frames.len(), 1);
+    assert_eq!(frames[0].family.name(), "foobar");
+}
+
+#[test]
+fn lossy_prototype_family_formatter_preserves_utf8_replacement() {
+    let raw = b"a\xff\xf0\x9f\x92z";
+    assert_eq!(
+        format!("{}", crate::surface::LossyPrototypeName(raw)),
+        String::from_utf8_lossy(raw)
+    );
+}
+
+#[test]
+fn named_prototype_parameter_name_refuses_before_retained_copy() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let payload = b"srf_prim_ptr(torus)\0\xe0\x01radius1\0\x18\xe3";
+    let run = |retained| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = retained;
+        let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
+            .expect("prototype fixture fits the root-byte limit");
+        crate::surface::named_prototype_records(
+            &ctx,
+            payload,
+            &mut crate::lane_refusal::LaneRefusals::new(),
+        )
+        .map(|records| records.len())
+    };
+    let limit = crate::test_support::allocation_limit_at(
+        ResourceDimension::RetainedBytes,
+        Some("creo named prototype parameter name"),
+        run,
+    );
+    let error = run(limit).expect_err("parameter name needs retained bytes");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+        if refusal.dimension == ResourceDimension::RetainedBytes
+            && refusal.operation == "creo named prototype parameter name")
+    );
+    assert_eq!(
+        run(u64::MAX).expect("prototype admitted under service limits"),
+        1
+    );
+}
+
+#[test]
+fn contour_surface_frames_refuse_before_aggregate_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let payload = b"srf_array\0\xf8\x01";
+    let run = |items| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = items;
+        let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
+            .expect("surface frame fixture fits root limit");
+        contour_records_for_rows(&ctx, payload, &[]).map(|records| records.len())
+    };
+    assert_eq!(run(1).expect("one frame admitted"), 0);
+    let error = run(0).expect_err("frame lookup needs one slot");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo contour surface frames")
+    );
+}
+
+fn named_spline_scalar_slots(
+    family: &SurfacePrototypeFamily,
+    name: &str,
+    body: &[u8],
+    count: usize,
+    cache: &scalar::ScalarCache,
+    refusal: &mut ScalarBodyRefusal,
+) -> Option<Vec<(Option<f64>, Vec<u8>)>> {
+    super::with_decode_ctx(body, |ctx| {
+        crate::surface::named_spline_scalar_slots(ctx, family, name, body, count, cache, refusal)
+    })
+}
+
+fn named_spline_limit_error(
+    collection_limit: u64,
+    retained_limit: u64,
+) -> cadmpeg_core::CodecError {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let body = [0xe4];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_retained_bytes = retained_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &policy)
+        .expect("one scalar token fits the input limit");
+    crate::surface::named_spline_scalar_slots(
+        &ctx,
+        &SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Spline),
+        "tangts",
+        &body,
+        1,
+        &scalar::ScalarCache::default(),
+        &mut ScalarBodyRefusal::default(),
+    )
+    .expect_err("the selected spline allocation exceeds its limit")
+}
+
+fn scalar_slots(
+    body: &[u8],
+    count: usize,
+    cache: &scalar::ScalarCache,
+    refusal: &mut ScalarBodyRefusal,
+) -> Option<Vec<Option<f64>>> {
+    super::with_decode_ctx(body, |ctx| {
+        crate::surface::scalar_slots(ctx, body, count, cache, refusal)
+    })
+}
+
+#[test]
+fn scalar_body_slots_refuse_before_declared_count_reserve() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let body = [0xe4];
+    assert_eq!(
+        scalar_slots(
+            &body,
+            1,
+            &scalar::ScalarCache::default(),
+            &mut ScalarBodyRefusal::default(),
+        ),
+        Some(vec![Some(1.0)])
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &policy)
+        .expect("one scalar token fits the input limit");
+    let error = crate::surface::scalar_slots(
+        &ctx,
+        &body,
+        1,
+        &scalar::ScalarCache::default(),
+        &mut ScalarBodyRefusal::default(),
+    )
+    .expect_err("one declared scalar slot exceeds zero collection items");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo scalar body slots"
+    ));
+}
+
+#[test]
+fn scalar_body_invalid_token_refusal_text_obeys_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let body = [0xff];
+    assert!(scalar_slots(
+        &body,
+        1,
+        &scalar::ScalarCache::default(),
+        &mut ScalarBodyRefusal::default(),
+    )
+    .is_none());
+    let error = crate::test_support::last_refusal_at(
+        &body,
+        ResourceDimension::RetainedBytes,
+        "creo scalar body refusal text",
+        |ctx| {
+            crate::surface::scalar_slots(
+                ctx,
+                &body,
+                1,
+                &scalar::ScalarCache::default(),
+                &mut ScalarBodyRefusal::default(),
+            )
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo scalar body refusal text")
+    );
+}
+
+#[test]
+fn scalar_body_trailing_refusal_text_obeys_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let body = [0xe4, 0xff];
+    assert!(scalar_slots(
+        &body,
+        1,
+        &scalar::ScalarCache::default(),
+        &mut ScalarBodyRefusal::default(),
+    )
+    .is_none());
+    let error = crate::test_support::last_refusal_at(
+        &body,
+        ResourceDimension::RetainedBytes,
+        "creo trailing scalar body refusal text",
+        |ctx| {
+            crate::surface::scalar_slots(
+                ctx,
+                &body,
+                1,
+                &scalar::ScalarCache::default(),
+                &mut ScalarBodyRefusal::default(),
+            )
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo trailing scalar body refusal text")
+    );
+}
+
+#[test]
+fn named_spline_slots_refuse_before_declared_count_reserve() {
+    assert_eq!(
+        named_spline_scalar_slots(
+            &SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Spline),
+            "tangts",
+            &[0xe4],
+            1,
+            &scalar::ScalarCache::default(),
+            &mut ScalarBodyRefusal::default(),
+        ),
+        Some(vec![(Some(1.0), vec![0xe4])])
+    );
+    let error = named_spline_limit_error(0, u64::MAX);
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo named spline scalar slots"
+    ));
+}
+
+#[test]
+fn named_spline_token_refuses_before_retained_copy() {
+    let error = named_spline_limit_error(
+        u64::MAX,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some("creo named spline scalar token"),
+            |cap| Err::<(), _>(named_spline_limit_error(u64::MAX, cap)),
+        ),
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo named spline scalar token"
+    ));
+}
 
 #[test]
 fn finds_one_byte_and_two_byte_surface_rows() {
@@ -88,14 +583,16 @@ fn positional_spline_replay_uses_the_named_array_extents() {
     assert_eq!(later_parameter.boundary, SurfaceBodyBoundary::CompoundClose);
     assert!(later_parameter.body.len() > 1);
     let cache = scalar::ScalarCache::from_section(&payload);
-    let replay =
-        decode_positional_spline_replay(&later_parameter.body, &prototype, &cache).unwrap();
-    assert_eq!(replay.points.len(), 4);
-    assert_eq!(replay.u_derivatives.len(), 4);
-    assert_eq!(replay.v_derivatives.len(), 4);
-    assert_eq!(replay.mixed_derivatives.len(), 4);
-    assert_eq!(replay.u_parameters, [0.0, 1.0]);
-    assert_eq!(replay.v_parameters, [0.0, 1.0]);
+    let replay = super::with_decode_ctx(&payload, |ctx| {
+        decode_positional_spline_replay(ctx, &later_parameter.body, &prototype, &cache)
+    })
+    .unwrap();
+    assert_eq!(replay.points().len(), 4);
+    assert_eq!(replay.u_derivatives().len(), 4);
+    assert_eq!(replay.v_derivatives().len(), 4);
+    assert_eq!(replay.mixed_derivatives().len(), 4);
+    assert_eq!(replay.u_parameters(), [0.0, 1.0]);
+    assert_eq!(replay.v_parameters(), [0.0, 1.0]);
     let body_start = positional_body_start(&payload, later).unwrap();
     assert_eq!(
         positional_spline_replay_body_end(
@@ -108,6 +605,85 @@ fn positional_spline_replay_uses_the_named_array_extents() {
         ),
         Some(later_parameter.body_offset + later_parameter.body.len())
     );
+}
+
+fn spline_collection_error(
+    run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<(), cadmpeg_core::CodecError>,
+) -> cadmpeg_core::CodecError {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0x0f], &arena, &policy)
+        .expect("one scalar fits root limit");
+    run(&ctx).expect_err("one spline item exceeds collection limit")
+}
+
+#[test]
+fn positional_spline_replay_refuses_scalar_vector() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let body = [0x0f];
+    let cache = scalar::ScalarCache::from_section(&body);
+    let error = spline_collection_error(|ctx| {
+        crate::surface::take_spline_scalars(ctx, &body, &mut 0, 1, "i_points", &cache).map(|_| ())
+    });
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo spline replay scalar values")
+    );
+}
+
+#[test]
+fn positional_spline_replay_refuses_point_vector() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let error = spline_collection_error(|ctx| {
+        crate::surface::spline_vectors(ctx, &[0.0, 1.0, 2.0]).map(|_| ())
+    });
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo spline replay vectors")
+    );
+}
+
+#[test]
+fn positional_spline_replay_rejects_unordered_parameters_at_grid_admission() {
+    let mut payload = b"srf_array\0\xf8\x02".to_vec();
+    payload.extend_from_slice(&[7, 0x28, 4, 0x01, 0, 8, 0xe3]);
+    payload.extend_from_slice(b"srf_prim_ptr(splsrf)\0");
+    payload.extend_from_slice(b"\xe0\x01tan_cond\0\xf8\x02\x03\xe4");
+    for name in ["i_points", "end_u_tangts", "end_v_tangts", "end_uv_deriv"] {
+        payload.extend_from_slice(&[0xe0, 0x02]);
+        payload.extend_from_slice(name.as_bytes());
+        payload.extend_from_slice(b"\0\xf9\x04\x03");
+        payload.extend(std::iter::repeat_n(0x0f, 12));
+    }
+    for name in ["u_params", "v_params"] {
+        payload.extend_from_slice(&[0xe0, 0x01]);
+        payload.extend_from_slice(name.as_bytes());
+        payload.extend_from_slice(b"\0\xf8\x02\x0f\xe4");
+    }
+    payload.push(0xe3);
+    payload.extend_from_slice(&[8, 0x28, 4, 0x01, 0, 0, 0xe3, 0x03, 0xe4]);
+    payload.extend(std::iter::repeat_n(0x0f, 48));
+    payload.extend_from_slice(&[0x0f, 0xe4, 0x0f, 0xe4, 0xe3]);
+    payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
+
+    let decoded_rows = rows(&payload);
+    let later = decoded_rows.iter().find(|row| row.id == 8).unwrap();
+    let prototype = positional_spline_replay_prototype(&payload, &decoded_rows, later).unwrap();
+    let parameters = parameter_records(&payload);
+    let later_parameter = unique_surface_parameter(&parameters, 8).unwrap();
+    let cache = scalar::ScalarCache::from_section(&payload);
+    let mut replay_body = later_parameter.body.clone();
+    let u_second = replay_body.len() - 3;
+    assert_eq!(replay_body[u_second], 0xe4);
+    replay_body[u_second] = 0x0f;
+    assert!(super::with_decode_ctx(&payload, |ctx| {
+        decode_positional_spline_replay(ctx, &replay_body, &prototype, &cache)
+    })
+    .is_none());
 }
 
 #[test]
@@ -133,13 +709,17 @@ fn cross_section_filters_boundary_one_body_candidate() {
 fn cross_section_plane_envelope_retains_its_namespace_geometry() {
     let payload = b"Sld_Xsections\0srf_array\0\xf8\x01\x07\x22\x04\x01\x06\0\xe4\xe4\xe4\xe4\x0f\x0f\x0f\xe4\x0f\xe4\xe3";
 
-    let envelopes = cross_section_plane_envelopes(payload);
+    let envelopes = super::with_decode_ctx(payload, |ctx| {
+        crate::surface::cross_section_plane_envelopes(ctx, payload)
+    });
     assert_eq!(envelopes.len(), 1);
-    let planes = outline_planes(&envelopes);
+    let planes = super::with_decode_ctx(payload, |ctx| {
+        crate::surface::outline_planes(ctx, &envelopes)
+    });
     assert_eq!(planes.len(), 1);
     assert_eq!(planes[0].surface_id, 7);
     assert_eq!(planes[0].origin, [0.0, 0.0, 0.0]);
-    assert_eq!(planes[0].normal, [0.0, 1.0, 0.0]);
+    assert_eq!(planes[0].normal(), [0.0, 1.0, 0.0]);
 }
 
 #[test]
@@ -165,7 +745,13 @@ fn plane_records_end_at_the_next_surface_family() {
             }
         ]
     ));
-    assert_eq!(plane_envelopes_for_rows(&payload, &rows).len(), 1);
+    assert_eq!(
+        super::with_decode_ctx(&payload, |ctx| plane_envelopes_for_rows(
+            ctx, &payload, &rows
+        ))
+        .len(),
+        1
+    );
     assert!(plane_local_systems_for_rows(&payload, &rows).is_empty());
 }
 
@@ -195,10 +781,10 @@ fn plane_local_system_follows_a_parameter_scalar_containing_a_named_record_heade
         Some([-1.335_000_000_000_026_4, 17.5, -3.595_135_602_449_500_5])
     );
     assert_eq!(
-        systems[0].frame().u_axis,
+        systems[0].frame().u_axis(),
         Some([0.0, 0.121_869_343_405_147_49, -0.992_546_151_641_322_1])
     );
-    assert_eq!(systems[0].frame().normal, Some([1.0, 0.0, 0.0]));
+    assert_eq!(systems[0].frame().normal(), Some([1.0, 0.0, 0.0]));
     assert_eq!(systems[0].body.len(), 52);
 }
 
@@ -217,19 +803,19 @@ fn compound_bounded_cylinder_local_system_retains_its_terminal_radius() {
     let frame = decode_compound_local_system_cylinder_frame(&body, &scalar::ScalarCache::default())
         .expect("complete compound-bounded frame");
     assert_eq!(
-        frame.origin,
+        frame.frame().origin(),
         [
             -0.000_490_864_005_609_825_7,
             23.393_699_364_519_936,
             -16.052_039_999_999_998
         ]
     );
-    assert_eq!(frame.axis, [0.0, 0.0, -1.0]);
+    assert_eq!(frame.frame().axis(), [0.0, 0.0, -1.0]);
     assert_eq!(
-        frame.ref_direction,
+        frame.frame().ref_direction(),
         [-0.992_546_151_641_322_3, 0.121_869_343_405_145_1, 0.0]
     );
-    assert_eq!(frame.radius, 0.606_300_635_480_064_5);
+    assert_eq!(frame.radius.get(), 0.606_300_635_480_064_5);
     assert_eq!(frame.length, None);
 }
 
@@ -256,10 +842,13 @@ fn unique_surface_projection_excludes_every_collided_identity() {
     let rows = [row(7, 10), row(8, 20), row(7, 30)];
 
     assert_eq!(
-        uniquely_identified_rows(&rows)
-            .iter()
-            .map(|row| row.id)
-            .collect::<Vec<_>>(),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            crate::identity::uniquely_identified_rows_checked(ctx, &rows, |row| row.id)
+        })
+        .expect("service unique surface projection")
+        .iter()
+        .map(|row| row.id)
+        .collect::<Vec<_>>(),
         [8]
     );
 }
@@ -293,6 +882,21 @@ fn sparse_surface_array_retains_rows_but_not_complete_frame() {
 }
 
 #[test]
+fn a_surface_array_frame_withholds_more_rows_than_the_slots_it_declares() {
+    let mut payload = b"srf_array\0\xf8\x01".to_vec();
+    payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
+    payload.extend_from_slice(&[8, 0x24, 5, 0x01, 0, 0]);
+    payload.extend_from_slice(b"crv_array\0\xf8\x00");
+
+    // The frame declares one slot and two validated headers fall inside it.
+    // More headers than slots is structurally invalid, so the frame holds no
+    // row.
+    assert!(rows(&payload).is_empty());
+    assert!(counted_row_bounds(&payload).is_empty());
+    assert!(complete_surface_array_bounds(&payload).is_empty());
+}
+
+#[test]
 fn named_prototype_parameter_body_cannot_start_a_surface_row() {
     let payload = b"srf_array\0\xf8\x01srf_prim_ptr(torus)\0\xe3\
         \xe0\x02radius1\0\x07\x26\x04\x01\x00\x00\
@@ -304,11 +908,15 @@ fn named_prototype_parameter_body_cannot_start_a_surface_row() {
 #[test]
 fn signed_surface_dict_scalar_owns_its_tail() {
     let body = [0x73, 0xe4, 0x2f, 0x43, 0, 0xe3, 0xe0];
-    let tokens = scalar_tokens(
-        SurfaceKind::TorusOrSphere,
-        &body,
-        &scalar::ScalarCache::default(),
-    );
+    let tokens = crate::decode::with_test_decode_ctx(|ctx| {
+        scalar_tokens(
+            ctx,
+            SurfaceKind::TorusOrSphere,
+            &body,
+            &scalar::ScalarCache::default(),
+        )
+    })
+    .expect("one torus scalar fits service limits");
 
     assert_eq!(tokens.len(), 1);
     assert_eq!(
@@ -339,7 +947,7 @@ fn decodes_named_prototype_scalars_without_promoting_them_to_instances() {
 fn bounds_last_named_prototype_field_at_compound_close() {
     let payload = b"srf_prim_ptr(torus)\0\xe0\x01radius2\0\x2e\x05\x33\xf1\xf7\x0e\xe3\
                     \x07\x26\x04\x01\0\0";
-    let records = named_prototype_records(payload);
+    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
 
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].parameters.len(), 1);
@@ -356,7 +964,7 @@ fn parenthesized_prototype_ends_at_legacy_prototype_record() {
         \xe0\x00srf_prim_ptr\0geom_type\0\x24\
         \xe0\x02radius\0\x2f\x05\x00";
 
-    let records = named_prototype_records(payload);
+    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
 
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].family, SurfacePrototypeFamily::Plane);
@@ -371,7 +979,7 @@ fn parenthesized_prototype_ends_at_peer_entity_record() {
         \xe0\x00entity_ptr(coord_sys)\0\xe3\
         \xe0\x02radius\0\x2f\x05\x00";
 
-    let records = named_prototype_records(payload);
+    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
 
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].parameters.len(), 1);
@@ -387,7 +995,7 @@ fn analytic_prototype_does_not_claim_nested_curve_parameters() {
         \xe0\x00curve(b_spline)\0\xe3\
         \xe0\x00c_pnts\0\xf8\x04\xf7\x50\xfb";
 
-    let records = named_prototype_records(payload);
+    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
 
     assert_eq!(records.len(), 1);
     assert_eq!(
@@ -403,7 +1011,7 @@ fn analytic_prototype_does_not_claim_nested_curve_parameters() {
 #[test]
 fn terminal_zero_decodes_in_a_bounded_named_scalar_field() {
     let payload = b"srf_prim_ptr(torus)\0\xe0\x01radius1\0\x18\xe3";
-    let records = named_prototype_records(payload);
+    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
 
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].parameters.len(), 1);
@@ -424,7 +1032,7 @@ fn summarizes_parenthesized_analytic_prototypes() {
 #[test]
 fn distinguishes_spline_and_fillet_surface_families() {
     let payload = b"srf_prim_ptr(splsrf)\0\xe3srf_prim_ptr(fillet_srf)\0\xe3";
-    let records = named_prototype_records(payload);
+    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
 
     assert_eq!(records.len(), 2);
     assert_eq!(
@@ -444,7 +1052,7 @@ fn retains_named_spline_point_and_tangent_arrays() {
         \xe0\x02i_points\0\xf9\x02\x02\xe4\x0f\xe4\x0f\
         \xe0\x02end_u_tangts\0\xf9\x01\x02\x0f\xe4\
         \xe0\x02u_params\0\xf8\x02\x0f\xe4\xe3";
-    let records = named_prototype_records(payload);
+    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
 
     assert_eq!(records.len(), 1);
     assert_eq!(
@@ -453,30 +1061,219 @@ fn retains_named_spline_point_and_tangent_arrays() {
     );
     assert_eq!(
         records[0].field("i_points").map(|field| &field.value),
-        Some(&SurfaceNamedValue::ScalarArray {
-            dimensions: 2,
-            count: 2,
-            values: vec![Some(1.0), Some(0.0), Some(1.0), Some(0.0)],
-            tokens: Some(vec![vec![0xe4], vec![0x0f], vec![0xe4], vec![0x0f]]),
-        })
+        Some(&SurfaceNamedValue::ScalarArray({
+            let mut array = crate::surface::arrays::DimensionedScalars::empty(2, 2)
+                .expect("valid scalar array");
+            crate::decode::with_test_decode_ctx(|ctx| {
+                array.fill_tokens(
+                    ctx,
+                    vec![
+                        (Some(1.0), vec![0xe4]),
+                        (Some(0.0), vec![0x0f]),
+                        (Some(1.0), vec![0xe4]),
+                        (Some(0.0), vec![0x0f]),
+                    ],
+                )
+            })
+            .expect("admitted scalar fill")
+            .expect("matching scalar extent");
+            array
+        }))
     );
     assert_eq!(
         records[0].field("end_u_tangts").map(|field| &field.value),
-        Some(&SurfaceNamedValue::ScalarArray {
-            dimensions: 1,
-            count: 2,
-            values: vec![Some(0.0), Some(1.0)],
-            tokens: Some(vec![vec![0x0f], vec![0xe4]]),
-        })
+        Some(&SurfaceNamedValue::ScalarArray({
+            let mut array = crate::surface::arrays::DimensionedScalars::empty(1, 2)
+                .expect("valid scalar array");
+            crate::decode::with_test_decode_ctx(|ctx| {
+                array.fill_tokens(ctx, vec![(Some(0.0), vec![0x0f]), (Some(1.0), vec![0xe4])])
+            })
+            .expect("admitted scalar fill")
+            .expect("matching scalar extent");
+            array
+        }))
     );
     assert_eq!(
         records[0].field("u_params").map(|field| &field.value),
-        Some(&SurfaceNamedValue::CountedScalarArray {
-            count: 2,
-            values: vec![Some(0.0), Some(1.0)],
-            tokens: vec![vec![0x0f], vec![0xe4]],
-        })
+        Some(&SurfaceNamedValue::CountedScalarArray({
+            let mut array =
+                crate::surface::arrays::CountedScalars::empty(2).expect("valid scalar array");
+            crate::decode::with_test_decode_ctx(|ctx| {
+                array.fill_tokens(ctx, vec![(Some(0.0), vec![0x0f]), (Some(1.0), vec![0xe4])])
+            })
+            .expect("admitted scalar fill")
+            .expect("matching scalar extent");
+            array
+        }))
     );
+}
+
+#[test]
+fn u_params_refuses_collection_limit_before_allocating_slots() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let payload = b"srf_prim_ptr(splsrf)\0\xe0\x02u_params\0\xf8\x04\x0f\x0f\x0f\x0f\xe3";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = last_limit_before_counted_scalar_array(payload);
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
+        .expect("small prototype payload is admitted");
+    let error = crate::surface::named_prototype_records(
+        &ctx,
+        payload,
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    .expect_err("four scalar slots exceed the three-item limit");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo scalar array values"
+    ));
+
+    let service = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &service)
+        .expect("small prototype payload is admitted");
+    let records = crate::surface::named_prototype_records(
+        &ctx,
+        payload,
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    .expect("service profile admits four slots");
+    let Some(SurfaceNamedValue::CountedScalarArray(array)) =
+        records[0].field("u_params").map(|field| &field.value)
+    else {
+        panic!("u_params must decode as a counted array");
+    };
+    assert_eq!(array.values(), &[Some(0.0); 4]);
+}
+
+#[test]
+fn v_params_refuses_collection_limit_before_allocating_slots() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let payload = b"srf_prim_ptr(splsrf)\0\xe0\x02v_params\0\xf8\x04\x0f\x0f\x0f\x0f\xe3";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = last_limit_before_counted_scalar_array(payload);
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
+        .expect("small prototype payload is admitted");
+    let error = crate::surface::named_prototype_records(
+        &ctx,
+        payload,
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    .expect_err("four scalar slots exceed the three-item limit");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo scalar array values"
+    ));
+
+    let service = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &service)
+        .expect("small prototype payload is admitted");
+    let records = crate::surface::named_prototype_records(
+        &ctx,
+        payload,
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    .expect("service profile admits four slots");
+    let Some(SurfaceNamedValue::CountedScalarArray(array)) =
+        records[0].field("v_params").map(|field| &field.value)
+    else {
+        panic!("v_params must decode as a counted array");
+    };
+    assert_eq!(array.values(), &[Some(0.0); 4]);
+}
+
+#[test]
+fn params_refuses_collection_limit_before_allocating_slots() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let payload = b"srf_prim_ptr(tab_cyl)\0\xe0\x02params\0\xf8\x03\xe6\xe3";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = last_limit_before_counted_scalar_array(payload);
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
+        .expect("small prototype payload is admitted");
+    let error = crate::surface::named_prototype_records(
+        &ctx,
+        payload,
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    .expect_err("three scalar slots exceed the two-item limit");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo scalar array values"
+    ));
+
+    let service = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &service)
+        .expect("small prototype payload is admitted");
+    let records = crate::surface::named_prototype_records(
+        &ctx,
+        payload,
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    .expect("service profile admits three slots");
+    let Some(SurfaceNamedValue::CountedScalarArray(array)) =
+        records[0].field("params").map(|field| &field.value)
+    else {
+        panic!("params must decode as a counted array");
+    };
+    assert_eq!(array.values(), &[Some(0.0); 3]);
+}
+
+#[test]
+fn counted_surface_arrays_share_the_collection_item_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let payload = b"srf_prim_ptr(splsrf)\0\
+        \xe0\x02u_params\0\xf8\x02\x0f\x0f\
+        \xe0\x02v_params\0\xf8\x02\x0f\x0f\xe3";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = last_limit_before_counted_scalar_array(payload);
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
+        .expect("small prototype payload is admitted");
+    let error = crate::surface::named_prototype_records(
+        &ctx,
+        payload,
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    .expect_err("the second array exceeds the shared collection budget");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo scalar array values"
+    ));
+
+    let service = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &service)
+        .expect("small prototype payload is admitted");
+    let records = crate::surface::named_prototype_records(
+        &ctx,
+        payload,
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    .expect("service profile admits both arrays");
+    for name in ["u_params", "v_params"] {
+        let Some(SurfaceNamedValue::CountedScalarArray(array)) =
+            records[0].field(name).map(|field| &field.value)
+        else {
+            panic!("{name} must decode as a counted array");
+        };
+        assert_eq!(array.values(), &[Some(0.0); 2]);
+    }
 }
 
 #[test]
@@ -488,7 +1285,9 @@ fn spline_slots_consume_unresolved_tokens_without_scanning_their_payloads() {
         &body,
         2,
         &scalar::ScalarCache::default(),
-    );
+        &mut ScalarBodyRefusal::default(),
+    )
+    .expect("complete spline body");
 
     assert_eq!(
         slots,
@@ -509,7 +1308,9 @@ fn interpolation_point_aliases_expand_continuation_and_terminal_zero() {
             &body,
             6,
             &scalar::ScalarCache::default(),
-        );
+            &mut ScalarBodyRefusal::default(),
+        )
+        .expect("complete spline body");
         assert_eq!(
             slots.iter().map(|slot| slot.0).collect::<Vec<_>>(),
             [
@@ -538,7 +1339,9 @@ fn spline_tangents_use_the_signed_coordinate_dict_lattice() {
             &body,
             3,
             &scalar::ScalarCache::default(),
-        );
+            &mut ScalarBodyRefusal::default(),
+        )
+        .expect("complete spline body");
 
         assert_eq!(
             slots[0].0,
@@ -565,24 +1368,32 @@ fn tabulated_cylinder_parameters_end_the_tangent_field() {
         \xe0\x02params\0\xf8\x03\x0f\
         \x2d\x00\x00\x00\x00\x00\x00\x00\
         \x2d\x08\x00\x00\x00\x00\x00\x00\xe3";
-    let records = named_prototype_records(payload);
+    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
 
     assert_eq!(records.len(), 1);
     assert!(matches!(
         records[0].field("end_tangts").map(|field| &field.value),
-        Some(SurfaceNamedValue::ScalarArray { values, .. }) if values.len() == 6
+        Some(SurfaceNamedValue::ScalarArray(array)) if array.values().len() == 6
     ));
     assert_eq!(
         records[0].field("params").map(|field| &field.value),
-        Some(&SurfaceNamedValue::CountedScalarArray {
-            count: 3,
-            values: vec![Some(0.0), Some(2.0), Some(3.0)],
-            tokens: vec![
-                vec![0x0f],
-                vec![0x2d, 0, 0, 0, 0, 0, 0, 0],
-                vec![0x2d, 8, 0, 0, 0, 0, 0, 0],
-            ],
-        })
+        Some(&SurfaceNamedValue::CountedScalarArray({
+            let mut array =
+                crate::surface::arrays::CountedScalars::empty(3).expect("valid scalar array");
+            crate::decode::with_test_decode_ctx(|ctx| {
+                array.fill_tokens(
+                    ctx,
+                    vec![
+                        (Some(0.0), vec![0x0f]),
+                        (Some(2.0), vec![0x2d, 0, 0, 0, 0, 0, 0, 0]),
+                        (Some(3.0), vec![0x2d, 8, 0, 0, 0, 0, 0, 0]),
+                    ],
+                )
+            })
+            .expect("admitted scalar fill")
+            .expect("matching scalar extent");
+            array
+        }))
     );
 }
 
@@ -591,7 +1402,7 @@ fn tabulated_cylinder_control_point_field_expands_contiguous_ids() {
     let payload = b"srf_prim_ptr(tab_cyl)\0\
         \xe0\x00c_pnts\0\xf8\x04\xf7\x50\xfb";
 
-    let records = named_prototype_records(payload);
+    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
 
     assert_eq!(
         records[0].tabulated_cylinder_control_point_ids(),
@@ -615,6 +1426,147 @@ fn counted_parameters_expand_compact_zero_runs() {
             (Some(0.0), vec![]),
         ])
     );
+}
+
+#[test]
+fn counted_parameter_slots_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
+    let error = crate::surface::counted_parameter_scalar_slots(
+        &ctx,
+        &[0xe4],
+        1,
+        &scalar::ScalarCache::default(),
+    )
+    .expect_err("two parser states exceed the collection limit");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo_counted_parameter_slots"
+    ));
+}
+
+fn counted_slot_error(
+    body: &[u8],
+    count: usize,
+    collection_limit: u64,
+    retained_limit: u64,
+) -> cadmpeg_core::CodecError {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_retained_bytes = retained_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(body, &arena, &policy)
+        .expect("counted parameter input fits the root limit");
+    crate::surface::counted_parameter_scalar_slots(
+        &ctx,
+        body,
+        count,
+        &scalar::ScalarCache::default(),
+    )
+    .expect_err("the selected parser allocation exceeds its limit")
+}
+
+#[test]
+fn counted_parameter_initial_tree_entry_refuses_before_insert() {
+    let body = [0xe4];
+    assert_eq!(
+        counted_parameter_scalar_slots(&body, 1, &scalar::ScalarCache::default()),
+        Some(vec![(Some(1.0), vec![0xe4])])
+    );
+    let error = counted_slot_error(&body, 1, 2, u64::MAX);
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo counted parameter initial state"
+    ));
+}
+
+#[test]
+fn counted_parameter_token_bytes_refuse_before_copy() {
+    let error = counted_slot_error(
+        &[0xe4],
+        1,
+        u64::MAX,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some("creo counted parameter token bytes"),
+            |cap| Err::<(), _>(counted_slot_error(&[0xe4], 1, u64::MAX, cap)),
+        ),
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo counted parameter token bytes"
+    ));
+}
+
+#[test]
+fn counted_parameter_suffix_slot_refuses_before_growth() {
+    let error = counted_slot_error(&[0xe4], 1, 3, u64::MAX);
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo counted parameter suffix slot"
+    ));
+}
+
+#[test]
+fn counted_parameter_accumulated_slots_refuse_before_growth() {
+    let error = counted_slot_error(&[0xe4], 1, 4, u64::MAX);
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo counted parameter accumulated slots"
+    ));
+}
+
+#[test]
+fn counted_parameter_next_tree_entry_refuses_before_insert() {
+    let error = counted_slot_error(&[0xe4], 1, 5, u64::MAX);
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo counted parameter state entries"
+    ));
+}
+
+#[test]
+fn counted_parameter_zero_run_slots_refuse_before_growth() {
+    let body = [0xe5];
+    assert_eq!(
+        counted_parameter_scalar_slots(&body, 2, &scalar::ScalarCache::default()),
+        Some(vec![(Some(0.0), vec![0xe5]), (Some(0.0), vec![])])
+    );
+    let error = counted_slot_error(&body, 2, 4, u64::MAX);
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo counted parameter zero-run slots"
+    ));
+}
+
+#[test]
+fn counted_parameter_branch_slots_refuse_before_clone() {
+    let body = [0xe4, 0x18];
+    assert_eq!(
+        counted_parameter_scalar_slots(&body, 2, &scalar::ScalarCache::default()),
+        Some(vec![(Some(1.0), vec![0xe4]), (Some(0.0), vec![0x18])])
+    );
+    let error = counted_slot_error(&body, 2, 7, u64::MAX);
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo counted parameter branch slots"
+    ));
 }
 
 #[test]
@@ -670,15 +1622,19 @@ fn tabulated_cylinder_frame_owns_compound_close_bytes_inside_scalars() {
     let (frame, frame_end) =
         decode_tabulated_cylinder_frame(&body, &scalar::ScalarCache::default())
             .expect("complete tabulated-cylinder frame");
-    assert_eq!(frame.prefixes, [0x4a, 0xe4, 0x0f, 0x4a, 0xe4, 0x0f]);
+    assert_eq!(frame.prefixes(), [0x4a, 0xe4, 0x0f, 0x4a, 0xe4, 0x0f]);
     assert_eq!(frame_end, body.len() - 3);
 
     assert_eq!(
-        surface_body_compound_close(
-            SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::TabulatedCylinder),
-            &body,
-            &scalar::ScalarCache::default(),
-        ),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            surface_body_compound_close(
+                ctx,
+                SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::TabulatedCylinder),
+                &body,
+                &scalar::ScalarCache::default(),
+            )
+        })
+        .expect("compound-close scan is admitted"),
         Some(body.len() - 1)
     );
 }
@@ -694,7 +1650,303 @@ fn tabulated_cylinder_zero_sweep_bound_does_not_consume_the_next_slot() {
     let (frame, end) = decode_tabulated_cylinder_frame(&body, &scalar::ScalarCache::default())
         .expect("complete zero-bound frame");
 
-    assert_eq!(frame.prefixes, [0x46, 0x42, 0x78, 0x4a, 0x18, 0x7b]);
-    assert_eq!(frame.values[4], 0.0);
+    assert_eq!(frame.prefixes(), [0x46, 0x42, 0x78, 0x4a, 0x18, 0x7b]);
+    assert_eq!(frame.values()[4], 0.0);
     assert_eq!(end, body.len());
+}
+
+#[test]
+fn tabulated_cylinder_frame_rejects_nonfinite_coordinates() {
+    let prefixes = [0x18; 6];
+    for index in 0..6 {
+        for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut values = [0.0; 6];
+            values[index] = invalid;
+            assert!(TabulatedCylinderFrame::new(values, prefixes).is_none());
+        }
+    }
+    let values = [-1.0, 0.0, 1.0, 2.0, 3.0, 4.0];
+    let frame = TabulatedCylinderFrame::new(values, prefixes).unwrap();
+    assert_eq!(frame.values(), values);
+    assert_eq!(frame.prefixes(), prefixes);
+}
+
+/// A bounded scalar body encodes its declared slots sequentially and skips no
+/// byte between slot encodings, and the format gives a byte that no scalar
+/// encoding defines no width. A body that states such a byte is refused, and
+/// the slot it refuses at is the one the byte stands in.
+#[test]
+fn an_undefined_prefix_in_a_scalar_body_refuses_the_complete_body() {
+    let cache = scalar::ScalarCache::default();
+
+    // `0xe4` is one and `0x0f` is zero; `0x00` defines no scalar form.
+    assert_eq!(
+        scalar_slots(
+            &[0xe4, 0x0f, 0x0f],
+            3,
+            &cache,
+            &mut super::super::ScalarBodyRefusal::default()
+        ),
+        Some(vec![Some(1.0), Some(0.0), Some(0.0)])
+    );
+    // The same body with the undefined byte at slot 0, slot 1 and slot 2.
+    assert_eq!(
+        scalar_slots(
+            &[0x00, 0x0f, 0x0f],
+            3,
+            &cache,
+            &mut super::super::ScalarBodyRefusal::default()
+        ),
+        None
+    );
+    assert_eq!(
+        scalar_slots(
+            &[0xe4, 0x00, 0x0f],
+            3,
+            &cache,
+            &mut super::super::ScalarBodyRefusal::default()
+        ),
+        None
+    );
+    assert_eq!(
+        scalar_slots(
+            &[0xe4, 0x0f, 0x00],
+            3,
+            &cache,
+            &mut super::super::ScalarBodyRefusal::default()
+        ),
+        None
+    );
+    // The first two slots decode, so the refusal is at slot 2 and not earlier:
+    // a two-slot declaration over the same two prefixes decodes.
+    assert_eq!(
+        scalar_slots(
+            &[0xe4, 0x0f],
+            2,
+            &cache,
+            &mut super::super::ScalarBodyRefusal::default()
+        ),
+        Some(vec![Some(1.0), Some(0.0)])
+    );
+}
+
+/// The field declares exactly its slot count and each declared slot consumes
+/// one complete scalar token, so a bounded scalar body that ends before its
+/// declared count states a slot it does not encode and is refused. It is not
+/// read as trailing absent slots.
+#[test]
+fn a_scalar_body_shorter_than_its_declared_count_is_refused() {
+    let cache = scalar::ScalarCache::default();
+
+    assert_eq!(
+        scalar_slots(
+            &[0xe4, 0x0f],
+            2,
+            &cache,
+            &mut super::super::ScalarBodyRefusal::default()
+        ),
+        Some(vec![Some(1.0), Some(0.0)])
+    );
+    assert_eq!(
+        scalar_slots(
+            &[0xe4, 0x0f],
+            3,
+            &cache,
+            &mut super::super::ScalarBodyRefusal::default()
+        ),
+        None
+    );
+    assert_eq!(
+        scalar_slots(
+            &[],
+            1,
+            &cache,
+            &mut super::super::ScalarBodyRefusal::default()
+        ),
+        None
+    );
+    assert_eq!(
+        scalar_slots(
+            &[],
+            0,
+            &cache,
+            &mut super::super::ScalarBodyRefusal::default()
+        ),
+        Some(Vec::new())
+    );
+}
+
+/// The format states no rule for a byte left in a bounded scalar body after
+/// its last declared slot, so such a body is refused and no rule is invented
+/// for the byte.
+#[test]
+fn a_scalar_body_longer_than_its_declared_count_is_refused() {
+    let cache = scalar::ScalarCache::default();
+
+    assert_eq!(
+        scalar_slots(
+            &[0xe4, 0x0f, 0x0f],
+            3,
+            &cache,
+            &mut super::super::ScalarBodyRefusal::default()
+        ),
+        Some(vec![Some(1.0), Some(0.0), Some(0.0)])
+    );
+    assert_eq!(
+        scalar_slots(
+            &[0xe4, 0x0f, 0x0f],
+            2,
+            &cache,
+            &mut super::super::ScalarBodyRefusal::default()
+        ),
+        None
+    );
+    assert_eq!(
+        scalar_slots(
+            &[0xe4],
+            0,
+            &cache,
+            &mut super::super::ScalarBodyRefusal::default()
+        ),
+        None
+    );
+}
+
+/// A refused bounded scalar body is recorded by name. The note states the
+/// record, the field, the declared slot count, and the slot and the byte the
+/// refusal stands at, or the length of a body that states fewer slots than it
+/// declares. The field bytes survive as an opaque value either way.
+#[test]
+fn a_refused_scalar_body_names_the_record_the_field_and_the_slot() {
+    let cache = scalar::ScalarCache::default();
+    let family = SurfacePrototypeFamily::Plane;
+    let record = "creo surface prototype plane at offset 96";
+
+    // `f9 01 03` declares three scalar slots. `0xe4` is one and `0x0f` is
+    // zero; `0x00` defines no scalar form.
+    let mut refusals = crate::lane_refusal::LaneRefusals::new();
+    let undefined = [0xf9, 0x01, 0x03, 0xe4, 0x00, 0x0f];
+    assert!(matches!(
+        super::named_surface_value(
+            &family,
+            "data_dbls",
+            &undefined,
+            &cache,
+            &record,
+            &mut refusals
+        ),
+        SurfaceNamedValue::Opaque(bytes) if bytes == undefined
+    ));
+    assert_eq!(
+        refusals.take_records(),
+        [format!(
+            "{record}: named field `data_dbls` declares 3 scalar slots and states byte 0x00 \
+             at slot 1, which no scalar form defines"
+        )]
+    );
+
+    // The same declaration over a body that encodes two slots.
+    let mut refusals = crate::lane_refusal::LaneRefusals::new();
+    let short = [0xf9, 0x01, 0x03, 0xe4, 0x0f];
+    assert!(matches!(
+        super::named_surface_value(
+            &family,
+            "data_dbls",
+            &short,
+            &cache,
+            &record,
+            &mut refusals
+        ),
+        SurfaceNamedValue::Opaque(bytes) if bytes == short
+    ));
+    assert_eq!(
+        refusals.take_records(),
+        [format!(
+            "{record}: named field `data_dbls` declares 3 scalar slots and encodes 2 in 2 bytes"
+        )]
+    );
+
+    // A two-slot declaration over the same three encoded slots.
+    let mut refusals = crate::lane_refusal::LaneRefusals::new();
+    let long = [0xf9, 0x01, 0x02, 0xe4, 0x0f, 0x0f];
+    assert!(matches!(
+        super::named_surface_value(
+            &family,
+            "data_dbls",
+            &long,
+            &cache,
+            &record,
+            &mut refusals
+        ),
+        SurfaceNamedValue::Opaque(bytes) if bytes == long
+    ));
+    assert_eq!(
+        refusals.take_records(),
+        [format!(
+            "{record}: named field `data_dbls` declares 2 scalar slots and ends them at byte 2 \
+             of 3"
+        )]
+    );
+
+    // A body every declared slot encodes states no refusal.
+    let mut refusals = crate::lane_refusal::LaneRefusals::new();
+    assert!(matches!(
+        super::named_surface_value(
+            &family,
+            "data_dbls",
+            &[0xf9, 0x01, 0x03, 0xe4, 0x0f, 0x0f],
+            &cache,
+            &record,
+            &mut refusals
+        ),
+        SurfaceNamedValue::ScalarArray(_)
+    ));
+    assert!(refusals.take_records().is_empty());
+}
+
+/// The bounded spline scalar body obeys the rules of the bounded scalar body
+/// it is: a body shorter than its declared count, and a body with a byte left
+/// after its last declared slot, are both refused.
+#[test]
+fn a_spline_scalar_body_that_is_not_exactly_its_declared_slots_is_refused() {
+    let cache = scalar::ScalarCache::default();
+    let family = SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Spline);
+    // Three complete eight-byte `2d` world coordinates.
+    let body = [
+        0x2d, 1, 2, 3, 4, 5, 6, 7, 0x2d, 1, 2, 3, 4, 5, 6, 8, 0x2d, 1, 2, 3, 4, 5, 6, 9,
+    ];
+
+    assert!(named_spline_scalar_slots(
+        &family,
+        "tangts",
+        &body,
+        3,
+        &cache,
+        &mut ScalarBodyRefusal::default()
+    )
+    .is_some());
+    // The same bytes under a four-slot declaration end one slot early.
+    assert_eq!(
+        named_spline_scalar_slots(
+            &family,
+            "tangts",
+            &body,
+            4,
+            &cache,
+            &mut ScalarBodyRefusal::default()
+        ),
+        None
+    );
+    // The same bytes under a two-slot declaration leave eight bytes over.
+    assert_eq!(
+        named_spline_scalar_slots(
+            &family,
+            "tangts",
+            &body,
+            2,
+            &cache,
+            &mut ScalarBodyRefusal::default()
+        ),
+        None
+    );
 }

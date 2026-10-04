@@ -2,70 +2,180 @@
 //! Record-decoder tests for the `e5` family over synthetic byte fixtures.
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
-use crate::test_support::*;
+use crate::test_support::test_b5::{coordinates, finite_pair};
+use crate::test_support::test_bytes::{le_f32, le_f64};
+use crate::test_support::test_container::object_main_catpart;
+use crate::test_support::test_e5::{
+    append_e5_record, e5_catpart, e5_circle_stream, e5_d8_rolling_ball_stream, e5_plane_stream,
+    e5_plane_stream_with_transform_scalars, e5_torus_stream, e5_torus_topology_stream,
+    e5_uv_line_payload,
+};
 use crate::variant::Variant;
 use crate::CatiaCodec;
 
+macro_rules! e5_test_context {
+    ($ctx:ident) => {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let ($ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("service decode context");
+    };
+}
+
 #[test]
 fn e5_circle_parser_reads_framed_carrier() {
+    e5_test_context!(ctx);
     let stream = e5_circle_stream();
-    let circles = crate::families::e5::records::e5_circles(&stream);
+    let circles =
+        crate::families::e5::records::e5_circles(&ctx, &stream).expect("service resource budget");
     assert_eq!(circles.len(), 1);
     match &circles[0].geometry {
-        cadmpeg_ir::geometry::CurveGeometry::Circle {
-            center,
-            axis,
-            radius,
-            ..
-        } => {
-            assert_eq!(*center, cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0));
+        cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
+            let center = circle_curve.center().get();
+            let axis = circle_curve.frame().axis().as_raw();
+            let radius = circle_curve.radius().get();
+            assert_eq!(center, cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0));
             assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
-            assert_eq!(*radius, 2.5);
+            assert_eq!(radius, 2.5);
         }
         other => panic!("expected circle, got {other:?}"),
     }
-    let surfaces = crate::families::e5::records::e5_surfaces(&stream);
-    assert!(matches!(
-        surfaces[0].geometry,
-        SurfaceGeometry::Cylinder { radius: 2.5, .. }
-    ));
+    let surfaces = crate::families::e5::records::e5_surfaces(
+        &ctx,
+        &stream,
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
+    .expect("service resource budget");
+    assert!(
+        matches!(surfaces[0].geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) if { cylinder_surface.radius().get() == 2.5 })
+    );
 
     let mut small = e5_circle_stream();
     small[86..94].copy_from_slice(&f64::from_bits(1).to_le_bytes());
-    assert_eq!(crate::families::e5::records::e5_circles(&small).len(), 1);
-    assert!(crate::families::e5::records::e5_surfaces(&small).is_empty());
+    assert_eq!(
+        crate::families::e5::records::e5_circles(&ctx, &small)
+            .expect("service resource budget")
+            .len(),
+        1
+    );
+    assert!(crate::families::e5::records::e5_surfaces(
+        &ctx,
+        &small,
+        &mut crate::nurbs::LaneRefusals::new()
+    )
+    .expect("service resource budget")
+    .is_empty());
 
     let mut zero = e5_circle_stream();
     zero[86..94].copy_from_slice(&0.0_f64.to_le_bytes());
-    assert!(crate::families::e5::records::e5_circles(&zero).is_empty());
-    assert!(crate::families::e5::records::e5_surfaces(&zero).is_empty());
+    assert!(crate::families::e5::records::e5_circles(&ctx, &zero)
+        .expect("service resource budget")
+        .is_empty());
+    assert!(crate::families::e5::records::e5_surfaces(
+        &ctx,
+        &zero,
+        &mut crate::nurbs::LaneRefusals::new()
+    )
+    .expect("service resource budget")
+    .is_empty());
 }
 
 #[test]
 fn e5_edge_parser_reads_u24_reference_tokens() {
+    e5_test_context!(ctx);
     let mut record = vec![0u8; 13];
     record[..3].copy_from_slice(&[0xe5, 0x0d, 0x03]);
     record[3] = 0xff;
     let payload = [
         0x85, 0x38, 1, 2, 3, 0x38, 4, 5, 6, 0x38, 7, 8, 9, 0x80, 0x80, 0x80,
     ];
-    record[5..7].copy_from_slice(&(payload.len() as u16).to_le_bytes());
+    record[5..7].copy_from_slice(
+        &(u16::try_from(payload.len()).expect("fixture value fits u16")).to_le_bytes(),
+    );
     record.extend_from_slice(&payload);
 
-    let edges = crate::families::e5::records::e5_edges(&record);
+    let edges =
+        crate::families::e5::records::e5_edges(&ctx, &record).expect("service resource budget");
     assert_eq!(edges.len(), 1);
     assert_eq!(edges[0].start_vertex_id, 0x06_0504);
     assert_eq!(edges[0].end_vertex_id, 0x09_0807);
 }
 
 #[test]
+fn e5_circle_plane_and_edge_results_refuse_before_growth() {
+    let circle = e5_circle_stream();
+    let plane = e5_plane_stream();
+    let mut edge = vec![0u8; 13];
+    edge[..3].copy_from_slice(&[0xe5, 0x0d, 0x03]);
+    edge[3] = 0xff;
+    let payload = [
+        0x85, 0x38, 1, 2, 3, 0x38, 4, 5, 6, 0x38, 7, 8, 9, 0x80, 0x80, 0x80,
+    ];
+    edge[5..7].copy_from_slice(
+        &(u16::try_from(payload.len()).expect("fixture value fits u16")).to_le_bytes(),
+    );
+    edge.extend_from_slice(&payload);
+    assert!(matches!(
+        crate::test_support::with_collection_limit(0, |ctx| crate::families::e5::records::e5_circles(ctx, &circle)),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "catia_e5_circles"
+    ));
+    assert!(matches!(
+        crate::test_support::with_collection_limit(0, |ctx| crate::families::e5::records::e5_planes(ctx, &plane)),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "catia_e5_planes"
+    ));
+    assert!(matches!(
+        crate::test_support::with_collection_limit(0, |ctx| crate::families::e5::records::e5_edges(ctx, &edge)),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "catia_e5_edges"
+    ));
+}
+
+#[test]
+fn e5_carrier_id_creation_refuses_retained_limit() {
+    let file = e5_catpart();
+    // Admit preceding backing-node growth, then refuse each identity one byte below need.
+    for operation in [
+        "catia_e5_payload_id",
+        "catia_e5_surface_id",
+        "catia_e5_free_vertex_id",
+    ] {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            operation,
+            |cap| {
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                policy.limits.max_retained_bytes = cap;
+                CatiaCodec
+                    .decode(
+                        &mut Cursor::new(&file),
+                        &DecodeOptions {
+                            policy,
+                            ..DecodeOptions::default()
+                        },
+                    )
+                    .map_err(|error| match error {
+                        cadmpeg_ir::DecodeFailure::Codec(error) => error,
+                        other => panic!("unexpected E5 decode refusal: {other}"),
+                    })
+            },
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.operation == operation)
+        );
+    }
+}
+
+#[test]
 fn e5_topology_follows_face_loop_and_serialized_edge_members() {
+    e5_test_context!(ctx);
     let mut bytes = Vec::new();
     for id in [10u32, 20, 30] {
         append_e5_record(&mut bytes, 0xfe, id, &[]);
@@ -178,7 +288,9 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
     );
     append_e5_record(&mut bytes, 0x01, 800, &[0x81, 0x18, 188, 2]);
 
-    let topology = crate::families::e5::graph::parse_topology(&bytes).expect("E5 graph");
+    let topology = crate::families::e5::graph::parse_topology(&ctx, &bytes)
+        .expect("service decode")
+        .expect("E5 graph");
     assert_eq!(topology.faces.len(), 2);
     assert_eq!(topology.faces[0].surface, 500);
     assert_eq!(
@@ -220,19 +332,20 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
     assert_eq!(topology.pcurves.len(), 7);
     assert!(matches!(
         topology.pcurves[&400],
-        crate::families::e5::graph::E5Pcurve::Line {
-            direction: [1.0, 0.0],
-            ..
-        }
+        crate::families::e5::graph::E5Pcurve::Line { direction, .. }
+            if direction == finite_pair([1.0, 0.0])
     ));
-    assert_eq!(topology.bounds[&900].entries[0].parameter, 0.25);
+    assert_eq!(topology.bounds[&900].entries[0].parameter.get(), 0.25);
     assert_eq!(topology.bounds[&900].entries[1].representation, 200);
     assert_eq!(topology.curve_supports[&200].pcurves(), &[400, 410]);
-    assert_eq!(topology.curve_supports[&200].range, [-10.0, 10.0]);
+    assert_eq!(
+        topology.curve_supports[&200].range,
+        finite_pair([-10.0, 10.0])
+    );
     assert!(matches!(
         topology.pcurves[&403],
         crate::families::e5::graph::E5Pcurve::Jet { ref sites, .. }
-            if sites.iter().map(|site| site.knot).collect::<Vec<_>>() == [0.0, 1.0]
+            if sites.iter().map(|site| site.knot.get()).collect::<Vec<_>>() == [0.0, 1.0]
     ));
 
     let mut missing_support = bytes.clone();
@@ -241,7 +354,11 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
         .position(|window| window == [0xe5, 0x0d, 0x03, 0xc1])
         .expect("curve-support record");
     missing_support[support_start + 3] = 0x7f;
-    assert!(crate::families::e5::graph::parse_topology(&missing_support).is_none());
+    assert!(
+        crate::families::e5::graph::parse_topology(&ctx, &missing_support)
+            .expect("service decode")
+            .is_none()
+    );
 
     let mut missing_support_pcurve = bytes.clone();
     let support_start = missing_support_pcurve
@@ -249,7 +366,11 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
         .position(|window| window == [0xe5, 0x0d, 0x03, 0xc1])
         .expect("curve-support record");
     missing_support_pcurve[support_start + 15..support_start + 17].copy_from_slice(&[0xff, 0x0f]);
-    assert!(crate::families::e5::graph::parse_topology(&missing_support_pcurve).is_none());
+    assert!(
+        crate::families::e5::graph::parse_topology(&ctx, &missing_support_pcurve)
+            .expect("service decode")
+            .is_none()
+    );
 
     let mut missing_bounds = bytes.clone();
     let bounds_start = missing_bounds
@@ -257,7 +378,11 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
         .position(|window| window == [0xe5, 0x0d, 0x03, 0x0e])
         .expect("parameter-bound record");
     missing_bounds[bounds_start + 3] = 0x7f;
-    assert!(crate::families::e5::graph::parse_topology(&missing_bounds).is_none());
+    assert!(
+        crate::families::e5::graph::parse_topology(&ctx, &missing_bounds)
+            .expect("service decode")
+            .is_none()
+    );
 
     let mut missing_pcurve_surface = bytes;
     let pcurve_start = missing_pcurve_surface
@@ -269,28 +394,37 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
         .expect("support pcurve record");
     missing_pcurve_surface[pcurve_start + 14..pcurve_start + 17]
         .copy_from_slice(&[0x18, 0x84, 0x03]);
-    assert!(crate::families::e5::graph::parse_topology(&missing_pcurve_surface).is_none());
+    assert!(
+        crate::families::e5::graph::parse_topology(&ctx, &missing_pcurve_surface)
+            .expect("service decode")
+            .is_none()
+    );
 }
 
 #[test]
 fn e5_surface_parser_reads_framed_torus() {
-    let surfaces = crate::families::e5::records::e5_surfaces(&e5_torus_stream());
+    e5_test_context!(ctx);
+    let surfaces = crate::families::e5::records::e5_surfaces(
+        &ctx,
+        &e5_torus_stream(),
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
+    .expect("service resource budget");
     assert_eq!(surfaces.len(), 1);
     match &surfaces[0].geometry {
-        SurfaceGeometry::Torus {
-            center,
-            axis,
-            ref_direction,
-            major_radius,
-            minor_radius,
-        } => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
+            let center = torus_surface.center();
+            let axis = torus_surface.frame().axis().as_raw();
+            let ref_direction = torus_surface.frame().reference().as_raw();
+            let major_radius = torus_surface.major_radius().get();
+            let minor_radius = torus_surface.minor_radius().get();
             assert_eq!(*center, cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0));
             assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
             assert_eq!(
                 *ref_direction,
                 cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
             );
-            assert_eq!((*major_radius, *minor_radius), (12.0, 2.0));
+            assert_eq!((major_radius, minor_radius), (12.0, 2.0));
         }
         other => panic!("expected torus, got {other:?}"),
     }
@@ -298,43 +432,53 @@ fn e5_surface_parser_reads_framed_torus() {
     let mut large = e5_torus_stream();
     large[110..118].copy_from_slice(&2_000_000.0_f64.to_le_bytes());
     large[118..126].copy_from_slice(&1_500_000.0_f64.to_le_bytes());
-    assert!(matches!(
-        crate::families::e5::records::e5_surfaces(&large)[0].geometry,
-        SurfaceGeometry::Torus {
-            major_radius: 2_000_000.0,
-            minor_radius: 1_500_000.0,
-            ..
-        }
-    ));
+    assert!(
+        matches!(crate::families::e5::records::e5_surfaces(&ctx, &large, &mut crate::nurbs::LaneRefusals::new()).expect("service resource budget")[0].geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
+        if {
+            (torus_surface.major_radius().get() == 2_000_000.0)
+                && (torus_surface.minor_radius().get() == 1_500_000.0)
+        })
+    );
 
     let mut tiny = e5_torus_stream();
     tiny[110..118].copy_from_slice(&f64::from_bits(1).to_le_bytes());
     tiny[118..126].copy_from_slice(&f64::from_bits(1).to_le_bytes());
-    assert!(crate::families::e5::records::e5_surfaces(&tiny).is_empty());
+    assert!(crate::families::e5::records::e5_surfaces(
+        &ctx,
+        &tiny,
+        &mut crate::nurbs::LaneRefusals::new()
+    )
+    .expect("service resource budget")
+    .is_empty());
 }
 
 #[test]
 fn e5_plane_parser_preserves_origin_and_natural_bounds_without_fabricating_axes() {
-    let planes = crate::families::e5::records::e5_planes(&e5_plane_stream());
+    e5_test_context!(ctx);
+    let planes = crate::families::e5::records::e5_planes(&ctx, &e5_plane_stream())
+        .expect("service resource budget");
     assert_eq!(planes.len(), 1);
     assert_eq!(planes[0].record_id, 42);
-    assert_eq!(planes[0].origin, [1.0, 2.0, 3.0]);
+    assert_eq!(coordinates(planes[0].origin), [1.0, 2.0, 3.0]);
     assert_eq!(planes[0].u_range, [-4.0, 7.0]);
     assert_eq!(planes[0].v_range, [-2.0, 9.0]);
 }
 
 #[test]
 fn e5_plane_parser_reads_terminal_bounds_after_extended_transform_lane() {
+    e5_test_context!(ctx);
     let planes =
-        crate::families::e5::records::e5_planes(&e5_plane_stream_with_transform_scalars(5));
+        crate::families::e5::records::e5_planes(&ctx, &e5_plane_stream_with_transform_scalars(5))
+            .expect("service resource budget");
     assert_eq!(planes.len(), 1);
-    assert_eq!(planes[0].origin, [1.0, 2.0, 3.0]);
+    assert_eq!(coordinates(planes[0].origin), [1.0, 2.0, 3.0]);
     assert_eq!(planes[0].u_range, [-4.0, 7.0]);
     assert_eq!(planes[0].v_range, [-2.0, 9.0]);
 }
 
 #[test]
 fn e5_vertices_exclude_marker_like_record_payload_bytes() {
+    e5_test_context!(ctx);
     let mut false_vertex = vec![0x05, 0x08, 0x01];
     for value in [90.0f32, 91.0, 92.0] {
         false_vertex.extend_from_slice(&le_f32(value));
@@ -347,13 +491,15 @@ fn e5_vertices_exclude_marker_like_record_payload_bytes() {
     }
     append_e5_record(&mut stream, 0xfe, 2, &[]);
 
-    let vertices = crate::families::e5::records::e5_vertices(&stream, 1);
+    let vertices = crate::families::e5::records::e5_vertices(&ctx, &stream, 1)
+        .expect("service resource budget");
     assert_eq!(vertices.len(), 1);
     assert_eq!(vertices[0], cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0));
 }
 
 #[test]
 fn e5_vertices_reject_multiple_matching_coordinate_runs() {
+    e5_test_context!(ctx);
     let mut stream = Vec::new();
     for (record_id, coordinate) in [(1, 1.0f32), (2, 2.0)] {
         append_e5_record(&mut stream, 0xfe, record_id, &[]);
@@ -364,11 +510,14 @@ fn e5_vertices_reject_multiple_matching_coordinate_runs() {
     }
     append_e5_record(&mut stream, 0xfe, 3, &[]);
 
-    assert!(crate::families::e5::records::e5_vertices(&stream, 1).is_empty());
+    assert!(crate::families::e5::records::e5_vertices(&ctx, &stream, 1)
+        .expect("service resource budget")
+        .is_empty());
 }
 
 #[test]
 fn e5_vertices_concatenate_a_complete_split_roster() {
+    e5_test_context!(ctx);
     let mut stream = Vec::new();
     for (record_id, coordinates) in [(1, [1.0f32, 2.0]), (2, [3.0, 4.0])] {
         append_e5_record(&mut stream, 0xfe, record_id, &[]);
@@ -381,7 +530,8 @@ fn e5_vertices_concatenate_a_complete_split_roster() {
     }
     append_e5_record(&mut stream, 0xfe, 3, &[]);
 
-    let vertices = crate::families::e5::records::e5_vertices(&stream, 4);
+    let vertices = crate::families::e5::records::e5_vertices(&ctx, &stream, 4)
+        .expect("service resource budget");
     assert_eq!(
         vertices.iter().map(|point| point.x).collect::<Vec<_>>(),
         vec![1.0, 2.0, 3.0, 4.0]
@@ -389,8 +539,27 @@ fn e5_vertices_concatenate_a_complete_split_roster() {
 }
 
 #[test]
+fn e5_vertex_roster_refuses_before_second_point() {
+    let mut stream = Vec::new();
+    for coordinate in [1.0_f32, 2.0] {
+        stream.extend_from_slice(&[0x05, 0x08, 0x01]);
+        for value in [coordinate, 0.0, 0.0] {
+            stream.extend_from_slice(&le_f32(value));
+        }
+    }
+    assert!(matches!(
+        crate::test_support::with_collection_limit(1, |ctx| crate::families::e5::records::e5_vertices(ctx, &stream, 2)),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_e5_vertex_roster"
+    ));
+}
+
+#[test]
 fn decode_e5_stream_transfers_circle_carrier() {
-    let scan = crate::container::scan_bytes(e5_catpart());
+    let scan = crate::test_support::with_service_context(|ctx| {
+        crate::container::scan_bytes(ctx, e5_catpart())
+    })
+    .expect("service resource budget");
     assert_eq!(scan.variant, Variant::E5Stream);
     let mut cur = Cursor::new(e5_catpart());
     let result = CatiaCodec
@@ -400,17 +569,19 @@ fn decode_e5_stream_transfers_circle_carrier() {
     assert_eq!(result.ir().model.vertices.len(), 2);
     assert!(result.ir().model.edges.is_empty());
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::report::LossCategory::Topology
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Topology
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
     }));
     assert!(matches!(
         result.ir().model.curves[0].geometry,
-        cadmpeg_ir::geometry::CurveGeometry::Circle { .. }
+        cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))
     ));
     assert!(result.ir().native_unknowns("catia").unwrap()[0]
         .links
-        .contains(&"catia:e5:surf#0".to_string()));
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+        .iter()
+        .any(|link| link.as_str() == "catia:e5:surf#0"));
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -442,35 +613,328 @@ fn decode_e5_stream_transfers_standalone_d8_carrier() {
     ));
     assert!(matches!(
         procedural.definition(),
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet {
-            degree: 5,
-            ref stations,
-        } if stations.iter().map(|station| station.knot).collect::<Vec<_>>() == [2.0, 5.0]
-            && stations.iter().map(|station| station.multiplicity).collect::<Vec<_>>() == [6, 6]
-            && stations.len() == 2
-    ));
+        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(jet) if jet.degree() == 5 && jet.stations().iter().map(|station| station.knot.get()).collect::<Vec<_>>() == [2.0, 5.0]
+            && jet.stations().iter().map(|station| station.multiplicity).collect::<Vec<_>>() == [6, 6]
+            && jet.stations().len() == 2));
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::report::LossCategory::Topology
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Topology
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
     }));
-    let point = cadmpeg_ir::eval::model_surface_point(result.ir(), &surface.geometry, 2.0, 0.5)
-        .expect("D8 surface point");
+    let point = cadmpeg_ir::eval::model_surface_point(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        result.ir(),
+        &surface.geometry,
+        2.0,
+        0.5,
+    )
+    .expect("D8 surface point");
     let expected = 2.0_f64.sqrt();
     assert!((point.x - expected).abs() < TEST_TOLERANCE);
     assert!((point.y - expected).abs() < TEST_TOLERANCE);
     assert!(point.z.abs() < TEST_TOLERANCE);
 
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
 #[test]
+fn e5_decode_route_propagates_orientation_collection_refusal() {
+    let file = object_main_catpart(&e5_torus_topology_stream());
+    let mut found = false;
+    for cap in 0..2048 {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let result = cadmpeg_test_support::decode::full(&CatiaCodec, &file, &policy);
+        match result {
+            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                limit,
+            ))) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "catia e5 orientation locations" =>
+            {
+                found = true;
+                break;
+            }
+            Ok(_) => break,
+            _ => {}
+        }
+    }
+    assert!(
+        found,
+        "E5 orientation locations must propagate their collection refusal"
+    );
+}
+
+#[test]
+fn e5_topology_transfer_refuses_before_reference_maps() {
+    let file = object_main_catpart(&e5_torus_topology_stream());
+    let mut refused = std::collections::HashSet::new();
+    for cap in 0..2048 {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        match cadmpeg_test_support::decode::full(&CatiaCodec, &file, &policy) {
+            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                limit,
+            ))) => {
+                refused.insert(limit.operation);
+            }
+            Ok(_) => break,
+            Err(error) => panic!("unexpected topology decode refusal: {error}"),
+        }
+    }
+    for operation in [
+        "catia_e5_transfer_surface_refs",
+        "catia_e5_transfer_vertex_refs",
+        "catia_e5_transfer_point_refs",
+        "catia_e5_transfer_edge_ids",
+        "catia_e5_used_surfaces",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
+fn e5_topology_emission_refuses_retained_identity_copies() {
+    let file = object_main_catpart(&e5_torus_topology_stream());
+    let mut refused = std::collections::HashSet::new();
+    let mut cap = 0;
+    for _ in 0..4096 {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        match CatiaCodec.decode(
+            &mut Cursor::new(&file),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        ) {
+            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                limit,
+            ))) => {
+                refused.insert(limit.operation);
+                assert!(limit.used + limit.additional > cap);
+                cap = limit.used + limit.additional;
+            }
+            Ok(_) => break,
+            Err(error) => panic!("unexpected E5 topology decode refusal: {error}"),
+        }
+    }
+    for operation in [
+        "catia_e5_transfer_surface_id",
+        "catia_e5_transfer_vertex_id",
+        "catia_e5_face_id",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
+fn e5_boundary_plan_refuses_before_face_and_relation_growth() {
+    let file = object_main_catpart(&e5_torus_topology_stream());
+    let mut refused = std::collections::HashSet::new();
+    for cap in 0..4096 {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        match CatiaCodec.decode(
+            &mut Cursor::new(&file),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        ) {
+            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                limit,
+            ))) => {
+                refused.insert(limit.operation);
+            }
+            Ok(_) => break,
+            Err(error) => panic!("unexpected boundary decode refusal: {error}"),
+        }
+    }
+    for operation in [
+        "catia_e5_boundary_face_plans",
+        "catia_e5_face_plan_loops",
+        "catia_e5_loop_plan_seen",
+        "catia_e5_loop_plan_members",
+        "catia_e5_boundary_occurrence_senses",
+        "catia_e5_pcurve_plan",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
+fn e5_emitted_rosters_refuse_before_nested_growth() {
+    let file = object_main_catpart(&e5_torus_topology_stream());
+    let mut refused = std::collections::HashSet::new();
+    for cap in 0..4096 {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        match CatiaCodec.decode(
+            &mut Cursor::new(&file),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        ) {
+            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                limit,
+            ))) => {
+                refused.insert(limit.operation);
+            }
+            Ok(_) => break,
+            Err(error) => panic!("unexpected topology decode refusal: {error}"),
+        }
+    }
+    for operation in [
+        "catia_e5_emitted_curve_ids",
+        "catia_e5_region_ids",
+        "catia_e5_body_regions",
+        "catia_e5_region_shells",
+        "catia_e5_shell_face_ids",
+        "catia_e5_face_loop_ids",
+        "catia_e5_loop_coedge_ids",
+        "catia_e5_loop_vertex_uses",
+        "catia_e5_radial_edge_keys",
+        "catia_e5_radial_occurrences",
+        "catia_e5_coedge_pcurve_uses",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
+fn e5_free_vertex_owner_refuses_before_roster_growth() {
+    let file = e5_catpart();
+    let mut refused = std::collections::HashSet::new();
+    for cap in 0..2048 {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        match CatiaCodec.decode(
+            &mut Cursor::new(&file),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        ) {
+            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                limit,
+            ))) => {
+                refused.insert(limit.operation);
+            }
+            Ok(_) => break,
+            Err(error) => panic!("unexpected free vertex decode refusal: {error}"),
+        }
+    }
+    for operation in [
+        "catia_e5_free_body_regions",
+        "catia_e5_free_region_shells",
+        "catia_e5_free_vertices",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
+fn e5_route_propagates_station_collection_refusal() {
+    let mut stream = e5_d8_rolling_ball_stream();
+    for id in 100..109 {
+        append_e5_record(&mut stream, 0xfe, id, &[]);
+    }
+    let file = object_main_catpart(&stream);
+    let mut cap = 13;
+    let mut reached = false;
+    for _ in 0..512 {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let options = DecodeOptions {
+            policy,
+            ..DecodeOptions::default()
+        };
+        match CatiaCodec.decode(&mut Cursor::new(file.clone()), &options) {
+            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                limit,
+            ))) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "decode CATIA E5 rolling-ball stations" =>
+            {
+                reached = true;
+                break;
+            }
+            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                limit,
+            ))) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                cap = limit
+                    .used
+                    .checked_add(limit.additional)
+                    .expect("bounded fixture");
+            }
+            other => panic!("E5 station limit not reached: {other:?}"),
+        }
+    }
+    assert!(reached, "E5 station limit was not reached");
+}
+
+#[test]
+fn e5_route_refuses_model_entity_before_first_point_append() {
+    let file = object_main_catpart(&e5_torus_topology_stream());
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_entities = 1;
+    let error = CatiaCodec
+        .decode(
+            &mut Cursor::new(file),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        )
+        .expect_err("raw preservation leaves no entity allowance for an E5 point");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+                && limit.operation == "admit CATIA family model entity"
+    ));
+}
+
+#[test]
+fn e5_topology_refuses_entity_before_boundary_curve_append() {
+    let file = object_main_catpart(&e5_torus_topology_stream());
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_entities = 10;
+    let error = CatiaCodec
+        .decode(
+            &mut Cursor::new(file),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        )
+        .expect_err(
+            "one raw record, four points, four vertices and one surface fill the allowance",
+        );
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+                && limit.operation == "admit CATIA family model entity"
+    ));
+}
+
+#[test]
 fn decode_e5_stream_transfers_reference_closed_torus_topology() {
+    e5_test_context!(ctx);
     let stream = e5_torus_topology_stream();
-    crate::families::e5::graph::parse_topology(&stream).expect("generated E5 topology");
+    crate::families::e5::graph::parse_topology(&ctx, &stream)
+        .expect("service decode")
+        .expect("generated E5 topology");
     let file = object_main_catpart(&stream);
     assert_eq!(
-        crate::container::scan_bytes(file.clone()).variant,
+        crate::test_support::with_service_context(|ctx| crate::container::scan_bytes(
+            ctx,
+            file.clone()
+        ))
+        .expect("service resource budget")
+        .variant,
         Variant::E5Stream
     );
 
@@ -483,7 +947,14 @@ fn decode_e5_stream_transfers_reference_closed_torus_topology() {
     assert_eq!(result.ir().model.faces.len(), 1);
     assert_eq!(result.ir().model.loops.len(), 1);
     assert_eq!(
-        result.ir().model.loops[0].boundary_role_in(&result.ir().model.faces),
+        result
+            .ir()
+            .model
+            .faces
+            .iter()
+            .find(|face| face.id == result.ir().model.loops[0].face)
+            .map(|face| face.loop_role(&result.ir().model.loops[0].id))
+            .unwrap_or_default(),
         cadmpeg_ir::topology::LoopBoundaryRole::Outer
     );
     assert_eq!(result.ir().model.coedges.len(), 4);
@@ -503,23 +974,25 @@ fn decode_e5_stream_transfers_reference_closed_torus_topology() {
         .model
         .edges
         .iter()
-        .all(|edge| edge.curve.is_some() && edge.param_range.is_some()));
+        .all(|edge| edge.curve().is_some() && edge.param_range().is_some()));
     assert!(result.report().losses.iter().all(|loss| {
-        loss.code.category() != cadmpeg_ir::report::LossCategory::Topology
+        loss.code.category() != cadmpeg_ir::report::loss::LossCategory::Topology
             || loss.severity != cadmpeg_ir::report::Severity::Blocking
     }));
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::report::LossCategory::Topology
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Topology
             && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss.message.contains("two trailing orientation signs")
     }));
 
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
 #[test]
 fn decode_e5_stream_binds_file_level_vertex_run() {
+    e5_test_context!(ctx);
     let mut stream = e5_torus_topology_stream();
     let vertex_start = stream
         .windows(3)
@@ -538,11 +1011,25 @@ fn decode_e5_stream_binds_file_level_vertex_run() {
         .position(|bytes| bytes == vertex_bytes)
         .expect("file-level E5 vertex run");
 
-    let record_range = crate::container::e5_record_stream(&file).expect("coherent E5 walk");
+    let record_range = crate::container::e5_record_stream(&ctx, &file)
+        .expect("service work")
+        .expect("coherent E5 walk");
     assert!(!record_range.contains(&vertex_file_start));
-    assert!(crate::families::e5::records::e5_vertices(&file[record_range], 4).is_empty());
-    assert_eq!(crate::families::e5::records::e5_vertices(&file, 4).len(), 4);
-    let scan = crate::container::scan_bytes(file.clone());
+    assert!(
+        crate::families::e5::records::e5_vertices(&ctx, &file[record_range], 4)
+            .expect("service resource budget")
+            .is_empty()
+    );
+    assert_eq!(
+        crate::families::e5::records::e5_vertices(&ctx, &file, 4)
+            .expect("service resource budget")
+            .len(),
+        4
+    );
+    let scan = crate::test_support::with_service_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.clone())
+    })
+    .expect("service resource budget");
     assert_eq!(scan.variant, Variant::E5Stream);
 
     let result = CatiaCodec
@@ -552,4 +1039,23 @@ fn decode_e5_stream_binds_file_level_vertex_run() {
     assert_eq!(result.ir().model.vertices.len(), 4);
     assert_eq!(result.ir().model.faces.len(), 1);
     assert_eq!(result.ir().model.edges.len(), 4);
+}
+
+pub(super) fn e5_loop_members(
+    pcurves: &[u32],
+    edges: &[u32],
+    reversed: &[bool],
+) -> Vec<crate::families::e5::graph::E5LoopMember> {
+    pcurves
+        .iter()
+        .zip(edges)
+        .zip(reversed)
+        .map(
+            |((&pcurve, &edge_use), &reversed)| crate::families::e5::graph::E5LoopMember {
+                pcurve,
+                edge_use,
+                reversed,
+            },
+        )
+        .collect()
 }

@@ -1,5 +1,13 @@
-use super::super::*;
-use super::*;
+use crate::records::SketchInputKind;
+use crate::resolved_features::endpoints::coordinate_roster_arc_center;
+use crate::resolved_features::endpoints::current_indexed_arc_reverses_center_sweep;
+use crate::resolved_features::endpoints::indexed_arc_uses_coordinate_center;
+use crate::resolved_features::endpoints::legacy_compact_diameter_arc_center;
+use crate::resolved_features::endpoints::unique_arc_center_marker;
+use crate::resolved_features::typed_relations::current_undetailed_bounded_curve_is_line;
+use crate::resolved_features::LEGACY_EXTENDED_SKETCH_MARKER;
+use crate::resolved_features::LEGACY_SKETCH_MARKER;
+use crate::resolved_features::SKETCH_MARKER;
 use cadmpeg_ir::math::Point2;
 
 #[test]
@@ -23,18 +31,23 @@ fn indexed_arcs_use_one_equidistant_center_marker() {
     payload[35..39].copy_from_slice(&[0x00, 0x00, 0x05, 0x00]);
     payload[56..58].copy_from_slice(&8u16.to_le_bytes());
     payload[58..60].copy_from_slice(&10u16.to_le_bytes());
-    let entity = |id: String, offset, object_index, coordinates_m| SketchInputEntity {
-        id,
-        parent: "lane".into(),
-        feature_ref: Some("sketch".into()),
-        ordinal: 0,
-        offset,
-        object_index,
-        local_id: None,
-        kind: SketchInputKind::Point,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: String, offset, object_index, coordinates_m: Option<[f64; 2]>| {
+        let marker_id: String = id;
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = crate::records::SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            0,
+            offset,
+            SketchInputKind::Point,
+        );
+        constructed_marker.feature_ref = Some("sketch".into());
+        constructed_marker = constructed_marker.with_test_identity(object_index, None);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let mut coordinates = (0..11)
         .map(|index| {
@@ -46,23 +59,25 @@ fn indexed_arcs_use_one_equidistant_center_marker() {
             )
         })
         .collect::<Vec<_>>();
-    coordinates[4].object_index = Some(7);
-    coordinates[4].coordinates_m = Some([0.0, -0.02]);
-    coordinates[8].coordinates_m = Some([-0.015, 0.02]);
-    coordinates[10].coordinates_m = Some([0.015, 0.02]);
+    coordinates[4] = coordinates[4].with_test_identity(Some(7), coordinates[4].local_id());
+    coordinates[4].coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.0, -0.02]);
+    coordinates[8].coordinates_m = cadmpeg_ir::units::FiniteVector::new([-0.015, 0.02]);
+    coordinates[10].coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.015, 0.02]);
     let mut curve = entity("curve".into(), 0, Some(3), None);
-    curve.kind = SketchInputKind::Arc;
+    curve.reclassify(SketchInputKind::Arc);
     let markers = coordinates
         .iter()
         .chain(std::iter::once(&curve))
         .collect::<Vec<_>>();
     assert_eq!(
         coordinate_roster_arc_center(
+            &cadmpeg_test_support::service_decode_context(),
             &payload,
             &curve,
             &markers,
             [&coordinates[8], &coordinates[10]],
-        ),
+        )
+        .unwrap(),
         Some([0.0, -0.02])
     );
 
@@ -157,20 +172,24 @@ fn indexed_arcs_use_one_equidistant_center_marker() {
     let end = Point2::new(0.0, 1.0);
     assert_eq!(
         unique_arc_center_marker(
+            &cadmpeg_test_support::service_decode_context(),
             start,
             end,
             &[Point2::new(0.0, 0.0), Point2::new(4.0, 3.0)],
             1.0e-8,
-        ),
+        )
+        .unwrap(),
         Some(Point2::new(0.0, 0.0))
     );
     assert_eq!(
         unique_arc_center_marker(
+            &cadmpeg_test_support::service_decode_context(),
             start,
             end,
             &[Point2::new(0.0, 0.0), Point2::new(0.5, 0.5)],
             1.0e-8,
-        ),
+        )
+        .unwrap(),
         None
     );
 }
@@ -193,18 +212,17 @@ fn compact_legacy_bounded_arc_uses_its_diameter_center_marker() {
     for relative in (78..94).step_by(4) {
         payload[relative..relative + 4].copy_from_slice(&(-2i32).to_le_bytes());
     }
-    let marker = |id: &str, offset, kind, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("profile".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let marker = |id: &str, offset, kind, coordinates_m: Option<[f64; 2]>| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            crate::records::SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("profile".into());
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let curve = marker("arc", 0, SketchInputKind::Arc, None);
     let start = marker("start", 1, SketchInputKind::Point, Some([1.0, 0.0]));
@@ -214,7 +232,14 @@ fn compact_legacy_bounded_arc_uses_its_diameter_center_marker() {
     let markers = [&start, &center, &end, &off_axis];
 
     assert_eq!(
-        legacy_compact_diameter_arc_center(&payload, &curve, &markers, [&start, &end]),
+        legacy_compact_diameter_arc_center(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &curve,
+            &markers,
+            [&start, &end]
+        )
+        .unwrap(),
         Some([0.0, 0.0])
     );
 }

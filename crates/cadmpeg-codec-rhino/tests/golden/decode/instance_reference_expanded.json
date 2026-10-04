@@ -165,18 +165,19 @@
         "unit_system": "standard:2",
         "unit_value": "2"
       },
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": "admitted",
-          "declared": {
-            "archive_version": "60"
-          },
-          "dialect": "rhino:archive-60",
-          "format": "rhino"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "archive_version": "60"
+            },
+            "dialect": "rhino:archive-60"
+          }
         }
-      },
-      "format": "rhino"
+      }
     },
     "tolerances": {
       "angular": 0.1,
@@ -187,50 +188,64 @@
     }
   },
   "report": {
-    "container_only": false,
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "admitted",
-        "declared": {
-          "archive_version": "60"
-        },
-        "dialect": "rhino:archive-60",
-        "format": "rhino"
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "archive_version": "60"
+          },
+          "dialect": "rhino:archive-60"
+        }
       }
     },
-    "format": "rhino",
-    "geometry_transferred": true,
     "losses": [
       {
         "code": {
           "code": "object.record-census",
           "kind": "object_records_untransferred",
-          "namespace": "rhino"
+          "namespace": "rhino",
+          "scope": "namespaced"
         },
         "message": "decoded 1/1 Rhino object records",
         "severity": "info"
       },
       {
         "code": {
-          "code": "container.instance-definition-degraded",
-          "kind": "decode_diagnostic",
-          "namespace": "rhino"
+          "code": "container.integrity-failure",
+          "kind": "integrity_failure",
+          "namespace": "rhino",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
-        "message": "retained 1 malformed, ambiguous, or checksum-degraded instance-definition record(s); first: instance definition CRC mismatch at offset 227",
+        "message": "instance-definition record at offset 159: instance definition CRC mismatch at offset 227",
         "provenance": {
           "format": "rhino",
           "offset": 159,
-          "stream": "",
           "tag": "INSTANCE_DEFINITION_TABLE"
         },
-        "severity": "warning"
+        "severity": "error"
       },
       {
         "code": {
           "code": "container.integrity-failure",
           "kind": "integrity_failure",
-          "namespace": "rhino"
+          "namespace": "rhino",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "CRC mismatch at offset 159 for typecode 0x20008076: expected 0x0, got 0xf46c4ebe",
+        "severity": "error"
+      },
+      {
+        "code": {
+          "code": "container.integrity-failure",
+          "kind": "integrity_failure",
+          "namespace": "rhino",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "CRC mismatch at offset 582 for typecode 0x20008070: expected 0x0, got 0x9d88d481",
         "severity": "error"
@@ -239,7 +254,8 @@
         "code": {
           "code": "container.scan-diagnostic",
           "kind": "decode_diagnostic",
-          "namespace": "rhino"
+          "namespace": "rhino",
+          "scope": "namespaced"
         },
         "message": "object at 582 has nil object UUID",
         "severity": "warning"
@@ -247,19 +263,23 @@
     ],
     "notes": [
       "decoded 1/1 Rhino object records; retained metadata/digests for 1 records and complete bytes for 1; document cap 268435456 bytes, per-record cap 16777216 bytes"
-    ]
+    ],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {},
-    "retained_records": [
-      {
-        "byte_len": 305,
-        "data": "cIAAICUBAAAAAAAAcQAAggAQAAAAAAAA+n8CAP0AAAAAAAAA+/8CABQAAAAAAAAAOLbP+dS5QEOH48VueGXZasKcfdT8/wIAxQAAAAAAAAAQYWFhYWFhYWFhYWFhYWFhYQAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAACRAAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8AAAAAAADwPwAAAAAAAPA/jFeqRf9/AoAAAAAAAAAAAH8AAIIAAAAAAAAAAIHUiJ0=",
-        "id": "rhino:object:record#000000",
+    "retained_records": {
+      "rhino:object:record#000000": {
+        "bytes": {
+          "data": "cIAAICUBAAAAAAAAcQAAggAQAAAAAAAA+n8CAP0AAAAAAAAA+/8CABQAAAAAAAAAOLbP+dS5QEOH48VueGXZasKcfdT8/wIAxQAAAAAAAAAQYWFhYWFhYWFhYWFhYWFhYQAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAACRAAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8AAAAAAADwPwAAAAAAAPA/jFeqRf9/AoAAAAAAAAAAAH8AAIIAAAAAAAAAAIHUiJ0=",
+          "retention": "inline"
+        },
         "offset": 582,
-        "sha256": "f0c0e87080dd7d963394c5ebb7837c8f1461a315e8c5d3d602afb8ba5d03e41a",
-        "stream": "source"
+        "stream": ""
       }
-    ]
+    }
   }
 }

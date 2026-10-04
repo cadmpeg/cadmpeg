@@ -191,15 +191,16 @@
         "stream_count": "2",
         "vertex_records": "3"
       },
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": "admitted",
-          "dialect": "catia:fbb-only",
-          "format": "catia"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "dialect": "catia:fbb-only"
+          }
         }
-      },
-      "format": "catia"
+      }
     },
     "tolerances": {
       "angular": 1e-10,
@@ -210,7 +211,6 @@
     }
   },
   "report": {
-    "container_only": false,
     "coverage": {
       "ambiguous_formula_parameter_dependency_count": 0,
       "ambiguous_relation_program_parameter_dependency_count": 0,
@@ -598,22 +598,23 @@
       "unresolved_storage_record_count": 0,
       "unresolved_unreferenced_relation_expression_count": 0
     },
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "admitted",
-        "dialect": "catia:fbb-only",
-        "format": "catia"
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "dialect": "catia:fbb-only"
+        }
       }
     },
-    "format": "catia",
-    "geometry_transferred": true,
     "losses": [
       {
         "code": {
           "code": "geometry.carrier-summary",
           "kind": "carrier_summary",
-          "namespace": "catia"
+          "namespace": "catia",
+          "scope": "namespaced"
         },
         "message": "0 vertex point(s) were decoded verbatim from `05 08 01` records (3×f32 LE, millimetres, identity world placement) and 2 analytic surface carrier(s) were decoded from `SurfacicReps` `00 33` records: 1 plane, 1 cylinder, 0 cone, 0 sphere, 0 torus.",
         "severity": "info"
@@ -622,7 +623,9 @@
         "code": {
           "code": "topology.boundary-graph-not-emitted",
           "kind": "topology_not_transferred",
-          "namespace": "catia"
+          "namespace": "catia",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "The B-rep boundary graph was not emitted: 2 face outer-bound row(s) in 1 group(s) were detected, but the curve support table is absent or empty.",
         "severity": "blocking"
@@ -631,7 +634,9 @@
         "code": {
           "code": "geometry.analytic-payload-invalid",
           "kind": "geometry_not_transferred",
-          "namespace": "catia"
+          "namespace": "catia",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "1 analytic surface record(s) had a non-finite or out-of-range inline payload and were not decoded.",
         "severity": "warning"
@@ -640,7 +645,8 @@
         "code": {
           "code": "attributes.materials-metadata-not-transferred",
           "kind": "attributes_not_transferred",
-          "namespace": "catia"
+          "namespace": "catia",
+          "scope": "namespaced"
         },
         "message": "Standard circles with an exact adjacent-carrier section normal or two non-collinear endpoint radii, plane-plane lines, and same-surface cylinder or cone generators are transferred as curves. Standard spline edges retain exact two-surface intersection constructions and their identity-bound support pcurves when present, but unbound serialized 3D NURBS caches, materials, and document metadata are not yet transferred.",
         "severity": "warning"
@@ -651,7 +657,11 @@
       "nested V5_CFV2 at file offset 16 with a CATIA_V5 CB0001 directory of 2 stream(s)",
       "reconstructed BREP stream from MainDataStream + SurfacicReps: 1 FBB group(s) containing 2 face row(s), 3 vertex record(s), 0 edge-table delimiter(s)",
       "container-level enumeration; `decode` applies the identified storage family's standard, freeform, E5, zero-entity, or metadata-fallback route"
-    ]
+    ],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {
@@ -660,50 +670,48 @@
           "entity": "unknown",
           "fields": {
             "links": "derived"
-          }
+          },
+          "scope": "entity"
         },
         "catia:standard:circle#0": {
-          "entity": "byte_exact",
           "fields": {
             "geometry.axis": "derived"
-          }
+          },
+          "scope": "fields"
         }
       },
       "provenance": {
         "catia:payload:unknown#brep-stream": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "catia:fbb-only"
         },
         "catia:standard:circle#0": {
           "offset": 297,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "curve_support_60_circle"
         },
         "catia:standard:surf#0": {
           "offset": 131,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "surfacic_reps_33"
         },
         "catia:standard:surf#1": {
           "offset": 204,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "surfacic_reps_32"
         }
-      },
-      "streams": [
-        "catia:MainDataStream+SurfacicReps"
-      ]
+      }
     },
-    "retained_records": [
-      {
-        "byte_len": 324,
-        "data": "AUEB/wMAAAAAAAABAAIBSQH/AwAAAAAAAAAAAAAAAACAPwAAAAEAAjAEBP/S0tLSMAQE/9LS0tIBAQARJAT//wAAAAECABEkBP//AAAAAQYDBQgBAAAAAAAAAAAAAAAABQgBAAAgQQAAAAAAAAAABQgBAAAAAAAAIEEAAAAAqrvMABoAMzMAAAAAAAAAAAAAAAAAAAAAAAAAAECgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAREiMwACADMyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP//ESIzAAIAMzIAAIA/AAAAQAAAQEAAAAAAAACAQAAAAAAAAIA/AAAAQAAAQEAAAIBAYERVZgASADM3AAAAAAAAAAAAAAAAQKAAAAAB",
-        "id": "catia:payload:unknown#brep-stream",
+    "retained_records": {
+      "catia:payload:unknown#brep-stream": {
+        "bytes": {
+          "data": "AUEB/wMAAAAAAAABAAIBSQH/AwAAAAAAAAAAAAAAAACAPwAAAAEAAjAEBP/S0tLSMAQE/9LS0tIBAQARJAT//wAAAAECABEkBP//AAAAAQYDBQgBAAAAAAAAAAAAAAAABQgBAAAgQQAAAAAAAAAABQgBAAAAAAAAIEEAAAAAqrvMABoAMzMAAAAAAAAAAAAAAAAAAAAAAAAAAECgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAREiMwACADMyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP//ESIzAAIAMzIAAIA/AAAAQAAAQEAAAAAAAACAQAAAAAAAAIA/AAAAQAAAQEAAAIBAYERVZgASADM3AAAAAAAAAAAAAAAAQKAAAAAB",
+          "retention": "inline"
+        },
         "offset": 0,
-        "sha256": "867e7b5fa60057a348df5093bcadcc75d8e7c8f8795b5f954091bbf7985295fe",
         "stream": "catia:MainDataStream+SurfacicReps"
       }
-    ]
+    }
   }
 }

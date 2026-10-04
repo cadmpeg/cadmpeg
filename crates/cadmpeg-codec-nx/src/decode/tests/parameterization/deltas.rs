@@ -1,13 +1,64 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
 use crate::framing::node_kind::NodeKind;
+use crate::test_support::test_deltas::circle_topology_partition_stream;
+use crate::test_support::test_deltas::cone_topology_partition_stream;
+use crate::test_support::test_deltas::cylinder_topology_partition_stream;
+use crate::test_support::test_deltas::deltas_blend_surface_partition_stream;
+use crate::test_support::test_deltas::deltas_circle_partition_stream;
+use crate::test_support::test_deltas::deltas_cone_partition_stream;
+use crate::test_support::test_deltas::deltas_cylinder_partition_stream;
+use crate::test_support::test_deltas::deltas_edge_partition_stream;
+use crate::test_support::test_deltas::deltas_ellipse_partition_stream;
+use crate::test_support::test_deltas::deltas_face_vertex_partition_stream;
+use crate::test_support::test_deltas::deltas_fin_partition_stream;
+use crate::test_support::test_deltas::deltas_line_partition_stream;
+use crate::test_support::test_deltas::deltas_loop_partition_stream;
+use crate::test_support::test_deltas::deltas_offset_surface_partition_stream;
+use crate::test_support::test_deltas::deltas_plane_partition_stream;
+use crate::test_support::test_deltas::deltas_point_partition_stream;
+use crate::test_support::test_deltas::deltas_shell_partition_stream;
+use crate::test_support::test_deltas::deltas_sphere_partition_stream;
+use crate::test_support::test_deltas::deltas_surface_curve_partition_stream;
+use crate::test_support::test_deltas::deltas_torus_partition_stream;
+use crate::test_support::test_deltas::deltas_trimmed_curve_partition_stream;
+use crate::test_support::test_deltas::ellipse_topology_partition_stream;
+use crate::test_support::test_deltas::sphere_topology_partition_stream;
+use crate::test_support::test_deltas::status_framed_deltas_stream;
+use crate::test_support::test_deltas::torus_topology_partition_stream;
+use crate::test_support::test_deltas::trimmed_topology_partition_stream;
+use crate::test_support::test_deltas::variable_status_framed_deltas_stream;
+use crate::test_support::test_deltas::DELTAS_PREAMBLE;
+use crate::test_support::test_prt::prt_with_partition;
+use crate::test_support::test_prt::prt_with_streams;
+use crate::test_support::test_streams::blend_surface_topology_partition_stream;
+use crate::test_support::test_streams::charted_intersection_curve_topology_partition_stream;
+use crate::test_support::test_streams::ext11_charted_intersection_curve_stream;
+use crate::test_support::test_streams::offset_surface_topology_partition_stream;
+use crate::test_support::test_streams::prt_with_ext11_intersection;
+use crate::test_support::test_streams::surface_curve_topology_partition_stream;
+use crate::test_support::test_streams::topology_partition_stream;
+use crate::NxCodec;
+use cadmpeg_ir::codec::Codec;
+use cadmpeg_ir::codec::DecodeOptions;
+use cadmpeg_ir::geometry::BlendRadiusLaw;
+use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::math::Vector3;
+use std::io::Cursor;
+
+const EPS_CONE_ANGLE: f64 = 1.0e-12;
 
 #[test]
 fn decode_reports_status_framed_deltas_records_and_tombstones() {
     let stream = status_framed_deltas_stream();
     assert_eq!(
-        crate::deltas::walk(&stream).bytes_decoded,
+        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &stream))
+            .unwrap()
+            .bytes_decoded(),
         stream.len() - DELTAS_PREAMBLE.len()
     );
     let mut cur = Cursor::new(prt_with_partition(&stream));
@@ -59,9 +110,9 @@ fn decode_emits_point_added_by_deltas_stream() {
     let mut cur = Cursor::new(prt_with_partition(&deltas_point_partition_stream()));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     assert_eq!(result.ir().model.points.len(), 1);
-    assert_eq!(result.ir().model.points[0].position.x, 12.5);
-    assert_eq!(result.ir().model.points[0].position.y, -2.0);
-    assert_eq!(result.ir().model.points[0].position.z, 4.0);
+    assert_eq!(result.ir().model.points[0].position().get().x, 12.5);
+    assert_eq!(result.ir().model.points[0].position().get().y, -2.0);
+    assert_eq!(result.ir().model.points[0].position().get().z, 4.0);
 }
 
 #[test]
@@ -76,9 +127,9 @@ fn decode_replaces_partition_point_with_same_xmt_deltas_point() {
     let mut cur = Cursor::new(prt_with_streams(&[&partition, &deltas]));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     assert_eq!(result.ir().model.points.len(), 1);
-    assert_eq!(result.ir().model.points[0].position.x, 12.5);
-    assert_eq!(result.ir().model.points[0].position.y, -2.0);
-    assert_eq!(result.ir().model.points[0].position.z, 4.0);
+    assert_eq!(result.ir().model.points[0].position().get().x, 12.5);
+    assert_eq!(result.ir().model.points[0].position().get().y, -2.0);
+    assert_eq!(result.ir().model.points[0].position().get().z, 4.0);
 }
 
 #[test]
@@ -88,12 +139,21 @@ fn decode_preserves_partition_edge_topology_over_deltas_history() {
     let mut cur = Cursor::new(prt_with_streams(&[&partition, &deltas]));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     assert_eq!(result.ir().model.edges.len(), 1);
-    assert_eq!(result.ir().model.edges[0].tolerance, Some(0.3));
     assert_eq!(
-        result.ir().model.edges[0].curve.as_ref(),
+        result.ir().model.edges[0]
+            .tolerance
+            .map(cadmpeg_ir::scalar::PositiveReal::get),
+        Some(0.3)
+    );
+    assert_eq!(
+        result.ir().model.edges[0].curve(),
         Some(&result.ir().model.curves[0].id)
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -103,19 +163,37 @@ fn decode_preserves_partition_face_and_vertex_topology_over_deltas_history() {
     let mut cur = Cursor::new(prt_with_streams(&[&partition, &deltas]));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(result.ir().model.faces[0].tolerance, Some(0.2));
+    assert_eq!(
+        result.ir().model.faces[0]
+            .tolerance
+            .map(cadmpeg_ir::scalar::PositiveReal::get),
+        Some(0.2)
+    );
     assert_eq!(result.ir().model.vertices.len(), 1);
-    assert_eq!(result.ir().model.vertices[0].tolerance, Some(0.1));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert_eq!(
+        result.ir().model.vertices[0]
+            .tolerance
+            .map(cadmpeg_ir::scalar::PositiveReal::get),
+        Some(0.1)
+    );
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
 fn decode_preserves_partition_loop_topology_over_deltas_history() {
     let partition = topology_partition_stream();
     let deltas = deltas_loop_partition_stream();
-    let merged = crate::deltas::merge_full_records(&partition, &deltas);
+    let merged = crate::test_support::with_decode_context(|ctx| {
+        crate::deltas::merge_full_records(ctx, &partition, &deltas)
+    })
+    .unwrap();
     assert_eq!(
-        crate::topology::Graph::parse(&merged)
+        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &merged))
+            .unwrap()
             .get(NodeKind::Loop, 5)
             .and_then(|node| node.u32_at(4)),
         Some(0)
@@ -124,16 +202,24 @@ fn decode_preserves_partition_loop_topology_over_deltas_history() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     assert_eq!(result.ir().model.loops.len(), 1);
     assert_eq!(result.ir().model.coedges.len(), 1);
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
 fn decode_preserves_partition_shell_topology_over_deltas_history() {
     let partition = topology_partition_stream();
     let deltas = deltas_shell_partition_stream();
-    let merged = crate::deltas::merge_full_records(&partition, &deltas);
+    let merged = crate::test_support::with_decode_context(|ctx| {
+        crate::deltas::merge_full_records(ctx, &partition, &deltas)
+    })
+    .unwrap();
     assert_eq!(
-        crate::topology::Graph::parse(&merged)
+        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &merged))
+            .unwrap()
             .get(NodeKind::Shell, 3)
             .and_then(|node| node.u32_at(4)),
         Some(0)
@@ -142,7 +228,11 @@ fn decode_preserves_partition_shell_topology_over_deltas_history() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     assert_eq!(result.ir().model.shells.len(), 1);
     assert_eq!(result.ir().model.faces.len(), 1);
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -158,7 +248,11 @@ fn decode_preserves_partition_fin_topology_over_deltas_history() {
         result.ir().model.coedges[0].sense,
         cadmpeg_ir::topology::Sense::Forward
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -169,12 +263,19 @@ fn decode_replaces_partition_line_from_status_framed_deltas() {
     let mut cur = Cursor::new(file);
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    let CurveGeometry::Line { origin, direction } = result.ir().model.curves[0].geometry else {
+    let Some(SolvedCurveGeometry::Line(line_curve)) = result.ir().model.curves[0].geometry.solved()
+    else {
         panic!("line");
     };
+    let origin = line_curve.origin().get();
+    let direction = *line_curve.direction().as_raw();
     assert_eq!(origin, cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0));
     assert_eq!(direction, Vector3::new(0.0, 1.0, 0.0));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -185,32 +286,53 @@ fn decode_replaces_partition_plane_from_status_framed_deltas() {
     let mut cur = Cursor::new(file);
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert!(matches!(
-        result.ir().model.surfaces[0].geometry,
-        SurfaceGeometry::Plane { origin, normal, u_axis }
-            if origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
-                && normal == Vector3::new(0.0, 1.0, 0.0)
-                && u_axis == Vector3::new(1.0, 0.0, 0.0)
-    ));
+    assert!(
+        matches!(result.ir().model.surfaces[0].geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))
+                if {
+                    let origin = plane_surface.origin();
+        let normal = plane_surface.frame().axis().as_raw();
+        let u_axis = plane_surface.frame().reference().as_raw();
+                    *origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+                        && *normal == Vector3::new(0.0, 1.0, 0.0)
+                        && *u_axis == Vector3::new(1.0, 0.0, 0.0)
+                })
+    );
     assert_eq!(
         result.ir().model.faces[0].surface,
         result.ir().model.surfaces[0].id
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
 fn decode_replaces_partition_offset_surface_from_status_framed_deltas() {
     let partition = offset_surface_topology_partition_stream();
     let deltas = deltas_offset_surface_partition_stream();
-    let census = crate::deltas::walk(&deltas);
-    assert_eq!(census.full_counts().get("OFFSET_SURF"), Some(&1));
-    let merged = crate::deltas::merge_full_records(&partition, &deltas);
+    let census =
+        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &deltas))
+            .unwrap();
     assert_eq!(
-        crate::topology::offset_surfaces(&merged)
-            .iter()
-            .map(|surface| surface.state.distance())
-            .collect::<Vec<_>>(),
+        crate::test_support::with_decode_context(|ctx| census.full_counts(ctx))
+            .unwrap()
+            .get("OFFSET_SURF"),
+        Some(&1)
+    );
+    let merged = crate::test_support::with_decode_context(|ctx| {
+        crate::deltas::merge_full_records(ctx, &partition, &deltas)
+    })
+    .unwrap();
+    assert_eq!(
+        crate::test_support::with_decode_context(|ctx| crate::topology::offset_surfaces(
+            ctx, &merged
+        ))
+        .unwrap()
+        .iter()
+        .map(|surface| surface.state.distance().get())
+        .collect::<Vec<_>>(),
         [4.5]
     );
     let file = prt_with_streams(&[&partition, &deltas]);
@@ -220,10 +342,11 @@ fn decode_replaces_partition_offset_surface_from_status_framed_deltas() {
     let [procedural] = result.ir().model.procedural_surfaces.as_slice() else {
         panic!("one offset surface");
     };
-    let ProceduralSurfaceDefinition::Offset { distance, .. } = procedural.definition() else {
+    let ProceduralSurfaceDefinition::Offset(definition_payload) = procedural.definition() else {
         panic!("offset surface");
     };
-    assert_eq!(*distance, 4.5);
+    let distance = definition_payload.distance();
+    assert_eq!(distance.get(), 4.5);
     assert_eq!(
         result.ir().model.faces[0].surface,
         *result
@@ -232,7 +355,11 @@ fn decode_replaces_partition_offset_surface_from_status_framed_deltas() {
             .procedural_surface_owner(&procedural.id)
             .expect("offset owner")
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -246,17 +373,14 @@ fn decode_replaces_partition_blend_surface_from_status_framed_deltas() {
         )
         .unwrap();
 
-    let ProceduralSurfaceDefinition::Blend { radius, .. } =
+    let ProceduralSurfaceDefinition::Blend(definition_payload) =
         &result.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("blend surface");
     };
-    assert_eq!(
-        *radius,
-        BlendRadiusLaw::Constant {
-            signed_radius: -4.0
-        }
-    );
+    let radius = definition_payload.radius();
+
+    assert_eq!(*radius, BlendRadiusLaw::constant(-4.0).unwrap());
     assert_eq!(
         result.ir().model.faces[0].surface,
         *result
@@ -265,16 +389,26 @@ fn decode_replaces_partition_blend_surface_from_status_framed_deltas() {
             .procedural_surface_owner(&result.ir().model.procedural_surfaces[0].id)
             .expect("blend owner")
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
 fn decode_replaces_partition_trimmed_curve_from_status_framed_deltas() {
     let partition = trimmed_topology_partition_stream();
     let deltas = deltas_trimmed_curve_partition_stream();
-    let merged = crate::deltas::merge_full_records(&partition, &deltas);
+    let merged = crate::test_support::with_decode_context(|ctx| {
+        crate::deltas::merge_full_records(ctx, &partition, &deltas)
+    })
+    .unwrap();
     assert_eq!(
-        crate::topology::trimmed_curves(&merged)[0]
+        crate::test_support::with_decode_context(|ctx| crate::topology::trimmed_curves(
+            ctx, &merged
+        ))
+        .unwrap()[0]
             .state
             .parameters(),
         [0.000_3, 0.000_7]
@@ -286,19 +420,35 @@ fn decode_replaces_partition_trimmed_curve_from_status_framed_deltas() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.edges[0].param_range, Some([0.3, 0.7]));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert_eq!(
+        result.ir().model.edges[0]
+            .param_range()
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.3, 0.7])
+    );
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
 fn decode_replaces_partition_surface_curve_from_status_framed_deltas() {
     let partition = surface_curve_topology_partition_stream();
     let deltas = deltas_surface_curve_partition_stream();
-    let merged = crate::deltas::merge_full_records(&partition, &deltas);
+    let merged = crate::test_support::with_decode_context(|ctx| {
+        crate::deltas::merge_full_records(ctx, &partition, &deltas)
+    })
+    .unwrap();
     assert_eq!(
-        crate::topology::surface_curves(&merged)[0]
+        crate::test_support::with_decode_context(|ctx| crate::topology::surface_curves(
+            ctx, &merged
+        ))
+        .unwrap()[0]
             .state
-            .tolerance(),
+            .tolerance()
+            .get(),
         0.000_02
     );
     let result = NxCodec
@@ -309,10 +459,14 @@ fn decode_replaces_partition_surface_curve_from_status_framed_deltas() {
         .unwrap();
 
     assert_eq!(
-        result.ir().model.edges[0].curve.as_ref(),
+        result.ir().model.edges[0].curve(),
         Some(&result.ir().model.curves[0].id)
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -323,15 +477,24 @@ fn decode_replaces_partition_circle_from_status_framed_deltas() {
     let mut cur = Cursor::new(file);
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert!(result.ir().model.curves.iter().any(|curve| matches!(
-        curve.geometry,
-        CurveGeometry::Circle { center, axis, ref_direction, radius }
-            if center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
-                && axis == Vector3::new(0.0, 1.0, 0.0)
-                && ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                && radius == 25.0
-    )));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(result.ir().model.curves.iter().any(
+        |curve| matches!(curve.geometry, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
+                if {
+                    let center = circle_curve.center().get();
+        let axis = circle_curve.frame().axis().as_raw();
+        let ref_direction = circle_curve.frame().reference().as_raw();
+        let radius = circle_curve.radius().get();
+                    center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+                        && *axis == Vector3::new(0.0, 1.0, 0.0)
+                        && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                        && radius == 25.0
+                })
+    ));
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -342,21 +505,26 @@ fn decode_replaces_partition_ellipse_from_status_framed_deltas() {
     let mut cur = Cursor::new(file);
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert!(result.ir().model.curves.iter().any(|curve| matches!(
-        curve.geometry,
-        CurveGeometry::Ellipse {
-            center,
-            axis,
-            major_direction,
-            major_radius,
-            minor_radius,
-        } if center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
-            && axis == Vector3::new(0.0, 1.0, 0.0)
-            && major_direction == Vector3::new(1.0, 0.0, 0.0)
-            && major_radius == 30.0
-            && minor_radius == 12.0
-    )));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(result.ir().model.curves.iter().any(
+        |curve| matches!(curve.geometry, CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve))
+                if {
+                    let center = ellipse_curve.center().get();
+        let axis = ellipse_curve.frame().axis().as_raw();
+        let major_direction = ellipse_curve.frame().reference().as_raw();
+        let major_radius = ellipse_curve.major_radius().get();
+        let minor_radius = ellipse_curve.minor_radius().get();
+                    center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+                        && *axis == Vector3::new(0.0, 1.0, 0.0)
+                        && *major_direction == Vector3::new(1.0, 0.0, 0.0)
+                        && major_radius == 30.0
+                        && minor_radius == 12.0
+                })
+    ));
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -367,15 +535,24 @@ fn decode_replaces_partition_cylinder_from_status_framed_deltas() {
     let mut cur = Cursor::new(file);
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
-        surface.geometry,
-        SurfaceGeometry::Cylinder { origin, axis, ref_direction, radius }
-            if origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
-                && axis == Vector3::new(0.0, 1.0, 0.0)
-                && ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                && radius == 25.0
-    )));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(result.ir().model.surfaces.iter().any(
+        |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
+                if {
+                    let origin = cylinder_surface.origin();
+        let axis = cylinder_surface.frame().axis().as_raw();
+        let ref_direction = cylinder_surface.frame().reference().as_raw();
+        let radius = cylinder_surface.radius().get();
+                    *origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+                        && *axis == Vector3::new(0.0, 1.0, 0.0)
+                        && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                        && radius == 25.0
+                })
+    ));
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -386,17 +563,28 @@ fn decode_replaces_partition_cone_from_status_framed_deltas() {
     let mut cur = Cursor::new(file);
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
-        surface.geometry,
-        SurfaceGeometry::Cone { origin, axis, ref_direction, radius, ratio, half_angle }
-            if origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
-                && axis == Vector3::new(0.0, 1.0, 0.0)
-                && ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                && radius == 25.0
-                && ratio == 1.0
-                && (half_angle - std::f64::consts::FRAC_PI_6).abs() < 1.0e-12
-    )));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(result.ir().model.surfaces.iter().any(
+        |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
+                if {
+                    let origin = cone_surface.origin();
+        let axis = cone_surface.frame().axis().as_raw();
+        let ref_direction = cone_surface.frame().reference().as_raw();
+        let radius = cone_surface.radius().get();
+        let ratio = cone_surface.ratio().get();
+        let half_angle = cone_surface.half_angle().get();
+                    *origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+                        && *axis == Vector3::new(0.0, 1.0, 0.0)
+                        && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                        && radius == 25.0
+                        && ratio == 1.0
+                        && (half_angle - std::f64::consts::FRAC_PI_6).abs() < EPS_CONE_ANGLE
+                })
+    ));
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -407,15 +595,24 @@ fn decode_replaces_partition_sphere_from_status_framed_deltas() {
     let mut cur = Cursor::new(file);
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
-        surface.geometry,
-        SurfaceGeometry::Sphere { center, axis, ref_direction, radius }
-            if center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
-                && axis == Vector3::new(0.0, 1.0, 0.0)
-                && ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                && radius == 25.0
-    )));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(result.ir().model.surfaces.iter().any(
+        |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))
+                if {
+                    let center = sphere_surface.center();
+        let axis = sphere_surface.frame().axis().as_raw();
+        let ref_direction = sphere_surface.frame().reference().as_raw();
+        let radius = sphere_surface.radius().get();
+                    *center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+                        && *axis == Vector3::new(0.0, 1.0, 0.0)
+                        && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                        && radius == 25.0
+                })
+    ));
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -426,21 +623,26 @@ fn decode_replaces_partition_torus_from_status_framed_deltas() {
     let mut cur = Cursor::new(file);
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
-        surface.geometry,
-        SurfaceGeometry::Torus {
-            center,
-            axis,
-            ref_direction,
-            major_radius,
-            minor_radius,
-        } if center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
-            && axis == Vector3::new(0.0, 1.0, 0.0)
-            && ref_direction == Vector3::new(1.0, 0.0, 0.0)
-            && major_radius == 40.0
-            && minor_radius == 15.0
-    )));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(result.ir().model.surfaces.iter().any(
+        |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
+                if {
+                    let center = torus_surface.center();
+        let axis = torus_surface.frame().axis().as_raw();
+        let ref_direction = torus_surface.frame().reference().as_raw();
+        let major_radius = torus_surface.major_radius().get();
+        let minor_radius = torus_surface.minor_radius().get();
+                    *center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+                        && *axis == Vector3::new(0.0, 1.0, 0.0)
+                        && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                        && major_radius == 40.0
+                        && minor_radius == 15.0
+                })
+    ));
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -462,9 +664,9 @@ fn decode_emits_ext11_deltas_intersection_chart() {
         .iter()
         .find(|curve| &curve.id == curve_id)
         .expect("intersection cache");
-    let Some(CurveGeometry::Nurbs(nurbs)) = curve.geometry.solved_cache() else {
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = curve.geometry.solved_cache() else {
         panic!("NURBS chart cache");
     };
     assert_eq!(nurbs.control_points()[1].x, 10.0);
-    assert_eq!(nurbs.knots(), [2.0, 2.0, 5.0, 5.0]);
+    assert_eq!(nurbs.knots().as_slice(), [2.0, 2.0, 5.0, 5.0]);
 }

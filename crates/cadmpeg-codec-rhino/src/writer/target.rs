@@ -2,7 +2,9 @@
 //! Rhino target resolution and export reporting.
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{Consumption, EncodeInput, ExportBody, ResolvedWrite, WritePath};
+use cadmpeg_ir::codec::write::{
+    target::ResolvedWrite, Consumption, EncodeInput, ExportBody, WritePath,
+};
 
 use crate::loss::RhinoLossCode;
 use crate::RhinoArchiveVersion;
@@ -40,20 +42,20 @@ pub(crate) fn plan(
             .iter()
             .flat_map(cadmpeg_ir::tessellation::Tessellation::vertices)
             .any(|point| {
-                f64::from(point.x as f32) != point.x
-                    || f64::from(point.y as f32) != point.y
-                    || f64::from(point.z as f32) != point.z
+                cadmpeg_core::convert::f32_from_f64(point.x).map(f64::from) != Some(point.x)
+                    || cadmpeg_core::convert::f32_from_f64(point.y).map(f64::from) != Some(point.y)
+                    || cadmpeg_core::convert::f32_from_f64(point.z).map(f64::from) != Some(point.z)
             });
     let normal_quantization = input
         .ir
         .model
         .tessellations
         .iter()
-        .flat_map(cadmpeg_ir::tessellation::Tessellation::normals)
+        .flat_map(cadmpeg_ir::tessellation::Tessellation::vertex_normals)
         .any(|normal| {
-            f64::from(normal.x as f32) != normal.x
-                || f64::from(normal.y as f32) != normal.y
-                || f64::from(normal.z as f32) != normal.z
+            cadmpeg_core::convert::f32_from_f64(normal.x).map(f64::from) != Some(normal.x)
+                || cadmpeg_core::convert::f32_from_f64(normal.y).map(f64::from) != Some(normal.y)
+                || cadmpeg_core::convert::f32_from_f64(normal.z).map(f64::from) != Some(normal.z)
         });
     let mut losses = Vec::new();
     if let Some(message) = target.displacement_message() {
@@ -74,8 +76,8 @@ pub(crate) fn plan(
     }
     Ok(ExportBody {
         bytes,
-        census: cadmpeg_ir::EntityCensus {
-            basis: cadmpeg_ir::CensusBasis::IrArenas,
+        census: cadmpeg_ir::report::export::EntityCensus {
+            basis: cadmpeg_ir::report::export::CensusBasis::IrArenas,
             counts: input.ir.census(),
         },
         write_path: WritePath::Synthesized {

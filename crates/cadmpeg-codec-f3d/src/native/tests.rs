@@ -10,8 +10,11 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_test_support::service_decode_context;
+use cadmpeg_test_support::EditableDecodeResult;
+
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
-use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::{Cursor, Write};
 
 use cadmpeg_ir::codec::write::Encoder;
@@ -21,8 +24,279 @@ use cadmpeg_ir::report::Severity;
 use zip::CompressionMethod;
 
 use crate::loss::F3dLossCode;
-use crate::test_support::*;
+use crate::test_support::manifest_test::write_synthetic_manifests;
+use crate::test_support::native_test::{f3d_native, f3d_native_mut, update_f3d_native};
+use crate::test_support::smbh_blocks_test::{
+    generated_curve_block, generated_pcurve_block, generated_surface_block,
+};
+use crate::test_support::smbh_curves_test::{
+    push_solved_cache_first_head, stamped_law_curve_subtype,
+    synthetic_geometry_with_cache_first_curve_smbh, synthetic_geometry_with_law_curve_smbh,
+    synthetic_geometry_with_stamped_law_curve_smbh,
+};
+use crate::test_support::smbh_geometry_test::{
+    append_generated_record_tail, replace_generated_record_head, synthetic_geometry_smbh,
+};
+use crate::test_support::smbh_header_test::with_save_format;
+use crate::test_support::smbh_revision_test::{
+    assert_parameterized_tail, decoded_revision_loft_member,
+    push_parameterized_revision_surface_tail, push_revision_loft_body, push_revision_surface_tail,
+    regenerated_procedural_surface_span, synthetic_revision_surface_smbh,
+    synthetic_revision_surface_subtype_span,
+};
+use crate::test_support::tokens_test::{
+    t_dbl, t_ident, t_long, t_pos, t_ref, t_str, t_subident, t_vec,
+};
+use crate::test_support::zip_test::{
+    assert_revision_surface_round_trip, f3d_with_deflated_smbh, f3d_with_smbh,
+    f3d_with_smbh_and_protein, set_zip_entry_uncompressed_size,
+};
 use crate::F3dCodec;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
+
+#[test]
+fn native_load_charges_non_sketch_arena_before_typed_copy() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let board = crate::history_records::AsmBulletinBoard {
+        id: "f3d:native:bulletin#1".into(),
+        parent: "f3d:native:state#1".into(),
+        byte_offset: 0,
+        owner_ref: 0,
+        number: 0,
+        changes: Vec::new(),
+    };
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    namespace
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "asm_bulletin_boards",
+            &[board],
+        )
+        .unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = crate::native::F3dNative::load_charged(&ctx, &namespace).unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "load typed native record"
+    ));
+}
+
+#[test]
+fn native_owner_index_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::owner_indices(&ctx, ["first", "second"].into_iter()).unwrap_err();
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "index F3D native owners"
+    ));
+}
+
+#[test]
+fn native_owner_index_refuses_retained_key_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D native owner id",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            super::owner_indices(&ctx, ["key"].into_iter())
+                .map(|_| ())
+                .map_err(cadmpeg_core::CodecError::from)
+        },
+    ) {
+        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+        error => panic!("unexpected refusal: {error:?}"),
+    };
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::owner_indices(&ctx, ["key"].into_iter()).unwrap_err();
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "retain F3D native owner id"
+    ));
+}
+
+#[test]
+fn native_owner_groups_refuse_outer_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::group_by_owner(
+        &ctx,
+        Vec::<(&str, &str)>::new(),
+        &std::collections::HashMap::new(),
+        2,
+        |record| record.0,
+        |record| record.1,
+    )
+    .unwrap_err();
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "group F3D native owners"
+    ));
+}
+
+#[test]
+fn native_owner_groups_refuse_child_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let owners = std::collections::HashMap::from([("owner".to_owned(), 0)]);
+    let error = super::group_by_owner(
+        &ctx,
+        vec![("first", "owner"), ("second", "owner")],
+        &owners,
+        1,
+        |record| record.0,
+        |record| record.1,
+    )
+    .unwrap_err();
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "attach F3D native owner child"
+    ));
+}
+
+#[test]
+fn native_missing_owner_text_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::group_by_owner(
+        &ctx,
+        vec![("child", "missing")],
+        &std::collections::HashMap::new(),
+        0,
+        |record| record.0,
+        |record| record.1,
+    )
+    .unwrap_err();
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "report F3D native missing owner"
+    ));
+}
+
+#[test]
+fn null_locus_native_retained_limit_refuses_before_owned_wire_conversion() {
+    use crate::records::dimension_null_locus_wire::{Wire, OWNED_WIRE_CONVERSIONS};
+    use crate::records::dimensions::DesignDimensionLocusPair;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let pair: DesignDimensionLocusPair = serde_json::from_str(
+        r#"{"id":"f3d:test:dimension-locus-pair#0","companion_record_index":1,"governing_companion_record_index":2,"byte_offset":10,"class_tag":"274","record_index":3,"frame_length":80,"first_geometry_record_index":0,"first_geometry_reference_offset":35,"first_role":0,"first_role_offset":45,"second_geometry_record_index":41,"second_geometry_reference_offset":50,"second_role":1,"second_role_offset":60,"paired_class_tag":"273","paired_byte_offset":90}"#,
+    )
+    .unwrap();
+    let record_bytes = serde_json::to_vec(&Wire::from(&pair)).unwrap().len();
+    let native = super::F3dNative {
+        design_dimension_null_locus_pairs: vec![pair].try_into().unwrap(),
+        ..super::F3dNative::default()
+    };
+    let name = "design_dimension_null_locus_pairs";
+    let prefix_names = super::F3D_FAMILIES
+        .iter()
+        .take_while(|row| row.arena != name)
+        .map(|row| row.arena.len())
+        .sum::<usize>();
+    let mut retained_limit = u64::try_from(prefix_names + name.len() + record_bytes - 1).unwrap();
+    let mut reached_serialization = false;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    for _ in 0..4096 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = retained_limit;
+        let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        namespace.arenas_mut().clear();
+        OWNED_WIRE_CONVERSIONS.with(|count| count.set(0));
+        let error = native.store(&limited, &mut namespace).unwrap_err();
+        assert_eq!(OWNED_WIRE_CONVERSIONS.with(std::cell::Cell::get), 0);
+        assert!(namespace.arenas().values().all(Vec::is_empty));
+        let cadmpeg_core::CodecError::ResourceLimit(first) = cadmpeg_core::CodecError::from(error)
+        else {
+            panic!("native storage refusal");
+        };
+        assert_eq!(first.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(first.limit, retained_limit);
+        assert_eq!(limited.resource_refusal(), Some(first));
+        if first.operation == "serialize native record" {
+            reached_serialization = true;
+            break;
+        }
+        let next = first.used.checked_add(first.additional).unwrap();
+        assert!(next > retained_limit);
+        retained_limit = next;
+    }
+    assert!(
+        reached_serialization,
+        "serialization admission must refuse before an owned wire conversion"
+    );
+    native
+        .store(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut namespace,
+        )
+        .unwrap();
+    assert_eq!(namespace.arenas()[name].len(), 1);
+}
+
+#[test]
+fn native_load_refuses_orphan_history_row_with_child_and_parent() {
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    crate::native::F3dNative::default()
+        .store(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut namespace,
+        )
+        .unwrap();
+    let board = crate::history_records::AsmBulletinBoard {
+        id: "f3d:native:bulletin#1".into(),
+        parent: "f3d:native:missing-state#1".into(),
+        byte_offset: 0,
+        owner_ref: 0,
+        number: 0,
+        changes: Vec::new(),
+    };
+    namespace.arenas_mut().insert(
+        "asm_bulletin_boards".into(),
+        cadmpeg_ir::native::arena_from(
+            &cadmpeg_test_support::service_decode_context(),
+            [Ok::<_, cadmpeg_ir::NativeConvertError>(board)],
+        )
+        .unwrap(),
+    );
+    let error = crate::native::F3dNative::load(&namespace).unwrap_err();
+    let message = error.to_string();
+    assert!(message.contains("f3d:native:bulletin#1"));
+    assert!(message.contains("f3d:native:missing-state#1"));
+}
 
 #[test]
 fn native_arenas_have_pinned_shape_and_typed_round_trip() {
@@ -47,7 +321,12 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
     let original = decoded.ir().native.namespace("f3d").unwrap();
     let typed = crate::native::F3dNative::load(original).unwrap();
     let mut round_trip = cadmpeg_ir::NativeNamespace::default();
-    typed.store(&mut round_trip).unwrap();
+    typed
+        .store(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut round_trip,
+        )
+        .unwrap();
     assert_eq!(typed, crate::native::F3dNative::load(&round_trip).unwrap());
     for name in crate::native::F3D_ARENA_NAMES {
         assert_eq!(
@@ -73,6 +352,29 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
     }
 }
 
+/// `store` emits one arena for every pinned name, empty families included.
+/// This is the registry-to-emitter agreement: a family added to
+/// `F3D_FAMILIES` without its name in `F3D_ARENA_NAMES`, or the reverse,
+/// fails here.
+#[test]
+fn store_emits_every_pinned_arena_name() {
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    crate::native::F3dNative::default()
+        .store(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut namespace,
+        )
+        .unwrap();
+    assert_eq!(
+        namespace
+            .arenas()
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        crate::native::F3D_ARENA_NAMES
+    );
+}
+
 #[test]
 fn diff_reports_design_material_assignment_changes() {
     let decoded = F3dCodec
@@ -88,10 +390,13 @@ fn diff_reports_design_material_assignment_changes() {
         .arenas_mut()
         .get_mut("design_material_assignments")
         .unwrap()[0];
-    let mut assignment_fields = assignment.fields();
+    let mut assignment_fields = assignment.fields().clone();
     assignment_fields.insert("entity_suffix".into(), serde_json::json!(123_456));
-    *assignment = cadmpeg_ir::NativeRecord::new(assignment.id().to_string(), assignment_fields)
-        .expect("valid native identity");
+    *assignment = cadmpeg_ir::NativeRecord::new(
+        cadmpeg_ir::ids::Identity::new(assignment.id()).expect("valid identity"),
+        assignment_fields,
+    )
+    .expect("valid native identity");
     let report = cadmpeg_ir::diff(decoded.ir(), &edited);
     let arena = report
         .per_arena
@@ -118,16 +423,16 @@ fn decode_transfers_generated_tolerant_coedge_parameters_and_topology() {
             &DecodeOptions::default(),
         )
         .expect("generated tolerant coedges must decode");
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
 
     assert_eq!(decoded.ir().model.coedges.len(), 3);
     assert_eq!(decoded.ir().model.edges.len(), 3);
-    assert_eq!(decoded.ir().model.shells[0].faces.len(), 1);
+    assert_eq!(decoded.ir().model.shells[0].faces().len(), 1);
     assert_eq!(
         f3d_native(decoded.ir())
             .tolerant_coedge_parameters
             .iter()
-            .map(|parameters| parameters.parameter_range)
+            .map(|parameters| parameters.parameter_range.get())
             .collect::<Vec<_>>(),
         vec![[0.25, 0.75]; 3]
     );
@@ -141,7 +446,8 @@ fn decode_transfers_generated_tolerant_coedge_parameters_and_topology() {
 
     decoded.ir_mut().model.coedges[0].sense = cadmpeg_ir::topology::Sense::Reversed;
     update_f3d_native(&mut decoded.ir_mut(), |native| {
-        native.tolerant_coedge_parameters[0].parameter_range = [-1.5, 2.25];
+        native.tolerant_coedge_parameters[0].parameter_range =
+            cadmpeg_ir::units::FiniteVector::new([-1.5, 2.25]).expect("finite interval");
     });
     let mut edited = Vec::new();
     crate::test_support::plan_inherited_write(decoded.ir(), decoded.source_fidelity(), &mut edited)
@@ -154,7 +460,9 @@ fn decode_transfers_generated_tolerant_coedge_parameters_and_topology() {
         cadmpeg_ir::topology::Sense::Reversed
     );
     assert_eq!(
-        f3d_native(round_trip.ir()).tolerant_coedge_parameters[0].parameter_range,
+        f3d_native(round_trip.ir()).tolerant_coedge_parameters[0]
+            .parameter_range
+            .get(),
         [-1.5, 2.25]
     );
 }
@@ -181,7 +489,9 @@ fn decode_selects_tolerant_coedge_extension_from_save_format() {
                 target: None,
                 curve_reversed: true,
                 payload_token_count: 1,
-                parameter_range: Some([-2.0, 3.0]),
+                parameter_range: Some(
+                    cadmpeg_ir::units::FiniteVector::new([-2.0, 3.0]).expect("finite interval"),
+                ),
             },
         ),
         (
@@ -196,7 +506,7 @@ fn decode_selects_tolerant_coedge_extension_from_save_format() {
         (
             21400u32,
             Vec::new(),
-            cadmpeg_asm::brep::records::TolerantCoedgeExtension::None,
+            cadmpeg_asm::brep::records::TolerantCoedgeExtension::None {},
         ),
     ] {
         let mut smbh = synthetic_geometry_smbh();
@@ -271,7 +581,9 @@ fn tolerant_coedge_extension_ignores_payload_identifiers() {
                 target: None,
                 curve_reversed: true,
                 payload_token_count: 1,
-                parameter_range: Some([-2.0, 3.0]),
+                parameter_range: Some(
+                    cadmpeg_ir::units::FiniteVector::new([-2.0, 3.0]).expect("finite interval"),
+                ),
             };
             3
         ]
@@ -296,12 +608,14 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
     append_generated_record_tail(&mut smbh, "coedge", &tail);
     replace_generated_record_head(&mut smbh, "coedge", "tcoedge");
 
-    let decoded = F3dCodec
-        .decode(
-            &mut Cursor::new(f3d_with_smbh_and_protein(&smbh)),
-            &DecodeOptions::default(),
-        )
-        .expect("embedded tolerant-coedge curves must decode");
+    let decoded = EditableDecodeResult::from(
+        F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh_and_protein(&smbh)),
+                &DecodeOptions::default(),
+            )
+            .expect("embedded tolerant-coedge curves must decode"),
+    );
     assert_eq!(
         decoded
             .ir()
@@ -314,10 +628,10 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
     );
     assert!(decoded.ir().model.coedges.iter().all(|coedge| {
         coedge.use_curve.as_ref().is_some_and(|use_| {
-            use_.parameter_range == [-2.0, 3.0]
+            use_.parameter_range.endpoints() == [-2.0, 3.0]
                 && decoded.ir().model.curves.iter().any(|curve| {
                     curve.id == use_.curve
-                        && matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Nurbs(ref nurbs) if nurbs.degree() == 2)
+                        && matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(ref nurbs)) if nurbs.degree() == 2)
                 })
         })
     }));
@@ -333,7 +647,7 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
                 .find(|curve| curve.id == use_.curve)
         })
         .expect("first embedded use curve");
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(first_use_curve) = &first_use_curve.geometry
+    let Some(SolvedCurveGeometry::Nurbs(first_use_curve)) = first_use_curve.geometry.solved()
     else {
         panic!("embedded use curve must be NURBS")
     };
@@ -346,7 +660,7 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
         cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)
     );
     assert_eq!(
-        first_use_curve.knots(),
+        first_use_curve.knots().as_slice(),
         [-1.0, -1.0, -1.0, -0.0, -0.0, -0.0]
     );
 
@@ -362,11 +676,27 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
         .iter_mut()
         .find(|curve| curve.id == use_curve)
         .expect("embedded use-curve carrier");
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &mut curve.geometry else {
+    let cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) =
+        &mut curve.geometry
+    else {
         panic!("embedded use curve must be NURBS")
     };
     nurbs
-        .edit_control_points(|points| points[0].x += 1.0)
+        .try_map_control_points(
+            |index, point| {
+                let mut point = point.get();
+                if index == 0 {
+                    point.x += 1.0;
+                }
+                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            },
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("pole edit admission")
         .unwrap();
     let expected = nurbs.clone();
     let mut preserved = Vec::new();
@@ -377,35 +707,40 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
         .expect("embedded use-curve edit round trip");
     assert!(preserved.ir().model.curves.iter().any(|curve| {
         curve.id == use_curve
-            && matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Nurbs(ref curve) if *curve == expected)
+            && matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(ref curve)) if *curve == expected)
     }));
 
-    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let generated_curve_id = cadmpeg_ir::ids::CurveId::mint("generated:test:tolerant-use-curve#0")
         .expect("identity grammar");
     source_less.model.curves.push(cadmpeg_ir::geometry::Curve {
         id: generated_curve_id.clone(),
-        geometry: cadmpeg_ir::geometry::CurveGeometry::Nurbs(expected.clone()),
+        geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+            expected.clone(),
+        )),
         source_object: None,
     });
     let tolerant_coedge = source_less.model.coedges[0].id.clone();
     source_less.model.coedges[0].use_curve = Some(cadmpeg_ir::topology::CoedgeUseCurve {
         curve: generated_curve_id,
-        parameter_range: [-2.0, 3.0],
+        parameter_range: cadmpeg_ir::topology::ParameterInterval::new([-2.0, 3.0]).unwrap(),
     });
     f3d_native_mut(&mut source_less).tolerant_coedge_parameters =
         vec![cadmpeg_asm::brep::records::TolerantCoedgeParameters {
             source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
-                cadmpeg_asm::ids::IdFormat("generated"),
+                cadmpeg_asm::asm_format!("generated"),
             ),
             coedge: tolerant_coedge,
             record_index: 0,
-            parameter_range: [0.0, 1.0],
+            parameter_range: cadmpeg_ir::units::FiniteVector::new([0.0, 1.0])
+                .expect("finite interval"),
             extension: cadmpeg_asm::brep::records::TolerantCoedgeExtension::EmbeddedCurve {
                 target: None,
                 curve_reversed: false,
                 payload_token_count: 0,
-                parameter_range: Some([-2.0, 3.0]),
+                parameter_range: Some(
+                    cadmpeg_ir::units::FiniteVector::new([-2.0, 3.0]).expect("finite interval"),
+                ),
             },
         }];
     let mut generated = Vec::new();
@@ -427,7 +762,7 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
         1
     );
     assert!(generated.ir().model.curves.iter().any(|curve| {
-        matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Nurbs(ref curve) if *curve == expected)
+        matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(ref curve)) if *curve == expected)
     }));
 }
 
@@ -445,7 +780,11 @@ fn decode_frames_history_less_stream_whose_final_record_ends_at_eof() {
         t_subident(&mut smbh, name);
     }
     t_ident(&mut smbh, "data"); // no trailing 0x11
-    assert!(cadmpeg_asm::asm_header::solved_record_limit(&smbh).is_none());
+    assert!(
+        cadmpeg_asm::asm_header::solved_record_limit(&service_decode_context(), &smbh)
+            .expect("history scan")
+            .is_none()
+    );
 
     let decoded = F3dCodec
         .decode(
@@ -461,7 +800,7 @@ fn decode_frames_history_less_stream_whose_final_record_ends_at_eof() {
 #[test]
 fn stamped_law_intcurve_round_trips_byte_exactly() {
     use cadmpeg_ir::geometry::{
-        CurveGeometry, LawExpression, LawFormula, ProceduralCurveDefinition,
+        LawExpression, LawFormula, ProceduralCurveDefinition, SolvedCurveGeometry,
     };
 
     // Formula names exceed 255 bytes to exercise the u16 (`0x08`) length prefix
@@ -496,21 +835,28 @@ fn stamped_law_intcurve_round_trips_byte_exactly() {
         unreachable!()
     };
     let version = version.as_ref().expect("version stamp");
-    assert_eq!(version.stamp, 20900);
-    assert_eq!(version.post_enum, 0);
-    assert_eq!(version.parameter_range, [None, None]);
-    assert_eq!(primary.name(), primary_name);
+    assert_eq!(version.stamp(), 20900);
+    assert_eq!(version.post_enum(), 0);
+    assert_eq!(version.parameter_range(), [None, None]);
+    assert!(
+        matches!(primary.formula(), LawFormula::Named { name, .. } if name.as_str() == primary_name)
+    );
     assert!(matches!(
-        primary.variables()[0],
+        primary.formula().variables()[0],
         LawExpression::TransformVec { .. }
     ));
     assert_eq!(additional.len(), 4);
-    assert!(matches!(additional[0], LawFormula::Null));
-    assert!(matches!(additional[1], LawFormula::Null));
-    assert_eq!(additional[2].name(), raw_name);
-    assert_eq!(additional[3].name(), "TRANS(VEC(X,X2,X3),TRANS1)");
+    assert!(matches!(additional[0].formula(), LawFormula::Null {}));
+    assert!(matches!(additional[1].formula(), LawFormula::Null {}));
+    assert!(
+        matches!(additional[2].formula(), LawFormula::Named { name, .. } if name.as_str() == raw_name)
+    );
+    assert!(
+        matches!(additional[3].formula(), LawFormula::Named { name, .. }
+        if name.as_str() == "TRANS(VEC(X,X2,X3),TRANS1)")
+    );
     assert!(matches!(
-        additional[3].variables()[0],
+        additional[3].formula().variables()[0],
         LawExpression::TransformVec { .. }
     ));
 
@@ -523,7 +869,7 @@ fn stamped_law_intcurve_round_trips_byte_exactly() {
         .iter()
         .find(|curve| decoded.ir().model.procedural_curve_owner(&procedural.id) == Some(&curve.id))
         .and_then(|curve| match curve.geometry.solved_cache() {
-            Some(CurveGeometry::Nurbs(nurbs)) => Some(nurbs.clone()),
+            Some(SolvedCurveGeometry::Nurbs(nurbs)) => Some(nurbs.clone()),
             _ => None,
         })
         .expect("solved cache");
@@ -546,13 +892,14 @@ fn stamped_law_intcurve_round_trips_byte_exactly() {
         inner,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
     )
-    .unwrap();
+    .unwrap()
+    .bytes();
     assert_eq!(span, subtype.as_slice());
 }
 
 #[test]
 fn legacy_law_intcurve_round_trips_byte_exactly() {
-    use cadmpeg_ir::geometry::{CurveGeometry, ProceduralCurveDefinition};
+    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, SolvedCurveGeometry};
 
     let smbh = synthetic_geometry_with_law_curve_smbh();
     let decoded = F3dCodec
@@ -585,6 +932,7 @@ fn legacy_law_intcurve_round_trips_byte_exactly() {
             cadmpeg_asm::kernel_header::RefWidth::Eight,
         )
         .unwrap()
+        .bytes()
         .to_vec()
     };
     let solved = decoded
@@ -594,7 +942,7 @@ fn legacy_law_intcurve_round_trips_byte_exactly() {
         .iter()
         .find(|curve| decoded.ir().model.procedural_curve_owner(&procedural.id) == Some(&curve.id))
         .and_then(|curve| match curve.geometry.solved_cache() {
-            Some(CurveGeometry::Nurbs(nurbs)) => Some(nurbs.clone()),
+            Some(SolvedCurveGeometry::Nurbs(nurbs)) => Some(nurbs.clone()),
             _ => None,
         })
         .expect("solved cache");
@@ -617,7 +965,8 @@ fn legacy_law_intcurve_round_trips_byte_exactly() {
         inner,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
     )
-    .unwrap();
+    .unwrap()
+    .bytes();
     assert_eq!(span, original.as_slice());
 }
 
@@ -640,23 +989,28 @@ fn generated_cache_first_spring_decodes_and_writes_source_less() {
             &DecodeOptions::default(),
         )
         .expect("cache-first spring decode");
-    let ProceduralCurveDefinition::Spring { layout, direction } =
+    let ProceduralCurveDefinition::Spring(definition_payload) =
         &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected spring construction")
     };
+    let layout = &definition_payload.layout().to_raw();
+    let direction = definition_payload.direction();
+
     let cadmpeg_ir::geometry::SpringLayout::CacheFirst { context, form } = layout else {
         panic!("expected cache-first spring layout")
     };
-    assert_eq!(form.revision, 23100);
+    assert_eq!(form.revision.get(), 23100);
     assert_eq!(form.solved_range, [Some(-1.0), Some(2.0)]);
     assert_eq!(form.extension, 7);
     assert_eq!(*direction, 4);
-    assert_eq!(context.parameter_range, [-1.0, 2.0]);
+    assert_eq!(context.parameter_range().endpoints(), [-1.0, 2.0]);
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -700,16 +1054,24 @@ fn generated_cache_first_parametric_curve_decodes_and_writes_source_less() {
     else {
         panic!("expected surface-curve construction")
     };
-    assert_eq!(tail.tail.revision, 23100);
-    assert_eq!(tail.tail.extension, 7);
+    assert_eq!(tail.form.revision().get(), 23100);
+    assert_eq!(tail.form.extension(), 7);
     assert!(tail.flags.flag);
     assert_eq!(tail.flags.second_flag, Some(false));
-    assert_eq!(tail.tail.solved_range, [Some(-1.0), Some(2.0)]);
-    assert_eq!(context.parameter_range, [-1.0, 2.0]);
+    assert_eq!(
+        *tail.form.solved_range(),
+        [
+            cadmpeg_ir::scalar::FiniteReal::new(-1.0),
+            cadmpeg_ir::scalar::FiniteReal::new(2.0)
+        ]
+    );
+    assert_eq!(context.parameter_range().endpoints(), [-1.0, 2.0]);
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -755,36 +1117,37 @@ fn generated_cache_first_surface_offset_decodes_and_writes_source_less() {
             &DecodeOptions::default(),
         )
         .expect("cache-first surface-offset decode");
-    let ProceduralCurveDefinition::SurfaceOffset {
-        cache_first,
-        base_u_range,
-        base_v_range,
-        base_endpoints,
-        base_range,
-        distance,
-        shift,
-        scale,
-        ..
-    } = &result.ir().model.procedural_curves[0].definition()
+    let ProceduralCurveDefinition::SurfaceOffset(definition_payload) =
+        &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected surface-offset construction")
     };
+    let cache_first = definition_payload.cache_first();
+    let base_u_range = definition_payload.base_u_range();
+    let base_v_range = definition_payload.base_v_range();
+    let base_endpoints = definition_payload.base_endpoints();
+    let base_range = definition_payload.base_range();
+    let distance = definition_payload.distance();
+    let shift = definition_payload.shift();
+    let scale = definition_payload.scale();
     let form = cache_first
         .as_ref()
         .expect("cache-first surface-offset form");
-    assert_eq!(form.revision, 23100);
+    assert_eq!(form.revision.get(), 23100);
     assert_eq!(form.extension, 7);
-    assert_eq!(*base_u_range, [-1.0, 2.0]);
-    assert_eq!(*base_v_range, [-3.0, 4.0]);
-    assert_eq!(*base_endpoints, [None, None]);
-    assert_eq!(*base_range, [-0.5, 1.5]);
-    assert_eq!(*distance, -2.5);
-    assert_eq!(*shift, 0.75);
-    assert_eq!(*scale, 1.25);
+    assert_eq!(base_u_range.endpoints(), [-1.0, 2.0]);
+    assert_eq!(base_v_range.endpoints(), [-3.0, 4.0]);
+    assert_eq!(base_endpoints, [None, None]);
+    assert_eq!(base_range.endpoints(), [-0.5, 1.5]);
+    assert_eq!(distance.get(), -2.5);
+    assert_eq!(shift.get(), 0.75);
+    assert_eq!(scale.get(), 1.25);
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -793,24 +1156,42 @@ fn generated_cache_first_surface_offset_decodes_and_writes_source_less() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less cache-first surface-offset round trip");
-    let mut expected = source_less.model.procedural_curves[0].definition().clone();
+    let expected = source_less.model.procedural_curves[0].definition().clone();
     let mut actual = round_trip.ir().model.procedural_curves[0]
         .definition()
         .clone();
     let (
-        ProceduralCurveDefinition::SurfaceOffset {
-            base: expected_base,
-            ..
-        },
-        ProceduralCurveDefinition::SurfaceOffset {
-            base: actual_base, ..
-        },
-    ) = (&mut expected, &mut actual)
+        ProceduralCurveDefinition::SurfaceOffset(expected_payload),
+        ProceduralCurveDefinition::SurfaceOffset(actual_payload),
+    ) = (&expected, &mut actual)
     else {
         panic!("expected surface-offset round trip")
     };
-    let round_trip_base = actual_base.clone();
-    *actual_base = expected_base.clone();
+    let round_trip_base = actual_payload.base().clone();
+    *actual_payload =
+        cadmpeg_ir::geometry::curve_payloads::SurfaceOffsetCurveConstruction::try_new(
+            actual_payload.context().clone(),
+            *actual_payload.discontinuity_flag(),
+            [
+                actual_payload.base_u_range().endpoints(),
+                actual_payload.base_v_range().endpoints(),
+            ],
+            (
+                expected_payload.base().clone(),
+                actual_payload.base_range().endpoints(),
+                actual_payload
+                    .base_endpoints()
+                    .map(|endpoint| endpoint.map(cadmpeg_ir::scalar::FiniteReal::get)),
+            ),
+            cadmpeg_ir::geometry::CacheContract::from_form(
+                actual_payload
+                    .cache_first()
+                    .map(cadmpeg_ir::geometry::CacheFirstCurveForm::to_raw),
+            ),
+            actual_payload.distance().get(),
+            [actual_payload.shift().get(), actual_payload.scale().get()],
+        )
+        .unwrap();
     assert_eq!(actual, expected);
     assert!(round_trip
         .ir()
@@ -848,17 +1229,16 @@ fn generated_revision_offset_surface_round_trips() {
             &DecodeOptions::default(),
         )
         .expect("revision offset decode");
-    let ProceduralSurfaceDefinition::Offset {
-        u_sense,
-        v_sense,
-        extension,
-        ..
-    } = &result.ir().model.procedural_surfaces[0].definition()
+    let ProceduralSurfaceDefinition::Offset(definition_payload) =
+        &result.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected offset surface construction")
     };
+    let u_sense = definition_payload.u_sense();
+    let v_sense = definition_payload.v_sense();
+    let extension = definition_payload.extension();
     assert_eq!((*u_sense, *v_sense), (None, None));
-    let cadmpeg_ir::geometry::OffsetExtension::Revision(form) = extension else {
+    let cadmpeg_ir::geometry::OffsetExtension::Revision { form } = extension else {
         panic!("expected revision offset extension")
     };
     assert_eq!(form.flags, [false, true, false, false]);
@@ -893,15 +1273,16 @@ fn generated_parameterized_revision_offset_surface_round_trips() {
     let procedural = &result.ir().model.procedural_surfaces[0];
     // Cache form 2 stores no fit tolerance.
     assert_eq!(procedural.cache_fit_tolerance(), None);
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset { extension, .. } =
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset(definition_payload) =
         procedural.definition()
     else {
         panic!("expected offset surface construction")
     };
-    let cadmpeg_ir::geometry::OffsetExtension::Revision(form) = extension else {
+    let extension = &definition_payload.extension().to_raw();
+    let cadmpeg_ir::geometry::OffsetExtension::Revision { form } = extension else {
         panic!("expected revision form")
     };
-    assert_eq!(form.cache.selector(), 2);
+    assert!(form.cache.parameterization().is_some());
     let parameterization = form
         .cache
         .parameterization()
@@ -971,9 +1352,11 @@ fn generated_revision_orthogonal_taper_decodes_sense_true() {
         .first()
         .expect("ortho construction")
         .definition();
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Taper { taper, .. } = definition else {
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Taper(definition_payload) = definition
+    else {
         panic!("expected taper definition, got {definition:?}");
     };
+    let taper = definition_payload.taper();
     assert_eq!(
         *taper,
         cadmpeg_ir::geometry::TaperSurfaceKind::Orthogonal { sense: true }
@@ -1048,11 +1431,15 @@ fn generated_parameterized_revision_loft_surface_round_trips() {
     let procedural = &result.ir().model.procedural_surfaces[0];
     // Cache form 2 stores no fit tolerance.
     assert_eq!(procedural.cache_fit_tolerance(), None);
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Loft { revision_form, .. } =
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Loft(definition_payload) =
         procedural.definition()
     else {
         panic!("expected a loft construction")
     };
+    let revision_form = definition_payload
+        .revision_form()
+        .map(cadmpeg_ir::geometry::LoftRevisionForm::to_raw);
+
     let form = revision_form.as_ref().expect("revision form");
     assert_parameterized_tail(&form.cache);
 }
@@ -1203,9 +1590,12 @@ fn oversized_nested_protein_entry_is_rejected_before_allocation() {
     let mut protein = zip.finish().unwrap().into_inner();
     set_zip_entry_uncompressed_size(&mut protein, target, u32::MAX);
 
-    let error =
-        crate::materials::patch_protein_appearances(&protein, &std::collections::BTreeMap::new())
-            .expect_err("oversized nested Protein entry must be rejected");
+    let error = crate::materials::patch_protein_appearances(
+        &protein,
+        &std::collections::BTreeMap::new(),
+        &mut Vec::new(),
+    )
+    .expect_err("oversized nested Protein entry must be rejected");
     assert!(error.to_string().contains("inflated bytes"));
 }
 

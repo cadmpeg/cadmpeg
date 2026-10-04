@@ -1,0 +1,1732 @@
+use crate::families::standard::topology::EdgeBoundaryLayout;
+use crate::families::standard::topology::EdgeRow;
+use crate::solve::incidence::prepare_face_configuration_domains;
+use crate::solve::incidence::prune_face_configuration_singleton_support;
+use crate::solve::incidence::prune_face_configuration_support;
+use crate::solve::incidence::prune_incidence_choices_with_deferred_support;
+use crate::solve::incidence::prune_ordered_face_endpoint_support;
+use crate::solve::incidence::reconstruct_incidence_candidates;
+use crate::solve::incidence::IncidenceEndpointDomains;
+use crate::solve::incidence::IncidenceSearchState;
+use crate::solve::mesh_quotient::AssignmentOrder;
+use crate::solve::mesh_quotient::MeshPartialEndpointConstraint;
+use crate::solve::mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS;
+use crate::solve::missing_edge::MeshBoundaryEdgeCandidate;
+use crate::solve::missing_edge::MeshFaceBoundaryAssignment;
+use crate::solve::missing_edge::MeshFaceBoundaryDomain;
+use cadmpeg_core::decode::WorkBudget;
+use std::cell::RefCell;
+use std::collections::BTreeMap;
+use std::collections::HashMap;
+use std::collections::HashSet;
+
+#[test]
+fn incidence_factor_checkpoint_refuses_nested_mask_copies() {
+    use crate::solve::incidence::{FaceFactorRefinement, PreparedFaceFactors};
+    use cadmpeg_core::CodecError;
+    use std::collections::BTreeSet;
+
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        let mut factors = PreparedFaceFactors {
+            domains: Vec::new(),
+            factor_faces: Vec::new(),
+            factor_by_face: Vec::new(),
+            factors_by_edge: Vec::new(),
+            active: Some(vec![vec![1u64, 2u64]]),
+        };
+        factors.refine_edges(ctx, &[])
+    };
+    crate::test_support::with_service_context(|ctx| {
+        assert!(matches!(
+            run(ctx).expect("service budget"),
+            FaceFactorRefinement::Tracked(_)
+        ));
+    });
+    let mut refusals = BTreeSet::new();
+    for cap in 0..=4 {
+        match crate::test_support::with_collection_limit(cap, run) {
+            Err(CodecError::ResourceLimit(limit)) => {
+                refusals.insert(limit.operation);
+            }
+            Ok(FaceFactorRefinement::Tracked(_)) => break,
+            _ => panic!("unexpected face factor checkpoint result"),
+        }
+    }
+    assert_eq!(
+        refusals,
+        BTreeSet::from([
+            "catia_face_factor_checkpoint_rows",
+            "catia_face_factor_checkpoint_words"
+        ])
+    );
+}
+
+fn sparse_degrees(faces: &[&[u8]]) -> Vec<BTreeMap<usize, u8>> {
+    faces
+        .iter()
+        .map(|degrees| {
+            degrees
+                .iter()
+                .copied()
+                .enumerate()
+                .filter_map(|(point, degree)| (degree != 0).then_some((point, degree)))
+                .collect()
+        })
+        .collect()
+}
+
+#[test]
+fn endpoint_candidate_search_selects_a_face_closing_assignment() {
+    catia_test_context!(ctx);
+    let rows: Vec<_> = (0..6)
+        .map(|edge| {
+            assert!(EdgeRow::new(
+                1,
+                vec![edge * 2, edge * 2 + 1],
+                EdgeBoundaryLayout::InteriorWithFlankingCorners
+            )
+            .is_none());
+            EdgeRow::new(
+                1,
+                vec![edge * 2, edge * 2, edge * 2 + 1],
+                EdgeBoundaryLayout::InteriorWithFlankingCorners,
+            )
+            .expect("admitted edge row")
+        })
+        .collect();
+    let points = vec![
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+    ];
+    let edge_faces = [[0, 1], [0, 2], [0, 3], [1, 3], [1, 2], [2, 3]];
+    let candidates = vec![
+        vec![[0, 2], [0, 1]],
+        vec![[1, 2]],
+        vec![[0, 2]],
+        vec![[0, 3]],
+        vec![[1, 3]],
+        vec![[2, 3]],
+    ];
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let topology = reconstruct_incidence_candidates(
+        &ctx,
+        &rows,
+        &points,
+        &edge_faces,
+        IncidenceEndpointDomains {
+            candidates: &candidates,
+            ports: None,
+        },
+        4,
+        &budget,
+    )
+    .expect("service resource budget")
+    .expect("unique face-closing endpoint assignment");
+    assert_eq!(
+        topology
+            .edge_vertices(&ctx)
+            .expect("service resource budget")
+            .expect("edge vertices")[0],
+        [0, 1]
+    );
+
+    let ports = [[11, 10], [11, 12], [10, 12], [13, 10], [11, 13], [13, 12]];
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let topology = reconstruct_incidence_candidates(
+        &ctx,
+        &rows,
+        &points,
+        &edge_faces,
+        IncidenceEndpointDomains {
+            candidates: &candidates,
+            ports: Some(&ports),
+        },
+        4,
+        &budget,
+    )
+    .expect("service resource budget")
+    .expect("unique face-closing assignment with deferred port orientation");
+    assert_eq!(
+        topology
+            .edge_vertices(&ctx)
+            .expect("service resource budget")
+            .expect("edge vertices")[0],
+        [1, 0]
+    );
+}
+
+#[test]
+fn endpoint_candidate_fallback_honors_caller_budget() {
+    catia_test_context!(ctx);
+    let rows: Vec<_> = (0..6)
+        .map(|edge| {
+            assert!(EdgeRow::new(
+                1,
+                vec![edge * 2, edge * 2 + 1],
+                EdgeBoundaryLayout::InteriorWithFlankingCorners
+            )
+            .is_none());
+            EdgeRow::new(
+                1,
+                vec![edge * 2, edge * 2, edge * 2 + 1],
+                EdgeBoundaryLayout::InteriorWithFlankingCorners,
+            )
+            .expect("admitted edge row")
+        })
+        .collect();
+    let points = vec![
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+    ];
+    let edge_faces = [[0, 1], [0, 2], [0, 3], [1, 3], [1, 2], [2, 3]];
+    let candidates = vec![
+        vec![[0, 2], [0, 1]],
+        vec![[1, 2]],
+        vec![[0, 2]],
+        vec![[0, 3]],
+        vec![[1, 3]],
+        vec![[2, 3]],
+    ];
+    let budget = WorkBudget::new(0);
+
+    assert!(reconstruct_incidence_candidates(
+        &ctx,
+        &rows,
+        &points,
+        &edge_faces,
+        IncidenceEndpointDomains {
+            candidates: &candidates,
+            ports: None,
+        },
+        4,
+        &budget,
+    )
+    .expect("service resource budget")
+    .is_none());
+    assert!(budget.exhausted());
+}
+
+#[test]
+fn endpoint_candidate_validation_charges_full_incidence_work() {
+    use crate::solve::incidence::{visit_incidence_endpoint_pair_solutions, IncidenceSolve};
+    use std::ops::ControlFlow;
+
+    catia_test_context!(ctx);
+    let rows = vec![
+        {
+            assert!(EdgeRow::new(
+                1,
+                vec![0, 1],
+                EdgeBoundaryLayout::InteriorWithFlankingCorners
+            )
+            .is_none());
+            EdgeRow::new(
+                1,
+                vec![0, 0, 1],
+                EdgeBoundaryLayout::InteriorWithFlankingCorners,
+            )
+            .expect("admitted edge row")
+        };
+        3
+    ];
+    let points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
+    let edge_faces = [[0, 0]; 3];
+    let candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
+    let budget = WorkBudget::new(2);
+    let mut visited = false;
+    let outcome = visit_incidence_endpoint_pair_solutions(
+        &ctx,
+        crate::solve::incidence::VisitIncidenceEndpointPairSolutionsInputs {
+            edge_rows: &rows,
+            vertex_points: &points,
+            edge_faces: &edge_faces,
+            edge_candidates: &candidates,
+            face_count: 1,
+            mesh_assignments: None,
+            mesh_quotient: None,
+            partial_solution_valid: None,
+            complete_solution_budget: Some(&budget),
+            solution_valid: &|_| Ok(true),
+            visitor: &mut |_| {
+                visited = true;
+                Ok(ControlFlow::Continue(()))
+            },
+        },
+    )
+    .expect("service resource budget");
+
+    assert_eq!(outcome, IncidenceSolve::Exhausted);
+    assert!(!visited);
+}
+
+#[test]
+fn incidence_propagation_closes_degree_one_vertices_before_search() {
+    catia_test_context!(ctx);
+    let mut choices = vec![vec![[0, 1]], vec![[1, 2], [3, 4]], vec![[2, 0]]];
+    let edge_faces = [[0, 0], [0, 0], [0, 0]];
+    crate::solve::incidence::prune_incidence_choices(&ctx, &mut choices, &edge_faces, 1, 5)
+        .expect("service resource budget")
+        .expect("face incidence is satisfiable");
+    assert_eq!(choices, vec![vec![[0, 1]], vec![[1, 2]], vec![[2, 0]]]);
+}
+
+#[test]
+fn incidence_choice_pruning_refuses_face_edge_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let choices = vec![vec![[0, 1]], vec![[0, 1]]];
+    let edge_faces = [[0, 0], [0, 0]];
+    catia_test_context!(service_ctx);
+    let mut service_choices = choices.clone();
+    assert!(crate::solve::incidence::prune_incidence_choices(
+        &service_ctx,
+        &mut service_choices,
+        &edge_faces,
+        1,
+        2,
+    )
+    .expect("service budget")
+    .is_some());
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let mut limited_choices = choices;
+    let error = crate::solve::incidence::prune_incidence_choices(
+        &ctx,
+        &mut limited_choices,
+        &edge_faces,
+        1,
+        2,
+    )
+    .expect_err("face edge collection exceeds the limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "catia_incidence_face_edges"));
+}
+
+#[test]
+fn incidence_choice_pruning_charges_fixed_degree_and_support_arrays() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use std::collections::BTreeSet;
+
+    let choices = vec![vec![[0, 1]], vec![[0, 1]]];
+    let edge_faces = [[0, 0], [0, 0]];
+    let mut operations = BTreeSet::new();
+    let mut completed = false;
+    for limit in 0..=64 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        let mut remaining = choices.clone();
+        match crate::solve::incidence::prune_incidence_choices(
+            &ctx,
+            &mut remaining,
+            &edge_faces,
+            1,
+            2,
+        ) {
+            Err(CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                operations.insert(error.operation);
+            }
+            Ok(Some(())) => {
+                completed = true;
+                break;
+            }
+            Ok(None) => panic!("valid incidence fixture must remain viable"),
+            Err(error) => panic!("unexpected incidence refusal: {error}"),
+        }
+    }
+    assert!(
+        completed,
+        "collection limit 64 must admit the incidence fixture"
+    );
+    assert!(operations.contains("catia_incidence_fixed_edges"));
+    assert!(operations.contains("catia_incidence_degrees"));
+    assert!(operations.contains("catia_incidence_supports"));
+}
+
+#[test]
+fn incidence_propagation_removes_candidates_with_unsupported_vertices() {
+    catia_test_context!(ctx);
+    let mut choices = vec![vec![[0, 1], [2, 3]], vec![[0, 1]]];
+    let edge_faces = [[0, 0], [0, 0]];
+    crate::solve::incidence::prune_incidence_choices(&ctx, &mut choices, &edge_faces, 1, 4)
+        .expect("service resource budget")
+        .expect("face incidence is satisfiable");
+    assert_eq!(choices, vec![vec![[0, 1]], vec![[0, 1]]]);
+}
+
+#[test]
+fn incidence_deferred_support_retains_an_explicit_boundary_gap() {
+    catia_test_context!(ctx);
+    let mut choices = vec![vec![[0, 1]]];
+    let edge_faces = [[0, 0]];
+
+    prune_incidence_choices_with_deferred_support(&ctx, &mut choices, &edge_faces, 1, 2)
+        .expect("service resource budget")
+        .expect("deferred boundary support is not an explicit contradiction");
+    assert_eq!(choices, vec![vec![[0, 1]]]);
+}
+
+#[test]
+fn incidence_propagation_indexes_wide_endpoint_support_domains() {
+    catia_test_context!(ctx);
+    let domain = (0..4096).map(|point| [0, point]).collect::<Vec<_>>();
+    let mut choices = vec![domain.clone(), domain.clone()];
+    let edge_faces = [[0, 0], [0, 0]];
+
+    crate::solve::incidence::prune_incidence_choices(
+        &ctx,
+        &mut choices,
+        &edge_faces,
+        1,
+        domain.len(),
+    )
+    .expect("service resource budget")
+    .expect("each endpoint candidate has support from the other edge");
+    assert_eq!(choices, vec![domain.clone(), domain]);
+}
+
+#[test]
+fn incidence_propagation_does_not_allocate_the_declared_point_product() {
+    catia_test_context!(ctx);
+    let mut choices = vec![vec![[0, 1]], vec![[0, 1]]];
+    let edge_faces = [[0, 0], [0, 0]];
+
+    crate::solve::incidence::prune_incidence_choices(
+        &ctx,
+        &mut choices,
+        &edge_faces,
+        1,
+        usize::MAX,
+    )
+    .expect("service resource budget")
+    .expect("sparse endpoint incidence is independent of the declared cardinality");
+    assert_eq!(choices, vec![vec![[0, 1]], vec![[0, 1]]]);
+}
+
+#[test]
+fn incidence_component_rejects_a_choice_that_strands_a_degree_one_vertex() {
+    catia_test_context!(ctx);
+    let choices = vec![vec![[0, 1], [0, 2]], vec![[0, 2]]];
+    let edge_faces = [[0, 0], [0, 0]];
+    let face_edges = vec![vec![0, 1]];
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let search = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
+        search_storage: RefCell::new(
+            ctx.reserve_scoped(0, "search test storage")
+                .expect("storage"),
+        ),
+        choices: &choices,
+        explicit_point_supports: Vec::new(),
+        point_support_edges: Vec::new(),
+        degree_support_witnesses: RefCell::new(HashMap::new()),
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: None,
+        face_configuration_domains: None,
+        coordinate_domains: None,
+        active: vec![true; 2],
+        edges: &[0, 1],
+        constraints: vec![(0, 0), (0, 1), (0, 2)],
+        assignment: vec![None; 2],
+        degrees: vec![BTreeMap::new()],
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        degree_support_budget: &propagation_budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        state: IncidenceSearchState::Open,
+    };
+
+    assert!(!search
+        .candidate_fits(0, [0, 1])
+        .expect("service resource budget"));
+    assert!(search
+        .candidate_fits(0, [0, 2])
+        .expect("service resource budget"));
+}
+
+#[test]
+fn incidence_component_indexes_and_revalidates_frontier_support() {
+    const IRRELEVANT_EDGES: usize = 32;
+    catia_test_context!(ctx);
+    let mut choices = vec![vec![[0, 1]], vec![[0, 1]]];
+    choices.extend((0..IRRELEVANT_EDGES).map(|edge| vec![[edge + 2, edge + 3]]));
+    let edge_faces = vec![[0, 0]; choices.len()];
+    let face_edges = vec![(0..choices.len()).collect::<Vec<_>>()];
+    let mut explicit_point_supports = vec![HashMap::new(); choices.len()];
+    for supports in explicit_point_supports.iter_mut().take(2) {
+        supports.insert(0, vec![[0, 1]]);
+        supports.insert(1, vec![[0, 1]]);
+    }
+    let point_support_edges = vec![HashMap::from([(0, vec![0, 1]), (1, vec![0, 1])])];
+    let budget = WorkBudget::new(16);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let mut search = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
+        search_storage: RefCell::new(
+            ctx.reserve_scoped(0, "search test storage")
+                .expect("storage"),
+        ),
+        choices: &choices,
+        explicit_point_supports,
+        point_support_edges,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: None,
+        face_configuration_domains: None,
+        coordinate_domains: None,
+        active: vec![true; choices.len()],
+        edges: &[0, 1],
+        constraints: vec![(0, 0), (0, 1)],
+        assignment: vec![None; choices.len()],
+        degrees: vec![BTreeMap::new()],
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        degree_support_budget: &propagation_budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        state: IncidenceSearchState::Open,
+    };
+
+    assert!(search
+        .candidate_fits(0, [0, 1])
+        .expect("service resource budget"));
+    assert!(!budget.exhausted());
+    search.assignment[1] = Some([0, 1]);
+    assert!(!search
+        .candidate_fits(0, [0, 1])
+        .expect("service resource budget"));
+}
+
+#[test]
+fn incidence_component_caches_implicit_frontier_support() {
+    catia_test_context!(ctx);
+    let choices = vec![vec![[0, 1]], Vec::new()];
+    let edge_faces = [[0, 0], [0, 0]];
+    let face_edges = vec![vec![0, 1]];
+    let mut quotient =
+        crate::solve::mesh_quotient::initial_mesh_quotient(&ctx, &choices, 2, &[[0, 1], [0, 1]])
+            .expect("service resource budget")
+            .expect("initial quotient");
+    let coordinate_domains = quotient
+        .prepare_coordinate_root_domains(&ctx, 2, &choices, None)
+        .expect("service resource budget")
+        .expect("implicit coordinate domains");
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let search = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
+        search_storage: RefCell::new(
+            ctx.reserve_scoped(0, "search test storage")
+                .expect("storage"),
+        ),
+        choices: &choices,
+        explicit_point_supports: Vec::new(),
+        point_support_edges: Vec::new(),
+        degree_support_witnesses: RefCell::new(HashMap::new()),
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: None,
+        face_configuration_domains: None,
+        coordinate_domains: Some(&coordinate_domains),
+        active: vec![true; 2],
+        edges: &[0, 1],
+        constraints: vec![(0, 0), (0, 1)],
+        assignment: vec![None; 2],
+        degrees: vec![BTreeMap::new()],
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        degree_support_budget: &propagation_budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        state: IncidenceSearchState::Open,
+    };
+
+    assert!(search
+        .candidate_fits(0, [0, 1])
+        .expect("service resource budget"));
+    assert_eq!(
+        *search.degree_support_witnesses.borrow(),
+        HashMap::from([((0, 0), vec![(1, [0, 1])]), ((0, 1), vec![(1, [0, 1])]),])
+    );
+}
+
+#[test]
+fn incidence_implicit_frontier_witness_refuses_map_and_pair_growth() {
+    use cadmpeg_core::CodecError;
+    use std::collections::BTreeSet;
+
+    let choices = vec![vec![[0, 1]], Vec::new()];
+    let edge_faces = [[0, 0], [0, 0]];
+    let face_edges = vec![vec![0, 1]];
+    let coordinate_domains = crate::test_support::with_service_context(|ctx| {
+        let mut quotient =
+            crate::solve::mesh_quotient::initial_mesh_quotient(ctx, &choices, 2, &[[0, 1], [0, 1]])
+                .expect("service budget")
+                .expect("initial quotient");
+        quotient
+            .prepare_coordinate_root_domains(ctx, 2, &choices, None)
+            .expect("service budget")
+            .expect("coordinate domains")
+    });
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+        let search = crate::solve::incidence::IncidenceComponentSearch {
+            ctx,
+            search_storage: RefCell::new(
+                ctx.reserve_scoped(0, "search test storage")
+                    .expect("storage"),
+            ),
+            choices: &choices,
+            explicit_point_supports: Vec::new(),
+            point_support_edges: Vec::new(),
+            degree_support_witnesses: RefCell::new(HashMap::new()),
+            edge_faces: &edge_faces,
+            face_edges: &face_edges,
+            mesh_assignments: None,
+            face_configuration_domains: None,
+            coordinate_domains: Some(&coordinate_domains),
+            active: vec![true; 2],
+            edges: &[0, 1],
+            constraints: vec![(0, 0), (0, 1)],
+            assignment: vec![None; 2],
+            degrees: vec![BTreeMap::new()],
+            solutions: Vec::new(),
+            solution_filter: None,
+            solution_visitor: None,
+            partial_solution_filter: None,
+            dead_states: HashSet::new(),
+            budget: &budget,
+            degree_support_budget: &budget,
+            coordinate_propagation_budget: &budget,
+            boundary_propagation_budget: &budget,
+            state: IncidenceSearchState::Open,
+        };
+        search.candidate_fits(0, [0, 1])
+    };
+    crate::test_support::with_service_context(|ctx| {
+        assert!(run(ctx).expect("service budget"));
+    });
+    let mut refusals = BTreeSet::new();
+    for cap in 0..=128 {
+        match crate::test_support::with_collection_limit(cap, run) {
+            Err(CodecError::ResourceLimit(limit)) => {
+                refusals.insert(limit.operation);
+            }
+            Ok(true) => break,
+            _ => panic!("unexpected implicit frontier result"),
+        }
+    }
+    assert!(refusals.contains("catia_incidence_witness_keys"));
+    assert!(refusals.contains("catia_incidence_witness_pairs"));
+}
+
+#[test]
+fn incidence_degree_support_budget_exhaustion_keeps_candidate_unknown() {
+    catia_test_context!(ctx);
+    let choices = vec![vec![[0, 1]], vec![[0, 1]]];
+    let edge_faces = [[0, 0], [0, 0]];
+    let face_edges = vec![vec![0, 1]];
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let degree_budget = WorkBudget::new(1);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let mut search = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
+        search_storage: RefCell::new(
+            ctx.reserve_scoped(0, "search test storage")
+                .expect("storage"),
+        ),
+        choices: &choices,
+        explicit_point_supports: Vec::new(),
+        point_support_edges: Vec::new(),
+        degree_support_witnesses: RefCell::new(HashMap::new()),
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: None,
+        face_configuration_domains: None,
+        coordinate_domains: None,
+        active: vec![true; 2],
+        edges: &[0, 1],
+        constraints: vec![(0, 0), (0, 1)],
+        assignment: vec![None; 2],
+        degrees: vec![BTreeMap::new()],
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        degree_support_budget: &degree_budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        state: IncidenceSearchState::Open,
+    };
+
+    assert!(search
+        .candidate_fits(0, [0, 1])
+        .expect("service resource budget"));
+    assert!(!budget.exhausted());
+    assert!(degree_budget.exhausted());
+    search.search().expect("service resource budget");
+    assert_ne!(search.state, IncidenceSearchState::Exhausted);
+}
+
+#[test]
+fn incidence_component_requires_degree_support_to_fit_every_incident_face() {
+    catia_test_context!(ctx);
+    let choices = vec![vec![[0, 1]], vec![[1, 2]]];
+    let edge_faces = [[0, 0], [0, 1]];
+    let face_edges = vec![vec![0, 1], vec![1]];
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let search = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
+        search_storage: RefCell::new(
+            ctx.reserve_scoped(0, "search test storage")
+                .expect("storage"),
+        ),
+        choices: &choices,
+        explicit_point_supports: Vec::new(),
+        point_support_edges: Vec::new(),
+        degree_support_witnesses: RefCell::new(HashMap::new()),
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: None,
+        face_configuration_domains: None,
+        coordinate_domains: None,
+        active: vec![true; 2],
+        edges: &[0, 1],
+        constraints: vec![(0, 0), (0, 1), (0, 2), (1, 1), (1, 2)],
+        assignment: vec![None; 2],
+        degrees: sparse_degrees(&[&[0, 0, 0], &[0, 0, 2]]),
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        degree_support_budget: &propagation_budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        state: IncidenceSearchState::Open,
+    };
+
+    assert!(!search
+        .candidate_fits(0, [0, 1])
+        .expect("service resource budget"));
+}
+
+#[test]
+fn incidence_candidate_checks_ordered_faces_with_implicit_edge_domains() {
+    catia_test_context!(ctx);
+    let choices = vec![vec![[0, 0]], Vec::new()];
+    let edge_faces = [[0, 0], [0, 0]];
+    let face_edges = vec![vec![0, 1]];
+    let mut quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
+        &ctx,
+        &choices,
+        2,
+        &[[10, 10], [11, 12]],
+    )
+    .expect("service resource budget")
+    .expect("initial quotient");
+    let coordinate_domains = quotient
+        .prepare_coordinate_root_domains(&ctx, 2, &choices, None)
+        .expect("service resource budget")
+        .expect("implicit coordinate domains");
+    let use_ = |edge| MeshBoundaryEdgeCandidate {
+        edge,
+        start: 0,
+        end: 0,
+        reversed: Some(false),
+    };
+    let assignments = vec![MeshFaceBoundaryDomain::Ordered(vec![
+        MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(0), use_(1)]],
+        },
+    ])];
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let search = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
+        search_storage: RefCell::new(
+            ctx.reserve_scoped(0, "search test storage")
+                .expect("storage"),
+        ),
+        choices: &choices,
+        explicit_point_supports: Vec::new(),
+        point_support_edges: Vec::new(),
+        degree_support_witnesses: RefCell::new(HashMap::new()),
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: Some(&assignments),
+        face_configuration_domains: None,
+        coordinate_domains: Some(&coordinate_domains),
+        active: vec![true; 2],
+        edges: &[0, 1],
+        constraints: Vec::new(),
+        assignment: vec![None; 2],
+        degrees: vec![BTreeMap::new()],
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        degree_support_budget: &propagation_budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        state: IncidenceSearchState::Open,
+    };
+
+    assert!(!search
+        .candidate_fits(0, [0, 0])
+        .expect("service resource budget"));
+    assert!(!propagation_budget.exhausted());
+}
+
+#[test]
+fn incidence_branch_reuses_candidate_viability_across_incident_face_frontiers() {
+    catia_test_context!(ctx);
+    let choices = vec![vec![[0, 2]], vec![[2, 4]]];
+    let edge_faces = [[0, 1], [0, 1]];
+    let face_edges = vec![vec![0, 1], vec![0, 1]];
+    let budget = WorkBudget::new(4);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let search = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
+        search_storage: RefCell::new(
+            ctx.reserve_scoped(0, "search test storage")
+                .expect("storage"),
+        ),
+        choices: &choices,
+        explicit_point_supports: Vec::new(),
+        point_support_edges: Vec::new(),
+        degree_support_witnesses: RefCell::new(HashMap::new()),
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: None,
+        face_configuration_domains: None,
+        coordinate_domains: None,
+        active: vec![true, true],
+        edges: &[0, 1],
+        constraints: vec![(0, 0), (1, 0)],
+        assignment: vec![None, None],
+        degrees: sparse_degrees(&[&[1, 0], &[1, 0]]),
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        degree_support_budget: &propagation_budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        state: IncidenceSearchState::Open,
+    };
+
+    assert_eq!(
+        search
+            .branch(None)
+            .map(|options| options.map(Iterator::collect))
+            .expect("service resource budget"),
+        Some(vec![(0, [0, 2])])
+    );
+    assert!(!budget.exhausted());
+}
+
+#[test]
+fn incidence_branch_stops_ranking_at_a_singleton_domain() {
+    catia_test_context!(ctx);
+    let choices = vec![vec![[0, 2]], vec![[2, 4]]];
+    let edge_faces = [[0, 0], [0, 0]];
+    let face_edges = vec![vec![0, 1], Vec::new()];
+    let budget = WorkBudget::new(4);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let search = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
+        search_storage: RefCell::new(
+            ctx.reserve_scoped(0, "search test storage")
+                .expect("storage"),
+        ),
+        choices: &choices,
+        explicit_point_supports: Vec::new(),
+        point_support_edges: Vec::new(),
+        degree_support_witnesses: RefCell::new(HashMap::new()),
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: None,
+        face_configuration_domains: None,
+        coordinate_domains: None,
+        active: vec![true, true],
+        edges: &[0, 1],
+        constraints: vec![(0, 0), (1, 9)],
+        assignment: vec![None, None],
+        degrees: sparse_degrees(&[&[1, 0], &[1, 9]]),
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        degree_support_budget: &propagation_budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        state: IncidenceSearchState::Open,
+    };
+
+    assert_eq!(
+        search
+            .branch(None)
+            .map(|options| options.map(Iterator::collect))
+            .expect("service resource budget"),
+        Some(vec![(0, [0, 2])])
+    );
+    assert!(!budget.exhausted());
+}
+
+#[test]
+fn incidence_component_uses_operation_budget_for_a_wide_rejected_frontier() {
+    const EDGE_COUNT: usize = 9;
+    catia_test_context!(ctx);
+    let choices = (0..EDGE_COUNT)
+        .map(|edge| vec![[edge * 2, edge * 2], [edge * 2 + 1, edge * 2 + 1]])
+        .collect::<Vec<_>>();
+    let edge_faces = (0..EDGE_COUNT).map(|face| [face, face]).collect::<Vec<_>>();
+    let face_edges = (0..EDGE_COUNT).map(|edge| vec![edge]).collect::<Vec<_>>();
+    let edges = (0..EDGE_COUNT).collect::<Vec<_>>();
+    let constraints = (0..EDGE_COUNT)
+        .flat_map(|face| [(face, face * 2), (face, face * 2 + 1)])
+        .collect::<Vec<_>>();
+    let solution_filter =
+        |solution: &[(usize, [usize; 2])]| Ok(solution.iter().all(|(_, pair)| pair[0] % 2 == 0));
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let mut search = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
+        search_storage: RefCell::new(
+            ctx.reserve_scoped(0, "search test storage")
+                .expect("storage"),
+        ),
+        choices: &choices,
+        explicit_point_supports: Vec::new(),
+        point_support_edges: Vec::new(),
+        degree_support_witnesses: RefCell::new(HashMap::new()),
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: None,
+        face_configuration_domains: None,
+        coordinate_domains: None,
+        active: vec![true; EDGE_COUNT],
+        edges: &edges,
+        constraints,
+        assignment: vec![None; EDGE_COUNT],
+        degrees: vec![BTreeMap::new(); EDGE_COUNT],
+        solutions: Vec::new(),
+        solution_filter: Some(&solution_filter),
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        degree_support_budget: &propagation_budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        state: IncidenceSearchState::Open,
+    };
+
+    search.search().expect("service resource budget");
+
+    assert_ne!(search.state, IncidenceSearchState::Exhausted);
+    assert_eq!(search.solutions.len(), 1);
+}
+
+#[test]
+fn incidence_solution_filter_propagates_collection_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let run = |ctx: &DecodeContext<'_>| {
+        let choices = vec![vec![[0, 0]]];
+        let edge_faces = [[0, 0]];
+        let face_edges = vec![vec![0]];
+        let edges = [0];
+        let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+        let filter = |_: &[(usize, [usize; 2])]| -> Result<bool, CodecError> {
+            ctx.alloc_filled(1, true, "catia incidence solution filter probe")?;
+            Ok(true)
+        };
+        let mut search = crate::solve::incidence::IncidenceComponentSearch {
+            ctx,
+            search_storage: RefCell::new(
+                ctx.reserve_scoped(0, "search test storage")
+                    .expect("storage"),
+            ),
+            choices: &choices,
+            explicit_point_supports: Vec::new(),
+            point_support_edges: Vec::new(),
+            degree_support_witnesses: RefCell::new(HashMap::new()),
+            edge_faces: &edge_faces,
+            face_edges: &face_edges,
+            mesh_assignments: None,
+            face_configuration_domains: None,
+            coordinate_domains: None,
+            active: vec![true],
+            edges: &edges,
+            constraints: Vec::new(),
+            assignment: vec![None],
+            degrees: vec![BTreeMap::new()],
+            solutions: Vec::new(),
+            solution_filter: Some(&filter),
+            solution_visitor: None,
+            partial_solution_filter: None,
+            dead_states: HashSet::new(),
+            budget: &budget,
+            degree_support_budget: &budget,
+            coordinate_propagation_budget: &budget,
+            boundary_propagation_budget: &budget,
+            state: IncidenceSearchState::Open,
+        };
+        search.search()?;
+        Ok::<_, CodecError>(search.solutions)
+    };
+
+    catia_test_context!(service_ctx);
+    assert_eq!(
+        run(&service_ctx).expect("service resource budget"),
+        vec![vec![(0, [0, 0])]]
+    );
+    let mut limit = 0;
+    let mut operations = HashSet::new();
+    for _ in 0..512 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        let error = run(&ctx).expect_err("filter allocation exceeds the collection limit");
+        let CodecError::ResourceLimit(refusal) = error else {
+            panic!("expected collection refusal");
+        };
+        assert_eq!(refusal.dimension, ResourceDimension::CollectionItems);
+        operations.insert(refusal.operation);
+        if refusal.operation == "catia incidence solution filter probe" {
+            assert!(operations.contains("catia_incidence_branch_edge_widths"));
+            assert!(operations.contains("catia_incidence_branch_options"));
+            return;
+        }
+        limit = refusal.used + refusal.additional;
+    }
+    panic!("adaptive cap did not reach the filter probe");
+}
+
+#[test]
+fn incidence_component_schedules_partial_constraint_variables_first() {
+    catia_test_context!(ctx);
+    let choices = vec![vec![[0, 1], [0, 2]], vec![[3, 4], [3, 5], [4, 5]]];
+    let edge_faces = [[0, 0], [0, 0]];
+    let face_edges = vec![vec![0, 1]];
+    let edges = [0, 1];
+    let active_edges = [true, true];
+    let assignment_dependencies = [vec![1], Vec::new()];
+    let valid = |_: &[Option<[usize; 2]>]| true;
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let search = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
+        search_storage: RefCell::new(
+            ctx.reserve_scoped(0, "search test storage")
+                .expect("storage"),
+        ),
+        choices: &choices,
+        explicit_point_supports: Vec::new(),
+        point_support_edges: Vec::new(),
+        degree_support_witnesses: RefCell::new(HashMap::new()),
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: None,
+        face_configuration_domains: None,
+        coordinate_domains: None,
+        active: vec![true; 2],
+        edges: &edges,
+        constraints: Vec::new(),
+        assignment: vec![None; 2],
+        degrees: vec![BTreeMap::new()],
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: Some(MeshPartialEndpointConstraint {
+            active_edges: &active_edges,
+            coupled_edges: &active_edges,
+            assignment_order: AssignmentOrder::new(None, Some(&assignment_dependencies)),
+            valid: &valid,
+        }),
+        dead_states: HashSet::new(),
+        budget: &budget,
+        degree_support_budget: &propagation_budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        state: IncidenceSearchState::Open,
+    };
+
+    assert_eq!(
+        search
+            .branch(None)
+            .map(|options| options.map(Iterator::collect))
+            .expect("service resource budget"),
+        Some(vec![(1, [3, 4]), (1, [3, 5]), (1, [4, 5])])
+    );
+}
+
+#[test]
+fn incidence_component_assigns_canonical_class_members_in_order() {
+    catia_test_context!(ctx);
+    let choices = vec![
+        vec![[0, 1], [0, 2]],
+        vec![[0, 1], [0, 2]],
+        vec![[3, 4], [3, 5]],
+    ];
+    let edge_faces = [[0, 0]; 3];
+    let face_edges = vec![vec![0, 1, 2]];
+    let active_edges = [false; 3];
+    let assignment_predecessors = [None, Some(0), Some(0)];
+    let valid = |_: &[Option<[usize; 2]>]| true;
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let search = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
+        search_storage: RefCell::new(
+            ctx.reserve_scoped(0, "search test storage")
+                .expect("storage"),
+        ),
+        choices: &choices,
+        explicit_point_supports: Vec::new(),
+        point_support_edges: Vec::new(),
+        degree_support_witnesses: RefCell::new(HashMap::new()),
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: None,
+        face_configuration_domains: None,
+        coordinate_domains: None,
+        active: vec![true, true, false],
+        edges: &[0, 1],
+        constraints: Vec::new(),
+        assignment: vec![None; 3],
+        degrees: vec![BTreeMap::new()],
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: Some(MeshPartialEndpointConstraint {
+            active_edges: &active_edges,
+            coupled_edges: &active_edges,
+            assignment_order: AssignmentOrder::new(Some(&assignment_predecessors), None),
+            valid: &valid,
+        }),
+        dead_states: HashSet::new(),
+        budget: &budget,
+        degree_support_budget: &propagation_budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        state: IncidenceSearchState::Open,
+    };
+
+    assert_eq!(
+        search
+            .branch(None)
+            .map(|options| options.map(Iterator::collect))
+            .expect("service resource budget"),
+        Some(vec![(0, [0, 1]), (0, [0, 2])])
+    );
+
+    let independent = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
+        active: vec![false, false, true],
+        edges: &[2],
+        ..search
+    };
+    assert_eq!(
+        independent
+            .branch(None)
+            .map(|options| options.map(Iterator::collect))
+            .expect("service resource budget"),
+        Some(Vec::new())
+    );
+}
+
+#[test]
+fn incidence_component_declines_when_its_work_budget_is_exhausted() {
+    catia_test_context!(ctx);
+    let choices = vec![vec![[0, 0]]];
+    let edge_faces = [[0, 0]];
+    let face_edges = vec![vec![0]];
+    let edges = [0];
+    let budget = WorkBudget::new(0);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let mut search = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
+        search_storage: RefCell::new(
+            ctx.reserve_scoped(0, "search test storage")
+                .expect("storage"),
+        ),
+        choices: &choices,
+        explicit_point_supports: Vec::new(),
+        point_support_edges: Vec::new(),
+        degree_support_witnesses: RefCell::new(HashMap::new()),
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: None,
+        face_configuration_domains: None,
+        coordinate_domains: None,
+        active: vec![true],
+        edges: &edges,
+        constraints: vec![(0, 0)],
+        assignment: vec![None],
+        degrees: vec![BTreeMap::new()],
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        degree_support_budget: &propagation_budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        state: IncidenceSearchState::Open,
+    };
+
+    search.search().expect("service resource budget");
+
+    assert!(matches!(search.state, IncidenceSearchState::Exhausted));
+    assert!(search.solutions.is_empty());
+}
+
+#[test]
+fn incidence_face_configuration_scan_does_not_charge_irrelevant_faces() {
+    catia_test_context!(ctx);
+    let choices = vec![vec![[0, 0]]];
+    let edge_faces = [[0, 0]];
+    let face_edges = vec![vec![0]];
+    let assignments = vec![MeshFaceBoundaryDomain::Ordered(vec![
+        MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+                edge: 0,
+                start: 0,
+                end: 0,
+                reversed: Some(false),
+            }]],
+        },
+    ])];
+    let budget = WorkBudget::new(0);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let search = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
+        search_storage: RefCell::new(
+            ctx.reserve_scoped(0, "search test storage")
+                .expect("storage"),
+        ),
+        choices: &choices,
+        explicit_point_supports: Vec::new(),
+        point_support_edges: Vec::new(),
+        degree_support_witnesses: RefCell::new(HashMap::new()),
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: Some(&assignments),
+        face_configuration_domains: None,
+        coordinate_domains: None,
+        active: vec![false],
+        edges: &[],
+        constraints: Vec::new(),
+        assignment: vec![Some([0, 0])],
+        degrees: sparse_degrees(&[&[2]]),
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        degree_support_budget: &propagation_budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        state: IncidenceSearchState::Open,
+    };
+
+    assert_eq!(
+        search
+            .face_configuration_options()
+            .expect("service resource budget"),
+        None
+    );
+    assert!(!budget.exhausted());
+}
+
+#[test]
+fn exhausted_boundary_lookahead_does_not_exhaust_exact_incidence_search() {
+    catia_test_context!(ctx);
+    let choices = vec![vec![[0, 0]]];
+    let edge_faces = [[0, 0]];
+    let face_edges = vec![vec![0]];
+    let assignments = vec![MeshFaceBoundaryDomain::Ordered(vec![
+        MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+                edge: 0,
+                start: 0,
+                end: 0,
+                reversed: Some(false),
+            }]],
+        },
+    ])];
+    let search_budget = WorkBudget::new(16);
+    let propagation_budget = WorkBudget::new(0);
+    let mut search = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
+        search_storage: RefCell::new(
+            ctx.reserve_scoped(0, "search test storage")
+                .expect("storage"),
+        ),
+        choices: &choices,
+        explicit_point_supports: Vec::new(),
+        point_support_edges: Vec::new(),
+        degree_support_witnesses: RefCell::new(HashMap::new()),
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: Some(&assignments),
+        face_configuration_domains: None,
+        coordinate_domains: None,
+        active: vec![true],
+        edges: &[0],
+        constraints: vec![(0, 0)],
+        assignment: vec![None],
+        degrees: vec![BTreeMap::new()],
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &search_budget,
+        degree_support_budget: &propagation_budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        state: IncidenceSearchState::Open,
+    };
+
+    search.search().expect("service resource budget");
+
+    assert_ne!(search.state, IncidenceSearchState::Exhausted);
+    assert_eq!(search.solutions, vec![vec![(0, [0, 0])]]);
+    assert!(propagation_budget.exhausted());
+}
+
+#[test]
+fn incidence_face_configuration_branches_on_the_narrowest_estimated_face() {
+    catia_test_context!(ctx);
+    let use_ = |edge| MeshBoundaryEdgeCandidate {
+        edge,
+        start: 0,
+        end: 0,
+        reversed: Some(false),
+    };
+    let choices = vec![
+        vec![[0, 0]],
+        (1..=300).map(|point| [point, point]).collect::<Vec<_>>(),
+    ];
+    let edge_faces = [[0, 0], [1, 1]];
+    let face_edges = vec![vec![0], vec![1]];
+    let assignments = vec![
+        MeshFaceBoundaryDomain::Ordered(vec![MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(0)]],
+        }]),
+        MeshFaceBoundaryDomain::Ordered(vec![MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(1)]],
+        }]),
+    ];
+    let budget = WorkBudget::new(4);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let search = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
+        search_storage: RefCell::new(
+            ctx.reserve_scoped(0, "search test storage")
+                .expect("storage"),
+        ),
+        choices: &choices,
+        explicit_point_supports: Vec::new(),
+        point_support_edges: Vec::new(),
+        degree_support_witnesses: RefCell::new(HashMap::new()),
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: Some(&assignments),
+        face_configuration_domains: None,
+        coordinate_domains: None,
+        active: vec![true, true],
+        edges: &[0, 1],
+        constraints: Vec::new(),
+        assignment: vec![None, None],
+        degrees: vec![BTreeMap::new(), BTreeMap::new()],
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        degree_support_budget: &propagation_budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        state: IncidenceSearchState::Open,
+    };
+
+    assert_eq!(
+        search
+            .face_configuration_options()
+            .expect("service resource budget"),
+        Some(vec![vec![(0, [0, 0])]])
+    );
+    assert!(!budget.exhausted());
+}
+
+#[test]
+fn incidence_face_configuration_branches_on_the_narrowest_projected_face() {
+    catia_test_context!(ctx);
+    let use_ = |edge| MeshBoundaryEdgeCandidate {
+        edge,
+        start: 0,
+        end: 0,
+        reversed: Some(false),
+    };
+    let choices = vec![
+        vec![[0, 0], [1, 1]],
+        vec![[10, 11]],
+        vec![[10, 11], [12, 13], [14, 15]],
+    ];
+    let edge_faces = [[0, 0], [1, 1], [1, 1]];
+    let face_edges = vec![vec![0], vec![1, 2]];
+    let assignments = vec![
+        MeshFaceBoundaryDomain::Ordered(vec![MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(0)]],
+        }]),
+        MeshFaceBoundaryDomain::Ordered(vec![MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(1), use_(2)]],
+        }]),
+    ];
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let search = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
+        search_storage: RefCell::new(
+            ctx.reserve_scoped(0, "search test storage")
+                .expect("storage"),
+        ),
+        choices: &choices,
+        explicit_point_supports: Vec::new(),
+        point_support_edges: Vec::new(),
+        degree_support_witnesses: RefCell::new(HashMap::new()),
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: Some(&assignments),
+        face_configuration_domains: None,
+        coordinate_domains: None,
+        active: vec![true; 3],
+        edges: &[0, 1, 2],
+        constraints: Vec::new(),
+        assignment: vec![None; 3],
+        degrees: vec![BTreeMap::new(), BTreeMap::new()],
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        degree_support_budget: &propagation_budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        state: IncidenceSearchState::Open,
+    };
+
+    assert_eq!(
+        search
+            .face_configuration_options()
+            .expect("service resource budget"),
+        Some(vec![vec![(1, [10, 11]), (2, [10, 11])]])
+    );
+}
+
+#[test]
+fn incidence_face_configuration_reuses_persistent_domains_across_assignments() {
+    catia_test_context!(ctx);
+    let use_ = |edge| MeshBoundaryEdgeCandidate {
+        edge,
+        start: 0,
+        end: 0,
+        reversed: Some(false),
+    };
+    let choices = vec![vec![[0, 0], [1, 1]], vec![[0, 0], [1, 1]]];
+    let edge_faces = [[0, 0]; 2];
+    let face_edges = vec![vec![0, 1]];
+    let assignments = vec![MeshFaceBoundaryDomain::Ordered(vec![
+        MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(0), use_(1)]],
+        },
+    ])];
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let propagation_budget = WorkBudget::new(2);
+    let prepared = prepare_face_configuration_domains(
+        &ctx,
+        Some(&assignments),
+        &choices,
+        &[None; 2],
+        &[true; 2],
+    )
+    .expect("service resource budget")
+    .expect("compiled face factors");
+    let mut search = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
+        search_storage: RefCell::new(
+            ctx.reserve_scoped(0, "search test storage")
+                .expect("storage"),
+        ),
+        choices: &choices,
+        explicit_point_supports: Vec::new(),
+        point_support_edges: Vec::new(),
+        degree_support_witnesses: RefCell::new(HashMap::new()),
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: Some(&assignments),
+        face_configuration_domains: Some(prepared),
+        coordinate_domains: None,
+        active: vec![true; 2],
+        edges: &[0, 1],
+        constraints: Vec::new(),
+        assignment: vec![None; 2],
+        degrees: vec![BTreeMap::new()],
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        degree_support_budget: &propagation_budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        state: IncidenceSearchState::Open,
+    };
+
+    assert_eq!(
+        search
+            .face_configuration_options()
+            .expect("service resource budget"),
+        Some(vec![
+            vec![(0, [0, 0]), (1, [0, 0])],
+            vec![(0, [1, 1]), (1, [1, 1])]
+        ])
+    );
+    search.assignment[0] = Some([1, 1]);
+    assert_eq!(
+        search
+            .face_configuration_options()
+            .expect("service resource budget"),
+        Some(vec![vec![(1, [1, 1])]])
+    );
+    assert!(!propagation_budget.exhausted());
+}
+
+#[test]
+fn incidence_face_factor_masks_roll_back_between_configuration_branches() {
+    catia_test_context!(ctx);
+    let use_ = |edge| MeshBoundaryEdgeCandidate {
+        edge,
+        start: 0,
+        end: 0,
+        reversed: Some(false),
+    };
+    let choices = vec![vec![[0, 1], [2, 3]], vec![[0, 1], [2, 3]]];
+    let assignments = vec![MeshFaceBoundaryDomain::Ordered(vec![
+        MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(0), use_(1)]],
+        },
+    ])];
+
+    let edge_faces = [[0, 0]; 2];
+    let face_edges = vec![vec![0, 1]];
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let prepared = prepare_face_configuration_domains(
+        &ctx,
+        Some(&assignments),
+        &choices,
+        &[None; 2],
+        &[true; 2],
+    )
+    .expect("service resource budget")
+    .expect("compiled face factors");
+    let mut search = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
+        search_storage: RefCell::new(
+            ctx.reserve_scoped(0, "search test storage")
+                .expect("storage"),
+        ),
+        choices: &choices,
+        explicit_point_supports: Vec::new(),
+        point_support_edges: Vec::new(),
+        degree_support_witnesses: RefCell::new(HashMap::new()),
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: Some(&assignments),
+        face_configuration_domains: Some(prepared),
+        coordinate_domains: None,
+        active: vec![true; 2],
+        edges: &[0, 1],
+        constraints: Vec::new(),
+        assignment: vec![None; 2],
+        degrees: vec![BTreeMap::new()],
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        degree_support_budget: &propagation_budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        state: IncidenceSearchState::Open,
+    };
+
+    search.search().expect("service resource budget");
+
+    assert_eq!(
+        search.solutions,
+        vec![
+            vec![(0, [0, 1]), (1, [0, 1])],
+            vec![(0, [2, 3]), (1, [2, 3])],
+        ]
+    );
+}
+
+#[test]
+fn persistent_face_configuration_preparation_retains_global_contradictions() {
+    catia_test_context!(ctx);
+    let use_ = |edge| MeshBoundaryEdgeCandidate {
+        edge,
+        start: 0,
+        end: 0,
+        reversed: Some(false),
+    };
+    let assignments = vec![
+        MeshFaceBoundaryDomain::Ordered(vec![MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(0), use_(1)]],
+        }]),
+        MeshFaceBoundaryDomain::Ordered(vec![MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(1), use_(2)]],
+        }]),
+    ];
+    let choices = vec![vec![[0, 1]], vec![[0, 1], [0, 2]], vec![[0, 2]]];
+    let selected = vec![Some([0, 1]), None, Some([0, 2])];
+    let prepared = prepare_face_configuration_domains(
+        &ctx,
+        Some(&assignments),
+        &choices,
+        &selected,
+        &[false, true, false],
+    )
+    .expect("service resource budget")
+    .expect("ordered face factors");
+
+    assert!(prepared.domains().iter().flatten().any(Vec::is_empty));
+
+    let compatible = vec![vec![[0, 1]], vec![[0, 1], [0, 2]], vec![[0, 1]]];
+    let selected = vec![Some([0, 1]), None, Some([0, 1])];
+    let prepared = prepare_face_configuration_domains(
+        &ctx,
+        Some(&assignments),
+        &compatible,
+        &selected,
+        &[false, true, false],
+    )
+    .expect("service resource budget")
+    .expect("compatible ordered face factors");
+    assert!(prepared
+        .domains()
+        .iter()
+        .flatten()
+        .all(|domain| domain.len() == 1));
+}
+
+mod allocation_limits;
+mod components;
+mod face_configuration;
+
+#[test]
+fn rejected_endpoint_choice_rows_use_and_release_scoped_storage() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use std::ops::ControlFlow;
+
+    for capacity in [0, std::mem::size_of::<Vec<[usize; 2]>>()] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = u64::try_from(capacity).expect("small row storage");
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+        let choices = [Vec::new()];
+        let result = super::visit_incidence_endpoint_pair_solutions_with_coordinate_root_policy(
+            &ctx,
+            super::VisitIncidenceEndpointPairSolutionsWithCoordinateRootPolicyInputs {
+                edge_rows: &[],
+                vertex_points: &[],
+                edge_faces: &[[0, 0]],
+                edge_candidates: &choices,
+                face_count: 1,
+                mesh_assignments: None,
+                mesh_quotient: None,
+                coordinate_root_policy: super::CoordinateRootPolicy::RequireUnique,
+                partial_solution_valid: None,
+                complete_solution_budget: None,
+                solution_valid: &|_| Ok(true),
+                visitor: &mut |_| Ok(ControlFlow::Continue(())),
+            },
+        );
+        if capacity == 0 {
+            assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::MaterializedBytes
+                    && limit.operation == "catia incidence choice rows"
+                    && ctx.resource_refusal() == Some(limit)));
+        } else {
+            assert!(matches!(
+                result,
+                Ok(super::IncidenceSolve::Rejected(
+                    super::IncidenceRejection::ChoicePruning
+                ))
+            ));
+            ctx.reserve_scoped(
+                u64::try_from(capacity).expect("small row storage"),
+                "released choice rows",
+            )
+            .expect("the search releases its temporary row storage");
+        }
+    }
+}

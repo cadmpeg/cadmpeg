@@ -2,13 +2,19 @@
 //! Configuration partition identity and coherence tests.
 #![allow(clippy::unwrap_used)]
 
-use super::super::*;
-use cadmpeg_ir::features::{
-    ConfigurationFeatureState, ConfigurationId, DesignConfiguration, DesignParameter, Feature,
-    FeatureDefinition, FeatureId, FeatureTreeNodeRole, Length, ParameterId, ParameterValue,
-};
+use crate::decode::append_design_losses;
+use crate::decode::assign_configuration_bodies;
+use crate::decode::mark_active_configuration;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::CadIr;
+use cadmpeg_ir::{
+    features::{
+        ConfigurationFeatureState, ConfigurationId, DesignConfiguration, DesignParameter, Feature,
+        FeatureDefinition, FeatureId, FeatureOperation, FeatureTreeNodeRole, ParameterId,
+        ParameterValue,
+    },
+    scalar::Length,
+};
 use std::collections::BTreeMap;
 
 #[test]
@@ -19,10 +25,10 @@ fn configuration_partitions_require_explicit_source_identity() {
         ordinal,
         active: false,
         source_index,
-        name: id.into(),
+        name: Some(id.to_string()),
         material: None,
         properties: BTreeMap::new(),
-        bodies: cadmpeg_ir::ConfigurationBodies::Unresolved,
+        bodies: None,
         parameter_values: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),
@@ -30,34 +36,45 @@ fn configuration_partitions_require_explicit_source_identity() {
     };
     ir.model
         .configurations
-        .push(configuration("explicit", 0, Some(5)));
+        .push(configuration("synthetic:test:id#explicit", 0, Some(5)));
     ir.model
         .configurations
-        .push(configuration("inferred", 9, None));
+        .push(configuration("synthetic:test:id#inferred", 9, None));
     ir.model
         .configurations
-        .push(configuration("empty", 10, Some(8)));
+        .push(configuration("synthetic:test:id#empty", 10, Some(8)));
     let first = BodyId::mint("test:model:entity#body:first").expect("identity grammar");
     let second = BodyId::mint("test:model:entity#body:second").expect("identity grammar");
     let third = BodyId::mint("test:model:entity#body:third").expect("identity grammar");
 
     assign_configuration_bodies(
+        &cadmpeg_test_support::service_decode_context(),
         &mut ir,
-        &[
+        vec![
             (7, vec![third.clone()]),
             (5, vec![first.clone()]),
             (5, vec![second.clone()]),
         ],
-    );
+    )
+    .unwrap();
 
     assert_eq!(ir.model.configurations[0].source_index, Some(5));
-    assert_eq!(ir.model.configurations[0].bodies, vec![first, second]);
+    assert_eq!(
+        ir.model.configurations[0].bodies.as_deref(),
+        Some([first, second].as_slice())
+    );
     assert_eq!(ir.model.configurations[1].source_index, None);
-    assert!(ir.model.configurations[1].bodies.is_unresolved());
+    assert!(ir.model.configurations[1].bodies.is_none());
     assert_eq!(ir.model.configurations[2].source_index, Some(8));
-    assert!(ir.model.configurations[2].bodies.is_empty());
+    assert!(ir.model.configurations[2]
+        .bodies
+        .as_deref()
+        .is_some_and(<[_]>::is_empty));
     assert_eq!(ir.model.configurations[3].source_index, Some(7));
-    assert_eq!(ir.model.configurations[3].bodies, vec![third]);
+    assert_eq!(
+        ir.model.configurations[3].bodies.as_deref(),
+        Some([third].as_slice())
+    );
     assert!(ir.model.configurations[3].native_ref.is_none());
 }
 
@@ -66,7 +83,7 @@ fn duplicate_configuration_source_identity_does_not_select_a_partition() {
     let mut ir = CadIr::empty();
     for ordinal in 0..2 {
         ir.model.configurations.push(DesignConfiguration {
-            id: ConfigurationId::mint(format!("configuration:{ordinal}"))
+            id: ConfigurationId::mint(format!("synthetic:test:id#configuration:{ordinal}"))
                 .expect("identity grammar"),
             ordinal,
             active: false,
@@ -74,7 +91,7 @@ fn duplicate_configuration_source_identity_does_not_select_a_partition() {
             name: format!("Configuration {ordinal}").into(),
             material: None,
             properties: BTreeMap::new(),
-            bodies: cadmpeg_ir::ConfigurationBodies::Unresolved,
+            bodies: None,
             parameter_values: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
             feature_states: BTreeMap::new(),
@@ -83,12 +100,20 @@ fn duplicate_configuration_source_identity_does_not_select_a_partition() {
     }
     let body = BodyId::mint("test:model:entity#body:partition").expect("identity grammar");
 
-    assign_configuration_bodies(&mut ir, &[(5, vec![body.clone()])]);
+    assign_configuration_bodies(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut ir,
+        vec![(5, vec![body.clone()])],
+    )
+    .unwrap();
 
-    assert!(ir.model.configurations[0].bodies.is_unresolved());
-    assert!(ir.model.configurations[1].bodies.is_unresolved());
+    assert!(ir.model.configurations[0].bodies.is_none());
+    assert!(ir.model.configurations[1].bodies.is_none());
     assert_eq!(ir.model.configurations[2].source_index, Some(5));
-    assert_eq!(ir.model.configurations[2].bodies, vec![body]);
+    assert_eq!(
+        ir.model.configurations[2].bodies.as_deref(),
+        Some([body].as_slice())
+    );
     assert!(ir.model.configurations[2].native_ref.is_none());
 }
 
@@ -97,29 +122,42 @@ fn inferred_partition_does_not_fabricate_active_configuration_identity() {
     let mut ir = CadIr::empty();
     ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
-            cadmpeg_core::dialect::DialectId::pinned("sldprt:test"),
+            cadmpeg_core::dialect_id!("sldprt:test"),
         )),
         BTreeMap::from([
             (
-                "active_parasolid_block".into(),
+                cadmpeg_core::nonblank_literal!("active_parasolid_block"),
                 "Contents/Config-3-Partition".into(),
             ),
-            ("sw_configuration_name".into(), "Default".into()),
+            (
+                cadmpeg_core::nonblank_literal!("sw_configuration_name"),
+                "Default".into(),
+            ),
         ]),
     ));
     let body = BodyId::mint("test:model:entity#body:active").expect("identity grammar");
 
-    assign_configuration_bodies(&mut ir, &[(3, vec![body.clone()])]);
+    assign_configuration_bodies(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut ir,
+        vec![(3, vec![body.clone()])],
+    )
+    .unwrap();
     mark_active_configuration(&mut ir);
 
     assert_eq!(ir.model.configurations.len(), 1);
     let configuration = &ir.model.configurations[0];
     assert!(!configuration.active);
     assert_eq!(configuration.source_index, Some(3));
-    assert_eq!(configuration.bodies, vec![body]);
+    assert_eq!(configuration.bodies.as_deref(), Some([body].as_slice()));
 
     let mut report = super::empty_report(true);
-    append_design_losses(&ir, &mut report);
+    append_design_losses(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut report,
+    )
+    .unwrap();
     assert!(report.losses.iter().any(|loss| {
         loss.message
             == "active configuration identity is unresolved; 0 of 1 configuration records are active."
@@ -131,41 +169,54 @@ fn active_configuration_name_binds_partition_without_fabricating_body_membership
     let mut ir = CadIr::empty();
     ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
-            cadmpeg_core::dialect::DialectId::pinned("sldprt:test"),
+            cadmpeg_core::dialect_id!("sldprt:test"),
         )),
         BTreeMap::from([
             (
-                "active_parasolid_block".into(),
+                cadmpeg_core::nonblank_literal!("active_parasolid_block"),
                 "Contents/Config-3-Partition".into(),
             ),
-            ("sw_configuration_name".into(), "Default".into()),
+            (
+                cadmpeg_core::nonblank_literal!("sw_configuration_name"),
+                "Default".into(),
+            ),
         ]),
     ));
     ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId::mint("configuration").expect("identity grammar"),
+        id: ConfigurationId::mint("synthetic:test:id#configuration").expect("identity grammar"),
         ordinal: 0,
         active: false,
         source_index: None,
-        name: "Default".into(),
+        name: Some("Default".to_string()),
         material: None,
         properties: BTreeMap::new(),
-        bodies: cadmpeg_ir::ConfigurationBodies::Unresolved,
+        bodies: None,
         parameter_values: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),
         native_ref: Some("native:configuration".into()),
     });
 
-    assign_configuration_bodies(&mut ir, &[]);
+    assign_configuration_bodies(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut ir,
+        Vec::new(),
+    )
+    .unwrap();
     mark_active_configuration(&mut ir);
 
     let configuration = &ir.model.configurations[0];
     assert_eq!(configuration.source_index, Some(3));
-    assert!(configuration.bodies.is_unresolved());
+    assert!(configuration.bodies.is_none());
     assert!(configuration.active);
 
     let mut report = super::empty_report(false);
-    append_design_losses(&ir, &mut report);
+    append_design_losses(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut report,
+    )
+    .unwrap();
     assert!(!report.losses.iter().any(|loss| {
         loss.message
             == "active configuration identity does not resolve to active geometry partition 3."
@@ -177,14 +228,14 @@ fn duplicate_configuration_partition_identities_are_reported() {
     let mut ir = CadIr::empty();
     for id in ["first", "second"] {
         ir.model.configurations.push(DesignConfiguration {
-            id: ConfigurationId::mint(id).expect("identity grammar"),
-            ordinal: ir.model.configurations.len() as u32,
+            id: ConfigurationId::mint(format!("synthetic:test:id#{id}")).expect("identity grammar"),
+            ordinal: u32::try_from(ir.model.configurations.len()).unwrap(),
             active: false,
             source_index: Some(5),
-            name: id.into(),
+            name: Some(id.to_string()),
             material: None,
             properties: BTreeMap::new(),
-            bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
+            bodies: Some(cadmpeg_ir::features::DistinctMembers::default()),
             parameter_values: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
             feature_states: BTreeMap::new(),
@@ -193,11 +244,87 @@ fn duplicate_configuration_partition_identities_are_reported() {
     }
     let mut report = super::empty_report(true);
 
-    append_design_losses(&ir, &mut report);
+    append_design_losses(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut report,
+    )
+    .unwrap();
 
     assert!(report.losses.iter().any(|loss| {
         loss.message == "2 configuration record(s) share non-unique geometry partition identities."
     }));
+}
+
+#[test]
+fn configuration_loss_counting_refuses_caller_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let mut ir = CadIr::empty();
+    ir.model.configurations.push(DesignConfiguration {
+        id: ConfigurationId::mint("synthetic:test:id#configuration").expect("identity grammar"),
+        ordinal: 0,
+        active: true,
+        source_index: Some(5),
+        name: Some("Default".into()),
+        material: None,
+        properties: BTreeMap::new(),
+        bodies: None,
+        parameter_values: BTreeMap::new(),
+        parameter_overrides: BTreeMap::new(),
+        feature_states: BTreeMap::new(),
+        native_ref: Some("native:configuration".into()),
+    });
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
+    let mut report = super::empty_report(true);
+    let error = append_design_losses(&ctx, &ir, &mut report)
+        .expect_err("configuration source index consumes one collection item");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "count SLDPRT configuration source indices"
+    ));
+}
+
+#[test]
+fn design_loss_note_refuses_caller_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let mut ir = CadIr::empty();
+    ir.model.configurations.push(DesignConfiguration {
+        id: ConfigurationId::mint("synthetic:test:id#inactive-configuration")
+            .expect("identity grammar"),
+        ordinal: 0,
+        active: false,
+        source_index: None,
+        name: None,
+        material: None,
+        properties: BTreeMap::new(),
+        bodies: None,
+        parameter_values: BTreeMap::new(),
+        parameter_overrides: BTreeMap::new(),
+        feature_states: BTreeMap::new(),
+        native_ref: None,
+    });
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
+    let mut report = super::empty_report(true);
+    let error = append_design_losses(&ctx, &ir, &mut report)
+        .expect_err("the first design loss consumes one collection item");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "append SLDPRT decode loss"
+    ));
 }
 
 #[test]
@@ -208,15 +335,15 @@ fn incomplete_configuration_names_are_reported() {
         .enumerate()
     {
         ir.model.configurations.push(DesignConfiguration {
-            id: ConfigurationId::mint(format!("configuration:{position}"))
+            id: ConfigurationId::mint(format!("synthetic:test:id#configuration:{position}"))
                 .expect("identity grammar"),
             ordinal,
             active: position == 1,
-            source_index: Some(position as u32),
-            name: name.into(),
+            source_index: Some(u32::try_from(position).unwrap()),
+            name: Some(name.to_string()),
             material: None,
             properties: BTreeMap::new(),
-            bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
+            bodies: Some(cadmpeg_ir::features::DistinctMembers::default()),
             parameter_values: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
             feature_states: BTreeMap::new(),
@@ -225,7 +352,12 @@ fn incomplete_configuration_names_are_reported() {
     }
     let mut report = super::empty_report(true);
 
-    append_design_losses(&ir, &mut report);
+    append_design_losses(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut report,
+    )
+    .unwrap();
 
     assert!(report.losses.iter().any(|loss| {
         loss.message
@@ -238,22 +370,22 @@ fn active_configuration_partition_disagreement_is_reported() {
     let mut ir = CadIr::empty();
     ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
-            cadmpeg_core::dialect::DialectId::pinned("sldprt:test"),
+            cadmpeg_core::dialect_id!("sldprt:test"),
         )),
         BTreeMap::from([(
-            "active_parasolid_block".into(),
+            cadmpeg_core::nonblank_literal!("active_parasolid_block"),
             "Contents/Config-3-Partition".into(),
         )]),
     ));
     ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId::mint("configuration").expect("identity grammar"),
+        id: ConfigurationId::mint("synthetic:test:id#configuration").expect("identity grammar"),
         ordinal: 0,
         active: true,
         source_index: Some(5),
-        name: "Default".into(),
+        name: Some("Default".to_string()),
         material: None,
         properties: BTreeMap::new(),
-        bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
+        bodies: Some(cadmpeg_ir::features::DistinctMembers::default()),
         parameter_values: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),
@@ -261,7 +393,12 @@ fn active_configuration_partition_disagreement_is_reported() {
     });
     let mut report = super::empty_report(true);
 
-    append_design_losses(&ir, &mut report);
+    append_design_losses(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut report,
+    )
+    .unwrap();
 
     assert!(report.losses.iter().any(|loss| {
         loss.message
@@ -271,14 +408,13 @@ fn active_configuration_partition_disagreement_is_reported() {
 
 #[test]
 fn incoherent_configuration_bodies_are_reported() {
-    let mut ir = cadmpeg_ir::examples::unit_cube();
-    let body = ir.model.bodies[0].id.clone();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let configuration = |id: &str, ordinal, bodies| DesignConfiguration {
         id: ConfigurationId::mint(id).expect("identity grammar"),
         ordinal,
         active: ordinal == 0,
         source_index: Some(ordinal),
-        name: id.into(),
+        name: Some(id.to_string()),
         material: None,
         properties: BTreeMap::new(),
         bodies,
@@ -289,23 +425,37 @@ fn incoherent_configuration_bodies_are_reported() {
     };
     ir.model.configurations = vec![
         configuration(
-            "duplicate",
+            "synthetic:test:id#duplicate",
             0,
-            cadmpeg_ir::ConfigurationBodies::Resolved(vec![body.clone(), body]),
+            Some(
+                cadmpeg_ir::features::DistinctMembers::try_from(
+                    vec![BodyId::mint("test:model:entity#another-missing-body").unwrap()],
+                    &cadmpeg_test_support::service_decode_context(),
+                )
+                .unwrap(),
+            ),
         ),
         configuration(
-            "missing",
+            "synthetic:test:id#missing",
             1,
-            cadmpeg_ir::ConfigurationBodies::Resolved(vec![BodyId::mint(
-                "test:model:entity#missing-body",
-            )
-            .expect("identity grammar")]),
+            Some(
+                cadmpeg_ir::features::DistinctMembers::try_from(
+                    vec![BodyId::mint("test:model:entity#missing-body").expect("identity grammar")],
+                    &cadmpeg_test_support::service_decode_context(),
+                )
+                .unwrap(),
+            ),
         ),
-        configuration("unresolved", 2, cadmpeg_ir::ConfigurationBodies::Unresolved),
+        configuration("synthetic:test:id#unresolved", 2, None),
     ];
     let mut report = super::empty_report(true);
 
-    append_design_losses(&ir, &mut report);
+    append_design_losses(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut report,
+    )
+    .unwrap();
 
     assert!(report.losses.iter().any(|loss| {
         loss.message == "1 configuration record(s) have unresolved body membership; 2 configuration record(s) contain missing or repeated body references."
@@ -315,7 +465,8 @@ fn incoherent_configuration_bodies_are_reported() {
 #[test]
 fn configuration_values_complete_parameters_without_baseline_values() {
     let mut ir = CadIr::empty();
-    let parameter = ParameterId::mint("configured-parameter").expect("identity grammar");
+    let parameter =
+        ParameterId::mint("synthetic:test:id#configured-parameter").expect("identity grammar");
     ir.model.parameters.push(DesignParameter {
         id: parameter.clone(),
         owner: None,
@@ -324,28 +475,36 @@ fn configuration_values_complete_parameters_without_baseline_values() {
         expression: "12mm".into(),
         display: None,
         value: None,
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
     });
     ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId::mint("configuration").expect("identity grammar"),
+        id: ConfigurationId::mint("synthetic:test:id#configuration").expect("identity grammar"),
         ordinal: 0,
         active: true,
         source_index: Some(0),
-        name: "Default".into(),
+        name: Some("Default".to_string()),
         material: None,
         properties: BTreeMap::new(),
-        bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
-        parameter_values: BTreeMap::from([(parameter, ParameterValue::Length(Length(12.0)))]),
+        bodies: Some(cadmpeg_ir::features::DistinctMembers::default()),
+        parameter_values: BTreeMap::from([(
+            parameter,
+            ParameterValue::Length(Length::new(12.0).unwrap()),
+        )]),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),
         native_ref: Some("native:configuration".into()),
     });
     let mut report = super::empty_report(true);
 
-    append_design_losses(&ir, &mut report);
+    append_design_losses(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut report,
+    )
+    .unwrap();
 
     assert!(!report.losses.iter().any(|loss| {
         loss.message
@@ -357,45 +516,44 @@ fn configuration_values_complete_parameters_without_baseline_values() {
 #[test]
 fn configuration_suppression_and_override_references_are_coherent() {
     let mut ir = CadIr::empty();
-    let feature = FeatureId::mint("feature").expect("identity grammar");
-    let definition = FeatureDefinition::TreeNode {
+    let feature = FeatureId::mint("synthetic:test:id#feature").expect("identity grammar");
+    let definition = FeatureDefinition::Operation(FeatureOperation::TreeNode {
         role: FeatureTreeNodeRole::History,
-        children: Vec::new(),
-        active_child: None,
-    };
+        children: cadmpeg_ir::features::TreeChildren::default(),
+    });
     ir.model.features.push(Feature {
         id: feature.clone(),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: definition.clone(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition.clone()),
         native_ref: None,
     });
     ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId::mint("configuration").expect("identity grammar"),
+        id: ConfigurationId::mint("synthetic:test:id#configuration").expect("identity grammar"),
         ordinal: 0,
         active: true,
         source_index: Some(0),
-        name: "Default".into(),
+        name: Some("Default".to_string()),
         material: None,
         properties: BTreeMap::new(),
-        bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
+        bodies: Some(cadmpeg_ir::features::DistinctMembers::default()),
         parameter_values: BTreeMap::new(),
         parameter_overrides: BTreeMap::from([(
-            ParameterId::mint("missing").expect("identity grammar"),
+            ParameterId::mint("synthetic:test:id#missing").expect("identity grammar"),
             "1mm".into(),
         )]),
         feature_states: BTreeMap::from([(
             feature,
             ConfigurationFeatureState {
-                evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Suppressed,
-                dependencies: Vec::new(),
+                evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Suppressed {},
+                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                 definition,
             },
         )]),
@@ -403,7 +561,12 @@ fn configuration_suppression_and_override_references_are_coherent() {
     });
     let mut report = super::empty_report(true);
 
-    append_design_losses(&ir, &mut report);
+    append_design_losses(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut report,
+    )
+    .unwrap();
 
     assert!(report.losses.iter().any(|loss| {
         loss.message == "1 configuration(s) have missing, repeated, or feature-state-inconsistent suppression members; 1 configuration(s) reference missing parameter overrides."

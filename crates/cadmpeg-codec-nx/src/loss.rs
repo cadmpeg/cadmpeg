@@ -18,29 +18,33 @@
 //! and the categories this codec spans (carrier, topology, history, container)
 //! have no honest common default.
 
-use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::{
+    loss::{LossKind, LossNote, LossTaxonomy},
+    Severity,
+};
 
 macro_rules! loss_codes {
     ($( $(#[$meta:meta])* $variant:ident => ($code:literal, $severity:ident, $taxonomy:ident), )*) => {
         /// Stable NX transfer-loss identifier.
         #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-        pub enum NxLossCode {
+        pub(crate) enum NxLossCode {
             $( $(#[$meta])* $variant, )*
         }
 
         impl NxLossCode {
             /// Every code in declaration order.
-            pub const ALL: &'static [Self] = &[$(Self::$variant),*];
+            #[cfg(test)]
+            const ALL: &'static [Self] = &[$(Self::$variant),*];
 
             /// Stable loss code string.
             #[must_use]
-            pub const fn code(self) -> &'static str {
+            pub(crate) const fn code(self) -> &'static str {
                 match self { $(Self::$variant => $code),* }
             }
 
             /// Loss severity.
             #[must_use]
-            pub const fn severity(self) -> Severity {
+            const fn severity(self) -> Severity {
                 match self { $(Self::$variant => Severity::$severity),* }
             }
 
@@ -52,6 +56,10 @@ macro_rules! loss_codes {
 }
 
 loss_codes! {
+    /// A JT display graph failed native admission.
+    DisplayJtGraphRejected => ("container.display-jt-graph-rejected", Blocking, DecodeDiagnostic),
+    /// A roll-forward table failed native admission.
+    RollForwardTableRejected => ("history.roll-forward-table-rejected", Blocking, DecodeDiagnostic),
     /// An embedded kernel dialect had no declared grammar and was recovered as residual.
     KernelDialectUnverified => ("source.kernel-dialect-unverified", Warning, SourceDialectUnverified),
     /// Two embedded kernel carriers resolved to one dialect-layer identity.
@@ -103,15 +111,32 @@ loss_codes! {
     NonParasolidStreamOmitted => ("stream.non-parasolid-omitted", Info, PassthroughRecordOmitted),
     /// Assembly `.prt` has no inline geometry; children live in external parts.
     AssemblyComponentsExternal => ("assembly.components-external", Blocking, AssemblyComponentsExternal),
+    /// A carrier record of the right family states lanes the IR carrier refuses.
+    CarrierLanesUnpaired => ("carrier.lanes-unpaired", Warning, ObjectRecordsUntransferred),
     /// No gate-passing analytic carrier was found in the Parasolid streams.
     GeometryNotTransferred => ("geometry.not-transferred", Blocking, GeometryNotTransferred),
+    /// A face loop states no resolvable coedge ring and is omitted from its face.
+    TopologyLoopRingUnresolved => ("topology.loop-ring-unresolved", Warning, TopologyNotTransferred),
+    /// A face's linked loop boundary cannot be admitted and is omitted.
+    TopologyFaceLoopUnresolved => ("topology.face-loop-unresolved", Warning, TopologyNotTransferred),
+    /// A semantic annotation order is past the stated annotation order width.
+    SemanticAnnotationOrderUnstatable => ("annotation.semantic-order-unstatable", Warning, MetadataNotTransferred),
 }
 
 impl NxLossCode {
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
-    pub fn kind(self) -> LossKind {
-        LossKind::namespaced("nx", self.code(), self.shared_taxonomy())
+    pub(crate) fn kind(self) -> LossKind {
+        LossKind::namespaced(
+            const {
+                match cadmpeg_ir::report::loss::LossNamespace::new("nx") {
+                    Ok(namespace) => namespace,
+                    Err(_) => panic!("reserved codec namespace"),
+                }
+            },
+            self.code(),
+            self.shared_taxonomy(),
+        )
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
@@ -119,7 +144,7 @@ impl NxLossCode {
     /// The structured code is `nx/<local>`. Severity comes from the local
     /// code; the strict floor comes from the taxonomy.
     #[must_use]
-    pub fn note(self, message: impl Into<String>) -> LossNote {
+    pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
     }
 }
@@ -136,6 +161,8 @@ mod tests {
         assert_eq!(
             codes,
             [
+                "container.display-jt-graph-rejected",
+                "history.roll-forward-table-rejected",
                 "source.kernel-dialect-unverified",
                 "source.dialect-layer-collision",
                 "carrier.analytic-census",
@@ -161,7 +188,11 @@ mod tests {
                 "container.stream-opaque",
                 "stream.non-parasolid-omitted",
                 "assembly.components-external",
+                "carrier.lanes-unpaired",
                 "geometry.not-transferred",
+                "topology.loop-ring-unresolved",
+                "topology.face-loop-unresolved",
+                "annotation.semantic-order-unstatable",
             ]
         );
     }

@@ -3,21 +3,152 @@
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::geometry::{Curve, CurveGeometry};
+use super::SourceParameterMap;
+
+use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::topology::{Edge, Point, Vertex};
+use cadmpeg_ir::topology::{Edge, IncreasingParameterInterval, Point, Vertex};
+use cadmpeg_ir::units::FiniteVector;
 use cadmpeg_ir::CadIr;
 
 use crate::parameter::{Token, TokenValue};
-use crate::test_support::*;
+use crate::test_support::test_curves_and_surfaces::{
+    function_offset_line_file, linear_offset_line_file,
+    offset_quarter_circle_with_absolute_native_parameters, placed_uniform_offset_circle_file,
+    placed_uniform_offset_line_file, uniform_offset_circle_file,
+    uniform_offset_circle_file_with_parameters, wide_control_linear_offset_line_file,
+    wide_distance_linear_offset_line_file,
+};
 use crate::IgesCodec;
 use crate::{directory::DirectoryEntry, directory::SourceStatus, parameter::ParameterRecord};
 
 const EPS_OFFSET_ENDPOINT_MATCH: f64 = 1.0e-9;
 const EPS_SOURCE_PARAMETER_DOMAIN: f64 = 1.0e-12;
 const EPS_PLACED_OFFSET: f64 = 1.0e-12;
+
+fn assert_offset_collection_refusal(bytes: &[u8], operation: &str) {
+    let mut cap = 0_u64;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        match IgesCodec.decode(
+            &mut Cursor::new(bytes),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        ) {
+            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                if limit.operation == operation {
+                    return;
+                }
+                cap = limit.used + limit.additional;
+            }
+            other => panic!("expected offset collection refusal at {operation}: {other:?}"),
+        }
+    }
+    panic!("offset collection refusal was not reached: {operation}");
+}
+
+fn assert_offset_retained_refusal(bytes: &[u8], operation: &str) {
+    let mut cap = 0_u64;
+    for _ in 0..8192 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        match IgesCodec.decode(
+            &mut Cursor::new(bytes),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        ) {
+            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+                if limit.operation == operation {
+                    return;
+                }
+                cap = limit.used + limit.additional;
+            }
+            other => panic!("expected offset retained refusal at {operation}: {other:?}"),
+        }
+    }
+    panic!("offset retained refusal was not reached: {operation}");
+}
+
+#[test]
+fn offset_identity_copies_refuse_before_retaining_text() {
+    let bytes = placed_uniform_offset_circle_file(0, b"124,0,-1,0,5,1,0,0,0,0,0,1,0;");
+    for operation in [
+        "iges offset source identity copy",
+        "iges offset procedural source identity",
+        "iges offset placed source identity",
+        "iges offset edge carrier identity",
+    ] {
+        assert_offset_retained_refusal(&bytes, operation);
+    }
+    IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+}
+
+#[test]
+fn offset_projection_refuses_unadmitted_controls_knots_and_neutral_slots() {
+    let linear = linear_offset_line_file(1);
+    for operation in [
+        "iges linear-offset controls",
+        "iges linear-offset knots",
+        "iges offset neutral point slots",
+        "iges offset neutral vertex slots",
+        "iges offset neutral curve slots",
+        "iges offset neutral edge slots",
+        "store procedural curve constructions",
+        "iges offset wire edge slots",
+    ] {
+        assert_offset_collection_refusal(&linear, operation);
+    }
+    let function = function_offset_line_file();
+    for operation in [
+        "iges function-offset controls",
+        "iges function-offset knots",
+    ] {
+        assert_offset_collection_refusal(&function, operation);
+    }
+    let placed = placed_uniform_offset_line_file(0, b"124,0,-1,0,5,1,0,0,0,0,0,1,0;");
+    assert_offset_collection_refusal(&placed, "iges offset source curve slots");
+}
+
+#[test]
+fn offset_nurbs_pole_admission_refuses_before_copy() {
+    for (bytes, operation) in [
+        (
+            linear_offset_line_file(1),
+            "iges linear-offset admitted controls",
+        ),
+        (
+            function_offset_line_file(),
+            "iges function-offset admitted controls",
+        ),
+    ] {
+        assert_offset_collection_refusal(&bytes, operation);
+        IgesCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+    }
+}
+
+#[test]
+fn source_parameter_map_preserves_a_finite_ratio_of_wide_intervals() {
+    let interval = IncreasingParameterInterval::new([-f64::MAX, f64::MAX]).unwrap();
+    let map = SourceParameterMap::new(interval, interval);
+    assert_eq!(map.scale(), 1.0);
+    assert_eq!(map.to_neutral(0.0), 0.0);
+    assert_eq!(map.to_neutral(f64::MAX), f64::MAX);
+}
 
 fn vector_distance(left: Vector3, right: Vector3) -> f64 {
     (left.x - right.x)
@@ -37,7 +168,7 @@ fn source_entry(entity_type: i64, form: i64) -> DirectoryEntry {
         view: 0,
         transform: 0,
         label_display: 0,
-        status: SourceStatus::from_codes([0, 1, 0, 0], crate::global::GlobalTable::V5Later),
+        status: SourceStatus::from_codes([0, 1, 0, 0]),
         line_weight: 0,
         color: 0,
         parameter_line_count: 1,
@@ -52,12 +183,12 @@ fn numeric_record(values: &[(usize, f64)]) -> ParameterRecord {
     let length = values.iter().map(|(index, _)| index + 1).max().unwrap_or(0);
     let mut tokens = (0..length)
         .map(|_| Token {
-            value: TokenValue::Real(0.0),
+            value: TokenValue::real(0.0),
             span: 0..0,
         })
         .collect::<Vec<_>>();
     for (index, value) in values {
-        tokens[*index].value = TokenValue::Real(*value);
+        tokens[*index].value = TokenValue::real(*value);
     }
     let parameter_end = tokens.len();
     ParameterRecord::from_test_tokens(1, 1..2, Vec::new(), parameter_end, tokens, Vec::new())
@@ -80,10 +211,14 @@ fn source_parameter_map_uses_the_iges_domain_for_each_bounded_curve_form() {
         let map = super::source_parameter_map(
             &source_entry(entity_type, form),
             &numeric_record(&[]),
-            neutral,
+            FiniteVector::new(neutral).unwrap(),
         )
         .expect("bounded source domain");
-        assert_eq!(map.native, native, "Type {entity_type} Form {form}");
+        assert_eq!(
+            map.native.endpoints(),
+            native,
+            "Type {entity_type} Form {form}"
+        );
         assert!((map.to_neutral(native[0]) - neutral[0]).abs() < EPS_SOURCE_PARAMETER_DOMAIN);
         assert!((map.to_neutral(native[1]) - neutral[1]).abs() < EPS_SOURCE_PARAMETER_DOMAIN);
     }
@@ -94,23 +229,26 @@ fn source_parameter_map_preserves_absolute_and_explicit_native_domains() {
     let circle = super::source_parameter_map(
         &source_entry(100, 0),
         &numeric_record(&[(4, 0.0), (5, -1.0), (6, 1.0), (7, 0.0)]),
-        [10.0, 20.0],
+        FiniteVector::new([10.0, 20.0]).unwrap(),
     )
     .expect("circular-arc domain");
     assert!(
-        (circle.native[0] - 3.0 * std::f64::consts::FRAC_PI_2).abs() < EPS_SOURCE_PARAMETER_DOMAIN
+        (circle.native.lower() - 3.0 * std::f64::consts::FRAC_PI_2).abs()
+            < EPS_SOURCE_PARAMETER_DOMAIN
     );
-    assert!((circle.native[1] - 2.0 * std::f64::consts::PI).abs() < EPS_SOURCE_PARAMETER_DOMAIN);
-    assert!((circle.to_neutral(circle.native[0]) - 10.0).abs() < EPS_SOURCE_PARAMETER_DOMAIN);
-    assert!((circle.to_neutral(circle.native[1]) - 20.0).abs() < EPS_SOURCE_PARAMETER_DOMAIN);
+    assert!(
+        (circle.native.upper() - 2.0 * std::f64::consts::PI).abs() < EPS_SOURCE_PARAMETER_DOMAIN
+    );
+    assert!((circle.to_neutral(circle.native.lower()) - 10.0).abs() < EPS_SOURCE_PARAMETER_DOMAIN);
+    assert!((circle.to_neutral(circle.native.upper()) - 20.0).abs() < EPS_SOURCE_PARAMETER_DOMAIN);
 
     let explicit = super::source_parameter_map(
         &source_entry(130, 0),
         &numeric_record(&[(13, -4.0), (14, 6.0)]),
-        [10.0, 20.0],
+        FiniteVector::new([10.0, 20.0]).unwrap(),
     )
     .expect("offset-curve domain");
-    assert_eq!(explicit.native, [-4.0, 6.0]);
+    assert_eq!(explicit.native.endpoints(), [-4.0, 6.0]);
     assert!((explicit.to_neutral(-4.0) - 10.0).abs() < EPS_SOURCE_PARAMETER_DOMAIN);
     assert!((explicit.to_neutral(6.0) - 20.0).abs() < EPS_SOURCE_PARAMETER_DOMAIN);
 }
@@ -121,7 +259,7 @@ fn source_parameter_map_rejects_unbounded_line_forms() {
         assert!(super::source_parameter_map(
             &source_entry(110, form),
             &numeric_record(&[]),
-            [0.0, 1.0],
+            FiniteVector::new([0.0, 1.0]).unwrap(),
         )
         .is_none());
     }
@@ -143,7 +281,7 @@ fn source_parameter_map_rejects_non_affine_curve_and_non_curve_domains() {
         assert!(super::source_parameter_map(
             &source_entry(entity_type, form),
             &numeric_record(&[]),
-            [0.0, 1.0],
+            FiniteVector::new([0.0, 1.0]).unwrap(),
         )
         .is_none());
     }
@@ -155,33 +293,40 @@ fn offset_source_range_uses_the_unique_curve_endpoint_match() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: source_id.clone(),
-        geometry: CurveGeometry::Line {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            direction: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        )),
         source_object: None,
     });
     ir.model.points.extend([
-        Point {
-            id: PointId::mint("test:model:point#wrong-start-point").expect("identity grammar"),
-            position: Point3::new(10.0, 0.0, 0.0),
-            source_object: None,
-        },
-        Point {
-            id: PointId::mint("test:model:point#wrong-end-point").expect("identity grammar"),
-            position: Point3::new(11.0, 0.0, 0.0),
-            source_object: None,
-        },
-        Point {
-            id: PointId::mint("test:model:point#matching-start-point").expect("identity grammar"),
-            position: Point3::new(0.0, 0.0, 0.0),
-            source_object: None,
-        },
-        Point {
-            id: PointId::mint("test:model:point#matching-end-point").expect("identity grammar"),
-            position: Point3::new(2.0, 0.0, 0.0),
-            source_object: None,
-        },
+        Point::new(
+            PointId::mint("test:model:point#wrong-start-point").expect("identity grammar"),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(10.0, 0.0, 0.0))
+                .expect("a finite position is a point"),
+            None,
+        ),
+        Point::new(
+            PointId::mint("test:model:point#wrong-end-point").expect("identity grammar"),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(11.0, 0.0, 0.0))
+                .expect("a finite position is a point"),
+            None,
+        ),
+        Point::new(
+            PointId::mint("test:model:point#matching-start-point").expect("identity grammar"),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                .expect("a finite position is a point"),
+            None,
+        ),
+        Point::new(
+            PointId::mint("test:model:point#matching-end-point").expect("identity grammar"),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
+                .expect("a finite position is a point"),
+            None,
+        ),
     ]);
     ir.model.vertices.extend([
         Vertex {
@@ -209,30 +354,39 @@ fn offset_source_range_uses_the_unique_curve_endpoint_match() {
     ir.model.edges.extend([
         Edge {
             id: EdgeId::mint("test:model:edge#wrong-occurrence").expect("identity grammar"),
-            curve: Some(source_id.clone()),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                Some(source_id.clone()),
+                Some([5.0, 6.0]),
+            )
+            .unwrap(),
             start: VertexId::mint("test:model:vertex#wrong-start").expect("identity grammar"),
             end: VertexId::mint("test:model:vertex#wrong-end").expect("identity grammar"),
-            param_range: Some([5.0, 6.0]),
             tolerance: None,
         },
         Edge {
             id: EdgeId::mint("test:model:edge#matching-occurrence").expect("identity grammar"),
-            curve: Some(source_id.clone()),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                Some(source_id.clone()),
+                Some([0.0, 2.0]),
+            )
+            .unwrap(),
             start: VertexId::mint("test:model:vertex#matching-start").expect("identity grammar"),
             end: VertexId::mint("test:model:vertex#matching-end").expect("identity grammar"),
-            param_range: Some([0.0, 2.0]),
             tolerance: None,
         },
     ]);
 
     let source = &ir.model.curves[0];
     assert_eq!(
-        super::source_parameter_range(
+        crate::test_support::with_service_context(&[], |ctx| super::source_parameter_range(
+            ctx,
             &ir,
             &source_id,
-            source.geometry.solved_cache().unwrap_or(&source.geometry),
+            source.geometry.solved().expect("solved carrier"),
             EPS_OFFSET_ENDPOINT_MATCH,
-        ),
+        ))
+        .expect("source parameter selection")
+        .map(FiniteVector::get),
         Some([0.0, 2.0])
     );
 }
@@ -253,13 +407,14 @@ fn decode_defaults_unused_uniform_offset_scalars_to_zero() {
         .iter()
         .find(|curve| curve.id.as_str() == "iges:model:curve#D3")
         .unwrap();
-    let cadmpeg_ir::geometry::CurveGeometry::Circle { radius, .. } = *offset
+    let SolvedCurveGeometry::Circle(circle_curve) = *offset
         .geometry
         .solved_cache()
         .expect("solved offset carrier")
     else {
         panic!("expected an exact circular offset carrier");
     };
+    let radius = circle_curve.radius().get();
     assert_eq!(radius, 1.5);
     let edge = result
         .ir()
@@ -268,10 +423,14 @@ fn decode_defaults_unused_uniform_offset_scalars_to_zero() {
         .iter()
         .find(|edge| edge.id.as_str() == "iges:model:edge#D3")
         .unwrap();
-    assert_eq!(edge.param_range, Some([0.0, std::f64::consts::FRAC_PI_2]));
+    assert_eq!(
+        edge.param_range().map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.0, std::f64::consts::FRAC_PI_2])
+    );
     assert_eq!(result.ir().model.procedural_curves.len(), 1);
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -293,35 +452,37 @@ fn decode_places_uniform_offset_circle_with_a_proper_transform() {
         .iter()
         .find(|curve| curve.id.as_str() == "iges:model:curve#D3")
         .expect("placed offset carrier");
-    let cadmpeg_ir::geometry::CurveGeometry::Circle {
-        center,
-        axis,
-        ref_direction,
-        radius,
-    } = *offset
+    let SolvedCurveGeometry::Circle(circle_curve) = *offset
         .geometry
         .solved_cache()
         .expect("solved offset carrier")
     else {
         panic!("expected an exact placed circular offset carrier");
     };
+    let center = circle_curve.center().get();
+    let axis = *circle_curve.frame().axis().as_raw();
+    let ref_direction = *circle_curve.frame().reference().as_raw();
+    let radius = circle_curve.radius().get();
     assert!(center.distance(Point3::new(5.0, 0.0, 0.0)) < EPS_PLACED_OFFSET);
     assert!(vector_distance(axis, Vector3::new(0.0, 0.0, 1.0)) < EPS_PLACED_OFFSET);
     assert!(vector_distance(ref_direction, Vector3::new(0.0, 1.0, 0.0)) < EPS_PLACED_OFFSET);
     assert!((radius - 1.5).abs() < EPS_PLACED_OFFSET);
     let procedural = &result.ir().model.procedural_curves[0];
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset {
-        source,
-        side: cadmpeg_ir::geometry::OffsetSide::PlaneNormal(normal),
-        ..
-    } = procedural.definition()
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset(definition_payload_0) =
+        procedural.definition()
+    else {
+        panic!("expected an offset construction");
+    };
+    let source = definition_payload_0.source();
+    let cadmpeg_ir::geometry::OffsetSide::PlaneNormal { normal } = definition_payload_0.side()
     else {
         panic!("expected an offset construction");
     };
     assert_eq!(source.as_str(), "iges:model:curve#D3-placed-source");
-    assert!(vector_distance(*normal, Vector3::new(0.0, 0.0, 1.0)) < EPS_PLACED_OFFSET);
+    assert!(vector_distance(normal.get(), Vector3::new(0.0, 0.0, 1.0)) < EPS_PLACED_OFFSET);
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -343,13 +504,15 @@ fn decode_places_uniform_offset_line_with_a_proper_transform() {
         .iter()
         .find(|curve| curve.id.as_str() == "iges:model:curve#D3")
         .expect("placed line offset carrier");
-    let cadmpeg_ir::geometry::CurveGeometry::Line { origin, direction } = *offset
+    let SolvedCurveGeometry::Line(line_curve) = *offset
         .geometry
         .solved_cache()
         .expect("solved offset carrier")
     else {
         panic!("expected an exact placed line offset carrier");
     };
+    let origin = line_curve.origin().get();
+    let direction = *line_curve.direction().as_raw();
     assert!(origin.distance(Point3::new(4.5, 0.0, 0.0)) < EPS_PLACED_OFFSET);
     assert!(vector_distance(direction, Vector3::new(0.0, 1.0, 0.0)) < EPS_PLACED_OFFSET);
     let end = result
@@ -359,9 +522,10 @@ fn decode_places_uniform_offset_line_with_a_proper_transform() {
         .iter()
         .find(|point| point.id.as_str() == "iges:model:point#D3:end")
         .expect("placed line offset end point");
-    assert!(end.position.distance(Point3::new(4.5, 2.0, 0.0)) < EPS_PLACED_OFFSET);
+    assert!(end.position().get().distance(Point3::new(4.5, 2.0, 0.0)) < EPS_PLACED_OFFSET);
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -383,18 +547,17 @@ fn decode_corrects_offset_normal_handedness_for_a_reflection() {
         .iter()
         .find(|curve| curve.id.as_str() == "iges:model:curve#D3")
         .expect("reflected offset carrier");
-    let cadmpeg_ir::geometry::CurveGeometry::Circle {
-        center,
-        axis,
-        ref_direction,
-        radius,
-    } = *offset
+    let SolvedCurveGeometry::Circle(circle_curve) = *offset
         .geometry
         .solved_cache()
         .expect("solved offset carrier")
     else {
         panic!("expected an exact reflected circular offset carrier");
     };
+    let center = circle_curve.center().get();
+    let axis = *circle_curve.frame().axis().as_raw();
+    let ref_direction = *circle_curve.frame().reference().as_raw();
+    let radius = circle_curve.radius().get();
     assert!(center.distance(Point3::new(5.0, 0.0, 0.0)) < EPS_PLACED_OFFSET);
     assert!(vector_distance(axis, Vector3::new(0.0, 0.0, -1.0)) < EPS_PLACED_OFFSET);
     assert!(vector_distance(ref_direction, Vector3::new(-1.0, 0.0, 0.0)) < EPS_PLACED_OFFSET);
@@ -406,9 +569,10 @@ fn decode_corrects_offset_normal_handedness_for_a_reflection() {
         .iter()
         .find(|point| point.id.as_str() == "iges:model:point#D3:start")
         .expect("reflected offset start point");
-    assert!(start.position.distance(Point3::new(3.5, 0.0, 0.0)) < EPS_PLACED_OFFSET);
+    assert!(start.position().get().distance(Point3::new(3.5, 0.0, 0.0)) < EPS_PLACED_OFFSET);
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -428,7 +592,10 @@ fn decode_maps_absolute_arc_parameters_to_the_neutral_domain() {
         .iter()
         .find(|edge| edge.id.as_str() == "iges:model:edge#D3")
         .expect("offset arc");
-    assert_eq!(edge.param_range, Some([0.0, std::f64::consts::FRAC_PI_2]));
+    assert_eq!(
+        edge.param_range().map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.0, std::f64::consts::FRAC_PI_2])
+    );
     let start = result
         .ir()
         .model
@@ -444,9 +611,13 @@ fn decode_maps_absolute_arc_parameters_to_the_neutral_domain() {
                 .find(|point| point.id == vertex.point)
         })
         .expect("offset start point");
-    assert_eq!(start.position, cadmpeg_ir::math::Point3::new(0.0, 1.5, 0.0));
+    assert_eq!(
+        start.position().get(),
+        cadmpeg_ir::math::Point3::new(0.0, 1.5, 0.0)
+    );
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -526,12 +697,10 @@ fn decode_solves_a_parameter_linear_line_offset() {
             .iter()
             .find(|curve| curve.id.as_str() == "iges:model:curve#D3")
             .unwrap();
-        let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) =
-            offset.geometry.solved_cache().unwrap_or(&offset.geometry)
-        else {
+        let Some(SolvedCurveGeometry::Nurbs(nurbs)) = offset.geometry.solved() else {
             panic!("expected an exact degree-one offset carrier");
         };
-        assert_eq!(nurbs.knots(), [0.0, 0.0, 10.0, 10.0]);
+        assert_eq!(nurbs.knots().as_slice(), [0.0, 0.0, 10.0, 10.0]);
         assert_eq!(
             nurbs.control_points(),
             vec![
@@ -539,29 +708,85 @@ fn decode_solves_a_parameter_linear_line_offset() {
                 cadmpeg_ir::math::Point3::new(10.0, 3.0, 0.0),
             ]
         );
-        let cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset {
-            range:
-                Some(cadmpeg_ir::geometry::CurveOffsetRange::Variable {
-                    distance_law:
-                        cadmpeg_ir::geometry::CurveOffsetDistanceLaw::Linear {
-                            basis,
-                            distances,
-                            control_range,
-                        },
-                    ..
-                }),
+        let cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset(definition_payload_0) =
+            &result.ir().model.procedural_curves[0].definition()
+        else {
+            panic!("expected a retained linear offset law");
+        };
+        let Some(cadmpeg_ir::geometry::CurveOffsetRange::Variable {
+            distance_law:
+                cadmpeg_ir::geometry::CurveOffsetDistanceLaw::Linear {
+                    basis,
+                    distances,
+                    control_range,
+                },
             ..
-        } = &result.ir().model.procedural_curves[0].definition()
+        }) = definition_payload_0.range()
         else {
             panic!("expected a retained linear offset law");
         };
         assert_eq!(*basis, expected_basis);
-        assert_eq!(*distances, [1.0, 3.0]);
-        assert_eq!(*control_range, [0.0, 10.0]);
+        assert_eq!(
+            cadmpeg_ir::scalar::FiniteReal::raw_array(*distances),
+            [1.0, 3.0]
+        );
+        assert_eq!(control_range.endpoints(), [0.0, 10.0]);
         assert!(result.report().losses.is_empty());
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
+}
+
+#[test]
+fn linear_offset_keeps_finite_distances_across_wide_controls() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(wide_control_linear_offset_line_file()),
+            &DecodeOptions::default(),
+        )
+        .expect("wide linear offset file decodes");
+    let offset = result
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.as_str() == "iges:model:curve#D3")
+        .expect("offset curve");
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = offset.geometry.solved() else {
+        panic!("expected an exact degree-one offset carrier");
+    };
+    assert_eq!(
+        nurbs.control_points(),
+        vec![Point3::new(0.0, 2.0, 0.0), Point3::new(10.0, 2.0, 0.0)]
+    );
+}
+
+#[test]
+fn linear_offset_keeps_finite_endpoints_across_wide_distances() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(wide_distance_linear_offset_line_file()),
+            &DecodeOptions::default(),
+        )
+        .expect("wide distance offset file decodes");
+    let offset = result
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.as_str() == "iges:model:curve#D3")
+        .expect("offset curve");
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = offset.geometry.solved() else {
+        panic!("expected an exact degree-one offset carrier");
+    };
+    assert_eq!(
+        nurbs.control_points(),
+        vec![
+            Point3::new(0.0, -9.0e307, 0.0),
+            Point3::new(10.0, 9.0e307, 0.0),
+        ]
+    );
 }
 
 #[test]
@@ -580,12 +805,10 @@ fn decode_solves_a_polynomial_coordinate_function_offset() {
         .iter()
         .find(|curve| curve.id.as_str() == "iges:model:curve#D5")
         .unwrap();
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) =
-        offset.geometry.solved_cache().unwrap_or(&offset.geometry)
-    else {
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = offset.geometry.solved() else {
         panic!("expected an exact function-offset carrier");
     };
-    assert_eq!(nurbs.knots(), [0.0, 0.0, 10.0, 10.0]);
+    assert_eq!(nurbs.knots().as_slice(), [0.0, 0.0, 10.0, 10.0]);
     assert_eq!(
         nurbs.control_points(),
         vec![
@@ -593,34 +816,36 @@ fn decode_solves_a_polynomial_coordinate_function_offset() {
             cadmpeg_ir::math::Point3::new(10.0, 3.0, 0.0),
         ]
     );
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset {
-        range:
-            Some(cadmpeg_ir::geometry::CurveOffsetRange::Variable {
-                distance_law:
-                    cadmpeg_ir::geometry::CurveOffsetDistanceLaw::Coordinate {
-                        function,
-                        coordinate,
-                        basis,
-                        function_parameter_offset,
-                        function_parameter_scale,
-                    },
-                ..
-            }),
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset(definition_payload_0) =
+        &result.ir().model.procedural_curves[0].definition()
+    else {
+        panic!("expected a retained coordinate-function offset law");
+    };
+    let Some(cadmpeg_ir::geometry::CurveOffsetRange::Variable {
+        distance_law:
+            cadmpeg_ir::geometry::CurveOffsetDistanceLaw::Coordinate {
+                function,
+                coordinate,
+                basis,
+                function_parameter_offset,
+                function_parameter_scale,
+            },
         ..
-    } = &result.ir().model.procedural_curves[0].definition()
+    }) = definition_payload_0.range()
     else {
         panic!("expected a retained coordinate-function offset law");
     };
     assert_eq!(function.as_str(), "iges:model:curve#D3");
-    assert_eq!(*coordinate, 2);
+    assert_eq!(coordinate.get(), 2);
     assert_eq!(*basis, cadmpeg_ir::geometry::CurveOffsetLawBasis::Parameter);
-    assert_eq!(*function_parameter_offset, 0.0);
-    assert_eq!(*function_parameter_scale, 0.1);
+    assert_eq!(function_parameter_offset.get(), 0.0);
+    assert_eq!(function_parameter_scale.get(), 0.1);
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
         result.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }

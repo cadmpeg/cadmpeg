@@ -1,6 +1,21 @@
 use super::test_consolidated::valid_consolidated_plane_geometry;
-use super::*;
+use crate::container;
+use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
+use crate::native::edge_node::consolidated_vertex_identities;
 use crate::native::edge_node::CatiaConsolidatedEdgeNode;
+use crate::native::projection::{
+    containing_finjpl_segment, finjpl_family, value_schema_selections,
+};
+use crate::native::{
+    repeated_reference_schema_selection, CatiaAliasRow, CatiaCatalog, CatiaConsolidatedCircle,
+    CatiaConsolidatedCone, CatiaConsolidatedCylinder, CatiaConsolidatedEdgeRun,
+    CatiaConsolidatedEmbeddedCylinder, CatiaConsolidatedGroup, CatiaConsolidatedOwnerPacket,
+    CatiaConsolidatedPcurve, CatiaConsolidatedPlaneCarrier, CatiaConsolidatedSphere,
+    CatiaConsolidatedSupportBinding, CatiaConsolidatedTorus, CatiaConsolidatedVertexIdentity,
+    CatiaFinjplSegment, CatiaObjectGraph, CatiaOwnerPacketPayload, CatiaValueBlock,
+};
+use crate::object_graph;
+use std::collections::{HashMap, HashSet};
 
 pub(super) fn validate_consolidated_owner_packets(
     packets: &[CatiaConsolidatedOwnerPacket],
@@ -12,19 +27,12 @@ pub(super) fn validate_consolidated_owner_packets(
         });
         let valid_payload = match &packet.payload {
             CatiaOwnerPacketPayload::FixedNine { numeric_tail, .. } => {
-                numeric_tail.header[0] == 0x84
-                    && matches!(numeric_tail.header[1], 0x41 | 0xc1)
-                    && numeric_tail.header[4] == 0x0d
-                    && numeric_tail.lower.iter().all(|value| value.is_finite())
-                    && numeric_tail.upper.iter().all(|value| value.is_finite())
-                    && numeric_tail.lower[0] < numeric_tail.upper[0]
-                    && numeric_tail.lower[1] < numeric_tail.upper[1]
-                    && numeric_tail.bounds.iter().all(|bounds| {
-                        bounds[0].is_finite() && bounds[1].is_finite() && bounds[0] < bounds[1]
-                    })
+                numeric_tail.header()[0] == 0x84
+                    && matches!(numeric_tail.header()[1], 0x41 | 0xc1)
+                    && numeric_tail.header()[4] == 0x0d
             }
             CatiaOwnerPacketPayload::Counted { references, tail } => {
-                !references.is_empty() && !tail.is_empty()
+                !references.is_empty() && !tail.as_slice().is_empty()
             }
         };
         if packet.id != format!("catia:consolidated:owner-packet#{:010}", packet.byte_offset)
@@ -119,7 +127,6 @@ pub(super) fn validate_consolidated_edge_runs(
         .collect::<HashSet<_>>();
     let mut run_nodes = HashSet::new();
     for (index, node) in nodes.iter().enumerate() {
-        let token_limit = 1u32 << (u8::from(node.width) * 8);
         let uses_valid = node.uses.as_ref().is_none_or(|uses| {
             node.curve_ref
                 .checked_sub(2)
@@ -130,18 +137,16 @@ pub(super) fn validate_consolidated_edge_runs(
                 && node.parameter_selectors == [2, 1]
         });
         let definition_valid = node.definition.as_ref().is_none_or(|definition| {
-            let token_limit = 1u32.checked_shl(u32::from(u8::from(definition.frame.width)) * 8);
             node.uses.is_some()
-                && token_limit.is_some_and(|limit| definition.frame.header_token < limit)
-                && !definition.frame.payload.is_empty()
-                && definition.frame.pos < node.byte_offset
+                && !definition.frame().payload.is_empty()
+                && definition.frame().pos < node.byte_offset
         });
         let analytic_circle_valid = node.analytic_circle.as_ref().is_none_or(|binding| {
             let definition = node.definition.as_ref();
             let circle = circles.get(binding.circle.as_str());
             node.uses.is_some()
                 && definition.is_some_and(|definition| {
-                    u8::from(definition.class) == 0x23
+                    u8::from(definition.class()) == 0x23
                         && matches!(
                             definition.data(),
                             Some(ConsolidatedEdgeDefinitionData::Scalar {
@@ -151,18 +156,15 @@ pub(super) fn validate_consolidated_edge_runs(
                         )
                         && circle.is_some_and(|circle| {
                             binding.descriptor.pos < circle.byte_offset
-                                && circle.byte_offset < definition.frame.pos
+                                && circle.byte_offset < definition.frame().pos
                         })
                 })
-                && 1u32
-                    .checked_shl(u32::from(u8::from(binding.descriptor.width)) * 8)
-                    .is_some_and(|limit| binding.descriptor.header_token < limit)
                 && !binding.descriptor.payload.is_empty()
         });
         let class25_descriptor_valid = node.class25_descriptor.as_ref().is_none_or(|descriptor| {
             node.uses.is_some()
                 && node.definition.as_ref().is_some_and(|definition| {
-                    u8::from(definition.class) == 0x25
+                    u8::from(definition.class()) == 0x25
                         && matches!(
                             definition.data(),
                             Some(
@@ -170,14 +172,12 @@ pub(super) fn validate_consolidated_edge_runs(
                                     | ConsolidatedEdgeDefinitionData::SegmentedScalar25 { .. }
                             )
                         )
-                        && descriptor.byte_offset < definition.frame.pos
+                        && descriptor.byte_offset < definition.frame().pos
                 })
                 && matches!(descriptor.control, 0x02 | 0x0a)
                 && matches!(descriptor.values.len(), 2 | 3)
-                && descriptor.values.iter().all(|value| value.is_finite())
         });
         if node.id != format!("catia:consolidated:edge-node#{index}")
-            || node.header_token >= token_limit
             || !uses_valid
             || !definition_valid
             || !analytic_circle_valid
@@ -252,7 +252,7 @@ pub(super) fn validate_consolidated_edge_runs(
                 CatiaConsolidatedSupportBinding::Plane { byte_offset } => {
                     plane_offsets.contains(byte_offset)
                 }
-                CatiaConsolidatedSupportBinding::NurbsCarrier { offset, .. } => offset.is_finite(),
+                CatiaConsolidatedSupportBinding::NurbsCarrier { .. } => true,
             });
         if run.id != expected_id
             || pcurve_offsets[0] != Some(run.byte_offset)
@@ -260,10 +260,7 @@ pub(super) fn validate_consolidated_edge_runs(
             || pcurve_offsets[0] >= pcurve_offsets[1]
             || pcurve_offsets[1].is_some_and(|offset| offset >= node.byte_offset)
             || pcurve_ranges != [Some(run.parameter_range), Some(run.parameter_range)]
-            || run.parameter_range[0] >= run.parameter_range[1]
-            || !run.parameter_range.iter().all(|value| value.is_finite())
-            || !run.tolerance.is_finite()
-            || run.tolerance < 0.0
+            || run.tolerance.get() < 0.0
             || node.uses.is_none()
             || !matches!(node.tail, 0x01 | 0x21)
             || !bindings_valid
@@ -277,7 +274,9 @@ pub(super) fn validate_consolidated_edge_runs(
         }
     }
     let expected_nodes = nodes.to_vec();
-    let expected_identities = consolidated_vertex_identities(&expected_nodes);
+    let expected_identities = crate::test_support::with_service_context(|ctx| {
+        consolidated_vertex_identities(ctx, &expected_nodes)
+    })?;
     if expected_nodes != nodes || expected_identities != vertex_identities {
         return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
             "consolidated vertex identities disagree with edge incidence".to_string(),
@@ -294,11 +293,10 @@ pub(super) fn validate_native_links(
     value_blocks: &[CatiaValueBlock],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for catalog in catalogs {
-        let count_width = if catalog.declared_count() <= 0x50 {
-            1
-        } else {
-            2
-        };
+        // The `7C02` count atom is one byte for a stored count up to 0x50 and
+        // two beyond it. The stored count is the entry population plus one, so
+        // the one-byte form is exactly a population below 0x50.
+        let count_width = if catalog.entries.len() < 0x50 { 1 } else { 2 };
         let Some(mut expected_offset) = catalog.byte_offset.checked_add(6 + count_width) else {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "catalog `{}` has an overflowing extent",
@@ -341,7 +339,14 @@ pub(super) fn validate_native_links(
         }
     }
     for (index, segment) in segments.iter().enumerate() {
-        let parsed = container::finjpl_segments(&segment.data, 0, segment.data.len());
+        let parsed = crate::test_support::with_service_context(|ctx| {
+            container::finjpl_segments(ctx, &container::BodyExtent::whole(&segment.data))
+        })
+        .map_err(|_| {
+            cadmpeg_ir::NativeConvertError::InvalidOwner(
+                "stored CATIA FINJPL segment exceeds service limits".to_string(),
+            )
+        })?;
         let expected_id = format!("catia:outer:finjpl#{index}");
         if segment.id != expected_id
             || u64::try_from(segment.data.len()).ok() != Some(segment.byte_len)
@@ -349,7 +354,7 @@ pub(super) fn validate_native_links(
             || !matches!(parsed.as_slice(), [parsed]
                 if parsed.range == (0..segment.data.len())
                     && parsed.type_word == segment.type_word
-                    && finjpl_family(parsed.kind) == segment.family
+                    && finjpl_family(parsed.kind()) == segment.family
                     && parsed.name == segment.name)
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
@@ -385,9 +390,11 @@ pub(super) fn validate_native_links(
                 block.id, block.catalog
             )));
         }
-        if value_schema_selections(&block.id, block.byte_offset, &block.fields(), catalog)
-            != block.schema_selections
-        {
+        let selections = crate::test_support::with_service_context(|ctx| {
+            value_schema_selections(ctx, &block.id, block.byte_offset, &block.fields(), catalog)
+        })
+        .map_err(|error| cadmpeg_ir::NativeConvertError::InvalidOwner(error.to_string()))?;
+        if selections != block.schema_selections {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "value block `{}` has an invalid derived view",
                 block.id
@@ -477,13 +484,20 @@ pub(super) fn validate_native_links(
                             .map(|entry| (entry.id.as_str(), entry.value.as_str()))
                     })
             });
+            let expected_repeated_selection = crate::test_support::with_service_context(|ctx| {
+                repeated_reference_schema_selection(
+                    ctx,
+                    object_graph::repeated_reference_schema_preamble(&record.payload).as_ref(),
+                    catalog,
+                )
+            });
             if record.class_entry() != expected_class.map(|(entry, _)| entry)
                 || record.class_name() != expected_class.map(|(_, value)| value)
-                || record.repeated_reference_schema_selection
-                    != repeated_reference_schema_selection(
-                        record.repeated_reference_suffix().as_ref(),
-                        catalog,
-                    )
+                || expected_repeated_selection
+                    .as_ref()
+                    .map_or(true, |selection| {
+                        record.repeated_reference_schema_selection != *selection
+                    })
             {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                     "object record `{}` has an invalid schema class",

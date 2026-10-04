@@ -1,44 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Compile-time schema contract shared by every neutral model arena.
 
-use std::cell::Cell;
-use std::fmt;
+use serde::Serialize;
 
-use serde::ser::{
-    SerializeMap, SerializeSeq, SerializeStruct, SerializeStructVariant, SerializeTuple,
-    SerializeTupleStruct, SerializeTupleVariant,
-};
-use serde::{Serialize, Serializer};
-
-/// Marks fields that current writers always serialize as required while their
-/// deserializers remain omission-tolerant for older artifacts.
-#[cfg(feature = "schema")]
-pub(crate) fn require_object_fields(
-    schema: &mut schemars::Schema,
-    names: impl IntoIterator<Item = &'static str>,
-) {
-    let object = schema
-        .as_object_mut()
-        .expect("a derived struct schema is an object");
-    let required = object
-        .entry("required")
-        .or_insert_with(|| serde_json::Value::Array(Vec::new()))
-        .as_array_mut()
-        .expect("a derived struct schema has an array of required fields");
-    for name in names {
-        if !required.iter().any(|field| field == name) {
-            required.push(serde_json::Value::String(name.to_owned()));
-        }
-    }
-}
-
-const REFERENCE_ID_MARKER: &str = "cadmpeg::reference_id";
-
-thread_local! {
-    static REFERENCE_WALK_ACTIVE: Cell<bool> = const { Cell::new(false) };
-}
+pub mod rewrite;
+/// Caller-accounted structural value projection and reconstruction.
+pub mod structural;
 
 /// Canonical neutral arena kind.
+#[repr(usize)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EntityKind {
     /// Body.
@@ -126,6 +96,53 @@ pub enum EntityKind {
 }
 
 impl EntityKind {
+    /// Position of this kind in the canonical arena registry.
+    pub(crate) const fn index(self) -> usize {
+        match self {
+            Self::Body => 0,
+            Self::Region => 1,
+            Self::Shell => 2,
+            Self::Face => 3,
+            Self::Loop => 4,
+            Self::Coedge => 5,
+            Self::Edge => 6,
+            Self::Vertex => 7,
+            Self::Point => 8,
+            Self::Surface => 9,
+            Self::Curve => 10,
+            Self::SubdSurface => 11,
+            Self::Pcurve => 12,
+            Self::ProceduralSurface => 13,
+            Self::ProceduralCurve => 14,
+            Self::Asset => 15,
+            Self::Feature => 16,
+            Self::FeatureInputTopology => 17,
+            Self::FeatureResultTopology => 18,
+            Self::DesignConfiguration => 19,
+            Self::DesignParameter => 20,
+            Self::Sketch => 21,
+            Self::SketchEntity => 22,
+            Self::SketchConstraint => 23,
+            Self::SpatialSketch => 24,
+            Self::SpatialSketchEntity => 25,
+            Self::SpatialSketchConstraint => 26,
+            Self::Spreadsheet => 27,
+            Self::ProductDefinition => 28,
+            Self::Occurrence => 29,
+            Self::AssemblyJoint => 30,
+            Self::Drawing => 31,
+            Self::SemanticAnnotation => 32,
+            Self::PresentationDocument => 33,
+            Self::ViewPresentation => 34,
+            Self::Tessellation => 35,
+            Self::Appearance => 36,
+            Self::AppearanceBinding => 37,
+            Self::SourceAttribute => 38,
+            Self::PmiAnnotation => 39,
+            Self::PresentationLayer => 40,
+        }
+    }
+
     /// Every registered entity kind in canonical arena order.
     pub const ALL: [Self; 41] = [
         Self::Body,
@@ -172,305 +189,35 @@ impl EntityKind {
     ];
 }
 
-/// One typed identity reference emitted by an entity schema walk.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Reference {
-    /// Referenced globally unique identity.
-    pub target: String,
-}
-
 /// Schema behavior required for every entity admitted to a model arena.
-pub trait EntitySchema: Serialize {
+pub trait EntitySchema: Serialize + rewrite::typed::RewriteIdentities {
     /// Entity's canonical arena kind.
     const KIND: EntityKind;
 
     /// Globally unique entity identity.
     fn identity(&self) -> &str;
 
-    /// Visits every typed identity reference held by this entity.
-    fn visit_references(&self, visitor: &mut dyn FnMut(Reference));
-}
-
-/// Serializes a typed reference ID while preserving its ordinary string wire shape.
-pub(crate) fn serialize_reference_id<S>(value: &str, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    if REFERENCE_WALK_ACTIVE.get() {
-        serializer.serialize_newtype_struct(REFERENCE_ID_MARKER, value)
-    } else {
-        serializer.serialize_str(value)
-    }
-}
-
-#[derive(Debug)]
-struct ReferenceWalkError(String);
-
-impl fmt::Display for ReferenceWalkError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.0)
-    }
-}
-
-impl std::error::Error for ReferenceWalkError {}
-
-impl serde::ser::Error for ReferenceWalkError {
-    fn custom<T: fmt::Display>(message: T) -> Self {
-        Self(message.to_string())
-    }
-}
-
-struct ReferenceSerializer<'a> {
-    identity: &'a str,
-    visitor: &'a mut dyn FnMut(Reference),
-}
-
-macro_rules! ignore_scalar {
-    ($($method:ident($type:ty)),* $(,)?) => {
-        $(fn $method(self, _value: $type) -> Result<Self::Ok, Self::Error> { Ok(()) })*
-    };
-}
-
-impl Serializer for &mut ReferenceSerializer<'_> {
-    type Ok = ();
-    type Error = ReferenceWalkError;
-    type SerializeSeq = Self;
-    type SerializeTuple = Self;
-    type SerializeTupleStruct = Self;
-    type SerializeTupleVariant = Self;
-    type SerializeMap = Self;
-    type SerializeStruct = Self;
-    type SerializeStructVariant = Self;
-
-    ignore_scalar!(
-        serialize_bool(bool),
-        serialize_i8(i8),
-        serialize_i16(i16),
-        serialize_i32(i32),
-        serialize_i64(i64),
-        serialize_i128(i128),
-        serialize_u8(u8),
-        serialize_u16(u16),
-        serialize_u32(u32),
-        serialize_u64(u64),
-        serialize_u128(u128),
-        serialize_f32(f32),
-        serialize_f64(f64),
-        serialize_char(char),
-        serialize_str(&str),
-        serialize_bytes(&[u8]),
-    );
-
-    fn serialize_none(self) -> Result<Self::Ok, Self::Error> {
-        Ok(())
-    }
-
-    fn serialize_some<T: ?Sized + Serialize>(self, value: &T) -> Result<Self::Ok, Self::Error> {
-        value.serialize(self)
-    }
-
-    fn serialize_unit(self) -> Result<Self::Ok, Self::Error> {
-        Ok(())
-    }
-
-    fn serialize_unit_struct(self, _name: &'static str) -> Result<Self::Ok, Self::Error> {
-        Ok(())
-    }
-
-    fn serialize_unit_variant(
-        self,
-        _name: &'static str,
-        _variant_index: u32,
-        _variant: &'static str,
-    ) -> Result<Self::Ok, Self::Error> {
-        Ok(())
-    }
-
-    fn serialize_newtype_struct<T: ?Sized + Serialize>(
-        self,
-        name: &'static str,
-        value: &T,
-    ) -> Result<Self::Ok, Self::Error> {
-        if name == REFERENCE_ID_MARKER {
-            let value = serde_json::to_value(value).map_err(serde::ser::Error::custom)?;
-            let target = value.as_str().ok_or_else(|| {
-                serde::ser::Error::custom("typed reference ID did not serialize as a string")
-            })?;
-            if target != self.identity {
-                (self.visitor)(Reference {
-                    target: target.to_owned(),
-                });
+    /// Visit borrowed typed references through fields under the caller's context.
+    fn visit_references(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        rewrite::typed::RewriteIdentities::visit_identity_references(self, ctx, &mut |target| {
+            let identity = self.identity();
+            ctx.charge_work(1, "typed reference owner comparison")?;
+            if identity.len() == target.len() {
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(identity.len()),
+                    "typed reference owner comparison",
+                )?;
+                if identity == target {
+                    return Ok(());
+                }
             }
-            Ok(())
-        } else {
-            value.serialize(self)
-        }
+            visitor(target)
+        })
     }
-
-    fn serialize_newtype_variant<T: ?Sized + Serialize>(
-        self,
-        _name: &'static str,
-        _variant_index: u32,
-        _variant: &'static str,
-        value: &T,
-    ) -> Result<Self::Ok, Self::Error> {
-        value.serialize(self)
-    }
-
-    fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {
-        Ok(self)
-    }
-
-    fn serialize_tuple(self, _len: usize) -> Result<Self::SerializeTuple, Self::Error> {
-        Ok(self)
-    }
-
-    fn serialize_tuple_struct(
-        self,
-        _name: &'static str,
-        _len: usize,
-    ) -> Result<Self::SerializeTupleStruct, Self::Error> {
-        Ok(self)
-    }
-
-    fn serialize_tuple_variant(
-        self,
-        _name: &'static str,
-        _variant_index: u32,
-        _variant: &'static str,
-        _len: usize,
-    ) -> Result<Self::SerializeTupleVariant, Self::Error> {
-        Ok(self)
-    }
-
-    fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap, Self::Error> {
-        Ok(self)
-    }
-
-    fn serialize_struct(
-        self,
-        _name: &'static str,
-        _len: usize,
-    ) -> Result<Self::SerializeStruct, Self::Error> {
-        Ok(self)
-    }
-
-    fn serialize_struct_variant(
-        self,
-        _name: &'static str,
-        _variant_index: u32,
-        _variant: &'static str,
-        _len: usize,
-    ) -> Result<Self::SerializeStructVariant, Self::Error> {
-        Ok(self)
-    }
-}
-
-macro_rules! serialize_element {
-    ($trait:ident, $method:ident) => {
-        impl $trait for &mut ReferenceSerializer<'_> {
-            type Ok = ();
-            type Error = ReferenceWalkError;
-
-            fn $method<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), Self::Error> {
-                value.serialize(&mut **self)
-            }
-
-            fn end(self) -> Result<Self::Ok, Self::Error> {
-                Ok(())
-            }
-        }
-    };
-}
-
-serialize_element!(SerializeSeq, serialize_element);
-serialize_element!(SerializeTuple, serialize_element);
-serialize_element!(SerializeTupleStruct, serialize_field);
-
-impl SerializeTupleVariant for &mut ReferenceSerializer<'_> {
-    type Ok = ();
-    type Error = ReferenceWalkError;
-
-    fn serialize_field<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), Self::Error> {
-        value.serialize(&mut **self)
-    }
-
-    fn end(self) -> Result<Self::Ok, Self::Error> {
-        Ok(())
-    }
-}
-
-impl SerializeMap for &mut ReferenceSerializer<'_> {
-    type Ok = ();
-    type Error = ReferenceWalkError;
-
-    fn serialize_key<T: ?Sized + Serialize>(&mut self, key: &T) -> Result<(), Self::Error> {
-        key.serialize(&mut **self)
-    }
-
-    fn serialize_value<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), Self::Error> {
-        value.serialize(&mut **self)
-    }
-
-    fn end(self) -> Result<Self::Ok, Self::Error> {
-        Ok(())
-    }
-}
-
-impl SerializeStruct for &mut ReferenceSerializer<'_> {
-    type Ok = ();
-    type Error = ReferenceWalkError;
-
-    fn serialize_field<T: ?Sized + Serialize>(
-        &mut self,
-        _key: &'static str,
-        value: &T,
-    ) -> Result<(), Self::Error> {
-        value.serialize(&mut **self)
-    }
-
-    fn end(self) -> Result<Self::Ok, Self::Error> {
-        Ok(())
-    }
-}
-
-impl SerializeStructVariant for &mut ReferenceSerializer<'_> {
-    type Ok = ();
-    type Error = ReferenceWalkError;
-
-    fn serialize_field<T: ?Sized + Serialize>(
-        &mut self,
-        _key: &'static str,
-        value: &T,
-    ) -> Result<(), Self::Error> {
-        value.serialize(&mut **self)
-    }
-
-    fn end(self) -> Result<Self::Ok, Self::Error> {
-        Ok(())
-    }
-}
-
-/// Visits typed-ID newtypes without interpreting arbitrary strings as references.
-pub(crate) fn visit_typed_references<T: EntitySchema>(
-    entity: &T,
-    visitor: &mut dyn FnMut(Reference),
-) {
-    struct WalkScope(bool);
-
-    impl Drop for WalkScope {
-        fn drop(&mut self) {
-            REFERENCE_WALK_ACTIVE.set(self.0);
-        }
-    }
-
-    let scope = WalkScope(REFERENCE_WALK_ACTIVE.replace(true));
-    let mut serializer = ReferenceSerializer {
-        identity: entity.identity(),
-        visitor,
-    };
-    let _ = entity.serialize(&mut serializer);
-    drop(scope);
 }
 
 macro_rules! impl_entity_schema {
@@ -479,12 +226,8 @@ macro_rules! impl_entity_schema {
             const KIND: EntityKind = EntityKind::$kind;
 
             fn identity(&self) -> &str {
-                self.$identity $(.$inner)?.as_str()
-            }
-
-            fn visit_references(&self, visitor: &mut dyn FnMut(Reference)) {
                 let Self { $($field: _),+ } = self;
-                visit_typed_references(self, visitor);
+                self.$identity $(.$inner)?.as_str()
             }
         }
     };
@@ -492,26 +235,32 @@ macro_rules! impl_entity_schema {
 
 impl_entity_schema!(crate::topology::Body, Body, id; id, kind, regions, transform, name, color, visible);
 impl_entity_schema!(crate::topology::Region, Region, id; id, body, shells);
-impl_entity_schema!(crate::topology::Shell, Shell, id; id, region, faces, wire_edges, free_vertices);
+impl EntitySchema for crate::topology::Shell {
+    const KIND: EntityKind = EntityKind::Shell;
+    fn identity(&self) -> &str {
+        self.id.as_str()
+    }
+}
 impl_entity_schema!(crate::topology::Face, Face, id; id, shell, surface, sense, loops, name, color, tolerance);
 impl_entity_schema!(crate::topology::Loop, Loop, id; id, face, boundary);
 impl_entity_schema!(crate::topology::Coedge, Coedge, id; id, owner_loop, edge, radial_next, sense, pcurves, use_curve);
-impl_entity_schema!(crate::topology::Edge, Edge, id; id, curve, start, end, param_range, tolerance);
+impl_entity_schema!(crate::topology::Edge, Edge, id; id, carrier, start, end, tolerance);
 impl_entity_schema!(crate::topology::Vertex, Vertex, id; id, point, tolerance);
-impl_entity_schema!(crate::topology::Point, Point, id; id, position, source_object);
+impl EntitySchema for crate::topology::Point {
+    const KIND: EntityKind = EntityKind::Point;
+    fn identity(&self) -> &str {
+        self.id.as_str()
+    }
+}
 impl_entity_schema!(crate::geometry::Surface, Surface, id; id, geometry, source_object);
 impl_entity_schema!(crate::geometry::Curve, Curve, id; id, geometry, source_object);
-impl_entity_schema!(crate::subd::SubdSurface, SubdSurface, id; id, scheme, vertices, edges, faces, symmetries, source_object);
-impl_entity_schema!(crate::geometry::Pcurve, Pcurve, id; id, geometry, metadata);
+impl_entity_schema!(crate::subd::SubdSurface, SubdSurface, id; id, scheme, cage, source_object);
+impl_entity_schema!(crate::geometry::pcurve::Pcurve, Pcurve, id; id, geometry, metadata);
 impl EntitySchema for crate::geometry::ProceduralSurface {
     const KIND: EntityKind = EntityKind::ProceduralSurface;
 
     fn identity(&self) -> &str {
         self.id.as_str()
-    }
-
-    fn visit_references(&self, visitor: &mut dyn FnMut(Reference)) {
-        visit_typed_references(self, visitor);
     }
 }
 
@@ -521,25 +270,22 @@ impl EntitySchema for crate::geometry::ProceduralCurve {
     fn identity(&self) -> &str {
         self.id.as_str()
     }
-
-    fn visit_references(&self, visitor: &mut dyn FnMut(Reference)) {
-        visit_typed_references(self, visitor);
-    }
 }
 impl_entity_schema!(crate::assets::Asset, Asset, id; id, name, media_type, content, native_ref);
-impl_entity_schema!(crate::features::Feature, Feature, id; id, ordinal, name, suppressed, dependencies, source_properties, source_tag, source_text, source_content, outputs, definition, native_ref);
+impl_entity_schema!(crate::features::Feature, Feature, id; id, ordinal, name, suppressed, dependencies, source_properties, source_tag, source_text, source_content, evaluation, native_ref);
 impl_entity_schema!(
     crate::features::FeatureInputTopology,
     FeatureInputTopology,
     id;
     id, input_of, bodies, faces, edges, vertices, native_ref
 );
-impl_entity_schema!(
-    crate::features::FeatureResultTopology,
-    FeatureResultTopology,
-    id;
-    id, output_of, bodies, faces, edges, vertices, native_ref
-);
+impl EntitySchema for crate::features::FeatureResultTopology {
+    const KIND: EntityKind = EntityKind::FeatureResultTopology;
+
+    fn identity(&self) -> &str {
+        self.id.as_str()
+    }
+}
 impl_entity_schema!(
     crate::features::DesignConfiguration,
     DesignConfiguration,
@@ -548,38 +294,36 @@ impl_entity_schema!(
     bodies, parameter_values, feature_states, native_ref
 );
 impl_entity_schema!(crate::features::DesignParameter, DesignParameter, id; id, owner, ordinal, name, expression, display, value, dependencies, properties, pmi, native_ref);
-impl_entity_schema!(crate::sketches::Sketch, Sketch, id.0; id, name, configuration, visible, placement, profiles, native_ref);
+impl_entity_schema!(crate::sketches::Sketch, Sketch, id; id, name, configuration, visible, placement, profiles, native_ref);
 impl EntitySchema for crate::sketches::SketchEntity {
     const KIND: EntityKind = EntityKind::SketchEntity;
 
     fn identity(&self) -> &str {
-        self.id().0.as_str()
-    }
-
-    fn visit_references(&self, visitor: &mut dyn FnMut(Reference)) {
-        visit_typed_references(self, visitor);
+        self.id().as_str()
     }
 }
-impl_entity_schema!(crate::sketches::SketchConstraint, SketchConstraint, id.0; id, sketch, definition, name, driving, active, virtual_space, visible, orientation, label_distance, label_position, metadata, native_ref);
-impl_entity_schema!(crate::sketches::SpatialSketch, SpatialSketch, id.0; id, name, configuration, visible, profiles, native_ref);
+impl_entity_schema!(crate::sketches::SketchConstraint, SketchConstraint, id; id, sketch, definition, name, driving, active, virtual_space, visible, orientation, label_distance, label_position, metadata, native_ref);
+impl_entity_schema!(crate::sketches::SpatialSketch, SpatialSketch, id; id, name, configuration, visible, profiles, native_ref);
 impl EntitySchema for crate::sketches::SpatialSketchEntity {
     const KIND: EntityKind = EntityKind::SpatialSketchEntity;
 
     fn identity(&self) -> &str {
-        self.id().0.as_str()
-    }
-
-    fn visit_references(&self, visitor: &mut dyn FnMut(Reference)) {
-        visit_typed_references(self, visitor);
+        self.id().as_str()
     }
 }
 impl_entity_schema!(
     crate::sketches::SpatialSketchConstraint,
     SpatialSketchConstraint,
-    id.0;
+    id;
     id, sketch, definition, native_ref
 );
-impl_entity_schema!(crate::spreadsheets::Spreadsheet, Spreadsheet, id; id, feature, cells, column_widths, row_heights, merged_ranges, native_ref);
+impl EntitySchema for crate::spreadsheets::Spreadsheet {
+    const KIND: EntityKind = EntityKind::Spreadsheet;
+
+    fn identity(&self) -> &str {
+        self.id.as_str()
+    }
+}
 impl_entity_schema!(crate::products::ProductDefinition, ProductDefinition, id; id, kind, source_name, label, description, part_number, bom_properties, bodies, native_ref);
 impl_entity_schema!(crate::products::Occurrence, Occurrence, id; id, prototype, parent, ordinal, transform, linked_prototype, scale, name, visible, link, native_ref);
 impl EntitySchema for crate::products::AssemblyJoint {
@@ -587,10 +331,6 @@ impl EntitySchema for crate::products::AssemblyJoint {
 
     fn identity(&self) -> &str {
         self.id.as_str()
-    }
-
-    fn visit_references(&self, visitor: &mut dyn FnMut(Reference)) {
-        visit_typed_references(self, visitor);
     }
 }
 impl_entity_schema!(crate::drawings::Drawing, Drawing, id; id, object, kind, runtime_type, order, visible, relationships, template, position, scale, direction, rotation_degrees, parameters, assets, native_ref);
@@ -601,12 +341,13 @@ impl_entity_schema!(
     id, object, kind, runtime_type, order, text, references, value, format, position,
     parameters, assets, native_ref
 );
-impl_entity_schema!(
-    crate::presentation::PresentationDocument,
-    PresentationDocument,
-    id;
-    id, schema_version, active_view, states, native_ref
-);
+impl EntitySchema for crate::presentation::PresentationDocument {
+    const KIND: EntityKind = EntityKind::PresentationDocument;
+
+    fn identity(&self) -> &str {
+        self.id.as_str()
+    }
+}
 impl_entity_schema!(
     crate::presentation::ViewPresentation,
     ViewPresentation,
@@ -619,10 +360,6 @@ impl EntitySchema for crate::tessellation::Tessellation {
 
     fn identity(&self) -> &str {
         self.id.as_str()
-    }
-
-    fn visit_references(&self, visitor: &mut dyn FnMut(Reference)) {
-        visit_typed_references(self, visitor);
     }
 }
 impl_entity_schema!(crate::appearance::Appearance, Appearance, id; id, name, asset_guid, library_id, visual_guid, physical_token, schema, category, base_color, properties, textures);

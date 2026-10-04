@@ -58,6 +58,7 @@ pub(super) struct DataBlockAbrReferenceLaneWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<DataBlockCountedIndexLane> for DataBlockCountedIndexLaneWire {
     fn from(value: DataBlockCountedIndexLane) -> Self {
         let anchor = value.frame.anchor();
@@ -146,6 +147,7 @@ impl TryFrom<DataBlockCountedIndexLaneWire> for DataBlockCountedIndexLane {
     }
 }
 
+#[cfg(test)]
 impl From<DataBlockAbrReferenceLane> for DataBlockAbrReferenceLaneWire {
     fn from(value: DataBlockAbrReferenceLane) -> Self {
         let slots = value.frame.slots();
@@ -205,7 +207,11 @@ impl TryFrom<DataBlockAbrReferenceLaneWire> for DataBlockAbrReferenceLane {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::DataBlockAbrReferenceLane;
+    use super::super::DataBlockCountedIndexLane;
+    use crate::om::compact::CompactIndexAtom;
+    use crate::om::compact::CompactIndexTarget;
+    use crate::om::compact_lane::AbrLane;
 
     #[test]
     fn counted_wire_rejects_each_inconsistent_derived_position() {

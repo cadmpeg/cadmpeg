@@ -1,11 +1,100 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Application-domain census unit tests.
 
-use crate::test_support::*;
+use crate::test_support::test_archive::{archive_entries, assert_valid_document};
 use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::fmt::Write as _;
 use std::io::Cursor;
+
+#[test]
+fn application_records_refuse_on_collection_limit() {
+    let objects = [crate::native::ObjectRecord {
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Owner".into(),
+            "Owner".into(),
+        )
+        .expect("object identity"),
+        type_name: "Vendor::Feature".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: std::collections::BTreeMap::new(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
+    }];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within input policy");
+    assert!(matches!(super::wire_records(&ctx, &objects, &[], &[]),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD application records"));
+}
+
+#[test]
+fn application_identity_refuses_at_retained_limit() {
+    let object = crate::native::ObjectRecord {
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Owner".into(),
+            "Owner".into(),
+        )
+        .expect("object identity"),
+        type_name: "Vendor::Feature".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: std::collections::BTreeMap::default(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
+    };
+    crate::test_support::assert_retained_refusal_at(&[], "FreeCAD native identity", |ctx| {
+        super::wire_records(ctx, std::slice::from_ref(&object), &[], &[]).map(|_| ())
+    });
+}
+
+#[test]
+fn application_property_identity_refuses_at_retained_limit() {
+    let object = crate::native::ObjectRecord {
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Owner".into(),
+            "Owner".into(),
+        )
+        .expect("object identity"),
+        type_name: "Vendor::Feature".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: std::collections::BTreeMap::default(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
+    };
+    let property = crate::native::PropertyRecord {
+        id: "fcstd:native:property#Owner:Value".into(),
+        owner: object.id().clone(),
+        name: "Value".into(),
+        type_name: "App::PropertyString".into(),
+        family: crate::native::PropertyFamily::Unknown,
+        status: None,
+        body: crate::native::PropertyBody::Transient,
+        order: 0,
+        xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
+            .expect("valid XML span"),
+    };
+    crate::test_support::assert_retained_refusal_at(&[], "FreeCAD native child identity", |ctx| {
+        super::wire_records(
+            ctx,
+            std::slice::from_ref(&object),
+            std::slice::from_ref(&property),
+            &[],
+        )
+        .map(|_| ())
+    });
+}
 
 #[test]
 fn censuses_application_domains_and_keeps_python_payloads_inert() {
@@ -62,7 +151,10 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
     let report = &by_domain["Fem"]["property_records"][0];
     assert_eq!(report["object"], by_domain["Fem"]["object"]);
     assert!(report["byte_start"].as_u64().unwrap() < report["byte_end"].as_u64().unwrap());
-    assert_eq!(report["byte_len"], bytes(report).len() as u64);
+    assert_eq!(
+        report["byte_len"],
+        cadmpeg_core::decode::u64_from_index(bytes(report).len())
+    );
     assert_eq!(
         report["sha256"],
         cadmpeg_ir::hash::sha256_hex(&bytes(report))
@@ -80,10 +172,10 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
     assert!(String::from_utf8_lossy(&bytes(python)).contains("serialized-but-inert"));
     assert!(records.iter().all(|record| {
         record["byte_start"].as_u64().unwrap() < record["byte_end"].as_u64().unwrap()
-            && record["byte_len"] == bytes(record).len() as u64
+            && record["byte_len"] == cadmpeg_core::decode::u64_from_index(bytes(record).len())
             && record["sha256"] == cadmpeg_ir::hash::sha256_hex(&bytes(record))
     }));
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 
     let mut altered = records;
@@ -99,20 +191,29 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
     edited
         .native
         .namespace_mut("fcstd")
-        .set_arena("applications", &altered)
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "applications",
+            &altered,
+        )
         .unwrap();
-    assert!(crate::validate_native(&edited).iter().any(|finding| {
-        finding
-            .message
-            .contains("application preservation records do not match authoritative bytes")
-    }));
+    assert!(crate::test_support::validate_native(&edited)
+        .iter()
+        .any(|finding| {
+            finding
+                .message
+                .contains("application preservation records do not match authoritative bytes")
+        }));
 }
 
 #[test]
 fn absent_object_data_keeps_the_legacy_empty_wire_without_a_domain_sentinel() {
     let objects = [crate::native::ObjectRecord {
-        id: "fcstd:native:object#Absent".into(),
-        name: "Absent".into(),
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Absent".into(),
+            "Absent".into(),
+        )
+        .expect("object identity"),
         type_name: "Vendor::Feature".into(),
         persistent_id: None,
         view_type: None,
@@ -123,7 +224,14 @@ fn absent_object_data_keeps_the_legacy_empty_wire_without_a_domain_sentinel() {
         data: None,
     }];
     let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
-    super::install(&mut namespace, &objects, &[], &[]).unwrap();
+    super::install(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut namespace,
+        &objects,
+        &[],
+        &[],
+    )
+    .unwrap();
     assert!(objects[0].data.is_none());
     let records = namespace
         .arena_as::<serde_json::Value>("applications")
@@ -133,7 +241,14 @@ fn absent_object_data_keeps_the_legacy_empty_wire_without_a_domain_sentinel() {
     assert_eq!(records[0]["byte_end"], 0);
     assert_eq!(records[0]["byte_len"], 0);
     assert_eq!(records[0]["sha256"], cadmpeg_ir::hash::sha256_hex(&[]));
-    assert!(super::matches_native(&namespace, &objects, &[], &[]).unwrap());
+    assert!(super::matches_native(
+        &cadmpeg_test_support::service_decode_context(),
+        &namespace,
+        &objects,
+        &[],
+        &[]
+    )
+    .unwrap());
 }
 
 #[test]
@@ -166,21 +281,24 @@ fn unregistered_application_payloads_remain_whole_named_opaque_entries() {
         .expect("entries");
     let entry = entries
         .iter()
-        .find(|entry| entry.name == "Payload.bin")
+        .find(|entry| entry.name() == "Payload.bin")
         .expect("payload entry");
     let spans = namespace
         .arena_as::<crate::native::LogicalSpan>("logical_ledger")
         .expect("logical ledger");
     let span = spans
         .iter()
-        .find(|span| span.entry == entry.name)
+        .find(|span| span.entry == entry.name())
         .expect("payload span");
-    assert_eq!(span.start, 0);
-    assert_eq!(span.end, payload.len() as u64);
+    assert_eq!(span.span.start(), 0);
+    assert_eq!(
+        span.span.end(),
+        cadmpeg_core::decode::u64_from_index(payload.len())
+    );
     assert_eq!(span.classification.as_str(), "named_opaque");
-    assert_eq!(span.classification.owner(), Some(entry.id.as_str()));
-    assert_eq!(entry.data, payload);
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert_eq!(span.classification.owner(), Some(entry.id()));
+    assert_eq!(entry.data(), payload);
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
 
 #[test]
@@ -296,18 +414,167 @@ fn producer_specific_side_entries_remain_whole_until_their_grammar_is_registered
     for (name, _, _, payload) in cases {
         let entry = entries
             .iter()
-            .find(|entry| entry.name == name)
+            .find(|entry| entry.name() == name)
             .expect("side entry");
-        assert_eq!(entry.data, payload);
-        assert_eq!(entry.byte_len(), payload.len() as u64);
+        assert_eq!(entry.data(), payload);
+        assert_eq!(
+            entry.byte_len(),
+            cadmpeg_core::decode::u64_from_index(payload.len())
+        );
         let span = spans
             .iter()
             .find(|span| span.entry == name)
             .expect("side-entry span");
-        assert_eq!(span.start, 0);
-        assert_eq!(span.end, payload.len() as u64);
+        assert_eq!(span.span.start(), 0);
+        assert_eq!(
+            span.span.end(),
+            cadmpeg_core::decode::u64_from_index(payload.len())
+        );
         assert_eq!(span.classification.as_str(), "named_opaque");
-        assert_eq!(span.classification.owner(), Some(entry.id.as_str()));
+        assert_eq!(span.classification.owner(), Some(entry.id()));
     }
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
+}
+
+#[test]
+fn application_hashes_refuse_work_before_digest_allocation() {
+    let object = crate::native::ObjectRecord {
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Owner".into(),
+            "Owner".into(),
+        )
+        .expect("object identity"),
+        type_name: "Vendor::Feature".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: std::collections::BTreeMap::new(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: Some(crate::native::RetainedXml::from_text("<Object/>".into(), 0).expect("XML")),
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 8;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("context");
+    assert!(
+        matches!(super::wire_records(&ctx, &[object], &[], &[]), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "FreeCAD application object digest" && limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
+}
+
+#[test]
+fn application_property_hash_refuses_work_and_digest_storage() {
+    let object = crate::native::ObjectRecord {
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Owner".into(),
+            "Owner".into(),
+        )
+        .expect("object identity"),
+        type_name: "Vendor::Feature".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: std::collections::BTreeMap::new(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
+    };
+    let property = crate::native::PropertyRecord {
+        id: "fcstd:native:property#Owner:Value".into(),
+        owner: object.id().clone(),
+        name: "Value".into(),
+        type_name: "App::PropertyString".into(),
+        family: crate::native::PropertyFamily::Unknown,
+        status: None,
+        body: crate::native::PropertyBody::Transient,
+        order: 0,
+        xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0).expect("XML"),
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    // The owner's one-property sort takes its count plus eight bytes over two levels at eight
+    // units each; the property digest then needs more than the ten units left.
+    policy.limits.max_work_units = 1 + 8 * 2 * 8 + 10;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("context");
+    assert!(
+        matches!(super::wire_records(&ctx, std::slice::from_ref(&object), std::slice::from_ref(&property), &[]), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "FreeCAD application property digest" && limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
+    crate::test_support::assert_retained_refusal_at(
+        &[],
+        "FreeCAD application property digest",
+        |ctx| {
+            super::wire_records(
+                ctx,
+                std::slice::from_ref(&object),
+                std::slice::from_ref(&property),
+                &[],
+            )
+            .map(|_| ())
+        },
+    );
+    crate::test_support::assert_retained_refusal_at(
+        &[],
+        "FreeCAD application object digest",
+        |ctx| super::wire_records(ctx, std::slice::from_ref(&object), &[], &[]).map(|_| ()),
+    );
+}
+
+#[test]
+fn application_repeated_payloads_borrow_the_cached_digest() {
+    let object = crate::native::ObjectRecord {
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Owner".into(),
+            "Owner".into(),
+        )
+        .expect("object identity"),
+        type_name: "Vendor::Feature".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: std::collections::BTreeMap::new(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
+    };
+    let properties = ["First", "Second"].map(|name| crate::native::PropertyRecord {
+        id: format!("fcstd:native:property#Owner:{name}"),
+        owner: object.id().clone(),
+        name: name.into(),
+        type_name: "App::PropertyFileIncluded".into(),
+        family: crate::native::PropertyFamily::File,
+        status: None,
+        body: crate::native::PropertyBody::Persisted {
+            values: Vec::new(),
+            links: Vec::new(),
+            side_entries: vec!["shared.bin".into()],
+            dynamic: None,
+        },
+        order: 0,
+        xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0).expect("XML"),
+    });
+    let entry = crate::test_support::entry_record(
+        "fcstd:native:entry#shared.bin".into(),
+        "shared.bin".into(),
+        cadmpeg_core::container::ContainerRole::Auxiliary,
+        Vec::new(),
+        vec![7; 4096],
+    );
+    let digest = entry.sha256().as_ptr();
+    let objects = [object];
+    let entries = [entry];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    // The owner's two-property sort takes its count plus sixteen bytes over three levels at
+    // eight units each; the remaining 22 units hash only the two property XML texts.
+    policy.limits.max_work_units = 2 + 16 * 3 * 8 + 22;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("context");
+    let records = super::wire_records(&ctx, &objects, &properties, &entries)
+        .expect("only property XML is hashed");
+    for property in &records[0].property_records {
+        assert_eq!(property.payloads[0].sha256.as_ptr(), digest);
+        assert_eq!(property.payloads[0].sha256, entries[0].sha256());
+    }
 }

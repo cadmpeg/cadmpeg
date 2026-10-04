@@ -1,15 +1,142 @@
 use std::collections::BTreeMap;
 
-use super::*;
+use super::{
+    encode_asset_header, encode_design_asset, encode_top_level, generated_design_asset,
+    parse_asset_header, parse_top_level, push_ascii, push_u32, push_utf16, resolve_design_folder,
+    AssetKind, DESIGN_ASSET_TYPE, GENERATED_DESIGN_ASSET_BASE, GENERATED_DOCUMENT_ASSET_GUID,
+    GENERATED_DOCUMENT_GUID, TOP_LEVEL_MANIFEST_VERSION,
+};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::CodecError;
 
 const DESIGN_GUID: &str = "10000000-0000-4000-8000-000000000001";
 const OTHER_GUID: &str = "20000000-0000-4000-8000-000000000002";
 const SECONDARY_GUID: &str = "30000000-0000-4000-8000-000000000003";
 
+fn top_level_limit(items: u64, retained: u64) -> CodecError {
+    let bytes = encode_top_level(DESIGN_GUID, &["Design Base"]).unwrap();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = items;
+    policy.limits.max_retained_bytes = retained;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    parse_top_level(&ctx, &bytes).unwrap_err()
+}
+
+#[test]
+fn manifest_ascii_refuses_retained_limit() {
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D manifest ASCII",
+        |cap| Err::<(), cadmpeg_core::CodecError>(top_level_limit(u64::MAX, cap)),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D manifest ASCII"));
+}
+
+#[test]
+fn manifest_utf16_refuses_retained_limit() {
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D manifest UTF-16",
+        |cap| Err::<(), cadmpeg_core::CodecError>(top_level_limit(u64::MAX, cap)),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D manifest UTF-16"));
+}
+
+#[test]
+fn manifest_registry_index_refuses_collection_limit() {
+    let error = top_level_limit(0, u64::MAX);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D manifest registry names"));
+}
+
+#[test]
+fn manifest_asset_folder_run_refuses_collection_limit() {
+    let error = top_level_limit(7, u64::MAX);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D asset folders"));
+}
+
+#[test]
+fn manifest_entry_name_index_refuses_collection_limit() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let manifest = super::TopLevelManifest {
+        version: TOP_LEVEL_MANIFEST_VERSION.to_owned(),
+        asset_folder_bases: vec!["Design Base".to_owned()],
+    };
+    let error =
+        resolve_design_folder(&ctx, &manifest, ["Design Base/Manifest.dat"], |_| None).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D manifest entry names"));
+}
+
+#[test]
+fn manifest_capability_index_refuses_collection_limit() {
+    let bytes = generated_design_asset().unwrap();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let error = parse_asset_header(&ctx, &bytes).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D asset capability names"));
+}
+
+#[test]
+fn manifest_active_name_refuses_materialization_limit() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes =
+        13 + cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<&str>());
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let manifest = super::TopLevelManifest {
+        version: TOP_LEVEL_MANIFEST_VERSION.to_owned(),
+        asset_folder_bases: vec!["Design".to_owned()],
+    };
+    let error =
+        resolve_design_folder(&ctx, &manifest, ["Design/Manifest.dat"], |_| None).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.operation == "name F3D active asset"));
+}
+
+#[test]
+fn manifest_member_name_refuses_materialization_limit() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes =
+        14 + cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<&str>());
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let manifest = super::TopLevelManifest {
+        version: TOP_LEVEL_MANIFEST_VERSION.to_owned(),
+        asset_folder_bases: vec!["Design".to_owned()],
+    };
+    let error =
+        resolve_design_folder(&ctx, &manifest, ["Design/Manifest.dat"], |_| None).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.operation == "name F3D asset manifest"));
+}
+
+#[test]
+fn manifest_error_text_refuses_retained_limit() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::parse_malformed(&ctx, "asset manifest", "invalid record");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.operation == "describe malformed F3D manifest"));
+}
+
 #[test]
 fn current_top_level_manifest_round_trips() {
     let bytes = encode_top_level(DESIGN_GUID, &["Design Base", "Simulation"]).unwrap();
-    let manifest = parse_top_level(&bytes).unwrap();
+    let manifest =
+        parse_top_level(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
     assert_eq!(manifest.asset_folder_bases, ["Design Base", "Simulation"]);
 }
 
@@ -34,17 +161,20 @@ fn legacy_top_level_manifest_accepts_both_terminal_forms() {
     push_utf16(&mut bytes, "Design Base").unwrap();
     push_u32(&mut bytes, 0);
 
-    let word_only = parse_top_level(&bytes).unwrap();
+    let word_only =
+        parse_top_level(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
     assert_eq!(word_only.asset_folder_bases, ["Simulation", "Design Base"]);
 
     bytes.push(0);
     push_utf16(&mut bytes, "Legacy Document").unwrap();
 
-    let manifest = parse_top_level(&bytes).unwrap();
+    let manifest =
+        parse_top_level(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
     assert_eq!(manifest.asset_folder_bases, ["Simulation", "Design Base"]);
 
     push_utf16(&mut bytes, "urn:synthetic:lineage").unwrap();
-    let with_lineage = parse_top_level(&bytes).unwrap();
+    let with_lineage =
+        parse_top_level(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
     assert_eq!(
         with_lineage.asset_folder_bases,
         ["Simulation", "Design Base"]
@@ -59,15 +189,18 @@ fn top_level_manifest_accepts_a_terminal_export_flag_without_a_marker() {
     assert!(bytes.ends_with(&marker));
     bytes.truncate(bytes.len() - marker.len());
 
-    let manifest = parse_top_level(&bytes).unwrap();
+    let manifest =
+        parse_top_level(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
     assert_eq!(manifest.asset_folder_bases, ["Design Base"]);
 }
 
 #[test]
 fn design_folder_uses_root_fusion_asset_not_active_guid_or_run_order() {
-    let manifest =
-        parse_top_level(&encode_top_level(OTHER_GUID, &["Simulation", "Design Base"]).unwrap())
-            .unwrap();
+    let manifest = parse_top_level(
+        &cadmpeg_test_support::service_decode_context(),
+        &encode_top_level(OTHER_GUID, &["Simulation", "Design Base"]).unwrap(),
+    )
+    .unwrap();
     let mut entries = BTreeMap::new();
     entries.insert(
         "Simulation/Manifest.dat".to_string(),
@@ -83,18 +216,23 @@ fn design_folder_uses_root_fusion_asset_not_active_guid_or_run_order() {
         vec![1],
     );
 
-    let folder = resolve_design_folder(&manifest, entries.keys().map(String::as_str), |name| {
-        entries.get(name).map(Vec::as_slice)
-    })
+    let folder = resolve_design_folder(
+        &cadmpeg_test_support::service_decode_context(),
+        &manifest,
+        entries.keys().map(String::as_str),
+        |name| entries.get(name).map(Vec::as_slice),
+    )
     .unwrap();
     assert_eq!(folder, "Design Base[Active]");
 }
 
 #[test]
 fn active_guid_can_be_shared_by_a_non_design_asset() {
-    let manifest =
-        parse_top_level(&encode_top_level(DESIGN_GUID, &["Simulation", "Design Base"]).unwrap())
-            .unwrap();
+    let manifest = parse_top_level(
+        &cadmpeg_test_support::service_decode_context(),
+        &encode_top_level(DESIGN_GUID, &["Simulation", "Design Base"]).unwrap(),
+    )
+    .unwrap();
     let entries = BTreeMap::from([
         (
             "Simulation/Manifest.dat".to_string(),
@@ -112,9 +250,12 @@ fn active_guid_can_be_shared_by_a_non_design_asset() {
         ),
         ("Design Base/Design1/BulkStream.dat".to_string(), vec![1]),
     ]);
-    let folder = resolve_design_folder(&manifest, entries.keys().map(String::as_str), |name| {
-        entries.get(name).map(Vec::as_slice)
-    })
+    let folder = resolve_design_folder(
+        &cadmpeg_test_support::service_decode_context(),
+        &manifest,
+        entries.keys().map(String::as_str),
+        |name| entries.get(name).map(Vec::as_slice),
+    )
     .unwrap();
     assert_eq!(folder, "Design Base");
 }
@@ -136,7 +277,8 @@ fn an_unknown_version_is_parsed_with_the_known_layout() {
     let known = encode_top_level(DESIGN_GUID, &["Design Base"]).unwrap();
     let bytes = with_version(&known, "3-3-0-0");
 
-    let manifest = parse_top_level(&bytes).unwrap();
+    let manifest =
+        parse_top_level(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
     assert_eq!(manifest.asset_folder_bases, ["Design Base"]);
     assert_eq!(manifest.declared_version(), "3-3-0-0");
 }
@@ -155,7 +297,8 @@ fn a_broken_layout_is_malformed_for_every_declared_version() {
     for version in [TOP_LEVEL_MANIFEST_VERSION, "3-3-0-0"] {
         let mut bytes = with_version(&known, version);
         bytes.splice(at..at + anchor.len(), moved.clone());
-        let error = parse_top_level(&bytes).unwrap_err();
+        let error =
+            parse_top_level(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap_err();
         assert!(
             matches!(&error, CodecError::Malformed(message)
                     if message.contains(version) && message.contains("probable cause")),
@@ -168,7 +311,11 @@ fn a_broken_layout_is_malformed_for_every_declared_version() {
 fn a_broken_top_level_manifest_version_field_stays_malformed() {
     let complete = encode_top_level(DESIGN_GUID, &["Design Base"]).unwrap();
 
-    let truncated = parse_top_level(&complete[..6]).unwrap_err();
+    let truncated = parse_top_level(
+        &cadmpeg_test_support::service_decode_context(),
+        &complete[..6],
+    )
+    .unwrap_err();
     assert!(
         matches!(truncated, CodecError::Malformed(_)),
         "expected a malformed truncation, found {truncated:?}"
@@ -176,7 +323,8 @@ fn a_broken_top_level_manifest_version_field_stays_malformed() {
 
     let mut non_ascii = complete.clone();
     non_ascii[4] = 0x01;
-    let error = parse_top_level(&non_ascii).unwrap_err();
+    let error =
+        parse_top_level(&cadmpeg_test_support::service_decode_context(), &non_ascii).unwrap_err();
     assert!(
         matches!(error, CodecError::Malformed(_)),
         "expected a malformed non-ASCII version, found {error:?}"
@@ -187,14 +335,15 @@ fn a_broken_top_level_manifest_version_field_stays_malformed() {
 fn top_level_manifest_rejects_trailing_bytes() {
     let mut bytes = encode_top_level(DESIGN_GUID, &["Design Base"]).unwrap();
     bytes.push(0);
-    assert!(parse_top_level(&bytes).is_err());
+    assert!(parse_top_level(&cadmpeg_test_support::service_decode_context(), &bytes).is_err());
 }
 
 #[test]
 fn generated_asset_manifest_has_a_joinable_header() {
     let bytes = generated_design_asset().unwrap();
-    let header = parse_asset_header(&bytes).unwrap();
-    assert_eq!(header.base_name, GENERATED_DESIGN_ASSET_BASE);
+    let header =
+        parse_asset_header(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
+    assert!(header.base_name.eq_str(GENERATED_DESIGN_ASSET_BASE));
     assert_eq!(
         header.kind,
         AssetKind::Design {
@@ -224,8 +373,9 @@ fn revision_zero_design_asset_has_no_named_capability_registry() {
     push_ascii(&mut bytes, "Design").unwrap();
     push_ascii(&mut bytes, "Design").unwrap();
 
-    let header = parse_asset_header(&bytes).unwrap();
-    assert_eq!(header.base_name, "Legacy Design");
+    let header =
+        parse_asset_header(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
+    assert!(header.base_name.eq_str("Legacy Design"));
     assert_eq!(
         header.kind,
         AssetKind::Design {
@@ -260,8 +410,9 @@ fn revision_ten_design_asset_carries_linked_document_triples() {
     push_ascii(&mut bytes, "Design").unwrap();
     push_ascii(&mut bytes, "Design").unwrap();
 
-    let header = parse_asset_header(&bytes).unwrap();
-    assert_eq!(header.base_name, "Linked Design");
+    let header =
+        parse_asset_header(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
+    assert!(header.base_name.eq_str("Linked Design"));
     assert_eq!(
         header.kind,
         AssetKind::Design {
@@ -280,8 +431,9 @@ fn revision_fourteen_uses_the_ascii_subtype_header() {
     bytes.push(0);
     push_ascii(&mut bytes, "").unwrap();
 
-    let header = parse_asset_header(&bytes).unwrap();
-    assert_eq!(header.base_name, "Design 14");
+    let header =
+        parse_asset_header(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
+    assert!(header.base_name.eq_str("Design 14"));
     assert_eq!(
         header.kind,
         AssetKind::Design {
@@ -308,8 +460,9 @@ fn current_revisions_use_the_current_asset_header() {
         bytes.push(0);
         push_ascii(&mut bytes, "").unwrap();
 
-        let header = parse_asset_header(&bytes).unwrap();
-        assert_eq!(header.base_name, "Intermediate Design");
+        let header =
+            parse_asset_header(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
+        assert!(header.base_name.eq_str("Intermediate Design"));
         assert_eq!(
             header.kind,
             AssetKind::Design {
@@ -336,8 +489,9 @@ fn an_unknown_revision_uses_the_current_asset_header() {
     bytes.push(0);
     push_ascii(&mut bytes, "").unwrap();
 
-    let header = parse_asset_header(&bytes).unwrap();
-    assert_eq!(header.base_name, "Future Design");
+    let header =
+        parse_asset_header(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
+    assert!(header.base_name.eq_str("Future Design"));
     assert_eq!(
         header.kind,
         AssetKind::Design {
@@ -359,7 +513,8 @@ fn a_broken_unknown_revision_names_the_revision_as_the_probable_cause() {
     push_u32(&mut bytes, 0);
     push_ascii(&mut bytes, "MovedAssetType").unwrap();
 
-    let error = parse_asset_header(&bytes).unwrap_err();
+    let error =
+        parse_asset_header(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap_err();
     assert!(
         matches!(&error, CodecError::Malformed(message)
                 if message.contains("declared revision 99 is the probable cause")),
@@ -380,4 +535,63 @@ fn encode_fusion_subtype_asset(
     bytes.push(0);
     push_ascii(&mut bytes, subtype)?;
     Ok(bytes)
+}
+
+#[test]
+fn manifest_discarded_fields_and_failed_tails_do_not_retain_text() {
+    let mut bytes = encode_top_level(DESIGN_GUID, &["Design Base"]).unwrap();
+    let mut anchor = Vec::new();
+    push_utf16(&mut anchor, DESIGN_GUID).unwrap();
+    let at = bytes
+        .windows(anchor.len())
+        .rposition(|window| window == anchor)
+        .unwrap();
+    let mut failed = Vec::new();
+    for _ in 0..32 {
+        push_utf16(&mut failed, OTHER_GUID).unwrap();
+        push_u32(&mut failed, 1);
+        push_utf16(&mut failed, "Discarded Folder").unwrap();
+        push_u32(&mut failed, 99);
+    }
+    bytes.splice(at..at, failed);
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = (TOP_LEVEL_MANIFEST_VERSION.len()
+        + "Design Base".len()
+        + 4 * std::mem::size_of::<String>())
+    .try_into()
+    .unwrap();
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        let manifest = parse_top_level(ctx, &bytes).unwrap();
+        assert_eq!(manifest.declared_version(), TOP_LEVEL_MANIFEST_VERSION);
+        assert_eq!(manifest.asset_folder_bases, ["Design Base"]);
+    });
+    let asset = generated_design_asset().unwrap();
+    policy.limits.max_retained_bytes = 0;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        let header = parse_asset_header(ctx, &asset).unwrap();
+        assert!(header.base_name.eq_str(GENERATED_DESIGN_ASSET_BASE));
+        assert_eq!(
+            header.kind,
+            AssetKind::Design {
+                fusion_subtype: None
+            }
+        );
+    });
+}
+
+#[test]
+fn failed_manifest_tail_preserves_scoped_refusal() {
+    let mut bytes = Vec::new();
+    push_utf16(&mut bytes, OTHER_GUID).unwrap();
+    push_u32(&mut bytes, 0);
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        let error = super::parse_asset_tail(ctx, &bytes, 0)
+            .unwrap_err()
+            .into_codec();
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+                && failure.operation == "describe malformed F3D manifest"));
+    });
 }

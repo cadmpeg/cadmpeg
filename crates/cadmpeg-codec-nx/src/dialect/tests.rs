@@ -4,15 +4,24 @@
 
 #![allow(clippy::unwrap_used)]
 
-use super::*;
+use super::{
+    classify_layers, NxDialect, DECLARED_SPLMSSTR_VERSION, DECLARED_UGII_VERSION, FORMAT,
+    PARASOLID_FORMAT,
+};
+use crate::container::Container;
 use crate::container::MAGIC;
-use crate::test_support::{extract_streams, single_part_prt};
+use crate::loss::NxLossCode;
+use crate::test_support::extract_streams;
+use crate::test_support::test_prt::single_part_prt;
 use cadmpeg_core::dialect::Admission;
+use cadmpeg_core::dialect::DialectMatch;
+use cadmpeg_core::CodecError;
 use std::sync::OnceLock;
 
 #[test]
-fn enum_and_registry_rows_are_closed_bidirectionally() {
-    cadmpeg_test_support::assert_dialect_rows_closed(&NxDialect::ALL.map(NxDialect::id), FORMAT);
+fn enum_and_registry_rows_are_closed_bidirectionally() -> Result<(), Box<dyn std::error::Error>> {
+    cadmpeg_test_support::assert_dialect_rows_closed(&NxDialect::ALL.map(NxDialect::id), FORMAT)?;
+    Ok(())
 }
 
 /// A container carrying nothing but the dispatch flag and the version byte.
@@ -20,18 +29,17 @@ fn enum_and_registry_rows_are_closed_bidirectionally() {
 /// Classification reads exactly these two fields, so an empty directory is a
 /// complete input for it.
 fn container(legacy_cfb: bool, version: u8) -> Container<'static> {
+    let empty: &[u8] = &[];
     Container {
-        data: (&[] as &[u8]).into(),
+        data: empty.into(),
         physical_size: 0,
         layout: if legacy_cfb {
-            crate::container::ContainerLayout::LegacyCfb {
-                version,
-                entry_count: 0,
-            }
+            crate::container::ContainerLayout::LegacyCfb { version }
         } else {
-            crate::container::test_modern_layout(version, 0)
+            crate::container::test_modern_layout(version)
         },
         entries: Vec::new(),
+        fastload_table: None,
         indexed_section_layouts: OnceLock::new(),
         om_section_cache: OnceLock::new(),
     }
@@ -45,10 +53,16 @@ fn classify(container: &Container<'_>) -> DialectMatch {
 fn extracted_parasolid_schema_emits_a_kernel_layer() {
     let bytes = single_part_prt();
     let scan = crate::decode::Scan {
-        container: crate::container::scan_bytes(bytes.clone()).unwrap(),
+        container: crate::test_support::with_decode_context(|ctx| {
+            crate::container::scan_bytes(ctx, bytes.clone())
+        })
+        .unwrap(),
         streams: extract_streams(&bytes),
     };
-    let (layers, losses) = classify_layers(&scan).into_report_parts();
+    let (layers, losses) =
+        crate::test_support::with_decode_context(|ctx| classify_layers(ctx, &scan))
+            .unwrap()
+            .into_report_parts();
     let kernel = layers
         .iter()
         .find(|matched| matched.format() == PARASOLID_FORMAT)
@@ -63,7 +77,7 @@ fn extracted_parasolid_schema_emits_a_kernel_layer() {
     assert_eq!(losses[0].code, NxLossCode::KernelDialectUnverified.kind());
     assert_eq!(
         losses[0].strict_consequence(),
-        cadmpeg_ir::report::StrictConsequence::Reject
+        cadmpeg_ir::report::loss::StrictConsequence::Reject
     );
     assert!(losses[0].message.contains("SCH_TEST_1_9999"));
 }
@@ -75,12 +89,21 @@ fn a_named_sldprt_parasolid_schema_remains_unverified_under_nx() {
     let crate::parasolid::StreamBody::Parasolid { schema, .. } = &mut streams[0].body else {
         panic!("Parasolid fixture");
     };
-    *schema = Some("SCH_3501171_35102_13006".to_owned());
+    *schema = Some(
+        cadmpeg_parasolid::OwnedSchemaToken::try_from("SCH_3501171_35102_13006")
+            .expect("the fixture text is a schema token"),
+    );
     let scan = crate::decode::Scan {
-        container: crate::container::scan_bytes(bytes).unwrap(),
+        container: crate::test_support::with_decode_context(|ctx| {
+            crate::container::scan_bytes(ctx, bytes)
+        })
+        .unwrap(),
         streams,
     };
-    let (layers, losses) = classify_layers(&scan).into_report_parts();
+    let (layers, losses) =
+        crate::test_support::with_decode_context(|ctx| classify_layers(ctx, &scan))
+            .unwrap()
+            .into_report_parts();
     let kernel = layers
         .iter()
         .find(|matched| matched.format() == PARASOLID_FORMAT)
@@ -99,12 +122,20 @@ fn duplicate_kernel_identity_is_omitted_with_a_typed_loss() {
     let mut streams = extract_streams(&bytes);
     streams.push(streams[0].clone());
     let scan = crate::decode::Scan {
-        container: crate::container::scan_bytes(bytes).unwrap(),
+        container: crate::test_support::with_decode_context(|ctx| {
+            crate::container::scan_bytes(ctx, bytes)
+        })
+        .unwrap(),
         streams,
     };
 
-    let summary = crate::summarize(&scan);
-    let (layers, losses) = classify_layers(&scan).into_report_parts();
+    let summary =
+        crate::test_support::with_decode_context(|ctx| crate::inspect::summarize(ctx, &scan))
+            .expect("test container summary");
+    let (layers, losses) =
+        crate::test_support::with_decode_context(|ctx| classify_layers(ctx, &scan))
+            .unwrap()
+            .into_report_parts();
     assert_eq!(
         layers
             .iter()
@@ -135,9 +166,15 @@ fn each_container_parser_classifies_into_its_own_row() {
 
 #[test]
 fn the_container_kind_label_and_the_registry_id_come_from_one_enum() {
-    assert_eq!(NxDialect::Splmsstr.container_kind(), "splmsstr");
+    assert_eq!(
+        NxDialect::Splmsstr.container_kind(),
+        cadmpeg_ir::ContainerKind::Splmsstr
+    );
     assert_eq!(NxDialect::Splmsstr.id().as_str(), "nx:splmsstr");
-    assert_eq!(NxDialect::LegacyCfb.container_kind(), "cfb");
+    assert_eq!(
+        NxDialect::LegacyCfb.container_kind(),
+        cadmpeg_ir::ContainerKind::Cfb
+    );
     assert_eq!(NxDialect::LegacyCfb.id().as_str(), "nx:legacy-cfb");
 }
 
@@ -179,21 +216,24 @@ fn the_legacy_arm_declares_the_ugii_payload_version_as_canonical_decimal() {
 }
 
 #[test]
-fn the_version_byte_is_evidence_and_never_moves_the_resolved_id() {
-    // The scanner requires the byte and classification compares it to nothing,
-    // so every value lands on the same row as every other. A consumer that
-    // parsed a version out of the id, or expected the id to agree with the
-    // declaration beside it, would be reading a field this codec does not
-    // branch on.
-    for version in [0_u8, 1, 6, 255] {
-        let container = container(false, version);
-        let matched = classify(&container);
-        assert_eq!(matched.dialect().as_str(), "nx:splmsstr");
-        assert_eq!(
-            matched.declared()[DECLARED_SPLMSSTR_VERSION],
-            version.to_string()
-        );
-        assert_eq!(matched.admission(), &Admission::Admitted);
+fn splmsstr_version_byte_is_checked_before_container_construction() {
+    let valid = single_part_prt();
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, valid.clone())
+    })
+    .expect("version 0x06 scans");
+    let matched = classify(&container);
+    assert_eq!(matched.dialect().as_str(), "nx:splmsstr");
+    assert_eq!(matched.declared()[DECLARED_SPLMSSTR_VERSION], "6");
+    assert_eq!(matched.admission(), &Admission::Admitted);
+
+    for version in [0_u8, 1, 255] {
+        let mut invalid = valid.clone();
+        invalid[crate::layout::splmsstr_header::VERSION_TAG] = version;
+        assert!(matches!(
+            crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, invalid)),
+            Err(CodecError::Malformed(message)) if message.contains("version byte must be 0x06")
+        ));
     }
 }
 
@@ -211,9 +251,86 @@ fn a_header_too_short_to_declare_a_version_never_scans() {
     let file = single_part_prt();
     for truncated_len in MAGIC.len()..=crate::layout::splmsstr_header::HEADER_MARKER {
         assert!(
-            crate::container::scan_bytes(&file[..truncated_len]).is_err(),
+            crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(
+                ctx,
+                &file[..truncated_len]
+            ))
+            .is_err(),
             "an image of {truncated_len} bytes must not scan"
         );
     }
-    crate::container::scan_bytes(file).expect("the whole image scans");
+    crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file))
+        .expect("the whole image scans");
+}
+
+#[test]
+fn dialect_classification_refuses_collection_limit() {
+    let bytes = single_part_prt();
+    let scan = crate::decode::Scan {
+        container: crate::test_support::with_decode_context(|ctx| {
+            crate::container::scan_bytes(ctx, bytes.clone())
+        })
+        .unwrap(),
+        streams: extract_streams(&bytes),
+    };
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_collection_items = 0;
+        },
+        |ctx| {
+            let error = classify_layers(ctx, &scan).err().expect("resource refusal");
+            assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+        },
+    );
+}
+
+#[test]
+fn dialect_classification_refuses_retained_limit() {
+    let bytes = single_part_prt();
+    let scan = crate::decode::Scan {
+        container: crate::test_support::with_decode_context(|ctx| {
+            crate::container::scan_bytes(ctx, bytes.clone())
+        })
+        .unwrap(),
+        streams: extract_streams(&bytes),
+    };
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_retained_bytes = 0;
+        },
+        |ctx| {
+            let error = classify_layers(ctx, &scan).err().expect("resource refusal");
+            assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+        },
+    );
+}
+
+#[test]
+fn dialect_classification_refuses_work_limit() {
+    let bytes = single_part_prt();
+    let scan = crate::decode::Scan {
+        container: crate::test_support::with_decode_context(|ctx| {
+            crate::container::scan_bytes(ctx, bytes.clone())
+        })
+        .unwrap(),
+        streams: extract_streams(&bytes),
+    };
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_work_units = 0;
+        },
+        |ctx| {
+            let error = classify_layers(ctx, &scan).err().expect("resource refusal");
+            assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+        },
+    );
 }

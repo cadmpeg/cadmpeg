@@ -123,7 +123,7 @@ Reused by plane, cylinder, cone, and torus prototypes, by curve-equation frames,
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-creo/src/scalar.rs` — The parser expands the local-system support frame as twelve `f64` slots.
+- `crates/cadmpeg-codec-creo/src/scalar.rs` — The parser expands the local-system support frame as twelve finite `f64` slots.
 
 ## Not tabulated
 

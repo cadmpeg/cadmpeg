@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use super::add_polygon_hole;
+use super::adjacent_quad_sheet;
+use super::assert_planar_sheet_round_trip;
+use super::planar_tetrahedron;
+use super::polygon_sheet;
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
-use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::write::Encoder;
@@ -11,7 +16,6 @@ use cadmpeg_ir::ids::PointId;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::Point;
 
-use super::*;
 use crate::{RhinoArchiveVersion, RhinoCodec};
 
 #[test]
@@ -43,12 +47,10 @@ fn planar_sheet_round_trips_object_attributes() {
         Point3::new(0.0, 2.0, 0.0),
     ]);
     ir.model.bodies[0].name = Some("named sheet".into());
-    ir.model.bodies[0].color = Some(cadmpeg_ir::topology::Color {
-        r: 64.0 / 255.0,
-        g: 128.0 / 255.0,
-        b: 1.0,
-        a: 192.0 / 255.0,
-    });
+    ir.model.bodies[0].color = Some(
+        cadmpeg_ir::topology::Color::new(64.0 / 255.0, 128.0 / 255.0, 1.0, 192.0 / 255.0)
+            .expect("valid color"),
+    );
     ir.model.bodies[0].visible = Some(false);
     for version in [
         RhinoArchiveVersion::V5,
@@ -126,12 +128,10 @@ fn adjacent_planar_faces_round_trip_shared_edge_and_domains() {
         assert_eq!(decoded.ir().model.coedges.len(), 8, "{version:?}");
         assert_eq!(decoded.ir().model.edges.len(), 7, "{version:?}");
         assert_eq!(decoded.ir().model.vertices.len(), 6, "{version:?}");
-        assert!(decoded
-            .ir()
-            .model
-            .edges
-            .iter()
-            .all(|edge| edge.param_range == Some([2.0, 3.0])));
+        assert!(decoded.ir().model.edges.iter().all(|edge| edge
+            .param_range()
+            .map(cadmpeg_ir::units::FiniteVector::get)
+            == Some([2.0, 3.0])));
         let shared = decoded
             .ir()
             .model
@@ -158,7 +158,9 @@ fn adjacent_planar_faces_round_trip_shared_edge_and_domains() {
         assert_ne!(uses[0].sense, uses[1].sense);
         assert_eq!(uses[0].radial_next, uses[1].id);
         assert_eq!(uses[1].radial_next, uses[0].id);
-        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
+        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok());
     }
 }
 
@@ -195,7 +197,7 @@ fn planar_tetrahedron_round_trips_as_closed_solid() {
         assert_eq!(decoded.ir().model.edges.len(), 6, "{version:?}");
         assert_eq!(decoded.ir().model.vertices.len(), 4, "{version:?}");
         for (actual, expected) in decoded.ir().model.edges.iter().zip(&ir.model.edges) {
-            assert_eq!(actual.param_range, expected.param_range, "{version:?}");
+            assert_eq!(actual.param_range(), expected.param_range(), "{version:?}");
             assert_eq!(
                 decoded
                     .ir()
@@ -214,7 +216,9 @@ fn planar_tetrahedron_round_trips_as_closed_solid() {
             .coedges
             .iter()
             .all(|coedge| coedge.radial_next != coedge.id));
-        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
+        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok());
     }
 }
 
@@ -238,7 +242,8 @@ fn multiple_brep_objects_round_trip_in_one_archive() {
     ir.model.surfaces.append(&mut adjacent.model.surfaces);
     ir.model.curves.append(&mut adjacent.model.curves);
     ir.model.pcurves.append(&mut adjacent.model.pcurves);
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
     for version in [
         RhinoArchiveVersion::V5,
         RhinoArchiveVersion::V6,
@@ -268,13 +273,17 @@ fn multiple_brep_objects_round_trip_in_one_archive() {
         assert_eq!(decoded.ir().model.bodies.len(), 2, "{version:?}");
         assert_eq!(decoded.ir().model.faces.len(), 3, "{version:?}");
         assert_eq!(decoded.ir().model.edges.len(), 10, "{version:?}");
-        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
+        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok());
     }
 }
 
 #[test]
 fn brep_and_free_geometry_round_trip_in_one_archive() {
-    use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{
+        Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    };
     use cadmpeg_ir::ids::{CurveId, SurfaceId};
     use cadmpeg_ir::math::Vector3;
 
@@ -283,31 +292,39 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
         Point3::new(2.0, 0.0, 0.0),
         Point3::new(0.0, 2.0, 0.0),
     ]);
-    ir.model.points.push(Point {
-        id: PointId::mint("cadir:model:point#free").expect("identity grammar"),
-        position: Point3::new(5.0, 6.0, 7.0),
-        source_object: None,
-    });
+    ir.model.points.push(Point::new(
+        PointId::mint("cadir:model:point#free").expect("identity grammar"),
+        cadmpeg_ir::features::FinitePoint3::new(Point3::new(5.0, 6.0, 7.0))
+            .expect("a finite position is a point"),
+        None,
+    ));
     ir.model.curves.push(Curve {
         id: CurveId::mint("cadir:model:curve#free").expect("identity grammar"),
-        geometry: CurveGeometry::Circle {
-            center: Point3::new(5.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 2.0,
-        },
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                Point3::new(5.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                2.0,
+            )
+            .unwrap(),
+        )),
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
         id: SurfaceId::mint("cadir:model:surface#free").expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 3.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 3.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        )),
         source_object: None,
     });
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
     for version in [
         RhinoArchiveVersion::V5,
         RhinoArchiveVersion::V6,
@@ -331,18 +348,23 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
             .model
             .points
             .iter()
-            .any(|point| point.position == Point3::new(5.0, 6.0, 7.0)));
+            .any(|point| point.position().get() == Point3::new(5.0, 6.0, 7.0)));
         assert!(decoded
             .ir()
             .model
             .curves
             .iter()
-            .any(|curve| matches!(curve.geometry, CurveGeometry::Circle { radius: 2.0, .. })));
-        assert!(decoded.ir().model.surfaces.iter().any(|surface| matches!(
-            surface.geometry,
-            SurfaceGeometry::Plane { origin, .. } if origin.z == 3.0
-        )));
-        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
+            .any(|curve| matches!(curve.geometry, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) if { circle_curve.radius().get() == 2.0 })));
+        assert!(decoded.ir().model.surfaces.iter().any(
+            |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))
+            if {
+                let origin = plane_surface.origin();
+                origin.z == 3.0
+            })
+        ));
+        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok());
     }
 }
 
@@ -360,4 +382,85 @@ fn open_planar_solid_is_rejected_before_output() {
         .expect_err("expected error");
     assert!(error.to_string().contains("incidence"));
     assert_eq!(output, [0xaa]);
+}
+
+/// A stated tolerance finer than the Rhino Brep write route resolves.
+const EPS_BELOW_WRITE_BOUND: f64 = 1.0e-12;
+
+/// Decimal rendering of `EPS_BELOW_WRITE_BOUND` in a refusal message.
+const EPS_BELOW_WRITE_BOUND_TEXT: &str = "0.000000000001";
+
+#[test]
+fn sub_resolution_edge_tolerance_is_refused_before_output() {
+    let mut ir = polygon_sheet(&[
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(2.0, 0.0, 0.0),
+        Point3::new(0.0, 2.0, 0.0),
+    ]);
+    ir.model.edges[0].tolerance = Some(
+        cadmpeg_ir::scalar::PositiveReal::new(EPS_BELOW_WRITE_BOUND)
+            .expect("positive finite tolerance"),
+    );
+    let mut output = vec![0xaa];
+    let error = RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .and_then(|plan| plan.write_to(&mut output))
+        .expect_err("a stated tolerance below the write bound must not be widened");
+    assert!(matches!(&error, cadmpeg_core::CodecError::InvalidInput(_)));
+    let message = error.to_string();
+    assert!(message.contains(EPS_BELOW_WRITE_BOUND_TEXT), "{message}");
+    assert!(message.contains("edge#polygon.0"), "{message}");
+    assert_eq!(output, [0xaa]);
+}
+
+#[test]
+fn sub_resolution_face_tolerance_is_refused_before_output() {
+    let mut ir = polygon_sheet(&[
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(2.0, 0.0, 0.0),
+        Point3::new(0.0, 2.0, 0.0),
+    ]);
+    ir.model.faces[0].tolerance = Some(
+        cadmpeg_ir::scalar::PositiveReal::new(EPS_BELOW_WRITE_BOUND)
+            .expect("positive finite tolerance"),
+    );
+    let mut output = vec![0xaa];
+    let error = RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .and_then(|plan| plan.write_to(&mut output))
+        .expect_err("a stated tolerance below the write bound must not be widened");
+    assert!(matches!(&error, cadmpeg_core::CodecError::InvalidInput(_)));
+    let message = error.to_string();
+    assert!(message.contains(EPS_BELOW_WRITE_BOUND_TEXT), "{message}");
+    assert!(message.contains("face#polygon"), "{message}");
+    assert_eq!(output, [0xaa]);
+}
+
+#[test]
+fn planar_solid_orientation_is_translation_and_scale_invariant() {
+    use crate::writer::{model::WritableModel, planar_solid_orientation};
+    let ir = planar_tetrahedron();
+    for (scale, translation) in [(1.0, 0.0), (1.0, 1e8), (1e200, 0.0), (1e-200, 0.0)] {
+        let mut model = WritableModel::try_new(&ir).unwrap();
+        // The sign owner consumes the oriented vertex rings; other writer fields
+        // do not enter this calculation.
+        for vertex in &mut model.vertices {
+            vertex.point = Point3::new(
+                2.0 * scale * vertex.point.x + translation,
+                scale * vertex.point.y + translation,
+                scale * vertex.point.z + translation,
+            );
+        }
+        assert_eq!(planar_solid_orientation(&model), 1);
+        for loop_ in &mut model.loops {
+            loop_.coedges.reverse();
+        }
+        assert_eq!(planar_solid_orientation(&model), 2);
+    }
 }

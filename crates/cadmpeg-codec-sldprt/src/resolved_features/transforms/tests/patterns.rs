@@ -1,22 +1,124 @@
 //! Pattern input and line-reference binding tests.
 
-use super::super::*;
 use super::marker;
+use crate::records::operand_tag::NativeOperandTag;
+use crate::records::FeatureSource;
+use crate::records::ObjectId;
 use crate::records::{
     Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputLane,
     FeatureInputName, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance,
 };
-use cadmpeg_ir::features::{
-    DesignParameter, Feature, FeatureDefinition, FeatureId, Length, ParameterId, ParameterValue,
-    PathRef, PatternKind, PatternSeed, SweepMode,
-};
+use crate::resolved_features::axes::compact_line_reference_direction as typed_compact_line_reference_direction;
+use crate::resolved_features::axes::declared_line_reference_directions as typed_declared_line_reference_directions;
+use crate::resolved_features::axes::line_reference_direction as typed_line_reference_direction;
+use crate::resolved_features::axes::linear_pattern_display_directions as typed_linear_pattern_display_directions;
+use crate::resolved_features::bindings::bind_pattern_inputs;
+use crate::resolved_features::bindings::bind_sweep_adjacent_profiles;
+use crate::resolved_features::relation_geometry::project_relation_bindings;
+use crate::resolved_features::relation_geometry::project_relation_point_geometry;
+use crate::resolved_features::relation_geometry::project_relation_solved_line_geometry;
+use crate::resolved_features::relation_geometry::project_relation_solved_point_geometry;
+use crate::resolved_features::relation_loci::profile_loci_by_marker;
+use crate::resolved_features::relation_loci::typed_relation_definition;
+use crate::resolved_features::selections::COMPACT_EDGE_VECTOR_MARKER;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    Sketch, SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry, SketchId,
-    SketchLocus, SketchPlacement,
+    Sketch, SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
+    SketchGeometryDefinition, SketchId, SketchLocus, SketchPlacement,
+};
+use cadmpeg_ir::{
+    features::{
+        patterns::{PatternKind, PatternSeed, PatternTransform},
+        DesignParameter, Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
+        ParameterValue, PathRef, SweepMode,
+    },
+    scalar::Length,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
+
+fn line_reference_direction(payload: &[u8], class_offset: u64) -> Option<Vector3> {
+    typed_line_reference_direction(payload, class_offset).map(|direction| *direction.as_raw())
+}
+
+fn declared_line_reference_directions(
+    payload: &[u8],
+    class_offset: u64,
+    object_end: usize,
+) -> Vec<Vector3> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        payload,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("line reference test input fits service policy");
+    typed_declared_line_reference_directions(&ctx, payload, class_offset, object_end)
+        .expect("line reference test scan succeeds")
+        .into_iter()
+        .map(|direction| *direction.as_raw())
+        .collect()
+}
+
+fn compact_line_reference_direction(
+    payload: &[u8],
+    object_start: usize,
+    object_end: usize,
+    excluded_handles: &[usize],
+) -> Option<Vector3> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        payload,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("line reference test input fits service policy");
+    typed_compact_line_reference_direction(
+        &ctx,
+        payload,
+        object_start,
+        object_end,
+        excluded_handles,
+    )
+    .expect("line reference test scan succeeds")
+    .map(|direction| *direction.as_raw())
+}
+
+fn bind_pattern_inputs_test(
+    features: &mut [cadmpeg_ir::features::Feature],
+    histories: &[FeatureHistory],
+    lanes: &[FeatureInputLane],
+) -> Result<(), cadmpeg_core::CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let bytes = lanes
+        .first()
+        .map_or(&[][..], |lane| lane.native_payload.as_slice());
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+    bind_pattern_inputs(&ctx, features, histories, lanes)
+}
+
+fn linear_pattern_display_directions(
+    payload: &[u8],
+    object_start: usize,
+    object_end: usize,
+    names: &[FeatureInputName],
+    expected_spacing_m: [Option<f64>; 2],
+) -> Vec<Vector3> {
+    typed_linear_pattern_display_directions(
+        payload,
+        object_start,
+        object_end,
+        names,
+        expected_spacing_m,
+    )
+    .into_iter()
+    .map(|direction| *direction.as_raw())
+    .collect()
+}
 
 #[test]
 fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
@@ -25,7 +127,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         parent: "history".into(),
         xml_tag: "Feature".into(),
         tree_parent: None,
-        source_id: Some(source_id.into()),
+        source_id: Some(FeatureSource::try_from(source_id).expect("test feature source id")),
         ordinal: 0,
         name: name.into(),
         kind: String::new(),
@@ -58,10 +160,13 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         ordinal: 0,
         offset,
         value: value.into(),
-        object_id: Some(object_id),
+        object_id: ObjectId::try_from(object_id).ok(),
     };
     let line_ref_offset = 120usize;
-    let mut native_payload = vec![0; 400];
+    // The lane states object names at offsets 50, 100, 500 and 600, and an
+    // object name states the payload bytes at its own offset, so the payload
+    // holds every one of them.
+    let mut native_payload = vec![0; 700];
     native_payload[line_ref_offset + 136..line_ref_offset + 144]
         .copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff]);
     native_payload[line_ref_offset + 148..line_ref_offset + 152]
@@ -71,7 +176,10 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         native_payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
     }
     assert_eq!(
-        line_reference_direction(&native_payload, line_ref_offset as u64),
+        line_reference_direction(
+            &native_payload,
+            cadmpeg_core::decode::u64_from_index(line_ref_offset)
+        ),
         Some(Vector3::new(-1.0, 0.0, 0.0))
     );
     assert_eq!(
@@ -94,7 +202,10 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         three_word_payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
     }
     assert_eq!(
-        line_reference_direction(&three_word_payload, line_ref_offset as u64),
+        line_reference_direction(
+            &three_word_payload,
+            cadmpeg_core::decode::u64_from_index(line_ref_offset)
+        ),
         Some(Vector3::new(0.0, 0.6, 0.8))
     );
     let mut declared_variants = vec![0; 280];
@@ -121,7 +232,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             parent: "lane".into(),
             ordinal: 0,
             offset: 100,
-            object_id: Some(u32::MAX),
+            object_id: Some(ObjectId::Absent),
             value: "D3".into(),
         },
         FeatureInputName {
@@ -129,7 +240,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             parent: "lane".into(),
             ordinal: 1,
             offset: 300,
-            object_id: Some(u32::MAX),
+            object_id: Some(ObjectId::Absent),
             value: "D4".into(),
         },
     ];
@@ -371,7 +482,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             id: "line-reference".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: line_ref_offset as u64,
+            offset: cadmpeg_core::decode::u64_from_index(line_ref_offset),
             name: "moLineRef_w".into(),
         }],
         names: vec![
@@ -390,174 +501,250 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         references: Vec::new(),
         sketch_entities: Vec::new(),
     };
+    // The lane's last two object names bind to the payload's last two hundred
+    // bytes: `PathSketch` at 500 owns 500..600 and `NextFeature` at 600 owns
+    // 600..700. Both objects state no reference-plane frame and no temporary
+    // axis, and every `bind_pattern_inputs` call below binds nothing from
+    // either.
+    for (start, end) in [(500usize, 600usize), (600, 700)] {
+        let object = &lane.native_payload[start..end];
+        assert_eq!(
+            crate::resolved_features::reference_geometry::explicit_reference_plane_frame(
+                &cadmpeg_test_support::service_decode_context(),
+                object,
+            )
+            .expect("resource budget")
+            .expect("a zero object states no frame"),
+            None
+        );
+        assert_eq!(
+            crate::resolved_features::axes::temporary_axis_reference(
+                &lane.native_payload,
+                start,
+                end
+            ),
+            None
+        );
+    }
+
     let model_feature = |id: &str, native_ref: &str, definition| Feature {
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
-    let sketch = SketchId("path-sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#path-sketch").unwrap();
     let mut features = vec![
         model_feature(
-            "pattern",
+            "synthetic:test:id#pattern",
             "pattern-native",
-            FeatureDefinition::Pattern {
+            FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: Vec::new(),
-                pattern: PatternKind::CurveDriven {
+                pattern: PatternKind::new(PatternTransform::CurveDriven {
                     path: None,
-                    spacing: Length(5.0),
+                    spacing: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
                     count: 3,
-                },
-            },
+                })
+                .unwrap(),
+            }),
         ),
         model_feature(
-            "path",
+            "synthetic:test:id#path",
             "path-native",
-            FeatureDefinition::Sketch {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
-            },
+            }),
         ),
         model_feature(
-            "seed",
+            "synthetic:test:id#seed",
             "seed-native",
-            FeatureDefinition::Native {
+            FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "Extrude".into(),
                 parameters: BTreeMap::new(),
-            },
+            }),
         ),
     ];
 
-    bind_pattern_inputs(
-        &mut features,
-        std::slice::from_ref(&history),
-        std::slice::from_ref(&lane),
-    );
-
-    assert!(matches!(
-        features[0].definition,
-        FeatureDefinition::Pattern {
-            ref seeds,
-            pattern: PatternKind::CurveDriven { path: None, .. },
-            ..
-        } if seeds == &[PatternSeed::Feature(features[2].id.clone())]
-    ));
-    assert_eq!(features[0].dependencies, [features[2].id.clone()]);
-    features[1].definition = FeatureDefinition::Sketch {
-        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
+    // The lane's last two object names bind to objects no pattern class owns.
+    // `PathSketch` at 500 is a `moProfileFeature_c`, so the walk binds nothing
+    // from `500..600`: the path feature keeps the sketch definition the test
+    // gave it and takes no dependency of its own. `NextFeature` at 600 states
+    // no input class and has no model feature, so nothing the walk produces
+    // can name it, and every dependency the pattern takes is a feature this
+    // fixture states.
+    let objects_at_500_and_600_bind_nothing = |features: &[Feature]| {
+        assert!(matches!(
+            features[1].evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Sketch { .. })
+        ));
+        assert!(features[1].dependencies.as_slice().is_empty());
+        let known = features
+            .iter()
+            .map(|feature| feature.id.clone())
+            .collect::<Vec<_>>();
+        assert!(features[0]
+            .dependencies
+            .as_slice()
+            .iter()
+            .all(|id| known.contains(id)));
     };
-    bind_pattern_inputs(
+
+    bind_pattern_inputs_test(
         &mut features,
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
-    );
+    )
+    .unwrap();
+    objects_at_500_and_600_bind_nothing(&features);
 
-    assert!(matches!(
-        features[0].definition,
-        FeatureDefinition::Pattern {
-            pattern: PatternKind::CurveDriven {
-                path: Some(PathRef::Sketch(ref path)),
-                ..
-            },
+    assert!(matches!(&(features[0].evaluation.definition()),
+        FeatureDefinition::Operation(FeatureOperation::Pattern {
+            ref seeds,
+            pattern: admitted_pattern,
             ..
-        } if path == &sketch
+        }) if matches!(admitted_pattern.definition(), PatternTransform::CurveDriven { path: None, .. } if seeds == &[PatternSeed::Feature(features[2].id.clone())])
     ));
     assert_eq!(
-        features[0].dependencies,
+        features[0].dependencies.as_slice(),
+        [features[2].id.clone()]
+    );
+    features[1]
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
+        }));
+    bind_pattern_inputs_test(
+        &mut features,
+        std::slice::from_ref(&history),
+        std::slice::from_ref(&lane),
+    )
+    .unwrap();
+    objects_at_500_and_600_bind_nothing(&features);
+
+    assert!(matches!(&(features[0].evaluation.definition()),
+        FeatureDefinition::Operation(FeatureOperation::Pattern {
+            pattern: admitted_pattern,
+            ..
+        }) if matches!(admitted_pattern.definition(), PatternTransform::CurveDriven {
+                path: Some(PathRef::Sketch(ref path)),
+                ..
+            } if path == &sketch)
+    ));
+    assert_eq!(
+        features[0].dependencies.as_slice(),
         [features[2].id.clone(), features[1].id.clone()]
     );
-    let FeatureDefinition::Pattern { seeds, .. } = &features[0].definition else {
+    let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) =
+        features[0].evaluation.definition()
+    else {
         panic!("expected pattern");
     };
     assert_eq!(seeds, &[PatternSeed::Feature(features[2].id.clone())]);
 
     let mut ambiguous_lane = lane.clone();
     ambiguous_lane.names.insert(2, name(450, 20, "PathSketch"));
-    if let FeatureDefinition::Pattern {
-        pattern: PatternKind::CurveDriven { path, .. },
-        seeds,
-        ..
-    } = &mut features[0].definition
-    {
-        *path = None;
-        seeds.clear();
-    }
-    bind_pattern_inputs(
+    features[0].evaluation.edit(|definition, _| {
+        if let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, seeds, .. }) =
+            definition
+        {
+            *pattern.curve_path_mut().unwrap() = None;
+            seeds.clear();
+        }
+    });
+    bind_pattern_inputs_test(
         &mut features,
         std::slice::from_ref(&history),
         &[ambiguous_lane],
-    );
-    assert!(matches!(
-        features[0].definition,
-        FeatureDefinition::Pattern {
-            pattern: PatternKind::CurveDriven { path: None, .. },
+    )
+    .unwrap();
+    objects_at_500_and_600_bind_nothing(&features);
+    assert!(matches!(&(features[0].evaluation.definition()),
+        FeatureDefinition::Operation(FeatureOperation::Pattern {
+            pattern: admitted_pattern,
             ..
-        }
+        }) if matches!(admitted_pattern.definition(), PatternTransform::CurveDriven { path: None, .. })
     ));
 
     let mut linear_history = history.clone();
     linear_history.features[1].input_class = Some("moLPattern_c".into());
     features[0].dependencies.clear();
-    features[0].definition = FeatureDefinition::Pattern {
-        seeds: Vec::new(),
-        pattern: PatternKind::Linear {
-            direction: None,
-            spacing: Length(5.0),
-            count: 3,
-            second: None,
-        },
-    };
-    bind_pattern_inputs(
+    features[0]
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::Pattern {
+            seeds: Vec::new(),
+            pattern: PatternKind::new(PatternTransform::Linear {
+                direction: None,
+                spacing: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
+                count: 3,
+                second: None,
+            })
+            .unwrap(),
+        }));
+    bind_pattern_inputs_test(
         &mut features,
         std::slice::from_ref(&linear_history),
         std::slice::from_ref(&lane),
-    );
-    let FeatureDefinition::Pattern { seeds, .. } = &features[0].definition else {
+    )
+    .unwrap();
+    objects_at_500_and_600_bind_nothing(&features);
+    let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) =
+        features[0].evaluation.definition()
+    else {
         panic!("expected pattern");
     };
     assert_eq!(seeds, &[PatternSeed::Feature(features[2].id.clone())]);
-    assert_eq!(features[0].dependencies, [features[2].id.clone()]);
-    assert!(matches!(
-        features[0].definition,
-        FeatureDefinition::Pattern {
-            pattern: PatternKind::Linear {
-                direction: Some(Vector3 { x, y, z }),
-                ..
-            },
+    assert_eq!(
+        features[0].dependencies.as_slice(),
+        [features[2].id.clone()]
+    );
+    assert!(matches!(&(features[0].evaluation.definition()),
+        FeatureDefinition::Operation(FeatureOperation::Pattern {
+            pattern: admitted_pattern,
             ..
-        } if x == -1.0 && y == 0.0 && z == 0.0
+        }) if matches!(admitted_pattern.definition(), PatternTransform::Linear {
+                direction: Some(actual_direction),
+                ..
+            } if *actual_direction == Vector3::new(-1.0, 0.0, 0.0))
     ));
 
-    let FeatureDefinition::Pattern {
-        pattern: PatternKind::Linear { direction, .. },
-        ..
-    } = &mut features[0].definition
+    let updated_features_evaluation = &mut features[0].evaluation;
+    let mut updated_features_definition = updated_features_evaluation.definition().clone();
+    let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) =
+        &mut updated_features_definition
     else {
         panic!("expected linear pattern");
     };
+    let mut transform = pattern.definition().clone();
+    let PatternTransform::Linear { direction, .. } = &mut transform else {
+        panic!("linear pattern");
+    };
     *direction = None;
-    bind_pattern_inputs(
+    *pattern = PatternKind::new(transform).unwrap();
+    updated_features_evaluation.set_definition(updated_features_definition);
+    bind_pattern_inputs_test(
         &mut features,
         std::slice::from_ref(&linear_history),
         std::slice::from_ref(&lane),
-    );
-    assert!(matches!(
-        features[0].definition,
-        FeatureDefinition::Pattern {
+    )
+    .unwrap();
+    objects_at_500_and_600_bind_nothing(&features);
+    assert!(matches!(&(features[0].evaluation.definition()),
+        FeatureDefinition::Operation(FeatureOperation::Pattern {
             ref seeds,
-            pattern: PatternKind::Linear {
-                direction: Some(Vector3 { x, y, z }),
+            pattern: admitted_pattern,
+        }) if matches!(admitted_pattern.definition(), PatternTransform::Linear {
+                direction: Some(actual_direction),
                 ..
-            },
-        } if seeds == &[PatternSeed::Feature(features[2].id.clone())]
-            && x == -1.0 && y == 0.0 && z == 0.0
+            } if seeds == &[PatternSeed::Feature(features[2].id.clone())]
+            && *actual_direction == Vector3::new(-1.0, 0.0, 0.0))
     ));
 
     let mut derived_history = linear_history.clone();
@@ -580,33 +767,38 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         name(600, 30, "NextFeature"),
     ];
     features[0].dependencies.clear();
-    features[0].definition = FeatureDefinition::Pattern {
-        seeds: Vec::new(),
-        pattern: PatternKind::Linear {
-            direction: None,
-            spacing: Length(5.0),
-            count: 3,
-            second: None,
-        },
-    };
-    bind_pattern_inputs(
+    features[0]
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::Pattern {
+            seeds: Vec::new(),
+            pattern: PatternKind::new(PatternTransform::Linear {
+                direction: None,
+                spacing: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
+                count: 3,
+                second: None,
+            })
+            .unwrap(),
+        }));
+    bind_pattern_inputs_test(
         &mut features,
         std::slice::from_ref(&derived_history),
         std::slice::from_ref(&derived_lane),
-    );
-    assert!(matches!(
-        features[0].definition,
-        FeatureDefinition::Pattern {
+    )
+    .unwrap();
+    assert!(matches!(&(features[0].evaluation.definition()),
+        FeatureDefinition::Operation(FeatureOperation::Pattern {
             ref seeds,
-            pattern: PatternKind::Linear {
-                direction: Some(Vector3 { x, y, z }),
+            pattern: admitted_pattern,
+        }) if matches!(admitted_pattern.definition(), PatternTransform::Linear {
+                direction: Some(actual_direction),
                 ..
-            },
-        } if seeds == &[PatternSeed::Feature(features[2].id.clone())]
-            && x == -1.0 && y == 0.0 && z == 0.0
+            } if seeds == &[PatternSeed::Feature(features[2].id.clone())]
+            && *actual_direction == Vector3::new(-1.0, 0.0, 0.0))
     ));
-    derived_history.features[2].parameters =
-        BTreeMap::from([("z".into(), "3".into()), ("e".into(), "19".into())]);
+    derived_history.features[2].parameters = BTreeMap::from([
+        (cadmpeg_core::nonblank_literal!("z"), "3".into()),
+        (cadmpeg_core::nonblank_literal!("e"), "19".into()),
+    ]);
     derived_lane.classes.extend([
         FeatureInputClass {
             id: "count-dimension".into(),
@@ -627,27 +819,29 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         .names
         .extend([name(220, u32::MAX, "z"), name(420, u32::MAX, "e")]);
     features[0].dependencies.clear();
-    features[0].definition = FeatureDefinition::Pattern {
-        seeds: Vec::new(),
-        pattern: PatternKind::UnresolvedLinear,
-    };
-    bind_pattern_inputs(
+    features[0]
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::Pattern {
+            seeds: Vec::new(),
+            pattern: PatternKind::UNRESOLVED_LINEAR,
+        }));
+    bind_pattern_inputs_test(
         &mut features,
         std::slice::from_ref(&derived_history),
         std::slice::from_ref(&derived_lane),
-    );
-    assert!(matches!(
-        features[0].definition,
-        FeatureDefinition::Pattern {
+    )
+    .unwrap();
+    assert!(matches!(&(features[0].evaluation.definition()),
+        FeatureDefinition::Operation(FeatureOperation::Pattern {
             ref seeds,
-            pattern: PatternKind::Linear {
-                direction: Some(Vector3 { x, y, z }),
-                spacing: Length(19.0),
+            pattern: admitted_pattern,
+        }) if matches!(admitted_pattern.definition(), PatternTransform::Linear {
+                direction: Some(actual_direction),
+                spacing: actual_spacing,
                 count: 3,
                 ..
-            },
-        } if seeds == &[PatternSeed::Feature(features[2].id.clone())]
-            && x == -1.0 && y == 0.0 && z == 0.0
+            } if (seeds == &[PatternSeed::Feature(features[2].id.clone())]
+            && *actual_direction == Vector3::new(-1.0, 0.0, 0.0)) && actual_spacing.get() == 19.0)
     ));
 
     let mut mirror_history = history.clone();
@@ -683,120 +877,154 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         .copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
     for (index, source) in [5u32, 40].into_iter().enumerate() {
         let entry = seed_path + 18 + index * 20;
-        mirror_lane.native_payload[entry..entry + 2]
-            .copy_from_slice(&(0x8001 + index as u16).to_le_bytes());
+        mirror_lane.native_payload[entry..entry + 2].copy_from_slice(
+            &(0x8001 + u16::try_from(index).expect("test index fits u16")).to_le_bytes(),
+        );
         mirror_lane.native_payload[entry + 4..entry + 8].copy_from_slice(&[1, 0, 1, 0]);
         mirror_lane.native_payload[entry + 8..entry + 12].copy_from_slice(&source.to_le_bytes());
         mirror_lane.native_payload[entry + 12..entry + 16].copy_from_slice(&9000u32.to_le_bytes());
-        mirror_lane.native_payload[entry + 16..entry + 20]
-            .copy_from_slice(&(index as u32 + 1).to_le_bytes());
+        mirror_lane.native_payload[entry + 16..entry + 20].copy_from_slice(
+            &(u32::try_from(index).expect("test index fits u32") + 1).to_le_bytes(),
+        );
     }
     features[0].dependencies.clear();
-    features[0].definition = FeatureDefinition::Pattern {
-        seeds: Vec::new(),
-        pattern: PatternKind::UnresolvedMirror,
-    };
-    bind_pattern_inputs(
+    features[0]
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::Pattern {
+            seeds: Vec::new(),
+            pattern: PatternKind::UNRESOLVED_MIRROR,
+        }));
+    bind_pattern_inputs_test(
         &mut features,
         std::slice::from_ref(&mirror_history),
         std::slice::from_ref(&mirror_lane),
+    )
+    .unwrap();
+    assert_eq!(
+        features[0].dependencies.as_slice(),
+        [features[2].id.clone()]
     );
-    assert_eq!(features[0].dependencies, [features[2].id.clone()]);
-    assert!(matches!(
-        features[0].definition,
-        FeatureDefinition::Pattern {
+    assert!(matches!(&(features[0].evaluation.definition()),
+        FeatureDefinition::Operation(FeatureOperation::Pattern {
             ref seeds,
-            pattern: PatternKind::Mirror {
-                plane_origin: Point3 { x, y, z },
-                plane_normal: Vector3 { x: nx, y: ny, z: nz },
-            },
-        } if seeds == &[PatternSeed::Feature(features[2].id.clone())]
-            && x == 12.0 && y == -25.0 && z == 0.0
-            && nx == 0.0 && ny == 1.0 && nz == 0.0
+            pattern: admitted_pattern,
+        }) if matches!(admitted_pattern.definition(), PatternTransform::Mirror {
+                plane_origin,
+                plane_normal,
+            } if seeds == &[PatternSeed::Feature(features[2].id.clone())]
+            && *plane_origin == Point3::new(12.0, -25.0, 0.0)
+            && *plane_normal == Vector3::new(0.0, 1.0, 0.0))
     ));
 
     features[0].dependencies.clear();
-    features[0].definition = FeatureDefinition::Pattern {
-        seeds: Vec::new(),
-        pattern: PatternKind::Mirror {
-            plane_origin: Point3::new(12.0, -25.0, 0.0),
-            plane_normal: Vector3::new(0.0, 1.0, 0.0),
-        },
-    };
-    bind_pattern_inputs(
+    features[0]
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::Pattern {
+            seeds: Vec::new(),
+            pattern: PatternKind::new(PatternTransform::Mirror {
+                plane_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                    12.0, -25.0, 0.0,
+                ))
+                .unwrap(),
+                plane_normal: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                    0.0, 1.0, 0.0,
+                ))
+                .unwrap(),
+            })
+            .unwrap(),
+        }));
+    bind_pattern_inputs_test(
         &mut features,
         std::slice::from_ref(&mirror_history),
         std::slice::from_ref(&mirror_lane),
-    );
-    assert!(matches!(
-        features[0].definition,
-        FeatureDefinition::Pattern {
+    )
+    .unwrap();
+    assert!(matches!(&(features[0].evaluation.definition()),
+        FeatureDefinition::Operation(FeatureOperation::Pattern {
             ref seeds,
-            pattern: PatternKind::Mirror { .. },
-        } if seeds == &[PatternSeed::Feature(features[2].id.clone())]
+            pattern: admitted_pattern,
+        }) if matches!(admitted_pattern.definition(), PatternTransform::Mirror { .. } if seeds == &[PatternSeed::Feature(features[2].id.clone())])
     ));
-    assert_eq!(features[0].dependencies, [features[2].id.clone()]);
+    assert_eq!(
+        features[0].dependencies.as_slice(),
+        [features[2].id.clone()]
+    );
 
     mirror_lane.native_payload[frame..frame + 97].fill(0);
     features[0].dependencies.clear();
-    features[0].definition = FeatureDefinition::Pattern {
-        seeds: Vec::new(),
-        pattern: PatternKind::UnresolvedMirror,
-    };
-    bind_pattern_inputs(
+    features[0]
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::Pattern {
+            seeds: Vec::new(),
+            pattern: PatternKind::UNRESOLVED_MIRROR,
+        }));
+    bind_pattern_inputs_test(
         &mut features,
         std::slice::from_ref(&mirror_history),
         std::slice::from_ref(&mirror_lane),
-    );
-    assert!(matches!(
-        features[0].definition,
-        FeatureDefinition::Pattern {
+    )
+    .unwrap();
+    assert!(matches!(&(features[0].evaluation.definition()),
+        FeatureDefinition::Operation(FeatureOperation::Pattern {
             ref seeds,
-            pattern: PatternKind::UnresolvedMirror,
-        } if seeds == &[PatternSeed::Feature(features[2].id.clone())]
+            pattern: admitted_pattern,
+        }) if matches!(admitted_pattern.definition(), PatternTransform::Unresolved { form: Some(cadmpeg_ir::features::patterns::PatternForm::Mirror) } if seeds == &[PatternSeed::Feature(features[2].id.clone())])
     ));
-    assert_eq!(features[0].dependencies, [features[2].id.clone()]);
+    assert_eq!(
+        features[0].dependencies.as_slice(),
+        [features[2].id.clone()]
+    );
 
     let mut sweep_history = history;
     sweep_history.features[0].input_class = Some("moProfileFeature_c".into());
     sweep_history.features[1].input_class = Some("moSweep_c".into());
-    let path_sketch = SketchId("sweep-path".into());
-    features[2].definition = FeatureDefinition::Sketch {
-        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(path_sketch.clone())),
-    };
+    let path_sketch = SketchId::mint("synthetic:test:id#sweep-path").unwrap();
+    features[2]
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(path_sketch.clone())),
+        }));
     features[0].dependencies.clear();
-    features[0].definition = FeatureDefinition::Sweep {
-        section: cadmpeg_ir::features::SweepSection::Unresolved(None),
-        sections: Vec::new(),
-        path: Some(PathRef::Native("curve-reference".into())),
-        mode: SweepMode::Solid {
-            op: cadmpeg_ir::features::BooleanKind::Join,
-        },
-        orientation: None,
-        transition: None,
-        transformation: None,
-        path_tangent: false,
-        linearize: false,
-        twist: None,
-        path_extent: None,
-        guide_rail: None,
-        taper: None,
-        scale: None,
-        allow_multi_profile_faces: None,
-    };
-    bind_sweep_adjacent_profiles(&mut features, &[sweep_history], std::slice::from_ref(&lane));
-    assert!(matches!(
-        features[0].definition,
-        FeatureDefinition::Sweep {
-            section: cadmpeg_ir::features::SweepSection::Profile(
-                cadmpeg_ir::features::ProfileRef::Sketch(ref profile),
+    features[0]
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::Sweep {
+            shape: cadmpeg_ir::features::SweepShape::sheet_sections(
+                SweepMode::Solid {
+                    op: cadmpeg_ir::features::SolidSweepOperation::Join,
+                },
+                cadmpeg_ir::features::SweepSection::Unresolved(None),
+                Vec::new(),
             ),
+
+            path: Some(PathRef::Native("curve-reference".into())),
+
+            orientation: None,
+            transition: None,
+            transformation: None,
+            path_tangent: false,
+            linearize: false,
+            twist: None,
+            path_extent: None,
+            guide_rail: None,
+            taper: None,
+            scale: None,
+            allow_multi_profile_faces: None,
+        }));
+    bind_sweep_adjacent_profiles(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut features,
+        &[sweep_history],
+        std::slice::from_ref(&lane),
+    )
+    .unwrap();
+    assert!(matches!(
+        features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sweep {
+            shape,
             path: Some(PathRef::Sketch(ref path)),
             ..
-        } if profile == &sketch && path == &path_sketch
-    ));
+        }) if matches!((shape.referenced_profile(),), (Some(cadmpeg_ir::features::PlanarProfileRef::Sketch(ref profile)),) if profile == &sketch && path == &path_sketch)));
     assert_eq!(
-        features[0].dependencies,
+        features[0].dependencies.as_slice(),
         [features[1].id.clone(), features[2].id.clone()]
     );
 }
@@ -901,21 +1129,30 @@ fn compact_line_reference_scalar_counts_follow_their_trailers() {
 
 #[test]
 fn e1_line_distance_indices_address_coordinate_point_pairs() {
-    let sketch = SketchId("sketch".into());
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        b"relation test",
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
-        id: FeatureId::mint("feature").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
+            }),
+        ),
         native_ref: Some("feature-native".into()),
     };
     let coordinates = [
@@ -937,7 +1174,8 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         .enumerate()
         .map(|(index, coordinates)| {
             let mut point = marker(&format!("point-{index}"), Some(coordinates));
-            point.offset = index as u64;
+            point = point
+                .with_test_position(point.ordinal(), cadmpeg_core::decode::u64_from_index(index));
             point
         })
         .collect::<Vec<_>>();
@@ -945,15 +1183,16 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         .iter()
         .take(3)
         .map(|marker| {
-            let [u, v] = marker.coordinates_m.unwrap();
+            let [u, v] = marker.coordinates_m.unwrap().get();
             SketchEntity::new(
-                SketchEntityId(format!("bound-{}", marker.id)),
+                SketchEntityId::mint(format!("synthetic:test:id#bound-{}", marker.id())).unwrap(),
                 sketch.clone(),
-                SketchGeometry::Point {
+                SketchGeometry::try_from(SketchGeometryDefinition::Point {
                     position: Point2::new(u * 1000.0, v * 1000.0),
-                },
+                })
+                .unwrap(),
             )
-            .with_native_ref(Some(marker.id.clone()))
+            .with_native_ref(Some(marker.id().to_string()))
         })
         .collect::<Vec<_>>();
     let operand = |offset: u64, index: u16| FeatureInputOperand {
@@ -967,7 +1206,7 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         FeatureInputRelationInstance {
             id: id.into(),
             parent: "lane".into(),
-            ordinal: offset as u32,
+            ordinal: u32::try_from(offset).expect("relation offset fits u32"),
             offset,
             family: FeatureInputRelationFamily::LineLineDistance,
             class_ref: "class".into(),
@@ -1004,45 +1243,49 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         id: ParameterId::mint(id).expect("identity grammar"),
         owner: Some(feature.id.clone()),
         ordinal: 0,
-        name: id.into(),
+        name: id.to_string(),
         expression: "5mm".into(),
         display: None,
-        value: Some(ParameterValue::Length(Length(5.0))),
-        dependencies: Vec::new(),
+        value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some(scalar.into()),
     };
     let parameters = vec![
-        parameter("lower", "lower-scalar"),
-        parameter("upper", "upper-scalar"),
+        parameter("synthetic:test:id#lower", "lower-scalar"),
+        parameter("synthetic:test:id#upper", "upper-scalar"),
     ];
     let mut constraints = Vec::new();
     project_relation_bindings(
+        &ctx,
         &mut constraints,
         &[],
         std::slice::from_ref(&feature),
         &entities,
         &parameters,
         std::slice::from_ref(&lane),
-    );
+    )
+    .unwrap();
     assert_eq!(constraints.len(), 2);
     assert!(constraints.iter().all(|constraint| matches!(
-        &constraint.definition,
-        SketchConstraintDefinition::Native { .. }
+        constraint.definition.kind(),
+        SketchConstraintDefinitionInput::Native { .. }
     )));
 
     project_relation_solved_line_geometry(
+        &ctx,
         &mut entities,
         &[],
         std::slice::from_ref(&feature),
         &parameters,
         std::slice::from_ref(&lane),
-    );
+    )
+    .unwrap();
 
     let solver_lines = entities
         .iter()
-        .filter(|entity| entity.id().0.contains("#solver-line:"))
+        .filter(|entity| entity.id().as_str().contains("#solver-line:"))
         .collect::<Vec<_>>();
     assert_eq!(solver_lines.len(), 4);
     assert_eq!(
@@ -1060,46 +1303,59 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         .collect()
     );
     project_relation_bindings(
+        &ctx,
         &mut constraints,
         &[],
         std::slice::from_ref(&feature),
         &entities,
         &parameters,
         std::slice::from_ref(&lane),
-    );
+    )
+    .unwrap();
     assert_eq!(constraints.len(), 2);
     assert!(constraints.iter().all(|constraint| matches!(
-        &constraint.definition,
-        SketchConstraintDefinition::Distance { entities, .. } if entities.len() == 2
+        constraint.definition.kind(),
+        SketchConstraintDefinitionInput::Distance { entities, .. } if entities.len() == 2
     )));
     project_relation_bindings(
+        &ctx,
         &mut constraints,
         &[],
         std::slice::from_ref(&feature),
         &entities,
         &parameters,
         std::slice::from_ref(&lane),
-    );
+    )
+    .unwrap();
     assert_eq!(constraints.len(), 2);
 }
 
 #[test]
 fn roster_point_line_distance_materializes_one_solver_line() {
-    let sketch = SketchId("sketch".into());
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        b"relation test",
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
-        id: FeatureId::mint("feature").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
+            }),
+        ),
         native_ref: Some("feature-native".into()),
     };
     let coordinates = [
@@ -1117,7 +1373,10 @@ fn roster_point_line_distance_materializes_one_solver_line() {
         .enumerate()
         .map(|(index, coordinates_m)| {
             let mut marker = marker(&format!("point-{index}"), Some(coordinates_m));
-            marker.offset = index as u64;
+            marker = marker.with_test_position(
+                marker.ordinal(),
+                cadmpeg_core::decode::u64_from_index(index),
+            );
             marker
         })
         .collect::<Vec<_>>();
@@ -1127,11 +1386,12 @@ fn roster_point_line_distance_materializes_one_solver_line() {
         .enumerate()
         .map(|(index, [u, v])| {
             SketchEntity::new(
-                SketchEntityId(format!("bound-point-{index}")),
+                SketchEntityId::mint(format!("synthetic:test:id#bound-point-{index}")).unwrap(),
                 sketch.clone(),
-                SketchGeometry::Point {
+                SketchGeometry::try_from(SketchGeometryDefinition::Point {
                     position: Point2::new(u * 1000.0, v * 1000.0),
-                },
+                })
+                .unwrap(),
             )
             .with_construction(true)
             .with_native_ref(Some(format!("point-{index}")))
@@ -1155,14 +1415,14 @@ fn roster_point_line_distance_materializes_one_solver_line() {
             FeatureInputOperand {
                 offset: 101,
                 reference_ref: "point-reference".into(),
-                kind: FeatureInputOperandKind::Native(0x81dd),
+                kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_81DD),
                 entity_index: 0,
                 entity_ref: Some("point-0".into()),
             },
             FeatureInputOperand {
                 offset: 102,
                 reference_ref: "line-reference".into(),
-                kind: FeatureInputOperandKind::Native(0x81e7),
+                kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_81E7),
                 entity_index: 2,
                 entity_ref: None,
             },
@@ -1185,59 +1445,62 @@ fn roster_point_line_distance_materializes_one_solver_line() {
         sketch_entities: markers,
     };
     let parameter = DesignParameter {
-        id: ParameterId::mint("parameter").expect("identity grammar"),
+        id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: Some(feature.id.clone()),
         ordinal: 0,
         name: "D1".into(),
         expression: "30mm".into(),
         display: None,
-        value: Some(ParameterValue::Length(Length(30.0))),
-        dependencies: Vec::new(),
+        value: Some(ParameterValue::Length(Length::new(30.0).unwrap())),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),
     };
     project_relation_solved_line_geometry(
+        &ctx,
         &mut entities,
         &[],
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
         std::slice::from_ref(&lane),
-    );
+    )
+    .unwrap();
     let solver_line = entities
         .iter()
         .find(|entity| entity.geometry_ref.as_deref() == Some("feature-native:solver-line:2"))
         .expect("point-line solver line");
-    assert!(matches!(
-        solver_line.geometry,
-        SketchGeometry::Line { start, end }
+    assert!(matches!(*solver_line.geometry.definition(),
+        SketchGeometryDefinition::Line { start, end }
             if start == Point2::new(36.0, -5.0) && end == Point2::new(36.0, -150.0)
     ));
     let solver_line_id = solver_line.id().clone();
 
     let mut constraints = Vec::new();
     project_relation_bindings(
+        &ctx,
         &mut constraints,
         &[],
         std::slice::from_ref(&feature),
         &entities,
         std::slice::from_ref(&parameter),
         std::slice::from_ref(&lane),
-    );
+    )
+    .unwrap();
     let [constraint] = constraints.as_slice() else {
         panic!("one point-line constraint");
     };
-    let SketchConstraintDefinition::DistanceLoci {
+    let SketchConstraintDefinitionInput::DistanceLoci {
         first,
         second,
         parameter: parameter_ref,
-    } = &constraint.definition
+    } = constraint.definition.kind()
     else {
         panic!("typed point-line constraint");
     };
     assert_eq!(
         first,
-        &SketchLocus::Entity(SketchEntityId("bound-point-0".into()))
+        &SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#bound-point-0").unwrap())
     );
     assert_eq!(second, &SketchLocus::Entity(solver_line_id));
     assert_eq!(parameter_ref, &parameter.id);
@@ -1245,57 +1508,77 @@ fn roster_point_line_distance_materializes_one_solver_line() {
 
 #[test]
 fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguous() {
-    let sketch_id = SketchId("sketch".into());
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        b"relation test",
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let sketch = Sketch {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
         visible: None,
-        placement: SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: Vec::new(),
+        placement: SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: None,
     };
     let feature = Feature {
-        id: FeatureId::mint("feature").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
+            }),
+        ),
         native_ref: Some("feature-native".into()),
     };
     let line = |id: &str, start: [f64; 2], end: [f64; 2]| {
         SketchEntity::new(
-            SketchEntityId(id.into()),
+            SketchEntityId::mint(id).unwrap(),
             sketch_id.clone(),
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(start[0], start[1]),
                 end: Point2::new(end[0], end[1]),
-            },
+            })
+            .unwrap(),
         )
     };
     let mut entities = vec![
-        line("profile-bottom", [0.0, -20.0], [70.0, -20.0]),
-        line("profile-top", [0.0, 0.0], [70.0, 0.0]),
-        line("profile-left", [0.0, -20.0], [0.0, 0.0]),
-        line("profile-right", [70.0, 0.0], [70.0, -20.0]),
+        line(
+            "synthetic:test:id#profile-bottom",
+            [0.0, -20.0],
+            [70.0, -20.0],
+        ),
+        line("synthetic:test:id#profile-top", [0.0, 0.0], [70.0, 0.0]),
+        line("synthetic:test:id#profile-left", [0.0, -20.0], [0.0, 0.0]),
+        line(
+            "synthetic:test:id#profile-right",
+            [70.0, 0.0],
+            [70.0, -20.0],
+        ),
         SketchEntity::new(
-            SketchEntityId("resolved-point".into()),
+            SketchEntityId::mint("synthetic:test:id#resolved-point").unwrap(),
             sketch_id.clone(),
-            SketchGeometry::Point {
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: Point2::new(85.0, -10.0),
-            },
+            })
+            .unwrap(),
         )
         .with_construction(true)
         .with_native_ref(Some("point-4".into())),
@@ -1312,7 +1595,10 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         .enumerate()
         .map(|(index, coordinates_m)| {
             let mut marker = marker(&format!("point-{index}"), Some(coordinates_m));
-            marker.offset = index as u64;
+            marker = marker.with_test_position(
+                marker.ordinal(),
+                cadmpeg_core::decode::u64_from_index(index),
+            );
             marker
         })
         .collect::<Vec<_>>();
@@ -1334,14 +1620,14 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
             FeatureInputOperand {
                 offset: 101,
                 reference_ref: "point-reference".into(),
-                kind: FeatureInputOperandKind::Native(0x81dd),
+                kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_81DD),
                 entity_index: 4,
                 entity_ref: Some("point-4".into()),
             },
             FeatureInputOperand {
                 offset: 102,
                 reference_ref: "line-reference".into(),
-                kind: FeatureInputOperandKind::Native(0x81e7),
+                kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_81E7),
                 entity_index: 1,
                 entity_ref: None,
             },
@@ -1364,104 +1650,119 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         sketch_entities: markers,
     };
     let parameter = DesignParameter {
-        id: ParameterId::mint("parameter").expect("identity grammar"),
+        id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: Some(feature.id.clone()),
         ordinal: 0,
         name: "D1".into(),
         expression: "15mm".into(),
         display: None,
-        value: Some(ParameterValue::Length(Length(15.0))),
-        dependencies: Vec::new(),
+        value: Some(ParameterValue::Length(Length::new(15.0).unwrap())),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),
     };
     let transforms =
         crate::resolved_features::relation_loci::marker_transform_candidates_by_feature(
+            &ctx,
             std::slice::from_ref(&feature),
             std::slice::from_ref(&sketch),
             &entities,
             std::slice::from_ref(&lane),
-        );
+        )
+        .expect("transform resource admission");
     assert!(transforms["feature-native"].len() > 1);
     project_relation_solved_line_geometry(
+        &ctx,
         &mut entities,
         std::slice::from_ref(&sketch),
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
         std::slice::from_ref(&lane),
-    );
+    )
+    .unwrap();
     let solver_line = entities
         .iter()
         .find(|entity| entity.geometry_ref.as_deref() == Some("feature-native:solver-line:1"))
         .expect("resolved point selects one solver line");
-    assert!(matches!(
-        solver_line.geometry,
-        SketchGeometry::Line { start, end }
+    assert!(matches!(*solver_line.geometry.definition(),
+        SketchGeometryDefinition::Line { start, end }
             if start == Point2::new(70.0, -20.0) && end == Point2::new(70.0, 0.0)
     ));
     let mut constraints = Vec::new();
     project_relation_bindings(
+        &ctx,
         &mut constraints,
         std::slice::from_ref(&sketch),
         std::slice::from_ref(&feature),
         &entities,
         std::slice::from_ref(&parameter),
         std::slice::from_ref(&lane),
-    );
+    )
+    .unwrap();
     let [constraint] = constraints.as_slice() else {
         panic!("one point-line constraint");
     };
     assert!(matches!(
-        &constraint.definition,
-        SketchConstraintDefinition::DistanceLoci { first, second, .. }
-            if first == &SketchLocus::Entity(SketchEntityId("resolved-point".into()))
+        constraint.definition.kind(),
+        SketchConstraintDefinitionInput::DistanceLoci { first, second, .. }
+            if first == &SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#resolved-point").unwrap())
                 && second == &SketchLocus::Entity(solver_line.id().clone())
     ));
 }
 
 #[test]
 fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
-    let sketch = SketchId("sketch".into());
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        b"relation test",
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
-        id: FeatureId::mint("feature").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
+            }),
+        ),
         native_ref: Some("feature-native".into()),
     };
     let point = |id: &str, marker: Option<&str>, u: f64| {
         SketchEntity::new(
-            SketchEntityId(id.into()),
+            SketchEntityId::mint(id).unwrap(),
             sketch.clone(),
-            SketchGeometry::Point {
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: Point2::new(u, 0.0),
-            },
+            })
+            .unwrap(),
         )
         .with_native_ref(marker.map(str::to_owned))
     };
     let mut entities = vec![
-        point("origin", Some("known-a"), 0.0),
-        point("middle", Some("known-b"), 5.0),
-        point("far", None, 12.0),
+        point("synthetic:test:id#origin", Some("known-a"), 0.0),
+        point("synthetic:test:id#middle", Some("known-b"), 5.0),
+        point("synthetic:test:id#far", None, 12.0),
     ];
     let known_a = marker("known-a", Some([0.0, 0.0]));
     let known_b = marker("known-b", Some([0.005, 0.0]));
     let missing = marker("missing", None);
     let operand = |index: usize, marker: &str| FeatureInputOperand {
-        offset: index as u64,
+        offset: cadmpeg_core::decode::u64_from_index(index),
         reference_ref: format!("reference-{index}"),
         kind: FeatureInputOperandKind::D6,
-        entity_index: index as u16,
+        entity_index: u16::try_from(index).expect("test index fits u16"),
         entity_ref: Some(marker.into()),
     };
     let relation =
@@ -1526,51 +1827,52 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
         id: ParameterId::mint(id).expect("identity grammar"),
         owner: Some(feature.id.clone()),
         ordinal: 0,
-        name: id.into(),
+        name: id.to_string(),
         expression: format!("{distance}mm"),
         display: None,
-        value: Some(ParameterValue::Length(Length(distance))),
-        dependencies: Vec::new(),
+        value: Some(ParameterValue::Length(Length::new(distance).unwrap())),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some(scalar.into()),
     };
     let parameters = vec![
-        parameter("distance-a", "scalar-a", 5.0),
-        parameter("distance-b", "scalar-b", 7.0),
-        parameter("distance-c", "scalar-c", 7.0),
+        parameter("synthetic:test:id#distance-a", "scalar-a", 5.0),
+        parameter("synthetic:test:id#distance-b", "scalar-b", 7.0),
+        parameter("synthetic:test:id#distance-c", "scalar-c", 7.0),
     ];
 
     project_relation_point_geometry(
+        &ctx,
         &mut entities,
         &[],
         std::slice::from_ref(&feature),
         std::slice::from_ref(&lane),
-    );
+    )
+    .unwrap();
     project_relation_solved_point_geometry(
+        &ctx,
         &mut entities,
         &[],
         std::slice::from_ref(&feature),
         &parameters,
         std::slice::from_ref(&lane),
-    );
+    )
+    .unwrap();
 
     let solved = entities
         .iter()
-        .filter(|entity| entity.id().0.contains("dimension-point:"))
+        .filter(|entity| entity.id().as_str().contains("dimension-point:"))
         .collect::<Vec<_>>();
     assert_eq!(solved.len(), 3);
-    assert!(matches!(
-        solved[0].geometry,
-        SketchGeometry::Point { position } if position == Point2::new(5.0, 0.0)
+    assert!(matches!(*solved[0].geometry.definition(),
+        SketchGeometryDefinition::Point { position } if position == Point2::new(5.0, 0.0)
     ));
-    assert!(matches!(
-        solved[1].geometry,
-        SketchGeometry::Point { position } if position == Point2::new(12.0, 0.0)
+    assert!(matches!(*solved[1].geometry.definition(),
+        SketchGeometryDefinition::Point { position } if position == Point2::new(12.0, 0.0)
     ));
-    assert!(matches!(
-        solved[2].geometry,
-        SketchGeometry::Point { position } if position == Point2::new(12.0, 0.0)
+    assert!(matches!(*solved[2].geometry.definition(),
+        SketchGeometryDefinition::Point { position } if position == Point2::new(12.0, 0.0)
     ));
     assert_ne!(solved[0].geometry_ref, solved[1].geometry_ref);
     assert_ne!(solved[1].geometry_ref, solved[2].geometry_ref);
@@ -1578,27 +1880,31 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
     let markers = lane
         .sketch_entities
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let loci = profile_loci_by_marker(
+        &ctx,
         std::slice::from_ref(&feature),
         &[],
         &entities,
         std::slice::from_ref(&lane),
-    );
+    )
+    .expect("transform resource admission");
     for (index, relation) in relations.iter().enumerate() {
         let definition = typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             relation,
             Some(&parameters[index]),
             &sketch,
             &entities,
             &markers,
             &loci,
-        );
+        )
+        .unwrap();
         let second = match definition {
             Some(
-                SketchConstraintDefinition::DistanceLoci { second, .. }
-                | SketchConstraintDefinition::HorizontalDistance { second, .. },
+                SketchConstraintDefinitionInput::DistanceLoci { second, .. }
+                | SketchConstraintDefinitionInput::HorizontalDistance { second, .. },
             ) => second,
             other => panic!("unexpected relation definition: {other:?}"),
         };

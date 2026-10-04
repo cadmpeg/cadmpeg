@@ -1,13 +1,52 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
-use super::*;
+use super::{find_color, style_application_order, ColorResolution, StyleDomain};
+use std::collections::{BTreeMap, BTreeSet};
 
+mod collection_limits;
+mod string_limits;
 mod surface_styles;
+
+/// A style whose override walk does not terminate states no depth. Its
+/// position is stated as absence and sorts after every stated depth; the
+/// decoder does not read it as the deepest style.
+#[test]
+fn a_style_with_no_stated_depth_takes_a_position_of_its_own() {
+    crate::test_support::with_service_context(b"", |_, ctx| {
+        let (exchange, _) = crate::test_support::with_service_context(
+        b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;\
+#1=COLOUR_RGB('surface',1.,0.,0.);\
+#2=SURFACE_STYLE_FILL_AREA(#1);\
+#3=PRESENTATION_STYLE_ASSIGNMENT((#2));\
+#4=CARTESIAN_POINT('',(0.,0.,0.));\
+#5=STYLED_ITEM('',(#3),#4);\
+#6=OVER_RIDING_STYLED_ITEM('',(#3),#4,#6);\
+ENDSEC;END-ISO-10303-21;",
+        crate::parse::parse_inner)
+    .expect("parse style graph");
+        let graph_limit = 64;
+
+        assert_eq!(
+            style_application_order(5, &exchange, graph_limit, ctx).expect("local style depth"),
+            (false, Some(0))
+        );
+        assert_eq!(
+            style_application_order(6, &exchange, graph_limit, ctx).expect("local style depth"),
+            (true, None)
+        );
+        let mut styles = vec![6_u64, 5_u64];
+        styles.sort_by_key(|id| {
+            style_application_order(*id, &exchange, graph_limit, ctx).expect("local style depth")
+        });
+        assert_eq!(styles, [5, 6]);
+    });
+}
 
 #[test]
 fn surface_color_search_ignores_curve_style_colors() {
-    let (exchange, _) = crate::parse::parse(
+    crate::test_support::with_service_context(b"", |_, ctx| {
+        let (exchange, _) = crate::test_support::with_service_context(
         b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;\
 #1=COLOUR_RGB('curve',0.,0.,1.);\
 #2=CURVE_STYLE('',#1);\
@@ -15,24 +54,33 @@ fn surface_color_search_ignores_curve_style_colors() {
 #4=SURFACE_STYLE_FILL_AREA(#3);\
 #5=PRESENTATION_STYLE_ASSIGNMENT((#2,#4));\
 ENDSEC;END-ISO-10303-21;",
-    )
+        crate::parse::parse_inner)
     .expect("parse style graph");
-    let color = find_color(
-        5,
-        &exchange,
-        StyleDomain::Surface,
-        &mut BTreeSet::new(),
-        &mut BTreeMap::new(),
-        &mut Vec::new(),
-        &mut BTreeSet::new(),
-        0,
-    )
-    .expect("surface color");
-    let ColorResolution::Candidate(color) = color else {
-        panic!("expected one surface color");
-    };
-    assert_eq!(color.color.r, 1.0);
-    assert_eq!(color.color.b, 0.0);
+        let color = find_color(
+            5,
+            &exchange,
+            StyleDomain::Surface,
+            super::ColorSearchState {
+                storage: &std::cell::RefCell::new(
+                    ctx.reserve_scoped(0, "color search fixture")
+                        .expect("scope"),
+                ),
+                active: &mut BTreeSet::new(),
+                cache: &mut BTreeMap::new(),
+                losses: &mut Vec::new(),
+                invalid_surface_sides: &mut BTreeSet::new(),
+            },
+            0,
+            ctx,
+        )
+        .expect("colour search fits local resources")
+        .expect("surface color");
+        let ColorResolution::Candidate(color) = color else {
+            panic!("expected one surface color");
+        };
+        assert_eq!(color.color.r(), 1.0);
+        assert_eq!(color.color.b(), 0.0);
+    });
 }
 
 use std::io::Cursor;
@@ -41,9 +89,10 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::transform::Transform;
 
+use crate::export::write_step;
 use crate::loss::StepLossCode;
-use crate::test_support::{decode_inline, export};
-use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
+use crate::test_support::exchange::{decode_inline, export};
+use crate::{StepCodec, StepSchema, StepWriteOptions};
 
 #[test]
 fn presentation_layer_expands_all_product_definition_views() {
@@ -93,7 +142,8 @@ fn presentation_layer_expands_all_product_definition_views() {
             definition.id.as_str() == "step:product:product#3-definition-6"
                 && definition.native_ref.as_deref() == Some("#6")
         }));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -167,13 +217,16 @@ fn ps04_product_definition_views_keep_identity_when_records_reordered() {
     reordered_members.sort();
     assert_eq!(source_members, reordered_members);
     for result in [&source_order, &reordered] {
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
 }
 
 #[test]
 fn presentation_layer_preserves_empty_label_and_visibility() {
+    use cadmpeg_ir::presentation::PresentationItem;
+
     let result = decode_inline(
         "#1=CARTESIAN_POINT('',(0.,0.,0.));
 #2=PRESENTATION_LAYER_ASSIGNMENT('','empty label description',(#1));
@@ -197,7 +250,8 @@ fn presentation_layer_preserves_empty_label_and_visibility() {
         [PresentationItem::Source { source_id }] if source_id == "#1"
     ));
 
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -309,7 +363,8 @@ fn presentation_layers_target_complex_tessellation_surface_sets() {
         cadmpeg_ir::presentation::PresentationItem::Tessellation { tessellation }
             if tessellation.ends_with("#7")
     )));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
     let mut output = Vec::new();
@@ -486,9 +541,10 @@ fn styled_free_curve_is_a_reachable_source_carrier() {
             .map(|source| source.object_id.as_str()),
         Some("#10")
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(!validation.findings.iter().any(|finding| {
-        finding.check == cadmpeg_ir::Check::CarrierReachability
+        finding.check == cadmpeg_ir::report::check::Check::CarrierReachability
             && finding.entity.as_deref() == Some("step:data:curve#7")
     }));
 }
@@ -514,7 +570,7 @@ fn overriding_style_suppresses_the_base_binding() {
         .find(|appearance| appearance.id == binding.appearance)
         .expect("overriding appearance");
     let color = appearance.base_color.expect("override color");
-    assert_eq!((color.r, color.g, color.b), (1.0, 0.0, 0.0));
+    assert_eq!((color.r(), color.g(), color.b()), (1.0, 0.0, 0.0));
 }
 
 #[test]
@@ -559,7 +615,8 @@ fn independent_face_styles_keep_bindings_without_source_order_scalar_color() {
             && loss.message.contains("#76")
             && loss.message.contains("scalar color omitted")
     }));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -597,9 +654,9 @@ fn independent_face_style_permutations_do_not_select_by_instance_order() {
         assert_eq!(bindings.len(), 2);
         for (red, green, blue) in [(1.0, 0.0, 0.0), (0.0, 0.0, 1.0)] {
             assert!(result.ir().model.appearances.iter().any(|appearance| {
-                appearance
-                    .base_color
-                    .is_some_and(|color| color.r == red && color.g == green && color.b == blue)
+                appearance.base_color.is_some_and(|color| {
+                    color.r() == red && color.g() == green && color.b() == blue
+                })
             }));
         }
         assert!(result.report().losses.iter().any(|loss| {
@@ -608,7 +665,8 @@ fn independent_face_style_permutations_do_not_select_by_instance_order() {
                 && loss.message.contains("#76")
                 && loss.message.contains("scalar color omitted")
         }));
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
 }
@@ -648,13 +706,14 @@ fn independent_same_rgb_styles_choose_lower_alpha_for_scalar_color() {
         .find(|face| face.id.as_str() == "step:data:face#29")
         .expect("styled face");
     let color = face.color.expect("same-RGB scalar face color");
-    assert!((color.a - 0.25).abs() < EPS_ALPHA);
+    assert!((color.a() - 0.25).abs() < EPS_ALPHA);
     assert!(!result
         .report()
         .losses
         .iter()
         .any(|loss| { loss.code == StepLossCode::ConflictingScalarColors.kind() }));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -724,7 +783,8 @@ fn context_dependent_styles_are_not_flattened_without_context() {
             && loss.message.contains("#7 in #5")
             && loss.message.contains("#8 in #6")
     }));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -928,7 +988,7 @@ fn surface_style_transparency_transfers_to_appearance_alpha() {
         .model
         .appearances
         .iter()
-        .filter_map(|appearance| appearance.base_color.map(|color| color.a))
+        .filter_map(|appearance| appearance.base_color.map(cadmpeg_ir::topology::Color::a))
         .collect::<Vec<_>>();
     assert_eq!(alphas.len(), 2);
     assert!(alphas.iter().any(|alpha| (*alpha - 0.75).abs() < EPS_ALPHA));
@@ -958,10 +1018,10 @@ fn duplicate_surface_transparency_properties_do_not_select_by_set_order() {
             .find(|appearance| {
                 appearance
                     .base_color
-                    .is_some_and(|color| color.r == 1.0 && color.g == 0.0 && color.b == 0.0)
+                    .is_some_and(|color| color.r() == 1.0 && color.g() == 0.0 && color.b() == 0.0)
             })
             .expect("red appearance");
-        assert_eq!(appearance.base_color.expect("appearance color").a, 1.0);
+        assert_eq!(appearance.base_color.expect("appearance color").a(), 1.0);
         assert!(result.report().losses.iter().any(|loss| {
             loss.code == StepLossCode::SurfaceTransparencyConflict.kind()
                 && loss.message.contains("rendering #12")
@@ -969,7 +1029,8 @@ fn duplicate_surface_transparency_properties_do_not_select_by_set_order() {
                 && loss.message.contains("#11=0.75")
                 && loss.message.contains("transparency omitted")
         }));
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
 }
@@ -1105,7 +1166,8 @@ fn presentation_records_retain_non_color_geometry_owners() {
             .object_id,
         "#10"
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1160,7 +1222,8 @@ fn complex_styled_item_decodes_color_and_owns_its_curve() {
         .expect("STEP unknown arena")
         .iter()
         .all(|record| record.id.as_str() != "step:data:styled_item#6"));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1180,7 +1243,7 @@ fn complex_colour_rgb_inherits_name_and_components() {
         .first()
         .expect("complex RGB appearance");
     assert_eq!(appearance.name.as_deref(), Some("red"));
-    assert_eq!(appearance.base_color.unwrap().r, 1.0);
+    assert_eq!(appearance.base_color.unwrap().r(), 1.0);
 }
 
 #[test]
@@ -1197,12 +1260,7 @@ fn complex_surface_targets_use_surface_style_domain() {
     assert_eq!(result.ir().model.appearances.len(), 1);
     assert_eq!(
         result.ir().model.appearances[0].base_color,
-        Some(cadmpeg_ir::topology::Color {
-            r: 0.0,
-            g: 0.0,
-            b: 1.0,
-            a: 1.0,
-        })
+        Some(cadmpeg_ir::topology::Color::new(0.0, 0.0, 1.0, 1.0).expect("valid color"))
     );
 }
 
@@ -1224,12 +1282,7 @@ fn surface_style_usage_prefers_positive_side_over_set_order() {
     assert_eq!(result.ir().model.appearances.len(), 1);
     assert_eq!(
         result.ir().model.appearances[0].base_color,
-        Some(cadmpeg_ir::topology::Color {
-            r: 0.0,
-            g: 1.0,
-            b: 0.0,
-            a: 1.0,
-        })
+        Some(cadmpeg_ir::topology::Color::new(0.0, 1.0, 0.0, 1.0).expect("valid color"))
     );
 }
 
@@ -1245,12 +1298,7 @@ fn surface_style_usage_permutations_keep_positive_side_scalar_color() {
         assert_eq!(result.ir().model.appearances.len(), 1);
         assert_eq!(
             result.ir().model.appearances[0].base_color,
-            Some(cadmpeg_ir::topology::Color {
-                r: 0.0,
-                g: 1.0,
-                b: 0.0,
-                a: 1.0,
-            })
+            Some(cadmpeg_ir::topology::Color::new(0.0, 1.0, 0.0, 1.0).expect("valid color"))
         );
         let face = result
             .ir()
@@ -1261,15 +1309,11 @@ fn surface_style_usage_permutations_keep_positive_side_scalar_color() {
             .expect("styled face");
         assert_eq!(
             face.color,
-            Some(cadmpeg_ir::topology::Color {
-                r: 0.0,
-                g: 1.0,
-                b: 0.0,
-                a: 1.0,
-            })
+            Some(cadmpeg_ir::topology::Color::new(0.0, 1.0, 0.0, 1.0).expect("valid color"))
         );
         assert!(result.report().losses.is_empty());
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
 }
@@ -1288,12 +1332,7 @@ fn curve_targets_use_curve_style_domain() {
     assert_eq!(result.ir().model.appearances.len(), 1);
     assert_eq!(
         result.ir().model.appearances[0].base_color,
-        Some(cadmpeg_ir::topology::Color {
-            r: 0.0,
-            g: 1.0,
-            b: 0.0,
-            a: 1.0,
-        })
+        Some(cadmpeg_ir::topology::Color::new(0.0, 1.0, 0.0, 1.0).expect("valid color"))
     );
 }
 
@@ -1311,12 +1350,7 @@ fn point_targets_use_point_style_domain() {
     assert_eq!(result.ir().model.appearances.len(), 1);
     assert_eq!(
         result.ir().model.appearances[0].base_color,
-        Some(cadmpeg_ir::topology::Color {
-            r: 0.0,
-            g: 1.0,
-            b: 0.0,
-            a: 1.0,
-        })
+        Some(cadmpeg_ir::topology::Color::new(0.0, 1.0, 0.0, 1.0).expect("valid color"))
     );
 }
 
@@ -1349,7 +1383,7 @@ fn body_layers_and_visibility_cover_every_region_shape_item() {
     use cadmpeg_ir::ids::LayerId;
     use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let body = ir.model.bodies[0].id.clone();
     let mut region = ir.model.regions[0].clone();
     region.id = "zzzz:test:region#second"
@@ -1374,10 +1408,12 @@ fn body_layers_and_visibility_cover_every_region_shape_item() {
         &StepWriteOptions::default(),
     )
     .expect("write body presentation");
-    let (exchange, diagnostics) = crate::parse::parse(&bytes).expect("parse body presentation");
+    let (exchange, diagnostics) =
+        crate::test_support::with_service_context(&bytes, crate::parse::parse_inner)
+            .expect("parse body presentation");
     assert!(diagnostics.is_empty());
     let layer = exchange
-        .records
+        .records()
         .values()
         .find(|record| {
             record
@@ -1396,7 +1432,7 @@ fn body_layers_and_visibility_cover_every_region_shape_item() {
     };
     assert_eq!(layer_items.len(), 2);
     let visibility = exchange
-        .records
+        .records()
         .values()
         .find(|record| {
             record
@@ -1444,9 +1480,10 @@ pub(crate) fn presentation_reader_normalizes_invalid_layer_and_common_datum_inpu
     assert!(result.ir().model.pmi.iter().any(|annotation| matches!(
         &annotation.definition,
         PmiDefinition::DatumSystem { references }
-            if references.len() == 1 && references[0].common_group.is_none()
+            if references.as_slice().len() == 1 && references.as_slice()[0].common_group.is_none()
     )));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1475,10 +1512,10 @@ fn presentation_reader_resolves_complex_datum_reference_inheritance() {
     assert!(matches!(
         &system.definition,
         PmiDefinition::DatumSystem { references }
-            if references.len() == 1
-                && references[0].datum.as_str() == "step:presentation:pmi#7"
-                && references[0].common_group.is_none()
-                && references[0].modifiers == ["distance:0.2"]
+            if references.as_slice().len() == 1
+                && references.as_slice()[0].datum.as_str() == "step:presentation:pmi#7"
+                && references.as_slice()[0].common_group.is_none()
+                && references.as_slice()[0].modifiers == ["distance:0.2"]
     ));
     assert!(result
         .report()
@@ -1489,7 +1526,7 @@ fn presentation_reader_resolves_complex_datum_reference_inheritance() {
 
 #[test]
 pub(crate) fn hidden_body_geometry_and_visibility_round_trip() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.bodies[0].visible = Some(false);
     let mut buf = Vec::new();
     let report = write_step(
@@ -1509,14 +1546,13 @@ pub(crate) fn hidden_body_geometry_and_visibility_round_trip() {
         .expect("decode hidden body");
     assert_eq!(decoded.ir().model.bodies[0].visible, Some(false));
 
-    let mut transformed = unit_cube();
+    let mut transformed = unit_cube().expect("unit cube fixture is admitted");
     transformed.model.bodies[0].visible = Some(false);
     transformed.model.bodies[0].transform = Some(
-        cadmpeg_ir::transform::Transform::from_rows([
+        cadmpeg_ir::transform::Transform::affine([
             [1.0, 0.0, 0.0, 10.0],
             [0.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
         ])
         .expect("affine transform"),
     );
@@ -1532,7 +1568,7 @@ pub(crate) fn hidden_body_geometry_and_visibility_round_trip() {
     assert_eq!(decoded.ir().model.bodies[0].visible, Some(false));
 
     // An explicitly visible body exports unchanged.
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.bodies[0].visible = Some(true);
     let s = export(&ir);
     assert!(s.contains("MANIFOLD_SOLID_BREP"));
@@ -1540,13 +1576,9 @@ pub(crate) fn hidden_body_geometry_and_visibility_round_trip() {
 
 #[test]
 pub(crate) fn body_color_becomes_per_face_styled_item_presentation() {
-    let mut ir = unit_cube();
-    ir.model.bodies[0].color = Some(cadmpeg_ir::topology::Color {
-        r: 0.25,
-        g: 0.5,
-        b: 0.75,
-        a: 1.0,
-    });
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
+    ir.model.bodies[0].color =
+        Some(cadmpeg_ir::topology::Color::new(0.25, 0.5, 0.75, 1.0).expect("valid color"));
     let face_count = ir.model.faces.len();
     let s = export(&ir);
     assert!(s.contains("COLOUR_RGB('',0.25,0.5,0.75)"));
@@ -1581,7 +1613,7 @@ pub(crate) fn face_appearance_binding_styles_the_advanced_face() {
     use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
     use cadmpeg_ir::ids::AppearanceId;
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let face = ir.model.faces[0].id.clone();
     ir.model.appearances.push(Appearance {
         id: AppearanceId::mint("test:model:appearance#black".to_string())
@@ -1593,12 +1625,9 @@ pub(crate) fn face_appearance_binding_styles_the_advanced_face() {
         physical_token: None,
         schema: None,
         category: None,
-        base_color: Some(cadmpeg_ir::topology::Color {
-            r: 0.125,
-            g: 0.125,
-            b: 0.125,
-            a: 1.0,
-        }),
+        base_color: Some(
+            cadmpeg_ir::topology::Color::new(0.125, 0.125, 0.125, 1.0).expect("valid color"),
+        ),
         properties: std::collections::BTreeMap::default(),
         textures: Vec::new(),
     });
@@ -1634,7 +1663,7 @@ fn vertex_appearance_binding_styles_the_vertex_point() {
     use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
     use cadmpeg_ir::ids::AppearanceId;
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let vertex = ir.model.vertices[0].id.clone();
     ir.model.appearances.push(Appearance {
         id: AppearanceId::mint("test:model:appearance#vertex".to_string())
@@ -1646,12 +1675,9 @@ fn vertex_appearance_binding_styles_the_vertex_point() {
         physical_token: None,
         schema: None,
         category: None,
-        base_color: Some(cadmpeg_ir::topology::Color {
-            r: 0.125,
-            g: 0.75,
-            b: 0.25,
-            a: 1.0,
-        }),
+        base_color: Some(
+            cadmpeg_ir::topology::Color::new(0.125, 0.75, 0.25, 1.0).expect("valid color"),
+        ),
         properties: std::collections::BTreeMap::default(),
         textures: Vec::new(),
     });
@@ -1693,7 +1719,7 @@ fn point_presentation_layer_writes_the_cartesian_point_carrier() {
     use cadmpeg_ir::ids::LayerId;
     use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let point = ir.model.points[0].id.clone();
     ir.model.presentation_layers.push(PresentationLayer {
         id: LayerId::mint("test:model:layer#point".to_string()).expect("identity grammar"),
@@ -1726,7 +1752,7 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
     use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
     use cadmpeg_ir::products::{Occurrence, OccurrenceParent, ProductDefinition};
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let body = ir.model.bodies[0].id.clone();
     let parent_product =
         ProductDefinitionId::mint("test:model:product#parent").expect("identity grammar");
@@ -1764,11 +1790,11 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
             prototype: cadmpeg_ir::products::PrototypeReference::Local {
                 definition: parent_product.clone(),
             },
-            parent: OccurrenceParent::Root,
+            parent: OccurrenceParent::Root {},
             ordinal: 0,
             transform: Transform::identity(),
             linked_prototype: None,
-            scale: [1.0; 3],
+            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
             name: Some("Root assembly".into()),
             visible: None,
             link: None,
@@ -1781,15 +1807,14 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
             },
             parent: OccurrenceParent::Occurrence { occurrence: root },
             ordinal: 0,
-            transform: Transform::from_rows([
+            transform: Transform::affine([
                 [1.0, 0.0, 0.0, 25.0],
                 [0.0, 1.0, 0.0, 0.0],
                 [0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
             ])
             .expect("affine transform"),
             linked_prototype: None,
-            scale: [1.0; 3],
+            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
             name: Some("Child occurrence".into()),
             visible: None,
             link: None,
@@ -1864,15 +1889,11 @@ pub(crate) fn face_override_wins_over_body_color_and_body_fills_the_rest() {
     use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
     use cadmpeg_ir::ids::AppearanceId;
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let face_count = ir.model.faces.len();
     // White body base color.
-    ir.model.bodies[0].color = Some(cadmpeg_ir::topology::Color {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: 1.0,
-    });
+    ir.model.bodies[0].color =
+        Some(cadmpeg_ir::topology::Color::new(1.0, 1.0, 1.0, 1.0).expect("valid color"));
     // Black override on a single face, via an appearance binding.
     let face = ir.model.faces[0].id.clone();
     ir.model.appearances.push(Appearance {
@@ -1885,12 +1906,9 @@ pub(crate) fn face_override_wins_over_body_color_and_body_fills_the_rest() {
         physical_token: None,
         schema: None,
         category: None,
-        base_color: Some(cadmpeg_ir::topology::Color {
-            r: 0.0,
-            g: 0.0,
-            b: 0.0,
-            a: 1.0,
-        }),
+        base_color: Some(
+            cadmpeg_ir::topology::Color::new(0.0, 0.0, 0.0, 1.0).expect("valid color"),
+        ),
         properties: std::collections::BTreeMap::default(),
         textures: Vec::new(),
     });

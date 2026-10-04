@@ -10,8 +10,12 @@ homepage.workspace = true
 rust-version.workspace = true
 
 [features]
-# `schema` builds the `JsonSchema` derives. It is off by default: the
-# derives are only consumed by `cadmpeg_ir::cadir_json_schema()`.
+test-support = []
+# `schema` builds the `JsonSchema` derives of this crate's native records. It is
+# off by default and no dependent turns it on: `cadmpeg-ir` does not depend on
+# this crate, so `cadmpeg_ir::cadir_json_schema()` does not reach these derives.
+# The CI "Schema feature" step is the only build that compiles them, and it is
+# what keeps each derive matching the shape its type writes.
 schema = ["dep:schemars", "cadmpeg-ir/schema"]
 
 [dependencies]
@@ -23,6 +27,7 @@ schemars = { workspace = true, optional = true }
 
 [dev-dependencies]
 cadmpeg-test-support.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true

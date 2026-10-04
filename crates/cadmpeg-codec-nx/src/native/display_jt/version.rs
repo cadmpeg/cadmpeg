@@ -5,10 +5,10 @@ use crate::layout::jt_document_header;
 
 /// An exact admitted JT version field; decoded numbers are not stored.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct JtVersionField(String);
+pub(super) struct JtVersionField(String);
 
 impl JtVersionField {
-    pub(crate) fn new(field: String) -> Result<Self, &'static str> {
+    pub(super) fn new(field: String) -> Result<Self, &'static str> {
         if field.len() != jt_document_header::BYTE_ORDER
             || !field
                 .bytes()
@@ -34,7 +34,7 @@ impl JtVersionField {
         Ok(Self(field))
     }
 
-    pub(crate) fn major(&self) -> u16 {
+    pub(super) fn major(&self) -> u16 {
         decimal(
             self.0
                 .bytes()
@@ -44,7 +44,7 @@ impl JtVersionField {
         )
     }
 
-    pub(crate) fn minor(&self) -> u16 {
+    pub(super) fn minor(&self) -> u16 {
         decimal(
             self.0
                 .bytes()
@@ -54,8 +54,13 @@ impl JtVersionField {
         )
     }
 
-    pub(crate) fn into_string(self) -> String {
+    #[cfg(test)]
+    pub(super) fn into_string(self) -> String {
         self.0
+    }
+
+    pub(super) fn as_str(&self) -> &str {
+        &self.0
     }
 }
 
@@ -68,7 +73,7 @@ fn decimal(bytes: impl Iterator<Item = u8>) -> u16 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::JtVersionField;
 
     #[test]
     fn exact_version_text_preserves_numeric_spelling_and_padding() {

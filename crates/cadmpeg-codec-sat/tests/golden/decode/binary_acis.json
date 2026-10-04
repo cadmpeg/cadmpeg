@@ -23,7 +23,10 @@
       "faces": [
         {
           "id": "sat:brep:entity#4",
-          "loops": [],
+          "loops": {
+            "classification": "unspecified",
+            "loops": []
+          },
           "sense": "forward",
           "shell": "sat:brep:entity#3",
           "surface": "sat:brep:entity#5"
@@ -53,10 +56,13 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [
-            "sat:brep:entity#4"
-          ],
           "id": "sat:brep:entity#3",
+          "members": [
+            {
+              "id": "sat:brep:entity#4",
+              "kind": "face"
+            }
+          ],
           "region": "sat:brep:entity#2"
         }
       ],
@@ -129,7 +135,6 @@
         "tolerant_edge_tails": [],
         "tolerant_vertex_tails": [],
         "transform_hints": [],
-        "unknowns": [],
         "vertex_ownerships": [],
         "wire_topologies": []
       }
@@ -144,6 +149,45 @@
         "product_version": "ASM 232.4.0.65535 OSX",
         "save_date": "Synthetic"
       },
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [
+            {
+              "admission": "admitted",
+              "declared": {
+                "reference_width": "4",
+                "save_format_major": "218",
+                "save_format_minor": "0"
+              },
+              "dialect": "acis:save-format-218"
+            }
+          ],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "encoding": "binary"
+            },
+            "dialect": "sat:acis-binary"
+          }
+        }
+      }
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 9.999999999999999e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "coverage": {
+      "unknown_records": 0,
+      "unknown_surface_faces": 0
+    },
+    "identity": {
+      "classification": "classified",
       "dialects": {
         "extra": [
           {
@@ -153,8 +197,7 @@
               "save_format_major": "218",
               "save_format_minor": "0"
             },
-            "dialect": "acis:save-format-218",
-            "format": "acis"
+            "dialect": "acis:save-format-218"
           }
         ],
         "primary": {
@@ -162,54 +205,55 @@
           "declared": {
             "encoding": "binary"
           },
-          "dialect": "sat:acis-binary",
-          "format": "sat"
+          "dialect": "sat:acis-binary"
         }
-      },
-      "format": "sat"
-    },
-    "tolerances": {
-      "angular": 1e-10,
-      "linear": 1e-6
-    },
-    "units": {
-      "length": "millimeter"
-    }
-  },
-  "report": {
-    "container_only": false,
-    "coverage": {
-      "unknown_records": 0,
-      "unknown_surface_faces": 0
-    },
-    "dialects": {
-      "extra": [
-        {
-          "admission": "admitted",
-          "declared": {
-            "reference_width": "4",
-            "save_format_major": "218",
-            "save_format_minor": "0"
-          },
-          "dialect": "acis:save-format-218",
-          "format": "acis"
-        }
-      ],
-      "primary": {
-        "admission": "admitted",
-        "declared": {
-          "encoding": "binary"
-        },
-        "dialect": "sat:acis-binary",
-        "format": "sat"
       }
     },
-    "format": "sat",
-    "geometry_transferred": true,
     "losses": [],
-    "notes": []
+    "notes": [],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {
+      "exactness": {
+        "sat:brep:entity#5": {
+          "fields": {
+            "geometry.axis": "derived",
+            "geometry.ref_direction": "derived"
+          },
+          "scope": "fields"
+        }
+      },
+      "provenance": {
+        "sat:brep:entity#1": {
+          "offset": 147,
+          "stream": "sat:stream",
+          "tag": "body"
+        },
+        "sat:brep:entity#2": {
+          "offset": 184,
+          "stream": "sat:stream",
+          "tag": "lump"
+        },
+        "sat:brep:entity#3": {
+          "offset": 221,
+          "stream": "sat:stream",
+          "tag": "shell"
+        },
+        "sat:brep:entity#4": {
+          "offset": 269,
+          "stream": "sat:stream",
+          "tag": "face"
+        },
+        "sat:brep:entity#5": {
+          "offset": 318,
+          "stream": "sat:stream",
+          "tag": "sphere-surface"
+        }
+      }
+    }
   }
 }

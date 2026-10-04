@@ -1,13 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::{wire, EditableDecodeResult};
+
+use crate::test_support::allfeatur_row;
+use crate::test_support::assert_annotation;
+use crate::test_support::build_prt;
+use crate::test_support::visibgeom_payload;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::Exactness;
 
 use crate::container::{self};
-use crate::test_support::*;
 use crate::CreoCodec;
 
 #[test]
@@ -15,7 +20,7 @@ fn scan_collects_feature_owners_from_rows_and_parent_lists() {
     let mut payload = visibgeom_payload(1, 0);
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
     payload.extend_from_slice(b"parent_feats\0\xf8\x02\x04\x09");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     assert_eq!(scan.features.ids, vec![4, 9]);
 }
@@ -42,7 +47,7 @@ fn scan_binds_allfeatur_mixed_entity_table_to_known_feature() {
             ("MdlStatus", b"Protrusion id 4\0".to_vec()),
         ],
     );
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.features.entity_tables.len(), 1);
     let table = &scan.features.entity_tables[0];
@@ -54,17 +59,19 @@ fn scan_binds_allfeatur_mixed_entity_table_to_known_feature() {
     assert!(table.entries[1].prefixed);
     assert_eq!(table.entries[0].entity_id, 7);
     assert_eq!(table.entries[1].entity_id, 9);
-    assert_eq!(table.entries[0].class_id, 200);
-    assert_eq!(table.entries[1].class_id, 200);
+    assert_eq!(table.entries[0].class_id(), 200);
+    assert_eq!(table.entries[1].class_id(), 200);
     assert_eq!(table.entries[0].source_entity_id(), Some(1));
     assert_eq!(table.entries[1].source_entity_id(), Some(2));
     assert_eq!(table.entries[0].end_offset, table.entries[1].offset - 2);
     assert_eq!(table.surface_ids(), vec![7]);
     assert_eq!(table.non_surface_entity_ids(), vec![9]);
 
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
+    let result = EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
     let feature = result
         .ir()
         .model
@@ -73,8 +80,10 @@ fn scan_binds_allfeatur_mixed_entity_table_to_known_feature() {
         .find(|feature| feature.id.as_str() == "creo:model:feature#4")
         .expect("feature 4");
     assert!(matches!(
-        feature.definition,
-        cadmpeg_ir::features::FeatureDefinition::Extrude { .. }
+        feature.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Extrude { .. }
+        )
     ));
     assert_eq!(
         feature.source_properties["native_parameter.generated_entity.7.source_section_entity_id"],
@@ -101,7 +110,7 @@ fn scan_binds_allfeatur_mixed_entity_table_to_known_feature() {
         &result.source_fidelity().annotations,
         tables[0].id(),
         "creo:AllFeatur",
-        table.offset as u64,
+        cadmpeg_core::decode::u64_from_index(table.offset),
         "feature_entity_table",
         Exactness::ByteExact,
     );
@@ -121,7 +130,7 @@ fn scan_decodes_source_entity_id_whose_compact_tail_is_e3() {
             0, 0xe3,
         ],
     );
-    let scan = container::scan_bytes(build_prt(
+    let scan = container::scan_bytes_ok(build_prt(
         "c",
         &[("VisibGeom", geometry), ("AllFeatur", allfeatur)],
     ));
@@ -130,7 +139,7 @@ fn scan_decodes_source_entity_id_whose_compact_tail_is_e3() {
         panic!("expected one generated-entity table");
     };
     assert_eq!(table.entry_ids(), vec![7, 8]);
-    assert_eq!(table.entries[0].class_id, 200);
+    assert_eq!(table.entries[0].class_id(), 200);
     assert_eq!(table.entries[0].source_entity_id(), Some(227));
     assert_eq!(table.entries[1].source_entity_id(), Some(3));
 }
@@ -144,7 +153,7 @@ fn scan_accepts_large_structurally_bounded_feature_entity_tables() {
     for _ in 1..65 {
         allfeatur.extend_from_slice(&[9, 0x80, 0xc8, 1, 0, 0xe3]);
     }
-    let scan = container::scan_bytes(build_prt(
+    let scan = container::scan_bytes_ok(build_prt(
         "c",
         &[("VisibGeom", geometry), ("AllFeatur", allfeatur)],
     ));
@@ -171,7 +180,7 @@ fn scan_rejects_feature_entity_table_that_crosses_the_next_feature_row() {
     );
     // The second declared entry is absent before feature 9 starts.
     allfeatur.extend(allfeatur_row(9, [0x90, 0x01], 913, &[8, 0xe3]));
-    let scan = container::scan_bytes(build_prt(
+    let scan = container::scan_bytes_ok(build_prt(
         "c",
         &[("VisibGeom", geometry), ("AllFeatur", allfeatur)],
     ));
@@ -186,7 +195,7 @@ fn scan_bounds_known_allfeatur_feature_rows() {
     geometry.extend_from_slice(&[8, 0x22, 9, 0x01, 0, 0]);
     let mut allfeatur = allfeatur_row(4, [0xeb, 0x04], 917, &[0xaa, 0xbb, 0xe3]);
     allfeatur.extend(allfeatur_row(9, [0x90, 0x01], 913, &[0xcc]));
-    let scan = container::scan_bytes(build_prt(
+    let scan = container::scan_bytes_ok(build_prt(
         "c",
         &[("VisibGeom", geometry), ("AllFeatur", allfeatur)],
     ));
@@ -195,7 +204,7 @@ fn scan_bounds_known_allfeatur_feature_rows() {
     assert_eq!(scan.features.rows[0].feature_id, 4);
     assert_eq!(scan.features.rows[0].body[..2], [0xeb, 0x04]);
     assert_eq!(
-        scan.features.rows[0].body,
+        scan.features.rows[0].body.to_vec(),
         vec![
             0xeb, 0x04, 0x00, 0x10, 0x01, 0x80, 0x80, 0x00, 0xe4, 0xe3, 0xf6, 0x83, 0x95, 0xe1,
             0xaa, 0xbb, 0xe3,
@@ -203,7 +212,7 @@ fn scan_bounds_known_allfeatur_feature_rows() {
     );
     assert_eq!(scan.features.rows[1].feature_id, 9);
     assert_eq!(
-        scan.features.rows[1].body,
+        scan.features.rows[1].body.to_vec(),
         vec![
             0x90, 0x01, 0x00, 0x10, 0x01, 0x80, 0x80, 0x00, 0xe4, 0xe3, 0xf6, 0x83, 0x91, 0xe1,
             0xcc,
@@ -231,7 +240,7 @@ fn scan_decodes_allfeatur_root_featdefs_schema_class() {
             ),
         ],
     );
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(
         scan.features.rows[0]
@@ -277,7 +286,7 @@ fn scan_resolves_allfeatur_walker_order_entity_references() {
     let allfeatur =
         b"\xe0\x00Sld_Features\0\xe0\x22first\0\xf7\x02\xe3\xe0\x24second\0\xf7\x01\xe3".to_vec();
     let data = build_prt("c", &[("AllFeatur", allfeatur)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.features.entities.len(), 3);
     assert_eq!(scan.features.entities[0].entity_id, 0);
@@ -288,15 +297,18 @@ fn scan_resolves_allfeatur_walker_order_entity_references() {
     assert_eq!(scan.features.entity_references[0].source_entity_id, Some(1));
     assert_eq!(scan.features.entity_references[0].target_entity_id, 2);
     assert!(
-        (scan.features.entity_references[0].target_entity_id as usize)
+        (usize::try_from(scan.features.entity_references[0].target_entity_id)
+            .expect("fixture index fits usize"))
             < scan.features.entities.len()
     );
     assert_eq!(scan.features.entity_references[1].source_entity_id, Some(2));
     assert_eq!(scan.features.entity_references[1].target_entity_id, 1);
 
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
+    let result = EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
     let namespace = result
         .ir()
         .native
@@ -319,7 +331,7 @@ fn scan_resolves_allfeatur_walker_order_entity_references() {
         &result.source_fidelity().annotations,
         entities[0].id(),
         "creo:AllFeatur",
-        scan.features.entities[0].offset as u64,
+        cadmpeg_core::decode::u64_from_index(scan.features.entities[0].offset),
         "feature_entity",
         Exactness::ByteExact,
     );
@@ -335,7 +347,7 @@ fn scan_bounds_allfeatur_procedural_choice_spans() {
         917,
         b"\xe0\x22blend_choice\0\x11\x12\xe0\x24depth_choice\0\x07",
     );
-    let scan = container::scan_bytes(build_prt(
+    let scan = container::scan_bytes_ok(build_prt(
         "c",
         &[("VisibGeom", geometry), ("AllFeatur", allfeatur)],
     ));
@@ -367,28 +379,28 @@ fn scan_decodes_allfeatur_choice_field_wrappers() {
             ("MdlStatus", b"Round id 4\0".to_vec()),
         ],
     );
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.features.choice_fields.len(), 2);
     assert_eq!(scan.features.choice_fields[0].name, "count");
     assert_eq!(
         scan.features.choice_fields[0].value,
-        crate::feature::FeatureFieldValue::CompactInt(7)
+        crate::feature::rows::FeatureFieldValue::CompactInt(7)
     );
     assert_eq!(scan.features.choice_fields[1].name, "refs");
     assert_eq!(
         scan.features.choice_fields[1].value,
-        crate::feature::FeatureFieldValue::CompactIntArray(vec![3, 4])
+        crate::feature::rows::FeatureFieldValue::CompactIntArray(vec![3, 4])
     );
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let feature = &result.ir().model.features[0];
     assert!(matches!(
-        feature.definition,
-        cadmpeg_ir::features::FeatureDefinition::Fillet {
+        feature.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Fillet {
             ref groups,
-        } if matches!(groups.as_slice(), [group]
+        }) if matches!(groups.as_slice(), [group]
             if matches!(group.edges, cadmpeg_ir::features::EdgeSelection::Unresolved)
                 && group.radius.is_unresolved())
     ));
@@ -414,11 +426,11 @@ fn scan_decodes_complete_allfeatur_f9_scalar_slots() {
     );
     allfeatur.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
     let data = build_prt("c", &[("VisibGeom", geometry), ("AllFeatur", allfeatur)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(
         scan.features.choice_fields[0].value,
-        crate::feature::FeatureFieldValue::ScalarArray {
+        crate::feature::rows::FeatureFieldValue::ScalarArray {
             dimensions: 1,
             count: 3,
             body: vec![0x0f, 0xe4, 0x46, 0x08, 0, 0, 0, 0, 0, 0],
@@ -456,32 +468,34 @@ fn scan_decodes_allfeatur_generated_geometry_manifest() {
         b"edg_id_tab_ptr\0\xf1\xf8\x03\xf7\x53\xfb\xe3used_bodies\0\xf8\x01\xf7\x60\xfb\xe2dtm_id_tab\0\xf2\xf8\x02\xf7\x57\xfb\xe2\xe0\x01dtm_id\0\x2a\xe0\x01dtm_id\0\x2b",
     );
     let data = build_prt("c", &[("VisibGeom", geometry), ("AllFeatur", allfeatur)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.features.geometry_tables.len(), 3);
     assert_eq!(scan.features.geometry_tables[0].feature_id, 4);
     assert_eq!(
         scan.features.geometry_tables[0].kind,
-        crate::feature::FeatureGeometryTableKind::EdgeIds
+        crate::feature::rows::FeatureGeometryTableKind::EdgeIds
     );
     assert_eq!(scan.features.geometry_tables[0].count, 3);
     assert_eq!(scan.features.geometry_tables[0].entity_class, 0x53);
     assert_eq!(
         scan.features.geometry_tables[1].kind,
-        crate::feature::FeatureGeometryTableKind::UsedBodies
+        crate::feature::rows::FeatureGeometryTableKind::UsedBodies
     );
     assert_eq!(
         scan.features.geometry_tables[2].kind,
-        crate::feature::FeatureGeometryTableKind::DatumIds(Some(vec![42, 43]))
+        crate::feature::rows::FeatureGeometryTableKind::DatumIds(Some(vec![42, 43]))
     );
     assert_eq!(
         scan.features.geometry_tables[2].kind.datum_ids(),
         Some(&[42, 43][..])
     );
 
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
+    let result = EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
     let tables = &result.ir().native.namespace("creo").unwrap().arenas()["feature_geometry_tables"];
     assert_eq!(tables.len(), 3);
     assert_eq!(tables[0].fields()["owner_feature_id"], 4);
@@ -494,7 +508,7 @@ fn scan_decodes_allfeatur_generated_geometry_manifest() {
         &result.source_fidelity().annotations,
         tables[0].id(),
         "creo:AllFeatur",
-        scan.features.geometry_tables[0].offset as u64,
+        cadmpeg_core::decode::u64_from_index(scan.features.geometry_tables[0].offset),
         "feature_geometry_table",
         Exactness::ByteExact,
     );
@@ -513,7 +527,7 @@ fn scan_decodes_complete_allfeatur_loop_history_rosters() {
         \x2b\x03\x04\xe4\xf6\x05\xe0\x00next\0",
     );
     let data = build_prt("c", &[("VisibGeom", geometry), ("AllFeatur", allfeatur)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.features.loop_history_entries.len(), 2);
     assert_eq!(scan.features.loop_history_entries[0].feature_id, 4);
@@ -522,9 +536,11 @@ fn scan_decodes_complete_allfeatur_loop_history_rosters() {
     assert_eq!(scan.features.loop_history_entries[1].ordinal, 1);
     assert_eq!(scan.features.loop_history_entries[1].loop_id, 43);
 
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
+    let result = EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
     let records =
         &result.ir().native.namespace("creo").unwrap().arenas()["feature_loop_history_entries"];
     assert_eq!(records.len(), 2);
@@ -545,14 +561,15 @@ fn scan_decodes_complete_allfeatur_loop_history_rosters() {
         &result.source_fidelity().annotations,
         records[0].id(),
         "creo:AllFeatur",
-        scan.features.loop_history_entries[0].offset as u64,
+        cadmpeg_core::decode::u64_from_index(scan.features.loop_history_entries[0].offset),
         "feature_loop_history_entry",
         Exactness::ByteExact,
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::DECODED_FEATURE_LOOP_HISTORY_ENTRY_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::DECODED_FEATURE_LOOP_HISTORY_ENTRY_COUNT.as_str()
+        ),
         2
     );
 }
@@ -569,22 +586,22 @@ fn scan_decodes_allfeatur_affected_id_arrays() {
         \xe0\x22contours\0\xf8\x01\x2a\xe0\x01parent_table\0\xf8\x02\x01\x03",
     );
     let data = build_prt("c", &[("VisibGeom", geometry), ("AllFeatur", allfeatur)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.features.affected_ids.len(), 3);
     assert_eq!(
         scan.features.affected_ids[0].kind,
-        crate::feature::AffectedIdKind::Geometry
+        crate::feature::rows::AffectedIdKind::Geometry
     );
     assert_eq!(scan.features.affected_ids[0].ids, vec![7, 128, 9]);
     assert_eq!(
         scan.features.affected_ids[1].kind,
-        crate::feature::AffectedIdKind::Contours
+        crate::feature::rows::AffectedIdKind::Contours
     );
     assert_eq!(scan.features.affected_ids[1].ids, vec![42]);
     assert_eq!(
         scan.features.affected_ids[2].kind,
-        crate::feature::AffectedIdKind::Parents
+        crate::feature::rows::AffectedIdKind::Parents
     );
     assert_eq!(scan.features.affected_ids[2].ids, vec![1, 3]);
 
@@ -612,7 +629,7 @@ fn scan_partitions_allfeatur_positional_round_operands() {
             ("MdlStatus", b"Round id 4\0".to_vec()),
         ],
     );
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.features.replay_affected_ids.len(), 1);
     assert_eq!(scan.features.replay_affected_ids[0].feature_id, 4);
@@ -623,20 +640,20 @@ fn scan_partitions_allfeatur_positional_round_operands() {
     assert_eq!(scan.features.replay_affected_ids[0].edge_ids, vec![9]);
     assert_eq!(
         scan.features.replay_affected_ids[0].geometry_extent,
-        crate::feature::ReplayExtentSource::Explicit
+        crate::feature::rows::ReplayExtentSource::Explicit
     );
     assert_eq!(
         scan.features.replay_affected_ids[0].edge_extent,
-        crate::feature::ReplayExtentSource::Explicit
+        crate::feature::rows::ReplayExtentSource::Explicit
     );
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     assert!(matches!(
-        &result.ir().model.features[0].definition,
-        cadmpeg_ir::features::FeatureDefinition::Fillet {
+        result.ir().model.features[0].evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Fillet {
             groups,
-        } if matches!(groups.as_slice(), [group]
+        }) if matches!(groups.as_slice(), [group]
             if matches!(&group.edges, cadmpeg_ir::features::EdgeSelection::Native(selection)
                 if selection == "creo:allfeatur:replay_edgs_affected#4:9")
                 && group.radius.is_unresolved())
@@ -659,7 +676,7 @@ fn scan_decodes_allfeatur_loop_restore_direction_compact_integers() {
         \xe0\x01direction2\0\x80\xa7\xe0\x01direction\0\x01",
     );
     let data = build_prt("c", &[("VisibGeom", geometry), ("AllFeatur", allfeatur)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.features.loop_restore_directions.len(), 3);
     assert_eq!(scan.features.loop_restore_directions[0].value, 0);
@@ -680,7 +697,9 @@ fn scan_decodes_allfeatur_loop_restore_direction_compact_integers() {
         .iter()
         .find(|feature| feature.id.as_str() == "creo:model:feature#4")
         .expect("feature");
-    let cadmpeg_ir::features::FeatureDefinition::Native { parameters, .. } = &feature.definition
+    let cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::Native { parameters, .. },
+    ) = feature.evaluation.definition()
     else {
         panic!("native feature");
     };
@@ -688,21 +707,24 @@ fn scan_decodes_allfeatur_loop_restore_direction_compact_integers() {
     assert_eq!(parameters["loop_restore.direction#2"], "1");
     assert_eq!(parameters["loop_restore.direction2"], "167");
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_FEATURE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_FEATURE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_TYPED_FEATURE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_TYPED_FEATURE_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_NATIVE_FEATURE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_NATIVE_FEATURE_COUNT.as_str()
+        ),
         1
     );
     assert!(result
@@ -718,7 +740,7 @@ fn scan_partitions_multiple_depdb_recipe_rows() {
         \xf7\x50\x9f\x77\x83\x94\xf6\x9f\x75Profile 2\0\xf6\0cutextrude\0"
         .to_vec();
     let data = build_prt("c", &[("DEPDB_DATA", depdb)]);
-    let scan = container::scan_bytes(data);
+    let scan = container::scan_bytes_ok(data);
 
     assert_eq!(scan.features.depdb_recipe_rows.len(), 2);
     assert_eq!(scan.features.depdb_recipe_rows[0].feature_id, 8053);
@@ -753,7 +775,7 @@ fn scan_binds_standalone_depdb_section_to_its_recipe_owner() {
         \xf7\x3b\x11\x83\x95\xf6\x04Profile 1\0\xf6\0protextrude\0",
     );
     let data = build_prt("c", &[("DEPDB_DATA", depdb)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.features.definitions.len(), 1);
     let definition = &scan.features.definitions[0];
@@ -765,16 +787,18 @@ fn scan_binds_standalone_depdb_section_to_its_recipe_owner() {
     assert_eq!(variables.points()[0].u, Some(1.0));
     assert_eq!(variables.points()[0].v, Some(3.0));
 
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
+    let result = EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
     let records = &result.ir().native.namespace("creo").unwrap().arenas()["feature_definitions"];
     assert_eq!(records[0].fields()["source_section"], "DEPDB_DATA");
     assert_annotation(
         &result.source_fidelity().annotations,
         "creo:featdefs:feature_definition#2",
         "creo:DEPDB_DATA",
-        definition.offset as u64,
+        cadmpeg_core::decode::u64_from_index(definition.offset),
         "feature_definition_record",
         Exactness::ByteExact,
     );
@@ -787,7 +811,7 @@ fn scan_binds_standalone_depdb_datum_and_parent_tables_to_recipe_owner() {
         \xe0\x01parent_table\0\xf8\x02\x03\x05\xf7\x24\xe3\
         Body ID 17\0\xe3\xf7\x3b\x11\x83\x95\xf6\x04Profile 1\0\xf6\0protextrude\0"
         .to_vec();
-    let scan = container::scan_bytes(build_prt("c", &[("DEPDB_DATA", depdb)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("DEPDB_DATA", depdb)]));
 
     let datum_table = scan
         .features
@@ -796,7 +820,7 @@ fn scan_binds_standalone_depdb_datum_and_parent_tables_to_recipe_owner() {
         .find(|table| {
             matches!(
                 table.kind,
-                crate::feature::FeatureGeometryTableKind::DatumIds(_)
+                crate::feature::rows::FeatureGeometryTableKind::DatumIds(_)
             )
         })
         .expect("datum table");
@@ -807,7 +831,7 @@ fn scan_binds_standalone_depdb_datum_and_parent_tables_to_recipe_owner() {
         .features
         .affected_ids
         .iter()
-        .find(|record| record.kind == crate::feature::AffectedIdKind::Parents)
+        .find(|record| record.kind == crate::feature::rows::AffectedIdKind::Parents)
         .expect("parent table");
     assert_eq!(parents.feature_id, 17);
     assert_eq!(parents.ids, [3, 5]);
@@ -822,7 +846,7 @@ fn scan_distinguishes_null_and_referenced_family_tables() {
             b"Sld_FamilyInfo\0drv_tbl_ptr\0\xe1\xf1".to_vec(),
         )],
     );
-    let null = container::scan_bytes(null_data.clone());
+    let null = container::scan_bytes_ok(null_data.clone());
     assert_eq!(
         null.framing.family_table.unwrap().pointer,
         crate::container::FamilyTablePointer::Null
@@ -840,15 +864,17 @@ fn scan_distinguishes_null_and_referenced_family_tables() {
         "none"
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_CONFIGURATION_DRIVER_TABLE_REFERENCE_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_CONFIGURATION_DRIVER_TABLE_REFERENCE_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_CONFIGURATION_DRIVER_TABLE_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_CONFIGURATION_DRIVER_TABLE_COUNT.as_str()
+        ),
         0
     );
     assert!(!decoded
@@ -863,7 +889,7 @@ fn scan_distinguishes_null_and_referenced_family_tables() {
             b"Sld_FamilyInfo\0drv_tbl_ptr\0\xf7\x81\x23\xf1".to_vec(),
         )],
     );
-    let referenced = container::scan_bytes(referenced_data.clone());
+    let referenced = container::scan_bytes_ok(referenced_data.clone());
     assert_eq!(
         referenced.framing.family_table.unwrap().pointer,
         crate::container::FamilyTablePointer::Entity(0x0123)
@@ -882,20 +908,22 @@ fn scan_distinguishes_null_and_referenced_family_tables() {
         "driver_table_unresolved"
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_CONFIGURATION_DRIVER_TABLE_REFERENCE_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_CONFIGURATION_DRIVER_TABLE_REFERENCE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_CONFIGURATION_DRIVER_TABLE_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_CONFIGURATION_DRIVER_TABLE_COUNT.as_str()
+        ),
         0
     );
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
-            && loss.severity == cadmpeg_ir::Severity::Warning
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::DesignIntent
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss
                 .message
                 .contains("1 referenced configuration driver table(s) retain unresolved")

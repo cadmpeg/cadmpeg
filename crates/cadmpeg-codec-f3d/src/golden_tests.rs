@@ -4,21 +4,76 @@
 //! `tests/golden/fixtures/*.f3d` are frozen inputs, and every snapshot here is
 //! produced from the committed bytes. Regenerate the artifacts with
 //! `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-f3d golden` and review the
-//! diff. Fixture regeneration is separate: `UPDATE_GOLDEN_FIXTURES=1`.
+//! diff. A regeneration writes only the artifacts their own comparison
+//! rejects, so one over a clean tree leaves the tree clean. Fixture
+//! regeneration is separate: `UPDATE_GOLDEN_FIXTURES=1`.
+
+use cadmpeg_test_support::EditableDecodeResult;
 
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
-use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
+use cadmpeg_core::decode::InspectOptions;
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions, DecodeResult};
 use cadmpeg_ir::examples;
-use cadmpeg_ir::{CadIr, WritePath};
+use cadmpeg_ir::{report::export::WritePath, CadIr};
 use cadmpeg_test_support::golden::{elide_local_digests, snapshot_text, snapshots_agree};
 use cadmpeg_test_support::roundtrip::{
-    mutation_roundtrip, semantic_roundtrip, verbatim_replay_holds, MutationOutcome, SemanticOutcome,
+    mutation_roundtrip, semantic_roundtrip, verbatim_replay_holds, ExpectedWritePath,
+    MutationOutcome, SemanticOutcome,
 };
 
-use super::*;
+use super::F3dCodec;
+use crate::test_support::native_test::TestEncode;
+use crate::test_support::smbh_bf4_test::{
+    synthetic_geometry_bf4_nurbs_smbh, synthetic_geometry_bf4_smbh,
+};
+use crate::test_support::smbh_blends_test::{
+    synthetic_full_rolling_ball_smbh, synthetic_g2_blend_spl_sur_smbh,
+    synthetic_variable_blend_smbh, synthetic_vertex_blend_smbh,
+};
+use crate::test_support::smbh_curves_test::{
+    synthetic_geometry_with_compound_curve_smbh, synthetic_geometry_with_exact_curve_smbh,
+    synthetic_geometry_with_helix_curve_smbh, synthetic_geometry_with_law_curve_smbh,
+    synthetic_geometry_with_projection_smbh, synthetic_geometry_with_silhouette_smbh,
+    synthetic_geometry_with_spring_smbh, synthetic_geometry_with_subset_curve_smbh,
+    synthetic_geometry_with_surface_intersection_smbh, synthetic_geometry_with_surface_offset_smbh,
+};
+use crate::test_support::smbh_geometry_test::{
+    synthetic_free_vertex_body_smbh, synthetic_geometry_smbh,
+    synthetic_geometry_with_attribute_smbh, synthetic_geometry_with_body_color_smbh,
+    synthetic_geometry_with_degenerate_curve_smbh, synthetic_geometry_with_face_color_smbh,
+    synthetic_geometry_with_history_smbh, synthetic_geometry_with_mesh_surface_smbh,
+    synthetic_geometry_with_sketch_link_smbh, synthetic_geometry_with_transform_smbh,
+    synthetic_mixed_face_wire_body_smbh, synthetic_wire_body_smbh, SketchLinkForm,
+};
+use crate::test_support::smbh_header_test::synthetic_smbh;
+use crate::test_support::smbh_pcurves_test::{
+    synthetic_geometry_with_pcurve_smbh, synthetic_geometry_with_rational_pcurve_smbh,
+    synthetic_geometry_with_ref_pcurve_smbh,
+};
+use crate::test_support::smbh_surfaces_test::{
+    synthetic_comp_spl_sur_smbh, synthetic_cyl_spl_sur_smbh, synthetic_exact_spl_sur_smbh,
+    synthetic_helix_surface_smbh, synthetic_law_spl_sur_smbh, synthetic_loft_spl_sur_smbh,
+    synthetic_minimal_deformable_surface_smbh, synthetic_net_spl_sur_smbh,
+    synthetic_off_spl_sur_smbh, synthetic_profile_first_sweep_smbh, synthetic_rot_spl_sur_smbh,
+    synthetic_ruled_spl_sur_smbh, synthetic_scaled_compound_loft_smbh, synthetic_skin_spl_sur_smbh,
+    synthetic_sub_spl_sur_smbh, synthetic_sum_spl_sur_smbh, synthetic_t_spl_sur_smbh,
+    synthetic_taper_spl_sur_smbh,
+};
+use crate::test_support::zip_test::{
+    f3d_with_configuration, f3d_with_smbh, f3d_with_smbh_and_protein,
+    f3d_with_smbh_and_protein_with_generated_base_feature,
+    f3d_with_smbh_and_protein_with_generated_base_flange,
+    f3d_with_smbh_and_protein_with_generated_copy_paste,
+    f3d_with_smbh_and_protein_with_generated_copy_paste_bodies,
+    f3d_with_smbh_and_protein_with_generated_form,
+    f3d_with_smbh_and_protein_with_generated_remove_body,
+    f3d_with_smbh_and_protein_with_generated_sketch_dimension,
+    f3d_with_smbh_and_protein_with_generated_surface_stitch,
+};
+use cadmpeg_core::CodecError;
 
 /// Covering fixture set as `(golden name, full .f3d bytes)`.
 #[allow(clippy::vec_init_then_push)]
@@ -263,7 +318,7 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
 }
 
 fn encoder_generated_unit_cube() -> Vec<u8> {
-    let ir = examples::unit_cube();
+    let ir = examples::unit_cube().expect("unit cube fixture is admitted");
     let mut bytes = Vec::new();
     F3dCodec
         .encode(&ir, &mut bytes)
@@ -316,7 +371,7 @@ fn indent_block(block: &str) -> String {
 fn decode_snapshot(bytes: &[u8]) -> String {
     match decode_result(bytes) {
         Ok(result) => {
-            let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
+            let mut result = EditableDecodeResult::from(result);
             if let Some(source) = result.ir_mut().source.as_mut() {
                 elide_local_digests(&mut source.attributes);
             }
@@ -359,19 +414,18 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 
 /// Encodes an unedited decode result via the verbatim-replay branch.
 fn replay_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
-    let result = decode_result(bytes).ok()?;
+    let result = EditableDecodeResult::from(decode_result(bytes).ok()?);
     let mut out = Vec::new();
     let outcome = match F3dCodec.plan(
         EncodeInput::new(result.ir(), Some(result.source_fidelity())),
         TargetRequest::Inherit,
     ) {
         Ok(plan) => {
-            let path = plan.report().write_path();
+            let path = plan.report().write_path().clone();
             match plan.write_to(&mut out) {
                 Ok(_) => {
-                    assert_eq!(
-                        path,
-                        WritePath::VerbatimReplay,
+                    assert!(
+                        matches!(path, WritePath::VerbatimReplay { .. }),
                         "the replay lane must take the verbatim-replay write path"
                     );
                     Ok(out)
@@ -389,9 +443,8 @@ fn generate_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
     let mut out = Vec::new();
     Some(match F3dCodec.encode(result.ir(), &mut out) {
         Ok(report) => {
-            assert_eq!(
-                report.write_path(),
-                WritePath::Synthesized,
+            assert!(
+                matches!(report.write_path(), WritePath::Synthesized { .. }),
                 "the generate lane withholds the sidecar, so the writer must author every byte"
             );
             Ok(out)
@@ -401,20 +454,27 @@ fn generate_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
 }
 
 fn patch_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
-    let result = decode_result(bytes).ok()?;
+    let result = EditableDecodeResult::from(decode_result(bytes).ok()?);
     if result.ir().model.points.is_empty() {
         return None;
     }
     let mut edited = result.ir().clone();
-    edited.model.points[0].position.x += 1.0;
+    let moved = edited.model.points[0].position().get();
+    edited.model.points[0].set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            moved.x + 1.0,
+            moved.y,
+            moved.z,
+        ))
+        .expect("a finite position is a point"),
+    );
     let mut out = Vec::new();
     Some(
         match crate::test_support::plan_inherited_write(&edited, result.source_fidelity(), &mut out)
         {
             Ok(path) => {
-                assert_eq!(
-                    path,
-                    WritePath::Patched,
+                assert!(
+                    matches!(path, WritePath::Patched { .. }),
                     "the patch lane edits the IR, so the writer must run"
                 );
                 Ok(out)
@@ -463,50 +523,56 @@ fn first_byte_diff(expected: &[u8], actual: &[u8]) -> String {
     )
 }
 
+/// Writes one golden, creating its branch directory.
+///
+/// Reached only where a comparison rejected the committed golden, so a
+/// regeneration over a clean tree writes nothing.
+fn write_golden(path: &Path, bytes: &[u8]) {
+    std::fs::create_dir_all(path.parent().expect("golden path has a parent"))
+        .expect("create golden dir");
+    std::fs::write(path, bytes).unwrap_or_else(|error| panic!("write {}: {error}", path.display()));
+}
+
 fn compare_text(update: bool, path: &Path, actual: &str, failures: &mut Vec<String>) {
-    if update {
-        std::fs::create_dir_all(path.parent().expect("golden path has a parent"))
-            .expect("create golden dir");
-        std::fs::write(path, actual.as_bytes())
-            .unwrap_or_else(|error| panic!("write {}: {error}", path.display()));
-        return;
-    }
-    match std::fs::read_to_string(path) {
+    let failure = match std::fs::read_to_string(path) {
         Ok(expected) => {
             let expected = expected.replace("\r\n", "\n");
             let actual = actual.replace("\r\n", "\n");
-            if let Err(mismatch) = snapshots_agree(&expected, &actual) {
-                failures.push(format!("{}: diverged {mismatch}", path.display()));
-            }
+            snapshots_agree(&expected, &actual)
+                .err()
+                .map(|mismatch| format!("{}: diverged {mismatch}", path.display()))
         }
-        Err(error) => failures.push(format!(
+        Err(error) => Some(format!(
             "{}: cannot read golden ({error}); regenerate with `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-f3d golden`",
             path.display()
         )),
+    };
+    let Some(failure) = failure else { return };
+    if update {
+        write_golden(path, actual.as_bytes());
+    } else {
+        failures.push(failure);
     }
 }
 
 fn compare_bytes(update: bool, path: &Path, actual: &[u8], failures: &mut Vec<String>) {
-    if update {
-        std::fs::create_dir_all(path.parent().expect("golden path has a parent"))
-            .expect("create golden dir");
-        std::fs::write(path, actual)
-            .unwrap_or_else(|error| panic!("write {}: {error}", path.display()));
-        return;
-    }
-    match std::fs::read(path) {
-        Ok(expected) if expected == actual => {}
-        Ok(expected) => {
-            failures.push(format!(
-                "{}: {}",
-                path.display(),
-                first_byte_diff(&expected, actual)
-            ));
-        }
-        Err(error) => failures.push(format!(
+    let failure = match std::fs::read(path) {
+        Ok(expected) if expected == actual => None,
+        Ok(expected) => Some(format!(
+            "{}: {}",
+            path.display(),
+            first_byte_diff(&expected, actual)
+        )),
+        Err(error) => Some(format!(
             "{}: cannot read golden ({error}); regenerate with `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-f3d golden`",
             path.display()
         )),
+    };
+    let Some(failure) = failure else { return };
+    if update {
+        write_golden(path, actual);
+    } else {
+        failures.push(failure);
     }
 }
 
@@ -523,7 +589,7 @@ fn generated_container_snapshot(bytes: &[u8]) -> String {
     };
     if let Some(source) = ir.source.as_mut() {
         for (key, value) in &mut source.attributes {
-            if key.ends_with("_sha256") {
+            if key.as_str().ends_with("_sha256") {
                 cadmpeg_test_support::golden::ELIDED_DIGEST.clone_into(value);
             }
         }
@@ -534,32 +600,30 @@ fn generated_container_snapshot(bytes: &[u8]) -> String {
 /// Compares produced bytes against a golden container by the document each
 /// decodes to, tolerating last-place disagreement in decoded numbers.
 fn compare_decoded_bytes(update: bool, path: &Path, actual: &[u8], failures: &mut Vec<String>) {
-    if update {
-        compare_bytes(update, path, actual, failures);
-        return;
-    }
-    let expected = match std::fs::read(path) {
-        Ok(bytes) => bytes,
-        Err(error) => {
-            failures.push(format!(
-                "{}: cannot read golden ({error}); regenerate with `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-f3d golden`",
-                path.display()
-            ));
-            return;
-        }
+    let failure = match std::fs::read(path) {
+        Ok(expected) if expected == actual => None,
+        Ok(expected) => snapshots_agree(
+            &generated_container_snapshot(&expected),
+            &generated_container_snapshot(actual),
+        )
+        .err()
+        .map(|mismatch| {
+            format!(
+                "{}: the produced container decodes differently: {mismatch}\n    {}",
+                path.display(),
+                first_byte_diff(&expected, actual)
+            )
+        }),
+        Err(error) => Some(format!(
+            "{}: cannot read golden ({error}); regenerate with `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-f3d golden`",
+            path.display()
+        )),
     };
-    if expected == actual {
-        return;
-    }
-    if let Err(mismatch) = snapshots_agree(
-        &generated_container_snapshot(&expected),
-        &generated_container_snapshot(actual),
-    ) {
-        failures.push(format!(
-            "{}: the produced container decodes differently: {mismatch}\n    {}",
-            path.display(),
-            first_byte_diff(&expected, actual)
-        ));
+    let Some(failure) = failure else { return };
+    if update {
+        write_golden(path, actual);
+    } else {
+        failures.push(failure);
     }
 }
 
@@ -777,12 +841,20 @@ fn an_edit_survives_the_patch_writer() {
             &F3dCodec,
             name,
             &input,
-            WritePath::Patched,
+            ExpectedWritePath::Patched,
             |ir| {
                 let Some(point) = ir.model.points.first_mut() else {
                     return false;
                 };
-                point.position.x += MUTATION_MM;
+                let moved = point.position().get();
+                point.set_position(
+                    cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+                        moved.x + MUTATION_MM,
+                        moved.y,
+                        moved.z,
+                    ))
+                    .expect("a finite position is a point"),
+                );
                 true
             },
             |outcome| match outcome {
@@ -790,8 +862,8 @@ fn an_edit_survives_the_patch_writer() {
                     let round_trip = decode_result(bytes).unwrap_or_else(|error| {
                         panic!("fixture `{name}`: patched output does not decode: {error}")
                     });
-                    let moved = edited.model.points[0].position.x;
-                    let returned = round_trip.ir().model.points[0].position.x;
+                    let moved = edited.model.points[0].position().get().x;
+                    let returned = round_trip.ir().model.points[0].position().get().x;
                     assert!(
                         (returned - moved).abs() <= 1.0e-9,
                         "fixture `{name}`: the patch writer produced a container that round-trips, but the \
@@ -851,4 +923,115 @@ fn golden_fixtures_match_builders() {
         "committed fixtures diverged from their builders; either restore the inputs or, if the builder change is intended, rebuild them with `UPDATE_GOLDEN_FIXTURES=1 cargo test -p cadmpeg-codec-f3d golden` and regenerate every artifact in the same commit:\n\n{}",
         failures.join("\n")
     );
+}
+
+/// Every key the wire-shape cut deleted is now refused where it used to sit.
+///
+/// The skin construction is exercised on the document route through the
+/// checked-in `skin_surface` decode golden; the other three sites are refused
+/// by the type that owns them.
+#[test]
+fn the_deleted_wire_keys_are_refused_at_the_level_they_were_deleted_from() {
+    use cadmpeg_ir::features::FeatureDefinition;
+    use cadmpeg_ir::geometry::VectorOffsetRoles;
+
+    let golden =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/decode/skin_surface.json");
+    let whole: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&golden).expect("the skin golden")).expect("json");
+    let document = whole["ir"].clone();
+    serde_json::from_value::<CadIr>(document.clone()).expect("the skin golden is a document");
+
+    let mut with_inner_count = document;
+    let mut touched = 0usize;
+    for surface in with_inner_count["model"]["procedural_surfaces"]
+        .as_array_mut()
+        .expect("procedural surfaces")
+    {
+        let construction = &mut surface["definition"]["construction"];
+        if construction.get("layout").is_some() {
+            assert!(construction.get("inner_count").is_none());
+            construction["inner_count"] = serde_json::json!(0);
+            touched += 1;
+        }
+    }
+    assert!(touched > 0, "the skin golden carries a layout");
+    let error = serde_json::from_value::<CadIr>(with_inner_count)
+        .expect_err("inner_count lives only on the compact layout that owns it")
+        .to_string();
+    assert!(error.contains("inner_count"), "{error}");
+
+    let face_maker_object = serde_json::json!({
+        "definition": "extrude",
+        "direction": {"kind": "explicit", "source": {"kind": "custom"},
+                      "vector": {"x": 0.0, "y": 0.0, "z": 1.0}},
+        "extent": {"kind": "symmetric",
+                   "side": {"termination": {"kind": "blind", "length": 12.0}}},
+        "face_maker": {"class": "Part::FaceMakerBullseye", "mode": "bullseye"},
+        "inner_wire_taper": "inverted",
+        "op": "new_body",
+        "profile": {"kind": "native", "value": "fcstd:native:property#X:Base"},
+        "solid": true,
+        "start": {"kind": "profile_plane"},
+    });
+    assert!(serde_json::from_value::<FeatureDefinition>(face_maker_object.clone()).is_err());
+    let error = serde_json::from_value::<cadmpeg_ir::features::FeatureOperation>(face_maker_object)
+        .expect_err("the face maker is its class")
+        .to_string();
+    assert!(error.contains("invalid type: map"), "{error}");
+
+    let solver_scalar_object = serde_json::json!({
+        "kind": "angle_difference",
+        "first": {"variable_type": 4, "key": 1},
+        "second": 2,
+    });
+    let error = serde_json::from_value::<cadmpeg_ir::sketches::SketchConstraintDefinitionInput>(
+        solver_scalar_object,
+    )
+    .expect_err("a solver scalar slot is its key")
+    .to_string();
+    assert!(error.contains("invalid type: map"), "{error}");
+
+    let labelled = serde_json::json!({
+        "source": 7,
+        "offset": 9,
+        "labels": ["source", "offset"],
+    });
+    let error = serde_json::from_value::<VectorOffsetRoles>(labelled)
+        .expect_err("the two roles are the two named keys")
+        .to_string();
+    assert!(error.contains("labels"), "{error}");
+}
+
+/// A construction that owns a revision-gated cache form states its
+/// solved-cache fit tolerance there, so the procedural record cannot state it
+/// a second time.
+#[test]
+fn a_revision_cached_surface_refuses_a_record_level_cache_fit_tolerance() {
+    let golden = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/golden/decode/rolling_ball_blend_surface.json");
+    let whole: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&golden).expect("the rolling-ball golden"))
+            .expect("json");
+    let document = whole["ir"].clone();
+    serde_json::from_value::<CadIr>(document.clone()).expect("the golden is a document");
+
+    let mut restated = document;
+    let mut touched = 0usize;
+    for surface in restated["model"]["procedural_surfaces"]
+        .as_array_mut()
+        .expect("procedural surfaces")
+    {
+        let stored = surface["definition"]["cache"]["form"]["cache"]["fit_tolerance"].clone();
+        if stored.is_f64() {
+            assert!(surface.get("cache_fit_tolerance").is_none());
+            surface["cache_fit_tolerance"] = stored;
+            touched += 1;
+        }
+    }
+    assert!(touched > 0, "the golden carries a solved revision cache");
+    let error = serde_json::from_value::<CadIr>(restated)
+        .expect_err("the cache form owns the tolerance")
+        .to_string();
+    assert!(error.contains("cache_fit_tolerance"), "{error}");
 }

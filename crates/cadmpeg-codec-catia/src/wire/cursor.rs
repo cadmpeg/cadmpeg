@@ -1,13 +1,15 @@
 //! Bounded byte cursor for CATIA record payloads.
 //!
-//! The cursor is the shared reader the per-family scan loops migrate onto.
 //! It backs the compact-int and reference-token readers (`object_ref`,
 //! `compact_uint`) and the finite-checked scalar and compound reads (`f64`,
 //! `point3`, `vector3`, `unit3`, `skip`) that drive the analytic surface
 //! frame readers in `analytic.rs`.
 
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::units::UnitVector3;
 
 /// A cursor over a CATIA record payload, tracking an absolute byte offset.
 #[derive(Debug, Clone, Copy)]
@@ -17,16 +19,20 @@ pub(crate) struct Cursor<'a> {
 
 impl<'a> Cursor<'a> {
     /// Creates a cursor positioned at `position` within `bytes`.
-    pub(crate) fn new_at(bytes: &'a [u8], position: usize) -> Self {
+    ///
+    /// `None` states a position past the payload: it names no byte of
+    /// `bytes`, and the payload's own end is a position, so a cursor there is
+    /// a cursor with nothing left to read rather than one that refuses. The
+    /// caller states what a position outside the payload means for its
+    /// record.
+    pub(crate) fn new_at(bytes: &'a [u8], position: usize) -> Option<Self> {
         let mut view = View::over_retained(bytes);
-        if view.seek(position).is_none() {
-            let _ = view.seek(view.end());
-        }
-        Self { view }
+        view.seek(position)?;
+        Some(Self { view })
     }
 
     /// Returns the absolute cursor offset.
-    pub(crate) fn position(&self) -> usize {
+    pub(super) fn position(&self) -> usize {
         self.view.position()
     }
 
@@ -35,8 +41,8 @@ impl<'a> Cursor<'a> {
     /// `extended` selects the token dialect. The restricted dialect (used by
     /// `e5`) recognises the lead bytes `0x38`, `0x18`, `0x10`, `0x08` and any
     /// `0x80..=0xff`. The extended dialect (used by `b5`) additionally
-    /// recognises `0x30`, `0x28`, and `0x20`. See `wire::object_ref`.
-    pub(crate) fn object_ref(&mut self, extended: bool) -> Option<u32> {
+    /// recognises `0x30`, `0x28`, and `0x20`. See `wire::tokens::object_ref`.
+    pub(super) fn object_ref(&mut self, extended: bool) -> Option<u32> {
         let mut view = self.view;
         let lead = view.u8()?;
         let value = match lead {
@@ -67,8 +73,8 @@ impl<'a> Cursor<'a> {
     ///
     /// A lead byte with `lead % 4 == 1` encodes `(lead - 1) / 4` in one byte.
     /// A nonzero lead with `lead % 4 == 0` encodes a `lead / 4`-byte
-    /// little-endian value (width at most four). See `wire::compact_uint`.
-    pub(crate) fn compact_uint(&mut self) -> Option<u32> {
+    /// little-endian value (width at most four). See `wire::tokens::compact_uint`.
+    pub(super) fn compact_uint(&mut self) -> Option<u32> {
         let mut view = self.view;
         let lead = view.u8()?;
         let value = if lead % 4 == 1 {
@@ -107,25 +113,32 @@ impl Cursor<'_> {
     }
 
     /// Reads a finite eight-byte little-endian `f64`, rejecting NaN/infinity.
-    pub(crate) fn f64(&mut self) -> Option<f64> {
-        let value = self.f64_raw()?;
-        value.is_finite().then_some(value)
+    pub(crate) fn f64(&mut self) -> Option<FiniteReal> {
+        FiniteReal::new(self.f64_raw()?)
     }
 
     /// Reads three finite `f64` components as a point.
-    pub(crate) fn point3(&mut self) -> Option<Point3> {
-        Some(Point3::new(self.f64()?, self.f64()?, self.f64()?))
+    pub(crate) fn point3(&mut self) -> Option<FinitePoint3> {
+        FinitePoint3::new(Point3::new(
+            self.f64_raw()?,
+            self.f64_raw()?,
+            self.f64_raw()?,
+        ))
     }
 
     /// Reads three finite `f64` components as a vector, without normalising.
-    pub(crate) fn vector3(&mut self) -> Option<Vector3> {
-        Some(Vector3::new(self.f64()?, self.f64()?, self.f64()?))
+    pub(crate) fn vector3(&mut self) -> Option<FiniteVector3> {
+        FiniteVector3::new(Vector3::new(
+            self.f64_raw()?,
+            self.f64_raw()?,
+            self.f64_raw()?,
+        ))
     }
 
     /// Reads three finite `f64` components and normalises them to a unit
     /// direction, failing on a degenerate (near-zero-length) vector.
-    pub(crate) fn unit3(&mut self) -> Option<Vector3> {
-        self.vector3()?.unit()
+    pub(crate) fn unit3(&mut self) -> Option<UnitVector3> {
+        UnitVector3::normalized(self.vector3()?.get())
     }
 }
 
@@ -136,7 +149,8 @@ mod tests {
     #[test]
     fn object_ref_extended_reads_all_dialect_leads() {
         let mut position = 0;
-        let mut cursor = Cursor::new_at(&[0x28, 0x34, 0x02], position);
+        let mut cursor =
+            Cursor::new_at(&[0x28, 0x34, 0x02], position).expect("a position inside the payload");
         assert_eq!(cursor.object_ref(true), Some(0x02_0034));
         position = cursor.position();
         assert_eq!(position, 3);
@@ -146,16 +160,45 @@ mod tests {
     fn object_ref_restricted_rejects_extended_only_leads() {
         // 0x30 is an extended-only lead; the restricted dialect rejects it.
         assert_eq!(
-            Cursor::new_at(&[0x30, 0x07, 0x00], 0).object_ref(false),
+            Cursor::new_at(&[0x30, 0x07, 0x00], 0)
+                .expect("a position inside the payload")
+                .object_ref(false),
             None
         );
-        assert_eq!(Cursor::new_at(&[0x8b], 0).object_ref(false), Some(11));
+        assert_eq!(
+            Cursor::new_at(&[0x8b], 0)
+                .expect("a position inside the payload")
+                .object_ref(false),
+            Some(11)
+        );
+    }
+
+    #[test]
+    fn new_at_refuses_a_position_past_the_payload() {
+        let bytes = [0x05u8, 0x08, 0x2a];
+        assert!(
+            Cursor::new_at(&bytes, 0).is_some(),
+            "the first byte is a position"
+        );
+        assert!(
+            Cursor::new_at(&bytes, bytes.len()).is_some(),
+            "the payload's end is a position with nothing left to read"
+        );
+        assert!(Cursor::new_at(&bytes, bytes.len() + 1).is_none());
+        assert!(Cursor::new_at(&bytes, usize::MAX).is_none());
+        assert!(Cursor::new_at(&[], 1).is_none());
     }
 
     #[test]
     fn compact_uint_matches_single_and_multi_byte_encodings() {
-        assert_eq!(Cursor::new_at(&[0x05], 0).compact_uint(), Some(1));
-        let mut cursor = Cursor::new_at(&[0x08, 0x2a, 0x00], 0);
+        assert_eq!(
+            Cursor::new_at(&[0x05], 0)
+                .expect("a position inside the payload")
+                .compact_uint(),
+            Some(1)
+        );
+        let mut cursor =
+            Cursor::new_at(&[0x08, 0x2a, 0x00], 0).expect("a position inside the payload");
         assert_eq!(cursor.compact_uint(), Some(42));
         assert_eq!(cursor.position(), 3);
     }

@@ -77,6 +77,12 @@ pub enum CodecError {
     Io(#[from] std::io::Error),
 }
 
+impl From<ResourceLimit> for CodecError {
+    fn from(limit: ResourceLimit) -> Self {
+        Self::ResourceLimit(limit)
+    }
+}
+
 impl CodecError {
     /// Builds a malformed-container error from a displayable message.
     pub fn malformed(message: impl std::fmt::Display) -> Self {
@@ -98,12 +104,24 @@ impl From<TargetRefusal> for CodecError {
     }
 }
 
+/// A source property whose key names nothing, or whose key the record already
+/// states, is an inconsistency inside the bytes that are present, so a reader
+/// that refuses the whole property set reports it as a malformed container.
+impl From<crate::text::NamedEntryError> for CodecError {
+    fn from(refused: crate::text::NamedEntryError) -> Self {
+        match refused {
+            crate::text::NamedEntryError::ResourceRefusal(limit) => Self::ResourceLimit(limit),
+            refused => Self::malformed(refused),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
 
     use super::CodecError;
-    use crate::dialect::{DialectId, DialectLayers, DialectMatch};
+    use crate::dialect::{DialectLayers, DialectMatch};
 
     #[test]
     fn malformed_constructor_formats_the_message_once() {
@@ -117,13 +135,14 @@ mod tests {
         let error = CodecError::UnsupportedDialect {
             dialects: Box::new(
                 DialectLayers::of(
-                    DialectMatch::refused(DialectId::pinned("acis:save-format-binary-other"))
+                    DialectMatch::refused(crate::dialect_id!("acis:save-format-binary-other"))
                         .with_declared(BTreeMap::from([(
-                            "save_format".to_owned(),
+                            crate::nonblank_literal!("save_format"),
                             "700".to_owned(),
                         )])),
                 )
-                .with(DialectMatch::refused(DialectId::pinned("sat:binary"))),
+                .with(DialectMatch::refused(crate::dialect_id!("sat:binary")))
+                .expect("distinct dialect layer keys"),
             ),
             message: "save format 700 has no read grammar".into(),
         };

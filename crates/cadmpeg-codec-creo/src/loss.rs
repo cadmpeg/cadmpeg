@@ -12,20 +12,24 @@
 //! severity from the code so the two cannot drift apart across sites, and it
 //! leaves only the per-instance message to the caller.
 //!
-use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::{
+    loss::{LossKind, LossNote, LossTaxonomy},
+    Severity,
+};
 
 macro_rules! loss_codes {
-    ($(#[$enum_attribute:meta])* pub enum $name:ident {
+    ($(#[$enum_attribute:meta])* pub(crate) enum $name:ident {
         $($(#[$variant_attribute:meta])* $variant:ident),* $(,)?
     }) => {
         $(#[$enum_attribute])*
-        pub enum $name {
+        pub(crate) enum $name {
             $($(#[$variant_attribute])* $variant),*
         }
 
         impl $name {
             /// Every code, in declaration order.
-            pub const ALL: &'static [Self] = &[$(Self::$variant),*];
+            #[cfg(test)]
+            const ALL: &'static [Self] = &[$(Self::$variant),*];
         }
     };
 }
@@ -35,9 +39,8 @@ loss_codes! {
 ///
 /// Variants are grouped by the record family whose transfer degraded. The
 /// string form (via [`CreoLossCode::code`]) is the stable contract.
-#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum CreoLossCode {
+pub(crate) enum CreoLossCode {
     /// PSB section census and prototype/instance transfer summary.
     ContainerCensus,
     /// No persistence-layout discriminant matched, so no layout-specific
@@ -69,12 +72,25 @@ pub enum CreoLossCode {
     TriangleStripRepresentationConflict,
     /// General model B-rep transfer remains incomplete for later instances.
     BrepTransferIncomplete,
+    /// A saved section spline cannot form a NURBS curve.
+    SectionSplineUnresolved,
+    /// A named surface-prototype field's bounded scalar body states no slots
+    /// and is retained opaque.
+    SurfacePrototypeFieldRetained,
+    /// A resolved extrusion body failed shell admission.
+    ExtrusionBodyRejected,
     /// Remaining per-instance surfaces, curves, and vertices stay gated.
     GeometryInstanceCarriersGated,
     /// Unique `VisibGeom` surface rows were not transferred as carriers.
     VisibGeomSurfaceUntransferred,
     /// Unique `VisibGeom` curve-topology rows were not transferred as carriers.
     VisibGeomCurveUntransferred,
+    /// A legacy ASCII surface carrier refused a lane, so its geometry stays a
+    /// structural record.
+    LegacySurfaceCarrierUnresolved,
+    /// A NURBS boundary or plane-generator carrier refused a lane, so the
+    /// curve named by its surface row stays a structural record.
+    NurbsBoundaryCarrierUnresolved,
     /// `VisibGeom` surface rows share a non-unique identity.
     VisibGeomSurfaceAmbiguous,
     /// `VisibGeom` curve-topology rows share a non-unique identity.
@@ -123,6 +139,8 @@ pub enum CreoLossCode {
     CarrierTorusParameterRetention,
     /// Remaining topology components lack complete face, curve, or vertex data.
     TopologyIncompleteComponents,
+    /// A half-edge orbit is past the stated topological vertex identifier width.
+    TopologyVertexIdentifierUnstatable,
     /// Neutral feature, configuration, graph, material, and display data remain open.
     FeatureNeutralSemanticsIncomplete,
     /// Profile sweep history features retain incomplete required operands.
@@ -175,7 +193,7 @@ pub enum CreoLossCode {
 impl CreoLossCode {
     /// The stable string identifier. This is the gating contract.
     #[must_use]
-    pub const fn code(self) -> &'static str {
+    const fn code(self) -> &'static str {
         match self {
             Self::ContainerCensus => "container.census",
             Self::SourceDialectUnverified => "source.dialect-unverified",
@@ -192,9 +210,14 @@ impl CreoLossCode {
             Self::LegacyStringEncodingRetained => "legacy.string-encoding-retained",
             Self::TriangleStripRepresentationConflict => "geometry.triangle-strip-conflict",
             Self::BrepTransferIncomplete => "geometry.brep-incomplete",
+            Self::SectionSplineUnresolved => "geometry.section-spline-unresolved",
+            Self::SurfacePrototypeFieldRetained => "geometry.surface-prototype-field-retained",
+            Self::ExtrusionBodyRejected => "topology.extrusion-body-rejected",
             Self::GeometryInstanceCarriersGated => "geometry.instance-carriers-gated",
             Self::VisibGeomSurfaceUntransferred => "geometry.visibgeom-surface-untransferred",
             Self::VisibGeomCurveUntransferred => "geometry.visibgeom-curve-untransferred",
+            Self::LegacySurfaceCarrierUnresolved => "geometry.legacy-surface-carrier-unresolved",
+            Self::NurbsBoundaryCarrierUnresolved => "geometry.nurbs-boundary-carrier-unresolved",
             Self::VisibGeomSurfaceAmbiguous => "geometry.visibgeom-surface-ambiguous",
             Self::VisibGeomCurveAmbiguous => "geometry.visibgeom-curve-ambiguous",
             Self::SectionSegmentGeometryUnresolved => "geometry.section-segment-unresolved",
@@ -219,6 +242,7 @@ impl CreoLossCode {
             Self::CarrierSharedExtrusionGenerators => "carrier.shared-extrusion-generators",
             Self::CarrierTorusParameterRetention => "carrier.torus-parameter-retention",
             Self::TopologyIncompleteComponents => "topology.incomplete-components",
+            Self::TopologyVertexIdentifierUnstatable => "topology.vertex-identifier-unstatable",
             Self::FeatureNeutralSemanticsIncomplete => "feature.neutral-semantics-incomplete",
             Self::FeatureSweepIncomplete => "feature.sweep-incomplete",
             Self::FeatureSurfaceOperationIncomplete => "feature.surface-operation-incomplete",
@@ -249,7 +273,7 @@ impl CreoLossCode {
 
     /// The severity of this loss.
     #[must_use]
-    pub const fn severity(self) -> Severity {
+    const fn severity(self) -> Severity {
         match self {
             Self::ContainerCensus
             | Self::VisibGeomSurfaceAmbiguous
@@ -276,8 +300,12 @@ impl CreoLossCode {
             | Self::CarrierTorusParameterRetention => Severity::Info,
             Self::BrepTransferIncomplete
             | Self::GeometryInstanceCarriersGated
-            | Self::TopologyIncompleteComponents => Severity::Blocking,
-            Self::SourceDialectUnverified
+            | Self::TopologyIncompleteComponents
+            | Self::TopologyVertexIdentifierUnstatable
+            | Self::ExtrusionBodyRejected => Severity::Blocking,
+            Self::SectionSplineUnresolved
+            | Self::SurfacePrototypeFieldRetained
+            | Self::SourceDialectUnverified
             | Self::LegacyRealValueUnresolved
             | Self::LegacyIntegerValueUnresolved
             | Self::LegacyContinuationFormUndefined
@@ -292,6 +320,8 @@ impl CreoLossCode {
             | Self::TriangleStripRepresentationConflict
             | Self::VisibGeomSurfaceUntransferred
             | Self::VisibGeomCurveUntransferred
+            | Self::LegacySurfaceCarrierUnresolved
+            | Self::NurbsBoundaryCarrierUnresolved
             | Self::SectionSegmentGeometryUnresolved
             | Self::FeatureNeutralSemanticsIncomplete
             | Self::FeatureSweepIncomplete
@@ -360,10 +390,16 @@ impl CreoLossCode {
             | Self::GeometryInstanceCarriersGated
             | Self::VisibGeomSurfaceUntransferred
             | Self::VisibGeomCurveUntransferred
+            | Self::LegacySurfaceCarrierUnresolved
+            | Self::NurbsBoundaryCarrierUnresolved
             | Self::VisibGeomSurfaceAmbiguous
             | Self::VisibGeomCurveAmbiguous
-            | Self::SectionSegmentGeometryUnresolved => LossTaxonomy::GeometryNotTransferred,
-            Self::TopologyIncompleteComponents => LossTaxonomy::TopologyNotTransferred,
+            | Self::SectionSegmentGeometryUnresolved
+            | Self::SectionSplineUnresolved
+            | Self::SurfacePrototypeFieldRetained => LossTaxonomy::GeometryNotTransferred,
+            Self::TopologyIncompleteComponents
+            | Self::TopologyVertexIdentifierUnstatable
+            | Self::ExtrusionBodyRejected => LossTaxonomy::TopologyNotTransferred,
             Self::FeatureNeutralSemanticsIncomplete
             | Self::FeatureSweepIncomplete
             | Self::FeatureSurfaceOperationIncomplete
@@ -392,8 +428,17 @@ impl CreoLossCode {
 
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
-    pub fn kind(self) -> LossKind {
-        LossKind::namespaced("creo", self.code(), self.shared_taxonomy())
+    pub(crate) fn kind(self) -> LossKind {
+        LossKind::namespaced(
+            const {
+                match cadmpeg_ir::report::loss::LossNamespace::new("creo") {
+                    Ok(namespace) => namespace,
+                    Err(_) => panic!("reserved codec namespace"),
+                }
+            },
+            self.code(),
+            self.shared_taxonomy(),
+        )
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
@@ -401,7 +446,7 @@ impl CreoLossCode {
     /// The structured code is `creo/<local>`. Severity comes from the local
     /// code; the strict floor comes from the taxonomy.
     #[must_use]
-    pub fn note(self, message: impl Into<String>) -> LossNote {
+    pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
     }
 }
@@ -433,9 +478,14 @@ mod tests {
                 "legacy.string-encoding-retained",
                 "geometry.triangle-strip-conflict",
                 "geometry.brep-incomplete",
+                "geometry.section-spline-unresolved",
+                "geometry.surface-prototype-field-retained",
+                "topology.extrusion-body-rejected",
                 "geometry.instance-carriers-gated",
                 "geometry.visibgeom-surface-untransferred",
                 "geometry.visibgeom-curve-untransferred",
+                "geometry.legacy-surface-carrier-unresolved",
+                "geometry.nurbs-boundary-carrier-unresolved",
                 "geometry.visibgeom-surface-ambiguous",
                 "geometry.visibgeom-curve-ambiguous",
                 "geometry.section-segment-unresolved",
@@ -460,6 +510,7 @@ mod tests {
                 "carrier.shared-extrusion-generators",
                 "carrier.torus-parameter-retention",
                 "topology.incomplete-components",
+                "topology.vertex-identifier-unstatable",
                 "feature.neutral-semantics-incomplete",
                 "feature.sweep-incomplete",
                 "feature.surface-operation-incomplete",

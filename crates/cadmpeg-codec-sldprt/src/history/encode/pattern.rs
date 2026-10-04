@@ -1,30 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rib, pattern, and helical-sweep write encoders.
 
-use super::super::{format_angle_rad, format_length_mm, pattern_form, NativePatternClass};
+use super::super::literals::{format_angle_rad, format_length_mm};
+use super::super::project::pattern::{pattern_form, NativePatternClass};
 use super::format::{format_length_like, format_point3_mm, format_vector3};
 use super::support::{
-    path_source, profile_source, require_count, require_direction, require_same_family,
-    resolved_boolean_op,
+    path_source, planar_profile_source, require_same_family, resolved_boolean_op,
 };
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
-    BooleanOp, PatternKind, PatternSeed, RibConstruction, RibDraft, RibSide,
+    patterns::{PatternKind, PatternSeed, PatternTransform},
+    BooleanOp, RibConstruction, RibDraft, RibSide,
 };
 
-#[allow(
-    clippy::too_many_arguments,
-    clippy::trivially_copy_pass_by_ref,
-    clippy::ref_option,
-    clippy::ptr_arg,
-    reason = "Encoder arguments are borrowed from one FeatureDefinition match."
-)]
 impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_rib(
         &self,
         construction: &RibConstruction,
-        op: &BooleanOp,
+        op: BooleanOp,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
@@ -39,7 +33,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     || construction.thickness.is_none()
                     || construction.side.is_none()
                     || construction.draft == RibDraft::Unresolved
-                    || *op == BooleanOp::Unresolved)
+                    || op == BooleanOp::Unresolved)
             {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} has unresolved rib construction",
@@ -50,11 +44,17 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 .map(|record| record.parameters.clone())
                 .unwrap_or_default();
             if let Some(thickness) = construction.thickness {
-                parameters.insert("Thickness".into(), format_length_mm(thickness.0));
+                parameters.insert(
+                    cadmpeg_core::nonblank_literal!("Thickness"),
+                    format_length_mm(thickness.into()),
+                );
             }
             match construction.draft {
                 RibDraft::Angle(draft) => {
-                    parameters.insert("Draft".into(), format_angle_rad(draft.0));
+                    parameters.insert(
+                        cadmpeg_core::nonblank_literal!("Draft"),
+                        format_angle_rad(draft.into()),
+                    );
                 }
                 RibDraft::None => {
                     parameters.remove("Draft");
@@ -64,26 +64,31 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let mut properties = feature.source_properties.clone();
             if let Some(profile) = &construction.profile {
                 let profile_source =
-                    profile_source(profile, record_sources, feature_sources, sketch_sources)
+                    planar_profile_source(profile, record_sources, feature_sources, sketch_sources)
                         .ok_or_else(|| {
                             CodecError::malformed(format_args!(
                                 "SLDPRT feature {} references a missing rib profile",
                                 feature.id
                             ))
                         })?;
-                properties.insert("Profile".into(), profile_source);
+                properties.insert(cadmpeg_core::nonblank_literal!("Profile"), profile_source);
             }
             if let Some(direction) = construction.direction {
-                require_direction(direction, &feature.id, "rib direction")?;
-                properties.insert("Direction".into(), format_vector3(direction));
+                properties.insert(
+                    cadmpeg_core::nonblank_literal!("Direction"),
+                    format_vector3(direction.into()),
+                );
             }
             if let Some(side) = construction.side {
-                properties.insert("BothSides".into(), (side == RibSide::Centered).to_string());
-            }
-            if *op != BooleanOp::Unresolved {
                 properties.insert(
-                    "Operation".into(),
-                    resolved_boolean_op(*op, &feature.id)?.into(),
+                    cadmpeg_core::nonblank_literal!("BothSides"),
+                    (side == RibSide::Centered).to_string(),
+                );
+            }
+            if op != BooleanOp::Unresolved {
+                properties.insert(
+                    cadmpeg_core::nonblank_literal!("Operation"),
+                    resolved_boolean_op(op, &feature.id)?.into(),
                 );
             }
             NeutralFeatureEncoding {
@@ -96,7 +101,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_pattern(
         &self,
-        seeds: &Vec<PatternSeed>,
+        seeds: &[PatternSeed],
         pattern: &PatternKind,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
@@ -106,30 +111,41 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let parent_sources = self.parent_sources;
         Ok({
             let unsupported_form = matches!(
-                pattern,
-                PatternKind::UnresolvedScale
-                    | PatternKind::UnresolvedComposite
-                    | PatternKind::Scale { .. }
-                    | PatternKind::Composite { .. }
+                pattern.definition(),
+                PatternTransform::Unresolved {
+                    form: Some(
+                        cadmpeg_ir::features::patterns::PatternForm::Scale
+                            | cadmpeg_ir::features::patterns::PatternForm::Composite
+                    )
+                } | PatternTransform::Scale { .. }
+                    | PatternTransform::Composite { .. }
             );
-            let expected_form = match pattern {
-                PatternKind::Unresolved => None,
-                PatternKind::UnresolvedLinear => Some(NativePatternClass::Linear),
-                PatternKind::UnresolvedCircular => Some(NativePatternClass::Circular),
-                PatternKind::UnresolvedCurveDriven => Some(NativePatternClass::CurveDriven),
-                PatternKind::UnresolvedMirror => Some(NativePatternClass::Mirror),
-                PatternKind::UnresolvedScale | PatternKind::UnresolvedComposite => None,
-                PatternKind::Linear { .. } | PatternKind::LinearOffsets { .. } => {
+            let expected_form = match pattern.definition() {
+                PatternTransform::Unresolved { form: None } => None,
+                PatternTransform::Unresolved {
+                    form: Some(cadmpeg_ir::features::patterns::PatternForm::Linear),
+                } => Some(NativePatternClass::Linear),
+                PatternTransform::Unresolved {
+                    form: Some(cadmpeg_ir::features::patterns::PatternForm::Circular),
+                } => Some(NativePatternClass::Circular),
+                PatternTransform::Unresolved {
+                    form: Some(cadmpeg_ir::features::patterns::PatternForm::CurveDriven),
+                } => Some(NativePatternClass::CurveDriven),
+                PatternTransform::Unresolved {
+                    form: Some(cadmpeg_ir::features::patterns::PatternForm::Mirror),
+                } => Some(NativePatternClass::Mirror),
+                PatternTransform::Unresolved { .. } => None,
+                PatternTransform::Linear { .. } | PatternTransform::LinearOffsets { .. } => {
                     Some(NativePatternClass::Linear)
                 }
-                PatternKind::Circular { .. } | PatternKind::CircularAngles { .. } => {
+                PatternTransform::Circular { .. } | PatternTransform::CircularAngles { .. } => {
                     Some(NativePatternClass::Circular)
                 }
-                PatternKind::CurveDriven { .. } => Some(NativePatternClass::CurveDriven),
-                PatternKind::Mirror { .. } | PatternKind::MirrorReference { .. } => {
+                PatternTransform::CurveDriven { .. } => Some(NativePatternClass::CurveDriven),
+                PatternTransform::Mirror { .. } | PatternTransform::MirrorReference { .. } => {
                     Some(NativePatternClass::Mirror)
                 }
-                PatternKind::Scale { .. } | PatternKind::Composite { .. } => None,
+                PatternTransform::Scale { .. } | PatternTransform::Composite { .. } => None,
             };
             if existing.is_some_and(|record| {
                 unsupported_form
@@ -183,16 +199,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 .unwrap_or_default();
             let mut properties = feature.source_properties.clone();
             if !seed_sources.is_empty() {
-                properties.insert("Seeds".into(), seed_sources.join(","));
+                properties.insert(
+                    cadmpeg_core::nonblank_literal!("Seeds"),
+                    seed_sources.join(","),
+                );
             }
-            match pattern {
-                PatternKind::Unresolved
-                | PatternKind::UnresolvedLinear
-                | PatternKind::UnresolvedCircular
-                | PatternKind::UnresolvedCurveDriven
-                | PatternKind::UnresolvedMirror
-                | PatternKind::UnresolvedScale
-                | PatternKind::UnresolvedComposite => {
+            match pattern.definition() {
+                PatternTransform::Unresolved { .. } => {
                     if existing.is_none() {
                         return Err(CodecError::NotImplemented(format!(
                             "SLDPRT feature {} has unresolved pattern construction",
@@ -200,7 +213,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         )));
                     }
                 }
-                PatternKind::Linear {
+                PatternTransform::Linear {
                     direction,
                     spacing,
                     count,
@@ -208,8 +221,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 } => {
                     match direction {
                         Some(direction) => {
-                            require_direction(*direction, &feature.id, "pattern")?;
-                            properties.insert("Direction".into(), format_vector3(*direction));
+                            properties.insert(
+                                cadmpeg_core::nonblank_literal!("Direction"),
+                                format_vector3((*direction).into()),
+                            );
                         }
                         None if existing.is_some() => {}
                         None => {
@@ -219,74 +234,69 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                             )));
                         }
                     }
-                    require_count(*count, &feature.id)?;
-                    if !spacing.0.is_finite() || spacing.0 <= 0.0 {
-                        return Err(CodecError::malformed(format_args!(
-                            "SLDPRT feature {} has invalid linear-pattern spacing",
-                            feature.id
-                        )));
-                    }
+
                     let spacing_key =
                         if parameters.contains_key("D3") && !parameters.contains_key("Spacing") {
-                            "D3"
+                            cadmpeg_core::nonblank_literal!("D3")
                         } else {
-                            "Spacing"
+                            cadmpeg_core::nonblank_literal!("Spacing")
                         };
                     let count_key =
                         if parameters.contains_key("D1") && !parameters.contains_key("Count") {
-                            "D1"
+                            cadmpeg_core::nonblank_literal!("D1")
                         } else {
-                            "Count"
+                            cadmpeg_core::nonblank_literal!("Count")
                         };
                     parameters.insert(
-                        spacing_key.into(),
+                        spacing_key.clone(),
                         format_length_like(
-                            spacing.0,
+                            (*spacing).into(),
                             existing
-                                .and_then(|record| record.parameters.get(spacing_key))
+                                .and_then(|record| record.parameters.get(spacing_key.as_str()))
                                 .map(String::as_str),
                         ),
                     );
-                    parameters.insert(count_key.into(), count.to_string());
+                    parameters.insert(count_key.clone(), count.to_string());
                     if let Some(second) = second {
-                        require_direction(second.direction, &feature.id, "second pattern")?;
-                        require_count(second.count, &feature.id)?;
-                        if !second.spacing.0.is_finite() || second.spacing.0 <= 0.0 {
-                            return Err(CodecError::malformed(format_args!(
-                                "SLDPRT feature {} has invalid second linear-pattern spacing",
-                                feature.id
-                            )));
-                        }
-                        properties.insert("Direction2".into(), format_vector3(second.direction));
-                        parameters.insert("D4".into(), format_length_like(second.spacing.0, None));
-                        parameters.insert("D2".into(), second.count.to_string());
+                        properties.insert(
+                            cadmpeg_core::nonblank_literal!("Direction2"),
+                            format_vector3(second.direction.into()),
+                        );
+                        parameters.insert(
+                            cadmpeg_core::nonblank_literal!("D4"),
+                            format_length_like(second.spacing.into(), None),
+                        );
+                        parameters.insert(
+                            cadmpeg_core::nonblank_literal!("D2"),
+                            second.count.to_string(),
+                        );
                     }
                 }
-                PatternKind::Circular {
+                PatternTransform::Circular {
                     axis_origin,
                     axis_dir,
                     angle,
                     count,
                 } => {
-                    require_direction(*axis_dir, &feature.id, "pattern axis")?;
-                    require_count(*count, &feature.id)?;
-                    properties.insert("AxisOrigin".into(), format_point3_mm(*axis_origin));
-                    properties.insert("AxisDirection".into(), format_vector3(*axis_dir));
-                    parameters.insert("Angle".into(), format_angle_rad(angle.0));
-                    parameters.insert("Count".into(), count.to_string());
+                    properties.insert(
+                        cadmpeg_core::nonblank_literal!("AxisOrigin"),
+                        format_point3_mm(*axis_origin),
+                    );
+                    properties.insert(
+                        cadmpeg_core::nonblank_literal!("AxisDirection"),
+                        format_vector3((*axis_dir).into()),
+                    );
+                    parameters.insert(
+                        cadmpeg_core::nonblank_literal!("Angle"),
+                        format_angle_rad((*angle).into()),
+                    );
+                    parameters.insert(cadmpeg_core::nonblank_literal!("Count"), count.to_string());
                 }
-                PatternKind::CurveDriven {
+                PatternTransform::CurveDriven {
                     path,
                     spacing,
                     count,
                 } => {
-                    require_count(*count, &feature.id)?;
-                    if !spacing.0.is_finite() || spacing.0 <= 0.0 {
-                        return Err(CodecError::malformed(format_args!(
-                            "SLDPRT feature {} has invalid curve-pattern spacing",
-                            feature.id
-                        )));
-                    }
                     match path {
                         Some(path) => {
                             let path = path_source(path, record_sources, sketch_sources)
@@ -296,7 +306,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                                         feature.id
                                     ))
                                 })?;
-                            properties.insert("Path".into(), path);
+                            properties.insert(cadmpeg_core::nonblank_literal!("Path"), path);
                         }
                         None if existing.is_some() => {}
                         None => {
@@ -308,45 +318,50 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     }
                     let spacing_key =
                         if parameters.contains_key("D3") && !parameters.contains_key("Spacing") {
-                            "D3"
+                            cadmpeg_core::nonblank_literal!("D3")
                         } else {
-                            "Spacing"
+                            cadmpeg_core::nonblank_literal!("Spacing")
                         };
                     let count_key =
                         if parameters.contains_key("D1") && !parameters.contains_key("Count") {
-                            "D1"
+                            cadmpeg_core::nonblank_literal!("D1")
                         } else {
-                            "Count"
+                            cadmpeg_core::nonblank_literal!("Count")
                         };
                     parameters.insert(
-                        spacing_key.into(),
+                        spacing_key.clone(),
                         format_length_like(
-                            spacing.0,
+                            (*spacing).into(),
                             existing
-                                .and_then(|record| record.parameters.get(spacing_key))
+                                .and_then(|record| record.parameters.get(spacing_key.as_str()))
                                 .map(String::as_str),
                         ),
                     );
-                    parameters.insert(count_key.into(), count.to_string());
+                    parameters.insert(count_key.clone(), count.to_string());
                 }
-                PatternKind::Mirror {
+                PatternTransform::Mirror {
                     plane_origin,
                     plane_normal,
                 } => {
-                    require_direction(*plane_normal, &feature.id, "mirror plane normal")?;
-                    properties.insert("PlaneOrigin".into(), format_point3_mm(*plane_origin));
-                    properties.insert("PlaneNormal".into(), format_vector3(*plane_normal));
+                    properties.insert(
+                        cadmpeg_core::nonblank_literal!("PlaneOrigin"),
+                        format_point3_mm(*plane_origin),
+                    );
+                    properties.insert(
+                        cadmpeg_core::nonblank_literal!("PlaneNormal"),
+                        format_vector3((*plane_normal).into()),
+                    );
                 }
-                PatternKind::MirrorReference { .. } => {
+                PatternTransform::MirrorReference { .. } => {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} has an unresolved mirror plane",
                         feature.id
                     )));
                 }
-                PatternKind::LinearOffsets { .. }
-                | PatternKind::CircularAngles { .. }
-                | PatternKind::Scale { .. }
-                | PatternKind::Composite { .. } => {
+                PatternTransform::LinearOffsets { .. }
+                | PatternTransform::CircularAngles { .. }
+                | PatternTransform::Scale { .. }
+                | PatternTransform::Composite { .. } => {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} uses a pattern form that cannot be written",
                         feature.id

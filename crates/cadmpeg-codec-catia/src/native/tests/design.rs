@@ -3,12 +3,207 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+use cadmpeg_test_support::wire;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::test_object_graph::{
+    catalog_stream, entity_backed_object_graph, object_graph_from_records, object_graph_record,
+    sequential_entity_backed_object_graph, standard_catpart_with_nested_design_objects,
+    value_block_stream,
+};
 use crate::CatiaCodec;
+
+fn parallel_table() -> crate::native::CatiaDesignParallelReferenceTable {
+    crate::native::CatiaDesignParallelReferenceTable::new(
+        vec![crate::native::CatiaDesignReferenceColumn {
+            field: "catia:test:field#0".to_owned(),
+            field_class: None,
+            list_payload_offset: 0,
+        }],
+        Vec::new(),
+    )
+    .expect("empty rows satisfy cardinality")
+}
+
+#[test]
+fn design_parallel_table_borrowed_wire_preserves_json_bytes() {
+    let table = parallel_table();
+    let owned: crate::native::CatiaDesignParallelReferenceTableWire = table.clone().into();
+    assert_eq!(
+        serde_json::to_vec(&table).expect("borrowed table JSON"),
+        serde_json::to_vec(&owned).expect("owned table JSON")
+    );
+}
+
+#[test]
+fn design_parallel_table_retained_limit_refuses_json_record() {
+    #[derive(serde::Serialize)]
+    struct Record<'a> {
+        id: &'static str,
+        #[serde(flatten)]
+        table: &'a crate::native::CatiaDesignParallelReferenceTable,
+    }
+    let table = parallel_table();
+
+    let record = Record {
+        id: "catia:test:parallel-table#0",
+        table: &table,
+    };
+    let arena_name = "parallel_tables";
+    let json_len = serde_json::to_vec(&record).expect("table JSON").len();
+    let limit = u64::try_from(json_len + arena_name.len() - 1).expect("small JSON");
+    let refused = crate::test_support::with_retained_limit(limit, |ctx| {
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        namespace.set_arena(ctx, arena_name, std::slice::from_ref(&record))
+    });
+    let error = refused.expect_err("record exceeds retained-byte limit");
+    assert!(error.to_string().contains("RetainedBytes"), "{error}");
+    crate::test_support::with_service_context(|ctx| {
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        namespace
+            .set_arena(ctx, arena_name, std::slice::from_ref(&record))
+            .expect("service profile admits table");
+    });
+}
+
+fn design_reference_cell() -> crate::native::CatiaDesignReferenceCell {
+    crate::native::CatiaDesignReferenceCell::Resolved {
+        payload_offset: 12,
+        entity_id: 7,
+        field: "catia:test:field#7".to_owned(),
+        field_class: Some(crate::native::CatiaDesignClass {
+            entry: "Entry".to_owned(),
+            name: "Name".to_owned(),
+        }),
+        design_object: Some("catia:test:design#0".to_owned()),
+    }
+}
+
+#[test]
+fn design_reference_cell_borrowed_wire_preserves_json_bytes() {
+    let cell = design_reference_cell();
+    let owned: crate::native::CatiaDesignReferenceCellWire = cell.clone().into();
+    assert_eq!(
+        serde_json::to_vec(&cell).expect("borrowed cell JSON"),
+        serde_json::to_vec(&owned).expect("owned cell JSON")
+    );
+}
+
+#[test]
+fn design_reference_cell_retained_limit_refuses_json_record() {
+    #[derive(serde::Serialize)]
+    struct Record<'a> {
+        id: &'static str,
+        #[serde(flatten)]
+        cell: &'a crate::native::CatiaDesignReferenceCell,
+    }
+    let cell = design_reference_cell();
+
+    let record = Record {
+        id: "catia:test:reference-cell#0",
+        cell: &cell,
+    };
+    let arena_name = "design_reference_cells";
+    let json_len = serde_json::to_vec(&record).expect("cell JSON").len();
+    let limit = u64::try_from(json_len + arena_name.len() - 1).expect("small JSON");
+    let refused = crate::test_support::with_retained_limit(limit, |ctx| {
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        namespace.set_arena(ctx, arena_name, std::slice::from_ref(&record))
+    });
+    let error = refused.expect_err("record exceeds retained-byte limit");
+    assert!(error.to_string().contains("RetainedBytes"), "{error}");
+    crate::test_support::with_service_context(|ctx| {
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        namespace
+            .set_arena(ctx, arena_name, std::slice::from_ref(&record))
+            .expect("service profile admits cell");
+    });
+}
+
+#[test]
+fn native_design_objects_refuse_caller_collection_limit() {
+    let native = crate::native::CatiaNative::decode(&standard_catpart_with_nested_design_objects());
+    let refused = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::design_objects(ctx, &native.object_graphs, &native.entity_records)
+    });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+    let retained =
+        crate::test_support::with_retained_refusal(&[], "catia_design_object_id", |ctx| {
+            super::super::design_objects(ctx, &native.object_graphs, &native.entity_records)
+        });
+    assert!(
+        matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_design_object_id")
+    );
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        super::super::design_objects(ctx, &native.object_graphs, &native.entity_records)
+    })
+    .expect("service profile admits design objects");
+    assert_eq!(admitted, native.design_objects);
+}
+
+#[test]
+fn parallel_reference_table_refuses_nested_collection_limit() {
+    use std::collections::HashMap;
+
+    let list_a = [0x3b, 0x82, 0x81, 0x83, 0x81, 0x84, 0x85, 0xfe];
+    let list_b = [0x3b, 0x82, 0x81, 0x84, 0x81, 0x83, 0x86, 0xfe];
+    let mut bytes = sequential_entity_backed_object_graph(&[
+        object_graph_record(&[0x04, 0x01, 0x81, 0x83], &list_a),
+        object_graph_record(&[0x04, 0x01, 0x81, 0x84], &list_b),
+        object_graph_record(&[0x04, 0x01, 0x83, 0x83], &[0xfe]),
+        object_graph_record(&[0x04, 0x01, 0x83, 0x84], &[0xfe]),
+    ]);
+    bytes.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "Profile",
+        "Limit",
+        "Profile",
+        "Limit",
+    ]));
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let graph = &native.object_graphs[0];
+    let owner = native.design_objects[0].owner_entity_id;
+    let fields = graph
+        .records
+        .iter()
+        .filter(|record| record.owner_entity_id() == Some(owner))
+        .collect::<Vec<_>>();
+    let indices = graph
+        .records
+        .iter()
+        .enumerate()
+        .filter_map(|(index, record)| Some((record.entity_id()?, index)))
+        .collect::<HashMap<_, _>>();
+    let refused = crate::test_support::with_collection_limit(2, |ctx| {
+        super::super::design_parallel_reference_table(ctx, &fields, graph, &indices)
+    });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_design_row_cells")
+    );
+    let retained = crate::test_support::with_retained_limit(0, |ctx| {
+        super::super::design_parallel_reference_table(ctx, &fields, graph, &indices)
+    });
+    assert!(
+        matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_design_column_field")
+    );
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        super::super::design_parallel_reference_table(ctx, &fields, graph, &indices)
+    })
+    .expect("service profile admits parallel reference table");
+    assert_eq!(admitted, native.design_objects[0].parallel_reference_table);
+}
 
 #[test]
 fn native_design_objects_preserve_payload_references_to_target_owners() {
@@ -150,6 +345,7 @@ fn native_design_objects_preserve_storage_relations_before_payload_relations() {
         object_graph_record(&[0x04, 0x01, 0x81, 0x85], &[0xfe]),
         object_graph_record(&[0x04, 0x01, 0x83, 0x86], &[0xfe]),
     ]);
+    let bytes = [b"V5_CFV2\0".as_slice(), &[0; 8], bytes.as_slice()].concat();
     let native = crate::native::CatiaNative::decode(&bytes);
     let graph = &native.object_graphs[0];
     let decoded = CatiaCodec
@@ -183,9 +379,10 @@ fn native_design_objects_preserve_storage_relations_before_payload_relations() {
         ]
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_DESIGN_OBJECT_RELATION_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_DESIGN_OBJECT_RELATION_COUNT.as_str()
+        ),
         2
     );
 
@@ -208,6 +405,7 @@ fn native_design_objects_preserve_relations_to_unowned_fields() {
         object_graph_record(&[0x04, 0x01, 0xe5, 0xff, 0xff, 0xff, 0xe4], &[0xfe]),
     ];
     let bytes = sequential_entity_backed_object_graph(&records);
+    let bytes = [b"V5_CFV2\0".as_slice(), &[0; 8], bytes.as_slice()].concat();
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .expect("decode relation to unowned field");
@@ -234,9 +432,10 @@ fn native_design_objects_preserve_relations_to_unowned_fields() {
         }]
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_DESIGN_UNOWNED_FIELD_RELATION_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_DESIGN_UNOWNED_FIELD_RELATION_COUNT.as_str()
+        ),
         1
     );
 }
@@ -248,6 +447,7 @@ fn native_design_objects_preserve_reflexive_field_relations() {
         &[0x81, 0x81, 0xfe],
     )];
     let bytes = sequential_entity_backed_object_graph(&records);
+    let bytes = [b"V5_CFV2\0".as_slice(), &[0; 8], bytes.as_slice()].concat();
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .expect("decode reflexive field relation");
@@ -273,15 +473,17 @@ fn native_design_objects_preserve_reflexive_field_relations() {
         }]
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_DESIGN_SAME_OBJECT_RELATION_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_DESIGN_SAME_OBJECT_RELATION_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_DESIGN_REFLEXIVE_FIELD_RELATION_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_DESIGN_REFLEXIVE_FIELD_RELATION_COUNT.as_str()
+        ),
         1
     );
 }
@@ -432,14 +634,16 @@ fn null_storage_roles_are_not_unresolved_storage_links() {
         "BaseFeature",
     ]));
 
+    let bytes = [b"V5_CFV2\0".as_slice(), &[0; 8], bytes.as_slice()].concat();
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode null storage role");
 
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::UNRESOLVED_STORAGE_RECORD_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNRESOLVED_STORAGE_RECORD_COUNT.as_str()
+        ),
         0
     );
 }
@@ -751,9 +955,10 @@ fn decode_links_design_objects_through_their_owner_record_group() {
     );
     assert_eq!(native.design_objects[1].owner_design_object, None);
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_DESIGN_OBJECT_OWNER_LINK_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_DESIGN_OBJECT_OWNER_LINK_COUNT.as_str()
+        ),
         1
     );
 }

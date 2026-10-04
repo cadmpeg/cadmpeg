@@ -3,8 +3,11 @@
 //!
 //! An export whose report carries no losses must decode back to an IR that
 //! [`cadmpeg_ir::diff`] reports as empty against the pre-write document.
+use cadmpeg_test_support::{edit, EditableDecodeResult};
 
-use cadmpeg_ir::codec::write::TargetRequest;
+use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
+
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
@@ -15,12 +18,15 @@ use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::SourceFidelity;
 use cadmpeg_test_support::golden::Harness;
 
-use crate::test_support::{
-    cacheless_line_tabulated_surface_file, degree_zero_nurbs_surface_file,
-    hyperbola_surface_of_revolution_file, line_surface_of_revolution_file,
-    multispan_degree_zero_nurbs_surface_file, placed_tabulated_hyperbola_file,
-    placed_tabulated_line_file, polynomial_nurbs_curve_file, tabulated_hyperbola_file,
-    trimmed_surface_of_revolution_file,
+use crate::test_support::test_curves_and_surfaces::polynomial_nurbs_curve_file;
+use crate::test_support::test_procedural_surfaces::cacheless_line_tabulated_surface_file;
+use crate::test_support::test_surface_fixtures::{
+    degree_zero_nurbs_surface_file, hyperbola_surface_of_revolution_file,
+    line_surface_of_revolution_file, multispan_degree_zero_nurbs_surface_file,
+    tabulated_hyperbola_file, trimmed_surface_of_revolution_file,
+};
+use crate::test_support::test_tabulated_surfaces::{
+    placed_tabulated_hyperbola_file, placed_tabulated_line_file,
 };
 use crate::{IgesCodec, IgesVersion};
 
@@ -72,7 +78,8 @@ fn try_lossless_round_trip(
     let round_trip = IgesCodec
         .decode(&mut Cursor::new(produced), &DecodeOptions::default())
         .unwrap_or_else(|e| panic!("{stem}: written file failed to decode: {e}"));
-    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{stem}: {:#?}", validation.findings);
     let d = cadmpeg_ir::diff::diff(original, round_trip.ir());
     assert!(d.is_empty(), "{stem}: no-loss export drifted: {d:#?}");
@@ -89,6 +96,7 @@ fn lossless_exports_round_trip_to_identical_ir() {
         else {
             continue;
         };
+        let decoded = EditableDecodeResult::from(decoded);
         if try_lossless_round_trip(&stem, decoded.ir(), decoded.ir(), None)
             || try_lossless_round_trip(
                 &stem,
@@ -136,7 +144,8 @@ fn semantic_writer_round_trips_a_normalized_line_generatrix() {
             .expect("line revolution writes");
         assert!(
             report.losses.iter().all(|loss| {
-                loss.code.taxonomy() != cadmpeg_ir::LossTaxonomy::GeometryNotTransferred
+                loss.code.taxonomy()
+                    != cadmpeg_ir::report::loss::LossTaxonomy::GeometryNotTransferred
             }),
             "{version:?}: {:#?}",
             report.losses
@@ -152,14 +161,18 @@ fn semantic_writer_round_trips_a_normalized_line_generatrix() {
             .find(|procedural| {
                 matches!(
                     procedural.definition(),
-                    cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution { .. }
+                    cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(_)
                 )
             })
             .expect("line revolution construction");
-        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
-            parameter_interval: Some(parameter_interval),
-            ..
-        } = procedural.definition()
+        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(definition_payload_0) =
+            procedural.definition()
+        else {
+            panic!("expected a revolution definition");
+        };
+        let Some(parameter_interval) = &definition_payload_0
+            .parameter_interval()
+            .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
         else {
             panic!("expected a revolution definition");
         };
@@ -179,17 +192,19 @@ fn semantic_writer_round_trips_a_normalized_line_generatrix() {
                         construction_owns_surface(original.ir(), procedural, &surface.id)
                             && matches!(
                                 procedural.definition(),
-                                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution { .. }
+                                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(_)
                             )
                     })
             })
             .expect("source line revolution surface");
         let source_carrier_end = surface_construction(original.ir(), &source_surface.id)
-            .and_then(|candidate| candidate.record_bounds)
+            .and_then(cadmpeg_ir::geometry::ProceduralSurface::record_bounds)
+            .map(cadmpeg_ir::geometry::RecordBounds::get)
             .and_then(|bounds| bounds[1])
             .expect("source line carrier interval");
         let round_carrier_end = procedural
-            .record_bounds
+            .record_bounds()
+            .map(cadmpeg_ir::geometry::RecordBounds::get)
             .and_then(|bounds| bounds[1])
             .expect("round-trip line carrier interval");
         assert!((source_carrier_end - round_carrier_end).abs() < EPS_LINE_REVOLUTION_ROUND_TRIP);
@@ -200,23 +215,34 @@ fn semantic_writer_round_trips_a_normalized_line_generatrix() {
             .iter()
             .find(|surface| construction_owns_surface(round_trip.ir(), procedural, &surface.id))
             .expect("round-trip revolution surface");
-        let source_index = cadmpeg_ir::index::ModelIndex::new(original.ir());
-        let round_index = cadmpeg_ir::index::ModelIndex::new(round_trip.ir());
+        let source_index =
+            cadmpeg_ir::index::ModelIndex::build(original.ir(), cadmpeg_ir::index::StandardIndex);
+        let round_index =
+            cadmpeg_ir::index::ModelIndex::build(round_trip.ir(), cadmpeg_ir::index::StandardIndex);
         let source_point = cadmpeg_ir::eval::model_surface_point_by_id(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
             &source_index,
             &source_surface.id,
             1.0,
             0.7,
         )
-        .expect("source line revolution evaluates");
-        let round_point =
-            cadmpeg_ir::eval::model_surface_point_by_id(&round_index, &round_surface.id, 1.0, 0.7)
-                .expect("round-trip line revolution evaluates");
+        .expect("source line revolution evaluates")
+        .get();
+        let round_point = cadmpeg_ir::eval::model_surface_point_by_id(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &round_index,
+            &round_surface.id,
+            1.0,
+            0.7,
+        )
+        .expect("round-trip line revolution evaluates")
+        .get();
         assert!(
             source_point.distance(round_point) < EPS_LINE_REVOLUTION_ROUND_TRIP,
             "{version:?}"
         );
-        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new());
+        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
+            .expect("resource allocation did not fail");
         assert!(
             validation.is_ok(),
             "{version:?}: {:#?}",
@@ -251,7 +277,7 @@ fn semantic_writer_round_trips_a_normalized_line_directrix() {
                         construction_owns_surface(original.ir(), procedural, &surface.id)
                             && matches!(
                                 procedural.definition(),
-                                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { .. }
+                                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(_)
                             )
                     })
             })
@@ -259,7 +285,8 @@ fn semantic_writer_round_trips_a_normalized_line_directrix() {
         let source_procedural = surface_construction(original.ir(), &source_surface.id)
             .expect("source line extrusion construction");
         let source_carrier_end = source_procedural
-            .record_bounds
+            .record_bounds()
+            .map(cadmpeg_ir::geometry::RecordBounds::get)
             .and_then(|bounds| bounds[1])
             .expect("source line carrier interval");
         let plan = Encoder::plan(
@@ -271,9 +298,8 @@ fn semantic_writer_round_trips_a_normalized_line_directrix() {
         let mut produced = Vec::new();
         let report = plan.write_to(&mut produced).expect("line extrusion writes");
         assert!(
-            report.losses.iter().all(
-                |loss| loss.code.taxonomy() != cadmpeg_ir::LossTaxonomy::GeometryNotTransferred
-            ),
+            report.losses.iter().all(|loss| loss.code.taxonomy()
+                != cadmpeg_ir::report::loss::LossTaxonomy::GeometryNotTransferred),
             "{version:?}: {:#?}",
             report.losses
         );
@@ -288,23 +314,25 @@ fn semantic_writer_round_trips_a_normalized_line_directrix() {
             .find(|procedural| {
                 matches!(
                     procedural.definition(),
-                    cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { .. }
+                    cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(_)
                 )
             })
             .expect("round-trip line extrusion construction");
         let round_carrier_end = round_procedural
-            .record_bounds
+            .record_bounds()
+            .map(cadmpeg_ir::geometry::RecordBounds::get)
             .and_then(|bounds| bounds[1])
             .expect("round-trip line carrier interval");
         assert!((source_carrier_end - round_carrier_end).abs() < EPS_LINE_EXTRUSION_ROUND_TRIP);
-        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
-            parameter_interval: Some(parameter_interval),
-            ..
-        } = round_procedural.definition()
+        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition_payload_0) =
+            round_procedural.definition()
         else {
             panic!("expected an extrusion definition");
         };
-        assert_eq!(*parameter_interval, [0.0, 1.0]);
+        let Some(parameter_interval) = &definition_payload_0.parameter_interval() else {
+            panic!("expected an extrusion definition");
+        };
+        assert_eq!(parameter_interval.get(), [0.0, 1.0]);
         let round_surface = round_trip
             .ir()
             .model
@@ -314,27 +342,34 @@ fn semantic_writer_round_trips_a_normalized_line_directrix() {
                 construction_owns_surface(round_trip.ir(), round_procedural, &surface.id)
             })
             .expect("round-trip extrusion surface");
-        let source_index = cadmpeg_ir::index::ModelIndex::new(original.ir());
-        let round_index = cadmpeg_ir::index::ModelIndex::new(round_trip.ir());
+        let source_index =
+            cadmpeg_ir::index::ModelIndex::build(original.ir(), cadmpeg_ir::index::StandardIndex);
+        let round_index =
+            cadmpeg_ir::index::ModelIndex::build(round_trip.ir(), cadmpeg_ir::index::StandardIndex);
         let source_point = cadmpeg_ir::eval::model_surface_point_by_id(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
             &source_index,
             &source_surface.id,
             source_carrier_end * 0.5,
             0.25,
         )
-        .expect("source line extrusion evaluates");
+        .expect("source line extrusion evaluates")
+        .get();
         let round_point = cadmpeg_ir::eval::model_surface_point_by_id(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
             &round_index,
             &round_surface.id,
             round_carrier_end * 0.5,
             0.25,
         )
-        .expect("round-trip line extrusion evaluates");
+        .expect("round-trip line extrusion evaluates")
+        .get();
         assert!(
             source_point.distance(round_point) < EPS_LINE_EXTRUSION_ROUND_TRIP,
             "{version:?}"
         );
-        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new());
+        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
+            .expect("resource allocation did not fail");
         assert!(
             validation.is_ok(),
             "{version:?}: {:#?}",
@@ -361,7 +396,7 @@ fn semantic_writer_maps_a_normalized_line_generatrix_pcurve_to_source_domain() {
         .expect("procedural line generatrix pcurve");
     let source = super::super::source_pcurve(original.ir(), pcurve)
         .expect("procedural pcurve source-domain mapping");
-    let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = &source.geometry else {
+    let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = &source.geometry else {
         panic!("expected a NURBS source pcurve");
     };
     assert!((nurbs.control_points()[0].u - 0.5).abs() < EPS_PCURVE_SOURCE_DOMAIN);
@@ -369,7 +404,22 @@ fn semantic_writer_maps_a_normalized_line_generatrix_pcurve_to_source_domain() {
 
     let mut source_without_record_bounds = original.ir().clone();
     for procedural in &mut source_without_record_bounds.model.procedural_surfaces {
-        procedural.record_bounds = None;
+        {
+            let replacement: Option<[Option<f64>; 4]> = None;
+            edit::replace(procedural, |previous| {
+                replacement
+                    .map(cadmpeg_ir::geometry::RecordBounds::try_from)
+                    .transpose()
+                    .map(|bounds| {
+                        cadmpeg_ir::geometry::ProceduralSurface::new(
+                            previous.id.clone(),
+                            previous.definition().clone(),
+                            bounds,
+                        )
+                    })
+            })
+        }
+        .expect("clearing record bounds");
     }
     let pcurve = source_without_record_bounds
         .model
@@ -378,7 +428,7 @@ fn semantic_writer_maps_a_normalized_line_generatrix_pcurve_to_source_domain() {
         .expect("procedural line generatrix pcurve without record bounds");
     let source = super::super::source_pcurve(&source_without_record_bounds, pcurve)
         .expect("derive the line carrier interval from its edge");
-    let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = &source.geometry else {
+    let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = &source.geometry else {
         panic!("expected a NURBS source pcurve");
     };
     assert!((nurbs.control_points()[0].u - 0.5).abs() < EPS_PCURVE_SOURCE_DOMAIN);
@@ -408,9 +458,8 @@ fn semantic_writer_round_trips_a_degree_zero_bspline_curve() {
             .write_to(&mut produced)
             .expect("degree-zero output writes");
         assert!(
-            report.losses.iter().all(
-                |loss| loss.code.taxonomy() != cadmpeg_ir::LossTaxonomy::GeometryNotTransferred
-            ),
+            report.losses.iter().all(|loss| loss.code.taxonomy()
+                != cadmpeg_ir::report::loss::LossTaxonomy::GeometryNotTransferred),
             "{version:?}: {:#?}",
             report.losses
         );
@@ -418,10 +467,8 @@ fn semantic_writer_round_trips_a_degree_zero_bspline_curve() {
         let round_trip = IgesCodec
             .decode(&mut Cursor::new(produced), &DecodeOptions::default())
             .expect("degree-zero output decodes");
-        let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = round_trip.ir().model.curves[0]
-            .geometry
-            .solved_cache()
-            .unwrap_or(&round_trip.ir().model.curves[0].geometry)
+        let Some(SolvedCurveGeometry::Nurbs(nurbs)) =
+            round_trip.ir().model.curves[0].geometry.solved()
         else {
             panic!("{version:?}: expected a NURBS carrier");
         };
@@ -432,7 +479,12 @@ fn semantic_writer_round_trips_a_degree_zero_bspline_curve() {
             original.ir().model.curves[0].geometry,
             "{version:?}"
         );
-        assert_eq!(round_trip.ir().model.edges[0].param_range, Some([0.0, 1.0]));
+        assert_eq!(
+            round_trip.ir().model.edges[0]
+                .param_range()
+                .map(cadmpeg_ir::units::FiniteVector::get),
+            Some([0.0, 1.0])
+        );
         assert!(
             round_trip
                 .report()
@@ -442,7 +494,8 @@ fn semantic_writer_round_trips_a_degree_zero_bspline_curve() {
             "{version:?}: {:#?}",
             round_trip.report().losses
         );
-        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new());
+        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
+            .expect("resource allocation did not fail");
         assert!(
             validation.is_ok(),
             "{version:?}: {:#?}",
@@ -451,7 +504,7 @@ fn semantic_writer_round_trips_a_degree_zero_bspline_curve() {
     }
 }
 
-fn assert_degree_zero_surface_round_trip(input: Vec<u8>, expected_counts: (u32, u32)) {
+fn assert_degree_zero_surface_round_trip(input: Vec<u8>, expected_counts: (usize, usize)) {
     let original = IgesCodec
         .decode(&mut Cursor::new(input), &DecodeOptions::default())
         .expect("degree-zero B-spline surface fixture decodes");
@@ -468,9 +521,8 @@ fn assert_degree_zero_surface_round_trip(input: Vec<u8>, expected_counts: (u32, 
             .write_to(&mut produced)
             .expect("degree-zero surface output writes");
         assert!(
-            report.losses.iter().all(
-                |loss| loss.code.taxonomy() != cadmpeg_ir::LossTaxonomy::GeometryNotTransferred
-            ),
+            report.losses.iter().all(|loss| loss.code.taxonomy()
+                != cadmpeg_ir::report::loss::LossTaxonomy::GeometryNotTransferred),
             "{version:?}: {:#?}",
             report.losses
         );
@@ -478,11 +530,9 @@ fn assert_degree_zero_surface_round_trip(input: Vec<u8>, expected_counts: (u32, 
         let round_trip = IgesCodec
             .decode(&mut Cursor::new(produced), &DecodeOptions::default())
             .expect("degree-zero surface output decodes");
-        let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(surface) = round_trip.ir().model.surfaces
-            [0]
-        .geometry
-        .solved_cache()
-        .unwrap_or(&round_trip.ir().model.surfaces[0].geometry) else {
+        let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
+            round_trip.ir().model.surfaces[0].geometry.solved()
+        else {
             panic!("{version:?}: expected a NURBS surface carrier");
         };
         assert_eq!(
@@ -509,7 +559,8 @@ fn assert_degree_zero_surface_round_trip(input: Vec<u8>, expected_counts: (u32, 
             "{version:?}: {:#?}",
             round_trip.report().losses
         );
-        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new());
+        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
+            .expect("resource allocation did not fail");
         assert!(
             validation.is_ok(),
             "{version:?}: {:#?}",
@@ -552,7 +603,8 @@ fn semantic_writer_emits_type122_for_cacheless_hyperbola_extrusion() {
         assert!(
             report.losses.iter().all(|loss| {
                 loss.code != crate::loss::IgesLossCode::ProceduralReduced.kind()
-                    && loss.code.taxonomy() != cadmpeg_ir::LossTaxonomy::GeometryNotTransferred
+                    && loss.code.taxonomy()
+                        != cadmpeg_ir::report::loss::LossTaxonomy::GeometryNotTransferred
             }),
             "{version:?}: {:#?}",
             report.losses
@@ -588,7 +640,7 @@ fn semantic_writer_emits_type122_for_cacheless_hyperbola_extrusion() {
                         construction_owns_surface(original.ir(), procedural, &surface.id)
                             && matches!(
                                 procedural.definition(),
-                                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { .. }
+                                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(_)
                             )
                     })
             })
@@ -608,48 +660,52 @@ fn semantic_writer_emits_type122_for_cacheless_hyperbola_extrusion() {
                         construction_owns_surface(round_trip.ir(), procedural, &surface.id)
                             && matches!(
                                 procedural.definition(),
-                                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { .. }
+                                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(_)
                             )
                     })
             })
             .expect("round-trip extrusion surface");
         let source_range = surface_construction(original.ir(), &source_surface.id)
             .and_then(|procedural| match procedural.definition() {
-                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
-                    parameter_interval: Some(range),
-                    ..
-                } => Some(*range),
+                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(payload) => {
+                    payload.parameter_interval()
+                }
                 _ => None,
             })
             .expect("source extrusion interval");
         let round_range = surface_construction(round_trip.ir(), &round_surface.id)
             .and_then(|procedural| match procedural.definition() {
-                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
-                    parameter_interval: Some(range),
-                    ..
-                } => Some(*range),
+                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(payload) => {
+                    payload.parameter_interval()
+                }
                 _ => None,
             })
             .expect("round-trip extrusion interval");
-        let source_index = cadmpeg_ir::index::ModelIndex::new(original.ir());
-        let round_index = cadmpeg_ir::index::ModelIndex::new(round_trip.ir());
+        let source_index =
+            cadmpeg_ir::index::ModelIndex::build(original.ir(), cadmpeg_ir::index::StandardIndex);
+        let round_index =
+            cadmpeg_ir::index::ModelIndex::build(round_trip.ir(), cadmpeg_ir::index::StandardIndex);
         for fraction in [0.25, 0.75] {
             let source_parameter = source_range[0] + fraction * (source_range[1] - source_range[0]);
             let round_parameter = round_range[0] + fraction * (round_range[1] - round_range[0]);
             let source_point = cadmpeg_ir::eval::model_surface_point_by_id(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
                 &source_index,
                 &source_surface.id,
                 source_parameter,
                 1.0,
             )
-            .expect("source extrusion evaluates");
+            .expect("source extrusion evaluates")
+            .get();
             let round_point = cadmpeg_ir::eval::model_surface_point_by_id(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
                 &round_index,
                 &round_surface.id,
                 round_parameter,
                 1.0,
             )
-            .expect("round-trip extrusion evaluates");
+            .expect("round-trip extrusion evaluates")
+            .get();
             assert!(
                 source_point.distance(round_point) < EPS_EXTRUSION_ROUND_TRIP,
                 "{version:?}: source={source_point:?} round_trip={round_point:?}"
@@ -664,7 +720,8 @@ fn semantic_writer_emits_type122_for_cacheless_hyperbola_extrusion() {
             "{version:?}: {:#?}",
             round_trip.report().losses
         );
-        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new());
+        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
+            .expect("resource allocation did not fail");
         assert!(
             validation.is_ok(),
             "{version:?}: {:#?}",
@@ -697,7 +754,8 @@ fn semantic_writer_round_trips_a_placed_type122_directrix() {
         assert!(
             report.losses.iter().all(|loss| {
                 loss.code != crate::loss::IgesLossCode::ProceduralReduced.kind()
-                    && loss.code.taxonomy() != cadmpeg_ir::LossTaxonomy::GeometryNotTransferred
+                    && loss.code.taxonomy()
+                        != cadmpeg_ir::report::loss::LossTaxonomy::GeometryNotTransferred
             }),
             "{version:?}: {:#?}",
             report.losses
@@ -720,7 +778,7 @@ fn semantic_writer_round_trips_a_placed_type122_directrix() {
                         construction_owns_surface(original.ir(), procedural, &surface.id)
                             && matches!(
                                 procedural.definition(),
-                                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { .. }
+                                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(_)
                             )
                     })
             })
@@ -740,48 +798,52 @@ fn semantic_writer_round_trips_a_placed_type122_directrix() {
                         construction_owns_surface(round_trip.ir(), procedural, &surface.id)
                             && matches!(
                                 procedural.definition(),
-                                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { .. }
+                                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(_)
                             )
                     })
             })
             .expect("round-trip placed extrusion surface");
         let source_range = surface_construction(original.ir(), &source_surface.id)
             .and_then(|procedural| match procedural.definition() {
-                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
-                    parameter_interval: Some(range),
-                    ..
-                } => Some(*range),
+                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(payload) => {
+                    payload.parameter_interval()
+                }
                 _ => None,
             })
             .expect("source placed extrusion interval");
         let round_range = surface_construction(round_trip.ir(), &round_surface.id)
             .and_then(|procedural| match procedural.definition() {
-                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
-                    parameter_interval: Some(range),
-                    ..
-                } => Some(*range),
+                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(payload) => {
+                    payload.parameter_interval()
+                }
                 _ => None,
             })
             .expect("round-trip placed extrusion interval");
-        let source_index = cadmpeg_ir::index::ModelIndex::new(original.ir());
-        let round_index = cadmpeg_ir::index::ModelIndex::new(round_trip.ir());
+        let source_index =
+            cadmpeg_ir::index::ModelIndex::build(original.ir(), cadmpeg_ir::index::StandardIndex);
+        let round_index =
+            cadmpeg_ir::index::ModelIndex::build(round_trip.ir(), cadmpeg_ir::index::StandardIndex);
         for fraction in [0.25, 0.5, 0.75] {
             let source_parameter = source_range[0] + fraction * (source_range[1] - source_range[0]);
             let round_parameter = round_range[0] + fraction * (round_range[1] - round_range[0]);
             let source_point = cadmpeg_ir::eval::model_surface_point_by_id(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
                 &source_index,
                 &source_surface.id,
                 source_parameter,
                 1.0,
             )
-            .expect("source placed extrusion evaluates");
+            .expect("source placed extrusion evaluates")
+            .get();
             let round_point = cadmpeg_ir::eval::model_surface_point_by_id(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
                 &round_index,
                 &round_surface.id,
                 round_parameter,
                 1.0,
             )
-            .expect("round-trip placed extrusion evaluates");
+            .expect("round-trip placed extrusion evaluates")
+            .get();
             assert!(
                 source_point.distance(round_point) < EPS_PLACED_EXTRUSION_ROUND_TRIP,
                 "{version:?}: source={source_point:?} round_trip={round_point:?}"
@@ -796,7 +858,8 @@ fn semantic_writer_round_trips_a_placed_type122_directrix() {
             "{version:?}: {:#?}",
             round_trip.report().losses
         );
-        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new());
+        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
+            .expect("resource allocation did not fail");
         assert!(
             validation.is_ok(),
             "{version:?}: {:#?}",
@@ -825,9 +888,8 @@ fn semantic_writer_writes_a_placed_nurbs_type122_directrix() {
             .write_to(&mut produced)
             .expect("placed NURBS Type 122 output writes");
         assert!(
-            report.losses.iter().all(
-                |loss| loss.code.taxonomy() != cadmpeg_ir::LossTaxonomy::GeometryNotTransferred
-            ),
+            report.losses.iter().all(|loss| loss.code.taxonomy()
+                != cadmpeg_ir::report::loss::LossTaxonomy::GeometryNotTransferred),
             "{version:?}: {:#?}",
             report.losses
         );
@@ -841,8 +903,8 @@ fn semantic_writer_writes_a_placed_nurbs_type122_directrix() {
                 .surfaces
                 .iter()
                 .any(|surface| matches!(
-                    *surface.geometry.solved_cache().unwrap_or(&surface.geometry),
-                    cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(_)
+                    surface.geometry.solved(),
+                    Some(SolvedSurfaceGeometry::Nurbs(_))
                 )),
             "{version:?}: no NURBS tabulated surface"
         );
@@ -855,7 +917,8 @@ fn semantic_writer_writes_a_placed_nurbs_type122_directrix() {
             "{version:?}: {:#?}",
             round_trip.report().losses
         );
-        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new());
+        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
+            .expect("resource allocation did not fail");
         assert!(
             validation.is_ok(),
             "{version:?}: {:#?}",
@@ -918,7 +981,7 @@ fn assert_type120_round_trip(version: IgesVersion) {
                     construction_owns_surface(original.ir(), procedural, &surface.id)
                         && matches!(
                             procedural.definition(),
-                            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution { .. }
+                            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(_)
                         )
                 })
         })
@@ -933,7 +996,7 @@ fn assert_type120_round_trip(version: IgesVersion) {
                 construction_owns_surface(round_trip.ir(), procedural, &surface.id)
                     && matches!(
                         procedural.definition(),
-                        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution { .. }
+                        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(_)
                     )
             })
     }) else {
@@ -942,23 +1005,23 @@ fn assert_type120_round_trip(version: IgesVersion) {
             round_trip.report().losses
         );
     };
-    let source_index = cadmpeg_ir::index::ModelIndex::new(original.ir());
-    let round_index = cadmpeg_ir::index::ModelIndex::new(round_trip.ir());
+    let source_index =
+        cadmpeg_ir::index::ModelIndex::build(original.ir(), cadmpeg_ir::index::StandardIndex);
+    let round_index =
+        cadmpeg_ir::index::ModelIndex::build(round_trip.ir(), cadmpeg_ir::index::StandardIndex);
     let source_range = surface_construction(original.ir(), &source_surface.id)
         .and_then(|procedural| match procedural.definition() {
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
-                parameter_interval: Some(range),
-                ..
-            } => Some(*range),
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(payload) => payload
+                .parameter_interval()
+                .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints),
             _ => None,
         })
         .expect("source revolution interval");
     let round_range = surface_construction(round_trip.ir(), &round_surface.id)
         .and_then(|procedural| match procedural.definition() {
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
-                parameter_interval: Some(range),
-                ..
-            } => Some(*range),
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(payload) => payload
+                .parameter_interval()
+                .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints),
             _ => None,
         })
         .expect("round-trip revolution interval");
@@ -966,19 +1029,23 @@ fn assert_type120_round_trip(version: IgesVersion) {
         let source_parameter = source_range[0] + fraction * (source_range[1] - source_range[0]);
         let round_parameter = round_range[0] + fraction * (round_range[1] - round_range[0]);
         let source_point = cadmpeg_ir::eval::model_surface_point_by_id(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
             &source_index,
             &source_surface.id,
             source_parameter,
             angle,
         )
-        .expect("source revolution evaluates");
+        .expect("source revolution evaluates")
+        .get();
         let round_point = cadmpeg_ir::eval::model_surface_point_by_id(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
             &round_index,
             &round_surface.id,
             round_parameter,
             angle,
         )
-        .expect("round-trip revolution evaluates");
+        .expect("round-trip revolution evaluates")
+        .get();
         assert!(
             source_point.distance(round_point) < EPS_REVOLUTION_ROUND_TRIP,
             "source={source_point:?} round_trip={round_point:?}"

@@ -1,16 +1,71 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use super::*;
+use super::{directed_subd_sum, unit_cube};
+use crate::document::CadIr;
 use crate::validate::validate_neutral;
 
 #[test]
 fn directed_subd_sum_fixture_round_trips_and_validates() {
     let ir = directed_subd_sum().unwrap();
-    let report = crate::validate::validate_neutral(&ir, Vec::new());
+    let report = crate::validate::validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail");
     assert!(report.is_ok(), "{:?}", report.findings);
     let json = ir.to_canonical_json().expect("serialize fixture");
     assert_eq!(CadIr::from_json(&json).expect("parse fixture"), ir);
+}
+
+#[test]
+fn directed_subd_sum_fixture_carries_the_literal_axes_and_frame() {
+    use crate::geometry::analytic::{LineCurve, PlaneSurface};
+    use crate::geometry::{
+        CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    };
+    use crate::ids::{CurveId, SurfaceId};
+    use crate::math::{Point3, Vector3};
+
+    let ir = directed_subd_sum().unwrap();
+    let origin = Point3::new(0.0, 0.0, 0.0);
+    for (key, direction) in [
+        (crate::identity_key!("u"), Vector3::new(1.0, 0.0, 0.0)),
+        (crate::identity_key!("v"), Vector3::new(0.0, 1.0, 0.0)),
+    ] {
+        let id = v2_id!(CurveId, "curve", key);
+        let curve = ir.model.curves.iter().find(|curve| curve.id == id).unwrap();
+        let CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) = &curve.geometry else {
+            panic!("the directed SubD example curve is a line");
+        };
+        assert_eq!(
+            serde_json::to_string(line).unwrap(),
+            serde_json::to_string(&LineCurve::try_new(origin, direction).unwrap()).unwrap()
+        );
+    }
+    let id = v2_id!(SurfaceId, "surface", crate::identity_key!("sum-cache"));
+    let surface = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == id)
+        .unwrap();
+    let SurfaceGeometry::Procedural {
+        cache: Some(SolvedSurfaceGeometry::Plane(plane)),
+        ..
+    } = &surface.geometry
+    else {
+        panic!("the directed SubD example cache is a plane");
+    };
+    assert_eq!(
+        serde_json::to_string(plane).unwrap(),
+        serde_json::to_string(
+            &PlaneSurface::try_new(
+                origin,
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0)
+            )
+            .unwrap()
+        )
+        .unwrap()
+    );
 }
 
 #[cfg(feature = "schema")]
@@ -25,7 +80,7 @@ fn directed_subd_sum_fixture_matches_schema_shape() {
 
 #[test]
 fn unit_cube_has_expected_census() {
-    let ir = unit_cube();
+    let ir = unit_cube().expect("valid unit cube fixture");
     assert_eq!(ir.model.bodies.len(), 1);
     assert_eq!(ir.model.regions.len(), 1);
     assert_eq!(ir.model.shells.len(), 1);
@@ -41,8 +96,8 @@ fn unit_cube_has_expected_census() {
 
 #[test]
 fn unit_cube_validates_clean() {
-    let ir = unit_cube();
-    let report = validate_neutral(&ir, Vec::new());
+    let ir = unit_cube().expect("valid unit cube fixture");
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(
         report.is_ok(),
         "cube should have no error findings, got: {:?}",
@@ -55,7 +110,7 @@ fn unit_cube_validates_clean() {
 
 #[test]
 fn every_cube_edge_has_two_opposite_sense_coedges() {
-    let ir = unit_cube();
+    let ir = unit_cube().expect("valid unit cube fixture");
     for edge in &ir.model.edges {
         let coedges: Vec<_> = ir
             .model

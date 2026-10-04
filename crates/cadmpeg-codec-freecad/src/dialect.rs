@@ -36,7 +36,7 @@ use crate::loss::FreecadLossCode;
 use crate::native::DocumentFacts;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch, Grammar};
 use cadmpeg_core::target::TargetDescriptor;
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 use std::collections::BTreeMap;
 
 include!("dialect/registry_ids.rs");
@@ -52,7 +52,7 @@ include!("dialect/registry_ids.rs");
 /// No row is a cross-format default because this writer cannot synthesize an
 /// `FCStd` document graph from another format.
 ///
-/// [`TargetRequest::Inherit`]: cadmpeg_ir::codec::write::TargetRequest::Inherit
+/// [`TargetRequest::Inherit`]: cadmpeg_ir::codec::write::target::TargetRequest::Inherit
 pub(crate) const TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
     id: FcstdDialect::Schema4.id(),
     aliases: &["4"],
@@ -63,7 +63,7 @@ pub(crate) const TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
 /// Verbatim as read. The attribute is required — a document without it is
 /// refused as the wrong format before classification — so this key is always
 /// present.
-const DECLARED_SCHEMA_VERSION: &str = "schema_version";
+pub(crate) const DECLARED_SCHEMA_VERSION: &str = "schema_version";
 /// Key of `Document/@FileVersion` in [`DialectMatch::declared`].
 ///
 /// Verbatim as read, except that an absent attribute is recorded as `"0"`,
@@ -93,7 +93,7 @@ pub(crate) enum FcstdDialect {
 impl FcstdDialect {
     /// Every dialect identity this enum can name.
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 4] = [Self::Schema2, Self::Schema3, Self::Schema4, Self::Unknown];
+    const ALL: [Self; 4] = [Self::Schema2, Self::Schema3, Self::Schema4, Self::Unknown];
 
     /// The registry-generated id for this variant.
     pub(crate) const fn id(self) -> DialectId {
@@ -150,16 +150,22 @@ impl FcstdDialect {
     /// decode path, container-only or full, and every inspect reads an
     /// undeclared schema with the `Objects` vocabulary rather than refusing on
     /// the discriminant.
-    pub(crate) fn classify(document: &DocumentFacts) -> DialectMatch {
-        let dialect = Self::from_schema_version(&document.schema_version);
+    pub(crate) fn classify(document: &DocumentFacts, schema_version: &str) -> DialectMatch {
+        let dialect = Self::from_schema_version(schema_version);
         let mut declared = BTreeMap::new();
         declared.insert(
-            DECLARED_SCHEMA_VERSION.into(),
-            document.schema_version.clone(),
+            cadmpeg_core::nonblank_const!(DECLARED_SCHEMA_VERSION),
+            schema_version.to_owned(),
         );
-        declared.insert(DECLARED_FILE_VERSION.into(), document.file_version.clone());
+        declared.insert(
+            cadmpeg_core::nonblank_const!(DECLARED_FILE_VERSION),
+            document.file_version.as_str().to_owned(),
+        );
         if let Some(version) = &document.program_version {
-            declared.insert(DECLARED_PROGRAM_VERSION.into(), version.clone());
+            declared.insert(
+                cadmpeg_core::nonblank_const!(DECLARED_PROGRAM_VERSION),
+                version.clone(),
+            );
         }
         if dialect == Self::Unknown {
             DialectMatch::unverified(dialect.id(), Grammar::of(&Self::NEAREST_VERIFIED.id()))

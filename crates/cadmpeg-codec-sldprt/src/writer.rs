@@ -3,23 +3,29 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::Write;
+use std::num::NonZeroU16;
 
 pub(crate) mod target;
 
 use crate::native::SldprtNative;
-use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_core::convert::{f32_from_f64, truncate_f64_to_u8};
+use cadmpeg_core::decode::{index_from_u32, DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, SurfaceGeometry,
+    nurbs::{NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface},
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::{BodyKind, Color, Sense};
 use cadmpeg_ir::Annotations;
 
 use crate::SourceRecord;
 
 use crate::container::MARKER;
+use crate::history::write::xml::valid_xml_name;
 
 const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
 const TYPED_BODY_LINEAR_RESOLUTION: f64 = 1.0e-8;
@@ -35,28 +41,31 @@ pub(crate) const PMI_LOCAL_DIGEST_ATTRIBUTE: &str = "sldprt_pmi_local_sha256";
 ///
 /// The returned id is classified from the final section payloads through the
 /// same `swSolidWorks` envelope parser that decode uses, so a re-decode of
-/// these bytes classifies exactly what the caller reports as
-/// `ExportReport::target`.
+/// these bytes classifies exactly the dialect stored in the serialized export
+/// report's `identity.target` field.
 pub(crate) fn write_semantic_with_records(
     ir: &CadIr,
     annotations: &Annotations,
     retained_records: &[SourceRecord<'_>],
     writer: &mut dyn Write,
 ) -> Result<cadmpeg_core::dialect::DialectId, CodecError> {
+    let digest_arena = DecodeArena::new();
+    let (digest_ctx, _) =
+        DecodeContext::from_root_bytes(&[], &digest_arena, &DecodePolicy::desktop())?;
     let mut native = ir
         .native
         .namespace("sldprt")
         .map(|namespace| SldprtNative::load(namespace).map_err(CodecError::from))
         .transpose()?;
     let mut normalized = ir.clone();
-    drop_synthesized_configuration_snapshot(&mut normalized);
+    normalized.model.configurations = configurations_without_synthesized_snapshot(&normalized);
     sort_arenas(&mut normalized);
     // Export precondition on the normalized input. Keeps full validate_neutral:
     // writer refusal depends on non-core Checks (e.g. Counts for duplicate
     // configuration source indices). SLDPRT_EXPORT_PRECONDITION_CHECKS records
     // the draft/topology floor; narrowing further needs reject-fixture coverage.
     // The postcondition after bake/prepare (below) also keeps full validate_neutral.
-    let validation = cadmpeg_ir::validate::validate_neutral(&normalized, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(&normalized, Vec::new())?;
     if !validation.is_ok() {
         let detail = validation
             .findings
@@ -68,25 +77,38 @@ pub(crate) fn write_semantic_with_records(
     crate::writer_transform::bake(&mut normalized)?;
     sort_arenas(&mut normalized);
     assign_configuration_indices(&mut normalized.model.configurations)?;
-    let source_scan = source_image(retained_records).map(crate::container::scan_bytes);
-    let retained_partition = retained_partition(&normalized, source_scan.as_ref());
-    let feature_name_changes = crate::history::feature_name_changes(&normalized, native.as_ref());
+    let source_arena = DecodeArena::new();
+    let source_context = source_image(retained_records)
+        .map(|bytes| DecodeContext::from_root_bytes(bytes, &source_arena, &DecodePolicy::desktop()))
+        .transpose()?;
+    let source_scan = source_context
+        .as_ref()
+        .map(|(ctx, root)| crate::container::scan(ctx, *root))
+        .transpose()?;
+    let retained_partition =
+        retained_partition(&normalized, source_scan.as_ref(), native.as_ref())?;
+    let feature_name_changes =
+        crate::history::write::feature_name_changes(&normalized, native.as_ref());
     let feature_parameter_changes_authorized = !feature_name_changes.is_empty()
-        && crate::history::native_parameters_match_source(&normalized, native.as_ref());
-    crate::history::apply_feature_name_changes(
+        && crate::history::write::native_parameters_match_source(&normalized, native.as_ref())?;
+    crate::history::write::apply_feature_name_changes(
         &mut normalized.model.parameters,
         &feature_name_changes,
-    );
+    )?;
     let ir = &normalized;
-    crate::history::prepare_features_for_write(ir, &mut native)?;
+    let feature_input_renames = crate::history::write::prepare_features_for_write(ir, &mut native)?;
     crate::resolved_features::write_prepare::prepare_sketches_for_write(ir, &mut native)?;
-    crate::history::prepare_parameters_for_write(
+    crate::history::write::parameters::prepare_parameters_for_write(
         ir,
         &mut native,
         feature_parameter_changes_authorized,
     )?;
-    crate::history::prepare_configurations_for_write(ir, &mut native, annotations)?;
-    let validation = cadmpeg_ir::validate::validate_neutral(ir, Vec::new());
+    crate::history::write::configurations::prepare_configurations_for_write(
+        ir,
+        &mut native,
+        annotations,
+    )?;
+    let validation = cadmpeg_ir::validate::validate_neutral(ir, Vec::new())?;
     if !validation.is_ok() {
         let detail = validation
             .findings
@@ -131,16 +153,16 @@ pub(crate) fn write_semantic_with_records(
         };
         vec![(
             "Contents/Config-0-Partition".to_string(),
-            parasolid_stream(&body, schema),
+            parasolid_stream(&body, schema)?,
         )]
     };
-    let active_partition_section = partition_sections
-        .first()
+    let generated_partition_sections = partition_sections
+        .iter()
         .map(|(section, _)| section.clone())
-        .unwrap_or_default();
+        .collect::<HashSet<_>>();
     let mut sections = partition_sections;
-    let materials = materials_payload(ir)?;
-    let (objects, units) = metadata_payloads(ir, length_scale)?;
+    let materials = materials_payload(&digest_ctx, ir)?;
+    let (objects, units) = metadata_payloads(&digest_ctx, ir, length_scale)?;
     let mut retained_swobjects = retained_swobjects_sections(retained_records, annotations)?;
     let replay_swobjects = if retained_swobjects.is_empty() {
         false
@@ -149,7 +171,7 @@ pub(crate) fn write_semantic_with_records(
             .source
             .as_ref()
             .and_then(|source| source.attributes.get(SWOBJECTS_LOCAL_DIGEST_ATTRIBUTE));
-        let current = swobjects_local_sha256(ir)?;
+        let current = swobjects_local_sha256(&digest_ctx, ir)?;
         if baseline != Some(&current) {
             let material_baseline = ir.source.as_ref().and_then(|source| {
                 source
@@ -161,8 +183,9 @@ pub(crate) fn write_semantic_with_records(
                     .attributes
                     .get(SWOBJECTS_METADATA_IDENTITY_LOCAL_DIGEST_ATTRIBUTE)
             });
-            if material_baseline != Some(&swobjects_material_local_sha256(ir)?)
-                || identity_baseline != Some(&swobjects_metadata_identity_local_sha256(ir))
+            if material_baseline != Some(&swobjects_material_local_sha256(&digest_ctx, ir)?)
+                || identity_baseline
+                    != Some(&swobjects_metadata_identity_local_sha256(&digest_ctx, ir)?)
             {
                 return Err(CodecError::NotImplemented(
                     "SLDPRT writer cannot edit retained SWObjects semantics without replacing opaque record bytes"
@@ -170,6 +193,7 @@ pub(crate) fn write_semantic_with_records(
                 ));
             }
             patch_retained_swobjects_metadata(
+                &digest_ctx,
                 ir,
                 annotations,
                 &mut retained_swobjects,
@@ -221,20 +245,23 @@ pub(crate) fn write_semantic_with_records(
         let histories = native
             .as_ref()
             .map_or(&[][..], |native| native.feature_histories.as_slice());
-        sections.push((section, resolved_feature_payload(lane, histories)?));
+        sections.push((
+            section,
+            resolved_feature_payload(lane, histories, &feature_input_renames)?,
+        ));
     }
     let opaque = opaque_blocks(
         ir,
         retained_records,
         annotations,
-        &active_partition_section,
+        &generated_partition_sections,
         retain_native_brep,
     )?;
     let document_envelope = crate::container::first_solidworks_envelope(
         opaque.iter().map(|(_, payload)| payload.as_slice()),
     );
     if let Some(active) = ir.model.configurations.iter().find(|value| value.active) {
-        let active_name = active.name.resolved().ok_or_else(|| {
+        let active_name = active.name.as_deref().ok_or_else(|| {
             CodecError::Malformed("active SLDPRT configuration has no resolved name".into())
         })?;
         if document_envelope.is_none() {
@@ -271,7 +298,7 @@ fn assign_configuration_indices(
     let mut used = HashSet::new();
     let mut names = HashSet::new();
     for configuration in configurations.iter() {
-        let Some(name) = configuration.name.resolved() else {
+        let Some(name) = configuration.name.as_deref() else {
             return Err(CodecError::Malformed(
                 "SLDPRT configuration has no resolved name".into(),
             ));
@@ -299,7 +326,7 @@ fn assign_configuration_indices(
     let mut next = 0;
     for position in positions {
         if configurations[position].source_index.is_none()
-            && configurations[position].bodies.resolved().is_some()
+            && configurations[position].bodies.as_deref().is_some()
         {
             configurations[position].source_index =
                 Some(reserve_configuration_index(&mut used, &mut next)?);
@@ -338,21 +365,25 @@ fn push_xml_attribute_value(output: &mut String, value: &str) {
 /// configuration when the native records carry none.
 ///
 /// Nothing in the file encodes that snapshot, so it cannot be written back.
-fn drop_synthesized_configuration_snapshot(ir: &mut CadIr) {
+pub(crate) fn configurations_without_synthesized_snapshot(
+    ir: &CadIr,
+) -> Vec<cadmpeg_ir::features::DesignConfiguration> {
+    let mut configurations = ir.model.configurations.clone();
     let Some(id) = ir.source.as_ref().and_then(|source| {
         source
             .attributes
             .get("sldprt_configuration_snapshot_synthesized")
             .cloned()
     }) else {
-        return;
+        return configurations;
     };
-    for configuration in &mut ir.model.configurations {
+    for configuration in &mut configurations {
         if configuration.id.as_str() == id {
             configuration.feature_states.clear();
             configuration.parameter_values.clear();
         }
     }
+    configurations
 }
 
 fn sort_arenas(ir: &mut CadIr) {
@@ -412,7 +443,7 @@ fn section_directory_entries(
         .zip(type_ids)
         .map(|((section, payload), type_id)| {
             let size = u32::try_from(payload.len())
-                .map_err(|_| CodecError::Malformed("SLDPRT section exceeds 4 GiB".into()))?;
+                .map_err(|_| CodecError::NotImplemented("SLDPRT section exceeds 4 GiB".into()))?;
             let source_entry = source_scan.and_then(|scan| {
                 scan.directory
                     .iter()
@@ -432,13 +463,13 @@ fn section_directory_entries(
                     return Ok(retained.to_vec());
                 }
             }
-            Ok(directory_entry(
+            directory_entry(
                 *type_id,
                 size,
                 section,
                 source_entry.map_or([0; 14], |entry| entry.descriptor),
                 source_trailer.unwrap_or([0xe5, 0x4b, 0x57, 0x5b, 0, 0]),
-            ))
+            )
         })
         .collect()
 }
@@ -454,7 +485,7 @@ fn retained_cache_cells(
         .iter()
         .filter(|cell| {
             let original_matches = scan.blocks.iter().any(|block| {
-                block.section.as_deref() == Some(cell.name.as_str())
+                block.section.name() == Some(cell.name.as_str())
                     && sections.iter().any(|(section, payload)| {
                         section == &cell.name && payload == &block.payload
                     })
@@ -479,22 +510,32 @@ fn retained_cache_cells(
 fn retained_partition(
     ir: &CadIr,
     source_scan: Option<&crate::container::ContainerScan<'_>>,
-) -> Option<(String, Vec<u8>)> {
-    let source = ir.source.as_ref()?;
-    let expected = source.attributes.get("brep_local_sha256")?;
-    if crate::decode::brep_local_sha256(ir) != *expected {
-        return None;
+    native: Option<&SldprtNative>,
+) -> Result<Option<(String, Vec<u8>)>, CodecError> {
+    let Some(source) = ir.source.as_ref() else {
+        return Ok(None);
+    };
+    let Some(expected) = source.attributes.get("brep_local_sha256") else {
+        return Ok(None);
+    };
+    if crate::decode::brep_local_sha256(ir)? != *expected {
+        return Ok(None);
     }
-    let scan = source_scan?;
-    let site = crate::container::select_active_parasolid_site(scan)?;
+    let Some(scan) = source_scan else {
+        return Ok(None);
+    };
+    let Some(site) = crate::container::select_active_parasolid_site(scan) else {
+        return Ok(None);
+    };
     let original_section = site.name();
-    let section = remapped_partition_section(ir, &original_section).unwrap_or(original_section);
-    Some((section, site.section.payload().to_vec()))
+    let section = native
+        .and_then(|native| remapped_partition_section(ir, native, &original_section))
+        .unwrap_or(original_section);
+    Ok(Some((section, site.section.payload().to_vec())))
 }
 
-fn remapped_partition_section(ir: &CadIr, section: &str) -> Option<String> {
+fn remapped_partition_section(ir: &CadIr, native: &SldprtNative, section: &str) -> Option<String> {
     let old_index = crate::container::configuration_index(section)?;
-    let native = SldprtNative::load(ir.native.namespace("sldprt")?).ok()?;
     let native_id = native
         .feature_histories
         .iter()
@@ -530,9 +571,9 @@ fn section_type_ids(
     let mut source_ids: HashMap<String, VecDeque<u32>> = HashMap::new();
     if let Some(scan) = source_scan {
         for block in &scan.blocks {
-            if let Some(section) = &block.section {
+            if let Some(section) = block.section.name() {
                 source_ids
-                    .entry(section.clone())
+                    .entry(section.to_owned())
                     .or_default()
                     .push_back(block.type_id);
             }
@@ -549,11 +590,13 @@ fn section_type_ids(
                     || {
                         0x20u32
                             .checked_add(u32::try_from(index).map_err(|_| {
-                                CodecError::Malformed(
+                                CodecError::NotImplemented(
                                     "SLDPRT section count exceeds type-id space".into(),
                                 )
                             })?)
-                            .ok_or_else(|| CodecError::Malformed("SLDPRT type-id overflow".into()))
+                            .ok_or_else(|| {
+                                CodecError::NotImplemented("SLDPRT type-id overflow".into())
+                            })
                     },
                     Ok,
                 )
@@ -608,33 +651,43 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
     }
     for surface in &ir.model.surfaces {
         match &surface.geometry {
-            SurfaceGeometry::Cone {
-                ratio, half_angle, ..
-            } => {
-                if *ratio != 1.0 {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
+                let ratio = cone_surface.ratio().get();
+                let half_angle = cone_surface.half_angle().get();
+                if ratio != 1.0 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT surface {} has elliptical cone ratio {}; compact cone carriers encode circular cones only",
                         surface.id.as_str(), ratio
                     )));
                 }
-                if !(*half_angle > 0.0 && *half_angle < std::f64::consts::FRAC_PI_2) {
+                if !(half_angle > 0.0 && half_angle < std::f64::consts::FRAC_PI_2) {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT surface {} has cone half-angle {}; compact cone carriers require an acute positive half-angle",
                         surface.id.as_str(), half_angle
                     )));
                 }
             }
-            SurfaceGeometry::Sphere { radius, .. } if *radius < 0.0 => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))
+                if {
+                    let radius = sphere_surface.radius().get();
+                    radius < 0.0
+                } =>
+            {
+                let radius = sphere_surface.radius().get();
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT surface {} has signed sphere radius {}; compact sphere carriers require a positive radius",
                     surface.id.as_str(), radius
                 )));
             }
-            SurfaceGeometry::Torus {
-                major_radius,
-                minor_radius,
-                ..
-            } if !(*major_radius > *minor_radius && *minor_radius > 0.0) => {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
+                if {
+                    let major_radius = torus_surface.major_radius().get();
+                    let minor_radius = torus_surface.minor_radius().get();
+                    !(major_radius > minor_radius && minor_radius > 0.0)
+                } =>
+            {
+                let major_radius = torus_surface.major_radius().get();
+                let minor_radius = torus_surface.minor_radius().get();
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT surface {} has torus radii ({}, {}); compact torus carriers require major > minor > 0",
                     surface.id.as_str(), major_radius, minor_radius
@@ -656,7 +709,7 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
         ));
     }
     if ir.model.edges.iter().any(|edge| {
-        edge.param_range.is_some()
+        edge.param_range().is_some()
             && annotations
                 .exactness()
                 .get(edge.id.as_str())
@@ -698,7 +751,7 @@ fn configuration_partitions(
         .flat_map(|configuration| {
             configuration
                 .bodies
-                .resolved()
+                .as_deref()
                 .unwrap_or_default()
                 .iter()
                 .cloned()
@@ -720,7 +773,7 @@ fn configuration_partitions(
     configurations
         .into_iter()
         .filter_map(|configuration| {
-            let bodies = configuration.bodies.resolved()?;
+            let bodies = configuration.bodies.as_deref()?;
             (!bodies.is_empty()).then_some((configuration, bodies))
         })
         .map(|(configuration, bodies)| {
@@ -744,7 +797,7 @@ fn configuration_partitions(
             };
             Ok((
                 format!("Contents/Config-{index}-Partition"),
-                parasolid_stream(&body, schema),
+                parasolid_stream(&body, schema)?,
             ))
         })
         .collect()
@@ -763,7 +816,9 @@ pub(super) fn reserve_configuration_index(
             return Ok(index);
         }
         *next = index.checked_add(1).ok_or_else(|| {
-            CodecError::Malformed("SLDPRT configuration source index space is exhausted".into())
+            CodecError::NotImplemented(
+                "SLDPRT configuration source index space is exhausted".into(),
+            )
         })?;
     }
 }
@@ -808,7 +863,7 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .model
         .shells
         .iter()
-        .flat_map(|shell| shell.faces.iter().cloned())
+        .flat_map(|shell| shell.faces().iter().cloned())
         .collect::<HashSet<_>>();
     subset.model.faces.retain(|face| faces.contains(&face.id));
     let loops = subset
@@ -835,7 +890,7 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .map(|coedge| coedge.edge.clone())
         .collect::<HashSet<_>>();
     for shell in &subset.model.shells {
-        edges.extend(shell.wire_edges.iter().cloned());
+        edges.extend(shell.wire_edges().iter().cloned());
     }
     subset.model.edges.retain(|edge| edges.contains(&edge.id));
     let mut vertices = subset
@@ -845,7 +900,7 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .flat_map(|edge| [edge.start.clone(), edge.end.clone()])
         .collect::<HashSet<_>>();
     for shell in &subset.model.shells {
-        vertices.extend(shell.free_vertices.iter().cloned());
+        vertices.extend(shell.free_vertices().iter().cloned());
     }
     subset
         .model
@@ -875,7 +930,7 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .model
         .edges
         .iter()
-        .filter_map(|edge| edge.curve.clone())
+        .filter_map(|edge| edge.curve().cloned())
         .collect::<HashSet<_>>();
     subset
         .model
@@ -891,7 +946,13 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .model
         .pcurves
         .retain(|pcurve| pcurves.contains(&pcurve.id));
-    subset.model.finalize();
+    let ordering_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ordering_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &ordering_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )?;
+    subset.model.finalize(&ordering_ctx)?;
     Ok(subset)
 }
 
@@ -899,9 +960,15 @@ fn opaque_blocks(
     ir: &CadIr,
     records: &[SourceRecord<'_>],
     annotations: &Annotations,
-    active_partition: &str,
+    generated_partitions: &HashSet<String>,
     retain_native_brep: bool,
 ) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
+    let native = ir
+        .native
+        .namespace("sldprt")
+        .map(SldprtNative::load)
+        .transpose()
+        .map_err(CodecError::from)?;
     let mut seen = HashSet::new();
     records
         .iter()
@@ -910,11 +977,14 @@ fn opaque_blocks(
             let provenance = annotations.provenance.get(record.id.as_str())?;
             let section = provenance.stream();
             let lower = section.to_ascii_lowercase();
-            if section == active_partition {
+            if generated_partitions.contains(section) {
                 return None;
             }
             if lower.ends_with("-partition")
-                && remapped_partition_section(ir, section).as_deref() == Some(active_partition)
+                && native
+                    .as_ref()
+                    .and_then(|native| remapped_partition_section(ir, native, section))
+                    .is_some_and(|remapped| generated_partitions.contains(&remapped))
             {
                 return None;
             }
@@ -941,7 +1011,7 @@ fn opaque_blocks(
                 }
             }
             if let Some(active) = ir.model.configurations.iter().find(|value| value.active) {
-                let Some(active_name) = active.name.resolved() else {
+                let Some(active_name) = active.name.as_deref() else {
                     return Some(Err(CodecError::Malformed(
                         "active SLDPRT configuration has no resolved name".into(),
                     )));
@@ -952,7 +1022,7 @@ fn opaque_blocks(
                     Err(error) => return Some(Err(error)),
                 }
             }
-            seen.insert((section.to_string(), record.sha256))
+            seen.insert((section.to_string(), record.sha256.clone()))
                 .then_some(Ok((section.to_string(), payload)))
         })
         .collect()
@@ -978,7 +1048,7 @@ fn retained_swobjects_sections(
     sections
         .into_iter()
         .filter_map(|(section, record)| {
-            seen.insert((section, record.sha256))
+            seen.insert((section, record.sha256.clone()))
                 .then_some((section, record))
         })
         .map(|(section, record)| {
@@ -991,15 +1061,15 @@ fn retained_swobjects_sections(
 }
 
 fn patch_retained_swobjects_metadata(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     annotations: &Annotations,
     sections: &mut [(String, Vec<u8>)],
     length_scale: f64,
 ) -> Result<(), CodecError> {
-    use cadmpeg_ir::attributes::AttributeValue;
     use std::cmp::Reverse;
 
-    let mut attributes = metadata_attributes(ir)
+    let mut attributes = metadata_attributes(ctx, ir)?
         .into_iter()
         .filter(|attribute| attribute.name != "source_linear_unit_code")
         .map(|attribute| {
@@ -1015,7 +1085,12 @@ fn patch_retained_swobjects_metadata(
             Ok((provenance.stream().to_owned(), provenance.offset, attribute))
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
-    attributes.sort_by(|left, right| (&left.0, Reverse(left.1)).cmp(&(&right.0, Reverse(right.1))));
+    ctx.stable_sort_by(
+        &mut attributes,
+        |left, right| (&left.0, Reverse(left.1)).cmp(&(&right.0, Reverse(right.1))),
+        |attribute| attribute.0.len(),
+        "SLDPRT retained metadata patch order",
+    )?;
 
     for (stream, offset, attribute) in attributes {
         let payload = sections
@@ -1030,166 +1105,79 @@ fn patch_retained_swobjects_metadata(
         let offset = usize::try_from(offset).map_err(|_| {
             CodecError::Malformed("SLDPRT metadata offset exceeds address space".into())
         })?;
-        match attribute.name.as_str() {
-            "bounding_envelope" => {
-                let [AttributeValue::Vector(values)] = attribute.values.as_slice() else {
-                    return Err(CodecError::Malformed("invalid bounding envelope".into()));
-                };
-                if values.len() != 4 {
-                    return Err(CodecError::Malformed("invalid bounding envelope".into()));
-                }
-                let token = b"moBBoxCenterData_c";
-                require_token(payload, offset, token)?;
+        // The retained record's token and unit-name marker are checked once
+        // the values have the record's shape and before they are admitted.
+        let retained = |token: &'static [u8]| {
+            require_token(payload, offset, token)?;
+            if token == UNIT_NAME_TOKEN {
+                resident_unit_name_len(payload, offset + token.len())?;
+            }
+            Ok(())
+        };
+        match MetadataRecord::project(attribute, length_scale, retained)? {
+            Some(MetadataRecord::BoundingEnvelope(values)) => {
                 let mut bytes = Vec::with_capacity(32);
                 for value in values {
-                    bytes.extend((value * length_scale).to_le_bytes());
-                }
-                overwrite_bytes(payload, offset + token.len() + 4, &bytes)?;
-            }
-            "default_reference_plane" => {
-                let [AttributeValue::Vector(origin), AttributeValue::Vector(frame)] =
-                    attribute.values.as_slice()
-                else {
-                    return Err(CodecError::Malformed(
-                        "invalid default reference plane".into(),
-                    ));
-                };
-                if origin.len() != 3 || frame.len() != 6 {
-                    return Err(CodecError::Malformed(
-                        "invalid default reference plane".into(),
-                    ));
-                }
-                let token = b"moDefaultRefPlnData_c";
-                require_token(payload, offset, token)?;
-                let mut bytes = Vec::with_capacity(72);
-                for value in origin {
-                    bytes.extend((value * length_scale).to_le_bytes());
-                }
-                for value in frame {
                     bytes.extend(value.to_le_bytes());
                 }
-                overwrite_bytes(payload, offset + token.len(), &bytes)?;
+                overwrite_bytes(payload, offset + BOUNDING_ENVELOPE_TOKEN.len() + 4, &bytes)?;
             }
-            "transformed_reference_plane" => {
-                let [AttributeValue::Vector(center), AttributeValue::Vector(extents), AttributeValue::Vector(auxiliary), AttributeValue::Float(diagonal)] =
-                    attribute.values.as_slice()
-                else {
-                    return Err(CodecError::Malformed(
-                        "invalid transformed reference plane".into(),
-                    ));
-                };
-                if center.len() != 3 || extents.len() != 2 || auxiliary.len() != 3 {
-                    return Err(CodecError::Malformed(
-                        "invalid transformed reference plane".into(),
-                    ));
-                }
-                let token = b"moTransRefPlaneData_c";
-                require_token(payload, offset, token)?;
+            Some(MetadataRecord::DefaultReferencePlane { origin, frame }) => {
                 let mut bytes = Vec::with_capacity(72);
-                for value in center.iter().chain(extents) {
-                    bytes.extend((value * length_scale).to_le_bytes());
-                }
-                for value in auxiliary {
+                for value in origin.into_iter().chain(frame) {
                     bytes.extend(value.to_le_bytes());
                 }
-                bytes.extend((diagonal * length_scale).to_le_bytes());
-                overwrite_bytes(payload, offset + token.len() + 8, &bytes)?;
-            }
-            "part_record" => {
-                let [AttributeValue::Integer(id), AttributeValue::Integer(version)] =
-                    attribute.values.as_slice()
-                else {
-                    return Err(CodecError::Malformed("invalid part record".into()));
-                };
-                let token = b"moPart_c";
-                require_token(payload, offset, token)?;
                 overwrite_bytes(
                     payload,
-                    offset + token.len(),
-                    &u32::try_from(*id)
-                        .map_err(|_| CodecError::Malformed("invalid part id".into()))?
-                        .to_le_bytes(),
-                )?;
-                overwrite_bytes(
-                    payload,
-                    offset + token.len() + 8,
-                    &u32::try_from(*version)
-                        .map_err(|_| CodecError::Malformed("invalid part version".into()))?
-                        .to_le_bytes(),
+                    offset + DEFAULT_REFERENCE_PLANE_TOKEN.len(),
+                    &bytes,
                 )?;
             }
-            "configuration_manager" => {
-                let [AttributeValue::Integer(minor), AttributeValue::Integer(states), AttributeValue::Integer(filetime)] =
-                    attribute.values.as_slice()
-                else {
-                    return Err(CodecError::Malformed(
-                        "invalid configuration manager".into(),
-                    ));
-                };
-                let token = b"moConfigurationMgr_c";
-                require_token(payload, offset, token)?;
-                let start = offset + token.len();
-                overwrite_bytes(
-                    payload,
-                    start + 66,
-                    &u32::try_from(*minor)
-                        .map_err(|_| {
-                            CodecError::Malformed("invalid configuration minor version".into())
-                        })?
-                        .to_le_bytes(),
-                )?;
-                overwrite_bytes(
-                    payload,
-                    start + 107,
-                    &[u8::try_from(*states).map_err(|_| {
-                        CodecError::Malformed("invalid configuration state count".into())
-                    })?],
-                )?;
-                overwrite_bytes(
-                    payload,
-                    start + 117,
-                    &u64::try_from(*filetime)
-                        .map_err(|_| {
-                            CodecError::Malformed("invalid configuration timestamp".into())
-                        })?
-                        .to_le_bytes(),
-                )?;
-            }
-            "source_linear_unit_name" => {
-                let [AttributeValue::String(name)] = attribute.values.as_slice() else {
-                    return Err(CodecError::Malformed(
-                        "invalid source linear unit name".into(),
-                    ));
-                };
-                let token = b"moLengthUserUnits_c";
-                require_token(payload, offset, token)?;
-                let marker = offset + token.len();
-                if payload.get(marker..marker + 3) != Some(&[0xff, 0xfe, 0xff]) {
-                    return Err(CodecError::Malformed(
-                        "retained SLDPRT unit-name marker does not match its provenance".into(),
-                    ));
+            Some(MetadataRecord::TransformedReferencePlane {
+                center,
+                extents,
+                auxiliary,
+                diagonal,
+            }) => {
+                let mut bytes = Vec::with_capacity(72);
+                for value in center
+                    .into_iter()
+                    .chain(extents)
+                    .chain(auxiliary)
+                    .chain([diagonal])
+                {
+                    bytes.extend(value.to_le_bytes());
                 }
-                let old_len = usize::from(*payload.get(marker + 3).ok_or_else(|| {
-                    CodecError::Malformed("truncated retained SLDPRT unit name".into())
-                })?);
-                let units = name.encode_utf16().collect::<Vec<_>>();
-                let byte_len = units.len().checked_mul(2).ok_or_else(|| {
-                    CodecError::Malformed("source linear unit name is too long".into())
-                })?;
-                let new_len = u8::try_from(byte_len).map_err(|_| {
-                    CodecError::Malformed("source linear unit name is too long".into())
-                })?;
-                if units.is_empty() {
-                    return Err(CodecError::Malformed(
-                        "source linear unit name is empty".into(),
-                    ));
-                }
-                if usize::from(new_len) != old_len {
+                overwrite_bytes(
+                    payload,
+                    offset + TRANSFORMED_REFERENCE_PLANE_TOKEN.len() + 8,
+                    &bytes,
+                )?;
+            }
+            Some(MetadataRecord::PartRecord { id, version }) => {
+                let start = offset + PART_RECORD_TOKEN.len();
+                overwrite_bytes(payload, start, &id.to_le_bytes())?;
+                overwrite_bytes(payload, start + 8, &version.to_le_bytes())?;
+            }
+            Some(MetadataRecord::ConfigurationManager {
+                minor,
+                states,
+                filetime,
+            }) => {
+                let start = offset + CONFIGURATION_MANAGER_TOKEN.len();
+                overwrite_bytes(payload, start + 66, &minor.to_le_bytes())?;
+                overwrite_bytes(payload, start + 107, &[states])?;
+                overwrite_bytes(payload, start + 117, &filetime.to_le_bytes())?;
+            }
+            Some(MetadataRecord::SourceLinearUnitName { units, byte_len }) => {
+                let marker = offset + UNIT_NAME_TOKEN.len();
+                let old_len = resident_unit_name_len(payload, marker)?;
+                if usize::from(byte_len) != old_len {
                     return Err(CodecError::NotImplemented(
                         "SLDPRT writer cannot resize a retained source linear unit name".into(),
                     ));
                 }
-                let mut replacement = vec![0xff, 0xfe, 0xff, new_len];
+                let mut replacement = vec![0xff, 0xfe, 0xff, byte_len];
                 replacement.extend(units.into_iter().flat_map(u16::to_le_bytes));
                 let end = marker.checked_add(4 + old_len).ok_or_else(|| {
                     CodecError::Malformed("retained SLDPRT unit-name range overflow".into())
@@ -1201,14 +1189,27 @@ fn patch_retained_swobjects_metadata(
                 }
                 payload.splice(marker..end, replacement);
             }
-            name => {
+            Some(MetadataRecord::SourceLinearUnitCode(_)) | None => {
                 return Err(CodecError::NotImplemented(format!(
-                    "unsupported retained SLDPRT metadata attribute {name}"
+                    "unsupported retained SLDPRT metadata attribute {}",
+                    attribute.name
                 )));
             }
         }
     }
     Ok(())
+}
+
+/// The byte length of the retained unit name after its marker at `marker`.
+fn resident_unit_name_len(payload: &[u8], marker: usize) -> Result<usize, CodecError> {
+    if payload.get(marker..marker + 3) != Some(&[0xff, 0xfe, 0xff]) {
+        return Err(CodecError::Malformed(
+            "retained SLDPRT unit-name marker does not match its provenance".into(),
+        ));
+    }
+    Ok(usize::from(*payload.get(marker + 3).ok_or_else(|| {
+        CodecError::Malformed("truncated retained SLDPRT unit name".into())
+    })?))
 }
 
 fn require_token(payload: &[u8], offset: usize, token: &[u8]) -> Result<(), CodecError> {
@@ -1263,21 +1264,37 @@ fn patch_active_configuration_xml(
     Ok(Some(output.into_bytes()))
 }
 
+/// The bytes written for one feature-input lane.
+///
+/// Every object-name record states the payload bytes at its own offset, so the
+/// lane is written as it stands. `renames` carries the write-side object-name
+/// changes that `synchronize_feature_input_names` derived from the neutral
+/// feature names; the splice loop at the end of this function writes each one
+/// into the emitted payload.
 fn resolved_feature_payload(
     lane: &crate::records::FeatureInputLane,
     histories: &[crate::records::FeatureHistory],
+    renames: &[crate::history::write::features::FeatureInputRename],
 ) -> Result<Vec<u8>, CodecError> {
     const MARKER: &[u8] = &[0xff, 0xff, 0x1f, 0x00, 0x03];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &lane.native_payload,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
     let expected_classes =
-        crate::resolved_features::names::class_declarations(&lane.native_payload, &lane.id);
+        crate::resolved_features::names::class_declarations(&ctx, &lane.native_payload, &lane.id)?;
     if lane.classes != expected_classes {
         return Err(CodecError::NotImplemented(format!(
             "feature-input lane {} has edited class declarations",
             lane.id
         )));
     }
+    // Every field of an object-name record, the value included, states the
+    // payload bytes at `offset`.
     let expected_names =
-        crate::resolved_features::names::object_names(&lane.native_payload, &lane.id);
+        crate::resolved_features::names::object_names(&ctx, &lane.native_payload, &lane.id)?;
     if lane.names.len() != expected_names.len()
         || lane
             .names
@@ -1288,6 +1305,7 @@ fn resolved_feature_payload(
                     || actual.parent != expected.parent
                     || actual.ordinal != expected.ordinal
                     || actual.offset != expected.offset
+                    || actual.object_id != expected.object_id
             })
     {
         return Err(CodecError::NotImplemented(format!(
@@ -1295,25 +1313,41 @@ fn resolved_feature_payload(
             lane.id
         )));
     }
+    if let Some((index, actual, expected)) =
+        lane.names.iter().zip(&expected_names).enumerate().find_map(
+            |(index, (actual, expected))| {
+                (actual.value != expected.value).then_some((index, actual, expected))
+            },
+        )
+    {
+        return Err(CodecError::malformed(format_args!(
+            "feature-input name value does not match its native payload: lane {} name {index} states {:?}, its payload states {:?}",
+            lane.id, actual.value, expected.value
+        )));
+    }
     let mut expected_lane = lane.clone();
-    expected_lane.scalars = crate::resolved_features::scalars::named_scalars(
+    expected_lane.scalars = crate::resolved_features::scalars::named_scalars_charged(
+        &ctx,
         &lane.native_payload,
         &lane.id,
         &lane.names,
-    );
-    expected_lane.relation_bindings = crate::resolved_features::markers::relation_bindings(
+    )?;
+    expected_lane.relation_bindings = crate::resolved_features::markers::relation_bindings_charged(
+        &ctx,
         &lane.id,
         &lane.classes,
         &expected_lane.scalars,
-    );
-    expected_lane.references = crate::resolved_features::markers::reference_cells(
+    )?;
+    expected_lane.references = crate::resolved_features::markers::reference_cells_charged(
+        &ctx,
         &expected_lane.scalars,
         &expected_lane.classes,
-    );
+    )?;
     crate::resolved_features::bindings::bind_scalar_operands(
+        &ctx,
         histories,
         std::slice::from_mut(&mut expected_lane),
-    );
+    )?;
     if !crate::resolved_features::scalars::scalar_indices_match(
         &lane.scalars,
         &expected_lane.scalars,
@@ -1341,41 +1375,13 @@ fn resolved_feature_payload(
             lane.id
         )));
     }
-    let expected_offsets = lane
-        .native_payload
-        .windows(MARKER.len())
-        .enumerate()
-        .filter_map(|(offset, bytes)| (bytes == MARKER).then_some(offset))
-        .collect::<Vec<_>>();
-    if expected_offsets.len() != lane.sketch_entities.len() {
-        return Err(CodecError::malformed(format_args!(
-            "feature-input lane {} has {} markers but {} native records",
-            lane.id,
-            expected_offsets.len(),
-            lane.sketch_entities.len()
-        )));
-    }
-    for (ordinal, ((entity, expected_entity), expected_offset)) in lane
+    for (entity, expected_entity) in lane
         .sketch_entities
         .iter()
         .zip(&expected_lane.sketch_entities)
-        .zip(&expected_offsets)
-        .enumerate()
     {
-        if entity.ordinal != ordinal as u32
-            || usize::try_from(entity.offset) != Ok(*expected_offset)
-            || entity.feature_ref != expected_entity.feature_ref
+        if entity.feature_ref != expected_entity.feature_ref
             || entity.links != expected_entity.links
-            || entity.object_index
-                != crate::resolved_features::markers::marker_object_index(
-                    &lane.native_payload,
-                    *expected_offset,
-                )
-            || entity.local_id
-                != crate::resolved_features::markers::marker_local_id(
-                    &lane.native_payload,
-                    *expected_offset,
-                )
         {
             return Err(CodecError::malformed(format_args!(
                 "feature-input lane {} has inconsistent marker order",
@@ -1385,7 +1391,16 @@ fn resolved_feature_payload(
     }
     let mut payload = lane.native_payload.clone();
     for entity in &lane.sketch_entities {
-        let offset = usize::try_from(entity.offset).map_err(|_| {
+        entity
+            .validate_against_payload(&lane.native_payload)
+            .map_err(|error| {
+                CodecError::malformed(format_args!(
+                    "feature-input lane {} entity {}: {error}",
+                    lane.id,
+                    entity.id()
+                ))
+            })?;
+        let offset = usize::try_from(entity.offset()).map_err(|_| {
             CodecError::Malformed("feature-input offset exceeds address space".into())
         })?;
         let marker_end = offset
@@ -1405,13 +1420,8 @@ fn resolved_feature_payload(
         let field = payload.get_mut(field_start..field_end).ok_or_else(|| {
             CodecError::Malformed("feature-input type field exceeds retained payload".into())
         })?;
-        field.copy_from_slice(&entity.kind.native_code().to_le_bytes());
+        field.copy_from_slice(&entity.kind().native_code().to_le_bytes());
         if let Some(value) = entity.state_value {
-            if !value.is_finite() {
-                return Err(CodecError::Malformed(
-                    "feature-input state value must be finite".into(),
-                ));
-            }
             let state_start = offset
                 .checked_add(48)
                 .ok_or_else(|| CodecError::Malformed("feature-input offset overflow".into()))?;
@@ -1421,14 +1431,9 @@ fn resolved_feature_payload(
             let state = payload.get_mut(state_start..state_end).ok_or_else(|| {
                 CodecError::Malformed("feature-input state field exceeds retained payload".into())
             })?;
-            state.copy_from_slice(&value.to_le_bytes());
+            state.copy_from_slice(&value.get().to_le_bytes());
         }
         if let Some(coordinates) = entity.coordinates_m {
-            if !coordinates.iter().all(|value| value.is_finite()) {
-                return Err(CodecError::Malformed(
-                    "feature-input marker coordinates must be finite".into(),
-                ));
-            }
             if crate::resolved_features::markers::marker_coordinates(&lane.native_payload, offset)
                 .is_none()
             {
@@ -1454,19 +1459,32 @@ fn resolved_feature_payload(
             }
         }
     }
-    for (name, expected) in lane.names.iter().zip(&expected_names).rev() {
-        if name.value == expected.value {
-            continue;
-        }
-        let utf16 = name.value.encode_utf16().collect::<Vec<_>>();
+    let mut lane_renames = renames
+        .iter()
+        .filter(|rename| rename.lane == lane.id)
+        .map(|rename| {
+            let name = lane.names.get(rename.name_index).ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "feature-input lane {} has no object name {}",
+                    lane.id, rename.name_index
+                ))
+            })?;
+            Ok((name, rename))
+        })
+        .collect::<Result<Vec<_>, CodecError>>()?;
+    // Descending offset order: a spliced name changes the length of the payload
+    // after it, and every remaining name sits before the one just written.
+    lane_renames.sort_by_key(|(name, _)| std::cmp::Reverse(name.offset));
+    for (name, rename) in lane_renames {
+        let utf16 = rename.value.as_str().encode_utf16().collect::<Vec<_>>();
         let length = u8::try_from(utf16.len()).map_err(|_| {
             CodecError::NotImplemented("feature-input object name exceeds 255 UTF-16 units".into())
         })?;
-        let start = usize::try_from(expected.offset).map_err(|_| {
+        let start = usize::try_from(name.offset).map_err(|_| {
             CodecError::Malformed("feature-input name offset exceeds address space".into())
         })?;
         let end = start
-            .checked_add(6 + expected.value.encode_utf16().count() * 2)
+            .checked_add(6 + name.value.encode_utf16().count() * 2)
             .ok_or_else(|| CodecError::Malformed("feature-input name range overflow".into()))?;
         if payload.get(start..start + 5) != Some(&[0x04, 0x80, 0xff, 0xfe, 0xff]) {
             return Err(CodecError::Malformed(
@@ -1490,192 +1508,287 @@ fn metadata_source_position(id: &str) -> Option<(u64, u64)> {
     Some((section.parse().ok()?, offset.parse().ok()?))
 }
 
+const BOUNDING_ENVELOPE_TOKEN: &[u8] = b"moBBoxCenterData_c";
+const DEFAULT_REFERENCE_PLANE_TOKEN: &[u8] = b"moDefaultRefPlnData_c";
+const TRANSFORMED_REFERENCE_PLANE_TOKEN: &[u8] = b"moTransRefPlaneData_c";
+const PART_RECORD_TOKEN: &[u8] = b"moPart_c";
+const CONFIGURATION_MANAGER_TOKEN: &[u8] = b"moConfigurationMgr_c";
+const UNIT_NAME_TOKEN: &[u8] = b"moLengthUserUnits_c";
+
+/// One `SWObjects` metadata attribute admitted for writing. Its values have
+/// the shape the record states, and each length, multiplied into source
+/// units, is finite. Both metadata writers take their bytes from here.
+enum MetadataRecord {
+    /// Four envelope lengths in source units.
+    BoundingEnvelope([f64; 4]),
+    /// The plane origin in source units and its six unitless frame values.
+    DefaultReferencePlane { origin: [f64; 3], frame: [f64; 6] },
+    /// Center, extents and diagonal in source units, and three unitless
+    /// auxiliary values.
+    TransformedReferencePlane {
+        center: [f64; 3],
+        extents: [f64; 2],
+        auxiliary: [f64; 3],
+        diagonal: f64,
+    },
+    /// Part identity and version.
+    PartRecord { id: u32, version: u32 },
+    /// Configuration-manager version, state count and timestamp.
+    ConfigurationManager {
+        minor: u32,
+        states: u8,
+        filetime: u64,
+    },
+    /// Source linear unit code.
+    SourceLinearUnitCode(i64),
+    /// A non-empty UTF-16 unit name and its byte length.
+    SourceLinearUnitName { units: Vec<u16>, byte_len: u8 },
+}
+
+impl MetadataRecord {
+    /// Admit one metadata attribute, or `None` for a name no writer states.
+    ///
+    /// The values' shape is checked first. `retained` then receives the
+    /// record's `SWObjects` token, and the values are admitted after it
+    /// returns.
+    fn project(
+        attribute: &cadmpeg_ir::attributes::SourceAttribute,
+        length_scale: f64,
+        retained: impl FnOnce(&'static [u8]) -> Result<(), CodecError>,
+    ) -> Result<Option<Self>, CodecError> {
+        use cadmpeg_ir::attributes::AttributeValue;
+
+        let invalid = |kind: &str| CodecError::malformed(format_args!("invalid {kind}"));
+        let values = attribute.values.as_slice();
+        Ok(Some(match attribute.name.as_str() {
+            "bounding_envelope" => {
+                let kind = "bounding envelope";
+                let [AttributeValue::Vector(values)] = values else {
+                    return Err(invalid(kind));
+                };
+                let values = ratios::<4>(values).ok_or_else(|| invalid(kind))?;
+                retained(BOUNDING_ENVELOPE_TOKEN)?;
+                Self::BoundingEnvelope(scaled(values, length_scale).ok_or_else(|| invalid(kind))?)
+            }
+            "default_reference_plane" => {
+                let kind = "default reference plane";
+                let [AttributeValue::Vector(origin), AttributeValue::Vector(frame)] = values else {
+                    return Err(invalid(kind));
+                };
+                let (Some(origin), Some(frame)) = (ratios::<3>(origin), ratios(frame)) else {
+                    return Err(invalid(kind));
+                };
+                retained(DEFAULT_REFERENCE_PLANE_TOKEN)?;
+                let origin = scaled(origin, length_scale).ok_or_else(|| invalid(kind))?;
+                Self::DefaultReferencePlane { origin, frame }
+            }
+            "transformed_reference_plane" => {
+                let kind = "transformed reference plane";
+                let [AttributeValue::Vector(center), AttributeValue::Vector(extents), AttributeValue::Vector(auxiliary), AttributeValue::Float(diagonal)] =
+                    values
+                else {
+                    return Err(invalid(kind));
+                };
+                let (Some(center), Some(extents), Some(auxiliary)) =
+                    (ratios::<3>(center), ratios::<2>(extents), ratios(auxiliary))
+                else {
+                    return Err(invalid(kind));
+                };
+                retained(TRANSFORMED_REFERENCE_PLANE_TOKEN)?;
+                let (Some(center), Some(extents), Some([diagonal])) = (
+                    scaled(center, length_scale),
+                    scaled(extents, length_scale),
+                    scaled([diagonal.get()], length_scale),
+                ) else {
+                    return Err(invalid(kind));
+                };
+                Self::TransformedReferencePlane {
+                    center,
+                    extents,
+                    auxiliary,
+                    diagonal,
+                }
+            }
+            "part_record" => {
+                let [AttributeValue::Integer(id), AttributeValue::Integer(version)] = values else {
+                    return Err(invalid("part record"));
+                };
+                retained(PART_RECORD_TOKEN)?;
+                Self::PartRecord {
+                    id: u32::try_from(*id).map_err(|_| invalid("part id"))?,
+                    version: u32::try_from(*version).map_err(|_| invalid("part version"))?,
+                }
+            }
+            "configuration_manager" => {
+                let [AttributeValue::Integer(minor), AttributeValue::Integer(states), AttributeValue::Integer(filetime)] =
+                    values
+                else {
+                    return Err(invalid("configuration manager"));
+                };
+                retained(CONFIGURATION_MANAGER_TOKEN)?;
+                Self::ConfigurationManager {
+                    minor: u32::try_from(*minor)
+                        .map_err(|_| invalid("configuration minor version"))?,
+                    states: u8::try_from(*states)
+                        .map_err(|_| invalid("configuration state count"))?,
+                    filetime: u64::try_from(*filetime)
+                        .map_err(|_| invalid("configuration timestamp"))?,
+                }
+            }
+            "source_linear_unit_code" => {
+                let [AttributeValue::Integer(code)] = values else {
+                    return Err(invalid("source linear unit code"));
+                };
+                Self::SourceLinearUnitCode(*code)
+            }
+            "source_linear_unit_name" => {
+                let [AttributeValue::String(name)] = values else {
+                    return Err(invalid("source linear unit name"));
+                };
+                retained(UNIT_NAME_TOKEN)?;
+                let units = name.encode_utf16().collect::<Vec<_>>();
+                // The resident u16 vector occupies two bytes per unit.
+                let byte_len = u8::try_from(units.len() * 2).map_err(|_| {
+                    CodecError::NotImplemented("source linear unit name is too long".into())
+                })?;
+                if units.is_empty() {
+                    return Err(CodecError::Malformed(
+                        "source linear unit name is empty".into(),
+                    ));
+                }
+                Self::SourceLinearUnitName { units, byte_len }
+            }
+            _ => return Ok(None),
+        }))
+    }
+}
+
+/// `N` unitless values, or `None` for another count.
+fn ratios<const N: usize>(values: &[FiniteReal]) -> Option<[f64; N]> {
+    let values: &[FiniteReal; N] = values.try_into().ok()?;
+    Some(values.map(FiniteReal::get))
+}
+
+/// Each value multiplied by `scale`, or `None` when a product is not finite.
+fn scaled<const N: usize>(values: [f64; N], scale: f64) -> Option<[f64; N]> {
+    let products = values.map(|value| value * scale);
+    products
+        .iter()
+        .all(|product| product.is_finite())
+        .then_some(products)
+}
+
 /// This codec's document attributes, ordered by source payload position.
 ///
 /// Arena order is by identifier name; writing that order would move every
 /// record and rename attributes minted from byte offsets.
-fn metadata_attributes(ir: &CadIr) -> Vec<&cadmpeg_ir::attributes::SourceAttribute> {
-    let mut attributes = ir
-        .model
-        .attributes
-        .iter()
-        .filter(|attribute| attribute.id.as_str().starts_with("sldprt:"))
-        .collect::<Vec<_>>();
-    attributes.sort_by_key(|attribute| {
-        let position = metadata_source_position(attribute.id.as_str());
-        (position.is_none(), position)
-    });
-    attributes
+fn metadata_attributes<'ir>(
+    ctx: &DecodeContext<'_>,
+    ir: &'ir CadIr,
+) -> Result<Vec<&'ir cadmpeg_ir::attributes::SourceAttribute>, CodecError> {
+    let mut positioned = Vec::new();
+    for attribute in &ir.model.attributes {
+        let work = cadmpeg_core::decode::u64_from_index(attribute.id.as_str().len())
+            .checked_mul(2)
+            .and_then(|bytes| bytes.checked_add(8))
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("scan SLDPRT metadata positions", u64::MAX - 1, u64::MAX)
+            })?;
+        ctx.charge_work(work, "scan SLDPRT metadata positions")?;
+        if attribute.id.as_str().starts_with("sldprt:") {
+            let position = metadata_source_position(attribute.id.as_str());
+            ctx.push_vec(
+                &mut positioned,
+                ((position.is_none(), position), attribute),
+                "collect SLDPRT metadata positions",
+            )?;
+        }
+    }
+    ctx.stable_sort_by(
+        &mut positioned,
+        |left, right| left.0.cmp(&right.0),
+        |_| 3,
+        "sort SLDPRT metadata positions",
+    )?;
+    ctx.try_collect_retained_with(
+        positioned,
+        "collect SLDPRT metadata attributes",
+        |(_, attribute)| Ok(attribute),
+    )
 }
 
 fn metadata_payloads(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     length_scale: f64,
 ) -> Result<(Vec<u8>, Option<Vec<u8>>), CodecError> {
-    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
+    use cadmpeg_ir::attributes::AttributeTarget;
 
     let mut objects = Vec::new();
     let mut unit_code = None;
-    for attribute in metadata_attributes(ir) {
+    for attribute in metadata_attributes(ctx, ir)? {
         if attribute.target != AttributeTarget::Document {
             return Err(CodecError::NotImplemented(
                 "SLDPRT semantic writer does not support entity attributes".into(),
             ));
         }
-        match attribute.name.as_str() {
-            "bounding_envelope" => {
-                let [AttributeValue::Vector(values)] = attribute.values.as_slice() else {
-                    return Err(CodecError::Malformed("invalid bounding envelope".into()));
-                };
-                if values.len() != 4 {
-                    return Err(CodecError::Malformed("invalid bounding envelope".into()));
-                }
-                objects.extend_from_slice(b"moBBoxCenterData_c");
+        match MetadataRecord::project(attribute, length_scale, |_| Ok(()))? {
+            Some(MetadataRecord::BoundingEnvelope(values)) => {
+                objects.extend_from_slice(BOUNDING_ENVELOPE_TOKEN);
                 objects.extend_from_slice(&1u32.to_le_bytes());
                 for value in values {
-                    objects.extend_from_slice(&(value * length_scale).to_le_bytes());
-                }
-            }
-            "default_reference_plane" => {
-                let [AttributeValue::Vector(origin), AttributeValue::Vector(frame)] =
-                    attribute.values.as_slice()
-                else {
-                    return Err(CodecError::Malformed(
-                        "invalid default reference plane".into(),
-                    ));
-                };
-                if origin.len() != 3 || frame.len() != 6 {
-                    return Err(CodecError::Malformed(
-                        "invalid default reference plane".into(),
-                    ));
-                }
-                objects.extend_from_slice(b"moDefaultRefPlnData_c");
-                for value in origin {
-                    objects.extend_from_slice(&(value * length_scale).to_le_bytes());
-                }
-                for value in frame {
                     objects.extend_from_slice(&value.to_le_bytes());
                 }
             }
-            "transformed_reference_plane" => {
-                let [AttributeValue::Vector(center), AttributeValue::Vector(extents), AttributeValue::Vector(auxiliary), AttributeValue::Float(diagonal)] =
-                    attribute.values.as_slice()
-                else {
-                    return Err(CodecError::Malformed(
-                        "invalid transformed reference plane".into(),
-                    ));
-                };
-                if center.len() != 3 || extents.len() != 2 || auxiliary.len() != 3 {
-                    return Err(CodecError::Malformed(
-                        "invalid transformed reference plane".into(),
-                    ));
+            Some(MetadataRecord::DefaultReferencePlane { origin, frame }) => {
+                objects.extend_from_slice(DEFAULT_REFERENCE_PLANE_TOKEN);
+                for value in origin.into_iter().chain(frame) {
+                    objects.extend_from_slice(&value.to_le_bytes());
                 }
-                objects.extend_from_slice(b"moTransRefPlaneData_c");
+            }
+            Some(MetadataRecord::TransformedReferencePlane {
+                center,
+                extents,
+                auxiliary,
+                diagonal,
+            }) => {
+                objects.extend_from_slice(TRANSFORMED_REFERENCE_PLANE_TOKEN);
                 objects.extend_from_slice(&[0xff; 8]);
                 for value in center
-                    .iter()
+                    .into_iter()
                     .chain(extents)
-                    .chain(std::iter::once(diagonal))
+                    .chain(auxiliary)
+                    .chain([diagonal])
                 {
-                    if !value.is_finite() {
-                        return Err(CodecError::Malformed(
-                            "invalid transformed reference plane".into(),
-                        ));
-                    }
-                }
-                if auxiliary.iter().any(|value| !value.is_finite()) {
-                    return Err(CodecError::Malformed(
-                        "invalid transformed reference plane".into(),
-                    ));
-                }
-                for value in center.iter().chain(extents) {
-                    objects.extend_from_slice(&(value * length_scale).to_le_bytes());
-                }
-                for value in auxiliary {
                     objects.extend_from_slice(&value.to_le_bytes());
                 }
-                objects.extend_from_slice(&(diagonal * length_scale).to_le_bytes());
             }
-            "part_record" => {
-                let [AttributeValue::Integer(id), AttributeValue::Integer(version)] =
-                    attribute.values.as_slice()
-                else {
-                    return Err(CodecError::Malformed("invalid part record".into()));
-                };
-                objects.extend_from_slice(b"moPart_c");
-                objects.extend_from_slice(
-                    &u32::try_from(*id)
-                        .map_err(|_| CodecError::Malformed("invalid part id".into()))?
-                        .to_le_bytes(),
-                );
+            Some(MetadataRecord::PartRecord { id, version }) => {
+                objects.extend_from_slice(PART_RECORD_TOKEN);
+                objects.extend_from_slice(&id.to_le_bytes());
                 objects.extend_from_slice(&0u32.to_le_bytes());
-                objects.extend_from_slice(
-                    &u32::try_from(*version)
-                        .map_err(|_| CodecError::Malformed("invalid part version".into()))?
-                        .to_le_bytes(),
-                );
+                objects.extend_from_slice(&version.to_le_bytes());
                 objects.push(0);
             }
-            "configuration_manager" => {
-                let [AttributeValue::Integer(minor), AttributeValue::Integer(states), AttributeValue::Integer(filetime)] =
-                    attribute.values.as_slice()
-                else {
-                    return Err(CodecError::Malformed(
-                        "invalid configuration manager".into(),
-                    ));
-                };
+            Some(MetadataRecord::ConfigurationManager {
+                minor,
+                states,
+                filetime,
+            }) => {
                 let mut record = [0u8; 125];
-                record[66..70].copy_from_slice(
-                    &u32::try_from(*minor)
-                        .map_err(|_| {
-                            CodecError::Malformed("invalid configuration minor version".into())
-                        })?
-                        .to_le_bytes(),
-                );
-                record[107] = u8::try_from(*states).map_err(|_| {
-                    CodecError::Malformed("invalid configuration state count".into())
-                })?;
-                record[117..125].copy_from_slice(
-                    &u64::try_from(*filetime)
-                        .map_err(|_| {
-                            CodecError::Malformed("invalid configuration timestamp".into())
-                        })?
-                        .to_le_bytes(),
-                );
-                objects.extend_from_slice(b"moConfigurationMgr_c");
+                record[66..70].copy_from_slice(&minor.to_le_bytes());
+                record[107] = states;
+                record[117..125].copy_from_slice(&filetime.to_le_bytes());
+                objects.extend_from_slice(CONFIGURATION_MANAGER_TOKEN);
                 objects.extend_from_slice(&record);
             }
-            "source_linear_unit_code" => {
-                let [AttributeValue::Integer(code)] = attribute.values.as_slice() else {
-                    return Err(CodecError::Malformed(
-                        "invalid source linear unit code".into(),
-                    ));
-                };
-                unit_code = Some(*code);
+            Some(MetadataRecord::SourceLinearUnitCode(code)) => unit_code = Some(code),
+            Some(MetadataRecord::SourceLinearUnitName { units, byte_len }) => {
+                objects.extend_from_slice(UNIT_NAME_TOKEN);
+                objects.extend_from_slice(&[0xff, 0xfe, 0xff, byte_len]);
+                objects.extend(units.into_iter().flat_map(u16::to_le_bytes));
             }
-            "source_linear_unit_name" => {
-                let [AttributeValue::String(name)] = attribute.values.as_slice() else {
-                    return Err(CodecError::Malformed(
-                        "invalid source linear unit name".into(),
-                    ));
-                };
-                let bytes = name
-                    .encode_utf16()
-                    .flat_map(u16::to_le_bytes)
-                    .collect::<Vec<_>>();
-                let length = u8::try_from(bytes.len()).map_err(|_| {
-                    CodecError::Malformed("source linear unit name is too long".into())
-                })?;
-                if bytes.is_empty() {
-                    return Err(CodecError::Malformed(
-                        "source linear unit name is empty".into(),
-                    ));
-                }
-                objects.extend_from_slice(b"moLengthUserUnits_c");
-                objects.extend_from_slice(&[0xff, 0xfe, 0xff, length]);
-                objects.extend_from_slice(&bytes);
-            }
-            _ => {
+            None => {
                 return Err(CodecError::NotImplemented(format!(
                     "unsupported SLDPRT attribute {}",
                     attribute.name
@@ -1690,40 +1803,88 @@ fn metadata_payloads(
     Ok((objects, units))
 }
 
-pub(crate) fn swobjects_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
-    let attributes = metadata_attributes(ir)
-        .into_iter()
-        .filter(|attribute| attribute.name != "source_linear_unit_code")
-        .collect::<Vec<_>>();
-    let materials = swobjects_materials(ir)?;
-    Ok(cadmpeg_ir::hash::canonical_json_sha256(&(
-        attributes, materials,
-    )))
-}
-
-pub(crate) fn swobjects_material_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
+pub(crate) fn swobjects_local_sha256(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<String, CodecError> {
+    let views = ctx.with_scoped_storage("SLDPRT SWObjects digest views", || {
+        let mut attributes = metadata_attributes(ctx, ir)?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(attributes.len())
+                .checked_mul(24)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "filter SLDPRT metadata digest attributes",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    )
+                })?,
+            "filter SLDPRT metadata digest attributes",
+        )?;
+        attributes.retain(|attribute| attribute.name != "source_linear_unit_code");
+        Ok::<_, CodecError>((attributes, swobjects_materials(ctx, ir)?))
+    })?;
     Ok(cadmpeg_ir::hash::canonical_json_sha256(
-        &swobjects_materials(ir)?,
-    ))
+        ctx,
+        &views.0,
+        "hash SLDPRT SWObjects semantics",
+    )?)
 }
 
-pub(crate) fn swobjects_metadata_identity_local_sha256(ir: &CadIr) -> String {
-    let identities = metadata_attributes(ir)
-        .into_iter()
-        .filter(|attribute| attribute.name != "source_linear_unit_code")
-        .map(|attribute| (&attribute.id, attribute.name.as_str()))
-        .collect::<Vec<_>>();
-    cadmpeg_ir::hash::canonical_json_sha256(&identities)
+pub(crate) fn swobjects_material_local_sha256(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<String, CodecError> {
+    let materials = ctx.with_scoped_storage("SLDPRT material digest views", || {
+        swobjects_materials(ctx, ir)
+    })?;
+    Ok(cadmpeg_ir::hash::canonical_json_sha256(
+        ctx,
+        &materials.0,
+        "hash SLDPRT SWObjects materials",
+    )?)
+}
+
+pub(crate) fn swobjects_metadata_identity_local_sha256(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<String, CodecError> {
+    let identities = ctx.with_scoped_storage("SLDPRT metadata identity digest views", || {
+        let attributes = metadata_attributes(ctx, ir)?;
+        let mut identities = Vec::new();
+        for attribute in attributes {
+            ctx.charge_work(24, "filter SLDPRT metadata digest identities")?;
+            if attribute.name != "source_linear_unit_code" {
+                ctx.push_vec(
+                    &mut identities,
+                    (&attribute.id, attribute.name.as_str()),
+                    "collect SLDPRT metadata digest identities",
+                )?;
+            }
+        }
+        Ok::<_, CodecError>(identities)
+    })?;
+    Ok(cadmpeg_ir::hash::canonical_json_sha256(
+        ctx,
+        &identities.0,
+        "hash SLDPRT metadata identities",
+    )?)
 }
 
 fn history_payload(history: &crate::records::FeatureHistory) -> Result<Vec<u8>, CodecError> {
-    validate_feature_graph(&history.features)?;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+    validate_feature_graph(&ctx, &history.features)?;
     let mut out = String::from("<Keywords");
     if let Some(name) = &history.part_name {
         xml_attribute(&mut out, "Name", name);
     }
     for (name, value) in &history.properties {
-        xml_attribute(&mut out, name, value);
+        xml_attribute(&mut out, name.as_str(), value);
     }
     out.push('>');
     let write_configuration = |out: &mut String, configuration: &crate::records::Configuration| {
@@ -1736,7 +1897,7 @@ fn history_payload(history: &crate::records::FeatureHistory) -> Result<Vec<u8>, 
             xml_attribute(out, "Material", material);
         }
         for (name, value) in &configuration.properties {
-            xml_attribute(out, name, value);
+            xml_attribute(out, name.as_str(), value);
         }
         out.push_str("/>");
     };
@@ -1784,6 +1945,7 @@ fn history_payload(history: &crate::records::FeatureHistory) -> Result<Vec<u8>, 
 }
 
 pub(crate) fn validate_feature_graph(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     features: &[crate::records::Feature],
 ) -> Result<(), CodecError> {
     if features
@@ -1794,10 +1956,13 @@ pub(crate) fn validate_feature_graph(
             "invalid feature XML element name".into(),
         ));
     }
-    let by_id = features
-        .iter()
-        .filter_map(|feature| feature.source_id.as_ref().map(|id| (id.as_str(), feature)))
-        .collect::<HashMap<_, _>>();
+    let mut by_id = HashMap::new();
+    for feature in features {
+        ctx.charge_work(1, "validate SLDPRT feature graph")?;
+        if let Some(id) = feature.source_id {
+            ctx.insert_hash_map(&mut by_id, id, feature, "index SLDPRT feature graph")?;
+        }
+    }
     if by_id.len()
         != features
             .iter()
@@ -1806,10 +1971,15 @@ pub(crate) fn validate_feature_graph(
     {
         return Err(CodecError::Malformed("duplicate feature source id".into()));
     }
-    let by_record = features
-        .iter()
-        .map(|feature| (feature.id.as_str(), feature))
-        .collect::<HashMap<_, _>>();
+    let mut by_record = HashMap::new();
+    for feature in features {
+        ctx.insert_hash_map(
+            &mut by_record,
+            feature.id.as_str(),
+            feature,
+            "index SLDPRT feature graph",
+        )?;
+    }
     if by_record.len() != features.len() {
         return Err(CodecError::Malformed("duplicate feature record id".into()));
     }
@@ -1817,18 +1987,20 @@ pub(crate) fn validate_feature_graph(
         let mut seen = HashSet::new();
         let mut parent = feature.parent_source_id();
         while let Some(id) = parent {
-            if !seen.insert(id) {
+            ctx.charge_work(1, "walk SLDPRT feature graph")?;
+            if !ctx.insert_hash_set(&mut seen, id, "index SLDPRT feature graph parents")? {
                 return Err(CodecError::Malformed("feature parent cycle".into()));
             }
             let node = by_id
-                .get(id)
+                .get(&id)
                 .ok_or_else(|| CodecError::Malformed("feature references missing parent".into()))?;
             parent = node.parent_source_id();
         }
         let mut seen = HashSet::new();
         let mut parent = feature.tree_parent_record_id();
         while let Some(id) = parent {
-            if !seen.insert(id) {
+            ctx.charge_work(1, "walk SLDPRT feature graph")?;
+            if !ctx.insert_hash_set(&mut seen, id, "index SLDPRT feature graph parents")? {
                 return Err(CodecError::Malformed("feature tree cycle".into()));
             }
             let node = by_record.get(id).ok_or_else(|| {
@@ -1840,15 +2012,6 @@ pub(crate) fn validate_feature_graph(
     Ok(())
 }
 
-fn valid_xml_name(name: &str) -> bool {
-    let mut bytes = name.bytes();
-    bytes
-        .next()
-        .is_some_and(|byte| byte.is_ascii_alphabetic() || matches!(byte, b'_' | b':'))
-        && bytes
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b':' | b'-' | b'.'))
-}
-
 fn write_feature_xml(
     out: &mut String,
     feature: &crate::records::Feature,
@@ -1856,8 +2019,8 @@ fn write_feature_xml(
 ) {
     out.push('<');
     out.push_str(&feature.xml_tag);
-    if let Some(id) = &feature.source_id {
-        xml_attribute(out, "id", id);
+    if let Some(id) = feature.source_id {
+        xml_attribute(out, "id", &String::from(id));
     }
     xml_attribute(out, "Name", &feature.name);
     xml_attribute(out, "Type", &feature.kind);
@@ -1865,7 +2028,7 @@ fn write_feature_xml(
         xml_attribute(out, "Suppressed", "true");
     }
     for (name, value) in &feature.properties {
-        xml_attribute(out, name, value);
+        xml_attribute(out, name.as_str(), value);
     }
     out.push('>');
     let write_dimension = |out: &mut String, name: &str, value: &str| {
@@ -1873,7 +2036,7 @@ fn write_feature_xml(
         xml_attribute(out, "Name", name);
         if let Some(properties) = feature.dimension_properties.get(name) {
             for (property, value) in properties {
-                xml_attribute(out, property, value);
+                xml_attribute(out, property.as_str(), value);
             }
         }
         out.push('>');
@@ -1885,7 +2048,7 @@ fn write_feature_xml(
         .filter(|child| {
             child.tree_parent_record_id() == Some(feature.id.as_str())
                 || (child.tree_parent_record_id().is_none()
-                    && child.parent_source_id() == feature.source_id.as_deref()
+                    && child.parent_source_id() == feature.source_id
                     && feature.source_id.is_some())
         })
         .collect::<Vec<_>>();
@@ -1894,7 +2057,7 @@ fn write_feature_xml(
     let mut emitted_children = HashSet::new();
     if feature.content.is_empty() {
         for (name, value) in &feature.parameters {
-            write_dimension(out, name, value);
+            write_dimension(out, name.as_str(), value);
             emitted_dimensions.insert(name.as_str());
         }
         if let Some(text) = &feature.text {
@@ -1904,7 +2067,7 @@ fn write_feature_xml(
         for item in &feature.content {
             match item {
                 crate::records::FeatureContent::Dimension(name) => {
-                    if let Some(value) = feature.parameters.get(name) {
+                    if let Some(value) = feature.parameters.get(name.as_str()) {
                         write_dimension(out, name, value);
                         emitted_dimensions.insert(name.as_str());
                     }
@@ -1920,8 +2083,8 @@ fn write_feature_xml(
         }
     }
     for (name, value) in &feature.parameters {
-        if emitted_dimensions.insert(name) {
-            write_dimension(out, name, value);
+        if emitted_dimensions.insert(name.as_str()) {
+            write_dimension(out, name.as_str(), value);
         }
     }
     for child in children {
@@ -1964,6 +2127,7 @@ fn xml_text(out: &mut String, value: &str) {
 }
 
 fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecError> {
+    type AuxiliaryWriter = fn(&mut Vec<u8>, &[u32]) -> Result<(), CodecError>;
     let meshes = ir
         .model
         .tessellations
@@ -1975,11 +2139,12 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
     out.extend_from_slice(b"uoTempFaceTessData_c");
     let (triangle_count, strip_count) = match meshes.first() {
         Some(mesh) => (
-            u32::try_from(mesh.triangles().len()).map_err(|_| {
-                CodecError::Malformed("tessellation triangle count overflow".into())
+            u32::try_from(mesh.triangle_count()).map_err(|_| {
+                CodecError::NotImplemented("tessellation triangle count overflow".into())
             })?,
-            u32::try_from(mesh.strip_lengths().len())
-                .map_err(|_| CodecError::Malformed("tessellation strip count overflow".into()))?,
+            u32::try_from(mesh.strip_lengths().len()).map_err(|_| {
+                CodecError::NotImplemented("tessellation strip count overflow".into())
+            })?,
         ),
         None => (0, 0),
     };
@@ -1989,10 +2154,10 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
         let strips = mesh
             .strip_lengths()
             .iter()
-            .flat_map(|value| value.to_le_bytes())
+            .flat_map(|run| run.to_le_bytes())
             .collect::<Vec<_>>();
-        descriptor(&mut out, 4, 8, 2, mesh.strip_lengths().len(), &strips);
-        let mut positions = Vec::with_capacity(mesh.vertices().len() * 12);
+        descriptor(&mut out, 4, 8, 2, mesh.strip_lengths().len(), &strips)?;
+        let mut positions = Vec::with_capacity(mesh.vertex_count() * 12);
         for point in mesh.vertices() {
             for value in [point.x, point.y, point.z] {
                 positions.extend_from_slice(
@@ -2000,28 +2165,34 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
                 );
             }
         }
-        descriptor(&mut out, 12, 100, 2, mesh.vertices().len(), &positions);
-        let mut normals = Vec::with_capacity(mesh.normals().len() * 12);
-        for normal in mesh.normals() {
+        descriptor(&mut out, 12, 100, 2, mesh.vertex_count(), &positions)?;
+        let mut normals = Vec::with_capacity(mesh.vertex_normals().len() * 12);
+        for normal in mesh.vertex_normals() {
             for value in [normal.x, normal.y, normal.z] {
                 normals.extend_from_slice(&tessellation_f32(value, "normal")?.to_le_bytes());
             }
         }
-        descriptor(&mut out, 12, 100, 2, mesh.normals().len(), &normals);
+        descriptor(&mut out, 12, 100, 2, mesh.vertex_normals().len(), &normals)?;
+        // `has_core_tessellation_channels` matches at least three channels, so
+        // the remainder after the core three is the complete auxiliary run.
+        // The display-list table carries exactly three auxiliary channels; the
+        // consistency check below refuses any other number rather than
+        // truncating the run the mesh states.
         let auxiliary_start = usize::from(has_core_tessellation_channels(mesh.channels())) * 3;
-        let auxiliary_count = mesh.channels().len().saturating_sub(auxiliary_start).min(3);
-        let auxiliary = &mesh.channels()[auxiliary_start..auxiliary_start + auxiliary_count];
+        let auxiliary = &mesh.channels()[auxiliary_start..];
         let strip_lengths = mesh
             .strip_lengths()
             .iter()
-            .map(|length| usize::try_from(*length))
+            .map(|run| usize::try_from(*run))
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| CodecError::Malformed("tessellation strip length overflow".into()))?;
         if !auxiliary.is_empty()
             && !crate::tessellation::auxiliary_channels_are_consistent(&strip_lengths, auxiliary)
         {
-            return Err(CodecError::Malformed(
-                "tessellation auxiliary channels are incomplete or inconsistent".into(),
+            return Err(CodecError::InvalidInput(
+                "tessellation channels: the SLDPRT display-list table carries exactly three \
+                 auxiliary channels after the strip, position and normal channels"
+                    .into(),
             ));
         }
         for channel in auxiliary {
@@ -2030,35 +2201,38 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
                 channel.item_size(),
                 channel.kind(),
                 channel.flags(),
-                channel.count() as usize,
+                index_from_u32(channel.count()),
                 channel.data(),
-            );
+            )?;
         }
         let list_c = mesh
             .strip_lengths()
             .iter()
-            .map(|length| {
-                length
-                    .checked_mul(2)
+            .map(|run| {
+                run.checked_mul(2)
                     .and_then(|value| value.checked_sub(2))
                     .ok_or_else(|| {
-                        CodecError::Malformed("tessellation strip is too short or too large".into())
+                        CodecError::NotImplemented(
+                            "tessellation strip is too short or too large".into(),
+                        )
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;
-        for index in auxiliary_count..3 {
-            match index {
-                0 => descriptor(&mut out, 4, 8, 2, 0, &[]),
-                1 => {
-                    let data = list_c
-                        .iter()
-                        .flat_map(|value| value.to_le_bytes())
-                        .collect::<Vec<_>>();
-                    descriptor(&mut out, 4, 8, 2, list_c.len(), &data);
-                }
-                2 => descriptor(&mut out, 1, 8, 2, 0, &[]),
-                _ => unreachable!("three auxiliary descriptors"),
-            }
+        let append: [AuxiliaryWriter; 3] = [
+            |out, _| descriptor(out, 4, 8, 2, 0, &[]),
+            |out, list_c| {
+                let data = list_c
+                    .iter()
+                    .flat_map(|value| value.to_le_bytes())
+                    .collect::<Vec<_>>();
+                descriptor(out, 4, 8, 2, list_c.len(), &data)
+            },
+            |out, _| descriptor(out, 1, 8, 2, 0, &[]),
+        ];
+        // The run is empty or the exact three the table carries, so the
+        // synthesized defaults fill in only for a mesh that states none.
+        for append in append.iter().skip(auxiliary.len()) {
+            append(&mut out, &list_c)?;
         }
     }
     Ok(out)
@@ -2073,7 +2247,7 @@ fn has_core_tessellation_channels(
             && (normals.item_size(), normals.kind()) == (12, 100))
 }
 
-pub(super) fn sequential_tessellation(
+fn sequential_tessellation(
     mesh: &cadmpeg_ir::tessellation::Tessellation,
 ) -> Result<cadmpeg_ir::tessellation::Tessellation, CodecError> {
     if !mesh.triangle_groups().is_empty() || !mesh.texture_assignments().is_empty() {
@@ -2087,63 +2261,49 @@ pub(super) fn sequential_tessellation(
             "SLDPRT display tessellation feature edges are not writable".into(),
         ));
     }
-    let expected = triangles_from_strips(mesh.strip_lengths())?;
-    if expected == mesh.triangles()
-        && mesh.strip_lengths().iter().sum::<u32>() as usize == mesh.vertices().len()
-        && mesh.corner_normals().is_empty()
-    {
+    if matches!(
+        mesh.mesh(),
+        cadmpeg_ir::tessellation::TessellationMesh::Strips { .. }
+            | cadmpeg_ir::tessellation::TessellationMesh::ShadedStrips { .. }
+    ) {
         return Ok(mesh.clone());
     }
-    let indices = mesh
-        .triangles()
+    let source_vertices = mesh.vertices();
+    let source_normals = mesh.vertex_normals();
+    let corner_normals = mesh.per_corner_normals();
+    let triangles = mesh.triangles();
+    let indices = triangles
         .iter()
         .flat_map(|triangle| triangle.iter().copied())
         .map(|index| {
             usize::try_from(index)
-                .ok()
-                .filter(|index| *index < mesh.vertices().len())
-                .ok_or_else(|| CodecError::Malformed("tessellation index is out of bounds".into()))
+                .map_err(|_| CodecError::Malformed("tessellation index is out of bounds".into()))
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let vertices = indices
+    let positions = indices
         .iter()
-        .map(|index| mesh.vertices()[*index])
-        .collect();
-    let normals = if !mesh.corner_normals().is_empty() {
-        if mesh.corner_normals().len() != indices.len() {
-            return Err(CodecError::Malformed(
-                "tessellation corner normals are not parallel to triangle corners".into(),
-            ));
+        .map(|index| source_vertices[*index])
+        .collect::<Vec<_>>();
+    let normals = if corner_normals.is_empty() {
+        if source_normals.is_empty() {
+            Vec::new()
+        } else {
+            indices
+                .iter()
+                .map(|index| source_normals[*index])
+                .collect::<Vec<_>>()
         }
-        mesh.corner_normals().to_vec()
-    } else if mesh.normals().is_empty() {
-        Vec::new()
     } else {
-        if mesh.normals().len() != mesh.vertices().len() {
-            return Err(CodecError::Malformed(
-                "tessellation normals are not parallel to vertices".into(),
-            ));
-        }
-        indices.iter().map(|index| mesh.normals()[*index]).collect()
+        corner_normals
     };
     let mut channels = Vec::new();
     for channel in mesh.channels() {
-        if channel.count() as usize != mesh.vertices().len() {
+        if usize::try_from(channel.count()).ok() != Some(source_vertices.len()) {
             channels.push(channel.clone());
             continue;
         }
         let item_size = usize::try_from(channel.item_size())
             .map_err(|_| CodecError::Malformed("tessellation channel item size overflow".into()))?;
-        let expected_len = mesh
-            .vertices()
-            .len()
-            .checked_mul(item_size)
-            .ok_or_else(|| CodecError::Malformed("tessellation channel size overflow".into()))?;
-        if channel.data().len() != expected_len {
-            return Err(CodecError::Malformed(
-                "tessellation channel payload length is inconsistent".into(),
-            ));
-        }
         let data = indices
             .iter()
             .flat_map(|index| {
@@ -2162,89 +2322,138 @@ pub(super) fn sequential_tessellation(
             .map_err(|err| CodecError::Malformed(err.to_string()))?,
         );
     }
-    let triangle_count = u32::try_from(mesh.triangles().len())
-        .map_err(|_| CodecError::Malformed("tessellation triangle count overflow".into()))?;
-    let strip_lengths = alloc_filled(
-        triangle_count as usize,
-        3_u32,
-        "SLDPRT tessellation triangle strips",
-    )?;
-    let triangles = triangles_from_strips(&strip_lengths)?;
-    Ok(cadmpeg_ir::tessellation::Tessellation::from_decoded(
-        mesh.id.clone(),
-        vertices,
-        triangles,
-        strip_lengths,
-        normals,
-        Vec::new(),
-        channels,
-    )
-    .map_err(|err| CodecError::Malformed(err.to_string()))?
-    .with_body(mesh.body.clone())
-    .with_faces(mesh.faces.clone())
-    .with_chordal_deflection(mesh.chordal_deflection)
-    .with_source_object(mesh.source_object.clone()))
+    // One triangle per strip: the SLDPRT display list states strips, so a
+    // triangle list is written as three-vertex runs.
+    let rows = if normals.is_empty() {
+        strip_rows(&positions)?.map_or(
+            cadmpeg_ir::tessellation::TessellationMesh::List {
+                vertices: Vec::new(),
+                triangles: Vec::new(),
+            },
+            |strips| cadmpeg_ir::tessellation::TessellationMesh::Strips { strips },
+        )
+    } else {
+        let shaded = positions
+            .into_iter()
+            .zip(normals)
+            .map(|(position, normal)| cadmpeg_ir::tessellation::ShadedVertex { position, normal })
+            .collect::<Vec<_>>();
+        strip_rows(&shaded)?.map_or(
+            cadmpeg_ir::tessellation::TessellationMesh::List {
+                vertices: Vec::new(),
+                triangles: Vec::new(),
+            },
+            |strips| cadmpeg_ir::tessellation::TessellationMesh::ShadedStrips { strips },
+        )
+    };
+    mesh.clone()
+        .with_mesh(rows, channels)
+        .map_err(|err| CodecError::Malformed(err.to_string()))
+}
+
+/// Cut a corner-expanded vertex run into one three-vertex strip per triangle.
+fn strip_rows<V: Clone>(
+    vertices: &[V],
+) -> Result<Option<cadmpeg_ir::tessellation::Strips<V>>, CodecError> {
+    let mut strips = Vec::with_capacity(vertices.len() / 3);
+    for corners in vertices.chunks(3) {
+        strips.push(
+            cadmpeg_ir::tessellation::Strip::new(corners.to_vec()).ok_or_else(|| {
+                CodecError::Malformed("tessellation triangle spans fewer than three corners".into())
+            })?,
+        );
+    }
+    Ok(cadmpeg_ir::tessellation::Strips::new(strips))
 }
 
 fn tessellation_f32(value: f64, role: &str) -> Result<f32, CodecError> {
-    let narrowed = value as f32;
-    if narrowed.is_finite() {
-        Ok(narrowed)
-    } else {
-        Err(CodecError::malformed(format_args!(
-            "SLDPRT tessellation {role} exceeds f32 range"
-        )))
-    }
+    f32_from_f64(value).ok_or_else(|| {
+        CodecError::malformed(format_args!("SLDPRT tessellation {role} exceeds f32 range"))
+    })
 }
 
-fn triangles_from_strips(strips: &[u32]) -> Result<Vec<[u32; 3]>, CodecError> {
-    let mut triangles = Vec::new();
-    let mut base = 0u32;
-    for &length in strips {
-        for index in 0..length.saturating_sub(2) {
-            triangles.push(if index % 2 == 0 {
-                [base + index, base + index + 1, base + index + 2]
-            } else {
-                [base + index, base + index + 2, base + index + 1]
-            });
-        }
-        base = base
-            .checked_add(length)
-            .ok_or_else(|| CodecError::Malformed("tessellation index overflow".into()))?;
-    }
-    Ok(triangles)
-}
-
-fn descriptor(out: &mut Vec<u8>, item_size: u32, kind: u32, flags: u32, count: usize, data: &[u8]) {
+fn descriptor(
+    out: &mut Vec<u8>,
+    item_size: u32,
+    kind: u32,
+    flags: u32,
+    count: usize,
+    data: &[u8],
+) -> Result<(), CodecError> {
+    let count = u32::try_from(count).map_err(|_| {
+        CodecError::NotImplemented("SLDPRT display-list channel count exceeds u32".into())
+    })?;
     out.extend_from_slice(&item_size.to_le_bytes());
     out.extend_from_slice(&kind.to_le_bytes());
     out.extend_from_slice(&flags.to_le_bytes());
-    out.extend_from_slice(&(count as u32).to_le_bytes());
+    out.extend_from_slice(&count.to_le_bytes());
     out.extend_from_slice(data);
+    Ok(())
 }
 
-fn body_material(ir: &CadIr) -> Result<Option<(String, Color)>, CodecError> {
-    let appearances = ir
-        .model
-        .appearances
-        .iter()
-        .map(|appearance| (&appearance.id, appearance))
-        .collect::<HashMap<_, _>>();
-    let mut selected: Option<(String, Color)> = None;
+fn body_material<'ir>(
+    ctx: &DecodeContext<'_>,
+    ir: &'ir CadIr,
+) -> Result<Option<(&'ir str, Color)>, CodecError> {
+    let mut appearances = HashMap::new();
+    for appearance in &ir.model.appearances {
+        let work = cadmpeg_core::decode::u64_from_index(appearances.len())
+            .checked_add(2)
+            .and_then(|count| {
+                count.checked_mul(
+                    cadmpeg_core::decode::u64_from_index(appearance.id.as_str().len())
+                        .checked_add(1)?,
+                )
+            })
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("index SLDPRT material appearances", u64::MAX - 1, u64::MAX)
+            })?;
+        ctx.charge_work(work, "index SLDPRT material appearances")?;
+        ctx.insert_hash_map(
+            &mut appearances,
+            &appearance.id,
+            appearance,
+            "index SLDPRT material appearances",
+        )
+        .map(|_| ())?;
+    }
+    let mut selected: Option<(&str, Color)> = None;
     for binding in &ir.model.appearance_bindings {
+        ctx.charge_work(1, "scan SLDPRT body material bindings")?;
         let AppearanceTarget::Body(_) = &binding.target else {
             continue;
         };
+        let work = cadmpeg_core::decode::u64_from_index(appearances.len())
+            .checked_add(2)
+            .and_then(|count| {
+                count.checked_mul(
+                    cadmpeg_core::decode::u64_from_index(binding.appearance.as_str().len())
+                        .checked_add(1)?,
+                )
+            })
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "find SLDPRT body material appearance",
+                    u64::MAX - 1,
+                    u64::MAX,
+                )
+            })?;
+        ctx.charge_work(work, "find SLDPRT body material appearance")?;
         let appearance = appearances.get(&binding.appearance).ok_or_else(|| {
             CodecError::Malformed("body binding references missing appearance".into())
         })?;
         let color = appearance.base_color.ok_or_else(|| {
             CodecError::NotImplemented("SLDPRT body appearance has no base color".into())
         })?;
-        let material = (
-            appearance.name.clone().unwrap_or_else(|| "Material".into()),
-            color,
-        );
+        let material = (appearance.name.as_deref().unwrap_or("Material"), color);
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(material.0.len())
+                .checked_add(5)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("compare SLDPRT body materials", u64::MAX - 1, u64::MAX)
+                })?,
+            "compare SLDPRT body materials",
+        )?;
         if selected
             .as_ref()
             .is_some_and(|current| current != &material)
@@ -2257,11 +2466,23 @@ fn body_material(ir: &CadIr) -> Result<Option<(String, Color)>, CodecError> {
     }
     if selected.is_none() {
         for body in &ir.model.bodies {
-            let Some(color) = body.color else { continue };
-            let material = (
-                body.name.clone().unwrap_or_else(|| "Material".into()),
-                color,
-            );
+            ctx.charge_work(1, "scan SLDPRT body display materials")?;
+            let Some(color) = body.color else {
+                continue;
+            };
+            let material = (body.name.as_deref().unwrap_or("Material"), color);
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(material.0.len())
+                    .checked_add(5)
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit(
+                            "compare SLDPRT body materials",
+                            u64::MAX - 1,
+                            u64::MAX,
+                        )
+                    })?,
+                "compare SLDPRT body materials",
+            )?;
             if selected
                 .as_ref()
                 .is_some_and(|current| current != &material)
@@ -2276,20 +2497,28 @@ fn body_material(ir: &CadIr) -> Result<Option<(String, Color)>, CodecError> {
     Ok(selected)
 }
 
-fn materials_payload(ir: &CadIr) -> Result<Vec<u8>, CodecError> {
+fn materials_payload(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<u8>, CodecError> {
     let mut payload = Vec::new();
-    for (name, color) in swobjects_materials(ir)? {
-        payload.extend(material_payload(&name, color)?);
+    for (name, color) in swobjects_materials(ctx, ir)? {
+        payload.extend(material_payload(name, color)?);
     }
     Ok(payload)
 }
 
-fn swobjects_materials(ir: &CadIr) -> Result<Vec<(String, Color)>, CodecError> {
-    let mut materials = Vec::<(String, Color)>::new();
-    if let Some(material) = body_material(ir)? {
-        materials.push(material);
+fn swobjects_materials<'ir>(
+    ctx: &DecodeContext<'_>,
+    ir: &'ir CadIr,
+) -> Result<Vec<(&'ir str, Color)>, CodecError> {
+    let mut materials = Vec::new();
+    if let Some(material) = body_material(ctx, ir)? {
+        ctx.push_vec(
+            &mut materials,
+            material,
+            "collect SLDPRT SWObjects materials",
+        )?;
     }
     for appearance in &ir.model.appearances {
+        ctx.charge_work(24, "scan SLDPRT SWObjects material schemas")?;
         if appearance.schema.as_deref() != Some("moVisualProperties_c") {
             continue;
         }
@@ -2298,12 +2527,24 @@ fn swobjects_materials(ir: &CadIr) -> Result<Vec<(String, Color)>, CodecError> {
                 "SLDPRT material appearance has no base color".into(),
             ));
         };
-        let material = (
-            appearance.name.clone().unwrap_or_else(|| "Material".into()),
-            color,
-        );
+        let material = (appearance.name.as_deref().unwrap_or("Material"), color);
+        let work = cadmpeg_core::decode::u64_from_index(materials.len())
+            .checked_add(1)
+            .and_then(|count| {
+                count.checked_mul(
+                    cadmpeg_core::decode::u64_from_index(material.0.len()).checked_add(5)?,
+                )
+            })
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("compare SLDPRT SWObjects materials", u64::MAX - 1, u64::MAX)
+            })?;
+        ctx.charge_work(work, "compare SLDPRT SWObjects materials")?;
         if !materials.contains(&material) {
-            materials.push(material);
+            ctx.push_vec(
+                &mut materials,
+                material,
+                "collect SLDPRT SWObjects materials",
+            )?;
         }
     }
     Ok(materials)
@@ -2312,18 +2553,24 @@ fn swobjects_materials(ir: &CadIr) -> Result<Vec<(String, Color)>, CodecError> {
 fn material_payload(name: &str, color: Color) -> Result<Vec<u8>, CodecError> {
     let name = name.encode_utf16().collect::<Vec<_>>();
     let length = u8::try_from(name.len())
-        .map_err(|_| CodecError::Malformed("SLDPRT material name is too long".into()))?;
+        .map_err(|_| CodecError::NotImplemented("SLDPRT material name is too long".into()))?;
     if name.is_empty() {
         return Err(CodecError::Malformed(
             "SLDPRT material name is empty".into(),
         ));
     }
     let mut out = b"moVisualProperties_c".to_vec();
-    let component = |value: f32| (value.clamp(0.0, 1.0) * 255.0).round() as u8;
+    // Every `Color` construction path admits components in [0, 1], so the
+    // rounded product is in [0, 255].
+    let component = |value: f32| {
+        truncate_f64_to_u8(f64::from((value * 255.0).round())).ok_or_else(|| {
+            CodecError::Malformed("SLDPRT material color component is out of range".into())
+        })
+    };
     out.extend_from_slice(&[
-        component(color.r),
-        component(color.g),
-        component(color.b),
+        component(color.r())?,
+        component(color.g())?,
+        component(color.b())?,
         0,
     ]);
     out.extend_from_slice(&0u32.to_le_bytes());
@@ -2347,11 +2594,13 @@ pub(crate) fn brep_body(
         .curves
         .iter()
         .filter(|curve| {
-            matches!(curve.geometry, CurveGeometry::Degenerate { .. })
-                && curve
-                    .id
-                    .as_str()
-                    .starts_with("sldprt:brep:curve#sphere-seam-face:")
+            matches!(
+                curve.geometry,
+                CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(_))
+            ) && curve
+                .id
+                .as_str()
+                .starts_with("sldprt:brep:curve#sphere-seam-face:")
         })
         .map(|curve| curve.id.clone())
         .collect::<HashSet<_>>();
@@ -2406,7 +2655,7 @@ pub(crate) fn brep_body(
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let mut out = Vec::new();
     for surface in &ir.model.surfaces {
-        if let SurfaceGeometry::Nurbs(nurbs) = &surface.geometry {
+        if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) = &surface.geometry {
             write_nurbs_surface(
                 &mut out,
                 surfaces[&surface.id],
@@ -2417,7 +2666,9 @@ pub(crate) fn brep_body(
             )?;
             continue;
         }
-        let reference = surface_reference(&surface.geometry);
+        let reference = surface_reference(surface.geometry.solved().ok_or_else(|| {
+            cadmpeg_core::CodecError::NotImplemented("carrier has no solved geometry".into())
+        })?);
         let (kind, values) = surface_values(&surface.geometry, reference, length_scale)?;
         compact(&mut out, kind, surfaces[&surface.id], &values);
     }
@@ -2425,7 +2676,7 @@ pub(crate) fn brep_body(
         if derived_sphere_seam_curves.contains(&curve.id) {
             continue;
         }
-        if let CurveGeometry::Nurbs(nurbs) = &curve.geometry {
+        if let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = &curve.geometry {
             write_nurbs_curve(
                 &mut out,
                 curves[&curve.id],
@@ -2464,7 +2715,11 @@ pub(crate) fn brep_body(
         be16(&mut out, points[&point.id]);
         be32(&mut out, 0);
         out.extend_from_slice(&[0; 8]);
-        for value in [point.position.x, point.position.y, point.position.z] {
+        for value in [
+            point.position().get().x,
+            point.position().get().y,
+            point.position().get().z,
+        ] {
             bef64(&mut out, value * length_scale);
         }
     }
@@ -2487,8 +2742,7 @@ pub(crate) fn brep_body(
             0,
             0,
             0,
-            edge.curve
-                .as_ref()
+            edge.curve()
                 .and_then(|id| curves.get(id))
                 .copied()
                 .unwrap_or(0),
@@ -2550,7 +2804,11 @@ pub(crate) fn brep_body(
             .iter()
             .position(|id| id == &lp.id)
             .ok_or_else(|| CodecError::Malformed("face does not own referenced loop".into()))?;
-        let next_loop = face.loops.get(position + 1).map_or(0, |id| loops[id]);
+        let next_loop = face
+            .loops
+            .iter()
+            .nth(position + 1)
+            .map_or(0, |id| loops[id]);
         tag(&mut out, 0x0f);
         be16(&mut out, loops[&lp.id]);
         be32(&mut out, 0);
@@ -2574,7 +2832,8 @@ pub(crate) fn brep_body(
         out.extend_from_slice(&MAGIC);
         let first = face
             .loops
-            .first()
+            .iter()
+            .next()
             .ok_or_else(|| CodecError::Malformed("face has no loop".into()))?;
         for value in [0, 0, loops[first], 0, surfaces[&face.surface]] {
             be16(&mut out, value);
@@ -2588,12 +2847,14 @@ pub(crate) fn brep_body(
     }
     write_body_hierarchy(
         ir,
-        &faces,
-        &surfaces,
-        &face_owners,
-        &color_attrs,
-        face_color_definition,
-        schema_32001,
+        &HierarchyIdentities {
+            faces: &faces,
+            surfaces: &surfaces,
+            face_owners: &face_owners,
+            color_attrs: &color_attrs,
+            face_color_definition,
+            schema_32001,
+        },
         &mut next,
         &mut out,
     )?;
@@ -2605,18 +2866,32 @@ pub(crate) fn brep_body(
     Ok(out)
 }
 
-#[allow(clippy::too_many_arguments)] // The native and typed hierarchy writers share these identity maps.
-fn write_body_hierarchy(
-    ir: &CadIr,
-    faces: &HashMap<cadmpeg_ir::ids::FaceId, u16>,
-    surfaces: &HashMap<cadmpeg_ir::ids::SurfaceId, u16>,
-    face_owners: &HashMap<cadmpeg_ir::ids::FaceId, u16>,
-    color_attrs: &HashMap<cadmpeg_ir::ids::FaceId, u16>,
+/// Attribute identities of the faces and surfaces that the native and typed
+/// hierarchy writers share.
+#[derive(Clone, Copy)]
+struct HierarchyIdentities<'a> {
+    faces: &'a HashMap<cadmpeg_ir::ids::FaceId, u16>,
+    surfaces: &'a HashMap<cadmpeg_ir::ids::SurfaceId, u16>,
+    face_owners: &'a HashMap<cadmpeg_ir::ids::FaceId, u16>,
+    color_attrs: &'a HashMap<cadmpeg_ir::ids::FaceId, u16>,
     face_color_definition: Option<(u16, u16)>,
     schema_32001: bool,
+}
+
+fn write_body_hierarchy(
+    ir: &CadIr,
+    identities: &HierarchyIdentities<'_>,
     next: &mut u16,
     out: &mut Vec<u8>,
 ) -> Result<(), CodecError> {
+    let HierarchyIdentities {
+        faces,
+        surfaces,
+        face_owners,
+        color_attrs,
+        face_color_definition,
+        schema_32001,
+    } = *identities;
     let shells = ir
         .model
         .shells
@@ -2650,7 +2925,7 @@ fn write_body_hierarchy(
                     CodecError::Malformed("region references missing shell".into())
                 })?;
                 let mut owned = Vec::new();
-                for face in &shell.faces {
+                for face in shell.faces() {
                     if !faces.contains_key(face) {
                         return Err(CodecError::Malformed(
                             "shell references missing face".into(),
@@ -2710,7 +2985,7 @@ fn write_body_hierarchy(
     }
     write_typed_body_hierarchy(ir, faces, surfaces, next, out)?;
     if let Some((key_node, definition_node)) = face_color_definition {
-        attribute_definition(out, key_node, definition_node);
+        attribute_definition(out, key_node, definition_node)?;
     }
     let mut face_owner_items = face_owners.iter().collect::<Vec<_>>();
     face_owner_items.sort_by_key(|(left, _)| *left);
@@ -2768,7 +3043,7 @@ fn write_typed_body_hierarchy(
     let mut face_shells = HashMap::new();
     for shell in &ir.model.shells {
         let shell_attr = shell_attrs[&shell.id];
-        for face in &shell.faces {
+        for face in shell.faces() {
             if face_shells.insert(face.clone(), shell_attr).is_some() {
                 return Err(CodecError::Malformed(
                     "face belongs to multiple typed shells".into(),
@@ -2792,7 +3067,19 @@ fn write_typed_body_hierarchy(
             .and_then(|region| region.shells.first())
             .map(|shell| shell_attrs[shell])
             .ok_or_else(|| CodecError::Malformed("typed region has no shell".into()))?;
-        typed_prefix(out, 0x0c, body_attr, 0x1000_0000 + index as u32);
+        typed_prefix(
+            out,
+            0x0c,
+            body_attr,
+            u32::try_from(index)
+                .ok()
+                .and_then(|index| 0x1000_0000_u32.checked_add(index))
+                .ok_or_else(|| {
+                    CodecError::NotImplemented(
+                        "SLDPRT typed topology node index exceeds the 32-bit range".into(),
+                    )
+                })?,
+        );
         for value in [5_u32, 6, 1, 1, 1, 1] {
             typed_ref(out, value)?;
         }
@@ -2836,7 +3123,14 @@ fn write_typed_body_hierarchy(
             out,
             0x0d,
             shell_attrs[&shell.id],
-            0x2000_0000 + index as u32,
+            u32::try_from(index)
+                .ok()
+                .and_then(|index| 0x2000_0000_u32.checked_add(index))
+                .ok_or_else(|| {
+                    CodecError::NotImplemented(
+                        "SLDPRT typed topology node index exceeds the 32-bit range".into(),
+                    )
+                })?,
         );
         for value in [1, body_attrs[body], 1, 1, 1, 1, region_attrs[&region.id], 1] {
             typed_ref(out, value)?;
@@ -2873,7 +3167,14 @@ fn write_typed_body_hierarchy(
             out,
             0x13,
             region_attrs[&region.id],
-            0x3000_0000 + index as u32,
+            u32::try_from(index)
+                .ok()
+                .and_then(|index| 0x3000_0000_u32.checked_add(index))
+                .ok_or_else(|| {
+                    CodecError::NotImplemented(
+                        "SLDPRT typed topology node index exceeds the 32-bit range".into(),
+                    )
+                })?,
         );
         for value in [1, body, next_region, previous_region, shell_head] {
             typed_ref(out, value)?;
@@ -2886,7 +3187,19 @@ fn write_typed_body_hierarchy(
             .get(&face.id)
             .copied()
             .ok_or_else(|| CodecError::Malformed("typed face has no shell".into()))?;
-        typed_prefix(out, 0x0e, faces[&face.id], 0x4000_0000 + index as u32);
+        typed_prefix(
+            out,
+            0x0e,
+            faces[&face.id],
+            u32::try_from(index)
+                .ok()
+                .and_then(|index| 0x4000_0000_u32.checked_add(index))
+                .ok_or_else(|| {
+                    CodecError::NotImplemented(
+                        "SLDPRT typed topology node index exceeds the 32-bit range".into(),
+                    )
+                })?,
+        );
         typed_ref(out, 1_u32)?;
         out.extend_from_slice(&MAGIC);
         for value in [1, 1, 0, shell, surfaces[&face.surface]] {
@@ -2920,11 +3233,19 @@ fn typed_ref(out: &mut Vec<u8>, value: impl Into<u32>) -> Result<(), CodecError>
             "SLDPRT typed reference exceeds the 31-bit XT pointer range".into(),
         ));
     }
+    let refuse = || {
+        CodecError::NotImplemented(
+            "SLDPRT typed reference exceeds the 31-bit XT pointer range".into(),
+        )
+    };
     if value <= 0x7ffe {
-        be16(out, value as u16);
+        be16(out, u16::try_from(value).map_err(|_| refuse())?);
     } else {
-        be16(out, 0x8000 | (value as u16 & 0x7fff));
-        be16(out, (value >> 15) as u16);
+        be16(
+            out,
+            0x8000 | u16::try_from(value & 0x7fff).map_err(|_| refuse())?,
+        );
+        be16(out, u16::try_from(value >> 15).map_err(|_| refuse())?);
     }
     Ok(())
 }
@@ -2977,20 +3298,30 @@ fn entity53(out: &mut Vec<u8>, attr: u16, color: Color) {
     tag(out, 0x53);
     be32(out, 3);
     be16(out, attr);
-    for value in [color.r, color.g, color.b] {
+    for value in [color.r(), color.g(), color.b()] {
         bef64(out, f64::from(value));
     }
 }
 
-fn attribute_definition(out: &mut Vec<u8>, key_node: u16, definition_node: u16) {
+fn attribute_definition(
+    out: &mut Vec<u8>,
+    key_node: u16,
+    definition_node: u16,
+) -> Result<(), CodecError> {
     const FAMILY: &[u8] = b"SDL/TYSA_COLOUR";
     tag(out, 0x4f);
-    be32(out, FAMILY.len() as u32);
+    be32(
+        out,
+        u32::try_from(FAMILY.len()).map_err(|_| {
+            CodecError::NotImplemented("SLDPRT attribute family name is too long".into())
+        })?,
+    );
     be16(out, key_node);
     out.extend_from_slice(FAMILY);
     tag(out, 0x50);
     be32(out, 2);
     be16(out, definition_node);
+    Ok(())
 }
 
 fn write_face_list(
@@ -3000,9 +3331,13 @@ fn write_face_list(
     disc: u16,
 ) -> Result<u16, CodecError> {
     let chunks = owners.chunks(5).collect::<Vec<_>>();
-    let attrs = (0..chunks.len().max(1))
-        .map(|_| take_attr(next))
-        .collect::<Result<Vec<_>, _>>()?;
+    // The list always states a head node: an empty owner run writes the one
+    // node that names no face. The head is a value, so the answer is not an
+    // index into a list whose length the function would have to floor first.
+    let head = take_attr(next)?;
+    let attrs = std::iter::once(Ok(head))
+        .chain((1..chunks.len()).map(|_| take_attr(next)))
+        .collect::<Result<Vec<_>, CodecError>>()?;
     for (index, attr) in attrs.iter().enumerate() {
         let mut refs = [0u16; 6];
         refs[0] = attrs.get(index + 1).copied().unwrap_or(0);
@@ -3011,7 +3346,7 @@ fn write_face_list(
         }
         entity51(out, 2, *attr, disc, &refs);
     }
-    Ok(attrs[0])
+    Ok(head)
 }
 
 fn entity51(out: &mut Vec<u8>, flags: u32, attr: u16, disc: u16, refs: &[u16; 6]) {
@@ -3032,54 +3367,56 @@ pub(super) fn surface_values(
 ) -> Result<(u8, Vec<f64>), CodecError> {
     let scaled = |value: f64| value * length_scale;
     let result = match geometry {
-        SurfaceGeometry::Plane { origin, normal, .. } => (
-            0x32,
-            vec![
-                scaled(origin.x),
-                scaled(origin.y),
-                scaled(origin.z),
-                normal.x,
-                normal.y,
-                normal.z,
-                reference.x,
-                reference.y,
-                reference.z,
-            ],
-        ),
-        SurfaceGeometry::Cylinder {
-            origin,
-            axis,
-            radius,
-            ..
-        } => (
-            0x33,
-            vec![
-                scaled(origin.x),
-                scaled(origin.y),
-                scaled(origin.z),
-                axis.x,
-                axis.y,
-                axis.z,
-                scaled(*radius),
-                reference.x,
-                reference.y,
-                reference.z,
-            ],
-        ),
-        SurfaceGeometry::Cone {
-            origin,
-            axis,
-            radius,
-            ratio,
-            half_angle,
-            ..
-        } => {
-            if *ratio != 1.0 {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
+            let origin = plane_surface.origin().get();
+            let normal = plane_surface.frame().axis().as_raw();
+            (
+                0x32,
+                vec![
+                    scaled(origin.x),
+                    scaled(origin.y),
+                    scaled(origin.z),
+                    normal.x,
+                    normal.y,
+                    normal.z,
+                    reference.x,
+                    reference.y,
+                    reference.z,
+                ],
+            )
+        }
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
+            let origin = cylinder_surface.origin().get();
+            let axis = cylinder_surface.frame().axis().as_raw();
+            let radius = cylinder_surface.radius().get();
+            (
+                0x33,
+                vec![
+                    scaled(origin.x),
+                    scaled(origin.y),
+                    scaled(origin.z),
+                    axis.x,
+                    axis.y,
+                    axis.z,
+                    scaled(radius),
+                    reference.x,
+                    reference.y,
+                    reference.z,
+                ],
+            )
+        }
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
+            let origin = cone_surface.origin().get();
+            let axis = cone_surface.frame().axis().as_raw();
+            let radius = cone_surface.radius().get();
+            let ratio = cone_surface.ratio().get();
+            let half_angle = cone_surface.half_angle().get();
+            if ratio != 1.0 {
                 return Err(CodecError::NotImplemented(
                     "SLDPRT compact cone carriers encode circular cones only".into(),
                 ));
             }
-            if !(*half_angle > 0.0 && *half_angle < std::f64::consts::FRAC_PI_2) {
+            if !(half_angle > 0.0 && half_angle < std::f64::consts::FRAC_PI_2) {
                 return Err(CodecError::NotImplemented(
                     "SLDPRT compact cone carriers require an acute positive half-angle".into(),
                 ));
@@ -3093,7 +3430,7 @@ pub(super) fn surface_values(
                     axis.x,
                     axis.y,
                     axis.z,
-                    scaled(*radius),
+                    scaled(radius),
                     half_angle.sin(),
                     half_angle.cos(),
                     reference.x,
@@ -3102,13 +3439,11 @@ pub(super) fn surface_values(
                 ],
             )
         }
-        SurfaceGeometry::Sphere {
-            center,
-            axis,
-            radius,
-            ..
-        } => {
-            if *radius < 0.0 {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
+            let center = sphere_surface.center().get();
+            let axis = sphere_surface.frame().axis().as_raw();
+            let radius = sphere_surface.radius().get();
+            if radius < 0.0 {
                 return Err(CodecError::NotImplemented(
                     "SLDPRT compact sphere carriers require a positive radius".into(),
                 ));
@@ -3120,7 +3455,7 @@ pub(super) fn surface_values(
                     scaled(center.x),
                     scaled(center.y),
                     scaled(center.z),
-                    scaled(*radius),
+                    scaled(radius),
                     axis.x,
                     axis.y,
                     axis.z,
@@ -3130,14 +3465,12 @@ pub(super) fn surface_values(
                 ],
             )
         }
-        SurfaceGeometry::Torus {
-            center,
-            axis,
-            major_radius,
-            minor_radius,
-            ..
-        } => {
-            if !(*major_radius > *minor_radius && *minor_radius > 0.0) {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
+            let center = torus_surface.center().get();
+            let axis = torus_surface.frame().axis().as_raw();
+            let major_radius = torus_surface.major_radius().get();
+            let minor_radius = torus_surface.minor_radius().get();
+            if !(major_radius > minor_radius && minor_radius > 0.0) {
                 return Err(CodecError::NotImplemented(
                     "SLDPRT compact torus carriers require major > minor > 0".into(),
                 ));
@@ -3151,19 +3484,21 @@ pub(super) fn surface_values(
                     axis.x,
                     axis.y,
                     axis.z,
-                    scaled(*major_radius),
-                    scaled(*minor_radius),
+                    scaled(major_radius),
+                    scaled(minor_radius),
                     reference.x,
                     reference.y,
                     reference.z,
                 ],
             )
         }
-        SurfaceGeometry::Nurbs(_)
-        | SurfaceGeometry::Polygonal(_)
-        | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Transformed { .. }
-        | SurfaceGeometry::Unknown { .. } => {
+        SurfaceGeometry::Solved(
+            SolvedSurfaceGeometry::Nurbs(_)
+            | SolvedSurfaceGeometry::Polygonal(_)
+            | SolvedSurfaceGeometry::Transformed(_)
+            | SolvedSurfaceGeometry::Unknown { .. },
+        )
+        | SurfaceGeometry::Procedural { .. } => {
             return Err(CodecError::NotImplemented(
                 "semantic SLDPRT writer does not support this surface carrier".into(),
             ))
@@ -3215,11 +3550,22 @@ fn write_nurbs_curve(
     for attr in [control, multiplicity, knots] {
         be16(out, attr);
     }
-    let poles = homogeneous_poles(nurbs.control_points(), nurbs.weights(), length_scale)?;
-    f64_array(out, 0x2d, control, &poles, entity)?;
-    let (unique, mult) = unique_knots(nurbs.knots(), entity)?;
-    u16_array(out, multiplicity, &mult, entity)?;
-    f64_array(out, 0x80, knots, &unique, entity)?;
+    let poles = homogeneous_poles(nurbs.pole_rows(), length_scale)?;
+    f64_array(out, 0x2d, control, poles.into_iter(), entity)?;
+    let unique = unique_knots(nurbs.knots(), entity)?;
+    u16_array(
+        out,
+        multiplicity,
+        unique.iter().map(|(_, multiplicity)| multiplicity.get()),
+        entity,
+    )?;
+    f64_array(
+        out,
+        0x80,
+        knots,
+        unique.iter().map(|(knot, _)| *knot),
+        entity,
+    )?;
     Ok(())
 }
 
@@ -3251,21 +3597,19 @@ fn write_nurbs_surface(
             "NURBS surface degree must be positive".into(),
         ));
     }
-    let (u_unique, u_mult) = unique_knots(nurbs.u_knots(), entity)?;
-    let (v_unique, v_mult) = unique_knots(nurbs.v_knots(), entity)?;
-    if !nurbs
-        .u_knots()
-        .iter()
-        .chain(nurbs.v_knots())
-        .all(|value| value.is_finite())
-        || !knots_nondecreasing(nurbs.u_knots())
-        || !knots_nondecreasing(nurbs.v_knots())
-    {
-        return Err(CodecError::Malformed(
-            "NURBS surface knot vectors must be finite and nondecreasing".into(),
-        ));
-    }
-    let poles = homogeneous_poles(nurbs.control_points(), nurbs.weights(), length_scale)?;
+    let u_count = u32::try_from(nurbs.u_count()).map_err(|_| {
+        CodecError::NotImplemented(format!(
+            "SLDPRT NURBS surface {entity} u pole count exceeds the native u32 field"
+        ))
+    })?;
+    let v_count = u32::try_from(nurbs.v_count()).map_err(|_| {
+        CodecError::NotImplemented(format!(
+            "SLDPRT NURBS surface {entity} v pole count exceeds the native u32 field"
+        ))
+    })?;
+    let u_unique = unique_knots(nurbs.u_knots(), entity)?;
+    let v_unique = unique_knots(nurbs.v_knots(), entity)?;
+    let poles = homogeneous_grid_poles(nurbs.pole_grid(), length_scale)?;
     let dimension = if nurbs.weights().is_some() { 4 } else { 3 };
     let u_knot_count = u32::try_from(u_unique.len()).map_err(|_| {
         CodecError::NotImplemented(format!(
@@ -3295,8 +3639,8 @@ fn write_nurbs_surface(
     out.extend_from_slice(&[0, 0]);
     be16(out, u_degree);
     be16(out, v_degree);
-    be32(out, nurbs.u_count());
-    be32(out, nurbs.v_count());
+    be32(out, u_count);
+    be32(out, v_count);
     out.extend_from_slice(&[1, 1]);
     be32(out, u_knot_count);
     be32(out, v_knot_count);
@@ -3307,11 +3651,33 @@ fn write_nurbs_surface(
     for attr in [control, u_multiplicity, v_multiplicity, u_knots, v_knots] {
         be16(out, attr);
     }
-    f64_array(out, 0x2d, control, &poles, entity)?;
-    u16_array(out, u_multiplicity, &u_mult, entity)?;
-    u16_array(out, v_multiplicity, &v_mult, entity)?;
-    f64_array(out, 0x80, u_knots, &u_unique, entity)?;
-    f64_array(out, 0x80, v_knots, &v_unique, entity)?;
+    f64_array(out, 0x2d, control, poles.into_iter(), entity)?;
+    u16_array(
+        out,
+        u_multiplicity,
+        u_unique.iter().map(|(_, multiplicity)| multiplicity.get()),
+        entity,
+    )?;
+    u16_array(
+        out,
+        v_multiplicity,
+        v_unique.iter().map(|(_, multiplicity)| multiplicity.get()),
+        entity,
+    )?;
+    f64_array(
+        out,
+        0x80,
+        u_knots,
+        u_unique.iter().map(|(knot, _)| *knot),
+        entity,
+    )?;
+    f64_array(
+        out,
+        0x80,
+        v_knots,
+        v_unique.iter().map(|(knot, _)| *knot),
+        entity,
+    )?;
     Ok(())
 }
 
@@ -3319,57 +3685,114 @@ fn take_attr(next: &mut u16) -> Result<u16, CodecError> {
     let attr = *next;
     *next = next
         .checked_add(1)
-        .ok_or_else(|| CodecError::Malformed("SLDPRT attribute space exhausted".into()))?;
+        .ok_or_else(|| CodecError::NotImplemented("SLDPRT attribute space exhausted".into()))?;
     Ok(attr)
 }
 
+fn append_homogeneous_pole(
+    out: &mut Vec<f64>,
+    point: FinitePoint3,
+    weight: Option<f64>,
+    length_scale: f64,
+    index: usize,
+) -> Result<(), CodecError> {
+    let point = point.get();
+    let homogeneous =
+        [point.x, point.y, point.z].map(|value| value * length_scale * weight.unwrap_or(1.0));
+    if !homogeneous.iter().all(|value| value.is_finite()) {
+        return Err(CodecError::NotImplemented(format!(
+            "SLDPRT NURBS pole {index} scaled by its weight has no finite coordinate"
+        )));
+    }
+    out.extend(homogeneous);
+    if let Some(weight) = weight {
+        out.push(weight);
+    }
+    Ok(())
+}
+
 fn homogeneous_poles(
-    points: &[cadmpeg_ir::math::Point3],
-    weights: Option<&[f64]>,
+    poles: &NurbsPoles3<FinitePoint3>,
     length_scale: f64,
 ) -> Result<Vec<f64>, CodecError> {
-    if weights.is_some_and(|values| values.len() != points.len()) {
-        return Err(CodecError::Malformed("invalid NURBS weight count".into()));
-    }
-    let mut out = Vec::with_capacity(points.len() * if weights.is_some() { 4 } else { 3 });
-    for (index, point) in points.iter().enumerate() {
-        let weight = weights.map_or(1.0, |values| values[index]);
-        out.extend([
-            point.x * length_scale * weight,
-            point.y * length_scale * weight,
-            point.z * length_scale * weight,
-        ]);
-        if weights.is_some() {
-            out.push(weight);
+    let mut out = Vec::with_capacity(
+        poles.count()
+            * if matches!(poles, NurbsPoles3::Rational { .. }) {
+                4
+            } else {
+                3
+            },
+    );
+    match poles {
+        NurbsPoles3::Polynomial { points } => {
+            for (index, point) in points.iter().enumerate() {
+                append_homogeneous_pole(&mut out, *point, None, length_scale, index)?;
+            }
+        }
+        NurbsPoles3::Rational { points } => {
+            for (index, pole) in points.iter().enumerate() {
+                append_homogeneous_pole(
+                    &mut out,
+                    pole.point,
+                    Some(pole.weight.get()),
+                    length_scale,
+                    index,
+                )?;
+            }
         }
     }
     Ok(out)
 }
 
-fn unique_knots(knots: &[f64], entity: &str) -> Result<(Vec<f64>, Vec<u16>), CodecError> {
-    let mut unique = Vec::new();
-    let mut multiplicities: Vec<u16> = Vec::new();
-    for &knot in knots {
-        if unique.last() == Some(&knot) {
-            let multiplicity = multiplicities.last_mut().expect("matching unique knot");
-            *multiplicity = multiplicity.checked_add(1).ok_or_else(|| {
-                CodecError::NotImplemented(format!(
-                    "SLDPRT NURBS carrier {entity} knot multiplicity exceeds the native u16 field"
-                ))
-            })?;
-        } else {
-            unique.push(knot);
-            multiplicities.push(1);
+fn homogeneous_grid_poles(
+    poles: &NurbsPoleGrid<FinitePoint3>,
+    length_scale: f64,
+) -> Result<Vec<f64>, CodecError> {
+    let mut out = Vec::new();
+    match poles {
+        NurbsPoleGrid::Polynomial { rows } => {
+            for (index, point) in rows.iter().flatten().enumerate() {
+                append_homogeneous_pole(&mut out, *point, None, length_scale, index)?;
+            }
+        }
+        NurbsPoleGrid::Rational { rows } => {
+            for (index, pole) in rows.iter().flatten().enumerate() {
+                append_homogeneous_pole(
+                    &mut out,
+                    pole.point,
+                    Some(pole.weight.get()),
+                    length_scale,
+                    index,
+                )?;
+            }
         }
     }
-    Ok((unique, multiplicities))
+    Ok(out)
+}
+
+fn unique_knots(knots: &[f64], entity: &str) -> Result<Vec<(f64, NonZeroU16)>, CodecError> {
+    let mut out: Vec<(f64, NonZeroU16)> = Vec::new();
+    for &knot in knots {
+        if let Some((previous, multiplicity)) = out.last_mut() {
+            if *previous == knot {
+                *multiplicity = multiplicity.checked_add(1).ok_or_else(|| {
+                    CodecError::NotImplemented(format!(
+                        "SLDPRT NURBS carrier {entity} knot multiplicity exceeds the native u16 field"
+                    ))
+                })?;
+                continue;
+            }
+        }
+        out.push((knot, NonZeroU16::MIN));
+    }
+    Ok(out)
 }
 
 fn f64_array(
     out: &mut Vec<u8>,
     kind: u8,
     attr: u16,
-    values: &[f64],
+    values: impl ExactSizeIterator<Item = f64>,
     entity: &str,
 ) -> Result<(), CodecError> {
     let count = u32::try_from(values.len()).map_err(|_| {
@@ -3382,12 +3805,17 @@ fn f64_array(
     be32(out, count);
     be16(out, attr);
     for value in values {
-        bef64(out, *value);
+        bef64(out, value);
     }
     Ok(())
 }
 
-fn u16_array(out: &mut Vec<u8>, attr: u16, values: &[u16], entity: &str) -> Result<(), CodecError> {
+fn u16_array(
+    out: &mut Vec<u8>,
+    attr: u16,
+    values: impl ExactSizeIterator<Item = u16>,
+    entity: &str,
+) -> Result<(), CodecError> {
     let count = u32::try_from(values.len()).map_err(|_| {
         CodecError::NotImplemented(format!(
             "SLDPRT NURBS carrier {entity} array length exceeds the native u32 field"
@@ -3398,7 +3826,7 @@ fn u16_array(out: &mut Vec<u8>, attr: u16, values: &[u16], entity: &str) -> Resu
     be32(out, count);
     be16(out, attr);
     for value in values {
-        be16(out, *value);
+        be16(out, value);
     }
     Ok(())
 }
@@ -3409,23 +3837,26 @@ pub(super) fn curve_values(
 ) -> Result<(u8, Vec<f64>), CodecError> {
     let scaled = |value: f64| value * length_scale;
     let result = match geometry {
-        CurveGeometry::Line { origin, direction } => (
-            0x1e,
-            vec![
-                scaled(origin.x),
-                scaled(origin.y),
-                scaled(origin.z),
-                direction.x,
-                direction.y,
-                direction.z,
-            ],
-        ),
-        CurveGeometry::Circle {
-            center,
-            axis,
-            ref_direction,
-            radius,
-        } => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
+            let origin = line_curve.origin().get();
+            let direction = *line_curve.direction().as_raw();
+            (
+                0x1e,
+                vec![
+                    scaled(origin.x),
+                    scaled(origin.y),
+                    scaled(origin.z),
+                    direction.x,
+                    direction.y,
+                    direction.z,
+                ],
+            )
+        }
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
+            let center = circle_curve.center().get();
+            let axis = circle_curve.frame().axis().as_raw();
+            let ref_direction = circle_curve.frame().reference().as_raw();
+            let radius = circle_curve.radius().get();
             let reference = *ref_direction;
             (
                 0x1f,
@@ -3439,63 +3870,70 @@ pub(super) fn curve_values(
                     reference.x,
                     reference.y,
                     reference.z,
-                    scaled(*radius),
+                    scaled(radius),
                 ],
             )
         }
-        CurveGeometry::Ellipse {
-            center,
-            axis,
-            major_direction,
-            major_radius,
-            minor_radius,
-        } => (
-            0x20,
-            vec![
-                scaled(center.x),
-                scaled(center.y),
-                scaled(center.z),
-                axis.x,
-                axis.y,
-                axis.z,
-                major_direction.x,
-                major_direction.y,
-                major_direction.z,
-                scaled(*major_radius),
-                scaled(*minor_radius),
-            ],
-        ),
-        CurveGeometry::Parabola { .. } | CurveGeometry::Hyperbola { .. } => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
+            let center = ellipse_curve.center().get();
+            let axis = ellipse_curve.frame().axis().as_raw();
+            let major_direction = ellipse_curve.frame().reference().as_raw();
+            let major_radius = ellipse_curve.major_radius().get();
+            let minor_radius = ellipse_curve.minor_radius().get();
+            (
+                0x20,
+                vec![
+                    scaled(center.x),
+                    scaled(center.y),
+                    scaled(center.z),
+                    axis.x,
+                    axis.y,
+                    axis.z,
+                    major_direction.x,
+                    major_direction.y,
+                    major_direction.z,
+                    scaled(major_radius),
+                    scaled(minor_radius),
+                ],
+            )
+        }
+        CurveGeometry::Solved(SolvedCurveGeometry::Parabola(_)) => {
             return Err(CodecError::NotImplemented(
                 "semantic SLDPRT writer does not support parabola or hyperbola curves".into(),
             ))
         }
-        CurveGeometry::Degenerate { .. } => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(_)) => {
+            return Err(CodecError::NotImplemented(
+                "semantic SLDPRT writer does not support parabola or hyperbola curves".into(),
+            ))
+        }
+        CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(_)) => {
             return Err(CodecError::NotImplemented(
                 "semantic SLDPRT writer does not support degenerate curves".into(),
             ))
         }
-        CurveGeometry::Composite { .. } => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. }) => {
             return Err(CodecError::NotImplemented(
                 "semantic SLDPRT writer does not support composite curves".into(),
             ))
         }
-        CurveGeometry::Nurbs(_) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_)) => {
             return Err(CodecError::NotImplemented(
                 "semantic SLDPRT writer does not support NURBS curves".into(),
             ))
         }
-        CurveGeometry::Polyline(_) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Polyline(_)) => {
             return Err(CodecError::NotImplemented(
                 "semantic SLDPRT writer does not support polyline curve carriers".into(),
             ))
         }
-        CurveGeometry::Procedural { .. } | CurveGeometry::Transformed { .. } => {
+        CurveGeometry::Procedural { .. }
+        | CurveGeometry::Solved(SolvedCurveGeometry::Transformed(_)) => {
             return Err(CodecError::NotImplemented(
                 "semantic SLDPRT writer does not support transformed curve carriers".into(),
             ))
         }
-        CurveGeometry::Unknown { .. } => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. }) => {
             return Err(CodecError::NotImplemented(
                 "semantic SLDPRT writer cannot regenerate an opaque curve".into(),
             ))
@@ -3504,38 +3942,44 @@ pub(super) fn curve_values(
     Ok(result)
 }
 
-pub(super) fn surface_reference(geometry: &SurfaceGeometry) -> cadmpeg_ir::math::Vector3 {
+/// Reference direction the compact carrier record states for `geometry`.
+///
+/// A transformed carrier states the default direction and no basis is read.
+/// Both callers pass the same carrier to `surface_values`, which refuses every
+/// transformed surface, so a transformed carrier leaves the writer through
+/// `CodecError::NotImplemented` and the direction stated here reaches no
+/// record.
+pub(super) fn surface_reference(geometry: &SolvedSurfaceGeometry) -> cadmpeg_ir::math::Vector3 {
+    const DEFAULT_REFERENCE: cadmpeg_ir::math::Vector3 = cadmpeg_ir::math::Vector3 {
+        x: 1.0,
+        y: 0.0,
+        z: 0.0,
+    };
     match geometry {
-        SurfaceGeometry::Plane { u_axis, .. } => *u_axis,
-        SurfaceGeometry::Cylinder {
-            axis: _,
-            ref_direction,
-            ..
+        SolvedSurfaceGeometry::Plane(plane_surface) => {
+            let u_axis = plane_surface.frame().reference().as_raw();
+            *u_axis
         }
-        | SurfaceGeometry::Cone {
-            axis: _,
-            ref_direction,
-            ..
+        SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
+            let ref_direction = cylinder_surface.frame().reference().as_raw();
+            *ref_direction
         }
-        | SurfaceGeometry::Torus {
-            axis: _,
-            ref_direction,
-            ..
-        } => *ref_direction,
-        SurfaceGeometry::Sphere {
-            axis: _,
-            ref_direction,
-            ..
-        } => *ref_direction,
-        SurfaceGeometry::Transformed { basis, .. } => surface_reference(basis),
-        SurfaceGeometry::Nurbs(_)
-        | SurfaceGeometry::Polygonal(_)
-        | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Unknown { .. } => cadmpeg_ir::math::Vector3 {
-            x: 1.0,
-            y: 0.0,
-            z: 0.0,
-        },
+        SolvedSurfaceGeometry::Cone(cone_surface) => {
+            let ref_direction = cone_surface.frame().reference().as_raw();
+            *ref_direction
+        }
+        SolvedSurfaceGeometry::Torus(torus_surface) => {
+            let ref_direction = torus_surface.frame().reference().as_raw();
+            *ref_direction
+        }
+        SolvedSurfaceGeometry::Sphere(sphere_surface) => {
+            let ref_direction = sphere_surface.frame().reference().as_raw();
+            *ref_direction
+        }
+        SolvedSurfaceGeometry::Nurbs(_)
+        | SolvedSurfaceGeometry::Polygonal(_)
+        | SolvedSurfaceGeometry::Transformed(_)
+        | SolvedSurfaceGeometry::Unknown { .. } => DEFAULT_REFERENCE,
     }
 }
 
@@ -3549,21 +3993,31 @@ fn compact(out: &mut Vec<u8>, kind: u8, attr: u16, values: &[f64]) {
         bef64(out, *value);
     }
 }
-pub(crate) fn parasolid_stream(body: &[u8], schema: &str) -> Vec<u8> {
+fn parasolid_stream(body: &[u8], schema: &str) -> Result<Vec<u8>, CodecError> {
     parasolid_stream_named(body, schema, "partition body")
 }
 
-pub(crate) fn parasolid_stream_named(body: &[u8], schema: &str, description: &str) -> Vec<u8> {
+pub(crate) fn parasolid_stream_named(
+    body: &[u8],
+    schema: &str,
+    description: &str,
+) -> Result<Vec<u8>, CodecError> {
     let description = description.as_bytes();
     let schema = schema.as_bytes();
+    let description_length = u16::try_from(description.len()).map_err(|_| {
+        CodecError::NotImplemented("Parasolid stream description exceeds 65535 bytes".into())
+    })?;
+    let schema_length = u8::try_from(schema.len()).map_err(|_| {
+        CodecError::NotImplemented("Parasolid stream schema name exceeds 255 bytes".into())
+    })?;
     let mut out = b"PS\0\0".to_vec();
-    be16(&mut out, description.len() as u16);
+    be16(&mut out, description_length);
     out.extend_from_slice(description);
     out.extend_from_slice(&[0, 0]);
-    out.push(schema.len() as u8);
+    out.push(schema_length);
     out.extend_from_slice(schema);
     out.extend_from_slice(body);
-    out
+    Ok(out)
 }
 fn block(payload: &[u8], section: &str, type_id: u32) -> Result<Vec<u8>, CodecError> {
     use flate2::write::DeflateEncoder;
@@ -3574,9 +4028,22 @@ fn block(payload: &[u8], section: &str, type_id: u32) -> Result<Vec<u8>, CodecEr
     let mut out = MARKER.to_vec();
     out.extend_from_slice(&type_id.to_le_bytes());
     out.extend_from_slice(&crc32fast::hash(payload).to_le_bytes());
-    out.extend_from_slice(&(compressed.len() as u32).to_le_bytes());
-    out.extend_from_slice(&(payload.len() as u32).to_le_bytes());
-    out.extend_from_slice(&(preamble.len() as u32).to_le_bytes());
+    let too_large = || CodecError::NotImplemented("SLDPRT block section is too large".into());
+    out.extend_from_slice(
+        &u32::try_from(compressed.len())
+            .map_err(|_| too_large())?
+            .to_le_bytes(),
+    );
+    out.extend_from_slice(
+        &u32::try_from(payload.len())
+            .map_err(|_| too_large())?
+            .to_le_bytes(),
+    );
+    out.extend_from_slice(
+        &u32::try_from(preamble.len())
+            .map_err(|_| too_large())?
+            .to_le_bytes(),
+    );
     out.extend_from_slice(&preamble);
     out.extend_from_slice(&compressed);
     Ok(out)
@@ -3588,7 +4055,7 @@ fn directory_entry(
     section: &str,
     descriptor: [u8; 14],
     trailer: [u8; 6],
-) -> Vec<u8> {
+) -> Result<Vec<u8>, CodecError> {
     let name = section
         .bytes()
         .map(|byte| byte.rotate_left(4))
@@ -3598,11 +4065,15 @@ fn directory_entry(
     out.extend_from_slice(&0u32.to_le_bytes());
     out.extend_from_slice(&size.to_le_bytes());
     out.extend_from_slice(&0u32.to_le_bytes());
-    out.extend_from_slice(&(name.len() as u32).to_le_bytes());
+    out.extend_from_slice(
+        &u32::try_from(name.len())
+            .map_err(|_| CodecError::NotImplemented("SLDPRT section name is too long".into()))?
+            .to_le_bytes(),
+    );
     out.extend_from_slice(&descriptor);
     out.extend_from_slice(&name);
     out.extend_from_slice(&trailer);
-    out
+    Ok(out)
 }
 fn tag(out: &mut Vec<u8>, kind: u8) {
     out.extend_from_slice(&[0, kind]);
@@ -3619,9 +4090,16 @@ fn bef64(out: &mut Vec<u8>, value: f64) {
 
 #[cfg(test)]
 mod nurbs_write_tests {
-    use super::*;
-    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use super::{
+        check_semantic_support, pmi_local_sha256, typed_ref, unique_knots, write_nurbs_surface,
+        PMI_LOCAL_DIGEST_ATTRIBUTE,
+    };
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::geometry::nurbs::NurbsSurface;
+    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
     use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::Annotations;
 
     #[test]
     fn retained_swift_pmi_requires_an_unchanged_semantic_baseline() {
@@ -3631,7 +4109,8 @@ mod nurbs_write_tests {
             name: Some("datum A".into()),
             visible: None,
             targets: vec![cadmpeg_ir::PmiTarget::ShapeAspect {
-                source_id: "F1".into(),
+                source_id: cadmpeg_core::text::NonBlankString::new("F1")
+                    .expect("nonempty source identity"),
             }],
             definition: cadmpeg_ir::PmiDefinition::Datum {
                 identification: "A".into(),
@@ -3640,11 +4119,14 @@ mod nurbs_write_tests {
         let hash = pmi_local_sha256(&ir).expect("PMI baseline hash");
         ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
             cadmpeg_core::dialect::DialectLayers::of(
-                cadmpeg_core::dialect::DialectMatch::admitted(
-                    cadmpeg_core::dialect::DialectId::pinned("sldprt:test"),
-                ),
+                cadmpeg_core::dialect::DialectMatch::admitted(cadmpeg_core::dialect_id!(
+                    "sldprt:test"
+                )),
             ),
-            std::collections::BTreeMap::from([(PMI_LOCAL_DIGEST_ATTRIBUTE.into(), hash)]),
+            std::collections::BTreeMap::from([(
+                cadmpeg_core::nonblank_const!(PMI_LOCAL_DIGEST_ATTRIBUTE),
+                hash,
+            )]),
         ));
         assert!(check_semantic_support(&ir, &Annotations::default()).is_ok());
 
@@ -3668,19 +4150,27 @@ mod nurbs_write_tests {
 
     #[test]
     fn writes_surface_degree_from_stored_descriptor() {
-        let surface = NurbsSurface::new(
-            9,
-            1,
-            vec![0.0; 20],
-            vec![0.0; 4],
-            10,
-            2,
-            vec![Point3::new(0.0, 0.0, 0.0); 20],
-            None,
-            false,
-            false,
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
+        let surface = NurbsSurface::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(9, vec![0.0; 20], false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0; 4], false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
+                vec![Point3::new(0.0, 0.0, 0.0); 20]
+                    .chunks(2_usize)
+                    .map(<[_]>::to_vec)
+                    .collect(),
+                None,
+            ),
             false,
         )
+        .expect("fixture constructor admission")
         .expect("valid high-degree surface");
 
         let mut bytes = Vec::new();
@@ -3693,10 +4183,11 @@ mod nurbs_write_tests {
             "test:surface#high-degree",
         )
         .expect("stored degree is representable");
-        let carrier = crate::brep::spline::scan_surface_carriers(&bytes)
+        let carrier = crate::brep::spline::scan_surface_carriers(&ctx, &bytes, &mut Vec::new())
+            .expect("surface scan")
             .remove(&2)
             .expect("surface carrier");
-        let SurfaceGeometry::Nurbs(decoded) = carrier.geometry else {
+        let Some(SolvedSurfaceGeometry::Nurbs(decoded)) = carrier.geometry.solved() else {
             panic!("expected NURBS surface");
         };
         assert_eq!((decoded.u_degree(), decoded.v_degree()), (9, 1));
@@ -3705,19 +4196,35 @@ mod nurbs_write_tests {
 
     #[test]
     fn writes_surface_shape_from_stored_counts() {
-        let surface = NurbsSurface::new(
-            2,
-            1,
-            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            vec![0.0, 0.0, 0.25, 0.75, 1.0, 1.0],
-            3,
-            4,
-            vec![Point3::new(0.0, 0.0, 0.0); 12],
-            None,
-            false,
-            false,
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
+        let surface = NurbsSurface::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                2,
+                vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                false,
+            ),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                1,
+                vec![0.0, 0.0, 0.25, 0.75, 1.0, 1.0],
+                false,
+            ),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
+                vec![Point3::new(0.0, 0.0, 0.0); 12]
+                    .chunks(4_usize)
+                    .map(<[_]>::to_vec)
+                    .collect(),
+                None,
+            ),
             false,
         )
+        .expect("fixture constructor admission")
         .expect("valid asymmetric surface");
 
         let mut bytes = Vec::new();
@@ -3730,10 +4237,11 @@ mod nurbs_write_tests {
             "test:surface#ambiguous-shape",
         )
         .expect("stored counts disambiguate the surface");
-        let carrier = crate::brep::spline::scan_surface_carriers(&bytes)
+        let carrier = crate::brep::spline::scan_surface_carriers(&ctx, &bytes, &mut Vec::new())
+            .expect("surface scan")
             .remove(&2)
             .expect("surface carrier");
-        let SurfaceGeometry::Nurbs(decoded) = carrier.geometry else {
+        let Some(SolvedSurfaceGeometry::Nurbs(decoded)) = carrier.geometry.solved() else {
             panic!("expected NURBS surface");
         };
         assert_eq!(
@@ -3781,6 +4289,27 @@ mod nurbs_write_tests {
                 if message.contains("test:curve#high-multiplicity")
                     && message.contains("knot multiplicity")
         ));
+    }
+}
+
+#[cfg(test)]
+mod conversion_correction_tests {
+    use super::tessellation_f32;
+
+    #[test]
+    fn tessellation_f32_refuses_a_value_above_f32_max_that_the_cast_rounded_down() {
+        // A value a hair above `f32::MAX` rounded to `f32::MAX` under `as`; the
+        // sum with `1.0` would not do, since `1.0` is below the spacing of
+        // `f64` at that magnitude.
+        let just_above = f64::from(f32::MAX) * (1.0 + 1e-10);
+        assert!(just_above > f64::from(f32::MAX));
+        assert!(tessellation_f32(just_above, "position").is_err());
+        assert_eq!(
+            tessellation_f32(f64::from(f32::MAX), "position").expect("exact maximum"),
+            f32::MAX
+        );
+        assert!(tessellation_f32(f64::NAN, "position").is_err());
+        assert!(tessellation_f32(f64::INFINITY, "position").is_err());
     }
 }
 

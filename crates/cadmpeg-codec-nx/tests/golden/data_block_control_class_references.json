@@ -230,18 +230,19 @@
           "plain_streams": "0",
           "unclassified_offset_store_control_count": "0"
         },
-        "dialects": {
-          "extra": [],
-          "primary": {
-            "admission": "admitted",
-            "declared": {
-              "splmsstr_version": "6"
-            },
-            "dialect": "nx:splmsstr",
-            "format": "nx"
+        "identity": {
+          "classification": "classified",
+          "dialects": {
+            "extra": [],
+            "primary": {
+              "admission": "admitted",
+              "declared": {
+                "splmsstr_version": "6"
+              },
+              "dialect": "nx:splmsstr"
+            }
           }
-        },
-        "format": "nx"
+        }
       },
       "tolerances": {
         "angular": 1e-10,
@@ -252,26 +253,27 @@
       }
     },
     "report": {
-      "container_only": false,
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": "admitted",
-          "declared": {
-            "splmsstr_version": "6"
-          },
-          "dialect": "nx:splmsstr",
-          "format": "nx"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "splmsstr_version": "6"
+            },
+            "dialect": "nx:splmsstr"
+          }
         }
       },
-      "format": "nx",
-      "geometry_transferred": false,
       "losses": [
         {
           "code": {
             "code": "geometry.not-transferred",
             "kind": "geometry_not_transferred",
-            "namespace": "nx"
+            "namespace": "nx",
+            "scope": "namespaced",
+            "strict_floor": "warning"
           },
           "message": "No B-rep geometry was transferred: no gate-passing analytic carrier was found in the embedded Parasolid streams (they may hold only B-spline/procedural geometry this codec does not yet type). The streams are preserved verbatim as unknown passthrough records.",
           "severity": "blocking"
@@ -282,7 +284,11 @@
         "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
         "NX object model: 1 of 1 bounded offset-store control block(s) have an admitted complete grammar",
         "NX object model: 1 indexed section(s), 0 ID-bounded entity record(s), 3 offset-only data block(s)"
-      ]
+      ],
+      "transfer": {
+        "geometry_transferred": false,
+        "transfer": "full"
+      }
     },
     "source_fidelity": {
       "annotations": {
@@ -291,135 +297,136 @@
             "entity": "derived",
             "fields": {
               "source_content": "derived"
-            }
+            },
+            "scope": "entity"
           },
           "nx:om-entry-0:parameter#97": {
-            "entity": "byte_exact",
             "fields": {
               "native_ref": "derived",
               "ordinal": "derived",
               "owner": "derived",
               "properties": "derived",
               "value": "derived"
-            }
+            },
+            "scope": "fields"
           }
         },
         "provenance": {
           "nx:om-data-block-control-class-references-0:class#0": {
             "offset": 122,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_DATA_BLOCK_CONTROL_CLASS_REFERENCE"
           },
           "nx:om-data-block-control-forms:form#0": {
             "offset": 122,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_DATA_BLOCK_CONTROL_FORM"
           },
           "nx:om-data-block-control-values-0:value#0": {
             "offset": 122,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_DATA_BLOCK_CONTROL_VALUE"
           },
           "nx:om-data-block-control-values-0:value#1": {
             "offset": 126,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_DATA_BLOCK_CONTROL_VALUE"
           },
           "nx:om-data-block-references-0-2:reference#0": {
             "offset": 167,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_DATA_BLOCK_REFERENCE"
           },
           "nx:om-entry-0:feature#equations-70": {
             "offset": 173,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "hostglobalvariables"
           },
           "nx:om-entry-0:parameter#97": {
             "offset": 173,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "Number"
           },
           "nx:om-section-0:block#0": {
             "offset": 122,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_DATA_BLOCK"
           },
           "nx:om-section-0:block#1": {
             "offset": 130,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_DATA_BLOCK"
           },
           "nx:om-section-0:block#2": {
             "offset": 165,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_DATA_BLOCK"
           },
           "nx:om-store-headers:store#0": {
             "offset": 130,
-            "stream": 0,
+            "stream": "nx:container",
             "tag": "OM_STORE_VERSION"
           }
-        },
-        "streams": [
-          "nx:container"
-        ]
+        }
       },
-      "retained_records": [
-        {
-          "byte_len": 8,
-          "data": "AAAAAAABAAA=",
-          "id": "nx:om-section-0:block#0",
+      "retained_records": {
+        "nx:om-section-0:block#0": {
+          "bytes": {
+            "data": "AAAAAAABAAA=",
+            "retention": "inline"
+          },
           "offset": 122,
-          "sha256": "be58233c8b1c33d2911eccf0f47364922b872acca2e95e4423bc21820b59ddf6",
           "stream": "nx:container"
         },
-        {
-          "byte_len": 35,
-          "data": "BAEOTlggMjAyNy4zMTAyAGhvc3RnbG9iYWx2YXJpYWJsZXM=",
-          "id": "nx:om-section-0:block#1",
+        "nx:om-section-0:block#1": {
+          "bytes": {
+            "data": "BAEOTlggMjAyNy4zMTAyAGhvc3RnbG9iYWx2YXJpYWJsZXM=",
+            "retention": "inline"
+          },
           "offset": 130,
-          "sha256": "304084362d58d3d80b8759c1b886a8dfd4b5ab46cd55a6d9ff901e0bb543a045",
           "stream": "nx:container"
         },
-        {
-          "byte_len": 35,
-          "data": "BAAqAguZBBwoTnVtYmVyIFttbV0pIGxlbmd0aDogMjU7IAA=",
-          "id": "nx:om-section-0:block#2",
+        "nx:om-section-0:block#2": {
+          "bytes": {
+            "data": "BAAqAguZBBwoTnVtYmVyIFttbV0pIGxlbmd0aDogMjU7IAA=",
+            "retention": "inline"
+          },
           "offset": 165,
-          "sha256": "6690abf98f671ca97a189957e9fe96618388bb0b8174d4fbb0685bf56b3669ef",
           "stream": "nx:container"
         }
-      ]
+      }
     }
   },
   "inspect": {
     "container_kind": "splmsstr",
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "admitted",
-        "declared": {
-          "splmsstr_version": "6"
-        },
-        "dialect": "nx:splmsstr",
-        "format": "nx"
-      }
-    },
     "entries": [
       {
         "attributes": {
           "file_offset": "76",
           "region": "HEADER"
         },
-        "compressed_size": 124,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "part-payload",
-        "uncompressed_size": 124
+        "size": {
+          "form": "exact",
+          "size": 124
+        }
       }
     ],
-    "format": "nx",
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "splmsstr_version": "6"
+          },
+          "dialect": "nx:splmsstr"
+        }
+      }
+    },
     "notes": [
       "SPLMSSTR container: file tag 0, footer offset 200, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",

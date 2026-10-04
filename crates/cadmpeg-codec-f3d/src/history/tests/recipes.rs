@@ -11,8 +11,17 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
-use super::super::*;
-use crate::records::topology::DesignOperandRole;
+use cadmpeg_core::decode::u64_from_index;
+
+use crate::history::{bind_body_recipe_operand_history_candidates, complete_body_face_slots};
+use crate::history_records::{
+    AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalEntityDelta, AsmHistoricalRelation,
+    AsmHistoricalTopology, AsmHistoricalTopologyDelta, AsmHistoricalTransition, AsmHistory,
+};
+use crate::records::topology::{
+    construction::DesignConstructionOperandGroup,
+    construction::DesignConstructionOperandGroupFrame, extrude_selection::DesignOperandRole,
+};
 
 #[test]
 fn three_point_recipe_vertices_must_define_the_solved_plane() {
@@ -56,21 +65,28 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
         AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalEdge,
         AsmHistoricalPoint, AsmHistoricalRelation, AsmHistoricalTopology, AsmHistory,
     };
-    use crate::records::feature::{
-        DesignVertexRecipe, DesignWorkPointConstruction, DesignWorkPointInput,
-        DesignWorkPointInputCarrier,
+    use crate::records::{
+        dimensions::DesignRecipeReference,
+        entity_header::DesignFeatureTimeline,
+        feature::work_geometry::{
+            DesignVertexRecipe, DesignWorkPointConstruction, DesignWorkPointInput,
+            DesignWorkPointInputCarrier,
+        },
     };
-    use crate::records::{DesignFeatureTimeline, DesignRecipeReference};
     use cadmpeg_ir::ids::FaceId;
     use cadmpeg_ir::math::Point3;
 
     let stream = "f3d:Design/BulkStream.dat";
-    let mut extrude = crate::records::feature::DesignParameterScope::empty(
+    let mut extrude = crate::records::feature::scope::DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#100"),
-        crate::records::feature::DesignFeatureKind::Extrude,
+        crate::records::feature::scope::DesignFeatureKind::Extrude,
         100,
     );
-    extrude.history_state_id = Some(4);
+    extrude
+        .try_edit(|draft| {
+            draft.history_state_id = Some(4);
+        })
+        .unwrap();
     let reference = |face: i64| DesignRecipeReference {
         selector: 1,
         selector_offset: 0,
@@ -85,44 +101,54 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
         alternate_selector_faces: Vec::new(),
         alternate_selector_edges: Vec::new(),
     };
-    let recipe = DesignVertexRecipe {
-        record_index: 202,
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("369".to_owned()).unwrap(),
-        paired_byte_offset: 1,
-        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
-        recipe_record_index: 203,
-        recipe_record_byte_offset: 2,
-        recipe_id: format!("{stream}:construction-recipe#vertex"),
-        recipe_prefix_offset: 3,
-        recipe_prefix_bytes: Vec::new(),
-        recipe_references: vec![reference(10), reference(11), reference(12)],
-        recipe_program_offset: 4,
-        recipe_program: vec![0],
-        resolution: None,
-        next_record_index: 205,
-        next_byte_offset: 5,
-    };
-    let mut work_point = crate::records::feature::DesignParameterScope::empty(
+    let recipe = DesignVertexRecipe::try_new(
+        crate::records::feature::work_geometry::DesignVertexRecipeDraft {
+            record_index: 202,
+            byte_offset: 0,
+            class_tag: crate::records::references::DesignClassTag::try_from("369".to_owned())
+                .unwrap(),
+            paired_byte_offset: 16,
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "261".to_owned(),
+            )
+            .unwrap(),
+            recipe_record_index: 205,
+            recipe_record_byte_offset: 32,
+            recipe_id: format!("{stream}:construction-recipe#vertex"),
+            recipe_prefix_offset: 43,
+            recipe_prefix_bytes: Vec::new(),
+            recipe_references: vec![reference(10), reference(11), reference(12)],
+            recipe_program_offset: 4,
+            recipe_program: vec![0],
+            resolution: None,
+            next_record_index: 207,
+            next_byte_offset: 200,
+        },
+    )
+    .unwrap();
+    let mut work_point = crate::records::feature::scope::DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#200"),
-        crate::records::feature::DesignFeatureKind::WorkPoint,
+        crate::records::feature::scope::DesignFeatureKind::WorkPoint,
         200,
     );
-    if let crate::records::feature::DesignScopePayload::WorkPoint(slot) = &mut work_point.payload {
+    if let crate::records::feature::scope::DesignScopePayloadMut::WorkPoint(slot) =
+        work_point.payload_mut()
+    {
         *slot = Some(DesignWorkPointConstruction {
             point_record_index: 201,
             point_record_byte_offset: 0,
-            position: [4.0, 3.0, 0.0],
+            position: crate::test_support::reals([4.0, 3.0, 0.0]),
             position_offset: 0,
-            rule: crate::records::feature::DesignWorkPointRule::try_from(
-                crate::records::feature::DesignWorkPointRuleForm::Vertex {
-                    input: DesignWorkPointInput {
-                        record_index: 202,
-                        reference_offset: 0,
-                        carrier: Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
+            rule: crate::records::feature::work_geometry::DesignWorkPointRule::try_from(
+                crate::records::feature::work_geometry::DesignWorkPointRuleForm::Vertex {
+                    input: DesignWorkPointInput::try_new(
+                        202,
+                        0,
+                        Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
                             recipe,
                         })),
-                    },
+                    )
+                    .unwrap(),
                 },
             )
             .expect("compatible WorkPoint rule"),
@@ -200,7 +226,6 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
         byte_offset: 0,
         preamble: None,
         record_table_binding_budget_exceeded: false,
-        projection_finalized: false,
         states: vec![AsmDeltaState {
             id: "f3d:history:state#4".into(),
             parent: "f3d:history".into(),
@@ -220,29 +245,31 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
             transition: None,
         }],
     };
-    let timeline = DesignFeatureTimeline {
-        frame: crate::records::DesignTimelineFrame::test_items(
+    let timeline = DesignFeatureTimeline::try_new(
+        crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
+        crate::records::entity_header::DesignTimelineFrame::test_items(
             0,
             vec![
-                crate::records::Located {
+                crate::records::identity::Located {
                     value: 100,
                     offset: 0,
                 },
-                crate::records::Located {
+                crate::records::identity::Located {
                     value: 200,
                     offset: 0,
                 },
             ],
         ),
-        id: crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
-        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
-        record_index: std::num::NonZeroU64::new(1).unwrap(),
-        source_ordinal: 0,
-        context_record_index: std::num::NonZeroU64::new(1).unwrap(),
-    };
+        crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        std::num::NonZeroU64::new(1).unwrap(),
+        0,
+        std::num::NonZeroU64::new(1).unwrap(),
+    )
+    .unwrap();
     let mut scopes = vec![extrude, work_point];
 
     super::super::bind_vertex_recipe_history(
+        &cadmpeg_test_support::service_decode_context(),
         &mut scopes,
         std::slice::from_ref(&timeline),
         std::slice::from_ref(&history),
@@ -251,13 +278,12 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
     let construction = scopes[1]
         .work_point_construction()
         .expect("WorkPoint construction");
-    let crate::records::feature::DesignWorkPointRuleForm::Vertex { input } =
+    let crate::records::feature::work_geometry::DesignWorkPointRuleForm::Vertex { input } =
         construction.rule.form()
     else {
         unreachable!("test construction is vertex-based")
     };
-    let Some(DesignWorkPointInputCarrier::VertexRecipe { recipe }) = input.carrier.as_deref()
-    else {
+    let Some(DesignWorkPointInputCarrier::VertexRecipe { recipe }) = input.carrier() else {
         unreachable!("test input carries a vertex recipe")
     };
     assert_eq!(
@@ -267,7 +293,7 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
     assert_eq!(
         recipe
             .resolution
-            .map(crate::records::feature::DesignVertexResolution::vertex_slot),
+            .map(crate::records::feature::work_geometry::DesignVertexResolution::vertex_slot),
         Some(40)
     );
 
@@ -284,6 +310,7 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
         .candidate_faces
         .push(FaceId::mint(crate::ids::brep_entity_id(11)).expect("identity grammar"));
     super::super::bind_vertex_recipe_history(
+        &cadmpeg_test_support::service_decode_context(),
         &mut ambiguous,
         std::slice::from_ref(&timeline),
         std::slice::from_ref(&history),
@@ -292,13 +319,12 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
     let construction = ambiguous[1]
         .work_point_construction()
         .expect("WorkPoint construction");
-    let crate::records::feature::DesignWorkPointRuleForm::Vertex { input } =
+    let crate::records::feature::work_geometry::DesignWorkPointRuleForm::Vertex { input } =
         construction.rule.form()
     else {
         unreachable!("test construction is vertex-based")
     };
-    let Some(DesignWorkPointInputCarrier::VertexRecipe { recipe }) = input.carrier.as_deref()
-    else {
+    let Some(DesignWorkPointInputCarrier::VertexRecipe { recipe }) = input.carrier() else {
         unreachable!("test input carries a vertex recipe")
     };
     assert_eq!(recipe.resolution, None);
@@ -307,29 +333,36 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
 #[test]
 fn feature_input_topology_projects_historical_vertices() {
     use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, UnresolvedFamily};
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation, UnresolvedFamily};
 
-    let mut scope = crate::records::feature::DesignParameterScope::empty(
+    let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
         "f3d:design:scope#work-point",
-        crate::records::feature::DesignFeatureKind::WorkPoint,
+        crate::records::feature::scope::DesignFeatureKind::WorkPoint,
         7,
     );
-    scope.previous_history_state_id = Some(4);
+    scope
+        .try_edit(|draft| {
+            draft.previous_history_state_id = Some(4);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     let feature = Feature {
         id: cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#work-point")
             .expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: Default::default(),
         source_tag: Some("WorkPoint".into()),
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Unresolved {
-            family: UnresolvedFamily::DatumPoint,
-        },
+        source_content: Default::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Unresolved {
+                family: UnresolvedFamily::DatumPoint,
+            }),
+        ),
         native_ref: Some(scope.id.clone()),
     };
     let history = AsmHistory {
@@ -337,7 +370,6 @@ fn feature_input_topology_projects_historical_vertices() {
         byte_offset: 0,
         preamble: None,
         record_table_binding_budget_exceeded: false,
-        projection_finalized: false,
         states: vec![AsmDeltaState {
             id: "f3d:history:state#4".into(),
             parent: "f3d:history".into(),
@@ -364,15 +396,17 @@ fn feature_input_topology_projects_historical_vertices() {
     };
 
     let projected = super::super::project_feature_input_topologies(
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&feature),
         std::slice::from_ref(&scope),
         std::slice::from_ref(&history),
         &[],
-    );
+    )
+    .unwrap();
     let prefix = super::super::feature_input_prefix(&feature.id, 4);
     assert_eq!(projected.len(), 1);
     assert_eq!(
-        projected[0].vertices,
+        projected[0].vertices.as_slice(),
         [
             crate::ids::history_input_vertex_id(&prefix, 43),
             crate::ids::history_input_vertex_id(&prefix, 59),
@@ -385,17 +419,20 @@ fn surface_patch_recipe_uses_the_unique_common_boundary_edge() {
     use crate::history_records::{
         AsmHistoricalCoedge, AsmHistoricalRelation, AsmHistoricalTopology,
     };
-    use crate::records::topology::{
-        DesignSurfacePatchRecipeClause, DesignSurfacePatchRecipeStructure,
+    use crate::records::{
+        dimensions::DesignRecipeReference,
+        topology::{
+            edge_recipe::DesignSurfacePatchRecipeClause,
+            edge_recipe::DesignSurfacePatchRecipeStructure,
+        },
     };
-    use crate::records::DesignRecipeReference;
     use cadmpeg_ir::ids::{EdgeId, FaceId};
 
     let clause = |faces, edges| DesignSurfacePatchRecipeClause {
         fields: Vec::new(),
         face_reference_ordinals: faces,
         edge_reference_ordinals: edges,
-        payload_entry_count: 0,
+
         entries: Vec::new(),
     };
     let structure = DesignSurfacePatchRecipeStructure {
@@ -451,7 +488,15 @@ fn surface_patch_recipe_uses_the_unique_common_boundary_edge() {
         ..Default::default()
     };
     assert_eq!(
-        super::super::surface_patch_edge_operand_slot(Some(&structure), &references, &topology,),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            super::super::surface_patch_edge_operand_slot(
+                decode_ctx,
+                Some(&structure),
+                &references,
+                &topology,
+            )
+        })
+        .unwrap(),
         Some(22)
     );
 
@@ -466,7 +511,15 @@ fn surface_patch_recipe_uses_the_unique_common_boundary_edge() {
         radial_next: 13,
     });
     assert_eq!(
-        super::super::surface_patch_edge_operand_slot(Some(&structure), &references, &ambiguous,),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            super::super::surface_patch_edge_operand_slot(
+                decode_ctx,
+                Some(&structure),
+                &references,
+                &ambiguous,
+            )
+        })
+        .unwrap(),
         None
     );
 }
@@ -476,54 +529,59 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
     use cadmpeg_ir::ids::{BodyId, FaceId, RegionId, ShellId};
     use cadmpeg_ir::topology::{Body, BodyKind, Region, Shell};
 
-    let reference = |faces: &[&str]| crate::records::topology::DesignBodyRecipeReference {
-        design_reference: 1,
-        design_reference_offset: 0,
-        form: 3,
-        form_offset: 0,
-        candidate_faces: faces
-            .iter()
-            .map(|face| FaceId::mint((*face).to_owned()).expect("identity grammar"))
-            .collect(),
-        preceding_candidate_faces: Vec::new(),
-        preceding_body_slots: Vec::new(),
-    };
-    let mut operand = crate::records::topology::DesignBodyRecipeOperand {
-        id: "operand".into(),
-        scope_record_index: 1,
-        owner: crate::records::topology::DesignOperandOwner::ScopeReference {
-            scope_reference_ordinal: 0,
-        },
-        record_index: 2,
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("295".to_owned()).unwrap(),
-        asset_id: crate::records::DesignRelaxedGuidText::try_from(
-            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
-        )
-        .unwrap(),
-        asset_id_offset: 0,
-        context_id: crate::records::DesignRelaxedGuidText::try_from(
-            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
-        )
-        .unwrap(),
-        context_id_offset: 0,
-        selector_tail: None,
+    let reference =
+        |faces: &[&str]| crate::records::topology::body_recipe::DesignBodyRecipeReference {
+            design_reference: 1,
+            design_reference_offset: 25,
+            form: 3,
+            form_offset: 33,
+            candidate_faces: faces
+                .iter()
+                .map(|face| FaceId::mint((*face).to_owned()).expect("identity grammar"))
+                .collect(),
+            preceding_candidate_faces: Vec::new(),
+            preceding_body_slots: Vec::new(),
+        };
+    let mut operand = crate::records::topology::body_recipe::DesignBodyRecipeOperand::try_new(
+        crate::records::topology::body_recipe::DesignBodyRecipeOperandDraft {
+            id: "operand".into(),
+            scope_record_index: 1,
+            owner: crate::records::topology::body_recipe::DesignOperandOwner::ScopeReference {
+                scope_reference_ordinal: 0,
+            },
+            record_index: 2,
+            byte_offset: 0,
+            class_tag: crate::records::references::DesignClassTag::try_from("295".to_owned())
+                .unwrap(),
+            asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+                "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+            )
+            .unwrap(),
+            asset_id_offset: 56,
+            context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+                "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+            )
+            .unwrap(),
+            context_id_offset: 132,
+            selector_tail: None,
 
-        references: vec![reference(&[
-            "f3d:brep/current/brep:face#1",
-            "f3d:brep/external/brep:face#1",
-            "f3d:brep/cache/brep:face#1",
-        ])],
-        nested_record_index: 3,
-        nested_record_index_offset: 0,
-        recipe_id: "recipe".into(),
-        resolved_face_slot: None,
-        resolved_body_state_id: None,
-        resolved_body_slot: None,
-        resolved_body_face_slots: Vec::new(),
-        next_record_index: 4,
-        next_byte_offset: 0,
-    };
+            references: vec![reference(&[
+                "f3d:brep/current/brep:face#1",
+                "f3d:brep/external/brep:face#1",
+                "f3d:brep/cache/brep:face#1",
+            ])],
+            nested_record_index: 5,
+            nested_record_index_offset: 38,
+            recipe_id: "recipe".into(),
+            resolved_face_slot: None,
+            resolved_body_state_id: None,
+            resolved_body_slot: None,
+            resolved_body_face_slots: Vec::new(),
+            next_record_index: 6,
+            next_byte_offset: 256,
+        },
+    )
+    .unwrap();
     let body = |id: &str, region: &str, visible| Body {
         id: BodyId::mint(id).expect("identity grammar"),
         kind: BodyKind::Solid,
@@ -569,12 +627,12 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
             shells: vec![ShellId::mint("test:model:shell#cache-shell").expect("identity grammar")],
         },
     ];
-    let shell = |id: &str, region: &str, face: &str| Shell {
-        id: ShellId::mint(id).expect("identity grammar"),
-        region: RegionId::mint(region).expect("identity grammar"),
-        faces: vec![FaceId::mint(face).expect("identity grammar")],
-        wire_edges: Vec::new(),
-        free_vertices: Vec::new(),
+    let shell = |id: &str, region: &str, face: &str| {
+        Shell::with_face(
+            ShellId::mint(id).expect("identity grammar"),
+            RegionId::mint(region).expect("identity grammar"),
+            FaceId::mint(face).expect("identity grammar"),
+        )
     };
     let shells = [
         shell(
@@ -596,85 +654,116 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
 
     assert_eq!(
         super::super::unique_external_body_candidate(
+            &cadmpeg_test_support::service_decode_context(),
             &operand,
             Some("current"),
             &bodies,
             &regions,
             &shells,
-        ),
+        )
+        .unwrap(),
         Some(bodies[1].id.clone())
     );
 
-    operand.references[0]
+    operand
+        .reference_bindings_mut()
+        .next()
+        .unwrap()
         .candidate_faces
         .retain(|face| !face.as_str().contains("/cache/"));
-    operand
-        .references
-        .push(reference(&["f3d:brep/cache/brep:face#1"]));
+    let mut draft = operand.into_draft();
+    let mut added = reference(&["f3d:brep/cache/brep:face#1"]);
+    added.design_reference_offset =
+        draft.byte_offset + 25 + u64_from_index(draft.references.len()) * 12;
+    added.form_offset = added.design_reference_offset + 8;
+    draft.references.push(added);
+    draft.nested_record_index_offset =
+        draft.byte_offset + 26 + u64_from_index(draft.references.len()) * 12;
+    draft.asset_id_offset = draft.nested_record_index_offset + 18;
+    operand =
+        crate::records::topology::body_recipe::DesignBodyRecipeOperand::try_new(draft).unwrap();
     assert_eq!(
         super::super::unique_external_body_candidate(
+            &cadmpeg_test_support::service_decode_context(),
             &operand,
             Some("current"),
             &bodies,
             &regions,
             &shells,
-        ),
+        )
+        .unwrap(),
         None
     );
 }
 
-#[test]
-fn body_recipe_history_resolves_the_complete_input_body_boundary() {
+fn body_recipe_history_fixture() -> (
+    crate::records::feature::scope::DesignParameterScope,
+    AsmHistory,
+    Vec<crate::records::topology::body_recipe::DesignBodyRecipeOperand>,
+    cadmpeg_ir::ids::FaceId,
+) {
     use cadmpeg_ir::ids::FaceId;
 
-    let mut scope = crate::records::feature::DesignParameterScope::empty(
+    let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#10",
-        crate::records::feature::DesignFeatureKind::Extrude,
+        crate::records::feature::scope::DesignFeatureKind::Extrude,
         10,
     );
-    scope.history_state_id = Some(2);
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(2);
+        })
+        .unwrap();
     let candidate = FaceId::mint("f3d:brep:entity#10").expect("identity grammar");
-    let mut operands = vec![crate::records::topology::DesignBodyRecipeOperand {
-        id: "f3d:Design/BulkStream.dat:design-body-recipe-operand#21".into(),
-        scope_record_index: 10,
-        owner: crate::records::topology::DesignOperandOwner::Group {
-            group_record_index: 20,
-            group_member_ordinal: 0,
-        },
-        record_index: 21,
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("365".to_owned()).unwrap(),
-        asset_id: crate::records::DesignRelaxedGuidText::try_from(
-            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
-        )
-        .unwrap(),
-        asset_id_offset: 0,
-        context_id: crate::records::DesignRelaxedGuidText::try_from(
-            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
-        )
-        .unwrap(),
-        context_id_offset: 0,
-        selector_tail: None,
+    let operands = vec![
+        crate::records::topology::body_recipe::DesignBodyRecipeOperand::try_new(
+            crate::records::topology::body_recipe::DesignBodyRecipeOperandDraft {
+                id: "f3d:Design/BulkStream.dat:design-body-recipe-operand#21".into(),
+                scope_record_index: 10,
+                owner: crate::records::topology::body_recipe::DesignOperandOwner::Group {
+                    group_record_index: 20,
+                    group_member_ordinal: 0,
+                },
+                record_index: 21,
+                byte_offset: 0,
+                class_tag: crate::records::references::DesignClassTag::try_from("365".to_owned())
+                    .unwrap(),
+                asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+                    "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+                )
+                .unwrap(),
+                asset_id_offset: 56,
+                context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+                    "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+                )
+                .unwrap(),
+                context_id_offset: 132,
+                selector_tail: None,
 
-        references: vec![crate::records::topology::DesignBodyRecipeReference {
-            design_reference: 301,
-            design_reference_offset: 0,
-            form: 33,
-            form_offset: 0,
-            candidate_faces: vec![candidate.clone()],
-            preceding_candidate_faces: Vec::new(),
-            preceding_body_slots: Vec::new(),
-        }],
-        nested_record_index: 24,
-        nested_record_index_offset: 0,
-        recipe_id: "recipe".into(),
-        resolved_face_slot: None,
-        resolved_body_state_id: None,
-        resolved_body_slot: None,
-        resolved_body_face_slots: Vec::new(),
-        next_record_index: 25,
-        next_byte_offset: 0,
-    }];
+                references: vec![
+                    crate::records::topology::body_recipe::DesignBodyRecipeReference {
+                        design_reference: 301,
+                        design_reference_offset: 25,
+                        form: 33,
+                        form_offset: 33,
+                        candidate_faces: vec![candidate.clone()],
+                        preceding_candidate_faces: Vec::new(),
+                        preceding_body_slots: Vec::new(),
+                    },
+                ],
+                nested_record_index: 24,
+                nested_record_index_offset: 38,
+                recipe_id: "recipe".into(),
+                resolved_face_slot: None,
+                resolved_body_state_id: None,
+                resolved_body_slot: None,
+                resolved_body_face_slots: Vec::new(),
+                next_record_index: 25,
+                next_byte_offset: 256,
+            },
+        )
+        .unwrap(),
+    ];
     let relation = |owner_ref, member_refs| AsmHistoricalRelation {
         owner_ref,
         member_refs,
@@ -749,26 +838,49 @@ fn body_recipe_history_resolves_the_complete_input_body_boundary() {
         byte_offset: 0,
         preamble: None,
         record_table_binding_budget_exceeded: false,
-        projection_finalized: false,
         states: vec![current, previous],
     };
 
-    bind_body_recipe_operand_history_candidates(
-        &mut operands,
-        &[],
-        std::slice::from_ref(&scope),
-        std::slice::from_ref(&history),
-    );
+    (scope, history, operands, candidate)
+}
+
+#[test]
+fn body_recipe_history_resolves_the_complete_input_body_boundary() {
+    let (scope, history, mut operands, candidate) = body_recipe_history_fixture();
+    crate::test_support::with_decode_context(|decode_ctx| {
+        bind_body_recipe_operand_history_candidates(
+            decode_ctx,
+            &mut operands,
+            &[],
+            std::slice::from_ref(&scope),
+            std::slice::from_ref(&history),
+        )
+    })
+    .unwrap();
 
     assert_eq!(
-        operands[0].references[0].preceding_candidate_faces,
+        operands[0].references()[0].preceding_candidate_faces,
         [candidate]
     );
-    assert_eq!(operands[0].references[0].preceding_body_slots, [1]);
+    assert_eq!(operands[0].references()[0].preceding_body_slots, [1]);
     assert_eq!(operands[0].resolved_face_slot, Some(10));
     assert_eq!(operands[0].resolved_body_state_id, Some(1));
     assert_eq!(operands[0].resolved_body_slot, Some(1));
     assert_eq!(operands[0].resolved_body_face_slots, [10, 11, 12]);
+}
+
+#[test]
+fn body_recipe_history_refuses_collection_limit() {
+    let (scope, history, mut operands, _) = body_recipe_history_fixture();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error =
+        bind_body_recipe_operand_history_candidates(&ctx, &mut operands, &[], &[scope], &[history])
+            .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
 }
 
 #[test]
@@ -787,105 +899,145 @@ fn complete_body_boundary_rejects_incomplete_or_ambiguous_incidence() {
         shell_faces: vec![relation(3, vec![10, 11])],
         ..AsmHistoricalTopology::default()
     };
-    assert_eq!(complete_body_face_slots(&topology, 1), Some(vec![10, 11]));
+    assert_eq!(
+        crate::test_support::with_decode_context(|decode_ctx| complete_body_face_slots(
+            decode_ctx, &topology, 1
+        ))
+        .unwrap(),
+        Some(vec![10, 11])
+    );
 
     let mut incomplete = topology.clone();
     incomplete.shell_faces[0].member_refs.clear();
-    assert_eq!(complete_body_face_slots(&incomplete, 1), None);
+    assert_eq!(
+        crate::test_support::with_decode_context(|decode_ctx| complete_body_face_slots(
+            decode_ctx,
+            &incomplete,
+            1
+        ))
+        .unwrap(),
+        None
+    );
 
     let mut ambiguous = topology;
     ambiguous.shell_faces.push(relation(4, vec![10]));
-    assert_eq!(complete_body_face_slots(&ambiguous, 1), None);
+    assert_eq!(
+        crate::test_support::with_decode_context(|decode_ctx| complete_body_face_slots(
+            decode_ctx, &ambiguous, 1
+        ))
+        .unwrap(),
+        None
+    );
 }
 
 #[test]
 fn direct_body_recipe_selection_resolves_compact_coil_target() {
     use cadmpeg_ir::features::{
-        BodySelection, Feature, FeatureDefinition, FeatureId, ScaleCenter, ScaleFactors,
+        BodySelection, Feature, FeatureDefinition, FeatureId, FeatureOperation, ScaleCenter,
+        ScaleFactors,
     };
     use cadmpeg_ir::ids::{BodyId, FaceId, RegionId, ShellId};
     use cadmpeg_ir::topology::{Body, BodyKind, Region, Shell};
 
-    let scope = crate::records::feature::DesignParameterScope::empty(
+    let scope = crate::records::feature::scope::DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#10",
-        crate::records::feature::DesignFeatureKind::CoilPrimitive,
+        crate::records::feature::scope::DesignFeatureKind::CoilPrimitive,
         10,
     );
     let group_id = "f3d:Design/BulkStream.dat:design-construction-operand-group#20";
-    let group = crate::records::topology::DesignConstructionOperandGroup {
-        id: group_id.into(),
-        scope_record_index: 10,
-        scope_reference_ordinal: 0,
-        record_index: 20,
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("280".to_owned()).unwrap(),
-        members: vec![crate::records::Located {
-            value: 21,
-            offset: 0,
-        }],
-        lost_edge_references: Vec::new(),
-        frame: crate::records::topology::DesignConstructionOperandGroupFrame {
-            member_count_offset: 0,
-            auxiliary_records: Vec::new(),
-            auxiliary_paths: Vec::new(),
-            trailing_records: Vec::new(),
-            trailing_transforms: Vec::new(),
-            trailing_dual_transforms: Vec::new(),
-            trailing_flags: Vec::new(),
-            opaque_index: 1,
-            opaque_index_offset: 0,
-            opaque_scalar: 0.0,
-            opaque_scalar_offset: 0,
-            variant: false,
+    let group = DesignConstructionOperandGroup::try_from(
+        crate::records::topology::construction::DesignConstructionOperandGroupDraft {
+            id: group_id.into(),
+            scope_record_index: 10,
+            scope_reference_ordinal: 0,
+            record_index: 20,
+            byte_offset: 0,
+            class_tag: crate::records::references::DesignClassTag::try_from("280".to_owned())
+                .unwrap(),
+            members: vec![crate::records::identity::Located {
+                value: 21,
+                offset: 0,
+            }],
+            lost_edge_references: Vec::new(),
+            frame: DesignConstructionOperandGroupFrame::try_from(
+                crate::records::topology::construction::DesignConstructionOperandGroupFrameDraft {
+                    member_count_offset: 0,
+                    auxiliary_records: Vec::new(),
+                    auxiliary_paths: Vec::new(),
+                    trailing_records: Vec::new(),
+                    trailing_transforms: Vec::new(),
+                    trailing_dual_transforms: Vec::new(),
+                    trailing_flags: Vec::new(),
+                    opaque_index: 1,
+                    opaque_index_offset: 18,
+                    opaque_scalar: 0.0,
+                    opaque_scalar_offset: 22,
+                    variant: false,
+                },
+            )
+            .unwrap(),
+            operand_role:
+                crate::records::topology::construction::DesignConstructionOperandRole::Other(
+                    DesignOperandRole::BODIES_B,
+                ),
+            role_offset: 0,
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "259".to_owned(),
+            )
+            .unwrap(),
+            paired_byte_offset: 0,
         },
-        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
-            DesignOperandRole::BODIES_B,
-        ),
-        role_offset: 0,
-        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
-        paired_byte_offset: 0,
-    };
-    let operand = crate::records::topology::DesignBodyRecipeOperand {
-        id: "f3d:Design/BulkStream.dat:design-body-recipe-operand#21".into(),
-        scope_record_index: 10,
-        owner: crate::records::topology::DesignOperandOwner::Group {
-            group_record_index: 20,
-            group_member_ordinal: 0,
-        },
-        record_index: 21,
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("384".to_owned()).unwrap(),
-        asset_id: crate::records::DesignRelaxedGuidText::try_from(
-            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
-        )
-        .unwrap(),
-        asset_id_offset: 0,
-        context_id: crate::records::DesignRelaxedGuidText::try_from(
-            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
-        )
-        .unwrap(),
-        context_id_offset: 0,
-        selector_tail: None,
+    )
+    .unwrap();
+    let operand = crate::records::topology::body_recipe::DesignBodyRecipeOperand::try_new(
+        crate::records::topology::body_recipe::DesignBodyRecipeOperandDraft {
+            id: "f3d:Design/BulkStream.dat:design-body-recipe-operand#21".into(),
+            scope_record_index: 10,
+            owner: crate::records::topology::body_recipe::DesignOperandOwner::Group {
+                group_record_index: 20,
+                group_member_ordinal: 0,
+            },
+            record_index: 21,
+            byte_offset: 0,
+            class_tag: crate::records::references::DesignClassTag::try_from("384".to_owned())
+                .unwrap(),
+            asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+                "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+            )
+            .unwrap(),
+            asset_id_offset: 56,
+            context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+                "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+            )
+            .unwrap(),
+            context_id_offset: 132,
+            selector_tail: None,
 
-        references: vec![crate::records::topology::DesignBodyRecipeReference {
-            design_reference: 301,
-            design_reference_offset: 0,
-            form: 33,
-            form_offset: 0,
-            candidate_faces: vec![FaceId::mint("f3d:brep:entity#7").expect("identity grammar")],
-            preceding_candidate_faces: Vec::new(),
-            preceding_body_slots: Vec::new(),
-        }],
-        nested_record_index: 22,
-        nested_record_index_offset: 0,
-        recipe_id: "f3d:Design/BulkStream.dat:construction-recipe#23".into(),
-        resolved_face_slot: None,
-        resolved_body_state_id: None,
-        resolved_body_slot: None,
-        resolved_body_face_slots: Vec::new(),
-        next_record_index: 24,
-        next_byte_offset: 0,
-    };
+            references: vec![
+                crate::records::topology::body_recipe::DesignBodyRecipeReference {
+                    design_reference: 301,
+                    design_reference_offset: 25,
+                    form: 33,
+                    form_offset: 33,
+                    candidate_faces: vec![
+                        FaceId::mint("f3d:brep:entity#7").expect("identity grammar")
+                    ],
+                    preceding_candidate_faces: Vec::new(),
+                    preceding_body_slots: Vec::new(),
+                },
+            ],
+            nested_record_index: 24,
+            nested_record_index_offset: 38,
+            recipe_id: "f3d:Design/BulkStream.dat:construction-recipe#23".into(),
+            resolved_face_slot: None,
+            resolved_body_state_id: None,
+            resolved_body_slot: None,
+            resolved_body_face_slots: Vec::new(),
+            next_record_index: 25,
+            next_byte_offset: 256,
+        },
+    )
+    .unwrap();
     let body = Body {
         id: BodyId::mint("f3d:brep:body#1").expect("identity grammar"),
         kind: BodyKind::Solid,
@@ -900,13 +1052,11 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         body: body.id.clone(),
         shells: vec![ShellId::mint("test:model:shell#1").expect("identity grammar")],
     };
-    let shell = Shell {
-        id: ShellId::mint("test:model:shell#1").expect("identity grammar"),
-        region: region.id.clone(),
-        faces: vec![FaceId::mint("f3d:brep:entity#7").expect("identity grammar")],
-        wire_edges: Vec::new(),
-        free_vertices: Vec::new(),
-    };
+    let shell = Shell::with_face(
+        ShellId::mint("test:model:shell#1").expect("identity grammar"),
+        region.id.clone(),
+        FaceId::mint("f3d:brep:entity#7").expect("identity grammar"),
+    );
     let inputs = super::super::FeatureBodySelectionInputs {
         scopes: std::slice::from_ref(&scope),
         groups: std::slice::from_ref(&group),
@@ -919,56 +1069,70 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         shells: std::slice::from_ref(&shell),
     };
     let mut selection = BodySelection::Native(group_id.into());
-    super::super::bind_direct_body_recipe_body_selection(&mut selection, &scope, &inputs);
+    super::super::bind_direct_body_recipe_body_selection(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut selection,
+        &scope,
+        &inputs,
+    )
+    .unwrap();
     assert_eq!(
         selection,
         BodySelection::Resolved {
-            bodies: vec![BodyId::mint("f3d:brep:body#1").expect("identity grammar")],
+            bodies: cadmpeg_ir::features::DistinctMembers::try_from(
+                vec![BodyId::mint("f3d:brep:body#1").expect("identity grammar")],
+                &cadmpeg_test_support::service_decode_context()
+            )
+            .expect("distinct bodies"),
             native: group_id.into(),
         }
     );
 
-    let recipe = crate::records::ConstructionRecipe {
+    let recipe = crate::records::recipes::ConstructionRecipe {
         id: operand.recipe_id.clone(),
         byte_offset: 0,
-        record_index_offset: None,
-        kind: crate::records::ConstructionRecipeKind::Body,
-        design: Some(crate::records::ConstructionRecipeDesign {
-            id: crate::records::RecordedValue {
+        kind: crate::records::recipes::ConstructionRecipeKind::Body,
+        design: Some(crate::records::recipes::ConstructionRecipeDesign {
+            id: crate::records::identity::RecordedValue {
                 value: "301".into(),
-                offset: None,
+                offset: 0,
             },
-            selector: Some(crate::records::ConstructionRecipeSelector {
+            selector: Some(crate::records::recipes::ConstructionRecipeSelector {
                 value: 9,
                 byte_offset: 0,
             }),
         }),
         recipe_index: 0,
-        record_index: 0,
+        record_index: Some(crate::records::identity::RecordedValue {
+            value: 0,
+            offset: 0,
+        }),
     };
-    let link = crate::records::PersistentDesignLink {
+    let link = crate::records::sketch_links::PersistentDesignLink {
         id: "link".into(),
         target: cadmpeg_ir::attributes::AttributeTarget::Body(body.id.clone()),
-        design_id: "301".into(),
+        design_id: "301".to_owned().try_into().unwrap(),
 
         design_reference: 9,
         ordinal: 0,
-        is_current: true,
     };
     assert_eq!(
         super::super::body_recipe_link_candidate(
+            &cadmpeg_test_support::service_decode_context(),
             &operand,
             std::slice::from_ref(&recipe),
             std::slice::from_ref(&link),
             std::slice::from_ref(&body),
-        ),
+        )
+        .unwrap(),
         Some(body.id.clone())
     );
 
     let mut direct_operand = operand.clone();
-    direct_operand.owner = crate::records::topology::DesignOperandOwner::ScopeReference {
-        scope_reference_ordinal: 0,
-    };
+    direct_operand.owner =
+        crate::records::topology::body_recipe::DesignOperandOwner::ScopeReference {
+            scope_reference_ordinal: 0,
+        };
     let direct_inputs = super::super::FeatureBodySelectionInputs {
         scopes: std::slice::from_ref(&scope),
         groups: &[],
@@ -984,25 +1148,45 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         "{}:design-record#21",
         crate::ids::native_stream(&scope.id).expect("test scope stream")
     );
-    let mut selection = BodySelection::NativeSet(vec![native.clone()]);
-    super::super::bind_direct_body_recipe_body_selection(&mut selection, &scope, &direct_inputs);
+    let mut selection = BodySelection::NativeSet(vec![native.clone()].try_into().unwrap());
+    super::super::bind_direct_body_recipe_body_selection(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut selection,
+        &scope,
+        &direct_inputs,
+    )
+    .unwrap();
     assert_eq!(
         selection,
         BodySelection::ResolvedSet {
-            members: cadmpeg_ir::features::BodyMembers::try_from_parts(
-                vec![body.id.clone()],
-                vec![native],
+            members: cadmpeg_ir::features::BodyMembers::try_from_rows(
+                vec![cadmpeg_ir::features::BodyMember::new(
+                    body.id.clone(),
+                    cadmpeg_core::text::NonBlankString::new(native)
+                        .expect("non-blank native fixture"),
+                ),],
+                &cadmpeg_test_support::service_decode_context()
             )
+            .expect("selection storage is admitted")
             .expect("valid body selection rows"),
         }
     );
 
     let mut scale_scope = scope.clone();
-    scale_scope.payload = crate::records::feature::DesignFeatureKind::Scale.into();
-    scale_scope.previous_history_state_id = Some(7);
+    scale_scope
+        .try_edit(|draft| {
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::Scale
+                .try_into()
+                .unwrap();
+            draft.previous_history_state_id = Some(7);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     let mut scale_group = group.clone();
     scale_group.operand_role =
-        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_A);
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            DesignOperandRole::BODIES_A,
+        );
     let scale_inputs = super::super::FeatureBodySelectionInputs {
         scopes: std::slice::from_ref(&scale_scope),
         groups: std::slice::from_ref(&scale_group),
@@ -1014,35 +1198,58 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         regions: std::slice::from_ref(&region),
         shells: std::slice::from_ref(&shell),
     };
-    let mut feature = Feature::new(
-        FeatureId::mint("f3d:test:feature#scale").expect("identity grammar"),
-        0,
-        FeatureDefinition::Scale {
-            bodies: BodySelection::Native(group_id.into()),
-            center: Some(ScaleCenter::ModelOrigin),
-            factors: ScaleFactors::Uniform(1.5),
-        },
-    );
+    let mut feature = Feature {
+        id: FeatureId::mint("f3d:test:feature#scale").expect("identity grammar"),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Scale {
+                bodies: BodySelection::Native(group_id.into()),
+                center: Some(ScaleCenter::ModelOrigin),
+                factors: ScaleFactors::Uniform {
+                    factor: cadmpeg_ir::scalar::NonZeroReal::new(1.5).unwrap(),
+                },
+            }),
+        ),
+        native_ref: None,
+    };
     feature.native_ref = Some(scale_scope.id.clone());
-    super::super::bind_feature_body_selections(std::slice::from_mut(&mut feature), &scale_inputs);
+    super::super::bind_feature_body_selections(
+        &cadmpeg_test_support::service_decode_context(),
+        std::slice::from_mut(&mut feature),
+        &scale_inputs,
+    )
+    .unwrap();
     assert!(matches!(
-        feature.definition,
-        FeatureDefinition::Scale {
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Scale {
             bodies: BodySelection::Resolved { ref bodies, ref native },
             ..
-        } if bodies == &[body.id.clone()] && native == group_id
+        }) if bodies.as_slice() == [body.id.clone()] && native == group_id
     ));
 
     let mut move_scope = scope;
-    move_scope.payload = crate::records::feature::DesignFeatureKind::Move.into();
-    move_scope.history_state_id = Some(42);
-    move_scope.previous_history_state_id = Some(41);
+    move_scope
+        .try_edit(|draft| {
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::Move
+                .try_into()
+                .unwrap();
+            draft.history_state_id = Some(42);
+            draft.previous_history_state_id = Some(41);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     let move_history = crate::history_records::AsmHistory {
         id: "f3d:history".into(),
         byte_offset: 0,
         preamble: None,
         record_table_binding_budget_exceeded: false,
-        projection_finalized: true,
         states: Vec::new(),
     };
     let move_inputs = super::super::FeatureBodySelectionInputs {
@@ -1056,33 +1263,50 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         regions: std::slice::from_ref(&region),
         shells: std::slice::from_ref(&shell),
     };
-    let mut move_feature = Feature::new(
-        FeatureId::mint("f3d:test:feature#move").expect("identity grammar"),
-        0,
-        FeatureDefinition::MoveBody {
-            bodies: BodySelection::Native(group_id.into()),
-            translation: cadmpeg_ir::math::Vector3::new(1.0, 2.0, 3.0),
-            rotation: None,
-            copies: 0,
-        },
-    );
+    let mut move_feature = Feature {
+        id: FeatureId::mint("f3d:test:feature#move").expect("identity grammar"),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::MoveBody {
+                bodies: BodySelection::Native(group_id.into()),
+                translation: cadmpeg_ir::features::FiniteVector3::new(
+                    cadmpeg_ir::math::Vector3::new(1.0, 2.0, 3.0),
+                )
+                .unwrap(),
+                rotation: None,
+                copies: 0,
+            }),
+        ),
+        native_ref: None,
+    };
     move_feature.native_ref = Some(move_scope.id.clone());
     super::super::bind_feature_body_selections(
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_mut(&mut move_feature),
         &move_inputs,
-    );
+    )
+    .unwrap();
     assert!(matches!(
-        move_feature.definition,
-        FeatureDefinition::MoveBody {
+        move_feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::MoveBody {
             bodies: BodySelection::Resolved { ref bodies, ref native },
             ..
-        } if bodies == &[body.id.clone()] && native == group_id
+        }) if bodies.as_slice() == [body.id.clone()] && native == group_id
     ));
 }
 
 #[test]
 fn base_feature_body_selection_uses_active_transition_outputs() {
-    use cadmpeg_ir::features::{BodySelection, Feature, FeatureDefinition, FeatureId};
+    use cadmpeg_ir::features::{
+        BodySelection, Feature, FeatureDefinition, FeatureId, FeatureOperation,
+    };
     use cadmpeg_ir::ids::BodyId;
 
     let mut feature = Feature {
@@ -1090,40 +1314,61 @@ fn base_feature_body_selection_uses_active_transition_outputs() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: Default::default(),
         source_tag: Some("Base Feature".into()),
         source_text: None,
-        source_content: Vec::new(),
-        outputs: vec![
-            BodyId::mint("test:model:body#2").expect("identity grammar"),
-            BodyId::mint("test:model:body#1").expect("identity grammar"),
-        ],
-        definition: FeatureDefinition::BaseFeature {
-            bodies: BodySelection::Native("native:scope".into()),
-        },
+        source_content: Default::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+            FeatureDefinition::Operation(FeatureOperation::BaseFeature {
+                bodies: BodySelection::Native("native:scope".into()),
+            }),
+            cadmpeg_ir::features::DistinctMembers::try_from(
+                vec![
+                    BodyId::mint("test:model:body#2").expect("identity grammar"),
+                    BodyId::mint("test:model:body#1").expect("identity grammar"),
+                ],
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .unwrap(),
+        ),
         native_ref: Some("native:scope".into()),
     };
-    super::super::bind_base_feature_output_selection(&mut feature);
+    super::super::bind_base_feature_output_selection(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut feature,
+    )
+    .unwrap();
     assert!(matches!(
-        feature.definition,
-        FeatureDefinition::BaseFeature {
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::BaseFeature {
             bodies: BodySelection::Resolved { ref bodies, ref native }
-        } if bodies == &[BodyId::mint("test:model:body#2").expect("identity grammar"), BodyId::mint("test:model:body#1").expect("identity grammar")]
+        }) if bodies.as_slice() == [BodyId::mint("test:model:body#2").expect("identity grammar"), BodyId::mint("test:model:body#1").expect("identity grammar")]
             && native == "native:scope"
     ));
 }
 
 #[test]
 fn opaque_history_span_retains_the_precise_framing_error() {
+    let bytes = [0x33];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("test input is within the service limit");
     let records = super::super::decode_history_records(
-        &[0x33],
+        &ctx,
+        &bytes,
         0,
         None,
         "stream",
         "state",
         cadmpeg_asm::kernel_header::RefWidth::Eight,
-    );
+    )
+    .expect("malformed history remains an opaque record");
     let [record] = records.as_slice() else {
         panic!("one opaque record");
     };
@@ -1131,832 +1376,6 @@ fn opaque_history_span_retains_the_precise_framing_error() {
     assert!(record
         .framing_error()
         .is_some_and(|error| error.contains("byte 0") && error.contains("0x33")));
-}
-
-#[test]
-fn split_face_targets_bind_from_a_transition_predecessor() {
-    use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
-    use crate::records::feature::DesignParameterScope;
-    use crate::records::topology::{
-        DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame, DesignFaceOperand,
-    };
-    use crate::records::ConstructionRecipeKind;
-    use cadmpeg_ir::features::{
-        FaceSelection, Feature, FeatureDefinition, FeatureId, SplitFaceTool,
-    };
-    use cadmpeg_ir::ids::FaceId;
-
-    let scope_id = "f3d:Design/BulkStream.dat:scope#42".to_string();
-    let group_id = "f3d:Design/BulkStream.dat:operand-group#100".to_string();
-    let face_id = FaceId::mint("f3d:brep:entity#7").expect("identity grammar");
-    let mut scope = DesignParameterScope::empty(
-        &scope_id,
-        crate::records::feature::DesignFeatureKind::SplitFace,
-        42,
-    );
-    scope.history_state_id = Some(2);
-
-    let group = DesignConstructionOperandGroup {
-        id: group_id.clone(),
-        scope_record_index: 42,
-        scope_reference_ordinal: 2,
-        record_index: 100,
-        byte_offset: 1000,
-        class_tag: crate::records::DesignClassTag::try_from("297".to_owned()).unwrap(),
-        members: vec![crate::records::Located {
-            value: 200,
-            offset: 1010,
-        }],
-        lost_edge_references: Vec::new(),
-        frame: DesignConstructionOperandGroupFrame {
-            member_count_offset: 1008,
-            auxiliary_records: Vec::new(),
-            auxiliary_paths: Vec::new(),
-            trailing_records: Vec::new(),
-            trailing_transforms: Vec::new(),
-            trailing_dual_transforms: Vec::new(),
-            trailing_flags: Vec::new(),
-            opaque_index: 1,
-            opaque_index_offset: 1020,
-            opaque_scalar: 0.0,
-            opaque_scalar_offset: 1024,
-            variant: false,
-        },
-        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
-            DesignOperandRole::ROLE_0X10,
-        ),
-        role_offset: 1030,
-        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
-        paired_byte_offset: 1100,
-    };
-    let operand = DesignFaceOperand {
-        id: "f3d:Design/BulkStream.dat:design-face-operand#200".into(),
-        scope_record_index: 42,
-        scope_reference_ordinal: 3,
-        group: Some(crate::records::topology::DesignOperandGroup {
-            group_record_index: 100,
-            group_member_ordinal: 0,
-        }),
-        record_index: 200,
-        byte_offset: 1200,
-        class_tag: crate::records::DesignClassTag::try_from("297".to_owned()).unwrap(),
-        paired_byte_offset: 1300,
-        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
-        recipe_record_index: 203,
-        recipe_record_byte_offset: 1400,
-        recipe_id: "f3d:Design/BulkStream.dat:construction-recipe#203".into(),
-        recipe_prefix_offset: 1411,
-        recipe_prefix_bytes: Vec::new(),
-        recipe_references: Vec::new(),
-        recipe_kind: ConstructionRecipeKind::Face,
-        recipe_program_offset: 1420,
-        recipe_program: Vec::new(),
-
-        recipe_nodes: Vec::new(),
-        candidate_faces: vec![face_id.clone()],
-        unreferenced_candidate_faces: Vec::new(),
-        alternate_selector_candidate_faces: Vec::new(),
-        preceding_candidate_faces: vec![face_id.clone()],
-        changed_candidate_faces: Vec::new(),
-        historical_support_contexts: Vec::new(),
-        resolved_face_slots: Vec::new(),
-        resolved_active_face: None,
-        next_record_index: 204,
-        next_byte_offset: 1500,
-    };
-    let state = |state_id, transition| AsmDeltaState {
-        id: format!("f3d:history:state#{state_id}"),
-        parent: "f3d:history".into(),
-        byte_offset: 0,
-        state_id,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: None,
-        node_index: state_id,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: Vec::new(),
-        records: Vec::new(),
-        entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Complete(
-            AsmHistoricalTopology::default(),
-        ),
-        transition,
-    };
-    let history = AsmHistory {
-        id: "f3d:history".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        projection_finalized: false,
-        states: vec![
-            state(
-                2,
-                Some(crate::history_records::AsmHistoricalTransition {
-                    previous_state_id: Some(1),
-                    records: Default::default(),
-                    topology: Default::default(),
-                }),
-            ),
-            state(1, None),
-        ],
-    };
-    let mut features = vec![Feature {
-        id: FeatureId::mint("f3d:test:feature#42").expect("identity grammar"),
-        ordinal: 0,
-        name: None,
-        suppressed: None,
-        dependencies: Vec::new(),
-        source_properties: Default::default(),
-        source_tag: Some("SplitFace".into()),
-        source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::SplitFace {
-            targets: FaceSelection::Native(group_id.clone()),
-            tool: SplitFaceTool::Plane {
-                plane: FeatureId::mint("f3d:test:feature#plane").expect("identity grammar"),
-            },
-        },
-        native_ref: Some(scope_id),
-    }];
-
-    super::super::bind_feature_face_selections(
-        &mut features,
-        &mut [],
-        &[scope],
-        &[group],
-        &[operand],
-        &[],
-        &[],
-        &[history],
-    );
-
-    assert!(matches!(
-        &features[0].definition,
-        FeatureDefinition::SplitFace {
-            targets: FaceSelection::Resolved { faces, native },
-            ..
-        } if faces == &[face_id] && native == &group_id
-    ));
-}
-
-#[test]
-fn thread_face_group_uses_first_reference_transition_candidates() {
-    use crate::history_records::{
-        AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalCylinder, AsmHistoricalTopology,
-        AsmHistoricalTransition, AsmHistory,
-    };
-    use crate::records::feature::{
-        DesignParameterScope, DesignThreadConstruction, DesignThreadForm,
-    };
-    use crate::records::topology::{
-        DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame, DesignFaceOperand,
-    };
-    use crate::records::{ConstructionRecipeKind, DesignRecipeReference};
-    use cadmpeg_ir::ids::FaceId;
-    use cadmpeg_ir::math::{Point3, Vector3};
-
-    let face = |slot| FaceId::mint(format!("f3d:brep:entity#{slot}")).expect("identity grammar");
-    let scope_id = "f3d:Design/BulkStream.dat:scope#42";
-    let mut scope = DesignParameterScope::empty(
-        scope_id,
-        crate::records::feature::DesignFeatureKind::Thread,
-        42,
-    );
-    scope.history_state_id = Some(2);
-    scope.previous_history_state_id = Some(1);
-
-    let group = DesignConstructionOperandGroup {
-        id: "f3d:Design/BulkStream.dat:operand-group#100".into(),
-        scope_record_index: 42,
-        scope_reference_ordinal: 0,
-        record_index: 100,
-        byte_offset: 1_000,
-        class_tag: crate::records::DesignClassTag::try_from("297".to_owned()).unwrap(),
-        members: vec![crate::records::Located {
-            value: 200,
-            offset: 1_010,
-        }],
-        lost_edge_references: Vec::new(),
-        frame: DesignConstructionOperandGroupFrame {
-            member_count_offset: 1_008,
-            auxiliary_records: Vec::new(),
-            auxiliary_paths: Vec::new(),
-            trailing_records: Vec::new(),
-            trailing_transforms: Vec::new(),
-            trailing_dual_transforms: Vec::new(),
-            trailing_flags: Vec::new(),
-            opaque_index: 1,
-            opaque_index_offset: 1_020,
-            opaque_scalar: 0.0,
-            opaque_scalar_offset: 1_024,
-            variant: false,
-        },
-        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
-            DesignOperandRole::ROLE_0X10,
-        ),
-        role_offset: 1_030,
-        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
-        paired_byte_offset: 1_100,
-    };
-    let reference = |token: &str, design_reference, candidates: &[i64]| DesignRecipeReference {
-        selector: 1,
-        selector_offset: 1_411,
-        token: token.into(),
-        token_offset: 1_415,
-        design_reference,
-        design_reference_offset: 1_420,
-        candidate_faces: candidates.iter().copied().map(face).collect(),
-        candidate_edges: Vec::new(),
-        alternate_selector_faces: Vec::new(),
-        alternate_selector_edges: Vec::new(),
-    };
-    let operand = DesignFaceOperand {
-        id: "f3d:Design/BulkStream.dat:design-face-operand#200".into(),
-        scope_record_index: 42,
-        scope_reference_ordinal: 1,
-        group: Some(crate::records::topology::DesignOperandGroup {
-            group_record_index: 100,
-            group_member_ordinal: 0,
-        }),
-        record_index: 200,
-        byte_offset: 1_200,
-        class_tag: crate::records::DesignClassTag::try_from("297".to_owned()).unwrap(),
-        paired_byte_offset: 1_300,
-        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
-        recipe_record_index: 203,
-        recipe_record_byte_offset: 1_400,
-        recipe_id: "f3d:Design/BulkStream.dat:construction-recipe#203".into(),
-        recipe_prefix_offset: 1_411,
-        recipe_prefix_bytes: Vec::new(),
-        recipe_references: vec![reference("3", 203, &[7, 8]), reference("-1", 199, &[9, 10])],
-        recipe_kind: ConstructionRecipeKind::BoundedFace,
-        recipe_program_offset: 1_430,
-        recipe_program: vec![0, -1, 2],
-
-        recipe_nodes: Vec::new(),
-        candidate_faces: [7, 8, 9, 10].into_iter().map(face).collect(),
-        unreferenced_candidate_faces: [9, 10].into_iter().map(face).collect(),
-        alternate_selector_candidate_faces: Vec::new(),
-        preceding_candidate_faces: Vec::new(),
-        changed_candidate_faces: Vec::new(),
-        historical_support_contexts: Vec::new(),
-        resolved_face_slots: Vec::new(),
-        resolved_active_face: None,
-        next_record_index: 204,
-        next_byte_offset: 1_500,
-    };
-
-    let mut transition = AsmHistoricalTransition {
-        previous_state_id: Some(1),
-        records: Default::default(),
-        topology: Default::default(),
-    };
-    transition.topology.faces.updated.push(7);
-    let state = |state_id, topology, transition| AsmDeltaState {
-        id: format!("f3d:history:state#{state_id}"),
-        parent: "f3d:history".into(),
-        byte_offset: 0,
-        state_id,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: (state_id == 2).then_some(1),
-        node_index: state_id,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: Vec::new(),
-        records: Vec::new(),
-        entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
-        transition,
-    };
-    let history = AsmHistory {
-        id: "f3d:history".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        projection_finalized: false,
-        states: vec![
-            state(2, AsmHistoricalTopology::default(), Some(transition)),
-            state(
-                1,
-                AsmHistoricalTopology {
-                    faces: vec![7, 8, 9, 10],
-                    persistent_subentity_tags: [
-                        (7, "3", 203),
-                        (8, "3", 203),
-                        (9, "-1", 199),
-                        (10, "-1", 199),
-                    ]
-                    .into_iter()
-                    .map(|(entity_ref, token, design_reference)| {
-                        crate::history_records::AsmHistoricalPersistentSubentityTag {
-                            entity_kind: AsmHistoricalEntityKind::Face,
-                            entity_ref,
-                            selector: 17,
-                            token: token.into(),
-                            design_references: vec![design_reference],
-                            ordinal: 0,
-                        }
-                    })
-                    .collect(),
-                    ..AsmHistoricalTopology::default()
-                },
-                None,
-            ),
-        ],
-    };
-
-    let mut operands = vec![operand.clone()];
-    bind_face_operand_history_candidates(
-        &mut operands,
-        std::slice::from_ref(&scope),
-        std::slice::from_ref(&group),
-        &[],
-        std::slice::from_ref(&history),
-        &HashMap::new(),
-    );
-    assert_eq!(operands[0].preceding_candidate_faces, [face(7), face(8)]);
-    assert_eq!(operands[0].changed_candidate_faces, [face(7)]);
-    assert_eq!(operands[0].resolved_face_slots, [7]);
-
-    let mut cylinder_scope = scope.clone();
-    if let crate::records::feature::DesignScopePayload::Thread(slot) = &mut cylinder_scope.payload {
-        *slot = Some(DesignThreadConstruction {
-            form: DesignThreadForm::Standard,
-            designation_offset: 0,
-            designation: "M4x0.7".into(),
-            nominal_size: crate::records::feature::DesignThreadNominalSize::try_from(
-                "4.0".to_owned(),
-            )
-            .expect("nominal size"),
-            profile: "ISO Metric profile".into(),
-            major_diameter: 0.4,
-            minor_diameter: 0.2,
-            pitch: 0.07,
-            pitch_diameter: 0.3,
-            face_group_record_indices: vec![100],
-        });
-    }
-    let mut cylinder_operand = operand.clone();
-    cylinder_operand.recipe_references[0].candidate_faces =
-        vec![FaceId::mint("f3d:brep/input/brep:entity#999").expect("identity grammar")];
-    cylinder_operand.candidate_faces = cylinder_operand.recipe_references[0]
-        .candidate_faces
-        .clone();
-    let mut cylinder_history = history.clone();
-    cylinder_history.id = "f3d:Breps.BlobParts/BREP.input:asm-history#1".into();
-    let cylinder_topology = cylinder_history.states[1]
-        .topology_mut()
-        .expect("preceding topology");
-    cylinder_topology.face_surfaces = vec![
-        AsmHistoricalCarrierBinding {
-            entity: 7,
-            carrier: 70,
-        },
-        AsmHistoricalCarrierBinding {
-            entity: 8,
-            carrier: 80,
-        },
-    ];
-    cylinder_topology.surface_cylinders = vec![
-        AsmHistoricalCylinder {
-            surface: 70,
-            origin: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            radius: 1.5,
-        },
-        AsmHistoricalCylinder {
-            surface: 80,
-            origin: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            radius: 3.0,
-        },
-    ];
-    let mut cylinder_operands = vec![cylinder_operand];
-    bind_face_operand_history_candidates(
-        &mut cylinder_operands,
-        std::slice::from_ref(&cylinder_scope),
-        std::slice::from_ref(&group),
-        &[],
-        std::slice::from_ref(&cylinder_history),
-        &HashMap::new(),
-    );
-    assert_eq!(cylinder_operands[0].resolved_face_slots, [7]);
-
-    let mut stale_active_operand = cylinder_operands[0].clone();
-    stale_active_operand.recipe_references[0]
-        .candidate_faces
-        .push(FaceId::mint("f3d:brep/input/brep:entity#998").expect("identity grammar"));
-    let mut stale_active_operands = vec![stale_active_operand];
-    bind_face_operand_history_candidates(
-        &mut stale_active_operands,
-        std::slice::from_ref(&cylinder_scope),
-        std::slice::from_ref(&group),
-        &[],
-        std::slice::from_ref(&cylinder_history),
-        &HashMap::new(),
-    );
-    assert_eq!(stale_active_operands[0].resolved_face_slots, [7]);
-
-    let mut ambiguous_geometry_history = cylinder_history;
-    ambiguous_geometry_history.states[0]
-        .transition
-        .as_mut()
-        .expect("result transition")
-        .topology
-        .faces
-        .updated
-        .push(8);
-    ambiguous_geometry_history.states[1]
-        .topology_mut()
-        .expect("preceding topology")
-        .surface_cylinders[1]
-        .radius = 1.6;
-    let mut ambiguous_geometry_operands = vec![cylinder_operands.remove(0)];
-    bind_face_operand_history_candidates(
-        &mut ambiguous_geometry_operands,
-        &[cylinder_scope],
-        std::slice::from_ref(&group),
-        &[],
-        &[ambiguous_geometry_history],
-        &HashMap::new(),
-    );
-    assert!(ambiguous_geometry_operands[0]
-        .resolved_face_slots
-        .is_empty());
-
-    let mut unrelated_group = group;
-    unrelated_group.operand_role =
-        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::FACES);
-    let mut rejected = vec![operand];
-    bind_face_operand_history_candidates(
-        &mut rejected,
-        &[scope],
-        &[unrelated_group],
-        &[],
-        &[history],
-        &HashMap::new(),
-    );
-    assert_eq!(rejected[0].preceding_candidate_faces, [face(9), face(10)]);
-    assert!(rejected[0].changed_candidate_faces.is_empty());
-    assert!(rejected[0].resolved_face_slots.is_empty());
-}
-
-#[test]
-fn history_binding_budget_charges_materialized_state_tables() {
-    let mut limits = cadmpeg_core::decode::ResourceLimits::desktop();
-    limits.max_materialized_bytes = 1920;
-    assert!(!complete_table_binding_budget_exceeded([5, 5], &limits));
-    assert!(complete_table_binding_budget_exceeded([10, 1], &limits));
-    assert!(complete_table_binding_budget_exceeded(
-        [usize::MAX, 1],
-        &limits,
-    ));
-
-    let desktop = cadmpeg_core::decode::ResourceLimits::desktop();
-    let service = cadmpeg_core::decode::ResourceLimits::service();
-    assert!(!complete_table_binding_budget_exceeded(
-        [18_000_000],
-        &desktop,
-    ));
-    assert!(complete_table_binding_budget_exceeded(
-        [18_000_000],
-        &service,
-    ));
-}
-
-#[test]
-fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, SweepMode, SweepSection};
-    use cadmpeg_ir::ids::BodyId;
-    use cadmpeg_ir::topology::{Body, BodyKind};
-
-    let body = |id: &str, kind| Body {
-        id: BodyId::mint(id).expect("identity grammar"),
-        kind,
-        regions: Vec::new(),
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    };
-    let sweep = |id: &str, outputs| Feature {
-        id: FeatureId::mint(id).expect("identity grammar"),
-        ordinal: 0,
-        name: None,
-        suppressed: None,
-        dependencies: Vec::new(),
-        source_properties: Default::default(),
-        source_tag: None,
-        source_text: None,
-        source_content: Vec::new(),
-        outputs,
-        definition: FeatureDefinition::Sweep {
-            section: SweepSection::Unresolved(None),
-            sections: Vec::new(),
-            path: None,
-            mode: SweepMode::Unresolved,
-            orientation: None,
-            transition: None,
-            transformation: None,
-            path_tangent: false,
-            linearize: false,
-            twist: None,
-            path_extent: None,
-            guide_rail: None,
-            taper: None,
-            scale: None,
-            allow_multi_profile_faces: None,
-        },
-        native_ref: None,
-    };
-    let bodies = [
-        body("test:model:body#sheet", BodyKind::Sheet),
-        body("test:model:body#solid", BodyKind::Solid),
-    ];
-    let mut features = [
-        sweep(
-            "sheet-sweep",
-            vec![BodyId::mint("test:model:body#sheet").expect("identity grammar")],
-        ),
-        sweep(
-            "solid-sweep",
-            vec![BodyId::mint("test:model:body#solid").expect("identity grammar")],
-        ),
-        sweep(
-            "mixed-sweep",
-            vec![
-                BodyId::mint("test:model:body#sheet").expect("identity grammar"),
-                BodyId::mint("test:model:body#solid").expect("identity grammar"),
-            ],
-        ),
-        sweep(
-            "missing-sweep",
-            vec![BodyId::mint("test:model:body#missing").expect("identity grammar")],
-        ),
-    ];
-
-    bind_sweep_result_modes(&mut features, &bodies);
-
-    let modes = features.map(|feature| match feature.definition {
-        FeatureDefinition::Sweep { mode, .. } => mode,
-        _ => unreachable!(),
-    });
-    assert_eq!(modes[0], SweepMode::Surface);
-    assert_eq!(modes[1], SweepMode::NewBody);
-    assert_eq!(modes[2], SweepMode::Unresolved);
-    assert_eq!(modes[3], SweepMode::Unresolved);
-}
-
-#[test]
-fn historical_brep_source_qualifies_state_local_candidates() {
-    assert_eq!(
-        historical_brep_source("f3d:asset/Breps.BlobParts/BREP.example.smbh:asm-delta-state#42"),
-        Some("example.smbh")
-    );
-    assert_eq!(historical_brep_source("f3d:unqualified:state#42"), None);
-}
-
-#[test]
-fn legacy_extrude_face_lane_prefers_history_then_source_identity() {
-    use crate::history_records::AsmHistoricalTopology;
-    use cadmpeg_ir::ids::FaceId;
-    use std::collections::HashSet;
-
-    let source_face = |source: &str, slot| {
-        FaceId::mint(format!("f3d:brep/{source}/brep:entity#{slot}")).expect("identity grammar")
-    };
-    let active_candidates = vec![source_face("old", 10), source_face("new", 10)];
-    assert_eq!(
-        select_legacy_extrude_face_candidate(
-            &active_candidates,
-            &AsmHistoricalTopology::default(),
-            &HashSet::new(),
-            Some("old"),
-        ),
-        Some(LegacyFaceResolution::Active(source_face("old", 10)))
-    );
-    assert_eq!(
-        select_legacy_extrude_face_candidate(
-            &active_candidates,
-            &AsmHistoricalTopology::default(),
-            &HashSet::new(),
-            Some("missing"),
-        ),
-        None
-    );
-
-    let historical_candidates = vec![
-        FaceId::mint("f3d:brep:entity#20").expect("identity grammar"),
-        source_face("new", 21),
-    ];
-    let topology = AsmHistoricalTopology {
-        faces: vec![20, 21],
-        ..AsmHistoricalTopology::default()
-    };
-    let mut changed = HashSet::new();
-    changed.insert(21);
-    assert_eq!(
-        select_legacy_extrude_face_candidate(
-            &historical_candidates,
-            &topology,
-            &changed,
-            Some("new"),
-        ),
-        Some(LegacyFaceResolution::Historical(21))
-    );
-    assert_eq!(
-        select_legacy_extrude_face_candidate(
-            &[FaceId::mint("f3d:brep:entity#20").expect("identity grammar")],
-            &topology,
-            &changed,
-            None,
-        ),
-        Some(LegacyFaceResolution::Historical(20))
-    );
-}
-
-#[test]
-fn hole_face_selection_binds_to_the_feature_input_topology() {
-    use crate::history_records::{
-        AsmDeltaState, AsmHistoricalTopology, AsmHistoricalTransition, AsmHistory,
-    };
-    use crate::records::feature::{
-        DesignHoleConstruction, DesignHoleFaceSelection, DesignParameterScope,
-    };
-    use crate::records::topology::DesignEntitySelectionFaceCandidate;
-    use cadmpeg_ir::features::{
-        FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureInputTopology, HoleKind,
-        Length, LinearTermination,
-    };
-    use cadmpeg_ir::math::{Point3, Vector3};
-
-    let feature_id = FeatureId::mint("f3d:test:feature#42").expect("identity grammar");
-    let scope_id = "f3d:Design/BulkStream.dat:scope#42";
-    let mut scope = DesignParameterScope::empty(
-        scope_id,
-        crate::records::feature::DesignFeatureKind::Hole,
-        42,
-    );
-    scope.history_state_id = Some(2);
-    scope.previous_history_state_id = Some(1);
-    if let crate::records::feature::DesignScopePayload::Hole(slot) = &mut scope.payload {
-        *slot = Some(DesignHoleConstruction {
-            point_record_index: 55,
-            point_record_byte_offset: 0,
-            position: [0.0; 3],
-            position_offset: 0,
-            direction: [0.0, 0.0, 1.0],
-            direction_offset: 0,
-            point_parameters: [0.0; 2],
-            point_parameter_offsets: [0, 0],
-            reference_type: 0,
-            reference_type_offset: 0,
-            tangent_point_data: None,
-            input_records: vec![crate::records::Located {
-                value: 55,
-                offset: 0,
-            }],
-            face_selection: Some(DesignHoleFaceSelection {
-                record_index: 100,
-                byte_offset: 0,
-                class_tag: crate::records::DesignClassTag::try_from("333".to_owned()).unwrap(),
-                asset_id: "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"
-                    .to_owned()
-                    .try_into()
-                    .unwrap(),
-                asset_id_offset: 0,
-                context_id: "BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB"
-                    .to_owned()
-                    .try_into()
-                    .unwrap(),
-                context_id_offset: 0,
-                identity_record_index: 103,
-                identity_record_offset: 0,
-                primary_identity: 18044,
-                primary_identity_offset: 0,
-                secondary: None,
-                historical_face_candidates: vec![DesignEntitySelectionFaceCandidate {
-                    history_id: "f3d:asset/Breps.BlobParts/BREP.example.smbh:asm-delta-state#2"
-                        .into(),
-                    historical: crate::records::topology::HistoricalBinding {
-                        kind: AsmHistoricalEntityKind::Pcurve,
-                        entity_ref: 18044,
-                        state_ids: vec![1],
-                    },
-                    face_slot: 30,
-                }],
-                next_record_index: 104,
-                next_byte_offset: 0,
-            }),
-        });
-    }
-    let mut feature = Feature::new(
-        feature_id.clone(),
-        0,
-        FeatureDefinition::Hole {
-            profile: None,
-            profile_filter: None,
-            face: Some(FaceSelection::Native(scope_id.into())),
-            direction: None,
-            placements: Some(vec![cadmpeg_ir::features::HolePlacement::Directed {
-                position: Point3::new(0.0, 0.0, 0.0),
-                direction: Vector3::new(0.0, 0.0, 1.0),
-            }]),
-            construction: cadmpeg_ir::features::HoleConstruction::form(HoleKind::Simple),
-            exit_kind: None,
-            diameter: Some(Length(5.0)),
-            extent: Some(LinearTermination::Blind {
-                length: Length(10.0),
-            }),
-            bottom: None,
-            taper_angle: None,
-            allow_multi_profile_faces: None,
-        },
-    );
-    feature.native_ref = Some(scope_id.into());
-    let mut input_topologies = vec![FeatureInputTopology {
-        id: crate::design::edge_resolve::feature_input_topology_id(&feature_id, 1),
-        input_of: feature_id.clone(),
-        bodies: Vec::new(),
-        faces: Vec::new(),
-        edges: Vec::new(),
-        vertices: Vec::new(),
-        native_ref: None,
-    }];
-    let state = |state_id, transition| AsmDeltaState {
-        id: format!("history:state#{state_id}"),
-        parent: "history".into(),
-        byte_offset: 0,
-        state_id,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: None,
-        node_index: state_id,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: Vec::new(),
-        records: Vec::new(),
-        entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Complete(
-            AsmHistoricalTopology::default(),
-        ),
-        transition,
-    };
-    let history = AsmHistory {
-        id: "f3d:history".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        projection_finalized: false,
-        states: vec![
-            state(
-                2,
-                Some(AsmHistoricalTransition {
-                    previous_state_id: Some(1),
-                    records: Default::default(),
-                    topology: Default::default(),
-                }),
-            ),
-            state(1, None),
-        ],
-    };
-
-    bind_feature_face_selections(
-        std::slice::from_mut(&mut feature),
-        &mut input_topologies,
-        &[scope],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[history],
-    );
-
-    let FeatureDefinition::Hole {
-        face:
-            Some(FaceSelection::Historical {
-                state,
-                faces,
-                native,
-            }),
-        ..
-    } = &feature.definition
-    else {
-        panic!("Hole support face remains unresolved");
-    };
-    assert_eq!(native, scope_id);
-    assert_eq!(
-        state,
-        &crate::design::edge_resolve::feature_input_topology_id(&feature_id, 1)
-    );
-    assert_eq!(faces.len(), 1);
-    assert_eq!(&input_topologies[0].faces, faces);
 }
 
 mod hem_carriers;

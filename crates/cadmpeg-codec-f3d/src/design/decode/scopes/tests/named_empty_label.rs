@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(
-    clippy::cloned_ref_to_slice_refs,
-    clippy::default_trait_access,
-    clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
-)]
-use super::prelude::*;
+
+use cadmpeg_core::decode::u64_from_index;
+
+use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
+use crate::records::decal::DesignRecordHeader;
+use crate::test_support::lp_utf16;
 
 #[test]
 fn parameter_scope_parses_named_tail_with_empty_label() {
@@ -50,23 +48,25 @@ fn parameter_scope_parses_named_tail_with_empty_label() {
     let header = DesignRecordHeader {
         id: "generated:scope-header#0".into(),
         record_index: 12,
-        class_tag: crate::records::DesignClassTag::try_from("378".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("378".to_owned()).unwrap(),
         byte_offset: 0,
     };
 
     let scope = parse_parameter_scope(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
         header.byte_offset,
     )
+    .unwrap()
     .expect("empty-label named scope");
     assert_eq!(
         scope.kind(),
-        crate::records::feature::DesignFeatureKind::CylinderPrimitive
+        crate::records::feature::scope::DesignFeatureKind::CylinderPrimitive
     );
-    assert_eq!(scope.frame_length, paired_at as u64);
-    assert_eq!(scope.previous_history_state_id, None);
-    assert_eq!(scope.previous_history_state_id_offset, None);
+    assert_eq!(scope.frame_length(), u64_from_index(paired_at));
+    assert_eq!(scope.previous_history_state_id(), None);
+    assert_eq!(scope.previous_history_state_id_offset(), None);
 }

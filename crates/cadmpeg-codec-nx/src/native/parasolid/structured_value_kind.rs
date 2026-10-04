@@ -7,7 +7,7 @@ use super::ParasolidAttributeFieldValueKind;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum StructuredValueKind {
+pub(in crate::native) enum StructuredValueKind {
     Points,
     Vectors,
     Directions,

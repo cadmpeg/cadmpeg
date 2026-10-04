@@ -4,54 +4,64 @@
 
 #![allow(clippy::unwrap_used)]
 
-use super::*;
+use cadmpeg_test_support::wire;
+
+use super::{
+    classify, dialect_loss, layers, Family, RecordStreamStart, StreamEvidence, TextEvidence,
+    DECLARED_ENCODING, DECLARED_TERMINATOR,
+};
 use crate::loss::SatLossCode;
-use crate::test_support::{
+use crate::test_support::test_streams::{
     acis_text_sphere_stream, binary_sphere_stream, text_sphere_stream, BinaryFixtureKind,
     UNVERIFIED_SAVE_FORMAT,
 };
 use crate::SatCodec;
 use crate::FORMAT;
 use cadmpeg_asm::dialect::{DECLARED_SAVE_FORMAT_MAJOR, DECLARED_SAVE_FORMAT_MINOR};
+use cadmpeg_asm::kernel_header::{BinaryHeader, KernelHeader};
+use cadmpeg_asm::sat;
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_core::dialect::{Admission, Grammar};
+use cadmpeg_core::dialect::{Admission, DialectId, Grammar};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use std::io::Cursor;
 
 #[test]
-fn enum_and_registry_rows_are_closed_bidirectionally() {
+fn enum_and_registry_rows_are_closed_bidirectionally() -> Result<(), Box<dyn std::error::Error>> {
     let kernel = header(None);
     let reportable = [
         StreamEvidence::Binary {
             family: Family::Asm,
             header: &kernel,
-            framed: true,
+            stream: Some(RecordStreamStart(0)),
         },
         StreamEvidence::Binary {
             family: Family::Acis,
             header: &kernel,
-            framed: true,
+            stream: Some(RecordStreamStart(0)),
         },
         StreamEvidence::Text(None),
     ]
     .map(|evidence| evidence.dialect());
-    cadmpeg_test_support::assert_dialect_rows_closed(&reportable, FORMAT);
+    cadmpeg_test_support::assert_dialect_rows_closed(&reportable, FORMAT)?;
+    Ok(())
 }
 
 /// A kernel header declaring `save_format_version` and nothing else that
 /// classification reads.
-fn header(save_format_version: Option<u32>) -> KernelHeader {
-    KernelHeader {
+fn header(save_format_version: Option<u32>) -> BinaryHeader {
+    BinaryHeader {
         width: cadmpeg_asm::kernel_header::RefWidth::Four,
-        save_format_version,
-        entity_count: None,
-        flags: None,
-        product_family: None,
-        product_version: None,
-        save_date: None,
-        scale: None,
-        linear: None,
-        angular: None,
+        metadata: KernelHeader {
+            save_format_version,
+            entity_count: None,
+            flags: None,
+            product_family: None,
+            product_version: None,
+            save_date: None,
+            scale: None,
+            linear: None,
+            angular: None,
+        },
     }
 }
 
@@ -72,11 +82,11 @@ fn only_the_acis_kernel_branches_are_banded() {
             StreamEvidence::Binary {
                 family: Family::Asm,
                 header: &kernel,
-                framed: true,
+                stream: Some(RecordStreamStart(0)),
             },
             StreamEvidence::Text(Some(TextEvidence {
                 branch: sat::Terminator::Asm,
-                header: &kernel,
+                header: &kernel.metadata,
             })),
         ] {
             let (host, kernel) = layers(&asm);
@@ -87,7 +97,7 @@ fn only_the_acis_kernel_branches_are_banded() {
         let (host, matched) = layers(&StreamEvidence::Binary {
             family: Family::Acis,
             header: &kernel,
-            framed: true,
+            stream: Some(RecordStreamStart(0)),
         });
         assert_eq!(host.admission(), &Admission::Admitted, "{version:?}");
         if verified {
@@ -100,7 +110,7 @@ fn only_the_acis_kernel_branches_are_banded() {
             );
             assert_eq!(
                 matched.using(),
-                Some(DialectId::pinned(nearest)),
+                Some(DialectId::parse(nearest).expect("test id has dialect grammar")),
                 "{version:?}"
             );
             let loss = dialect_loss(&matched).expect("the recovery is charged");
@@ -110,7 +120,7 @@ fn only_the_acis_kernel_branches_are_banded() {
 
         let (host, matched) = layers(&StreamEvidence::Text(Some(TextEvidence {
             branch: sat::Terminator::Acis,
-            header: &kernel,
+            header: &kernel.metadata,
         })));
         assert_eq!(host.admission(), &Admission::Admitted, "{version:?}");
         if verified {
@@ -141,7 +151,7 @@ fn a_stream_that_stops_at_its_own_discriminant_is_refused() {
             StreamEvidence::Binary {
                 family: Family::Asm,
                 header: &kernel,
-                framed: false,
+                stream: None,
             },
             "sat:asm-binary",
         ),
@@ -149,7 +159,7 @@ fn a_stream_that_stops_at_its_own_discriminant_is_refused() {
             StreamEvidence::Binary {
                 family: Family::Acis,
                 header: &kernel,
-                framed: false,
+                stream: None,
             },
             "sat:acis-binary",
         ),
@@ -173,40 +183,40 @@ fn the_recovery_loss_is_charged_exactly_on_the_unverified_admission() {
         StreamEvidence::Binary {
             family: Family::Asm,
             header: &verified,
-            framed: true,
+            stream: Some(RecordStreamStart(0)),
         },
         StreamEvidence::Binary {
             family: Family::Asm,
             header: &unverified,
-            framed: true,
+            stream: Some(RecordStreamStart(0)),
         },
         StreamEvidence::Binary {
             family: Family::Asm,
             header: &verified,
-            framed: false,
+            stream: None,
         },
         StreamEvidence::Binary {
             family: Family::Acis,
             header: &verified,
-            framed: true,
+            stream: Some(RecordStreamStart(0)),
         },
         StreamEvidence::Binary {
             family: Family::Acis,
             header: &unverified,
-            framed: true,
+            stream: Some(RecordStreamStart(0)),
         },
         StreamEvidence::Binary {
             family: Family::Acis,
             header: &verified,
-            framed: false,
+            stream: None,
         },
         StreamEvidence::Text(Some(TextEvidence {
             branch: sat::Terminator::Asm,
-            header: &unverified,
+            header: &unverified.metadata,
         })),
         StreamEvidence::Text(Some(TextEvidence {
             branch: sat::Terminator::Acis,
-            header: &unverified,
+            header: &unverified.metadata,
         })),
         StreamEvidence::Text(None),
     ] {
@@ -230,7 +240,7 @@ fn the_declared_keys_are_pinned() {
     let binary = classify(&StreamEvidence::Binary {
         family: Family::Acis,
         header: &kernel,
-        framed: true,
+        stream: Some(RecordStreamStart(0)),
     })
     .declared()
     .clone();
@@ -241,7 +251,7 @@ fn the_declared_keys_are_pinned() {
 
     let text = classify(&StreamEvidence::Text(Some(TextEvidence {
         branch: sat::Terminator::Acis,
-        header: &kernel,
+        header: &kernel.metadata,
     })))
     .declared()
     .clone();
@@ -252,7 +262,7 @@ fn the_declared_keys_are_pinned() {
 
     let asm_text = classify(&StreamEvidence::Text(Some(TextEvidence {
         branch: sat::Terminator::Asm,
-        header: &kernel,
+        header: &kernel.metadata,
     })))
     .declared()
     .clone();
@@ -263,7 +273,7 @@ fn the_declared_keys_are_pinned() {
     let silent = classify(&StreamEvidence::Binary {
         family: Family::Asm,
         header: &header(None),
-        framed: true,
+        stream: Some(RecordStreamStart(0)),
     })
     .declared()
     .clone();
@@ -415,7 +425,11 @@ fn an_unverified_band_recovers_the_same_solid_as_the_verified_one() {
         assert_eq!(result.ir().model.bodies.len(), 1, "{label}");
         assert_eq!(result.ir().model.faces.len(), 1, "{label}");
         assert_eq!(result.ir().model.surfaces.len(), 1, "{label}");
-        assert_eq!(result.report().coverage()["unknown_records"], 0, "{label}");
+        assert_eq!(
+            wire::coverage(result.report())["unknown_records"],
+            0,
+            "{label}"
+        );
     }
 }
 

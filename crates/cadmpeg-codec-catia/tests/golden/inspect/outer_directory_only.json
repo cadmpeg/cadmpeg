@@ -1,13 +1,5 @@
 {
   "container_kind": "v5-cfv2",
-  "dialects": {
-    "extra": [],
-    "primary": {
-      "admission": "residual",
-      "dialect": "catia:unknown",
-      "format": "catia"
-    }
-  },
   "entries": [
     {
       "attributes": {
@@ -16,20 +8,33 @@
         "extent_count": "1",
         "extent_flags": "0x00000000"
       },
-      "compressed_size": 20,
       "compression": "none",
       "name": "RootStorage",
       "role": "stream",
-      "uncompressed_size": 20
+      "size": {
+        "form": "exact",
+        "size": 20
+      }
     }
   ],
-  "format": "catia",
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "residual",
+        "dialect": "catia:unknown"
+      }
+    }
+  },
   "losses": [
     {
       "code": {
         "code": "source.dialect-unverified",
         "kind": "source_dialect_unverified",
-        "namespace": "catia"
+        "namespace": "catia",
+        "scope": "namespaced",
+        "strict_floor": "warning"
       },
       "message": "This container matched no CATIA V5 storage family's structural invariants, so it is `catia:unknown`. No decode route declares a grammar for that row, and no declared dialect grammar was substituted; the file was admitted under the metadata-IR fallback, which enumerates the container and retains the source bytes without applying any family's record grammar.",
       "severity": "warning"

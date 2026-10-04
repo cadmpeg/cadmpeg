@@ -2,65 +2,106 @@
 //! Bounded decoder for the historical Unix `compress` (`.Z`) LZW stream.
 
 use crate::layout::unix_compress_header as unix_compress;
+use cadmpeg_core::decode::{
+    u64_from_index, DecodeContext, ExpandSpec, ExpandWriter, ScopedReservation,
+};
+use cadmpeg_core::CodecError;
 
 const BLOCK_MODE: u8 = 0x80;
 const CLEAR: u16 = 256;
 
-pub(crate) fn decode(data: &[u8], expected_length: usize) -> Option<Vec<u8>> {
+pub(crate) fn decode(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    expected_length: usize,
+) -> Result<Option<Vec<u8>>, CodecError> {
     if data.get(unix_compress::MAGIC..unix_compress::FLAGS) != Some(&[0x1f, 0x9d]) {
-        return None;
+        return Ok(None);
     }
-    let flags = *data.get(unix_compress::FLAGS)?;
-    let rest = data.get(unix_compress::LEN..)?;
+    let Some(&flags) = data.get(unix_compress::FLAGS) else {
+        return Ok(None);
+    };
+    let Some(rest) = data.get(unix_compress::LEN..) else {
+        return Ok(None);
+    };
     let max_bits = usize::from(flags & 0x1f);
     if !(9..=16).contains(&max_bits) || flags & !(BLOCK_MODE | 0x1f) != 0 {
-        return None;
+        return Ok(None);
     }
     let block_mode = flags & BLOCK_MODE != 0;
     let dictionary_limit = 1usize << max_bits;
-    let mut prefix =
-        cadmpeg_core::decode::alloc_filled(dictionary_limit, 0u16, "creo_lzw_prefix").ok()?;
-    let mut suffix =
-        cadmpeg_core::decode::alloc_filled(dictionary_limit, 0u8, "creo_lzw_suffix").ok()?;
+    let reservation =
+        ctx.reserve_scoped(u64_from_index(expected_length), "inflate Creo TOC section")?;
+    let mut output = ctx.begin_expand(ExpandSpec::Exact(u64_from_index(expected_length)))?;
+    let dictionary_bytes = dictionary_limit * 4;
+    let _dictionary_reservation = ctx.reserve_scoped(
+        u64_from_index(dictionary_bytes),
+        "decode Creo LZW dictionary",
+    )?;
+    let mut prefix = ctx.alloc_filled(dictionary_limit, 0u16, "creo LZW prefix slots")?;
+    let mut suffix = ctx.alloc_filled(dictionary_limit, 0u8, "creo LZW suffix slots")?;
     for (value, slot) in suffix.iter_mut().take(256).enumerate() {
-        *slot = u8::try_from(value).ok()?;
+        let Ok(value) = u8::try_from(value) else {
+            return Ok(None);
+        };
+        *slot = value;
     }
 
     let mut reader = CodeReader::new(rest, max_bits);
     let mut free_entry = if block_mode { 257usize } else { 256usize };
-    let first = usize::from(reader.next(free_entry, false)?);
+    let Some(first) = reader.next(free_entry, false) else {
+        return Ok(None);
+    };
+    let first = usize::from(first);
     if first >= 256 {
-        return None;
+        return Ok(None);
     }
     let mut old_code = first;
-    let mut final_byte = u8::try_from(first).ok()?;
-    let mut output = Vec::with_capacity(expected_length);
-    output.push(final_byte);
-    let mut stack = Vec::new();
-
-    if output.len() == expected_length {
-        return Some(output);
+    let Ok(mut final_byte) = u8::try_from(first) else {
+        return Ok(None);
+    };
+    if expected_length == 0 {
+        return Ok(None);
     }
+    output.write(&[final_byte])?;
+    let mut written: usize = 1;
+    let mut stack_storage = ctx.reserve_scoped(0, "Creo LZW stack storage")?;
+    let mut stack = stack_storage
+        .with_storage(|| ctx.collection_vec(dictionary_limit, "creo LZW stack slots"))?;
 
     while let Some(raw_code) = reader.next(free_entry, false) {
+        ctx.charge_work(1, "decode Creo LZW code")?;
         if block_mode && raw_code == CLEAR {
             free_entry = 257;
             let Some(code) = reader.next(free_entry, true) else {
-                break;
+                return Err(CodecError::malformed(
+                    "Creo LZW clear code has no following literal",
+                ));
             };
             let code = usize::from(code);
             if code >= 256 {
-                return None;
+                return Err(CodecError::malformed(
+                    "Creo LZW clear code is followed by a nonliteral",
+                ));
             }
             old_code = code;
-            final_byte = u8::try_from(code).ok()?;
-            output.push(final_byte);
-            if output.len() > expected_length {
-                return None;
+            let Ok(byte) = u8::try_from(code) else {
+                return Ok(None);
+            };
+            final_byte = byte;
+            written = written.checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "creo LZW expansion length",
+                    u64_from_index(expected_length),
+                    u64::MAX,
+                )
+            })?;
+            if written > expected_length {
+                return Err(CodecError::malformed(
+                    "Creo LZW expansion exceeds its TOC length",
+                ));
             }
-            if output.len() == expected_length {
-                return Some(output);
-            }
+            output.write(&[final_byte])?;
             continue;
         }
 
@@ -68,37 +109,80 @@ pub(crate) fn decode(data: &[u8], expected_length: usize) -> Option<Vec<u8>> {
         let mut code = input_code;
         if code >= free_entry {
             if code != free_entry {
-                return None;
+                return Err(CodecError::malformed(
+                    "Creo LZW stream contains an undefined code",
+                ));
+            }
+            if stack.len() == dictionary_limit {
+                return Ok(None);
             }
             stack.push(final_byte);
             code = old_code;
         }
         while code >= 256 {
+            ctx.charge_work(1, "decode Creo LZW dictionary chain")?;
             if code >= free_entry || code >= dictionary_limit {
-                return None;
+                return Ok(None);
+            }
+            if stack.len() == dictionary_limit {
+                return Ok(None);
             }
             stack.push(suffix[code]);
             code = usize::from(prefix[code]);
         }
-        final_byte = u8::try_from(code).ok()?;
-        output.push(final_byte);
-        output.extend(stack.drain(..).rev());
-        if output.len() > expected_length {
-            return None;
+        let Ok(byte) = u8::try_from(code) else {
+            return Ok(None);
+        };
+        final_byte = byte;
+        let Some(next_written) = written
+            .checked_add(1)
+            .and_then(|value| value.checked_add(stack.len()))
+        else {
+            return Ok(None);
+        };
+        if next_written > expected_length {
+            return Err(CodecError::malformed(
+                "Creo LZW expansion exceeds its TOC length",
+            ));
         }
-        if output.len() == expected_length {
-            return Some(output);
-        }
+        output.write(&[final_byte])?;
+        stack.reverse();
+        output.write(&stack)?;
+        stack.clear();
+        written = next_written;
 
         if free_entry < dictionary_limit {
-            prefix[free_entry] = u16::try_from(old_code).ok()?;
+            let Ok(previous) = u16::try_from(old_code) else {
+                return Ok(None);
+            };
+            prefix[free_entry] = previous;
             suffix[free_entry] = final_byte;
             free_entry += 1;
         }
         old_code = input_code;
     }
 
-    (output.len() == expected_length).then_some(output)
+    if written != expected_length {
+        return Err(CodecError::malformed(
+            "Creo LZW expansion does not equal its TOC length",
+        ));
+    }
+    ctx.charge_work(16, "creo LZW final padding")?;
+    if !reader.padding_is_zero() {
+        return Err(CodecError::malformed(
+            "Creo LZW stream has invalid final padding",
+        ));
+    }
+    finish_expansion(output, reservation).map(Some)
+}
+
+fn finish_expansion(
+    output: ExpandWriter<'_, '_>,
+    reservation: ScopedReservation<'_>,
+) -> Result<Vec<u8>, CodecError> {
+    let bytes = output.finalize_owned()?;
+    reservation.commit()?;
+    Ok(bytes)
 }
 
 struct CodeReader<'a> {
@@ -124,6 +208,17 @@ impl<'a> CodeReader<'a> {
         }
     }
 
+    fn padding_is_zero(&self) -> bool {
+        if self.cursor != self.data.len() {
+            return false;
+        }
+        let bits = self.block.len() * 8;
+        if self.bit_offset > bits || bits - self.bit_offset >= self.width {
+            return false;
+        }
+        (self.bit_offset..bits).all(|bit| ((self.block[bit / 8] >> (bit % 8)) & 1) == 0)
+    }
+
     fn next(&mut self, free_entry: usize, clear: bool) -> Option<u16> {
         let max_code = (1usize << self.width) - 1;
         if clear {
@@ -141,7 +236,7 @@ impl<'a> CodeReader<'a> {
             if self.cursor >= self.data.len() {
                 return None;
             }
-            let end = self.cursor.saturating_add(self.width).min(self.data.len());
+            let end = self.cursor.checked_add(self.width)?.min(self.data.len());
             self.block = &self.data[self.cursor..end];
             self.cursor = end;
             self.bit_offset = 0;
@@ -167,7 +262,127 @@ impl<'a> CodeReader<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    fn codes(values: &[u16]) -> Vec<u8> {
+        let mut bytes = vec![0; values.len().saturating_mul(9).div_ceil(8)];
+        for (index, value) in values.iter().copied().enumerate() {
+            for bit in 0..9 {
+                bytes[(index * 9 + bit) / 8] |= u8::try_from((value >> bit) & 1)
+                    .expect("required invariant")
+                    << ((index * 9 + bit) % 8);
+            }
+        }
+        bytes
+    }
+
+    use super::CLEAR;
+
+    fn decode(data: &[u8], expected_length: usize) -> Option<Vec<u8>> {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+            .expect("test stream is admitted");
+        match super::decode(&ctx, data, expected_length) {
+            Ok(value) => value,
+            Err(cadmpeg_core::CodecError::Malformed(_)) => None,
+            Err(error) => panic!("test stream resource refusal: {error}"),
+        }
+    }
+
+    #[test]
+    fn toc_expansion_refuses_before_materializing_output() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let stream = [0x1f, 0x9d, 0x10, 0x41, 0x84, 0x0c, 0x01];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 2;
+        let (ctx, _) = DecodeContext::from_root_bytes(&stream, &arena, &policy)
+            .expect("small compressed input is admitted");
+        let error = super::decode(&ctx, &stream, 3)
+            .expect_err("three output bytes exceed the two-byte live reservation");
+        assert!(matches!(
+            error,
+            CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::MaterializedBytes
+                    && limit.operation == "inflate Creo TOC section"
+        ));
+    }
+
+    #[test]
+    fn toc_expansion_refuses_per_expansion_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let stream = [0x1f, 0x9d, 0x10, 0x41, 0x84, 0x0c, 0x01];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_decompressed_bytes_per_expand = 2;
+        let (ctx, _) = DecodeContext::from_root_bytes(&stream, &arena, &policy)
+            .expect("small compressed input is admitted");
+        let error = super::decode(&ctx, &stream, 3)
+            .expect_err("three output bytes exceed the two-byte expansion limit");
+        assert!(matches!(
+            error,
+            CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::DecompressedBytes
+                    && limit.operation == "begin_expand"
+        ));
+    }
+
+    #[test]
+    fn toc_expansions_share_the_cumulative_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let stream = [0x1f, 0x9d, 0x10, 0x41, 0x84, 0x0c, 0x01];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_decompressed_bytes_total = 5;
+        let (ctx, _) = DecodeContext::from_root_bytes(&stream, &arena, &policy)
+            .expect("small compressed input is admitted");
+        assert_eq!(
+            super::decode(&ctx, &stream, 3).expect("first section is admitted"),
+            Some(b"ABC".to_vec())
+        );
+        let error = super::decode(&ctx, &stream, 3)
+            .expect_err("second section exceeds the remaining two bytes");
+        assert!(matches!(
+            error,
+            CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::DecompressedBytes
+                    && limit.operation == "begin_expand"
+        ));
+    }
+
+    #[test]
+    fn lzw_stack_slots_refuse_at_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let stream = [0x1f, 0x9d, 0x10, 0x41, 0x84, 0x0c, 0x01];
+        let arena = DecodeArena::new();
+        let service = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&stream, &arena, &service)
+            .expect("service profile admits input");
+        assert_eq!(
+            super::decode(&ctx, &stream, 3).expect("service profile admits LZW stack"),
+            Some(b"ABC".to_vec())
+        );
+
+        let mut limited = service;
+        limited.limits.max_collection_items = 2 * (1 << 16);
+        let (ctx, _) = DecodeContext::from_root_bytes(&stream, &arena, &limited)
+            .expect("root bytes are within the limit");
+        let err = super::decode(&ctx, &stream, 3)
+            .expect_err("the dictionary fills the item budget before the stack");
+        assert!(matches!(
+            err,
+            CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "creo LZW stack slots"
+        ));
+    }
 
     #[test]
     fn decodes_literal_non_block_stream() {
@@ -190,18 +405,6 @@ mod tests {
 
     #[test]
     fn non_block_mode_starts_with_literal_dictionary_slot_256() {
-        fn codes(values: &[u16]) -> Vec<u8> {
-            let mut bytes = vec![0; values.len().saturating_mul(9).div_ceil(8)];
-            for (index, value) in values.iter().copied().enumerate() {
-                for bit in 0..9 {
-                    bytes[(index * 9 + bit) / 8] |= u8::try_from((value >> bit) & 1)
-                        .expect("required invariant")
-                        << ((index * 9 + bit) % 8);
-                }
-            }
-            bytes
-        }
-
         let mut stream = vec![0x1f, 0x9d, 0x10];
         stream.extend(codes(&[u16::from(b'A'), u16::from(b'A'), 256]));
         assert_eq!(decode(&stream, 4), Some(b"AAAA".to_vec()));
@@ -216,7 +419,12 @@ mod tests {
         for (width, block) in [(9, &values[..257]), (10, &values[257..])] {
             for chunk in block.chunks(8) {
                 let block_offset = packed.len();
-                packed.resize(block_offset + width, 0);
+                let bytes = if width == 10 {
+                    (chunk.len() * width).div_ceil(8)
+                } else {
+                    width
+                };
+                packed.resize(block_offset + bytes, 0);
                 for (index, value) in chunk.iter().copied().enumerate() {
                     for bit in 0..width {
                         let bit_offset = index * width + bit;
@@ -249,23 +457,72 @@ mod tests {
 
     #[test]
     fn block_mode_clear_reserves_the_clear_code() {
-        fn codes(values: &[u16]) -> Vec<u8> {
-            let mut bytes = vec![0; values.len().saturating_mul(9).div_ceil(8)];
-            for (index, value) in values.iter().copied().enumerate() {
-                for bit in 0..9 {
-                    bytes[(index * 9 + bit) / 8] |= u8::try_from((value >> bit) & 1)
-                        .expect("required invariant")
-                        << ((index * 9 + bit) % 8);
-                }
-            }
-            bytes
-        }
-
         let mut stream = vec![0x1f, 0x9d, 0x90];
         let mut first_block = codes(&[u16::from(b'A'), CLEAR]);
         first_block.resize(9, 0);
         stream.extend(first_block);
         stream.extend(codes(&[u16::from(b'B'), u16::from(b'C'), 257]));
         assert_eq!(decode(&stream, 5), Some(b"ABCBC".to_vec()));
+    }
+    #[test]
+    fn expansion_owns_one_payload_buffer() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 3;
+        let stream = [0x1f, 0x9d, 0x10, 0x41, 0x84, 0x0c, 0x01];
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&stream, &arena, &policy)
+                .expect("root");
+        assert_eq!(
+            super::decode(&ctx, &stream, 3).expect("one retained buffer"),
+            Some(b"ABC".to_vec())
+        );
+    }
+    #[test]
+    fn lzw_rejects_output_after_declared_prefix() {
+        let stream = [0x1f, 0x9d, 0x10, 0x41, 0x84, 0x0c, 0x01];
+        crate::decode::with_test_decode_ctx(|ctx| {
+            assert!(matches!(
+                super::decode(ctx, &stream, 1),
+                Err(cadmpeg_core::CodecError::Malformed(_))
+            ));
+        });
+    }
+
+    #[test]
+    fn lzw_rejects_invalid_code_after_declared_prefix() {
+        let mut stream = vec![0x1f, 0x9d, 0x10];
+        stream.extend(codes(&[65, 400]));
+        crate::decode::with_test_decode_ctx(|ctx| {
+            assert!(matches!(
+                super::decode(ctx, &stream, 1),
+                Err(cadmpeg_core::CodecError::Malformed(_))
+            ));
+        });
+    }
+
+    #[test]
+    fn lzw_rejects_nonzero_terminal_padding() {
+        let stream = [0x1f, 0x9d, 0x10, 0x41, 0x80];
+        crate::decode::with_test_decode_ctx(|ctx| {
+            assert!(matches!(
+                super::decode(ctx, &stream, 1),
+                Err(cadmpeg_core::CodecError::Malformed(_))
+            ));
+        });
+    }
+    #[test]
+    fn lzw_rejects_invalid_clear_literal_after_declared_prefix() {
+        let mut stream = vec![0x1f, 0x9d, 0x90];
+        let mut first_block = codes(&[u16::from(b'A'), CLEAR]);
+        first_block.resize(9, 0);
+        stream.extend(first_block);
+        stream.extend(codes(&[CLEAR]));
+        crate::decode::with_test_decode_ctx(|ctx| {
+            assert!(matches!(
+                super::decode(ctx, &stream, 1),
+                Err(cadmpeg_core::CodecError::Malformed(_))
+            ));
+        });
     }
 }

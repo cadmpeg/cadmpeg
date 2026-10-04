@@ -1,15 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature-state recipes, operation names, and model reference names.
 
+#[cfg(test)]
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
+
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 
 use super::schema::SchemaClass;
 use crate::psb;
 
 /// Exact procedural recipe stored in a feature-state record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FeatureRecipe {
+pub(crate) enum FeatureRecipe {
     /// Additive linear section sweep named `protextrude`.
     ProtrudeExtrude,
     /// Subtractive linear section sweep named `cutextrude`.
@@ -22,7 +26,7 @@ pub enum FeatureRecipe {
 
 /// Geometry family selected by a procedural feature recipe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FeatureRecipeKind {
+pub(crate) enum FeatureRecipeKind {
     /// Linear section sweep.
     Extrude,
     /// Rotational section sweep.
@@ -31,7 +35,7 @@ pub enum FeatureRecipeKind {
 
 /// Boolean effect selected by a procedural feature recipe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FeatureRecipeEffect {
+pub(crate) enum FeatureRecipeEffect {
     /// Material-adding operation.
     Protrude,
     /// Material-removing operation.
@@ -40,7 +44,7 @@ pub enum FeatureRecipeEffect {
 
 impl FeatureRecipe {
     /// Exact stored recipe name without its NUL terminator.
-    pub const fn name(self) -> &'static str {
+    pub(crate) const fn name(self) -> &'static str {
         match self {
             Self::ProtrudeExtrude => "protextrude",
             Self::CutExtrude => "cutextrude",
@@ -50,7 +54,7 @@ impl FeatureRecipe {
     }
 
     /// Section-sweep geometry family.
-    pub const fn kind(self) -> FeatureRecipeKind {
+    pub(crate) const fn kind(self) -> FeatureRecipeKind {
         match self {
             Self::ProtrudeExtrude | Self::CutExtrude => FeatureRecipeKind::Extrude,
             Self::ProtrudeRevolve | Self::CutRevolve => FeatureRecipeKind::Revolve,
@@ -58,7 +62,7 @@ impl FeatureRecipe {
     }
 
     /// Boolean effect of the section sweep.
-    pub const fn effect(self) -> FeatureRecipeEffect {
+    pub(crate) const fn effect(self) -> FeatureRecipeEffect {
         match self {
             Self::ProtrudeExtrude | Self::ProtrudeRevolve => FeatureRecipeEffect::Protrude,
             Self::CutExtrude | Self::CutRevolve => FeatureRecipeEffect::Cut,
@@ -75,7 +79,7 @@ const FEATURE_RECIPES: &[(&[u8], FeatureRecipe)] = &[
 
 /// Stored identifier keyword, preserving `id` versus `ID`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum IdKeyword {
+pub(crate) enum IdKeyword {
     /// Lowercase `id`.
     Id,
     /// Uppercase `ID`.
@@ -91,7 +95,7 @@ impl IdKeyword {
         }
     }
 
-    pub fn as_str(self) -> &'static str {
+    fn as_str(self) -> &'static str {
         match self {
             Self::Id => "id",
             Self::ID => "ID",
@@ -101,7 +105,7 @@ impl IdKeyword {
 
 /// Source of a feature-operation display name.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum OperationName {
+pub(crate) enum OperationName {
     /// Stored `<Kind> id <N>` display name.
     Stored {
         /// Exact stored operation-name bytes excluding the NUL terminator.
@@ -116,30 +120,31 @@ pub enum OperationName {
 }
 
 impl OperationName {
-    pub fn display_name_stored(&self) -> bool {
+    pub(crate) fn display_name_stored(&self) -> bool {
         matches!(self, Self::Stored { .. })
     }
 
-    pub fn stored_name(&self) -> Option<String> {
+    #[cfg(test)]
+    pub(crate) fn stored_name(&self) -> Option<String> {
         self.stored_name_bytes()
             .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
     }
 
-    pub fn stored_name_bytes(&self) -> Option<&[u8]> {
+    pub(crate) fn stored_name_bytes(&self) -> Option<&[u8]> {
         match self {
             Self::Stored { bytes, .. } => Some(bytes),
             Self::Derived => None,
         }
     }
 
-    pub fn identifier_keyword(&self) -> Option<&str> {
+    pub(crate) fn identifier_keyword(&self) -> Option<&str> {
         match self {
             Self::Stored { keyword, .. } => Some(keyword.as_str()),
             Self::Derived => None,
         }
     }
 
-    pub fn stored_name_prefix(&self) -> Option<u8> {
+    pub(crate) fn stored_name_prefix(&self) -> Option<u8> {
         match self {
             Self::Stored { prefix, .. } => *prefix,
             Self::Derived => None,
@@ -149,7 +154,7 @@ impl OperationName {
 
 /// Operation-family kind named by a feature-state record.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum OperationKind {
+pub(crate) enum OperationKind {
     /// Family name taken from a stored display name.
     Stored(String),
     /// Linear section-sweep family.
@@ -161,7 +166,7 @@ pub enum OperationKind {
 }
 
 impl OperationKind {
-    pub fn as_str(&self) -> &str {
+    pub(crate) fn as_str(&self) -> &str {
         match self {
             Self::Stored(value) => value,
             Self::Extrude => "Extrude",
@@ -180,11 +185,11 @@ impl OperationKind {
 
 /// DEPDB recipe prefix pairing a schema class with a parent feature.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DepdbPrefix {
+pub(crate) struct DepdbPrefix {
     /// Root feature-definition schema class.
-    pub schema: SchemaClass,
+    pub(crate) schema: SchemaClass,
     /// Previous or parent feature identifier.
-    pub parent: u32,
+    pub(crate) parent: u32,
 }
 
 /// Resolution of a feature's procedural recipe in one stored source state.
@@ -192,7 +197,7 @@ pub struct DepdbPrefix {
 /// A source state that competes with another may still name the recipe it
 /// stored; that candidate is source evidence, not a resolution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RecipeState {
+pub(crate) enum RecipeState {
     /// No recipe is stored.
     None,
     /// One recipe is resolved.
@@ -206,7 +211,7 @@ pub enum RecipeState {
 
 impl RecipeState {
     /// Resolved recipe available to geometry consumers.
-    pub fn resolved(self) -> Option<FeatureRecipe> {
+    pub(super) fn resolved(self) -> Option<FeatureRecipe> {
         match self {
             Self::Resolved(recipe) => Some(recipe),
             Self::None | Self::Conflicting { .. } => None,
@@ -214,7 +219,7 @@ impl RecipeState {
     }
 
     /// Stored recipe candidate retained for source records.
-    pub fn candidate(self) -> Option<FeatureRecipe> {
+    pub(crate) fn candidate(self) -> Option<FeatureRecipe> {
         match self {
             Self::Resolved(recipe) => Some(recipe),
             Self::Conflicting { candidate } => candidate,
@@ -223,7 +228,7 @@ impl RecipeState {
     }
 
     /// Whether competing recipes prevent resolution.
-    pub fn is_conflicting(self) -> bool {
+    pub(crate) fn is_conflicting(self) -> bool {
         matches!(self, Self::Conflicting { .. })
     }
 }
@@ -239,7 +244,7 @@ impl From<Option<FeatureRecipe>> for RecipeState {
 /// The projection selects one state per feature, so competing recipes leave
 /// no candidate to carry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RecipeResolution {
+pub(crate) enum RecipeResolution {
     /// No recipe is stored.
     None,
     /// One recipe is resolved.
@@ -250,7 +255,7 @@ pub enum RecipeResolution {
 
 impl RecipeResolution {
     /// Resolved recipe available to geometry consumers.
-    pub fn resolved(self) -> Option<FeatureRecipe> {
+    pub(crate) fn resolved(self) -> Option<FeatureRecipe> {
         match self {
             Self::Resolved(recipe) => Some(recipe),
             Self::None | Self::Conflicting => None,
@@ -258,7 +263,7 @@ impl RecipeResolution {
     }
 
     /// Whether competing recipes prevent resolution.
-    pub fn is_conflicting(self) -> bool {
+    pub(crate) fn is_conflicting(self) -> bool {
         matches!(self, Self::Conflicting)
     }
 }
@@ -281,40 +286,40 @@ impl From<RecipeState> for RecipeResolution {
 
 mod sealed {
     /// Closed set of procedural recipe forms.
-    pub trait Sealed {}
+    pub(crate) trait Sealed {}
 
     impl Sealed for super::RecipeState {}
     impl Sealed for super::RecipeResolution {}
 }
 
 /// Stored or resolved procedural recipe form.
-pub trait RecipeForm: sealed::Sealed {}
+pub(crate) trait RecipeForm: sealed::Sealed {}
 
 impl RecipeForm for RecipeState {}
 impl RecipeForm for RecipeResolution {}
 
 /// One stored feature-state record, before current-state selection.
-pub type FeatureOperationState = FeatureOperation<RecipeState>;
+pub(crate) type FeatureOperationState = FeatureOperation<RecipeState>;
 
 /// Feature-operation family named by a feature-state record.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureOperation<R: RecipeForm = RecipeResolution> {
+pub(crate) struct FeatureOperation<R: RecipeForm = RecipeResolution> {
     /// Numeric feature identifier following `id` in the stored name.
-    pub feature_id: u32,
+    pub(crate) feature_id: u32,
     /// Operation-family kind.
-    pub kind: OperationKind,
+    pub(crate) kind: OperationKind,
     /// Display-name source.
-    pub name: OperationName,
+    pub(crate) name: OperationName,
     /// Procedural recipe resolution for this state.
-    pub recipe: R,
+    pub(crate) recipe: R,
     /// Multiple stored display states prevent a unique current-state selection.
-    pub display_state_conflict: bool,
+    pub(crate) display_state_conflict: bool,
     /// DEPDB recipe prefix, when present.
-    pub depdb: Option<DepdbPrefix>,
+    pub(crate) depdb: Option<DepdbPrefix>,
     /// Byte offset of the operation name in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Byte offset including the optional stored-name prefix.
-    pub state_offset: usize,
+    pub(crate) state_offset: usize,
 }
 
 impl FeatureOperationState {
@@ -334,61 +339,61 @@ impl FeatureOperationState {
 }
 
 impl<R: RecipeForm> FeatureOperation<R> {
-    pub fn display_name_stored(&self) -> bool {
+    pub(crate) fn display_name_stored(&self) -> bool {
         self.name.display_name_stored()
     }
 
-    pub fn stored_name(&self) -> Option<String> {
+    #[cfg(test)]
+    pub(crate) fn stored_name(&self) -> Option<String> {
         self.name.stored_name()
     }
 
-    pub fn stored_name_bytes(&self) -> Option<&[u8]> {
-        self.name.stored_name_bytes()
-    }
-
-    pub fn identifier_keyword(&self) -> Option<&str> {
-        self.name.identifier_keyword()
-    }
-
-    pub fn stored_name_prefix(&self) -> Option<u8> {
+    pub(crate) fn stored_name_prefix(&self) -> Option<u8> {
         self.name.stored_name_prefix()
     }
 
-    pub fn root_schema_class(&self) -> Option<SchemaClass> {
+    pub(crate) fn root_schema_class(&self) -> Option<SchemaClass> {
         self.depdb.map(|prefix| prefix.schema)
     }
 
-    pub fn parent_feature_id(&self) -> Option<u32> {
+    pub(crate) fn parent_feature_id(&self) -> Option<u32> {
         self.depdb.map(|prefix| prefix.parent)
     }
 }
 
 /// Feature name joined to its model feature identifier by `mdl_feat_ref_info_new`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureReferenceName {
+pub(crate) struct FeatureReferenceName {
     /// Numeric model feature identifier.
-    pub feature_id: u32,
+    pub(crate) feature_id: u32,
     /// Exact stored feature-name bytes excluding the NUL terminator.
-    pub name_bytes: Vec<u8>,
+    pub(crate) name_bytes: Vec<u8>,
     /// Reference-database object identifier.
-    pub own_reference_id: u32,
+    pub(crate) own_reference_id: u32,
     /// Stored reference type.
-    pub reference_type: u32,
+    pub(crate) reference_type: u32,
     /// Byte offset of the `f7 0x71` entry header.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
+#[cfg(test)]
 impl FeatureReferenceName {
     /// Stored name decoded with replacement for invalid UTF-8 sequences.
-    pub fn name(&self) -> Cow<'_, str> {
+    pub(crate) fn name(&self) -> Cow<'_, str> {
         String::from_utf8_lossy(&self.name_bytes)
     }
 }
 
 /// Decode structurally closed feature-name entries from model reference data.
-pub fn reference_names(payload: &[u8]) -> Vec<FeatureReferenceName> {
+pub(crate) fn reference_names(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<FeatureReferenceName>, CodecError> {
     let mut names = Vec::new();
-    for offset in 0..payload.len().saturating_sub(2) {
+    let Some(last) = payload.len().checked_sub(2) else {
+        return Ok(names);
+    };
+    for offset in 0..last {
         if payload.get(offset..offset + 2) != Some(&[psb::token::ENTITY_REF, 0x71]) {
             continue;
         }
@@ -403,8 +408,8 @@ pub fn reference_names(payload: &[u8]) -> Vec<FeatureReferenceName> {
             continue;
         }
         let Some(name_end) = payload
-            .get(name_start..name_start.saturating_add(256).min(payload.len()))
-            .and_then(|tail| tail.iter().position(|byte| *byte == 0))
+            .get(name_start..)
+            .and_then(|tail| tail.iter().take(256).position(|byte| *byte == 0))
             .map(|relative| name_start + relative)
         else {
             continue;
@@ -422,15 +427,16 @@ pub fn reference_names(payload: &[u8]) -> Vec<FeatureReferenceName> {
         {
             continue;
         }
+        ctx.reserve_vec(&mut names, 1, "creo reference name entries")?;
         names.push(FeatureReferenceName {
             feature_id,
-            name_bytes: name_bytes.to_vec(),
+            name_bytes: ctx.copy_retained(name_bytes, "creo reference name bytes")?,
             own_reference_id,
             reference_type,
             offset,
         });
     }
-    names
+    Ok(names)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -441,7 +447,10 @@ struct FeatureRecipeBinding {
     offset: usize,
 }
 
-fn recipe_bindings(payload: &[u8]) -> Vec<(u32, FeatureRecipeBinding)> {
+fn recipe_bindings(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<(u32, FeatureRecipeBinding)>, CodecError> {
     let mut bindings = Vec::new();
     for marker in 0..payload.len() {
         if payload.get(marker) != Some(&psb::token::ENTITY_REF) {
@@ -461,8 +470,8 @@ fn recipe_bindings(payload: &[u8]) -> Vec<(u32, FeatureRecipeBinding)> {
         }
         let (parent_feature_id, display_start) = psb::compact_int(payload, after_schema + 1);
         let Some(display_end) = payload
-            .get(display_start..display_start.saturating_add(96).min(payload.len()))
-            .and_then(|bytes| bytes.iter().position(|byte| *byte == 0))
+            .get(display_start..)
+            .and_then(|bytes| bytes.iter().take(96).position(|byte| *byte == 0))
             .map(|relative| display_start + relative)
         else {
             continue;
@@ -477,6 +486,7 @@ fn recipe_bindings(payload: &[u8]) -> Vec<(u32, FeatureRecipeBinding)> {
             .iter()
             .find(|(name, _)| payload.get(recipe_start..recipe_start + name.len()) == Some(*name))
         {
+            ctx.reserve_vec(&mut bindings, 1, "creo recipe bindings")?;
             bindings.push((
                 feature_id,
                 FeatureRecipeBinding {
@@ -488,7 +498,7 @@ fn recipe_bindings(payload: &[u8]) -> Vec<(u32, FeatureRecipeBinding)> {
             ));
         }
     }
-    bindings
+    Ok(bindings)
 }
 
 fn agreeing_recipe_binding(bindings: &[FeatureRecipeBinding]) -> Option<FeatureRecipeBinding> {
@@ -516,19 +526,38 @@ fn inline_recipe_resolution(record: &[u8]) -> RecipeState {
     found.into()
 }
 
-fn conflicting_recipe_features(bindings: &[(u32, FeatureRecipeBinding)]) -> BTreeSet<u32> {
+fn conflicting_recipe_features(
+    ctx: &DecodeContext<'_>,
+    bindings: &[(u32, FeatureRecipeBinding)],
+) -> Result<BTreeSet<u32>, CodecError> {
     let mut by_feature = BTreeMap::<u32, Vec<FeatureRecipeBinding>>::new();
     for (feature_id, binding) in bindings {
-        by_feature.entry(*feature_id).or_default().push(*binding);
+        ctx.admit_btree_entry(&by_feature, feature_id, "creo recipe feature nodes")?;
+        match by_feature.entry(*feature_id) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                let mut values = Vec::new();
+                ctx.reserve_vec(&mut values, 1, "creo recipe feature bindings")?;
+                values.push(*binding);
+                entry.insert(values);
+            }
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                let values = entry.get_mut();
+                ctx.reserve_vec(values, 1, "creo recipe feature bindings")?;
+                values.push(*binding);
+            }
+        }
     }
-    by_feature
-        .into_iter()
-        .filter_map(|(feature_id, bindings)| {
-            agreeing_recipe_binding(&bindings)
-                .is_none()
-                .then_some(feature_id)
-        })
-        .collect()
+    let mut conflicting = BTreeSet::new();
+    for (feature_id, bindings) in by_feature {
+        if agreeing_recipe_binding(&bindings).is_none() {
+            ctx.insert_btree_set(
+                &mut conflicting,
+                feature_id,
+                "creo conflicting recipe features",
+            )?;
+        }
+    }
+    Ok(conflicting)
 }
 
 fn agreeing_value<T: Clone + Eq>(mut values: impl Iterator<Item = T>) -> Option<T> {
@@ -538,24 +567,37 @@ fn agreeing_value<T: Clone + Eq>(mut values: impl Iterator<Item = T>) -> Option<
 
 /// Decode every NUL-terminated `<Kind> id <N>` operation state and bounded
 /// procedural-recipe record from one feature-state namespace, in byte order.
-pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperationState> {
+pub(crate) fn operation_states(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<FeatureOperationState>, CodecError> {
     const SEPARATORS: &[&[u8]] = &[b" id ", b" ID "];
     let family_byte = |byte: u8| {
         byte.is_ascii_alphanumeric()
             || byte >= 0x80
             || matches!(byte, b' ' | b'_' | b'-' | b'/' | b'(' | b')')
     };
-    let bound_recipes = recipe_bindings(payload);
-    let conflicting_features = conflicting_recipe_features(&bound_recipes);
-    let recipe_binding_counts = bound_recipes.iter().fold(
-        BTreeMap::<u32, usize>::new(),
-        |mut counts, (feature_id, _)| {
-            *counts.entry(*feature_id).or_default() += 1;
-            counts
-        },
-    );
+    let bound_recipes = recipe_bindings(ctx, payload)?;
+    let conflicting_features = conflicting_recipe_features(ctx, &bound_recipes)?;
+    let mut recipe_binding_counts = BTreeMap::<u32, usize>::new();
+    for (feature_id, _) in &bound_recipes {
+        ctx.admit_btree_entry(
+            &recipe_binding_counts,
+            feature_id,
+            "creo recipe binding counts",
+        )?;
+        match recipe_binding_counts.entry(*feature_id) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(1);
+            }
+            std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
+        }
+    }
     let mut result = Vec::new();
-    for separator in 0..payload.len().saturating_sub(4) {
+    let Some(last) = payload.len().checked_sub(4) else {
+        return Ok(result);
+    };
+    for separator in 0..last {
         let Some(separator_bytes) = SEPARATORS.iter().find(|candidate| {
             payload.get(separator..separator + candidate.len()) == Some(**candidate)
         }) else {
@@ -588,7 +630,10 @@ pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperationState> {
         if end == 0 || !digits[..end].iter().all(u8::is_ascii_digit) {
             continue;
         }
-        let Ok(feature_id) = String::from_utf8_lossy(&digits[..end]).parse::<u32>() else {
+        let Some(feature_id) = std::str::from_utf8(&digits[..end])
+            .ok()
+            .and_then(|digits| digits.parse::<u32>().ok())
+        else {
             continue;
         };
         let record_start = payload[..offset]
@@ -596,24 +641,42 @@ pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperationState> {
             .rposition(|byte| *byte == 0xe3)
             .map_or(0, |position| position + 1);
         let record = &payload[record_start..offset];
-        let matching_recipes = bound_recipes
+        let mut matching_recipes = bound_recipes
             .iter()
             .filter(|(candidate, _)| *candidate == feature_id)
-            .map(|(_, binding)| *binding)
-            .collect::<Vec<_>>();
-        let bound_recipe = agreeing_recipe_binding(&matching_recipes);
-        let recipe = if matching_recipes.is_empty() {
+            .map(|(_, binding)| binding);
+        let first_binding = matching_recipes.next().copied();
+        let bound_recipe = first_binding.filter(|first| {
+            matching_recipes.all(|binding| {
+                binding.recipe == first.recipe
+                    && binding.root_schema_class == first.root_schema_class
+                    && binding.parent_feature_id == first.parent_feature_id
+            })
+        });
+        let recipe = if first_binding.is_none() {
             inline_recipe_resolution(record)
         } else {
             bound_recipe.map_or(RecipeState::Conflicting { candidate: None }, |binding| {
                 RecipeState::Resolved(binding.recipe)
             })
         };
+        let text_work = cadmpeg_core::decode::u64_from_index(family.len())
+            .checked_mul(6)
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("creo operation family text work", u64::MAX, u64::MAX)
+            })?;
+        ctx.charge_work(text_work, "creo operation family text work")?;
+        let kind = ctx.copy_retained_lossy_utf8(family, "creo operation family name")?;
+        let name_bytes = ctx.copy_retained(
+            &payload[state_offset..separator + separator_bytes.len() + end],
+            "creo operation stored name bytes",
+        )?;
+        ctx.reserve_vec(&mut result, 1, "creo feature operation states")?;
         result.push(FeatureOperation {
             feature_id,
-            kind: OperationKind::Stored(String::from_utf8_lossy(family).into_owned()),
+            kind: OperationKind::Stored(kind),
             name: OperationName::Stored {
-                bytes: payload[state_offset..separator + separator_bytes.len() + end].to_vec(),
+                bytes: name_bytes,
                 keyword: IdKeyword::from_bytes(&separator_bytes[1..separator_bytes.len() - 1])
                     .unwrap_or(IdKeyword::Id),
                 prefix: stored_name_prefix,
@@ -639,6 +702,7 @@ pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperationState> {
         {
             continue;
         }
+        ctx.reserve_vec(&mut result, 1, "creo feature operation states")?;
         result.push(FeatureOperation {
             feature_id,
             kind: OperationKind::from_recipe(binding.recipe),
@@ -659,79 +723,156 @@ pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperationState> {
             state_offset: binding.offset,
         });
     }
-    result.sort_by_key(|operation| operation.offset);
-    let conflicting_display_features = result
+    ctx.stable_sort_by(
+        result.as_mut_slice(),
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "creo operation states result ordering",
+    )?;
+    let mut display_counts = BTreeMap::<u32, usize>::new();
+    for operation in result
         .iter()
         .filter(|operation| operation.display_name_stored())
-        .fold(BTreeMap::<u32, usize>::new(), |mut counts, operation| {
-            *counts.entry(operation.feature_id).or_default() += 1;
-            counts
-        })
-        .into_iter()
-        .filter_map(|(feature_id, count)| (count > 1).then_some(feature_id))
-        .collect::<BTreeSet<_>>();
+    {
+        ctx.admit_btree_entry(
+            &display_counts,
+            &operation.feature_id,
+            "creo operation display counts",
+        )?;
+        match display_counts.entry(operation.feature_id) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(1);
+            }
+            std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
+        }
+    }
+    let mut conflicting_display_features = BTreeSet::new();
+    for (feature_id, count) in display_counts {
+        if count > 1 {
+            ctx.insert_btree_set(
+                &mut conflicting_display_features,
+                feature_id,
+                "creo conflicting operation displays",
+            )?;
+        }
+    }
     for operation in &mut result {
         operation.display_state_conflict =
             conflicting_display_features.contains(&operation.feature_id);
     }
-    result
+    Ok(result)
 }
 
 /// Decode one unambiguous or consensus operation projection per feature identifier.
-pub fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
-    let bindings = recipe_bindings(payload);
-    let conflicting_features = conflicting_recipe_features(&bindings);
+pub(crate) fn operations(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<FeatureOperation>, CodecError> {
+    let bindings = recipe_bindings(ctx, payload)?;
+    let conflicting_features = conflicting_recipe_features(ctx, &bindings)?;
     let mut by_feature = BTreeMap::<u32, Vec<FeatureOperationState>>::new();
-    for operation in operation_states(payload) {
-        by_feature
-            .entry(operation.feature_id)
-            .or_default()
-            .push(operation);
+    for operation in operation_states(ctx, payload)? {
+        ctx.admit_btree_entry(
+            &by_feature,
+            &operation.feature_id,
+            "creo operation feature nodes",
+        )?;
+        match by_feature.entry(operation.feature_id) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                let mut states = Vec::new();
+                ctx.reserve_vec(&mut states, 1, "creo operation feature states")?;
+                states.push(operation);
+                entry.insert(states);
+            }
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                let states = entry.get_mut();
+                ctx.reserve_vec(states, 1, "creo operation feature states")?;
+                states.push(operation);
+            }
+        }
     }
-    let mut current = by_feature
-        .into_values()
-        .filter_map(|states| {
-            let display_states = states
-                .iter()
-                .filter(|state| state.display_name_stored())
-                .collect::<Vec<_>>();
-            match display_states.as_slice() {
-                [] => states.first().cloned().map(FeatureOperationState::project),
-                [display] => Some((*display).clone().project()),
-                displays => {
-                    let mut projection = (*displays.last()?).clone().project();
-                    projection.offset = displays.first()?.offset;
-                    projection.state_offset = displays.first()?.state_offset;
-                    projection.display_state_conflict = true;
-                    projection.kind =
-                        agreeing_value(displays.iter().map(|state| state.kind.clone()))
-                            .or_else(|| {
-                                agreeing_value(displays.iter().map(|state| state.recipe.resolved()))
-                                    .flatten()
-                                    .map(OperationKind::from_recipe)
-                            })
-                            .unwrap_or(OperationKind::Native);
-                    projection.name = OperationName::Derived;
-                    projection.recipe = agreeing_value(
-                        displays
+    let mut current = Vec::new();
+    for states in by_feature.into_values() {
+        let display_count = states
+            .iter()
+            .filter(|state| state.display_name_stored())
+            .count();
+        let projection = match display_count {
+            0 => states
+                .into_iter()
+                .next()
+                .map(FeatureOperationState::project),
+            1 => states
+                .into_iter()
+                .find(FeatureOperationState::display_name_stored)
+                .map(FeatureOperationState::project),
+            _ => {
+                let first = states.iter().find(|state| state.display_name_stored());
+                let last_index = states
+                    .iter()
+                    .rposition(FeatureOperationState::display_name_stored);
+                if let (Some(first), Some(last_index)) = (first, last_index) {
+                    let first_offset = first.offset;
+                    let first_state_offset = first.state_offset;
+                    let same_kind = states
+                        .iter()
+                        .filter(|state| state.display_name_stored())
+                        .all(|state| state.kind == first.kind);
+                    let agreed_recipe = agreeing_value(
+                        states
                             .iter()
+                            .filter(|state| state.display_name_stored())
+                            .map(|state| state.recipe.resolved()),
+                    )
+                    .flatten();
+                    let recipe = agreeing_value(
+                        states
+                            .iter()
+                            .filter(|state| state.display_name_stored())
                             .map(|state| RecipeResolution::from(state.recipe)),
                     )
                     .unwrap_or(RecipeResolution::Conflicting);
-                    projection.depdb = match (
-                        agreeing_value(displays.iter().map(|state| state.root_schema_class()))
-                            .flatten(),
-                        agreeing_value(displays.iter().map(|state| state.parent_feature_id()))
-                            .flatten(),
-                    ) {
-                        (Some(schema), Some(parent)) => Some(DepdbPrefix { schema, parent }),
-                        _ => None,
-                    };
-                    Some(projection)
+                    let schema = agreeing_value(
+                        states
+                            .iter()
+                            .filter(|state| state.display_name_stored())
+                            .map(FeatureOperationState::root_schema_class),
+                    )
+                    .flatten();
+                    let parent = agreeing_value(
+                        states
+                            .iter()
+                            .filter(|state| state.display_name_stored())
+                            .map(FeatureOperationState::parent_feature_id),
+                    )
+                    .flatten();
+                    states.into_iter().nth(last_index).map(|state| {
+                        let mut projection = state.project();
+                        projection.offset = first_offset;
+                        projection.state_offset = first_state_offset;
+                        projection.display_state_conflict = true;
+                        if !same_kind {
+                            projection.kind = agreed_recipe
+                                .map_or(OperationKind::Native, OperationKind::from_recipe);
+                        }
+                        projection.name = OperationName::Derived;
+                        projection.recipe = recipe;
+                        projection.depdb = match (schema, parent) {
+                            (Some(schema), Some(parent)) => Some(DepdbPrefix { schema, parent }),
+                            _ => None,
+                        };
+                        projection
+                    })
+                } else {
+                    None
                 }
             }
-        })
-        .collect::<Vec<_>>();
+        };
+        if let Some(projection) = projection {
+            ctx.reserve_vec(&mut current, 1, "creo current operation projections")?;
+            current.push(projection);
+        }
+    }
     for operation in &mut current {
         if !conflicting_features.contains(&operation.feature_id) {
             continue;
@@ -742,18 +883,71 @@ pub fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
             operation.kind = OperationKind::Native;
         }
     }
-    current.sort_by_key(|operation| operation.offset);
-    current
+    ctx.stable_sort_by(
+        current.as_mut_slice(),
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "creo operations current ordering",
+    )?;
+    Ok(current)
 }
 
 #[cfg(test)]
 mod tests {
+    mod resource_limits;
+
     use super::reference_names;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
     use std::borrow::Cow;
 
     #[test]
+    fn reference_name_entry_refuses_before_vec_growth() {
+        let data = b"\xf7\x71\x01\x05\x02Name\0\x01\x01";
+        let run = |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(data, &arena, &policy)
+                .expect("root input is admitted");
+            reference_names(&ctx, data)
+        };
+        assert_eq!(run(1).expect("one entry admitted").len(), 1);
+        let error = run(0).expect_err("entry needs one Vec item");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo reference name entries"));
+    }
+
+    #[test]
+    fn reference_name_bytes_refuse_before_retained_copy() {
+        let data = b"\xf7\x71\x01\x05\x02Name\0\x01\x01";
+        let run = |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(data, &arena, &policy)
+                .expect("root input is admitted");
+            reference_names(&ctx, data)
+        };
+        let slots = cadmpeg_core::decode::u64_from_index(
+            4 * std::mem::size_of::<super::FeatureReferenceName>(),
+        );
+        assert_eq!(run(slots + 4).expect("four name bytes admitted").len(), 1);
+        let error = run(slots + 3).expect_err("fourth retained byte exceeds limit");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "creo reference name bytes"));
+    }
+
+    #[test]
     fn reference_name_text_follows_stored_bytes() {
-        let mut names = reference_names(b"\xf7\x71\x01\x05\x02N\xff\0\x01\x01");
+        let data = b"\xf7\x71\x01\x05\x02N\xff\0\x01\x01";
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+            .expect("root input is admitted");
+        let mut names = reference_names(&ctx, data).expect("one reference name");
         let [record] = names.as_mut_slice() else {
             panic!("one closed reference name");
         };

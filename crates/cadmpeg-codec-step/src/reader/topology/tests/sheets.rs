@@ -8,9 +8,10 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
-use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 
-use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
+use crate::export::write_step;
+use crate::{StepCodec, StepSchema, StepWriteOptions};
 
 #[test]
 pub(crate) fn decode_and_write_singular_vertex_loops() {
@@ -25,7 +26,8 @@ pub(crate) fn decode_and_write_singular_vertex_loops() {
         .loops
         .iter()
         .all(|loop_| loop_.singular_vertex().is_some()));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     let mut encoded = Vec::new();
     write_step(
@@ -61,10 +63,12 @@ pub(crate) fn decode_builds_a_valid_connected_sheet_brep() {
     assert_eq!(result.ir().model.loops.len(), 1);
     assert_eq!(result.ir().model.coedges.len(), 3);
     assert_eq!(result.ir().model.edges.len(), 3);
-    assert!(result.ir().model.edges.iter().all(|edge| {
-        edge.param_range
-            .is_some_and(|[start, end]| start.is_finite() && end.is_finite() && start < end)
-    }));
+    assert!(result
+        .ir()
+        .model
+        .edges
+        .iter()
+        .all(|edge| { edge.param_range().is_some_and(|range| range[0] < range[1]) }));
     assert_eq!(result.ir().model.vertices.len(), 3);
     assert_eq!(result.ir().model.pcurves.len(), 1);
     assert_eq!(
@@ -77,12 +81,15 @@ pub(crate) fn decode_builds_a_valid_connected_sheet_brep() {
             .count(),
         1
     );
-    assert!(matches!(
-        result.ir().model.pcurves[0].geometry,
-        cadmpeg_ir::geometry::PcurveGeometry::Line { origin, direction }
-            if origin == cadmpeg_ir::math::Point2::new(0.0, 0.0)
-                && direction == cadmpeg_ir::math::Point2::new(1.0, 0.0)
-    ));
+    assert!(
+        matches!(result.ir().model.pcurves[0].geometry, cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line_pcurve)
+                if {
+                    let origin = line_pcurve.origin().as_raw();
+        let direction = line_pcurve.direction().as_raw();
+                    *origin == cadmpeg_ir::math::Point2::new(0.0, 0.0)
+                        && *direction == cadmpeg_ir::math::Point2::new(1.0, 0.0)
+                })
+    );
     assert!(result
         .ir()
         .model
@@ -101,12 +108,7 @@ pub(crate) fn decode_builds_a_valid_connected_sheet_brep() {
         )));
     assert_eq!(
         result.ir().model.faces[0].color,
-        Some(cadmpeg_ir::topology::Color {
-            r: 0.9,
-            g: 0.1,
-            b: 0.1,
-            a: 1.0,
-        })
+        Some(cadmpeg_ir::topology::Color::new(0.9, 0.1, 0.1, 1.0).expect("valid color"))
     );
     assert_eq!(result.ir().model.presentation_layers.len(), 1);
     assert_eq!(
@@ -117,7 +119,8 @@ pub(crate) fn decode_builds_a_valid_connected_sheet_brep() {
         result.ir().model.presentation_layers[0].items.as_slice(),
         [cadmpeg_ir::PresentationItem::Face { .. }]
     ));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
     let mut output = Vec::new();
@@ -190,10 +193,10 @@ pub(crate) fn decode_builds_a_valid_ap203_sheet_brep() {
         .expect("outer composite curve");
     assert!(matches!(
         &composite.geometry,
-        cadmpeg_ir::geometry::CurveGeometry::Composite {
+        cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Composite {
             segments,
             self_intersect: Some(false)
-        } if segments.len() == 1
+        }) if segments.len() == 1
             && segments[0].curve.as_str() == "step:data:curve#36"
             && segments[0].same_sense
             && segments[0].transition
@@ -214,7 +217,8 @@ pub(crate) fn decode_builds_a_valid_ap203_sheet_brep() {
             } if support.as_str() == "step:data:surface#28"
                 && boundaries.as_slice() == [cadmpeg_ir::ids::CurveId::mint("step:data:curve#34").expect("identity grammar")]
         )));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
     let mut encoded = Vec::new();
@@ -228,12 +232,10 @@ pub(crate) fn decode_builds_a_valid_ap203_sheet_brep() {
     let roundtrip = StepCodec::default()
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("decode written composite curve graph");
-    assert!(roundtrip
-        .ir()
-        .model
-        .curves
-        .iter()
-        .any(|curve| matches!(curve.geometry, CurveGeometry::Composite { .. })));
+    assert!(roundtrip.ir().model.curves.iter().any(|curve| matches!(
+        curve.geometry,
+        CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. })
+    )));
 }
 
 #[test]
@@ -268,7 +270,8 @@ fn decode_builds_a_face_based_surface_model() {
         .losses
         .iter()
         .all(|loss| !loss.message.contains("does not resolve to a complete")));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -306,8 +309,9 @@ fn decode_builds_faceted_brep_polygon_loops() {
         .model
         .edges
         .iter()
-        .all(|edge| edge.curve.is_none()));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        .all(|edge| edge.curve().is_none()));
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -343,7 +347,8 @@ fn sheet_root_salvages_independent_shells() {
         .losses
         .iter()
         .any(|loss| loss.message.contains("shell carrier #34")));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -364,7 +369,8 @@ fn decode_builds_a_sheet_from_a_geometric_surface_set() {
         result.ir().model.faces[0].surface.as_str(),
         "step:data:surface#11"
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -416,7 +422,8 @@ fn complex_geometric_set_representation_uses_its_named_items() {
             "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #13 omitted unsupported or unresolved member(s): #15",
         )
     }));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -424,7 +431,7 @@ fn complex_geometric_set_representation_uses_its_named_items() {
 pub(crate) fn reader_recovers_a_valid_solid_from_writer_output() {
     use cadmpeg_ir::topology::BodyKind;
 
-    let source = unit_cube();
+    let source = unit_cube().expect("unit cube fixture is admitted");
     let mut bytes = Vec::new();
     write_step(
         &source,
@@ -442,6 +449,7 @@ pub(crate) fn reader_recovers_a_valid_solid_from_writer_output() {
     assert_eq!(result.ir().model.faces.len(), 6);
     assert_eq!(result.ir().model.edges.len(), 12);
     assert_eq!(result.ir().model.vertices.len(), 8);
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }

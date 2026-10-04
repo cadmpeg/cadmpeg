@@ -2,39 +2,42 @@
 //! Bulkstream and sketch/design record encoders for source-less generation.
 
 use crate::records::{
-    ConstructionRecipeKind, PersistentReferenceKind, SketchCurveGeometry, SketchPointRecordForm,
-    SketchText,
+    recipes::ConstructionRecipeKind,
+    references::PersistentReferenceKind,
+    sketch_geometry::{SketchCurveGeometry, SketchPointRecordForm, SketchText},
 };
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::ids::CoedgeId;
 
-use super::index::NativeGenerationIndex;
-use super::native_bytes::{native_f64, native_i64, native_ref};
-use super::native_geometry::native_nurbs_curve;
-use super::presentation::GeneratedDesignRegistry;
+use super::{
+    index::NativeGenerationIndex,
+    native_bytes::{native_f64, native_i64, native_ref},
+    native_geometry::native_nurbs_curve,
+    presentation::GeneratedDesignRegistry,
+};
 use crate::native::F3dNative;
 use crate::writer::primitives::native_bool;
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 
 /// Generated Design `BulkStream` and the primary offsets known while writing it.
-pub(crate) struct EncodedDesignBulkStream {
-    pub(crate) bytes: Vec<u8>,
-    pub(crate) primary_records: Vec<crate::metastream::RecordIndexEntry>,
+pub(in crate::writer::generate) struct EncodedDesignBulkStream {
+    pub(super) bytes: Vec<u8>,
+    pub(super) primary_records: Vec<crate::metastream::RecordIndexEntry>,
 }
 
-pub(crate) fn tolerant_coedge_range(
+pub(super) fn tolerant_coedge_range(
     index: &NativeGenerationIndex<'_>,
     coedge: &CoedgeId,
 ) -> Option<[f64; 2]> {
     index
         .tolerant_coedges
         .get(coedge.as_str())
-        .map(|parameters| parameters.parameter_range)
+        .map(|parameters| parameters.parameter_range.get())
 }
 
-pub(crate) fn native_tolerant_coedge_extension(
+pub(super) fn native_tolerant_coedge_extension(
     records: &mut Vec<u8>,
     target: &CadIr,
     index: &NativeGenerationIndex<'_>,
@@ -47,7 +50,7 @@ pub(crate) fn native_tolerant_coedge_extension(
     match extension {
         None
         | Some(
-            cadmpeg_asm::brep::records::TolerantCoedgeExtension::None
+            cadmpeg_asm::brep::records::TolerantCoedgeExtension::None {}
             | cadmpeg_asm::brep::records::TolerantCoedgeExtension::Empty { target: None },
         ) => {
             native_ref(records, -1);
@@ -78,14 +81,21 @@ pub(crate) fn native_tolerant_coedge_extension(
                 .ok_or_else(|| {
                     CodecError::malformed(format_args!("missing use curve {}", use_curve.curve))
                 })?;
-            let CurveGeometry::Nurbs(curve) = &curve.geometry else {
+            let Some(SolvedCurveGeometry::Nurbs(curve)) = curve.geometry.solved() else {
                 return Err(CodecError::NotImplemented(format!(
                     "source-less F3D tolerant coedge {coedge} requires a NURBS use curve"
                 )));
             };
             let mut native_curve = curve.clone();
             if *curve_reversed {
-                native_curve.reverse_parameterization();
+                let writer_arena = cadmpeg_core::decode::DecodeArena::new();
+                let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
+                let (writer_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    &[],
+                    &writer_arena,
+                    &writer_policy,
+                )?;
+                native_curve.reverse_parameterization(&writer_ctx)?;
             }
             native_ref(records, -1);
             native_i64(records, 1);
@@ -93,7 +103,8 @@ pub(crate) fn native_tolerant_coedge_extension(
             records.push(0x0f);
             native_nurbs_curve(records, &native_curve)?;
             records.push(0x10);
-            if let Some([start, end]) = *parameter_range {
+            if let Some(range) = *parameter_range {
+                let [start, end] = range.get();
                 records.push(0x0a);
                 native_f64(records, start);
                 records.push(0x0a);
@@ -110,14 +121,23 @@ pub(crate) fn native_tolerant_coedge_extension(
     }
 }
 
-pub(crate) fn encode_design_bulkstream(
+pub(super) fn encode_design_bulkstream(
     target: &CadIr,
     native: &F3dNative,
     registry: &GeneratedDesignRegistry,
     parameter_bytes: Vec<u8>,
 ) -> Result<Option<EncodedDesignBulkStream>, CodecError> {
+    let decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &decode_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )?;
+    let decode_ctx = &decode_ctx;
+
     let (_, projected_parameters) =
         crate::design::feature_project::project_parameter_design_with_edge_identities(
+            decode_ctx,
             &crate::design::feature_project::ProjectInputs {
                 native: &native.design_parameters,
                 owners: &native.design_parameter_owners,
@@ -196,10 +216,10 @@ pub(crate) fn encode_design_bulkstream(
         native_lp_ascii(&mut out, class_tag)?;
         out.extend_from_slice(&record_index.to_le_bytes());
         out.extend_from_slice(&[0; crate::design::body::GENERATED_BODY_MAP_ZERO_PREFIX_LEN]);
-        let count = u32::try_from(body_map.entries.len())
-            .map_err(|_| CodecError::Malformed("Design body map exceeds u32::MAX".into()))?;
+        let count = u32::try_from(body_map.entries.as_map().len())
+            .map_err(|_| CodecError::NotImplemented("Design body map exceeds u32::MAX".into()))?;
         out.extend_from_slice(&count.to_le_bytes());
-        for (&body_key, &entity_suffix) in &body_map.entries {
+        for (&body_key, &entity_suffix) in body_map.entries.as_map() {
             out.extend_from_slice(&body_key.to_le_bytes());
             out.extend_from_slice(&entity_suffix.to_le_bytes());
         }
@@ -214,17 +234,26 @@ pub(crate) fn encode_design_bulkstream(
         if let Some(design) = &recipe.design {
             let design_id = &design.id.value;
             if design_id.len() != 3 || !design_id.bytes().all(|byte| byte.is_ascii_digit()) {
-                return Err(CodecError::malformed(format_args!(
+                return Err(CodecError::NotImplemented(format!(
                     "source-less Design recipe id must be three ASCII digits: {design_id}"
                 )));
             }
             prefix[0..4].copy_from_slice(&3u32.to_le_bytes());
             prefix[4..7].copy_from_slice(design_id.as_bytes());
         }
-        prefix[11..15].copy_from_slice(&recipe.record_index.to_le_bytes());
+        // A generated Design recipe states its own record index; a native
+        // recipe that states none has no index word to regenerate.
+        let Some(record_index) = recipe.record_index else {
+            return Err(CodecError::NotImplemented(
+                "source-less F3D construction recipe states no record index".into(),
+            ));
+        };
+        prefix[11..15].copy_from_slice(&record_index.value.to_le_bytes());
         prefix[23..27].copy_from_slice(
             &u32::try_from(name.len())
-                .map_err(|_| CodecError::Malformed("Design recipe name exceeds u32::MAX".into()))?
+                .map_err(|_| {
+                    CodecError::NotImplemented("Design recipe name exceeds u32::MAX".into())
+                })?
                 .to_le_bytes(),
         );
         out.extend_from_slice(&prefix);
@@ -239,7 +268,7 @@ pub(crate) fn encode_design_bulkstream(
         out.extend_from_slice(&0u16.to_le_bytes());
         native_lp_ascii(&mut out, "BodiesRoot")?;
         let count = u32::try_from(native.design_body_members.len()).map_err(|_| {
-            CodecError::Malformed("Design BodiesRoot exceeds u32::MAX members".into())
+            CodecError::NotImplemented("Design BodiesRoot exceeds u32::MAX members".into())
         })?;
         out.extend_from_slice(&count.to_le_bytes());
         for member in &native.design_body_members {
@@ -262,7 +291,9 @@ pub(crate) fn encode_design_bulkstream(
         native_lp_utf16(&mut out, header.entity_id.as_str())?;
         if header.in_sketch_module() {
             let count = u32::try_from(header.reference_values().count()).map_err(|_| {
-                CodecError::Malformed("Design sketch header exceeds u32::MAX references".into())
+                CodecError::NotImplemented(
+                    "Design sketch header exceeds u32::MAX references".into(),
+                )
             })?;
             match header
                 .sketch_references()
@@ -295,7 +326,10 @@ pub(crate) fn encode_design_bulkstream(
             .iter()
             .enumerate()
             .filter(|(_, design_type)| {
-                design_type.type_guid.eq_ignore_ascii_case(expected.0)
+                design_type
+                    .type_guid
+                    .as_str()
+                    .eq_ignore_ascii_case(expected.0)
                     && design_type.version == expected.1
                     && design_type.module == expected.2
                     && design_type
@@ -319,9 +353,10 @@ pub(crate) fn encode_design_bulkstream(
         }
         let companion_class_tag = super::presentation::dynamic_class_tag(companion_type_ordinal)?;
         primary_records.push(primary_record(point.record_index, out.len())?);
-        encode_sketch_point(&mut out, point)?;
+        encode_sketch_point(decode_ctx, &mut out, point)?;
         primary_records.push(primary_record(point.paired_reference, out.len())?);
         encode_sketch_point_companion(
+            decode_ctx,
             &mut out,
             &companion_class_tag,
             point.paired_reference,
@@ -331,7 +366,7 @@ pub(crate) fn encode_design_bulkstream(
     }
     for curve in &native.sketch_curve_identities {
         primary_records.push(primary_record(curve.record_index, out.len())?);
-        encode_sketch_curve_identity(&mut out, curve)?;
+        encode_sketch_curve_identity(decode_ctx, &mut out, curve)?;
     }
     for text in &native.sketch_texts {
         primary_records.push(primary_record(text.record_index, out.len())?);
@@ -339,7 +374,7 @@ pub(crate) fn encode_design_bulkstream(
     }
     for relation in &native.sketch_relations {
         primary_records.push(primary_record(relation.record_index, out.len())?);
-        encode_sketch_relation(&mut out, relation)?;
+        encode_sketch_relation(decode_ctx, &mut out, relation)?;
     }
     for reference in &native.persistent_references {
         out.extend_from_slice(persistent_reference_name(reference.kind));
@@ -393,13 +428,13 @@ fn primary_record_u64(
     Ok(crate::metastream::RecordIndexEntry {
         entity_id,
         bulk_offset: u64::try_from(bulk_offset).map_err(|_| {
-            CodecError::Malformed("generated Design record offset exceeds u64".into())
+            CodecError::NotImplemented("generated Design record offset exceeds u64".into())
         })?,
     })
 }
 
 pub(super) fn encode_document_parameters(
-    parameters: &[crate::records::DesignParameter],
+    parameters: &[crate::records::parameters::DesignParameter],
 ) -> Result<Vec<u8>, CodecError> {
     let mut out = Vec::new();
     let mut parameter_indices = std::collections::BTreeSet::new();
@@ -419,27 +454,14 @@ pub(super) fn encode_document_parameters(
                 parameter.id, parameter.family_discriminator().map(|value| value.value.code()), parameter.source_kind()
             )));
         }
-        let crate::records::DesignParameterSource::User {
+        let crate::records::parameters::DesignParameterSource::User {
             family_discriminator,
-        } = &parameter.source
+        } = parameter.source()
         else {
             return Err(CodecError::NotImplemented(
                 "source-less F3D owned Design parameter records are not writable".into(),
             ));
         };
-        if parameter.expression.is_empty()
-            || parameter.name.is_empty()
-            || parameter
-                .unit
-                .as_ref()
-                .is_some_and(|field| field.value.is_empty())
-            || !parameter.evaluated_value.is_finite()
-        {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D Design parameter {} has an invalid document parameter value",
-                parameter.id
-            )));
-        }
         if !parameter_indices.insert(parameter.record_index)
             || !parameter_ordinals.insert(parameter.source_ordinal)
         {
@@ -455,18 +477,18 @@ pub(super) fn encode_document_parameters(
         out.push(0);
         out.extend_from_slice(&parameter.source_ordinal.to_le_bytes());
         out.push(0);
-        native_lp_utf16(&mut out, &parameter.expression)?;
+        native_lp_utf16(&mut out, parameter.expression())?;
         out.extend_from_slice(&[0; 8]);
         out.push(1);
         native_lp_utf16(&mut out, "User Parameter")?;
         out.extend_from_slice(&0u32.to_le_bytes());
-        if let Some(unit) = &parameter.unit {
-            native_lp_utf16(&mut out, &unit.value)?;
+        if let Some(unit) = parameter.unit() {
+            native_lp_utf16(&mut out, unit.value.as_str())?;
         } else {
             out.extend_from_slice(&0u32.to_le_bytes());
         }
-        native_lp_utf16(&mut out, &parameter.name)?;
-        out.extend_from_slice(&parameter.evaluated_value.to_le_bytes());
+        native_lp_utf16(&mut out, parameter.name())?;
+        out.extend_from_slice(&parameter.evaluated_value().get().to_le_bytes());
         out.extend_from_slice(&[0, 1, 19, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     }
     Ok(out)
@@ -474,7 +496,7 @@ pub(super) fn encode_document_parameters(
 
 fn encode_sketch_record_header(
     out: &mut [u8],
-    class_tag: &crate::records::DesignClassTag,
+    class_tag: &crate::records::references::DesignClassTag,
     record_index: u32,
 ) {
     out[0..4].copy_from_slice(&3u32.to_le_bytes());
@@ -483,17 +505,10 @@ fn encode_sketch_record_header(
 }
 
 fn encode_sketch_point(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut Vec<u8>,
-    point: &crate::records::SketchPoint,
+    point: &crate::records::sketch_geometry::SketchPoint,
 ) -> Result<(), CodecError> {
-    if !point.coordinates.u.is_finite()
-        || !point.coordinates.v.is_finite()
-        || !point.depth().is_finite()
-    {
-        return Err(CodecError::Malformed(
-            "source-less sketch point coordinates must be finite".into(),
-        ));
-    }
     let owner_reference = point.owner_reference.ok_or_else(|| {
         CodecError::malformed(format_args!(
             "source-less sketch point {} has no direct owner",
@@ -502,13 +517,13 @@ fn encode_sketch_point(
     })?;
     let SketchPointRecordForm::Version11 {
         padded_paired_reference,
-        companion: _,
         entity_genesis,
         depth,
         persistent_id,
         flags,
         closure,
-    } = &point.record_form
+        ..
+    } = point.record_form()
     else {
         return Err(CodecError::NotImplemented(format!(
             "source-less sketch point {} requires the version-11 member sequence",
@@ -516,7 +531,13 @@ fn encode_sketch_point(
         )));
     };
     let shift = usize::from(entity_genesis.is_some()) * 52;
-    let mut record = std::iter::repeat_n(0u8, 105 + shift).collect::<Vec<_>>();
+    let mut record = Vec::new();
+    ctx.resize_retained_bytes(
+        &mut record,
+        105 + shift,
+        0,
+        "generate F3D sketch record bytes",
+    )?;
     encode_sketch_record_header(&mut record, &point.class_tag, point.record_index);
     record[20] = 1;
     record[21..25].copy_from_slice(&(1 + u32::from(entity_genesis.is_some())).to_le_bytes());
@@ -527,15 +548,15 @@ fn encode_sketch_point(
     record[29 + shift..35 + shift].copy_from_slice(b"pt_tag");
     record[35 + shift..39 + shift].copy_from_slice(&23u32.to_le_bytes());
     record[39 + shift..62 + shift].copy_from_slice(b"IntrinsicMetaTypeuint64");
-    record[62 + shift..70 + shift].copy_from_slice(&persistent_id.to_le_bytes());
+    record[62 + shift..70 + shift].copy_from_slice(&persistent_id.get().to_le_bytes());
     record[70 + shift] = 1;
     record[71 + shift..75 + shift].copy_from_slice(&point.paired_reference.to_le_bytes());
     record[81 + shift..89 + shift].copy_from_slice(&flags.map(u8::from));
     record[89 + shift..97 + shift]
-        .copy_from_slice(&(point.coordinates.u / LEN_TO_MM).to_le_bytes());
+        .copy_from_slice(&(point.coordinates().u / LEN_TO_MM).to_le_bytes());
     record[97 + shift..105 + shift]
-        .copy_from_slice(&(point.coordinates.v / LEN_TO_MM).to_le_bytes());
-    record.extend_from_slice(&(depth / LEN_TO_MM).to_le_bytes());
+        .copy_from_slice(&(point.coordinates().v / LEN_TO_MM).to_le_bytes());
+    record.extend_from_slice(&(depth.get() / LEN_TO_MM).to_le_bytes());
     record.extend_from_slice(&closure.selector().to_le_bytes());
     record.push(closure.state());
     record.extend_from_slice(&[0; 12]);
@@ -552,24 +573,28 @@ fn encode_sketch_point(
 }
 
 fn encode_sketch_point_companion(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut Vec<u8>,
-    class_tag: &crate::records::DesignClassTag,
+    class_tag: &crate::records::references::DesignClassTag,
     record_index: u32,
     point_record_index: u32,
-    companion: Option<crate::records::SketchPointCompanionRef<'_>>,
+    companion: crate::records::sketch_geometry::SketchPointCompanionRef<'_>,
 ) -> Result<(), CodecError> {
-    let companion = companion.ok_or_else(|| {
-        CodecError::malformed(format_args!(
-            "source-less sketch point {point_record_index} has no inverse companion"
-        ))
-    })?;
     let prefix_present_zero = companion.prefix_present_zero;
     let incident_curves = companion.incident_curves;
     let count = u32::try_from(incident_curves.len()).map_err(|_| {
-        CodecError::Malformed("source-less sketch point companion exceeds u32::MAX curves".into())
+        CodecError::NotImplemented(
+            "source-less sketch point companion exceeds u32::MAX curves".into(),
+        )
     })?;
     let prefix_len = if prefix_present_zero { 25 } else { 21 };
-    let mut record = std::iter::repeat_n(0u8, prefix_len).collect::<Vec<_>>();
+    let mut record = Vec::new();
+    ctx.resize_retained_bytes(
+        &mut record,
+        prefix_len,
+        0,
+        "generate F3D sketch record bytes",
+    )?;
     encode_sketch_record_header(&mut record, class_tag, record_index);
     if prefix_present_zero {
         record[20] = 1;
@@ -585,8 +610,9 @@ fn encode_sketch_point_companion(
 }
 
 fn encode_sketch_curve_identity(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut Vec<u8>,
-    curve: &crate::records::SketchCurveIdentity,
+    curve: &crate::records::sketch_geometry::SketchCurveIdentity,
 ) -> Result<(), CodecError> {
     let owner_reference = curve.owner_reference.ok_or_else(|| {
         CodecError::malformed(format_args!(
@@ -595,7 +621,13 @@ fn encode_sketch_curve_identity(
         ))
     })?;
     let shift = usize::from(curve.entity_genesis.is_some()) * 52;
-    let mut record = std::iter::repeat_n(0u8, 133 + shift).collect::<Vec<_>>();
+    let mut record = Vec::new();
+    ctx.resize_retained_bytes(
+        &mut record,
+        133 + shift,
+        0,
+        "generate F3D sketch record bytes",
+    )?;
     encode_sketch_record_header(&mut record, &curve.class_tag, curve.record_index);
     record[20] = 1;
     record[21..25].copy_from_slice(&(2 + u32::from(curve.entity_genesis.is_some())).to_le_bytes());
@@ -606,7 +638,7 @@ fn encode_sketch_curve_identity(
     record[29 + shift..43 + shift].copy_from_slice(b"crv_primary_id");
     record[43 + shift..47 + shift].copy_from_slice(&23u32.to_le_bytes());
     record[47 + shift..70 + shift].copy_from_slice(b"IntrinsicMetaTypeuint64");
-    record[70 + shift..78 + shift].copy_from_slice(&curve.primary_id.to_le_bytes());
+    record[70 + shift..78 + shift].copy_from_slice(&curve.primary_id.get().to_le_bytes());
     record[78 + shift..82 + shift].copy_from_slice(&16u32.to_le_bytes());
     record[82 + shift..98 + shift].copy_from_slice(b"crv_secondary_id");
     record[98 + shift..102 + shift].copy_from_slice(&23u32.to_le_bytes());
@@ -619,6 +651,10 @@ fn encode_sketch_curve_identity(
             direction,
             normal,
         }) => {
+            let start = start.get();
+            let end = end.get();
+            let direction = direction.as_raw();
+            let normal = normal.as_raw();
             let values = [
                 start.x / LEN_TO_MM,
                 start.y / LEN_TO_MM,
@@ -633,7 +669,7 @@ fn encode_sketch_curve_identity(
                 normal.y,
                 normal.z,
             ];
-            encode_f64_sequence(&mut record, &values)?;
+            encode_f64_sequence(&mut record, &values);
         }
         Some(SketchCurveGeometry::Arc {
             center,
@@ -643,6 +679,9 @@ fn encode_sketch_curve_identity(
             start_angle,
             end_angle,
         }) => {
+            let center = center.as_raw();
+            let normal = normal.as_raw();
+            let reference_direction = reference_direction.as_raw();
             let values = [
                 center.x / LEN_TO_MM,
                 center.y / LEN_TO_MM,
@@ -653,31 +692,24 @@ fn encode_sketch_curve_identity(
                 reference_direction.x,
                 reference_direction.y,
                 reference_direction.z,
-                radius / LEN_TO_MM,
-                *start_angle,
-                *end_angle,
+                radius.get() / LEN_TO_MM,
+                start_angle.get(),
+                end_angle.get(),
             ];
-            encode_f64_sequence(&mut record, &values)?;
+            encode_f64_sequence(&mut record, &values);
         }
         Some(SketchCurveGeometry::Nurbs {
             carrier_reference,
             subtype_class_tag,
             subtype_record_index,
-            degree,
-            fit_tolerance,
-            scalar_width,
-            knots,
-            poles,
+            geometry,
         }) => encode_sketch_nurbs(
+            ctx,
             &mut record,
             *carrier_reference,
             subtype_class_tag,
             *subtype_record_index,
-            *degree,
-            *fit_tolerance,
-            *scalar_width,
-            knots,
-            poles,
+            geometry,
         )?,
         None => {
             return Err(CodecError::NotImplemented(format!(
@@ -699,67 +731,56 @@ fn encode_entity_genesis(record: &mut [u8], entity_genesis: u64) {
     record[69..77].copy_from_slice(&entity_genesis.to_le_bytes());
 }
 
-fn encode_f64_sequence(out: &mut Vec<u8>, values: &[f64]) -> Result<(), CodecError> {
-    if values.iter().any(|value| !value.is_finite()) {
-        return Err(CodecError::Malformed(
-            "source-less sketch geometry must contain finite scalars".into(),
-        ));
-    }
+fn encode_f64_sequence(out: &mut Vec<u8>, values: &[f64]) {
     for value in values {
         out.extend_from_slice(&value.to_le_bytes());
     }
-    Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
+/// The sketch NURBS null carrier reference.
+///
+/// `docs/formats/f3d.md`: the payload begins with "either an eight-byte
+/// all-`0xff` null sentinel or a non-null u64 carrier reference".
+const NULL_CARRIER_REFERENCE: u64 = u64::MAX;
+
 fn encode_sketch_nurbs(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     record: &mut Vec<u8>,
     carrier_reference: Option<u64>,
-    subtype_class_tag: &crate::records::DesignClassTag,
+    subtype_class_tag: &crate::records::references::DesignClassTag,
     subtype_record_index: u32,
-    degree: u32,
-    fit_tolerance: f64,
-    scalar_width: u32,
-    knots: &[f64],
-    poles: &crate::records::SketchNurbsPoles,
+    geometry: &crate::records::sketch_geometry::SketchNurbsGeometry,
 ) -> Result<(), CodecError> {
-    if scalar_width != 8 {
-        return Err(CodecError::Malformed(
-            "source-less sketch NURBS requires scalar width 8 and parallel weights".into(),
-        ));
-    }
-    let expected_knots = poles
-        .point_count()
-        .checked_add(usize::try_from(degree).unwrap_or(usize::MAX))
-        .and_then(|count| count.checked_add(1));
-    if expected_knots != Some(knots.len()) {
-        return Err(CodecError::Malformed(
-            "source-less sketch NURBS knot count must equal control points + degree + 1".into(),
-        ));
-    }
-    record.extend_from_slice(&carrier_reference.unwrap_or(u64::MAX).to_le_bytes());
+    let knots = geometry.knots();
+    let poles = geometry.poles();
+    record.extend_from_slice(
+        &carrier_reference
+            .unwrap_or(NULL_CARRIER_REFERENCE)
+            .to_le_bytes(),
+    );
     record.extend_from_slice(&3u32.to_le_bytes());
     record.extend_from_slice(subtype_class_tag.as_bytes());
     record.extend_from_slice(&subtype_record_index.to_le_bytes());
-    record.resize(133 + 88, 0);
+    ctx.resize_retained_bytes(record, 133 + 88, 0, "generate F3D sketch NURBS bytes")?;
     record.push(1);
     record.push(0);
-    record.extend_from_slice(&degree.to_le_bytes());
-    record.extend_from_slice(&(fit_tolerance / LEN_TO_MM).to_le_bytes());
+    record.extend_from_slice(&geometry.degree().to_le_bytes());
+    record.extend_from_slice(&(geometry.fit_tolerance().get() / LEN_TO_MM).to_le_bytes());
     let knot_count = u32::try_from(knots.len())
-        .map_err(|_| CodecError::Malformed("sketch NURBS has too many knots".into()))?;
+        .map_err(|_| CodecError::NotImplemented("sketch NURBS has too many knots".into()))?;
     record.extend_from_slice(&knot_count.to_le_bytes());
     record.extend_from_slice(&knot_count.to_le_bytes());
     record.extend_from_slice(&8u32.to_le_bytes());
-    encode_f64_sequence(record, knots)?;
+    encode_f64_sequence(record, knots);
     let weight_count = u32::try_from(poles.weights().len())
-        .map_err(|_| CodecError::Malformed("sketch NURBS has too many weights".into()))?;
+        .map_err(|_| CodecError::NotImplemented("sketch NURBS has too many weights".into()))?;
     record.extend_from_slice(&weight_count.to_le_bytes());
     record.extend_from_slice(&weight_count.to_le_bytes());
     record.extend_from_slice(&8u32.to_le_bytes());
-    encode_f64_sequence(record, &poles.weights().copied().collect::<Vec<_>>())?;
-    let point_count = u32::try_from(poles.point_count())
-        .map_err(|_| CodecError::Malformed("sketch NURBS has too many control points".into()))?;
+    encode_f64_sequence(record, &poles.weights().collect::<Vec<_>>());
+    let point_count = u32::try_from(poles.point_count()).map_err(|_| {
+        CodecError::NotImplemented("sketch NURBS has too many control points".into())
+    })?;
     record.extend_from_slice(&point_count.to_le_bytes());
     record.extend_from_slice(&point_count.to_le_bytes());
     record.extend_from_slice(&8u32.to_le_bytes());
@@ -773,18 +794,28 @@ fn encode_sketch_nurbs(
             ]
         })
         .collect::<Vec<_>>();
-    encode_f64_sequence(record, &coordinates)
+    encode_f64_sequence(record, &coordinates);
+    Ok(())
 }
 
 fn encode_sketch_text(out: &mut Vec<u8>, text: &SketchText) -> Result<(), CodecError> {
+    let decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &text.raw_bytes,
+        &decode_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )?;
+    let decode_ctx = &decode_ctx;
+
     let decoded = crate::design::decode::sketch::decode_sketch_text_record(
+        decode_ctx,
         &text.raw_bytes,
         "Design/BulkStream.dat",
         text.class_tag.clone(),
         text.class_version,
         text.record_index,
         0,
-    )
+    )?
     .ok_or_else(|| {
         CodecError::malformed(format_args!("invalid raw sketch-text record {}", text.id))
     })?;
@@ -814,19 +845,40 @@ fn encode_sketch_text(out: &mut Vec<u8>, text: &SketchText) -> Result<(), CodecE
     Ok(())
 }
 
+/// Least sketch-relation record the Design `BulkStream` writer emits. A
+/// relation record ends at its trailing zero byte, and the reader requires
+/// every byte from there to the next indexed-record header to be zero, so the
+/// filler carries no field. It is a fixed width of the writer's own and bounds
+/// no value the IR states.
+const SKETCH_RELATION_RECORD_FILLED_LEN: usize = 101;
+
 fn encode_sketch_relation(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut Vec<u8>,
-    relation: &crate::records::SketchRelation,
+    relation: &crate::records::sketch_relations::SketchRelation,
 ) -> Result<(), CodecError> {
     let mut record = vec![0u8; 19];
     encode_sketch_record_header(&mut record, &relation.class_tag, relation.record_index);
     record.push(1);
-    let member_count = u32::try_from(relation.members.len())
-        .map_err(|_| CodecError::Malformed("sketch relation has too many members".into()))?;
+    let member_count = u32::try_from(relation.members().len()).map_err(|_| {
+        CodecError::InvalidInput(
+            "sketch relation members: the Design record states a u32 member count".into(),
+        )
+    })?;
     record.extend_from_slice(&member_count.to_le_bytes());
-    for member in relation.members.iter() {
+    for member in relation.members().iter() {
         write_reference(&mut record, member.reference.record_index());
-        record.extend_from_slice(&member.relation_ordinal.unwrap_or(0).to_le_bytes());
+        // The member's ordinal is a stated u32 in the record, and `0` is a
+        // stated ordinal there, not an absent one. A member that retains none
+        // has no bytes to write.
+        let relation_ordinal = member.relation_ordinal.ok_or_else(|| {
+            CodecError::InvalidInput(
+                "sketch relation member relation_ordinal: the Design record states a u32 \
+                 ordinal for every member, and this member retains none"
+                    .into(),
+            )
+        })?;
+        record.extend_from_slice(&relation_ordinal.to_le_bytes());
     }
     // The base level's property-block presence byte, then the block when the
     // relation carries an `EntityGenesis` origin.
@@ -841,21 +893,31 @@ fn encode_sketch_relation(
         None => record.push(0),
     }
     for reference in relation
-        .auxiliary_references
+        .auxiliary_references()
         .values()
         .chain(std::iter::once(&relation.owner_reference))
     {
         write_reference(&mut record, *reference);
     }
     record.extend_from_slice(&relation.definition.state().to_le_bytes());
-    let return_count = u32::try_from(relation.return_members.len())
-        .map_err(|_| CodecError::Malformed("sketch relation has too many return members".into()))?;
+    let return_count = u32::try_from(relation.return_members().len()).map_err(|_| {
+        CodecError::InvalidInput(
+            "sketch relation return_members: the Design record states a u32 return count".into(),
+        )
+    })?;
     record.extend_from_slice(&return_count.to_le_bytes());
-    for member in relation.return_members.iter() {
+    for member in relation.return_members().iter() {
         write_reference(&mut record, member.reference.record_index());
     }
     record.push(0);
-    record.resize(record.len().max(101), 0);
+    if record.len() < SKETCH_RELATION_RECORD_FILLED_LEN {
+        ctx.resize_retained_bytes(
+            &mut record,
+            SKETCH_RELATION_RECORD_FILLED_LEN,
+            0,
+            "generate F3D sketch relation bytes",
+        )?;
+    }
     out.extend_from_slice(&record);
     Ok(())
 }
@@ -886,7 +948,7 @@ fn persistent_reference_name(kind: PersistentReferenceKind) -> &'static [u8] {
     }
 }
 
-pub(crate) fn encode_design_metastream(
+pub(super) fn encode_design_metastream(
     registry: &GeneratedDesignRegistry,
     primary_records: &[crate::metastream::RecordIndexEntry],
 ) -> Result<Option<Vec<u8>>, CodecError> {
@@ -907,41 +969,44 @@ pub(crate) fn encode_design_metastream(
     out.extend_from_slice(&1u32.to_le_bytes());
     out.extend_from_slice(&0u32.to_le_bytes());
     let type_count = u32::try_from(registry.types.len()).map_err(|_| {
-        CodecError::Malformed("Design MetaStream registers more than u32::MAX types".into())
+        CodecError::NotImplemented("Design MetaStream registers more than u32::MAX types".into())
     })?;
     out.extend_from_slice(&type_count.to_le_bytes());
     let mut next_entity_id = 1u64;
     for design_type in &registry.types {
-        validate_guid(&design_type.type_guid, "Design type GUID")?;
-        native_lp_ascii(&mut out, &design_type.type_guid)?;
+        native_lp_ascii(&mut out, design_type.type_guid.as_str())?;
         match &design_type.base_type_guid {
             Some(base) => {
-                validate_guid(base, "Design base type GUID")?;
-                native_lp_ascii(&mut out, base)?;
+                native_lp_ascii(&mut out, base.as_str())?;
             }
             None => out.extend_from_slice(&0u32.to_le_bytes()),
         }
         out.extend_from_slice(&design_type.version.to_le_bytes());
         if crate::bytes::is_guid_relaxed(&design_type.module) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::NotImplemented(format!(
                 "Design type module name is GUID-shaped: {}",
                 design_type.module
             )));
         }
         native_lp_ascii(&mut out, &design_type.module)?;
         let count = u32::try_from(design_type.entity_ids.len()).map_err(|_| {
-            CodecError::Malformed("Design type owns more than u32::MAX entities".into())
+            CodecError::NotImplemented("Design type owns more than u32::MAX entities".into())
         })?;
         out.extend_from_slice(&count.to_le_bytes());
         for entity_id in &design_type.entity_ids {
             out.extend_from_slice(&entity_id.to_le_bytes());
-            next_entity_id = next_entity_id.max(entity_id.saturating_add(1));
+            let next = entity_id.checked_add(1).ok_or_else(|| {
+                CodecError::Malformed("generated Design next entity id overflows".into())
+            })?;
+            if next > next_entity_id {
+                next_entity_id = next;
+            }
         }
     }
     // Named-entity list, primary record index, and secondary index.
     out.extend_from_slice(&0u32.to_le_bytes());
     let record_count = u32::try_from(primary_records.len()).map_err(|_| {
-        CodecError::Malformed("Design primary index exceeds u32::MAX records".into())
+        CodecError::NotImplemented("Design primary index exceeds u32::MAX records".into())
     })?;
     out.extend_from_slice(&record_count.to_le_bytes());
     let registered_entities = registry
@@ -1008,12 +1073,13 @@ const GENERATED_ASSET_GUID: &str = "00000000-0000-0000-0000-000000000000";
 
 fn native_lp_ascii(out: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
     if !value.bytes().all(|byte| byte.is_ascii_graphic()) {
-        return Err(CodecError::Malformed(
+        return Err(CodecError::NotImplemented(
             "Design MetaStream strings must contain printable ASCII".into(),
         ));
     }
-    let length = u32::try_from(value.len())
-        .map_err(|_| CodecError::Malformed("Design MetaStream string exceeds u32::MAX".into()))?;
+    let length = u32::try_from(value.len()).map_err(|_| {
+        CodecError::NotImplemented("Design MetaStream string exceeds u32::MAX".into())
+    })?;
     out.extend_from_slice(&length.to_le_bytes());
     out.extend_from_slice(value.as_bytes());
     Ok(())
@@ -1022,7 +1088,7 @@ fn native_lp_ascii(out: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
 fn native_lp_utf16(out: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
     let units = value.encode_utf16().collect::<Vec<_>>();
     let length = u32::try_from(units.len())
-        .map_err(|_| CodecError::Malformed("Design UTF-16 string exceeds u32::MAX".into()))?;
+        .map_err(|_| CodecError::NotImplemented("Design UTF-16 string exceeds u32::MAX".into()))?;
     out.extend_from_slice(&length.to_le_bytes());
     for unit in units {
         out.extend_from_slice(&unit.to_le_bytes());
@@ -1030,12 +1096,212 @@ fn native_lp_utf16(out: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
     Ok(())
 }
 
-fn validate_guid(value: &str, field: &str) -> Result<(), CodecError> {
-    if crate::bytes::is_guid_hyphenated(value) {
-        Ok(())
-    } else {
-        Err(CodecError::malformed(format_args!(
-            "{field} is not a canonical GUID: {value}"
-        )))
+#[cfg(test)]
+mod tests {
+    // Hand-built relations assert the written bytes; the drafts are valid by construction.
+    #![allow(clippy::unwrap_used)]
+    use super::{encode_sketch_relation, SKETCH_RELATION_RECORD_FILLED_LEN};
+    use crate::records::{
+        identity::ReferenceRun,
+        references::DesignClassTag,
+        sketch_relations::{
+            SketchRelation, SketchRelationDefinition, SketchRelationDraft, SketchRelationMember,
+            SketchRelationReturnMember,
+        },
+    };
+
+    fn registry_with_entity(entity_id: u64) -> super::GeneratedDesignRegistry {
+        super::GeneratedDesignRegistry {
+            types: vec![super::super::presentation::GeneratedDesignType {
+                type_guid: "11111111-2222-3333-4444-555555555555"
+                    .to_owned()
+                    .try_into()
+                    .unwrap(),
+                base_type_guid: None,
+                version: 1,
+                module: "Fusion".into(),
+                entity_ids: vec![entity_id],
+            }],
+            body_map: None,
+            browser_nodes: None,
+        }
+    }
+
+    #[test]
+    fn metastream_rejects_overflowed_next_entity_id() {
+        let error = super::encode_design_metastream(&registry_with_entity(u64::MAX), &[])
+            .expect_err("the next identity cannot be represented");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::Malformed(ref message)
+            if message == "generated Design next entity id overflows")
+        );
+    }
+
+    #[test]
+    fn metastream_preserves_largest_representable_next_entity_id() {
+        let bytes = super::encode_design_metastream(&registry_with_entity(u64::MAX - 1), &[])
+            .unwrap()
+            .unwrap();
+        let next_offset = bytes.len() - 16;
+        assert_eq!(
+            cadmpeg_core::decode::View::u64_le_at(&bytes, next_offset),
+            Some(u64::MAX)
+        );
+    }
+
+    /// One member whose ordinal the wire states, which is what the writer
+    /// needs: `SketchRelationMember::from_index` retains none.
+    fn stated_member(record_index: u32) -> SketchRelationMember {
+        SketchRelationMember {
+            relation_ordinal: Some(0),
+            ..SketchRelationMember::from_index(record_index)
+        }
+    }
+
+    fn relation(member_count: u32) -> SketchRelation {
+        let members = (1..=member_count).collect::<Vec<_>>();
+        SketchRelation::try_new(SketchRelationDraft {
+            id: "f3d:native:sketch-relation#filler".into(),
+            record_index: 10,
+            class_tag: DesignClassTag::try_from("300".to_owned()).unwrap(),
+            byte_offset: 0,
+            state_offset: 0,
+            owner_reference: 1,
+            owner_entity_id: None,
+            owner_reference_offset: 0,
+            auxiliary_references: ReferenceRun::located(Vec::new()),
+            rectangular_counted_reference_count: None,
+            members: members
+                .iter()
+                .copied()
+                .map(stated_member)
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+            definition: SketchRelationDefinition::new(1, None).unwrap(),
+            entity_genesis: None,
+            return_members: members
+                .iter()
+                .copied()
+                .map(SketchRelationReturnMember::from_index)
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+            raw_bytes: vec![0; 160],
+        })
+        .unwrap()
+    }
+
+    fn encoded(member_count: u32) -> Vec<u8> {
+        let mut out = Vec::new();
+        crate::test_support::with_decode_context(|ctx| {
+            encode_sketch_relation(ctx, &mut out, &relation(member_count))
+        })
+        .unwrap();
+        out
+    }
+
+    #[test]
+    fn the_relation_record_filler_is_a_writer_width_and_never_bounds_a_stated_count() {
+        // A short relation is filled to the writer's own width with the zero
+        // bytes the reader requires between the record's trailing zero and the
+        // next indexed-record header.
+        let short = encoded(1);
+        assert_eq!(short.len(), SKETCH_RELATION_RECORD_FILLED_LEN);
+
+        // Every byte the relation itself does not state is zero: take the same
+        // record one member longer and the shared prefix is identical up to
+        // the point the counts differ, with zeros beyond each content end.
+        let content_end = short
+            .iter()
+            .rposition(|byte| *byte != 0)
+            .expect("the record states nonzero bytes")
+            + 1;
+        assert!(content_end < SKETCH_RELATION_RECORD_FILLED_LEN);
+        assert!(short[content_end..].iter().all(|byte| *byte == 0));
+
+        // The stated member count reaches the bytes unfloored, and a relation
+        // whose own content passes the filler width is written whole: the
+        // width is a floor on the record, never a ceiling on a stated count.
+        assert_eq!(
+            u32::from_le_bytes(short[20..24].try_into().unwrap()),
+            1,
+            "the member count the relation states"
+        );
+        let long = encoded(6);
+        assert!(long.len() > SKETCH_RELATION_RECORD_FILLED_LEN);
+        assert_eq!(u32::from_le_bytes(long[20..24].try_into().unwrap()), 6);
+        let longer = encoded(7);
+        assert!(longer.len() > long.len());
+        assert_eq!(u32::from_le_bytes(longer[20..24].try_into().unwrap()), 7);
+    }
+}
+
+#[cfg(test)]
+mod relation_ordinal_tests {
+    #![allow(clippy::unwrap_used)]
+    use super::encode_sketch_relation;
+    use crate::records::{
+        identity::ReferenceRun,
+        references::DesignClassTag,
+        sketch_relations::{
+            SketchRelation, SketchRelationDefinition, SketchRelationDraft, SketchRelationMember,
+            SketchRelationReturnMember,
+        },
+    };
+
+    /// The record states a u32 ordinal for every member, so a member that
+    /// retains none has no bytes to write. Writing `0` there would state the
+    /// ordinal `0`, which the reader reads back as a stated ordinal.
+    #[test]
+    fn a_member_with_no_retained_ordinal_is_refused_by_name() {
+        let draft = |relation_ordinal: Option<u32>| SketchRelationDraft {
+            id: "f3d:native:sketch-relation#ordinal".into(),
+            record_index: 10,
+            class_tag: DesignClassTag::try_from("300".to_owned()).unwrap(),
+            byte_offset: 0,
+            state_offset: 0,
+            owner_reference: 1,
+            owner_entity_id: None,
+            owner_reference_offset: 0,
+            auxiliary_references: ReferenceRun::located(Vec::new()),
+            rectangular_counted_reference_count: None,
+            members: vec![SketchRelationMember {
+                relation_ordinal,
+                ..SketchRelationMember::from_index(1)
+            }]
+            .try_into()
+            .unwrap(),
+            definition: SketchRelationDefinition::new(1, None).unwrap(),
+            entity_genesis: None,
+            return_members: vec![SketchRelationReturnMember::from_index(1)]
+                .try_into()
+                .unwrap(),
+            raw_bytes: vec![0; 160],
+        };
+
+        let mut out = Vec::new();
+        crate::test_support::with_decode_context(|ctx| {
+            encode_sketch_relation(
+                ctx,
+                &mut out,
+                &SketchRelation::try_new(draft(Some(0))).unwrap(),
+            )
+        })
+        .expect("a stated ordinal writes");
+
+        let mut out = Vec::new();
+        let error = crate::test_support::with_decode_context(|ctx| {
+            encode_sketch_relation(
+                ctx,
+                &mut out,
+                &SketchRelation::try_new(draft(None)).unwrap(),
+            )
+        })
+        .expect_err("a member that retains no ordinal has no bytes to write");
+        assert!(
+            error.to_string().contains("relation_ordinal"),
+            "the refusal names the field: {error}"
+        );
     }
 }

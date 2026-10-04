@@ -41,27 +41,21 @@
         {
           "edge": "sldprt:brep:edge#40",
           "id": "sldprt:brep:coedge#30",
-          "next": "sldprt:brep:coedge#31",
           "owner_loop": "sldprt:brep:loop#20",
-          "previous": "sldprt:brep:coedge#32",
           "radial_next": "sldprt:brep:coedge#30",
           "sense": "forward"
         },
         {
           "edge": "sldprt:brep:edge#41",
           "id": "sldprt:brep:coedge#31",
-          "next": "sldprt:brep:coedge#32",
           "owner_loop": "sldprt:brep:loop#20",
-          "previous": "sldprt:brep:coedge#30",
           "radial_next": "sldprt:brep:coedge#31",
           "sense": "forward"
         },
         {
           "edge": "sldprt:brep:edge#42",
           "id": "sldprt:brep:coedge#32",
-          "next": "sldprt:brep:coedge#30",
           "owner_loop": "sldprt:brep:loop#20",
-          "previous": "sldprt:brep:coedge#31",
           "radial_next": "sldprt:brep:coedge#32",
           "sense": "forward"
         }
@@ -82,16 +76,19 @@
       "drawings": [],
       "edges": [
         {
+          "carrier": {},
           "end": "sldprt:brep:vertex#51",
           "id": "sldprt:brep:edge#40",
           "start": "sldprt:brep:vertex#50"
         },
         {
+          "carrier": {},
           "end": "sldprt:brep:vertex#52",
           "id": "sldprt:brep:edge#41",
           "start": "sldprt:brep:vertex#51"
         },
         {
+          "carrier": {},
           "end": "sldprt:brep:vertex#50",
           "id": "sldprt:brep:edge#42",
           "start": "sldprt:brep:vertex#52"
@@ -106,9 +103,12 @@
             "r": 0.25
           },
           "id": "sldprt:brep:face#10",
-          "loops": [
-            "sldprt:brep:loop#20"
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "sldprt:brep:loop#20"
+            ]
+          },
           "sense": "forward",
           "shell": "sldprt:brep:shell#0",
           "surface": "sldprt:brep:surf#10"
@@ -117,12 +117,14 @@
       "features": [],
       "loops": [
         {
-          "boundary_role": "unspecified",
-          "coedges": [
-            "sldprt:brep:coedge#30",
-            "sldprt:brep:coedge#31",
-            "sldprt:brep:coedge#32"
-          ],
+          "boundary": {
+            "coedges": [
+              "sldprt:brep:coedge#30",
+              "sldprt:brep:coedge#31",
+              "sldprt:brep:coedge#32"
+            ],
+            "kind": "ring"
+          },
           "face": "sldprt:brep:face#10",
           "id": "sldprt:brep:loop#20"
         }
@@ -174,10 +176,13 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [
-            "sldprt:brep:face#10"
-          ],
           "id": "sldprt:brep:shell#0",
+          "members": [
+            {
+              "id": "sldprt:brep:face#10",
+              "kind": "face"
+            }
+          ],
           "region": "sldprt:brep:region#0"
         }
       ],
@@ -281,36 +286,35 @@
         "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>"
       },
-      "dialects": {
-        "extra": [
-          {
-            "admission": "admitted",
-            "declared": {
-              "carrier": "block@8:Contents/Config-0-Partition+0",
-              "schema": "SCH_SW_33103_11000"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [
+            {
+              "admission": "admitted",
+              "declared": {
+                "carrier": "block@8:Contents/Config-0-Partition+0",
+                "schema": "SCH_SW_33103_11000"
+              },
+              "dialect": "parasolid:sch-sw-33103",
+              "instance": "block@8:Contents/Config-0-Partition+0"
             },
-            "dialect": "parasolid:sch-sw-33103",
-            "format": "parasolid",
-            "instance": "block@8:Contents/Config-0-Partition+0"
-          },
-          {
-            "admission": "admitted",
-            "declared": {
-              "carrier": "block@283:Contents/Config-0-Deltas+0",
-              "schema": "SCH_SW_33103_11000"
-            },
-            "dialect": "parasolid:sch-sw-33103",
-            "format": "parasolid",
-            "instance": "block@283:Contents/Config-0-Deltas+0"
+            {
+              "admission": "admitted",
+              "declared": {
+                "carrier": "block@283:Contents/Config-0-Deltas+0",
+                "schema": "SCH_SW_33103_11000"
+              },
+              "dialect": "parasolid:sch-sw-33103",
+              "instance": "block@283:Contents/Config-0-Deltas+0"
+            }
+          ],
+          "primary": {
+            "admission": "residual",
+            "dialect": "sldprt:unknown"
           }
-        ],
-        "primary": {
-          "admission": "residual",
-          "dialect": "sldprt:unknown",
-          "format": "sldprt"
         }
-      },
-      "format": "sldprt"
+      }
     },
     "tolerances": {
       "angular": 1e-10,
@@ -321,44 +325,42 @@
     }
   },
   "report": {
-    "container_only": false,
-    "dialects": {
-      "extra": [
-        {
-          "admission": "admitted",
-          "declared": {
-            "carrier": "block@8:Contents/Config-0-Partition+0",
-            "schema": "SCH_SW_33103_11000"
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [
+          {
+            "admission": "admitted",
+            "declared": {
+              "carrier": "block@8:Contents/Config-0-Partition+0",
+              "schema": "SCH_SW_33103_11000"
+            },
+            "dialect": "parasolid:sch-sw-33103",
+            "instance": "block@8:Contents/Config-0-Partition+0"
           },
-          "dialect": "parasolid:sch-sw-33103",
-          "format": "parasolid",
-          "instance": "block@8:Contents/Config-0-Partition+0"
-        },
-        {
-          "admission": "admitted",
-          "declared": {
-            "carrier": "block@283:Contents/Config-0-Deltas+0",
-            "schema": "SCH_SW_33103_11000"
-          },
-          "dialect": "parasolid:sch-sw-33103",
-          "format": "parasolid",
-          "instance": "block@283:Contents/Config-0-Deltas+0"
+          {
+            "admission": "admitted",
+            "declared": {
+              "carrier": "block@283:Contents/Config-0-Deltas+0",
+              "schema": "SCH_SW_33103_11000"
+            },
+            "dialect": "parasolid:sch-sw-33103",
+            "instance": "block@283:Contents/Config-0-Deltas+0"
+          }
+        ],
+        "primary": {
+          "admission": "residual",
+          "dialect": "sldprt:unknown"
         }
-      ],
-      "primary": {
-        "admission": "residual",
-        "dialect": "sldprt:unknown",
-        "format": "sldprt"
       }
     },
-    "format": "sldprt",
-    "geometry_transferred": true,
     "losses": [
       {
         "code": {
           "code": "topology.body-hierarchy-derived",
           "kind": "topology_gauge_substituted",
-          "namespace": "sldprt"
+          "namespace": "sldprt",
+          "scope": "namespaced"
         },
         "message": "No body record was available; one body/region/shell hierarchy was derived.",
         "severity": "warning"
@@ -367,7 +369,9 @@
         "code": {
           "code": "source.dialect-unverified",
           "kind": "source_dialect_unverified",
-          "namespace": "sldprt"
+          "namespace": "sldprt",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on the `sldprt:unknown` residual path without substituting a declared dialect grammar: the feature-operation form-code padding filter is not applied, and an operation code binds only where the four- and eight-byte candidates agree. Agreement is consistency, not a declaration.",
         "severity": "warning"
@@ -376,7 +380,8 @@
         "code": {
           "code": "config.inferred-without-native",
           "kind": "feature_history_retained",
-          "namespace": "sldprt"
+          "namespace": "sldprt",
+          "scope": "namespaced"
         },
         "message": "1 configuration state(s) are inferred from geometry partitions without native configuration definitions.",
         "severity": "warning"
@@ -386,171 +391,172 @@
       "outer version word: 0x00000004; 2 CRC-validated block(s), 0 tail-directory entry/entries, 0 cache-cell(s), 0 compound stream(s)",
       "active Parasolid B-rep candidate: Contents/Config-0-Partition (602 bytes, schema SCH_SW_33103_11000)",
       "Parasolid body streams supply the typed topology and analytic carriers used by decode"
-    ]
+    ],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {
       "exactness": {
         "sldprt:brep:body#0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "sldprt:brep:region#0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "sldprt:brep:shell#0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "sldprt:brep:surf#10": {
-          "entity": "byte_exact",
           "fields": {
             "geometry.u_axis": "derived"
-          }
+          },
+          "scope": "fields"
         }
       },
       "provenance": {
         "sldprt:appearance:entity53#900": {
           "offset": 26,
-          "stream": 1,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_53_color"
         },
         "sldprt:brep:body#0": {
           "offset": 0,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "synthetic_grouping"
         },
         "sldprt:brep:coedge#30": {
           "offset": 204,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_11"
         },
         "sldprt:brep:coedge#31": {
           "offset": 227,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_11"
         },
         "sldprt:brep:coedge#32": {
           "offset": 250,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_11"
         },
         "sldprt:brep:edge#40": {
           "offset": 273,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_10"
         },
         "sldprt:brep:edge#41": {
           "offset": 303,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_10"
         },
         "sldprt:brep:edge#42": {
           "offset": 333,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_10"
         },
         "sldprt:brep:face#10": {
           "offset": 149,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_0e"
         },
         "sldprt:brep:loop#20": {
           "offset": 188,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_0f"
         },
         "sldprt:brep:point#60": {
           "offset": 441,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_1d"
         },
         "sldprt:brep:point#61": {
           "offset": 481,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_1d"
         },
         "sldprt:brep:point#62": {
           "offset": 521,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_1d"
         },
         "sldprt:brep:region#0": {
           "offset": 0,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "synthetic_grouping"
         },
         "sldprt:brep:shell#0": {
           "offset": 0,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "synthetic_grouping"
         },
         "sldprt:brep:surf#10": {
           "offset": 58,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "compact_surface"
         },
         "sldprt:brep:vertex#50": {
           "offset": 363,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_12"
         },
         "sldprt:brep:vertex#51": {
           "offset": 389,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_12"
         },
         "sldprt:brep:vertex#52": {
           "offset": 415,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_12"
         },
         "sldprt:file:block#283": {
           "offset": 283,
-          "stream": 2,
+          "stream": "Contents/Config-0-Deltas",
           "tag": "parasolid"
         },
         "sldprt:file:block#8": {
           "offset": 8,
-          "stream": 0,
+          "stream": "Contents/Config-0-Partition",
           "tag": "parasolid"
         },
         "sldprt:file:source-image#0": {
           "offset": 0,
-          "stream": 3,
+          "stream": "source",
           "tag": "source_image"
         }
-      },
-      "streams": [
-        "Contents/Config-0-Partition",
-        "partition body",
-        "Contents/Config-0-Deltas",
-        "source"
-      ]
+      }
     },
-    "retained_records": [
-      {
-        "byte_len": 96,
-        "data": "UFMAAAALZGVsdGFzIGJvZHkAABJTQ0hfU1dfMzMxMDNfMTEwMDAAUQAAAAECvAAAAAEAFQAAAAAAAAAAAAADhABTAAAAAwOEP9AAAAAAAAA/4AAAAAAAAD/oAAAAAAAA",
-        "id": "sldprt:file:block#283",
+    "retained_records": {
+      "sldprt:file:block#283": {
+        "bytes": {
+          "data": "UFMAAAALZGVsdGFzIGJvZHkAABJTQ0hfU1dfMzMxMDNfMTEwMDAAUQAAAAECvAAAAAEAFQAAAAAAAAAAAAADhABTAAAAAwOEP9AAAAAAAAA/4AAAAAAAAD/oAAAAAAAA",
+          "retention": "inline"
+        },
         "offset": 0,
-        "sha256": "fe54d1661c7f5b79439332b7509598a1d1803708427085cdf4d254c6a90c4f0a",
         "stream": "Contents/Config-0-Deltas"
       },
-      {
-        "byte_len": 602,
-        "data": "UFMAAAAOcGFydGl0aW9uIGJvZHkAABJTQ0hfU1dfMzMxMDNfMTEwMDAAUQAAAAECvAAAAAEAFQAAAAAAAAAAAAADhABTAAAAAwOEP9AAAAAAAAA/4AAAAAAAAD/oAAAAAAAAADIAZAAAAAAAAAAAAAAAAAAAKwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOAAoAAAAAArzCvJKPmW4AAAAAAAAAFAAAAGQrAAAAAAAAAAAAAAAPABQAAAAAAAAAHgAKAAAAEQAeAAAAFAAAAB8AMgAAACgAAAAAKwARAB8AAAAUAAAAIAAzAAAAKQAAAAArABEAIAAAABQAAAAeADQAAAAqAAAAACsAEAAoAAAAAAAAwrySj5luAAAAAAAAAAAAAAAAAAAAEAApAAAAAAAAwrySj5luAAAAAAAAAAAAAAAAAAAAEAAqAAAAAAAAwrySj5luAAAAAAAAAAAAAAAAAAAAEgAyAAAAAAAAAAAAAAAAADzCvJKPmW4AAAASADMAAAAAAAAAAAAAAAAAPcK8ko+ZbgAAABIANAAAAAAAAAAAAAAAAAA+wrySj5luAAAAHQA8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB0APQAAAAAAAAAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAdAD4AAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAAAAAAAAAAAA=",
-        "id": "sldprt:file:block#8",
+      "sldprt:file:block#8": {
+        "bytes": {
+          "data": "UFMAAAAOcGFydGl0aW9uIGJvZHkAABJTQ0hfU1dfMzMxMDNfMTEwMDAAUQAAAAECvAAAAAEAFQAAAAAAAAAAAAADhABTAAAAAwOEP9AAAAAAAAA/4AAAAAAAAD/oAAAAAAAAADIAZAAAAAAAAAAAAAAAAAAAKwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOAAoAAAAAArzCvJKPmW4AAAAAAAAAFAAAAGQrAAAAAAAAAAAAAAAPABQAAAAAAAAAHgAKAAAAEQAeAAAAFAAAAB8AMgAAACgAAAAAKwARAB8AAAAUAAAAIAAzAAAAKQAAAAArABEAIAAAABQAAAAeADQAAAAqAAAAACsAEAAoAAAAAAAAwrySj5luAAAAAAAAAAAAAAAAAAAAEAApAAAAAAAAwrySj5luAAAAAAAAAAAAAAAAAAAAEAAqAAAAAAAAwrySj5luAAAAAAAAAAAAAAAAAAAAEgAyAAAAAAAAAAAAAAAAADzCvJKPmW4AAAASADMAAAAAAAAAAAAAAAAAPcK8ko+ZbgAAABIANAAAAAAAAAAAAAAAAAA+wrySj5luAAAAHQA8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB0APQAAAAAAAAAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAdAD4AAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAAAAAAAAAAAA=",
+          "retention": "inline"
+        },
         "offset": 0,
-        "sha256": "5b1504d820335fd8233c12b225e907aa50dc5cece6cdf2ea9bb59f4d6338b4e4",
         "stream": "Contents/Config-0-Partition"
       },
-      {
-        "byte_len": 405,
-        "data": "AQAAAAAAAAQUAAYACAAgAAAAjCnTcN4AAABaAgAAGwAAADT25kdW5kc38jT25maWdtID0gUWJ0eWR5b25o2Qq27CYBiGn1E30ZVmky2Vg5mWTtJWzExCKiYbSA0GFoLB45fguJcqroBLQCK5hOU/0AOsyR7xf/nf7/TmG6eA+T1drefr+XLhzZb5Buz04zNLv7IwDPwwCwLf95kAD51CvLxQYmwRIwxjmxyVkpx0POuSITkN3vgnyaUZ7zB5FKFTHIrdz36h1Wcgry95kpLAlQ1dXF3WYwi8Klddelr2CIH+Vfa07PIODJRsqTZo7L5iqe7WrBzSkrWlqYpRWWVLXxVRLSOsVcRlxmHUcr0mDlH923pzh/gv+bb+FxQABgAIACEAAAAkeXyESAAAAGAAAAAYAAAANPbmR1bmRzfyNPbmZpZ20gPSRFbGRxY3CwhmYGDgTknNKUksVkjKT6lkYBAKdvaIDw6PNzY2NDCONzQ0MDBgCGRgYGBk2gMiGUQZ4IC5hQGkn5m5xf4CRMT+AZR+AaEB",
-        "id": "sldprt:file:source-image#0",
+      "sldprt:file:source-image#0": {
+        "bytes": {
+          "data": "AQAAAAAAAAQUAAYACAAgAAAAjCnTcN4AAABaAgAAGwAAADT25kdW5kc38jT25maWdtID0gUWJ0eWR5b25o2Qq27CYBiGn1E30ZVmky2Vg5mWTtJWzExCKiYbSA0GFoLB45fguJcqroBLQCK5hOU/0AOsyR7xf/nf7/TmG6eA+T1drefr+XLhzZb5Buz04zNLv7IwDPwwCwLf95kAD51CvLxQYmwRIwxjmxyVkpx0POuSITkN3vgnyaUZ7zB5FKFTHIrdz36h1Wcgry95kpLAlQ1dXF3WYwi8Klddelr2CIH+Vfa07PIODJRsqTZo7L5iqe7WrBzSkrWlqYpRWWVLXxVRLSOsVcRlxmHUcr0mDlH923pzh/gv+bb+FxQABgAIACEAAAAkeXyESAAAAGAAAAAYAAAANPbmR1bmRzfyNPbmZpZ20gPSRFbGRxY3CwhmYGDgTknNKUksVkjKT6lkYBAKdvaIDw6PNzY2NDCONzQ0MDBgCGRgYGBk2gMiGUQZ4IC5hQGkn5m5xf4CRMT+AZR+AaEB",
+          "retention": "inline"
+        },
         "offset": 0,
-        "sha256": "22e1641e3f98e6483e9e68a42c063fa33656528308f92ec637e21b16822fa278",
-        "stream": "sldprt"
+        "stream": "source"
       }
-    ]
+    }
   }
 }

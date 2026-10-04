@@ -1,0 +1,1942 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Record-decoder tests for the `b2` family over synthetic byte fixtures.
+
+#![allow(clippy::doc_markdown, clippy::unwrap_used)]
+
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+use cadmpeg_ir::scalar::FiniteReal;
+
+use crate::test_support::test_a5a8::a5_surface_stream;
+use crate::test_support::test_b2::{
+    b2_adjacent_face_counted_owner_stream, b2_adjacent_face_owner_stream,
+    b2_adjacent_secondary_face_owner_stream, b2_all_compact_owner_packet_stream, b2_circle_stream,
+    b2_class5b5c_stream, b2_cone_face_stream, b2_cone_stream, b2_construction_use_stream,
+    b2_counted_61_stream, b2_cylinder_stream, b2_edge_node_stream, b2_edge_parameter_stream,
+    b2_edge_parameter_stream_for, b2_face_node_5f_stream, b2_group_stream,
+    b2_implicit_axis_cylinder_stream, b2_line_profile_stream, b2_long_61_stream,
+    b2_offset_support_stream, b2_owner_chart_stream, b2_owner_chart_stream_with_extended_bridge,
+    b2_owner_packet_stream, b2_parameter_point_stream, b2_pcurve_stream, b2_plane_carrier_stream,
+    b2_range_origin_cylinder_stream, b2_reference_list_stream, b2_resolved_revolution_stream,
+    b2_revolution_stream, b2_sphere_stream, b2_topology_edge_run_stream,
+    b2_topology_metadata_stream, b2_torus_stream, b2_width_coded_owner_chart_stream,
+    b2_width_coded_owner_packet_stream, b2_width_coded_owner_with_allocation_stream,
+    b3_cylinder_stream, b3_offset_support_stream,
+};
+use crate::test_support::test_b5::{finite, finite_vector, increasing, positive_angle};
+
+fn parsed_b2_nurbs_curves(data: &[u8]) -> Vec<crate::families::b2::records::B2NurbsCurve> {
+    crate::test_support::with_service_context(|ctx| {
+        crate::families::b2::records::b2_nurbs_curves(ctx, data).expect("service decode")
+    })
+}
+
+fn parsed_owner_identity_targets(
+    data: &[u8],
+    records: &[crate::wire::records::ConsolidatedRecord],
+) -> Vec<crate::families::b2::records::B2OwnerIdentityTarget> {
+    crate::test_support::with_service_context(|ctx| {
+        super::b2_owner_identity_targets_from_records(ctx, data, records).expect("service decode")
+    })
+}
+
+fn parsed_owner_charts(
+    data: &[u8],
+    records: &[crate::wire::records::ConsolidatedRecord],
+) -> Vec<crate::families::b2::records::B2OwnerChart> {
+    crate::test_support::with_service_context(|ctx| {
+        super::b2_owner_charts_from_records(ctx, data, records).expect("service decode")
+    })
+}
+
+#[test]
+fn b_family_pcurve_parser_reads_six_channel_uv_jet() {
+    let pcurves = crate::families::b2::records::b2_pcurves(&b2_pcurve_stream());
+    assert_eq!(pcurves.len(), 1);
+    assert_eq!(pcurves[0].support_id, 0x1234);
+    assert_eq!(pcurves[0].second_derivatives(), vec![[0.0, 0.0]; 2]);
+}
+
+#[test]
+fn b2_parameter_point_parser_reads_uv_station_and_unsplit_layouts() {
+    use crate::families::b2::records::B2ParameterPointPayload;
+
+    let points = crate::families::b2::records::b2_parameter_points(&b2_parameter_point_stream());
+    assert_eq!(points.len(), 4);
+    assert_eq!(
+        points
+            .iter()
+            .map(|point| point.prefix.as_u8())
+            .collect::<Vec<_>>(),
+        [0x05, 0x09, 0x0d, 0x11]
+    );
+    assert_eq!(points[0].payload.layout(), 0x12);
+    assert!(matches!(
+        &points[0].payload,
+        B2ParameterPointPayload::Uv { uv } if *uv == [2.0, 3.0]
+    ));
+    assert!(matches!(
+        &points[1].payload,
+        B2ParameterPointPayload::StationUv {
+            station,
+            uv,
+        } if station.get() == 11.0 && *uv == [4.0, 5.0]
+    ));
+    assert!(matches!(
+        &points[2].payload,
+        B2ParameterPointPayload::FiveScalars { .. }
+    ));
+    assert!(matches!(
+        &points[3].payload,
+        B2ParameterPointPayload::StationUv {
+            station,
+            uv,
+        } if station.get() == 12.0 && *uv == [6.0, 7.0]
+    ));
+}
+
+#[test]
+fn b2_plane_carrier_parser_preserves_each_selector_layout() {
+    use crate::families::b2::records::B2PlaneCarrierPayload;
+
+    let carriers = crate::families::b2::records::b2_plane_carriers(&b2_plane_carrier_stream());
+    assert_eq!(carriers.len(), 3);
+    assert_eq!(
+        carriers
+            .iter()
+            .map(|carrier| carrier.payload.selector())
+            .collect::<Vec<_>>(),
+        [0xe4, 0xc4, 0xec]
+    );
+    let point = cadmpeg_ir::math::Point3::new(10.0, 20.0, 0.0);
+    let direction = cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0);
+    assert!(matches!(
+        &carriers[0].payload,
+        B2PlaneCarrierPayload::PointDirection2 {
+            origin,
+            frame,
+            tail,
+        } if origin.get() == point
+            && *frame.reference().as_raw() == direction
+            && *tail == [5.0, -2.0, 3.0]
+    ));
+    assert!(matches!(
+        &carriers[1].payload,
+        B2PlaneCarrierPayload::PointDirection3 {
+            origin,
+            frame,
+            tail,
+            ..
+        } if origin.get() == point
+            && *frame.reference().as_raw() == direction
+            && *tail == [5.0, -2.0, 3.0]
+    ));
+    assert!(matches!(
+        &carriers[2].payload,
+        B2PlaneCarrierPayload::PointTail {
+            point,
+            tail,
+        } if *point == [10.0, 20.0] && *tail == [-2.0, 5.0, -2.0, 3.0]
+    ));
+    assert_eq!(carriers[0].end - carriers[0].pos, 63);
+}
+
+#[test]
+fn b2_plane_carrier_parser_retains_unclassified_scalar_lanes() {
+    use crate::families::b2::records::B2PlaneCarrierPayload;
+
+    let mut stream = b2_plane_carrier_stream();
+    let values = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
+    stream.extend_from_slice(&[
+        0xb2,
+        0x03,
+        0x27,
+        2 + u8::try_from(values.len() * 8).expect("scalar lane fixture"),
+        0x05,
+        0xb4,
+        0x40,
+    ]);
+    for value in values {
+        stream.extend_from_slice(&crate::test_support::test_bytes::le_f64(value));
+    }
+
+    let carriers = crate::families::b2::records::b2_plane_carriers(&stream);
+    assert_eq!(carriers.len(), 4);
+    assert_eq!(carriers[3].payload.selector(), 0x40);
+    assert!(matches!(
+        &carriers[3].payload,
+        B2PlaneCarrierPayload::ScalarLane { values: lane, .. }
+            if FiniteReal::raw_lane(lane) == values
+    ));
+    assert!(crate::families::b2::records::b2_plane_geometry(&carriers[3]).is_none());
+}
+
+#[test]
+fn b2_plane_scalar_lane_and_carrier_refuse_resource_limits() {
+    let values = [1.0f64, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
+    let mut bytes = vec![0xb2, 0x03, 0x27, 82, 0x05, 0xb4, 0x40];
+    for value in values {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let limited = crate::test_support::with_collection_limit(9, |ctx| {
+        crate::families::b2::records::b2_plane_carriers_from_records(ctx, &bytes, &records)
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b2_plane_scalar_lane")
+    );
+    let limited = crate::test_support::with_collection_limit(10, |ctx| {
+        crate::families::b2::records::b2_plane_carriers_from_records(ctx, &bytes, &records)
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b2_plane_carriers")
+    );
+    let limited = crate::test_support::with_retained_limit(79, |ctx| {
+        crate::families::b2::records::b2_plane_carriers_from_records(ctx, &bytes, &records)
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b2_plane_scalar_lane")
+    );
+}
+
+#[test]
+fn b2_plane_carrier_parser_rejects_open_or_nonfinite_layouts() {
+    let valid = b2_plane_carrier_stream();
+    let mut invalid_marker = valid.clone();
+    invalid_marker[5] = 0xb5;
+    assert_eq!(
+        crate::families::b2::records::b2_plane_carriers(&invalid_marker).len(),
+        2
+    );
+
+    let mut invalid_selector = valid.clone();
+    invalid_selector[6] = 0xc4;
+    assert_eq!(
+        crate::families::b2::records::b2_plane_carriers(&invalid_selector).len(),
+        2
+    );
+
+    let mut invalid_flag = valid.clone();
+    invalid_flag[1] = 0x04;
+    assert_eq!(
+        crate::families::b2::records::b2_plane_carriers(&invalid_flag).len(),
+        2
+    );
+
+    let mut invalid_scalar = valid;
+    invalid_scalar[7..15].copy_from_slice(&f64::NAN.to_le_bytes());
+    assert_eq!(
+        crate::families::b2::records::b2_plane_carriers(&invalid_scalar).len(),
+        2
+    );
+}
+
+#[test]
+fn b2_plane_geometry_uses_direction_bearing_layouts_only() {
+    use crate::families::b2::records::B2PlaneCarrierPayload;
+
+    let carriers = crate::families::b2::records::b2_plane_carriers(&b2_plane_carrier_stream());
+    let geometry =
+        crate::families::b2::records::b2_plane_geometry(&carriers[0]).expect("e4 plane geometry");
+    let cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) =
+        geometry
+    else {
+        panic!("plane carrier geometry")
+    };
+    let origin = plane_surface.origin();
+    let normal = plane_surface.frame().axis().as_raw();
+    let u_axis = plane_surface.frame().reference().as_raw();
+    assert_eq!(*origin, cadmpeg_ir::math::Point3::new(10.0, 20.0, 0.0));
+    assert_eq!(*u_axis, cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0));
+    assert_eq!(*normal, cadmpeg_ir::math::Vector3::new(0.0, -1.0, 0.0));
+    assert!(crate::families::b2::records::b2_plane_geometry(&carriers[1]).is_some());
+    assert!(matches!(
+        &carriers[2].payload,
+        B2PlaneCarrierPayload::PointTail { .. }
+    ));
+    assert!(crate::families::b2::records::b2_plane_geometry(&carriers[2]).is_none());
+}
+
+#[test]
+fn b2_reference_list_parser_reads_compact_refs_and_unit_tail() {
+    let records = crate::families::b2::records::b2_reference_lists(&b2_reference_list_stream());
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].references, (0u32..26).collect::<Vec<_>>());
+}
+
+#[test]
+fn b2_reference_list_entries_and_records_refuse_collection_limits() {
+    let bytes = b2_reference_list_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let limited = crate::test_support::with_collection_limit(25, |ctx| {
+        crate::families::b2::records::b2_reference_lists_from_records(ctx, &bytes, &records)
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b2_reference_list_entries")
+    );
+    let limited = crate::test_support::with_collection_limit(26, |ctx| {
+        crate::families::b2::records::b2_reference_lists_from_records(ctx, &bytes, &records)
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b2_reference_lists")
+    );
+}
+
+#[test]
+fn b2_owner_packet_parser_closes_nine_references_and_numeric_tail() {
+    use crate::{
+        families::b2::records::{B2OwnerIdentityEncoding, B2OwnerReferenceEncoding},
+        wire::bytes::AllocationReferenceEncoding,
+    };
+
+    let packets = crate::families::b2::records::b2_owner_packets(&b2_owner_packet_stream());
+    assert_eq!(packets.len(), 1);
+    assert_eq!(packets[0].header_token, 5);
+    assert_eq!(
+        packets[0].reference_encoding,
+        B2OwnerReferenceEncoding::TaggedU16Strong
+    );
+    assert_eq!(
+        packets[0].references,
+        [1000, 1, 1001, 2, 1002, 3, 1003, 4, 1004]
+    );
+    assert_eq!(
+        packets[0].identity_encodings,
+        std::array::from_fn(
+            |index| B2OwnerIdentityEncoding::Allocation(if index % 2 == 0 {
+                AllocationReferenceEncoding::TaggedU16
+            } else {
+                AllocationReferenceEncoding::BackwardDistance
+            })
+        )
+    );
+    assert_eq!(
+        packets[0].numeric_tail.header(),
+        [0x84, 0x41, 0xbb, 0x05, 0x0d]
+    );
+    assert_eq!(packets[0].numeric_tail.lower(), [-0.0, 4.5]);
+    assert_eq!(packets[0].numeric_tail.upper(), [12.25, 7.0]);
+    assert_eq!(
+        packets[0].numeric_tail.bounds(),
+        [[-2.0, 1.0], [3.5, 4.0], [5.25, 6.0]]
+    );
+
+    let packets =
+        crate::families::b2::records::b2_owner_packets(&b2_width_coded_owner_packet_stream());
+    assert_eq!(packets.len(), 1);
+    assert_eq!(
+        packets[0].reference_encoding,
+        B2OwnerReferenceEncoding::WidthCodedStrong
+    );
+    assert_eq!(
+        packets[0].references,
+        [216, 3, 540, 7, 223, 19, 545, 31, 606]
+    );
+    assert_eq!(
+        packets[0].identity_encodings,
+        std::array::from_fn(|index| {
+            if index % 2 == 0 {
+                B2OwnerIdentityEncoding::Allocation(AllocationReferenceEncoding::WidthCoded)
+            } else {
+                B2OwnerIdentityEncoding::RawU8
+            }
+        })
+    );
+
+    let packets =
+        crate::families::b2::records::b2_owner_packets(&b2_all_compact_owner_packet_stream());
+    assert_eq!(packets.len(), 1);
+    assert_eq!(
+        packets[0].reference_encoding,
+        B2OwnerReferenceEncoding::AllCompact
+    );
+    assert_eq!(
+        packets[0].references,
+        [278, 324, 276, 268, 277, 374, 199, 195, 279]
+    );
+    assert_eq!(
+        packets[0].identity_encodings,
+        [B2OwnerIdentityEncoding::Allocation(AllocationReferenceEncoding::WidthCoded); 9]
+    );
+}
+
+#[test]
+fn b2_owner_packet_collection_refuses_before_first_packet_storage() {
+    let bytes = b2_all_compact_owner_packet_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        ctx.collect_vec(
+            crate::families::b2::records::b2_owner_packets_from_records(&bytes, &records),
+            "catia_a5_owner_packets",
+        )
+    });
+    assert!(matches!(
+        limited,
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
+    let packets = crate::test_support::with_service_context(|ctx| {
+        ctx.collect_vec(
+            crate::families::b2::records::b2_owner_packets_from_records(&bytes, &records),
+            "catia_a5_owner_packets",
+        )
+    })
+    .expect("service context admits the fixed owner packet");
+    assert_eq!(packets.len(), 1);
+}
+
+#[test]
+fn b2_owner_packet_parser_rejects_invalid_numeric_tail_framing() {
+    let valid = b2_owner_packet_stream();
+    let tail = valid.len() - 62;
+    for (offset, replacement) in [
+        (0, vec![0x85]),
+        (1, vec![0x40]),
+        (4, vec![0x0c]),
+        (37, vec![0x00]),
+        (5, f64::NAN.to_le_bytes().to_vec()),
+        (5, 13.0f64.to_le_bytes().to_vec()),
+        (38, f32::INFINITY.to_le_bytes().to_vec()),
+        (38, 2.0f32.to_le_bytes().to_vec()),
+    ] {
+        let mut invalid = valid.clone();
+        invalid[tail + offset..tail + offset + replacement.len()].copy_from_slice(&replacement);
+        assert!(crate::families::b2::records::b2_owner_packets(&invalid).is_empty());
+    }
+}
+
+#[test]
+fn fixed_owner_backward_identities_resolve_in_the_local_allocation_sequence() {
+    let (mut bytes, target_positions, owner_pos) = b2_width_coded_owner_with_allocation_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let targets = parsed_owner_identity_targets(&bytes, &records);
+
+    assert_eq!(
+        targets
+            .iter()
+            .map(|target| (
+                target.owner_pos,
+                target.slot,
+                target.distance,
+                target.target_pos,
+                u8::from(target.target_class),
+            ))
+            .collect::<Vec<_>>(),
+        [
+            (owner_pos, 0, 1, target_positions[4], 0x5e),
+            (owner_pos, 2, 4, target_positions[1], 0x5e),
+            (owner_pos, 4, 2, target_positions[3], 0x5e),
+            (owner_pos, 6, 3, target_positions[2], 0x5d),
+            (owner_pos, 8, 5, target_positions[0], 0x5d),
+        ]
+    );
+
+    let records = crate::wire::records::consolidated_records_in_range_sources(
+        &bytes,
+        [
+            std::iter::once(0..owner_pos),
+            std::iter::once(owner_pos..bytes.len()),
+        ],
+    );
+    let packets = crate::families::b2::records::b2_owner_packets_from_records(&bytes, &records)
+        .collect::<Vec<_>>();
+    let [packet] = packets.as_slice() else {
+        panic!("one source-scoped owner packet")
+    };
+    assert_eq!(packet.source_index, 1);
+    assert!(parsed_owner_identity_targets(&bytes, &records).is_empty());
+
+    bytes.insert(owner_pos, 0x00);
+    let records = crate::wire::records::consolidated_records(&bytes);
+    assert!(parsed_owner_identity_targets(&bytes, &records).is_empty());
+}
+
+#[test]
+fn fixed_owner_backward_identities_do_not_cross_group_separator() {
+    let (mut bytes, _target_positions, owner_pos) = b2_width_coded_owner_with_allocation_stream();
+    bytes.splice(owner_pos..owner_pos, b2_group_stream());
+    let records = crate::wire::records::consolidated_records(&bytes);
+
+    assert!(parsed_owner_identity_targets(&bytes, &records).is_empty());
+}
+
+#[test]
+fn fixed_owner_identity_indexes_and_targets_refuse_collection_limits() {
+    use std::collections::HashSet;
+
+    let (bytes, _, _) = b2_width_coded_owner_with_allocation_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let mut refused = HashSet::new();
+    for limit in 0..128 {
+        let result = crate::test_support::with_collection_limit(limit, |ctx| {
+            super::b2_owner_identity_targets_from_records(ctx, &bytes, &records)
+        });
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = result {
+            refused.insert(error.operation);
+        }
+    }
+    for operation in [
+        "catia_b2_owner_identity_packets",
+        "catia_b2_owner_identity_allocations",
+        "catia_b2_owner_identity_targets",
+    ] {
+        assert!(refused.contains(operation), "{operation} did not refuse");
+    }
+}
+
+#[test]
+fn fixed_owner_boundary_requires_one_simple_four_edge_cycle() {
+    use std::collections::HashMap;
+
+    use crate::families::b2::records::{b2_closed_owner_boundary_edges, B2OwnerIdentityTarget};
+
+    let targets = [(5, 13), (1, 10), (7, 16), (3, 14)]
+        .into_iter()
+        .map(|(slot, target_pos)| B2OwnerIdentityTarget {
+            owner_pos: 20,
+            source_index: 0,
+            slot,
+            distance: 1,
+            target_pos,
+            target_class: crate::native::CatiaOwnerIdentityClass::Edge,
+        })
+        .collect::<Vec<_>>();
+    let endpoints = HashMap::from([
+        (10, [100, 101]),
+        (13, [102, 103]),
+        (14, [100, 102]),
+        (16, [101, 103]),
+    ]);
+
+    let edges = crate::test_support::with_service_context(|ctx| {
+        b2_closed_owner_boundary_edges(ctx, &targets, &endpoints)
+    })
+    .expect("service profile admits the sort")
+    .expect("four class-5e targets close a cycle");
+    assert_eq!(edges.map(|edge| edge.slot), [1, 3, 5, 7]);
+    assert_eq!(edges[0].endpoint_records, [100, 101]);
+
+    let mut open = endpoints.clone();
+    open.insert(16, [101, 104]);
+    assert!(crate::test_support::with_service_context(|ctx| {
+        b2_closed_owner_boundary_edges(ctx, &targets, &open)
+    })
+    .expect("service profile admits the sort")
+    .is_none());
+
+    let mut mixed_classes = targets.clone();
+    mixed_classes[0].target_class = crate::native::CatiaOwnerIdentityClass::Vertex;
+    assert!(crate::test_support::with_service_context(|ctx| {
+        b2_closed_owner_boundary_edges(ctx, &mixed_classes, &endpoints)
+    })
+    .expect("service profile admits the sort")
+    .is_none());
+
+    let mut duplicate = endpoints;
+    duplicate.insert(16, [100, 101]);
+    assert!(crate::test_support::with_service_context(|ctx| {
+        b2_closed_owner_boundary_edges(ctx, &targets, &duplicate)
+    })
+    .expect("service profile admits the sort")
+    .is_none());
+}
+
+#[test]
+fn owner_chart_requires_exact_source_closed_selector_rectangle() {
+    use crate::families::b2::records::{B2OwnerChartBridge, B2OwnerChartCarrier};
+    use crate::native::owner_chart::CatiaOwnerChartSideAxis;
+
+    for (carrier_class, carrier, carrier_selector, side_axis) in [
+        (
+            0x28,
+            B2OwnerChartCarrier::B28,
+            0x05,
+            CatiaOwnerChartSideAxis::FirstParameter,
+        ),
+        (
+            0x2b,
+            B2OwnerChartCarrier::B2b,
+            0x09,
+            CatiaOwnerChartSideAxis::SecondParameter,
+        ),
+        (
+            0x32,
+            B2OwnerChartCarrier::A32,
+            0x11,
+            CatiaOwnerChartSideAxis::SecondParameter,
+        ),
+    ] {
+        let bytes = b2_owner_chart_stream(carrier_class);
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let [chart] = parsed_owner_charts(&bytes, &records)
+            .try_into()
+            .unwrap_or_else(|charts: Vec<_>| {
+                panic!("one class-{carrier_class:02x} owner chart, got {charts:?}")
+            });
+        assert_eq!(chart.source_index, 0);
+        assert_eq!(chart.carrier, carrier);
+        let native = crate::native::CatiaNative::decode(&bytes);
+        assert_eq!(
+            native.consolidated_owner_packets[0]
+                .owner_chart()
+                .expect("source-closed owner chart")
+                .side_axis(),
+            side_axis
+        );
+        let B2OwnerChartBridge::SupportedSurface {
+            carrier_surface,
+            support_surfaces,
+            support_pcurves,
+            construction_radius,
+            ..
+        } = chart.bridge
+        else {
+            panic!("five-reference supported surface")
+        };
+        assert_eq!(
+            [
+                carrier_surface,
+                support_surfaces[0],
+                support_surfaces[1],
+                support_pcurves[0],
+                support_pcurves[1]
+            ]
+            .map(|reference| reference.value),
+            [1, 100, 0, 101, 1]
+        );
+        assert_eq!(
+            carrier_surface.encoding,
+            crate::wire::bytes::AllocationReferenceEncoding::BackwardDistance
+        );
+        let wire = serde_json::to_value(native.consolidated_owner_packets[0].owner_chart())
+            .expect("serialize owner chart");
+        let controls: [u8; 6] = serde_json::from_value(wire["bridge"]["controls"].clone())
+            .expect("six bridge controls");
+        assert_eq!(controls, [carrier_selector, 0x05, 0x03, 0x05, 0x01, 0x05]);
+        assert_eq!(construction_radius.get(), 1.0);
+        assert_eq!(
+            chart.parameter_point_offsets().map(|pos| {
+                crate::families::b2::records::b2_parameter_points(&bytes)
+                    .into_iter()
+                    .find(|point| point.pos == pos)
+                    .expect("chart selector record")
+                    .prefix
+                    .as_u8()
+            }),
+            [0x05, 0x09, 0x0d, 0x11]
+        );
+
+        let owner_pos = chart.owner_pos;
+        let records = crate::wire::records::consolidated_records_in_range_sources(
+            &bytes,
+            [
+                std::iter::once(0..owner_pos),
+                std::iter::once(owner_pos..bytes.len()),
+            ],
+        );
+        assert!(parsed_owner_charts(&bytes, &records).is_empty());
+    }
+}
+
+#[test]
+fn owner_chart_applies_to_width_coded_identity_dialect() {
+    use crate::families::b2::records::{B2OwnerChartCarrier, B2OwnerReferenceEncoding};
+
+    for (carrier_class, carrier) in [
+        (0x28, B2OwnerChartCarrier::B28),
+        (0x2b, B2OwnerChartCarrier::B2b),
+        (0x32, B2OwnerChartCarrier::A32),
+    ] {
+        let bytes = b2_width_coded_owner_chart_stream(carrier_class);
+        let packets = crate::families::b2::records::b2_owner_packets(&bytes);
+        assert_eq!(packets.len(), 1);
+        assert_eq!(
+            packets[0].reference_encoding,
+            B2OwnerReferenceEncoding::WidthCodedStrong
+        );
+        assert_eq!(packets[0].references, [278, 1, 276, 2, 277, 3, 199, 4, 279]);
+
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let [chart] = parsed_owner_charts(&bytes, &records)
+            .try_into()
+            .unwrap_or_else(|charts: Vec<_>| {
+                panic!("one width-coded class-{carrier_class:02x} owner chart, got {charts:?}")
+            });
+        assert_eq!(chart.carrier, carrier);
+        assert_eq!(
+            chart.parameter_point_offsets().map(|pos| {
+                crate::families::b2::records::b2_parameter_points(&bytes)
+                    .into_iter()
+                    .find(|point| point.pos == pos)
+                    .expect("chart selector record")
+                    .prefix
+                    .as_u8()
+            }),
+            [0x05, 0x09, 0x0d, 0x11]
+        );
+    }
+}
+
+#[test]
+fn owner_chart_admits_the_scalar_free_eight_reference_bridge() {
+    use crate::families::b2::records::B2OwnerChartBridge;
+
+    let bytes = b2_owner_chart_stream_with_extended_bridge();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let [chart] = parsed_owner_charts(&bytes, &records)
+        .try_into()
+        .unwrap_or_else(|charts: Vec<_>| panic!("one extended owner chart, got {charts:?}"));
+    let B2OwnerChartBridge::Extended { references, .. } = chart.bridge else {
+        panic!("eight-reference extended bridge")
+    };
+    assert_eq!(
+        references.map(|reference| reference.value),
+        [1, 100, 0, 101, 1, 2, 3, 4]
+    );
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let wire = serde_json::to_value(native.consolidated_owner_packets[0].owner_chart())
+        .expect("serialize extended owner chart");
+    let controls: [u8; 4] = serde_json::from_value(wire["bridge"]["controls"].clone())
+        .expect("four extended bridge controls");
+    let terminal_controls: [u8; 2] =
+        serde_json::from_value(wire["bridge"]["terminal_controls"].clone())
+            .expect("two extended bridge terminal controls");
+    assert_eq!(controls, [0x11, 0x09, 0x05, 0x05]);
+    assert_eq!(terminal_controls, [0x01, 0x05]);
+}
+
+#[test]
+fn owner_chart_rejects_selector_order_bound_mismatch_and_unframed_gap() {
+    let valid = b2_owner_chart_stream(0x2b);
+    let records = crate::wire::records::consolidated_records(&valid);
+    let side_05 = records
+        .iter()
+        .find(|record| record.class() == 0x18)
+        .expect("first owner-chart side");
+
+    let mut wrong_selector = valid.clone();
+    wrong_selector[side_05.payload().unwrap().start] = 0x09;
+    let records = crate::wire::records::consolidated_records(&wrong_selector);
+    assert!(parsed_owner_charts(&wrong_selector, &records).is_empty());
+
+    let mut wrong_bound = valid.clone();
+    wrong_bound[side_05.payload().unwrap().start + 2..side_05.payload().unwrap().start + 10]
+        .copy_from_slice(&8.0f64.to_le_bytes());
+    let records = crate::wire::records::consolidated_records(&wrong_bound);
+    assert!(parsed_owner_charts(&wrong_bound, &records).is_empty());
+
+    let mut separated = valid;
+    separated.insert(side_05.byte_offset(), 0x00);
+    let records = crate::wire::records::consolidated_records(&separated);
+    assert!(parsed_owner_charts(&separated, &records).is_empty());
+}
+
+#[test]
+fn owner_chart_indexes_and_rows_refuse_collection_limits() {
+    use std::collections::HashSet;
+
+    let bytes = b2_owner_chart_stream(0x28);
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let mut refused = HashSet::new();
+    for limit in 0..128 {
+        let result = crate::test_support::with_collection_limit(limit, |ctx| {
+            super::b2_owner_charts_from_records(ctx, &bytes, &records)
+        });
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = result {
+            refused.insert(error.operation);
+        }
+    }
+    for operation in [
+        "catia_b2_owner_chart_owners",
+        "catia_b2_owner_chart_points",
+        "catia_b2_owner_charts",
+    ] {
+        assert!(refused.contains(operation), "{operation} did not refuse");
+    }
+}
+
+#[test]
+fn b2_counted_61_parser_separates_references_from_tail() {
+    let records = crate::families::b2::records::b2_counted_61(&b2_counted_61_stream());
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].header_token, 5);
+    assert_eq!(records[0].references, [1300, 1294, 30, 74]);
+    assert_eq!(records[0].tail, [0x41, 0x03]);
+}
+
+#[test]
+fn b2_counted61_references_tail_and_record_refuse_limits() {
+    let bytes = b2_counted_61_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    for (limit, operation) in [
+        (3, "catia_b2_counted61_references"),
+        (4, "catia_b2_counted61_tail"),
+        (6, "catia_b2_counted61_records"),
+    ] {
+        let limited = crate::test_support::with_collection_limit(limit, |ctx| {
+            crate::families::b2::records::b2_counted_61_from_records(ctx, &bytes, &records)
+        });
+        assert!(
+            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == operation)
+        );
+    }
+    let limited = crate::test_support::with_retained_limit(15, |ctx| {
+        crate::families::b2::records::b2_counted_61_from_records(ctx, &bytes, &records)
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b2_counted61_references")
+    );
+    let limited = crate::test_support::with_retained_limit(16, |ctx| {
+        crate::families::b2::records::b2_counted_61_from_records(ctx, &bytes, &records)
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b2_counted61_tail")
+    );
+}
+
+#[test]
+fn b2_long_61_parser_derives_monotone_member_boundary_from_suffix() {
+    let records = crate::families::b2::records::b2_long_61(&b2_long_61_stream());
+    assert_eq!(records.len(), 1);
+    assert_eq!(
+        records[0].prefix,
+        [0xb5, 0x03, 0x2b, 0x47, 0x8f, 0xb3, 0xd7, 0xfb]
+    );
+    assert_eq!(records[0].members, [0x064a, 0x0650, 0x0656]);
+    assert_eq!(
+        records[0].references,
+        [0x0100, 0x0103, 0x0106, 0x0109, 0x010c]
+    );
+    assert_eq!(records[0].scalar, finite(42.5));
+
+    let mut short = vec![0xb2, 0x03, 0x61, 27, 0x05];
+    short.extend_from_slice(&[0; 27]);
+    short[13] = 0x06;
+    assert!(crate::families::b2::records::b2_long_61(&short).is_empty());
+}
+
+#[test]
+fn b2_long61_members_and_record_refuse_limits() {
+    let bytes = b2_long_61_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    for (limit, operation) in [
+        (2, "catia_b2_long61_members"),
+        (3, "catia_b2_long61_records"),
+    ] {
+        let limited = crate::test_support::with_collection_limit(limit, |ctx| {
+            crate::families::b2::records::b2_long_61_from_records(ctx, &bytes, &records)
+        });
+        assert!(
+            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == operation)
+        );
+    }
+    let limited = crate::test_support::with_retained_limit(5, |ctx| {
+        crate::families::b2::records::b2_long_61_from_records(ctx, &bytes, &records)
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b2_long61_members")
+    );
+}
+
+#[test]
+fn b2_class5b5c_parser_retains_complete_source_local_control_lanes() {
+    let bytes = b2_class5b5c_stream();
+    let records = crate::families::b2::records::b2_class5b5c_records(&bytes);
+    assert_eq!(records.len(), 3);
+    assert_eq!(
+        records
+            .iter()
+            .map(|record| u8::from(record.class))
+            .collect::<Vec<_>>(),
+        [0x5b, 0x5c, 0x5b]
+    );
+    assert_eq!(
+        records
+            .iter()
+            .map(|record| u8::from(record.frame.width()))
+            .collect::<Vec<_>>(),
+        [1, 2, 3]
+    );
+    assert_eq!(
+        records
+            .iter()
+            .map(|record| u8::from(record.frame.flag))
+            .collect::<Vec<_>>(),
+        [0x13, 0x03, 0x83]
+    );
+    assert!(records
+        .iter()
+        .all(|record| { record.source_index == 0 && record.source_offset == record.frame.pos }));
+
+    let mut invalid_flag = bytes;
+    invalid_flag[1] = 0x04;
+    assert_eq!(
+        crate::families::b2::records::b2_class5b5c_records(&invalid_flag)
+            .iter()
+            .map(|record| u8::from(record.class))
+            .collect::<Vec<_>>(),
+        [0x5c, 0x5b]
+    );
+}
+
+#[test]
+fn b2_class5b5c_parser_retains_bounded_source_coordinates() {
+    let bytes = b2_class5b5c_stream();
+    let split = 12 + 15;
+    let records = crate::wire::records::consolidated_records_in_range_sources(
+        &bytes,
+        [
+            std::iter::once(0..split),
+            std::iter::once(split..bytes.len()),
+        ],
+    );
+    let controls = crate::test_support::with_service_context(|ctx| {
+        crate::families::b2::records::b2_class5b5c_records_from_records(ctx, &bytes, &records)
+            .expect("service decode")
+    });
+    assert_eq!(
+        controls
+            .iter()
+            .map(|record| (record.source_index, record.source_offset))
+            .collect::<Vec<_>>(),
+        [(0, 0), (0, 12), (1, 0)]
+    );
+}
+
+#[test]
+fn b2_class5b5c_payload_and_record_refuse_limits() {
+    let bytes = b2_class5b5c_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let first_payload_len = u64::try_from(records[0].payload().expect("first class payload").len())
+        .expect("fixture payload fits u64");
+    let limited = crate::test_support::with_collection_limit(first_payload_len - 1, |ctx| {
+        crate::families::b2::records::b2_class5b5c_records_from_records(ctx, &bytes, &records)
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b2_class5b5c_payload")
+    );
+    let limited = crate::test_support::with_collection_limit(first_payload_len, |ctx| {
+        crate::families::b2::records::b2_class5b5c_records_from_records(ctx, &bytes, &records)
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b2_class5b5c_records")
+    );
+    let limited = crate::test_support::with_retained_limit(first_payload_len - 1, |ctx| {
+        crate::families::b2::records::b2_class5b5c_records_from_records(ctx, &bytes, &records)
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b2_class5b5c_payload")
+    );
+}
+
+#[test]
+fn b2_face_node_5f_parser_accepts_each_compact_target_width_and_fixed_tail() {
+    let mut bytes = Vec::new();
+    for payload in [
+        &[0x82, 0x04, 0x5d, 0x03, 0x05][..],
+        &[0x82, 0x08, 0x5d, 0x02, 0x03, 0x05],
+        &[0x82, 0x0c, 0x5d, 0x02, 0x01, 0x03, 0x05],
+        &[0x82, 0x10, 0x5d, 0x02, 0x01, 0x01, 0x03, 0x05],
+    ] {
+        bytes.extend_from_slice(&[0xb2, 0x03, 0x5f, u8::try_from(payload.len()).unwrap(), 0x05]);
+        bytes.extend_from_slice(payload);
+    }
+    let nodes = crate::families::b2::records::b2_face_nodes_5f(&bytes);
+    assert_eq!(nodes.len(), 4);
+    assert!(nodes.iter().all(|node| node.header_token == 5));
+    assert_eq!(
+        nodes.iter().map(|node| node.target).collect::<Vec<_>>(),
+        [0x5d, 0x025d, 0x0001_025d, 0x0101_025d]
+    );
+
+    let malformed = [
+        0xb2, 0x03, 0x5f, 0x06, 0x05, 0x82, 0x04, 0x5d, 0x00, 0x03, 0x05,
+    ];
+    assert!(crate::families::b2::records::b2_face_nodes_5f(&malformed).is_empty());
+}
+
+#[test]
+fn b2_face_node_5f_parser_retains_strong_targets_and_terminal_pairs() {
+    use crate::families::b2::records::B2FaceNode5fTargetEncoding;
+
+    let mut bytes = vec![
+        0xb2, 0x03, 0x5f, 0x06, 0x05, 0x82, 0x0a, 0x34, 0x12, 0x03, 0x05,
+    ];
+    bytes.extend_from_slice(&[
+        0xb2, 0x03, 0x5f, 0x06, 0x05, 0x82, 0x0a, 0x78, 0x56, 0x0f, 0x05,
+    ]);
+
+    let nodes = crate::families::b2::records::b2_face_nodes_5f(&bytes);
+    assert_eq!(nodes.len(), 2);
+    assert_eq!(nodes[0].target, 0x1234);
+    assert_eq!(
+        nodes[0].target_encoding,
+        B2FaceNode5fTargetEncoding::TaggedU16Strong
+    );
+    assert_eq!(nodes[0].terminal, [0x03, 0x05]);
+    assert_eq!(nodes[1].target, 0x5678);
+    assert_eq!(nodes[1].terminal, [0x0f, 0x05]);
+
+    let mut owner_stream = vec![
+        0xb2, 0x03, 0x5f, 0x06, 0x05, 0x82, 0x0a, 0xeb, 0x03, 0x03, 0x05,
+    ];
+    owner_stream.extend_from_slice(&b2_owner_packet_stream());
+    let related = crate::families::b2::records::b2_adjacent_face_owners(&owner_stream);
+    assert_eq!(related.len(), 1);
+    assert_eq!(
+        related[0].face_node.target_encoding,
+        B2FaceNode5fTargetEncoding::TaggedU16Strong
+    );
+}
+
+#[test]
+fn b2_adjacent_face_owner_requires_adjacency_and_successor_identity() {
+    let pairs =
+        crate::families::b2::records::b2_adjacent_face_owners(&b2_adjacent_face_owner_stream());
+    assert_eq!(pairs.len(), 1);
+    assert_eq!(pairs[0].face_node.target, 1003);
+    assert_eq!(pairs[0].owner.references[8], 1004);
+
+    let mut separated = b2_face_node_5f_stream();
+    separated.extend_from_slice(&[0xb2, 0x03, 0x2e, 0x01, 0x05, 0x05]);
+    separated.extend_from_slice(&b2_owner_packet_stream());
+    assert!(crate::families::b2::records::b2_adjacent_face_owners(&separated).is_empty());
+}
+
+#[test]
+fn b2_adjacent_face_owner_indexes_and_pair_refuse_collection_limits() {
+    let bytes = b2_adjacent_face_owner_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    for (limit, operation) in [
+        (0, "catia_b2_adjacent_face_nodes"),
+        (1, "catia_b2_adjacent_face_owners"),
+        (2, "catia_b2_adjacent_face_pairs"),
+    ] {
+        let limited = crate::test_support::with_collection_limit(limit, |ctx| {
+            crate::families::b2::records::b2_adjacent_face_owners_from_records(
+                ctx, &bytes, &records,
+            )
+        });
+        assert!(
+            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == operation)
+        );
+    }
+}
+
+#[test]
+fn b2_secondary_face_node_terminal_requires_all_compact_owner() {
+    let secondary = b2_adjacent_secondary_face_owner_stream();
+    let pairs = crate::families::b2::records::b2_adjacent_face_owners(&secondary);
+    assert_eq!(pairs.len(), 1);
+    assert_eq!(pairs[0].face_node.terminal, [0x03, 0x03]);
+    assert_eq!(pairs[0].face_node.target, 278);
+    assert_eq!(pairs[0].owner.references[8], 279);
+
+    let owner_start = secondary
+        .windows(3)
+        .position(|window| window == [0xb2, 0x03, 0x62])
+        .expect("owner frame");
+    let mut tagged = b2_adjacent_face_owner_stream();
+    let tagged_owner_start = tagged
+        .windows(3)
+        .position(|window| window == [0xb2, 0x03, 0x62])
+        .expect("tagged owner frame");
+    tagged[tagged_owner_start - 1] = 0x03;
+    assert!(crate::families::b2::records::b2_adjacent_face_owners(&tagged).is_empty());
+
+    let mut unknown_terminal = secondary;
+    unknown_terminal[owner_start - 1] = 0x07;
+    assert!(crate::families::b2::records::b2_adjacent_face_owners(&unknown_terminal).is_empty());
+}
+
+#[test]
+fn b2_counted_owner_references_refuse_collection_limit() {
+    let bytes = b2_adjacent_face_counted_owner_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let result = crate::test_support::with_collection_limit(0, |ctx| {
+        crate::families::b2::records::b2_counted_owners_from_records(ctx, &bytes, &records)
+    });
+    assert!(
+        matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_b2_counted_owner_references")
+    );
+}
+
+#[test]
+fn b2_counted_owner_encodings_refuse_collection_limit() {
+    let bytes = b2_adjacent_face_counted_owner_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let result = crate::test_support::with_collection_limit(1, |ctx| {
+        crate::families::b2::records::b2_counted_owners_from_records(ctx, &bytes, &records)
+    });
+    assert!(
+        matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_b2_counted_owner_encodings")
+    );
+}
+
+#[test]
+fn b2_counted_owner_tail_refuses_retained_limit() {
+    let bytes = b2_adjacent_face_counted_owner_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let result =
+        crate::test_support::with_retained_refusal(&[], "catia_b2_counted_owner_tail", |ctx| {
+            crate::families::b2::records::b2_counted_owners_from_records(ctx, &bytes, &records)
+        });
+    assert!(
+        matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_b2_counted_owner_tail")
+    );
+}
+
+#[test]
+fn b2_counted_owner_packets_refuse_collection_limit() {
+    let bytes = b2_adjacent_face_counted_owner_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let result = crate::test_support::with_collection_limit(19, |ctx| {
+        crate::families::b2::records::b2_counted_owners_from_records(ctx, &bytes, &records)
+    });
+    assert!(
+        matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_b2_counted_owner_packets")
+    );
+}
+
+#[test]
+fn b2_adjacent_counted_owners_refuse_each_collection_boundary() {
+    let bytes = b2_adjacent_face_counted_owner_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let mut refusals = std::collections::HashSet::new();
+    for limit in 0..128 {
+        let result = crate::test_support::with_collection_limit(limit, |ctx| {
+            crate::families::b2::records::b2_adjacent_face_counted_owners_from_records(
+                ctx, &bytes, &records,
+            )
+        });
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = result {
+            refusals.insert(refusal.operation);
+        }
+    }
+    for operation in [
+        "catia_b2_counted_face_nodes",
+        "catia_b2_counted_owner_index",
+        "catia_b2_adjacent_counted_owners",
+    ] {
+        assert!(
+            refusals.contains(operation),
+            "missing charge for {operation}"
+        );
+    }
+}
+
+#[test]
+fn b2_counted_owner_closes_variable_reference_lane_and_face_node_relation() {
+    let bytes = b2_adjacent_face_counted_owner_stream();
+    let owners = crate::families::b2::records::b2_counted_owners(&bytes);
+    assert_eq!(owners.len(), 1);
+    assert_eq!(owners[0].references, [911, 7, 263, 258, 281, 276, 917]);
+    assert_eq!(owners[0].tail.as_slice(), [0x83, 0x41, 0x92, 0x00, 0x01]);
+
+    let related = crate::families::b2::records::b2_adjacent_face_counted_owners(&bytes);
+    assert_eq!(related.len(), 1);
+    assert_eq!(related[0].face_node.target, 916);
+    assert_eq!(related[0].owner.references.last(), Some(&917));
+
+    let mut wrong_successor = bytes;
+    wrong_successor[35] = 0x99;
+    assert!(
+        crate::families::b2::records::b2_adjacent_face_counted_owners(&wrong_successor).is_empty()
+    );
+}
+
+#[test]
+fn b2_counted_owner_maps_mixed_tokens_to_local_edge_ordinals() {
+    let bytes = [
+        0xb2, 0x03, 0x5f, 0x04, 0x05, 0x82, 0x1d, 0x03, 0x05, 0xb2, 0x03, 0x62, 0x0f, 0x05, 0x89,
+        0x19, 0x0b, 0x15, 0x23, 0x11, 0x3b, 0x0d, 0x53, 0x21, 0x84, 0x41, 0xff, 0x0f, 0x01,
+    ];
+    let owners = crate::families::b2::records::b2_counted_owners(&bytes);
+    let [owner] = owners.as_slice() else {
+        panic!("one compact counted owner")
+    };
+    assert_eq!(owner.references, [6, 2, 5, 8, 4, 14, 3, 20, 8]);
+
+    let related = crate::families::b2::records::b2_adjacent_face_counted_owners(&bytes);
+    assert_eq!(related.len(), 1);
+    assert_eq!(related[0].face_node.target, 7);
+}
+
+#[test]
+fn b2_cone_face_parser_reads_program_scale_and_half_angle() {
+    let records = crate::test_support::with_service_context(|ctx| {
+        crate::families::b2::records::b2_cone_faces(ctx, &b2_cone_face_stream())
+            .expect("service decode")
+    });
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].program.len(), 16);
+    assert_eq!(records[0].angular_scale, finite(1.5));
+    assert_eq!(
+        records[0].half_angle,
+        positive_angle(std::f64::consts::FRAC_PI_4)
+    );
+
+    let mut degenerate = b2_cone_face_stream();
+    let half_angle = degenerate.len() - 8;
+    degenerate[half_angle..].copy_from_slice(&0.0_f64.to_le_bytes());
+    assert!(crate::test_support::with_service_context(|ctx| {
+        crate::families::b2::records::b2_cone_faces(ctx, &degenerate).expect("service decode")
+    })
+    .is_empty());
+}
+
+#[test]
+fn b2_cone_face_program_and_output_refuse_resource_limits() {
+    let bytes = b2_cone_face_stream();
+    for (limit, operation) in [
+        (15, "catia_b2_cone_face_program"),
+        (16, "catia_b2_cone_faces"),
+    ] {
+        let limited = crate::test_support::with_collection_limit(limit, |ctx| {
+            crate::families::b2::records::b2_cone_faces(ctx, &bytes)
+        });
+        assert!(
+            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == operation)
+        );
+    }
+    let limited = crate::test_support::with_retained_limit(15, |ctx| {
+        crate::families::b2::records::b2_cone_faces(ctx, &bytes)
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b2_cone_face_program")
+    );
+}
+
+#[test]
+fn b2_cone_face_parser_reads_a_complete_nested_frame() {
+    let nested = b2_cone_face_stream();
+    let mut bytes = vec![0xa5, 0x03, 0x7f];
+    bytes.extend_from_slice(
+        &u32::try_from(nested.len())
+            .expect("bounded nested frame")
+            .to_le_bytes(),
+    );
+    bytes.push(0x05);
+    bytes.extend(nested);
+    let records = crate::test_support::with_service_context(|ctx| {
+        crate::families::b2::records::b2_cone_faces(ctx, &bytes).expect("service decode")
+    });
+    let [record] = records.as_slice() else {
+        panic!("one nested cone-face chart")
+    };
+    assert_eq!(record.pos, 8);
+}
+
+#[test]
+fn b2_topology_metadata_parser_preserves_refs_and_sense_code() {
+    use crate::families::b2::records::B2UseSense;
+
+    let bytes = b2_topology_metadata_stream();
+    let edges = crate::families::b2::records::b2_edge_metadata(&bytes);
+    let uses = crate::families::b2::records::b2_use_metadata(&bytes);
+    assert_eq!(edges[0].references, vec![0x1234, 0x5678]);
+    assert_eq!(edges[0].payload, [0x0a, 0x34, 0x12, 0x0a, 0x78, 0x56, 0]);
+    assert_eq!(uses[0].sense(), Some(B2UseSense::Sense88));
+    assert!(uses[0].references().is_none());
+    assert_eq!(uses[0].payload, [1, 2, 3, 0x88]);
+}
+
+#[test]
+fn b2_use_payload_references_and_rows_refuse_collection_limits() {
+    use std::collections::HashSet;
+
+    let mut refused = HashSet::new();
+    for bytes in [b2_topology_metadata_stream(), b2_topology_edge_run_stream()] {
+        let records = crate::wire::records::consolidated_records(&bytes);
+        for limit in 0..128 {
+            let result = crate::test_support::with_collection_limit(limit, |ctx| {
+                super::b2_use_metadata_from_records(ctx, &bytes, &records)
+            });
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = result {
+                refused.insert(error.operation);
+            }
+        }
+    }
+    for operation in [
+        "catia_b2_use_payload",
+        "catia_b2_use_references",
+        "catia_b2_uses",
+    ] {
+        assert!(refused.contains(operation), "{operation} did not refuse");
+    }
+}
+
+#[test]
+fn b2_class25_scalar_lane_and_descriptor_refuse_collection_limits() {
+    let mut payload = vec![0x08, 0x34, 0x12, 0x02];
+    payload.extend_from_slice(&3.0_f64.to_le_bytes());
+    payload.extend_from_slice(&7.0_f64.to_le_bytes());
+    let mut bytes = vec![0xb2, 0x03, 0x18, 0x14, 0x05];
+    bytes.extend_from_slice(&payload);
+    let records = crate::wire::records::consolidated_records(&bytes);
+    for (limit, operation) in [
+        (1, "catia_b2_class25_values"),
+        (2, "catia_b2_class25_descriptors"),
+    ] {
+        let result = crate::test_support::with_collection_limit(limit, |ctx| {
+            super::b2_class25_descriptors_from_records(ctx, &bytes, &records)
+        });
+        assert!(
+            matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == operation)
+        );
+    }
+}
+
+#[test]
+fn b2_edge_node_parser_reads_compact_native_vertex_identities() {
+    let nodes = crate::families::b2::records::b2_edge_nodes(&b2_edge_node_stream());
+    assert_eq!(nodes.len(), 1);
+    assert_eq!(nodes[0].header_token, 5);
+    assert_eq!(nodes[0].curve_ref, 216);
+    assert_eq!(nodes[0].start_vertex_ref, 889);
+    assert_eq!(nodes[0].end_vertex_ref, 895);
+    assert_eq!(nodes[0].start_parameter_ref, 215);
+    assert_eq!(nodes[0].end_parameter_ref, 214);
+    assert_eq!(nodes[0].tail, 0x21);
+}
+
+#[test]
+fn b2_edge_node_parser_reads_tagged_and_raw_vertex_identities() {
+    let mut bytes = vec![
+        0xb2, 0x03, 0x5e, 0x09, 0x05, 0x0d, 0x06, 0x8b, 0x0a, 0xc1, 0x01, 0x09, 0x05, 0x01,
+    ];
+    bytes.extend_from_slice(&[
+        0xb2, 0x03, 0x5e, 0x06, 0x05, 0x0d, 0xcf, 0xe7, 0x09, 0x05, 0x01,
+    ]);
+    let nodes = crate::families::b2::records::b2_edge_nodes(&bytes);
+    assert_eq!(nodes.len(), 2);
+    assert_eq!(nodes[0].curve_ref, 3);
+    assert_eq!(nodes[0].start_vertex_ref, 139);
+    assert_eq!(nodes[0].end_vertex_ref, 449);
+    assert_eq!(nodes[0].start_parameter_ref, 2);
+    assert_eq!(nodes[0].end_parameter_ref, 1);
+    assert_eq!(nodes[0].tail, 0x01);
+    assert_eq!(nodes[1].start_vertex_ref, 51);
+    assert_eq!(nodes[1].end_vertex_ref, 57);
+}
+
+#[test]
+fn b2_edge_node_parser_reads_raw_allocation_references_in_every_slot() {
+    use crate::wire::bytes::AllocationReferenceEncoding;
+
+    let bytes = [
+        0xb2, 0x03, 0x5e, 0x06, 0x05, 0x03, 0x09, 0x0f, 0x07, 0x0b, 0x21,
+    ];
+    let nodes = crate::families::b2::records::b2_edge_nodes(&bytes);
+    let [node] = nodes.as_slice() else {
+        panic!("one compact edge node")
+    };
+    assert_eq!(node.curve_ref, 0);
+    assert_eq!(node.start_vertex_ref, 2);
+    assert_eq!(node.end_vertex_ref, 3);
+    assert_eq!(node.start_parameter_ref, 1);
+    assert_eq!(node.end_parameter_ref, 2);
+    assert_eq!(
+        node.reference_encodings,
+        [
+            AllocationReferenceEncoding::OwnedChild,
+            AllocationReferenceEncoding::BackwardDistance,
+            AllocationReferenceEncoding::OwnedChild,
+            AllocationReferenceEncoding::OwnedChild,
+            AllocationReferenceEncoding::OwnedChild,
+        ]
+    );
+    assert_eq!(node.tail, 0x21);
+}
+
+#[test]
+fn b2_revolution_parser_reads_axis_profile_bounds_and_exact_scale_relations() {
+    for reference_token in [0x08, 0x0a] {
+        let mut stream = b2_revolution_stream();
+        stream[5] = reference_token;
+        let records = crate::families::b2::records::b2_revolutions(&stream);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].pos, 0);
+        assert_eq!(u8::from(records[0].reference_token), reference_token);
+        assert_eq!(records[0].profile_allocation_id, 0x1234);
+        assert_eq!(<[f64; 3]>::from(records[0].origin.get()), [1.0, 2.0, 3.0]);
+        assert_eq!(records[0].profile_frame.axis().get(), [1.0, 0.0, 0.0]);
+        assert_eq!(records[0].profile_frame.reference().get(), [0.0, 1.0, 0.0]);
+        assert_eq!(records[0].axis.get(), [0.0, 0.0, 1.0]);
+        assert_eq!(
+            records[0].angular_range.endpoints(),
+            [2.0 * 0.5, 2.0 * (0.5 + std::f64::consts::TAU)]
+        );
+        assert_eq!(records[0].profile_range.endpoints(), [-4.0, 9.0]);
+        assert_eq!(records[0].angular_scale.get(), 2.0);
+    }
+}
+
+#[test]
+fn b2_revolution_profile_requires_one_exact_circle_interval() {
+    let stream = b2_resolved_revolution_stream();
+    let resolved = crate::families::b2::records::b2_resolved_revolutions(&stream);
+    let [resolved] = resolved.as_slice() else {
+        panic!("one resolved revolution profile")
+    };
+    assert_eq!(
+        resolved.revolution.profile_range.endpoints(),
+        resolved.profile.range.endpoints()
+    );
+    assert_eq!(resolved.revolution_index, 0);
+
+    let mut unmatched_prefix = b2_revolution_stream();
+    unmatched_prefix[120..128].copy_from_slice(&(-5.0f64).to_le_bytes());
+    unmatched_prefix.extend_from_slice(&stream);
+    let resolved = crate::families::b2::records::b2_resolved_revolutions(&unmatched_prefix);
+    let [resolved] = resolved.as_slice() else {
+        panic!("one resolved revolution after unmatched prefix")
+    };
+    assert_eq!(resolved.revolution_index, 1);
+
+    let mut ambiguous = stream.clone();
+    ambiguous.splice(0..0, stream[..57].iter().copied());
+    assert!(crate::families::b2::records::b2_resolved_revolutions(&ambiguous).is_empty());
+
+    let mut mismatched = stream;
+    mismatched[40..48].copy_from_slice(&10.0f64.to_le_bytes());
+    assert!(crate::families::b2::records::b2_resolved_revolutions(&mismatched).is_empty());
+
+    let mut signed_zero_mismatch = b2_resolved_revolution_stream();
+    signed_zero_mismatch[32..40].copy_from_slice(&0.0f64.to_le_bytes());
+    signed_zero_mismatch[177..185].copy_from_slice(&(-0.0f64).to_le_bytes());
+    assert!(
+        crate::families::b2::records::b2_resolved_revolutions(&signed_zero_mismatch).is_empty()
+    );
+}
+
+#[test]
+fn b2_revolution_profile_and_resolved_output_refuse_collection_limits() {
+    let bytes = b2_resolved_revolution_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        crate::families::b2::records::b2_resolved_revolutions_from_records(ctx, &bytes, &records)
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b2_revolution_profiles")
+    );
+    let limited = crate::test_support::with_collection_limit(1, |ctx| {
+        crate::families::b2::records::b2_resolved_revolutions_from_records(ctx, &bytes, &records)
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b2_resolved_revolutions")
+    );
+}
+
+#[test]
+fn b2_revolution_profile_identity_disambiguates_equal_intervals() {
+    let mut first = b2_circle_stream();
+    first[6..8].copy_from_slice(&0x9999u16.to_le_bytes());
+    first[32..40].copy_from_slice(&(-4.0f64).to_le_bytes());
+    first[40..48].copy_from_slice(&9.0f64.to_le_bytes());
+    let mut second = b2_circle_stream();
+    second[32..40].copy_from_slice(&(-4.0f64).to_le_bytes());
+    second[40..48].copy_from_slice(&9.0f64.to_le_bytes());
+    let second_pos = first.len();
+    let mut stream = first;
+    stream.extend_from_slice(&second);
+    stream.extend_from_slice(&b2_revolution_stream());
+
+    let resolved_revolutions = crate::families::b2::records::b2_resolved_revolutions(&stream);
+    let [resolved] = resolved_revolutions.as_slice() else {
+        panic!("one identity-bound revolution profile");
+    };
+    assert_eq!(resolved.profile.record_id, 0x1234);
+    assert_eq!(resolved.profile.pos, second_pos);
+}
+
+#[test]
+fn b2_revolution_profile_identity_mismatch_does_not_fall_back_to_interval() {
+    let mut identity_mismatch = b2_circle_stream();
+    identity_mismatch[32..40].copy_from_slice(&10.0f64.to_le_bytes());
+    identity_mismatch[40..48].copy_from_slice(&20.0f64.to_le_bytes());
+    let mut interval_match = b2_circle_stream();
+    interval_match[6..8].copy_from_slice(&0x9999u16.to_le_bytes());
+    interval_match[32..40].copy_from_slice(&(-4.0f64).to_le_bytes());
+    interval_match[40..48].copy_from_slice(&9.0f64.to_le_bytes());
+    let mut stream = identity_mismatch;
+    stream.extend_from_slice(&interval_match);
+    stream.extend_from_slice(&b2_revolution_stream());
+
+    assert!(crate::families::b2::records::b2_resolved_revolutions(&stream).is_empty());
+}
+
+#[test]
+fn b2_line_profile_parser_reads_exact_origin_direction_and_range() {
+    let b2 = b2_line_profile_stream();
+    for (family, header) in [
+        (0xb2, vec![0x05]),
+        (0xb3, vec![0x05, 0x00]),
+        (0xb4, vec![0x05, 0x00, 0x00]),
+    ] {
+        let mut stream = vec![family, 0x03, 0x0e, 0x48];
+        stream.extend(header);
+        stream.extend_from_slice(&b2[5..]);
+        let records = crate::families::b2::records::b2_line_profiles(&stream);
+        let [line] = records.as_slice() else {
+            panic!("one B-family line profile")
+        };
+        assert_eq!(line.pos, 0);
+        assert_eq!(<[f64; 3]>::from(line.origin.get()), [1.0, 2.0, 3.0]);
+        assert_eq!(line.direction.get(), [0.0, 0.6, 0.8]);
+        assert_eq!(line.range.endpoints(), [-4.0, 9.0]);
+    }
+}
+
+#[test]
+fn b2_line_profile_parser_requires_its_complete_fixed_metric_grammar() {
+    let valid = b2_line_profile_stream();
+    for (offset, bytes) in [
+        (3, vec![0x50]),
+        (5 + 3 * 8, 2.0f64.to_le_bytes().to_vec()),
+        (5 + 6 * 8, 0.0f64.to_le_bytes().to_vec()),
+        (5 + 6 * 8, 2.5f64.to_le_bytes().to_vec()),
+        (5 + 7 * 8, 10.0f64.to_le_bytes().to_vec()),
+        (5, f64::NAN.to_le_bytes().to_vec()),
+    ] {
+        let mut invalid = valid.clone();
+        invalid.splice(offset..offset + bytes.len(), bytes);
+        assert!(crate::families::b2::records::b2_line_profiles(&invalid).is_empty());
+    }
+}
+
+#[test]
+fn b2_revolution_parser_requires_an_ordered_profile_and_right_handed_unit_frame() {
+    let mut stream = b2_revolution_stream();
+    stream[6..8].fill(0);
+    assert!(crate::families::b2::records::b2_revolutions(&stream).is_empty());
+
+    let mut stream = b2_revolution_stream();
+    stream[5 + 3 + 8 * 3..5 + 3 + 8 * 3 + 8].copy_from_slice(&2.0f64.to_le_bytes());
+    assert!(crate::families::b2::records::b2_revolutions(&stream).is_empty());
+
+    let mut stream = b2_revolution_stream();
+    stream[5 + 3 + 8 * 6..5 + 3 + 8 * 6 + 8].copy_from_slice(&(-1.0f64).to_le_bytes());
+    assert!(crate::families::b2::records::b2_revolutions(&stream).is_empty());
+
+    let mut stream = b2_revolution_stream();
+    let start = 5 + 99 + 2 * 8;
+    let bounds = [9.0f64, -4.0];
+    for (index, value) in bounds.into_iter().enumerate() {
+        stream[start + 8 * index..start + 8 * (index + 1)].copy_from_slice(&value.to_le_bytes());
+    }
+    assert!(crate::families::b2::records::b2_revolutions(&stream).is_empty());
+}
+
+#[test]
+fn b2_torus_parser_reads_exact_frame_radii_and_parameter_scales() {
+    let records = crate::families::b2::records::b2_tori(&b2_torus_stream());
+    let [torus] = records.as_slice() else {
+        panic!("one B2 torus")
+    };
+    assert_eq!(torus.pos, 0);
+    assert_eq!(<[f64; 3]>::from(torus.center.get()), [1.0, 2.0, 3.0]);
+    assert_eq!(torus.frame.reference().get(), [1.0, 0.0, 0.0]);
+    assert_eq!(torus.direction_y.get(), [0.0, 1.0, 0.0]);
+    assert_eq!(torus.frame.axis().get(), [0.0, 0.0, 1.0]);
+    assert_eq!(torus.major_radius.get(), 7.0);
+    assert_eq!(torus.minor_radius.get(), 2.0);
+    assert_eq!(
+        torus.major_angular_range,
+        increasing([
+            std::f64::consts::FRAC_PI_2,
+            3.0 * std::f64::consts::FRAC_PI_2
+        ])
+    );
+    assert_eq!(
+        torus.major_angular_domain,
+        increasing([0.0, std::f64::consts::TAU])
+    );
+    assert_eq!(
+        torus.minor_angular_range,
+        increasing([0.0, std::f64::consts::PI])
+    );
+    assert_eq!(
+        torus.minor_angular_domain,
+        increasing([
+            -std::f64::consts::FRAC_PI_2,
+            3.0 * std::f64::consts::FRAC_PI_2
+        ])
+    );
+    assert_eq!(torus.major_scale.get(), 14.0);
+    assert_eq!(torus.minor_scale.get(), 4.0);
+}
+
+#[test]
+fn b2_torus_parser_rejects_invalid_frames_and_nonpositive_scales() {
+    let mut stream = b2_torus_stream();
+    stream[5 + 6 * 8..5 + 7 * 8].copy_from_slice(&1.0f64.to_le_bytes());
+    assert!(crate::families::b2::records::b2_tori(&stream).is_empty());
+
+    let mut stream = b2_torus_stream();
+    stream[5 + 23 * 8..5 + 24 * 8].copy_from_slice(&0.0f64.to_le_bytes());
+    assert!(crate::families::b2::records::b2_tori(&stream).is_empty());
+
+    let mut stream = b2_torus_stream();
+    stream[5 + 15 * 8..5 + 16 * 8].copy_from_slice(&f64::NAN.to_le_bytes());
+    assert!(crate::families::b2::records::b2_tori(&stream).is_empty());
+
+    let mut stream = b2_torus_stream();
+    stream[5 + 16 * 8..5 + 17 * 8].copy_from_slice(&std::f64::consts::FRAC_PI_4.to_le_bytes());
+    assert!(crate::families::b2::records::b2_tori(&stream).is_empty());
+}
+
+/// Overwrite the `index`th f64 of a single consolidated record's payload.
+fn set_record_value(stream: &mut [u8], index: usize, value: f64) {
+    stream[5 + index * 8..5 + (index + 1) * 8].copy_from_slice(&value.to_le_bytes());
+}
+
+#[test]
+fn b2_torus_parser_gates_the_axis_by_the_componentwise_right_handed_cross_product() {
+    let long = 1.0 + 4.0e-13;
+    let mut stream = b2_torus_stream();
+    set_record_value(&mut stream, 7, long);
+    set_record_value(&mut stream, 10, 1.0e-12);
+    set_record_value(&mut stream, 11, long);
+    let [torus] = crate::families::b2::records::b2_tori(&stream)
+        .try_into()
+        .expect("the cross product deviates from the axis by 1e-12");
+    let [y, axis] = [torus.direction_y.get(), torus.frame.axis().get()];
+    assert!((y[0] * axis[0] + y[1] * axis[1] + y[2] * axis[2]).abs() > 1.0e-12);
+    assert_eq!(torus.frame.reference().get(), [1.0, 0.0, 0.0]);
+    assert_eq!(axis, [0.0, 1.0e-12, long]);
+
+    let quarter = 2.0_f64.powi(-40);
+    for (index, value) in [(10, 2.0e-12), (11, -1.0)] {
+        let mut stream = b2_torus_stream();
+        set_record_value(&mut stream, index, value);
+        assert!(crate::families::b2::records::b2_tori(&stream).is_empty());
+    }
+    // Each component is within 1e-12 of the axis; the euclidean deviation is
+    // about 1.3e-12.
+    let mut stream = b2_torus_stream();
+    set_record_value(&mut stream, 9, quarter);
+    set_record_value(&mut stream, 10, quarter);
+    let [torus] = crate::families::b2::records::b2_tori(&stream)
+        .try_into()
+        .expect("each cross-product component is within 1e-12 of the axis");
+    assert_eq!(torus.frame.axis().get(), [quarter, quarter, 1.0]);
+}
+
+/// Each three-direction frame is admitted when the record is read only when
+/// its transverse directions are perpendicular to `1e-12`. The second
+/// transverse direction `(2e-12, 1, 0)` keeps the cross product with
+/// `(1, 0, 0)` equal to the axis `(0, 0, 1)`.
+#[test]
+fn b2_frames_refuse_transverse_directions_that_are_not_perpendicular() {
+    let skew = 2.0e-12;
+    let mut torus = b2_torus_stream();
+    set_record_value(&mut torus, 6, skew);
+    assert!(crate::families::b2::records::b2_tori(&torus).is_empty());
+    let mut sphere = b2_sphere_stream();
+    set_record_value(&mut sphere, 6, 5.0 * skew);
+    assert!(crate::families::b2::records::b2_spheres(&sphere).is_empty());
+    let mut cone = b2_cone_stream();
+    set_record_value(&mut cone, 6, skew);
+    assert!(crate::families::b2::records::b2_cones(&cone).is_empty());
+    let mut revolution = b2_revolution_stream();
+    revolution[56..64].copy_from_slice(&skew.to_le_bytes());
+    assert!(crate::families::b2::records::b2_revolutions(&revolution).is_empty());
+
+    let mut sphere = b2_sphere_stream();
+    set_record_value(&mut sphere, 6, 5.0 * 2.0_f64.powi(-40));
+    assert_eq!(crate::families::b2::records::b2_spheres(&sphere).len(), 1);
+    assert_eq!(
+        crate::families::b2::records::b2_cones(&b2_cone_stream()).len(),
+        1
+    );
+    assert_eq!(
+        crate::families::b2::records::b2_revolutions(&b2_revolution_stream()).len(),
+        1
+    );
+}
+
+#[test]
+fn b2_sphere_parser_gates_the_axis_by_the_componentwise_right_handed_cross_product() {
+    let quarter = 2.0_f64.powi(-40);
+    let mut stream = b2_sphere_stream();
+    set_record_value(&mut stream, 9, 5.0 * quarter);
+    set_record_value(&mut stream, 10, 5.0 * quarter);
+    let [sphere] = crate::families::b2::records::b2_spheres(&stream)
+        .try_into()
+        .expect("each cross-product component is within 1e-12 of the axis");
+    assert_eq!(sphere.frame.axis().get(), [quarter, quarter, 1.0]);
+    assert_eq!(sphere.frame.reference().get(), [1.0, 0.0, 0.0]);
+
+    for (index, value) in [(10, 5.0 * 2.0e-12), (11, -5.0)] {
+        let mut stream = b2_sphere_stream();
+        set_record_value(&mut stream, index, value);
+        assert!(crate::families::b2::records::b2_spheres(&stream).is_empty());
+    }
+}
+
+#[test]
+fn b2_centres_and_the_cone_half_angle_are_admitted_when_the_record_is_read() {
+    for index in 0..3 {
+        let mut stream = b2_torus_stream();
+        set_record_value(&mut stream, index, f64::NAN);
+        assert!(crate::families::b2::records::b2_tori(&stream).is_empty());
+        let mut stream = b2_sphere_stream();
+        set_record_value(&mut stream, index, f64::INFINITY);
+        assert!(crate::families::b2::records::b2_spheres(&stream).is_empty());
+        let mut stream = b2_cone_stream();
+        set_record_value(&mut stream, index, f64::NAN);
+        assert!(crate::families::b2::records::b2_cones(&stream).is_empty());
+    }
+    let mut stream = b2_cone_stream();
+    set_record_value(&mut stream, 12, f64::NAN);
+    assert!(crate::families::b2::records::b2_cones(&stream).is_empty());
+
+    let [torus] = crate::families::b2::records::b2_tori(&b2_torus_stream())
+        .try_into()
+        .expect("one torus");
+    let [sphere] = crate::families::b2::records::b2_spheres(&b2_sphere_stream())
+        .try_into()
+        .expect("one sphere");
+    let [cone] = crate::families::b2::records::b2_cones(&b2_cone_stream())
+        .try_into()
+        .expect("one cone");
+    for (geometry, center) in [
+        (
+            crate::families::b2::records::b2_torus_geometry(&torus),
+            torus.center,
+        ),
+        (
+            crate::families::b2::records::b2_sphere_geometry(&sphere),
+            sphere.center,
+        ),
+    ] {
+        let carried = match geometry {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(surface)) => surface.center(),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(surface)) => surface.center(),
+            other => panic!("expected a torus or a sphere, got {other:?}"),
+        };
+        assert_eq!(carried, center);
+    }
+    match crate::families::b2::records::b2_cone_geometry(&cone) {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(surface)) => {
+            assert_eq!(surface.half_angle(), cone.half_angle);
+        }
+        other => panic!("expected a cone, got {other:?}"),
+    }
+}
+
+#[test]
+fn b2_sphere_parser_reads_radius_scaled_frame_and_active_ranges() {
+    let records = crate::families::b2::records::b2_spheres(&b2_sphere_stream());
+    let [sphere] = records.as_slice() else {
+        panic!("one B2 sphere")
+    };
+    assert_eq!(sphere.pos, 0);
+    assert_eq!(<[f64; 3]>::from(sphere.center.get()), [1.0, 2.0, 3.0]);
+    assert_eq!(sphere.frame.reference().get(), [1.0, 0.0, 0.0]);
+    assert_eq!(sphere.direction_y.get(), [0.0, 1.0, 0.0]);
+    assert_eq!(sphere.frame.axis().get(), [0.0, 0.0, 1.0]);
+    assert_eq!(sphere.radius.get(), 5.0);
+    assert_eq!(sphere.azimuth_range, increasing([-2.0, 4.0]));
+    assert_eq!(
+        sphere.latitude_range,
+        increasing([-1.0, std::f64::consts::FRAC_PI_2])
+    );
+}
+
+#[test]
+fn b2_sphere_parser_validates_tiny_radius_scaled_frame() {
+    let tiny = 1e-200_f64;
+    let mut stream = b2_sphere_stream();
+    for (index, value) in [tiny, 0.0, 0.0, 0.0, tiny, 0.0, 0.0, 0.0, tiny]
+        .into_iter()
+        .enumerate()
+    {
+        stream[5 + (3 + index) * 8..5 + (4 + index) * 8].copy_from_slice(&value.to_le_bytes());
+    }
+    stream[5 + 12 * 8..5 + 13 * 8].copy_from_slice(&tiny.to_le_bytes());
+    stream[5 + 17 * 8..5 + 18 * 8].copy_from_slice(&tiny.to_le_bytes());
+    let chart_origin = tiny * (1.0 - std::f64::consts::PI);
+    stream[5 + 18 * 8..5 + 19 * 8].copy_from_slice(&chart_origin.to_le_bytes());
+    let [sphere] = crate::families::b2::records::b2_spheres(&stream)
+        .try_into()
+        .expect("tiny sphere frame");
+    assert_eq!(sphere.radius.get(), tiny);
+    assert_eq!(sphere.frame.reference().get(), [1.0, 0.0, 0.0]);
+    assert_eq!(sphere.direction_y.get(), [0.0, 1.0, 0.0]);
+    assert_eq!(sphere.frame.axis().get(), [0.0, 0.0, 1.0]);
+
+    stream[5 + 3 * 8..5 + 4 * 8].copy_from_slice(&(2.0 * tiny).to_le_bytes());
+    assert!(crate::families::b2::records::b2_spheres(&stream).is_empty());
+}
+
+#[test]
+fn b2_sphere_parser_rejects_invalid_scaled_frames_and_bounds() {
+    let mut stream = b2_sphere_stream();
+    stream[5 + 3 * 8..5 + 4 * 8].copy_from_slice(&4.0f64.to_le_bytes());
+    assert!(crate::families::b2::records::b2_spheres(&stream).is_empty());
+
+    let mut stream = b2_sphere_stream();
+    stream[5 + 14 * 8..5 + 15 * 8].copy_from_slice(&(-3.0f64).to_le_bytes());
+    assert!(crate::families::b2::records::b2_spheres(&stream).is_empty());
+
+    let mut stream = b2_sphere_stream();
+    stream[5 + 18 * 8..5 + 19 * 8].copy_from_slice(&f64::NAN.to_le_bytes());
+    assert!(crate::families::b2::records::b2_spheres(&stream).is_empty());
+
+    let mut stream = b2_sphere_stream();
+    stream[5 + 17 * 8..5 + 18 * 8].copy_from_slice(&7.0f64.to_le_bytes());
+    assert!(crate::families::b2::records::b2_spheres(&stream).is_empty());
+
+    let mut stream = b2_sphere_stream();
+    stream[5 + 18 * 8..5 + 19 * 8].copy_from_slice(&0.25f64.to_le_bytes());
+    assert!(crate::families::b2::records::b2_spheres(&stream).is_empty());
+}
+
+#[test]
+fn b2_group_parser_reads_separator_and_typed_opener() {
+    let bytes = b2_group_stream();
+    let separators = crate::families::b2::records::b2_group_separators(&bytes);
+    let groups = crate::families::b2::records::b2_groups(&bytes);
+    assert_eq!(separators.len(), 1);
+    assert_eq!(separators[0].token, 0x05);
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].group_type, 3);
+
+    let mut invalid = bytes;
+    invalid[14] = 0x85;
+    assert!(crate::families::b2::records::b2_groups(&invalid).is_empty());
+}
+
+#[test]
+fn b2_offset_support_parser_reads_carrier_distance_and_domain() {
+    let offsets = crate::families::b2::records::b2_offset_supports(&b2_offset_support_stream());
+    assert_eq!(offsets.len(), 1);
+    assert_eq!(offsets[0].support_id, 0x1234);
+    assert_eq!(offsets[0].distance.get(), 2.5);
+    assert_eq!(
+        [
+            offsets[0].u_range.endpoints(),
+            offsets[0].v_range.endpoints()
+        ],
+        [[0.0, 4.0], [-1.0, 3.0]]
+    );
+}
+
+#[test]
+fn b2_offset_support_parser_refuses_collection_limit() {
+    let bytes = b2_offset_support_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let refused = crate::test_support::with_collection_limit(0, |ctx| {
+        crate::families::b2::records::b2_offset_supports_from_records(ctx, &bytes, &records)
+    });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_b2_offset_supports")
+    );
+    let service = crate::test_support::with_service_context(|ctx| {
+        crate::families::b2::records::b2_offset_supports_from_records(ctx, &bytes, &records)
+    })
+    .expect("service profile admits offset support");
+    assert_eq!(service.len(), 1);
+}
+
+#[test]
+fn b2_construction_offset_support_refuses_collection_limit() {
+    let bytes = b2_construction_use_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let refused = crate::test_support::with_collection_limit(0, |ctx| {
+        crate::families::b2::records::b2_offset_supports_from_records(ctx, &bytes, &records)
+    });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_b2_construction_offset_supports")
+    );
+    let service = crate::test_support::with_service_context(|ctx| {
+        crate::families::b2::records::b2_offset_supports_from_records(ctx, &bytes, &records)
+    })
+    .expect("service profile admits construction offset support");
+    assert_eq!(service.len(), 1);
+}
+
+fn b2_nurbs_curve_stream(weights: [f64; 4]) -> Vec<u8> {
+    let knot_end = 41.693_759_535_8_f64;
+    let mut payload = vec![0x0d, 0x09, 0x0c];
+    payload.extend_from_slice(&0.0f64.to_le_bytes());
+    payload.extend_from_slice(&knot_end.to_le_bytes());
+    payload.push(0x05);
+    for point in [
+        [11.0, 23.0, 37.0],
+        [15.0, 31.0, 41.0],
+        [24.0, 17.0, 43.0],
+        [31.0, 29.0, 37.0],
+    ] {
+        for coordinate in point {
+            payload.extend_from_slice(&f64::to_le_bytes(coordinate));
+        }
+    }
+    for weight in weights {
+        payload.extend_from_slice(&weight.to_le_bytes());
+    }
+    payload.extend_from_slice(&[0x05, 0x05]);
+    for value in [0.0, knot_end, 1.0, 0.0] {
+        payload.extend_from_slice(&f64::to_le_bytes(value));
+    }
+    payload.extend_from_slice(&[0x00, 0x07]);
+    assert_eq!(payload.len(), 184);
+    let mut record = vec![0xb2, 0x03, 0x16, 184, 0x19];
+    record.extend(payload);
+    record
+}
+
+fn b2_spatial_circle_stream() -> Vec<u8> {
+    let cosine = 0.696_706_709_347_165_3_f64;
+    let sine = 0.717_356_090_899_522_8_f64;
+    let values = [
+        17.0,
+        23.0,
+        13.0,
+        cosine,
+        -sine,
+        0.0,
+        sine,
+        cosine,
+        -0.0,
+        7.0,
+        0.0,
+        11.2,
+        1.0,
+        -16.391_148_575_128_55,
+    ];
+    let mut record = vec![0xb2, 0x03, 0x0f, 112, 0x05];
+    for value in values {
+        record.extend_from_slice(&value.to_le_bytes());
+    }
+    record
+}
+
+mod carrier_records;
+mod indexed_wrappers;
+mod spatial_and_consolidated;

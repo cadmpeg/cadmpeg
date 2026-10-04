@@ -15,197 +15,325 @@ use super::item::{ambiguous_message, miss_id_message, unknown_arena_message, Are
 use super::{read_input, sniff_kind, ArtifactKind};
 
 /// One addressable JSON-array arena and its records.
-#[derive(Debug, Clone)]
-pub(crate) struct Arena {
-    pub target: ArenaTarget,
-    pub records: Vec<Value>,
+#[derive(Debug)]
+pub(in crate::query) struct Arena {
+    pub(super) target: ArenaTarget,
+    pub(super) records: Vec<Value>,
 }
 
-/// Indexed CADIR document: arenas, addressable names, and id lookup.
-#[derive(Debug, Clone)]
-pub(crate) struct CadirDocument {
+/// A record location valid only in the document whose index constructed it.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub(super) struct RecordRef {
+    arena: usize,
+    rec: usize,
+}
+
+/// CADIR document arenas and optional graph identity lookup.
+#[derive(Debug)]
+pub(super) struct CadirDocument {
     arenas: Vec<Arena>,
-    /// Exact id → every `(arena_index, record_index)` that carries it.
-    by_id: BTreeMap<String, Vec<(usize, usize)>>,
+    /// Exact ID to each record location that carries it, populated for graph walks.
+    by_id: BTreeMap<String, Vec<RecordRef>>,
+}
+
+/// Which records of an arena a query selects.
+///
+/// The two forms are exclusive: a list of requested IDs, or the first N records
+/// in arena order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum RecordSelection {
+    /// Records matching these IDs, exactly or as a unique suffix.
+    Ids(RequestedIds),
+    /// The first N records in arena order.
+    Head(usize),
+}
+
+/// A record-ID request naming at least one ID.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct RequestedIds(Vec<String>);
+
+impl RequestedIds {
+    /// Returns the request, or `None` when the list names no ID.
+    pub(super) fn new(ids: Vec<String>) -> Option<Self> {
+        (!ids.is_empty()).then_some(Self(ids))
+    }
+
+    /// Returns the requested IDs in the order they were given.
+    pub(super) fn as_slice(&self) -> &[String] {
+        &self.0
+    }
+}
+
+impl clap::Args for RecordSelection {
+    fn augment_args(command: clap::Command) -> clap::Command {
+        command
+            .arg(
+                clap::Arg::new("ids")
+                    .value_name("ID")
+                    .help(
+                        "Record IDs (exact or unique suffix); omit for the first record, \
+                         conflicts with --head",
+                    )
+                    .action(clap::ArgAction::Append)
+                    .value_parser(clap::value_parser!(String)),
+            )
+            .arg(
+                clap::Arg::new("head")
+                    .long("head")
+                    .value_name("N")
+                    .help("Take the first N records in arena order; conflicts with explicit IDs")
+                    .conflicts_with("ids")
+                    .value_parser(clap::value_parser!(usize)),
+            )
+    }
+
+    fn augment_args_for_update(command: clap::Command) -> clap::Command {
+        Self::augment_args(command)
+    }
+}
+
+impl clap::FromArgMatches for RecordSelection {
+    fn from_arg_matches(matches: &clap::ArgMatches) -> Result<Self, clap::Error> {
+        let ids: Vec<String> = matches
+            .get_many::<String>("ids")
+            .into_iter()
+            .flatten()
+            .cloned()
+            .collect();
+        match (RequestedIds::new(ids), matches.get_one::<usize>("head")) {
+            (None, Some(head)) => Ok(Self::Head(*head)),
+            (None, None) => Ok(Self::Head(1)),
+            (Some(ids), None) => Ok(Self::Ids(ids)),
+            (Some(_), Some(_)) => Err(clap::Error::raw(
+                clap::error::ErrorKind::ArgumentConflict,
+                "--head cannot be used with explicit record IDs\n",
+            )),
+        }
+    }
+
+    fn update_from_arg_matches(&mut self, matches: &clap::ArgMatches) -> Result<(), clap::Error> {
+        *self = Self::from_arg_matches(matches)?;
+        Ok(())
+    }
 }
 
 impl CadirDocument {
     /// Reads `path`, rejects reports and sidecars, and indexes every array arena.
-    pub(crate) fn load(path: &Path, view: &str) -> Result<Self> {
+    pub(super) fn load(path: &Path, view: &str) -> Result<Self> {
         let bytes = read_input(path)?;
         reject_non_cadir(&bytes, path, view)?;
         Self::from_bytes(&bytes, path)
     }
 
-    pub(crate) fn from_bytes(bytes: &[u8], path: &Path) -> Result<Self> {
+    pub(super) fn from_bytes(bytes: &[u8], path: &Path) -> Result<Self> {
         let root: Value = serde_json::from_slice(bytes)
             .with_context(|| format!("parsing the CADIR document {}", path.display()))?;
-        Ok(Self::from_value(&root))
+        Ok(Self::from_value(root))
     }
 
-    pub(crate) fn from_value(root: &Value) -> Self {
+    pub(super) fn from_value(mut root: Value) -> Self {
         let mut arenas = Vec::new();
-        if let Some(model) = root.get("model").and_then(Value::as_object) {
+        if let Some(model) = root.get_mut("model").and_then(Value::as_object_mut) {
             for (name, value) in model {
-                if let Some(arr) = value.as_array() {
+                if let Some(arr) = value.as_array_mut() {
                     arenas.push(Arena {
                         target: ArenaTarget::Model {
                             arena: name.clone(),
                         },
-                        records: arr.clone(),
+                        records: std::mem::take(arr),
                     });
                 }
             }
         }
-        if let Some(native) = root.get("native").and_then(Value::as_object) {
+        if let Some(native) = root.get_mut("native").and_then(Value::as_object_mut) {
             for (codec, namespace) in native {
-                let Some(native_arenas) = namespace.as_object() else {
+                let Some(native_arenas) = namespace.as_object_mut() else {
                     continue;
                 };
                 for (name, value) in native_arenas {
-                    if let Some(arr) = value.as_array() {
+                    if let Some(arr) = value.as_array_mut() {
                         arenas.push(Arena {
                             target: ArenaTarget::Native {
                                 codec: codec.clone(),
                                 arena: name.clone(),
                             },
-                            records: arr.clone(),
+                            records: std::mem::take(arr),
                         });
                     }
                 }
             }
         }
 
-        let mut by_id: BTreeMap<String, Vec<(usize, usize)>> = BTreeMap::new();
-        for (ai, arena) in arenas.iter().enumerate() {
+        Self {
+            arenas,
+            by_id: BTreeMap::new(),
+        }
+    }
+
+    pub(super) fn index_ids(&mut self) {
+        self.by_id.clear();
+        for (ai, arena) in self.arenas.iter().enumerate() {
             for (ri, rec) in arena.records.iter().enumerate() {
                 if let Some(id) = record_id(rec) {
-                    by_id.entry(id.to_owned()).or_default().push((ai, ri));
+                    self.by_id
+                        .entry(id.to_owned())
+                        .or_default()
+                        .push(RecordRef { arena: ai, rec: ri });
                 }
             }
         }
-
-        Self { arenas, by_id }
     }
 
-    pub(crate) fn arenas(&self) -> &[Arena] {
+    pub(super) fn arenas(&self) -> &[Arena] {
         &self.arenas
     }
 
-    pub(crate) fn id_locations(&self, id: &str) -> Option<&[(usize, usize)]> {
+    pub(super) fn id_locations(&self, id: &str) -> Option<&[RecordRef]> {
         self.by_id.get(id).map(Vec::as_slice)
     }
 
-    pub(crate) fn addressable(&self) -> Vec<(String, u64)> {
+    pub(super) fn addressable(&self) -> Vec<(String, u64)> {
         self.arenas
             .iter()
-            .map(|arena| (arena.target.dotted(), arena.records.len() as u64))
+            .map(|arena| {
+                (
+                    arena.target.dotted(),
+                    cadmpeg_core::decode::u64_from_index(arena.records.len()),
+                )
+            })
             .collect()
     }
 
-    pub(crate) fn require_arena(&self, target: &ArenaTarget) -> Result<&Arena> {
+    pub(super) fn require_arena(&self, target: &ArenaTarget) -> Result<&Arena> {
         self.arenas
             .iter()
             .find(|arena| &arena.target == target)
             .ok_or_else(|| anyhow::anyhow!(unknown_arena_message(target, &self.addressable())))
     }
 
-    pub(crate) fn arena_index(&self, target: &ArenaTarget) -> Result<usize> {
-        self.arenas
-            .iter()
-            .position(|arena| &arena.target == target)
-            .ok_or_else(|| anyhow::anyhow!(unknown_arena_message(target, &self.addressable())))
+    pub(super) fn all_ids(&self) -> std::collections::BTreeSet<String> {
+        self.records()
+            .filter_map(|(_, record)| record_id(record).map(str::to_owned))
+            .collect()
     }
 
-    pub(crate) fn all_ids(&self) -> std::collections::BTreeSet<String> {
-        self.by_id.keys().cloned().collect()
+    /// Returns each record with its indexed location.
+    pub(super) fn records(&self) -> impl Iterator<Item = (RecordRef, &Value)> {
+        self.arenas.iter().enumerate().flat_map(|(ai, arena)| {
+            arena
+                .records
+                .iter()
+                .enumerate()
+                .map(move |(ri, record)| (RecordRef { arena: ai, rec: ri }, record))
+        })
     }
 
-    pub(crate) fn locator(&self, arena: usize, rec: usize) -> String {
-        let arena = &self.arenas[arena];
-        match record_id(&arena.records[rec]) {
+    /// Returns a record using a location constructed by this document only.
+    pub(super) fn record(&self, location: RecordRef) -> &Value {
+        &self.arenas[location.arena].records[location.rec]
+    }
+
+    /// Formats a location constructed by this document only.
+    pub(super) fn locator(&self, location: RecordRef) -> String {
+        let arena = &self.arenas[location.arena];
+        match record_id(self.record(location)) {
             Some(id) => format!("{}#{id}", arena.target.dotted()),
-            None => format!("{}#{rec}", arena.target.dotted()),
+            None => format!("{}#{}", arena.target.dotted(), location.rec),
         }
+    }
+
+    /// Selects indexed records by first-N, exact ID, or unique ID suffix.
+    pub(super) fn select_records(
+        &self,
+        target: &ArenaTarget,
+        selection: &RecordSelection,
+    ) -> Result<(Vec<RecordRef>, Vec<String>)> {
+        let (ai, arena) = self
+            .arenas
+            .iter()
+            .enumerate()
+            .find(|(_, arena)| &arena.target == target)
+            .ok_or_else(|| anyhow::anyhow!(unknown_arena_message(target, &self.addressable())))?;
+        let ids = match selection {
+            RecordSelection::Head(head) => {
+                let end = (*head).min(arena.records.len());
+                return Ok((
+                    (0..end).map(|rec| RecordRef { arena: ai, rec }).collect(),
+                    Vec::new(),
+                ));
+            }
+            RecordSelection::Ids(ids) => ids.as_slice(),
+        };
+
+        let indexed = arena
+            .records
+            .iter()
+            .enumerate()
+            .map(|(rec, value)| (record_id(value), RecordRef { arena: ai, rec }));
+
+        let mut records = Vec::new();
+        let mut errors = Vec::new();
+        let mut all_ids = None;
+        for request in ids {
+            match resolve_one(request, indexed.clone()) {
+                Ok(record) => records.push(record),
+                Err(ResolveError::Ambiguous(matches)) => {
+                    errors.push(ambiguous_message(request, &arena.target.dotted(), &matches));
+                }
+                Err(ResolveError::Missing) => {
+                    let all_ids = all_ids.get_or_insert_with(|| {
+                        indexed
+                            .clone()
+                            .filter_map(|(id, _)| id.map(str::to_owned))
+                            .collect::<Vec<_>>()
+                    });
+                    errors.push(miss_id_message(
+                        &arena.target.dotted(),
+                        request,
+                        cadmpeg_core::decode::u64_from_index(arena.records.len()),
+                        all_ids,
+                    ));
+                }
+            }
+        }
+        Ok((records, errors))
     }
 }
 
 /// Top-level JSON-string `id`, if present.
-pub(crate) fn record_id(record: &Value) -> Option<&str> {
+fn record_id(record: &Value) -> Option<&str> {
     record.get("id").and_then(Value::as_str)
 }
 
-/// Selects start records the same way `query item` does.
-///
-/// Missing or ambiguous IDs go into the error list; the caller emits any
-/// resolved records and then fails if that list is not empty.
-pub(crate) fn select_records(
-    arena: &Arena,
-    ids: &[String],
-    head: Option<usize>,
-) -> (Vec<usize>, Vec<String>) {
-    if ids.is_empty() {
-        let n = head.unwrap_or(1);
-        let end = n.min(arena.records.len());
-        return ((0..end).collect(), Vec::new());
-    }
-
-    let indexed: Vec<(Option<&str>, usize)> = arena
-        .records
-        .iter()
-        .enumerate()
-        .map(|(i, rec)| (record_id(rec), i))
-        .collect();
-    let all_ids: Vec<String> = indexed
-        .iter()
-        .filter_map(|(id, _)| id.map(str::to_owned))
-        .collect();
-
-    let mut indices = Vec::new();
-    let mut errors = Vec::new();
-    for request in ids {
-        match resolve_one(request, &indexed) {
-            Ok(i) => indices.push(i),
-            Err(ResolveError::Ambiguous(matches)) => {
-                errors.push(ambiguous_message(request, &arena.target.dotted(), &matches));
-            }
-            Err(ResolveError::Missing) => {
-                errors.push(miss_id_message(
-                    &arena.target.dotted(),
-                    request,
-                    arena.records.len() as u64,
-                    &all_ids,
-                ));
-            }
-        }
-    }
-    (indices, errors)
-}
-
-enum ResolveError {
+/// Failure to select one record by ID.
+pub(super) enum ResolveError {
     Missing,
     Ambiguous(Vec<String>),
 }
 
-fn resolve_one(request: &str, indexed: &[(Option<&str>, usize)]) -> Result<usize, ResolveError> {
-    for (id, i) in indexed {
-        if *id == Some(request) {
-            return Ok(*i);
+/// Resolves the first exact ID or one unique suffix match.
+pub(super) fn resolve_one<'a, T: Copy>(
+    request: &str,
+    indexed: impl Iterator<Item = (Option<&'a str>, T)> + Clone,
+) -> Result<T, ResolveError> {
+    for (id, value) in indexed.clone() {
+        if id == Some(request) {
+            return Ok(value);
         }
     }
-    let mut suffix: Vec<(String, usize)> = Vec::new();
-    for (id, i) in indexed {
+    let mut suffix = Vec::new();
+    for (id, value) in indexed {
         if let Some(id) = id {
             if id.ends_with(request) {
-                suffix.push(((*id).to_owned(), *i));
+                suffix.push((id, value));
             }
         }
     }
-    match suffix.len() {
-        0 => Err(ResolveError::Missing),
-        1 => Ok(suffix[0].1),
+    match suffix.as_slice() {
+        [] => Err(ResolveError::Missing),
+        [(_, value)] => Ok(*value),
         _ => Err(ResolveError::Ambiguous(
-            suffix.into_iter().map(|(id, _)| id).collect(),
+            suffix.into_iter().map(|(id, _)| id.to_owned()).collect(),
         )),
     }
 }
@@ -215,7 +343,7 @@ fn resolve_one(request: &str, indexed: &[(Option<&str>, usize)]) -> Result<usize
 ///
 /// Decides on the top-level keys alone, so a caller that goes on to index the
 /// document parses the body once.
-pub(crate) fn reject_non_cadir(bytes: &[u8], path: &Path, view: &str) -> Result<()> {
+pub(super) fn reject_non_cadir(bytes: &[u8], path: &Path, view: &str) -> Result<()> {
     match sniff_kind(bytes, path)? {
         ArtifactKind::Cadir => Ok(()),
         ArtifactKind::Report => bail!(
@@ -235,12 +363,13 @@ pub(crate) fn reject_non_cadir(bytes: &[u8], path: &Path, view: &str) -> Result<
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::item::ArenaTarget;
+    use super::{CadirDocument, RecordSelection, RequestedIds};
     use serde_json::json;
 
     #[test]
     fn indexes_model_and_native_arenas_and_skips_non_arrays() {
-        let doc = CadirDocument::from_value(&json!({
+        let mut doc = CadirDocument::from_value(json!({
             "ir_version": "4",
             "model": {
                 "faces": [{"id": "f1"}, {"id": "f2"}],
@@ -251,31 +380,39 @@ mod tests {
                 "rhino": {"unknowns": [{"id": "n1"}]}
             }
         }));
+        doc.index_ids();
         let names: Vec<String> = doc.arenas.iter().map(|a| a.target.dotted()).collect();
         assert!(names.contains(&"model.faces".to_owned()));
         assert!(names.contains(&"model.empty".to_owned()));
         assert!(names.contains(&"native.rhino.unknowns".to_owned()));
         assert!(!names.iter().any(|n| n.contains("null")));
-        let (ai, ri) = doc.by_id["f1"][0];
-        assert_eq!(doc.arenas[ai].target.dotted(), "model.faces");
-        assert_eq!(ri, 0);
-        assert_eq!(doc.locator(ai, ri), "model.faces#f1");
+        let location = doc.by_id["f1"][0];
+        assert_eq!(doc.arenas[location.arena].target.dotted(), "model.faces");
+        assert_eq!(location.rec, 0);
+        assert_eq!(doc.locator(location), "model.faces#f1");
     }
 
     #[test]
     fn id_collision_keeps_every_hit() {
-        let doc = CadirDocument::from_value(&json!({
+        let mut doc = CadirDocument::from_value(json!({
             "model": {
                 "a": [{"id": "dup"}],
                 "b": [{"id": "dup"}]
             }
         }));
+        doc.index_ids();
         assert_eq!(doc.by_id["dup"].len(), 2);
+    }
+
+    /// Selects by ID, falling back to the first record when no ID is given.
+    fn ids_selection(ids: &[&str]) -> RecordSelection {
+        RequestedIds::new(ids.iter().map(|id| (*id).to_owned()).collect())
+            .map_or(RecordSelection::Head(1), RecordSelection::Ids)
     }
 
     #[test]
     fn select_head_and_suffix_and_ambiguous() {
-        let doc = CadirDocument::from_value(&json!({
+        let doc = CadirDocument::from_value(json!({
             "model": {"faces": [
                 {"id": "other:face#1"},
                 {"id": "other:face#2"},
@@ -283,18 +420,28 @@ mod tests {
                 {"id": "other:coedge#802"}
             ]}
         }));
-        let arena = doc
-            .require_arena(&ArenaTarget::parse("faces").unwrap())
+        let target = ArenaTarget::parse("faces").unwrap();
+        let (idx, err) = doc
+            .select_records(&target, &RecordSelection::Head(2))
             .unwrap();
-        let (idx, err) = select_records(arena, &[], Some(2));
-        assert_eq!(idx, vec![0, 1]);
+        assert_eq!(
+            idx.iter().map(|location| location.rec).collect::<Vec<_>>(),
+            vec![0, 1]
+        );
         assert!(err.is_empty());
 
-        let (idx, err) = select_records(arena, &["face#2".to_owned()], None);
-        assert_eq!(idx, vec![1]);
+        let (idx, err) = doc
+            .select_records(&target, &ids_selection(&["face#2"]))
+            .unwrap();
+        assert_eq!(
+            idx.iter().map(|location| location.rec).collect::<Vec<_>>(),
+            vec![1]
+        );
         assert!(err.is_empty());
 
-        let (_, err) = select_records(arena, &["#802".to_owned()], None);
+        let (_, err) = doc
+            .select_records(&target, &ids_selection(&["#802"]))
+            .unwrap();
         assert_eq!(err.len(), 1);
         assert!(err[0].contains("ambiguous"));
     }

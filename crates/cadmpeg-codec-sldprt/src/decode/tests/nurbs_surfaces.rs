@@ -5,14 +5,40 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::LossTaxonomy;
+use cadmpeg_ir::report::loss::LossTaxonomy;
 
-use crate::test_support::*;
+use crate::test_support::container::make_block;
+use crate::test_support::container::outer_header;
+use crate::test_support::container::sldprt_with_body;
+use crate::test_support::ir::strict_options;
+use crate::test_support::parasolid::be16;
+use crate::test_support::parasolid::be32;
+use crate::test_support::parasolid::bef64;
+use crate::test_support::parasolid::blend_triangle_body;
+use crate::test_support::parasolid::bridge;
+use crate::test_support::parasolid::coedge;
+use crate::test_support::parasolid::compact_counted_nurbs_surface_carrier;
+use crate::test_support::parasolid::compact_f64_array;
+use crate::test_support::parasolid::cylinder_carrier;
+use crate::test_support::parasolid::edge_use;
+use crate::test_support::parasolid::f64_array;
+use crate::test_support::parasolid::line_carrier;
+use crate::test_support::parasolid::loop_head;
+use crate::test_support::parasolid::markerless_nurbs_surface_carrier;
+use crate::test_support::parasolid::nurbs_surface_carrier;
+use crate::test_support::parasolid::nurbs_surface_carrier_with_v_knot_storage;
+use crate::test_support::parasolid::offset_surface_carrier;
+use crate::test_support::parasolid::parasolid_with_body;
+use crate::test_support::parasolid::triangle_body;
+use crate::test_support::parasolid::u16_array;
+use crate::test_support::parasolid::untyped_triangle;
+use crate::test_support::parasolid::vertex_use;
+use crate::test_support::parasolid::world_point;
 use crate::SldprtCodec;
 
 #[test]
 fn faces_decode_nurbs_surface() {
-    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
     let mut body = triangle_body();
     body.extend(nurbs_surface_carrier(180, 181, 10));
@@ -34,18 +60,18 @@ fn faces_decode_nurbs_surface() {
         .surfaces
         .iter()
         .find_map(|surface| match &surface.geometry {
-            SurfaceGeometry::Nurbs(nurbs) => Some(nurbs),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => Some(nurbs),
             _ => None,
         })
         .expect("NURBS surface");
     assert_eq!((nurbs.u_degree(), nurbs.v_degree()), (1, 1));
     assert_eq!((nurbs.u_count(), nurbs.v_count()), (2, 2));
-    assert_eq!(nurbs.control_points().len(), 4);
+    assert_eq!(nurbs.poles().len(), 4);
 }
 
 #[test]
 fn faces_decode_compact_counted_nurbs_surface_arrays() {
-    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
     let mut body = triangle_body();
     body.extend(compact_counted_nurbs_surface_carrier(180, 181, 10));
@@ -62,22 +88,26 @@ fn faces_decode_compact_counted_nurbs_surface_arrays() {
         )
         .unwrap();
 
-    let SurfaceGeometry::Nurbs(surface) = &result.ir().model.surfaces[0].geometry else {
+    let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
+        result.ir().model.surfaces[0].geometry.solved()
+    else {
         panic!("compact counted NURBS surface");
     };
     assert_eq!((surface.u_degree(), surface.v_degree()), (1, 1));
     assert_eq!((surface.u_count(), surface.v_count()), (2, 2));
-    assert_eq!(surface.u_knots(), [0.0, 0.0, 1.0, 1.0]);
-    assert_eq!(surface.v_knots(), [0.0, 0.0, 1.0, 1.0]);
-    assert_eq!(surface.control_points().len(), 4);
-    assert_eq!(surface.control_points()[3].z, 500.0);
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    assert_eq!(surface.u_knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(surface.v_knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
+    let poles = surface.poles();
+    assert_eq!(poles.len(), 4);
+    assert_eq!(poles[3].z, 500.0);
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
 #[test]
 fn conflicting_compact_counted_surface_array_is_rejected() {
-    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
     let mut body = triangle_body();
     body.extend(compact_counted_nurbs_surface_carrier(180, 181, 10));
@@ -97,12 +127,19 @@ fn conflicting_compact_counted_surface_array_is_rejected() {
 
     assert!(matches!(
         result.ir().model.surfaces[0].geometry,
-        SurfaceGeometry::Unknown { .. }
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
     ));
 }
 
 #[test]
 fn short_compact_surface_knot_array_is_rejected_without_panicking() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let mut bytes = compact_counted_nurbs_surface_carrier(180, 181, 10);
     let multiplicity_attr = 183u16.to_be_bytes();
     let header = bytes
@@ -111,12 +148,18 @@ fn short_compact_surface_knot_array_is_rejected_without_panicking() {
         .expect("u multiplicity header");
     bytes[header + 1] = 1;
 
-    assert!(!crate::brep::spline::scan_surface_carriers(&bytes).contains_key(&180));
+    assert!(
+        !crate::brep::spline::scan_surface_carriers(&ctx, &bytes, &mut Vec::new())
+            .expect("surface scan")
+            .contains_key(&180)
+    );
 }
 
 #[test]
 fn faces_decode_nested_offset_surface_with_hidden_support() {
-    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{
+        ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry,
+    };
 
     let mut body = triangle_body();
     let bridge = body
@@ -137,33 +180,35 @@ fn faces_decode_nested_offset_surface_with_hidden_support() {
     assert_eq!(result.ir().model.procedural_surfaces.len(), 2);
     assert_eq!(result.ir().model.surfaces.len(), 3);
     assert!(result.ir().model.procedural_surfaces.iter().any(|surface| {
-        matches!(
-            surface.definition(),
-            ProceduralSurfaceDefinition::Offset { distance, .. }
-                if (distance - 2.0).abs() < f64::EPSILON
-        )
+        match surface.definition() { ProceduralSurfaceDefinition::Offset(matched_payload) => matches!((matched_payload.distance(),), (distance,) if (distance.get() - 2.0).abs() < f64::EPSILON), _ => false }
     }));
     assert!(result.ir().model.surfaces.iter().any(|surface| {
-        matches!(surface.geometry, SurfaceGeometry::Plane { .. })
-            && surface.id.as_str().contains("hidden-support-surf#100")
+        matches!(
+            surface.geometry,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
+        ) && surface.id.as_str().contains("hidden-support-surf#100")
     }));
 
     let face_surface = &result.ir().model.faces[0].surface;
     let point = cadmpeg_ir::eval::model_surface_point_by_id(
-        &cadmpeg_ir::index::ModelIndex::new(result.ir()),
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &cadmpeg_ir::index::ModelIndex::build(result.ir(), cadmpeg_ir::index::StandardIndex),
         face_surface,
         0.0,
         0.0,
     )
     .expect("nested offset evaluation");
     assert!((point.z - 5.0).abs() < 1.0e-12);
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
 #[test]
 fn blend_emits_typed_and_opaque_hidden_support_surfaces() {
-    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{
+        ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry,
+    };
 
     let result = SldprtCodec
         .decode(
@@ -174,11 +219,13 @@ fn blend_emits_typed_and_opaque_hidden_support_surfaces() {
 
     assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
     assert_eq!(result.ir().model.surfaces.len(), 3);
-    let ProceduralSurfaceDefinition::Blend { supports, .. } =
+    let ProceduralSurfaceDefinition::Blend(definition_payload) =
         result.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("rolling-ball construction");
     };
+    let supports = definition_payload.supports();
+
     let support_surfaces: Vec<_> = supports
         .iter()
         .flatten()
@@ -194,11 +241,11 @@ fn blend_emits_typed_and_opaque_hidden_support_surfaces() {
         .collect();
     assert!(matches!(
         support_surfaces[0].geometry,
-        SurfaceGeometry::Plane { .. }
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
     ));
     assert!(matches!(
         support_surfaces[1].geometry,
-        SurfaceGeometry::Unknown { .. }
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
     ));
     for surface in support_surfaces {
         assert!(surface.id.as_str().contains("hidden-support-surf#"));
@@ -207,7 +254,8 @@ fn blend_emits_typed_and_opaque_hidden_support_surfaces() {
         loss.message
             .contains("1 untyped surface carrier(s) are retained as opaque hidden supports")
     }));
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -254,13 +302,14 @@ fn merged_sites_retain_procedural_surface_constructions() {
         loss.message
             .contains("2 untyped surface carrier(s) are retained as opaque hidden supports")
     }));
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
 #[test]
 fn cyclic_offset_surface_graph_remains_unknown() {
-    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
     let mut body = triangle_body();
     let bridge = body
@@ -281,20 +330,39 @@ fn cyclic_offset_surface_graph_remains_unknown() {
     assert!(result.ir().model.procedural_surfaces.is_empty());
     assert!(matches!(
         result.ir().model.surfaces[0].geometry,
-        SurfaceGeometry::Unknown { .. }
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
     ));
 }
 
 #[test]
 fn surface_rejects_nonzero_terminal_multiplicity() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let bytes =
         nurbs_surface_carrier_with_v_knot_storage(180, 181, 10, &[2, 2, 1], &[0.0, 1.0, 2.0]);
-    assert!(!crate::brep::spline::scan_surface_carriers(&bytes).contains_key(&180));
+    assert!(
+        !crate::brep::spline::scan_surface_carriers(&ctx, &bytes, &mut Vec::new())
+            .expect("surface scan")
+            .contains_key(&180)
+    );
 }
 
 #[test]
 fn surface_descriptor_uses_terminal_array_references() {
-    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
 
     let mut bytes = nurbs_surface_carrier(180, 181, 10);
     let descriptor = bytes
@@ -321,19 +389,21 @@ fn surface_descriptor_uses_terminal_array_references() {
     bytes.extend(f64_array(0x80, 193, &[0.0, 1.0]));
     bytes.extend(f64_array(0x80, 194, &[0.0, 1.0]));
 
-    let carrier = crate::brep::spline::scan_surface_carriers(&bytes)
+    let carrier = crate::brep::spline::scan_surface_carriers(&ctx, &bytes, &mut Vec::new())
+        .expect("surface scan")
         .remove(&180)
         .expect("surface carrier");
-    let SurfaceGeometry::Nurbs(surface) = carrier.geometry else {
+    let Some(SolvedSurfaceGeometry::Nurbs(surface)) = carrier.geometry.solved() else {
         panic!("expected NURBS surface");
     };
-    assert_eq!(surface.control_points()[0].x, 10_000.0);
-    assert_eq!(surface.control_points()[3].y, 1_000.0);
+    let poles = surface.poles();
+    assert_eq!(poles[0].x, 10_000.0);
+    assert_eq!(poles[3].y, 1_000.0);
 }
 
 #[test]
 fn faces_decode_markerless_nurbs_surface_arrays() {
-    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
     let mut body = triangle_body();
     body.extend(markerless_nurbs_surface_carrier(180, 181, 10));
@@ -356,7 +426,7 @@ fn faces_decode_markerless_nurbs_surface_arrays() {
         .surfaces
         .iter()
         .find_map(|surface| match &surface.geometry {
-            SurfaceGeometry::Nurbs(nurbs) => Some(nurbs),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => Some(nurbs),
             _ => None,
         })
         .expect("NURBS surface");
@@ -365,7 +435,7 @@ fn faces_decode_markerless_nurbs_surface_arrays() {
 
 #[test]
 fn face_on_untyped_surface_keeps_topology() {
-    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
     let f = sldprt_with_body(&untyped_triangle(0.0));
     let mut cur = Cursor::new(f);
@@ -374,9 +444,9 @@ fn face_on_untyped_surface_keeps_topology() {
         .unwrap();
 
     assert_eq!(result.ir().model.faces.len(), 1);
-    let SurfaceGeometry::Unknown {
+    let Some(SolvedSurfaceGeometry::Unknown {
         record: Some(record),
-    } = &result.ir().model.surfaces[0].geometry
+    }) = result.ir().model.surfaces[0].geometry.solved()
     else {
         panic!("opaque surface has no replay record");
     };
@@ -388,19 +458,20 @@ fn face_on_untyped_surface_keeps_topology() {
     assert!(retained
         .links
         .iter()
-        .any(|link| link == result.ir().model.surfaces[0].id.as_str()));
+        .any(|link| link.as_str() == result.ir().model.surfaces[0].id.as_str()));
     assert!(result
         .report()
         .losses
         .iter()
         .any(|l| l.code.taxonomy() == LossTaxonomy::GeometryNotTransferred));
-    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }
 
 #[test]
 fn strict_rejects_topology_decode_resting_on_untyped_surface() {
-    use cadmpeg_ir::report::{LossTaxonomy, StrictConsequence};
+    use cadmpeg_ir::report::loss::{LossTaxonomy, StrictConsequence};
 
     let mut body = Vec::new();
     body.extend(bridge(10, 20, 999));
@@ -447,7 +518,9 @@ fn strict_rejects_topology_decode_resting_on_untyped_surface() {
 #[test]
 fn compact_carrier_shapes_decode() {
     use crate::brep::{parse_carrier, Carrier, CurveCarrier, SurfaceCarrier};
-    use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{
+        CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    };
 
     // Cylinder (tag 00 33, 10 f64): origin, axis, radius, refdir.
     let mut cyl = vec![0x00, 0x33];
@@ -462,9 +535,11 @@ fn compact_carrier_shapes_decode() {
     }
     match parse_carrier(&cyl, 0).unwrap() {
         Carrier::Surface(SurfaceCarrier {
-            geometry: SurfaceGeometry::Cylinder { radius, axis, .. },
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
             ..
         }) => {
+            let axis = cylinder_surface.frame().axis().as_raw();
+            let radius = cylinder_surface.radius().get();
             assert_eq!(radius, 50.0); // 0.05 m ×1000
             assert_eq!(axis.z, 1.0);
         }
@@ -484,9 +559,12 @@ fn compact_carrier_shapes_decode() {
     }
     match parse_carrier(&circ, 0).unwrap() {
         Carrier::Curve(CurveCarrier {
-            geometry: CurveGeometry::Circle { radius, .. },
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
             ..
-        }) => assert_eq!(radius, 3.0),
+        }) => {
+            let radius = circle_curve.radius().get();
+            assert_eq!(radius, 3.0);
+        }
         other => panic!("expected circle, got {other:?}"),
     }
 

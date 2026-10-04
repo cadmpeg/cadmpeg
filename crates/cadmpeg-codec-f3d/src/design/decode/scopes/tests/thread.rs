@@ -1,13 +1,115 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(
-    clippy::cloned_ref_to_slice_refs,
-    clippy::default_trait_access,
-    clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
-)]
-use super::prelude::*;
-use crate::design::decode::scopes::ThreadPrefix;
+
+use cadmpeg_core::decode::u64_from_index;
+
+use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
+use crate::design::decode::scopes::thread::ThreadPrefix;
+use crate::design::decode::scopes::thread::{exact_thread_construction, parse_thread_payload};
+use crate::records::decal::DesignRecordHeader;
+use crate::records::feature::scope::DesignParameterScope;
+use crate::records::feature::thread::{DesignThreadConstruction, DesignThreadForm};
+use crate::test_support::lp_utf16;
+
+#[test]
+fn thread_payload_refuses_each_text_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let texts = ["M30x3.5", "30.0", "ISO Metric profile"];
+    let mut bytes = Vec::new();
+    for text in texts {
+        lp_utf16(&mut bytes, text);
+    }
+    let mut charged = 0usize;
+    for text in texts {
+        charged += text.len();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = u64::try_from(charged - 1).unwrap();
+
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = parse_thread_payload(&ctx, &bytes, 0, ThreadPrefix::Standard, Vec::new());
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::RetainedBytes
+                    && failure.operation == "f3d Design UTF-16 text"
+        ));
+    }
+}
+
+#[test]
+fn thread_face_group_limit_refuses_before_payload() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let mut bytes = vec![0; 38];
+    bytes[21..29].copy_from_slice(&60.0f64.to_le_bytes());
+    bytes[29..34].copy_from_slice(&[1, 2, 0, 0, 0]);
+    bytes[34..38].copy_from_slice(&[0x36, 0, 0x67, 0]);
+    let mut scope = DesignParameterScope::empty(
+        "f3d:scope#thread-limit",
+        crate::records::feature::scope::DesignFeatureKind::Thread,
+        987,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 200;
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![988, 989]);
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = exact_thread_construction(&ctx, &bytes, &scope);
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == "f3d Thread face groups"
+    ));
+}
+
+#[test]
+fn thread_compact_face_group_limit_refuses_second_item() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let mut bytes = vec![0; 38];
+    bytes[21..29].copy_from_slice(&60.0f64.to_le_bytes());
+    bytes[29..34].copy_from_slice(&[0, 2, 0, 0, 0]);
+    bytes[34..38].copy_from_slice(&[0x36, 0, 0x48, 0]);
+    let mut scope = DesignParameterScope::empty(
+        "f3d:scope#compact-thread-limit",
+        crate::records::feature::scope::DesignFeatureKind::Thread,
+        987,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 200;
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![988, 989, 992, 993]);
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 1;
+
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = exact_thread_construction(&ctx, &bytes, &scope);
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == "f3d Thread face groups"
+    ));
+}
 
 #[test]
 fn thread_scope_decodes_standard_size_and_face_group() {
@@ -35,62 +137,121 @@ fn thread_scope_decodes_standard_size_and_face_group() {
     let expected = DesignThreadConstruction {
         form: DesignThreadForm::Standard,
         designation_offset: 38,
-        designation: "M30x3.5".into(),
-        nominal_size: crate::records::feature::DesignThreadNominalSize::try_from("30.0".to_owned())
-            .expect("nominal size"),
-        profile: "ISO Metric profile".into(),
-        major_diameter: 2.97345,
-        minor_diameter: 2.5732,
-        pitch: 0.35,
-        pitch_diameter: 2.7568,
+        designation: cadmpeg_core::text::NonBlankString::new("M30x3.5").unwrap(),
+        nominal_size: crate::records::feature::thread::DesignThreadNominalSize::try_from(
+            "30.0".to_owned(),
+        )
+        .expect("nominal size"),
+        profile: cadmpeg_core::text::NonBlankString::new("ISO Metric profile").unwrap(),
+        pitch: cadmpeg_ir::scalar::PositiveReal::new(0.35).unwrap(),
         face_group_record_indices: vec![988],
+        diameters: crate::records::feature::thread::DesignThreadDiameters::new(
+            2.97345, 2.5732, 2.7568,
+        )
+        .unwrap(),
     };
     assert_thread_construction(
-        parse_thread_payload(&bytes, 38, ThreadPrefix::Standard, vec![988]),
+        parse_thread_payload(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            38,
+            ThreadPrefix::Standard,
+            vec![988],
+        )
+        .unwrap(),
         &expected,
     );
     let mut invalid_standard_pitch_marker = bytes.clone();
     invalid_standard_pitch_marker[129] = 0;
     assert_eq!(
         parse_thread_payload(
+            &cadmpeg_test_support::service_decode_context(),
             &invalid_standard_pitch_marker,
             38,
             ThreadPrefix::Standard,
             vec![988],
-        ),
+        )
+        .unwrap(),
         None
     );
 
     let mut scope = DesignParameterScope::empty(
         "f3d:scope#standard-thread",
-        crate::records::feature::DesignFeatureKind::Thread,
+        crate::records::feature::scope::DesignFeatureKind::Thread,
         987,
     );
-    scope.class_tag = crate::records::DesignClassTag::try_from("901".to_owned()).unwrap();
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("902".to_owned()).unwrap();
-    scope.frame_length = 17;
-    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![988, 989]);
-    assert_thread_construction(exact_thread_construction(&bytes, &scope), &expected);
+    scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("901".to_owned()).unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("902".to_owned()).unwrap();
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 200;
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![988, 989]);
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    assert_thread_construction(
+        exact_thread_construction(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &scope,
+        )
+        .unwrap(),
+        &expected,
+    );
 
     let mut owner_marked = bytes;
     owner_marked.splice(20..20, [1, 0, 0, 0]);
-    let shifted_expected =
-        parse_thread_payload(&owner_marked, 42, ThreadPrefix::Standard, vec![988])
-            .expect("owner-marked standard Thread payload");
+    let shifted_expected = parse_thread_payload(
+        &cadmpeg_test_support::service_decode_context(),
+        &owner_marked,
+        42,
+        ThreadPrefix::Standard,
+        vec![988],
+    )
+    .unwrap()
+    .expect("owner-marked standard Thread payload");
     assert_eq!(shifted_expected.designation_offset, 42);
-    scope.frame_length += 4;
+    scope
+        .try_edit(|draft| {
+            draft.frame_length += 4;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     assert_thread_construction(
-        exact_thread_construction(&owner_marked, &scope),
+        exact_thread_construction(
+            &cadmpeg_test_support::service_decode_context(),
+            &owner_marked,
+            &scope,
+        )
+        .unwrap(),
         &shifted_expected,
     );
     let mut invalid_owner_marker = owner_marked.clone();
     invalid_owner_marker[20..24].copy_from_slice(&2u32.to_le_bytes());
     assert_eq!(
-        exact_thread_construction(&invalid_owner_marker, &scope),
+        exact_thread_construction(
+            &cadmpeg_test_support::service_decode_context(),
+            &invalid_owner_marker,
+            &scope
+        )
+        .unwrap(),
         None
     );
     assert_eq!(
-        parse_thread_payload(&owner_marked, 42, ThreadPrefix::Compact, vec![988]),
+        parse_thread_payload(
+            &cadmpeg_test_support::service_decode_context(),
+            &owner_marked,
+            42,
+            ThreadPrefix::Compact,
+            vec![988]
+        )
+        .unwrap(),
         None
     );
 }
@@ -118,34 +279,73 @@ fn thread_scope_decodes_class_334_legacy_standard_tail() {
     let expected = DesignThreadConstruction {
         form: DesignThreadForm::StandardLegacy,
         designation_offset: 38,
-        designation: "M7x1".into(),
-        nominal_size: crate::records::feature::DesignThreadNominalSize::try_from("7.0".to_owned())
-            .expect("nominal size"),
-        profile: "ISO Metric profile".into(),
-        major_diameter: 0.71472,
-        minor_diameter: 0.60355,
-        pitch: 0.1,
-        pitch_diameter: 0.64255,
+        designation: cadmpeg_core::text::NonBlankString::new("M7x1").unwrap(),
+        nominal_size: crate::records::feature::thread::DesignThreadNominalSize::try_from(
+            "7.0".to_owned(),
+        )
+        .expect("nominal size"),
+        profile: cadmpeg_core::text::NonBlankString::new("ISO Metric profile").unwrap(),
+        pitch: cadmpeg_ir::scalar::PositiveReal::new(0.1).unwrap(),
         face_group_record_indices: vec![988],
+        diameters: crate::records::feature::thread::DesignThreadDiameters::new(
+            0.71472, 0.60355, 0.64255,
+        )
+        .unwrap(),
     };
     assert_thread_construction(
-        parse_thread_payload(&bytes, 38, ThreadPrefix::Standard, vec![988]),
+        parse_thread_payload(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            38,
+            ThreadPrefix::Standard,
+            vec![988],
+        )
+        .unwrap(),
         &expected,
     );
 
     let mut scope = DesignParameterScope::empty(
         "f3d:scope#legacy-thread",
-        crate::records::feature::DesignFeatureKind::Thread,
+        crate::records::feature::scope::DesignFeatureKind::Thread,
         987,
     );
-    scope.class_tag = crate::records::DesignClassTag::try_from("334".to_owned()).unwrap();
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("262".to_owned()).unwrap();
-    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![988, 991]);
-    assert_thread_construction(exact_thread_construction(&bytes, &scope), &expected);
+    scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("334".to_owned()).unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("262".to_owned()).unwrap();
+    scope
+        .try_edit(|draft| {
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![988, 991]);
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    assert_thread_construction(
+        exact_thread_construction(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &scope,
+        )
+        .unwrap(),
+        &expected,
+    );
 
-    scope.class_tag = crate::records::DesignClassTag::try_from("335".to_owned()).unwrap();
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
-    assert_eq!(exact_thread_construction(&bytes, &scope), None);
+    scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("335".to_owned()).unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap();
+    assert_eq!(
+        exact_thread_construction(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &scope
+        )
+        .unwrap(),
+        None
+    );
 }
 
 fn assert_thread_construction(
@@ -170,10 +370,10 @@ fn assert_thread_construction(
                 .value()
                 .expect("expected nominal size"),
         ),
-        (actual.major_diameter, expected.major_diameter),
-        (actual.minor_diameter, expected.minor_diameter),
-        (actual.pitch, expected.pitch),
-        (actual.pitch_diameter, expected.pitch_diameter),
+        (actual.diameters.major(), expected.diameters.major()),
+        (actual.diameters.minor(), expected.diameters.minor()),
+        (actual.pitch.get(), expected.pitch.get()),
+        (actual.diameters.pitch(), expected.diameters.pitch()),
     ] {
         assert!((actual - expected).abs() < 1.0e-12);
     }
@@ -203,18 +403,28 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
     let expected = DesignThreadConstruction {
         form: DesignThreadForm::Compact(None),
         designation_offset: 38,
-        designation: "M3.5x0.6".into(),
-        nominal_size: crate::records::feature::DesignThreadNominalSize::try_from("3.5".to_owned())
-            .expect("nominal size"),
-        profile: "GB Metric profile".into(),
-        major_diameter: 0.35995,
-        minor_diameter: 0.293,
-        pitch: 0.06,
-        pitch_diameter: 0.3166,
+        designation: cadmpeg_core::text::NonBlankString::new("M3.5x0.6").unwrap(),
+        nominal_size: crate::records::feature::thread::DesignThreadNominalSize::try_from(
+            "3.5".to_owned(),
+        )
+        .expect("nominal size"),
+        profile: cadmpeg_core::text::NonBlankString::new("GB Metric profile").unwrap(),
+        pitch: cadmpeg_ir::scalar::PositiveReal::new(0.06).unwrap(),
         face_group_record_indices: vec![988],
+        diameters: crate::records::feature::thread::DesignThreadDiameters::new(
+            0.35995, 0.293, 0.3166,
+        )
+        .unwrap(),
     };
     assert_thread_construction(
-        parse_thread_payload(&bytes, 38, ThreadPrefix::Compact, vec![988]),
+        parse_thread_payload(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            38,
+            ThreadPrefix::Compact,
+            vec![988],
+        )
+        .unwrap(),
         &expected,
     );
     let mut referenced = bytes.clone();
@@ -222,49 +432,106 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
     referenced[after_profile + 39..after_profile + 43].copy_from_slice(&2075u32.to_le_bytes());
     referenced[after_profile + 43..after_profile + 49].fill(0);
     let mut referenced_expected = expected.clone();
-    referenced_expected.form = DesignThreadForm::Compact(Some(crate::records::Located {
+    referenced_expected.form = DesignThreadForm::Compact(Some(crate::records::identity::Located {
         value: std::num::NonZeroU32::new(2075).expect("reference"),
-        offset: (after_profile + 39) as u64,
+        offset: u64_from_index(after_profile + 39),
     }));
     assert_thread_construction(
-        parse_thread_payload(&referenced, 38, ThreadPrefix::Compact, vec![988]),
+        parse_thread_payload(
+            &cadmpeg_test_support::service_decode_context(),
+            &referenced,
+            38,
+            ThreadPrefix::Compact,
+            vec![988],
+        )
+        .unwrap(),
         &referenced_expected,
     );
 
     let mut scope = DesignParameterScope::empty(
         "f3d:scope#compact-thread",
-        crate::records::feature::DesignFeatureKind::Thread,
+        crate::records::feature::scope::DesignFeatureKind::Thread,
         987,
     );
-    scope.class_tag = crate::records::DesignClassTag::try_from("903".to_owned()).unwrap();
-    scope.frame_length = 19;
-    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![988, 989, 992, 993]);
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("904".to_owned()).unwrap();
+    scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("903".to_owned()).unwrap();
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 200;
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![988, 989, 992, 993]);
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("904".to_owned()).unwrap();
     let mut plural_expected = expected.clone();
     plural_expected.face_group_record_indices.push(992);
-    assert_thread_construction(exact_thread_construction(&bytes, &scope), &plural_expected);
+    assert_thread_construction(
+        exact_thread_construction(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &scope,
+        )
+        .unwrap(),
+        &plural_expected,
+    );
 
     let mut owner_marked = bytes;
     owner_marked.splice(20..20, [1, 0, 0, 0]);
     plural_expected.designation_offset += 4;
-    scope.frame_length += 4;
+    scope
+        .try_edit(|draft| {
+            draft.frame_length += 4;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     assert_thread_construction(
-        exact_thread_construction(&owner_marked, &scope),
+        exact_thread_construction(
+            &cadmpeg_test_support::service_decode_context(),
+            &owner_marked,
+            &scope,
+        )
+        .unwrap(),
         &plural_expected,
     );
     let mut invalid_owner_separator = owner_marked.clone();
     invalid_owner_separator[24] = 1;
     assert_eq!(
-        exact_thread_construction(&invalid_owner_separator, &scope),
+        exact_thread_construction(
+            &cadmpeg_test_support::service_decode_context(),
+            &invalid_owner_separator,
+            &scope
+        )
+        .unwrap(),
         None
     );
 
-    scope.reference_members = {
-        let mut values: Vec<u32> = scope.reference_members.values().copied().collect();
-        values.push(994);
-        crate::records::ReferenceRun::unlocated(values)
-    };
-    assert_eq!(exact_thread_construction(&owner_marked, &scope), None);
+    scope
+        .try_edit(|draft| {
+            draft.reference_members = {
+                let mut values: Vec<u32> = draft.reference_members.values().copied().collect();
+                values.push(994);
+                crate::records::identity::ReferenceRun::unlocated(values)
+            };
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    assert_eq!(
+        exact_thread_construction(
+            &cadmpeg_test_support::service_decode_context(),
+            &owner_marked,
+            &scope
+        )
+        .unwrap(),
+        None
+    );
 }
 
 #[test]
@@ -290,37 +557,73 @@ fn thread_scope_decodes_class_414_legacy_compact_tail() {
     let expected = DesignThreadConstruction {
         form: DesignThreadForm::CompactLegacy,
         designation_offset: 38,
-        designation: "M190x8".into(),
-        nominal_size: crate::records::feature::DesignThreadNominalSize::try_from(
+        designation: cadmpeg_core::text::NonBlankString::new("M190x8").unwrap(),
+        nominal_size: crate::records::feature::thread::DesignThreadNominalSize::try_from(
             "190.0".to_owned(),
         )
         .expect("nominal size"),
-        profile: "ISO Metric profile".into(),
-        major_diameter: 19.08149,
-        minor_diameter: 18.18397,
-        pitch: 0.8,
-        pitch_diameter: 18.50413,
+        profile: cadmpeg_core::text::NonBlankString::new("ISO Metric profile").unwrap(),
+        pitch: cadmpeg_ir::scalar::PositiveReal::new(0.8).unwrap(),
         face_group_record_indices: vec![988],
+        diameters: crate::records::feature::thread::DesignThreadDiameters::new(
+            19.08149, 18.18397, 18.50413,
+        )
+        .unwrap(),
     };
     assert_thread_construction(
-        parse_thread_payload(&bytes, 38, ThreadPrefix::Compact, vec![988]),
+        parse_thread_payload(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            38,
+            ThreadPrefix::Compact,
+            vec![988],
+        )
+        .unwrap(),
         &expected,
     );
 
     let mut scope = DesignParameterScope::empty(
         "f3d:scope#legacy-compact-thread",
-        crate::records::feature::DesignFeatureKind::Thread,
+        crate::records::feature::scope::DesignFeatureKind::Thread,
         987,
     );
-    scope.class_tag = crate::records::DesignClassTag::try_from("414".to_owned()).unwrap();
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("263".to_owned()).unwrap();
-    scope.frame_length = 19;
-    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![988, 989]);
-    assert_thread_construction(exact_thread_construction(&bytes, &scope), &expected);
+    scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("414".to_owned()).unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("263".to_owned()).unwrap();
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 200;
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![988, 989]);
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    assert_thread_construction(
+        exact_thread_construction(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &scope,
+        )
+        .unwrap(),
+        &expected,
+    );
 
-    scope.class_tag = crate::records::DesignClassTag::try_from("334".to_owned()).unwrap();
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("262".to_owned()).unwrap();
-    assert_eq!(exact_thread_construction(&bytes, &scope), None);
+    scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("334".to_owned()).unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("262".to_owned()).unwrap();
+    assert_eq!(
+        exact_thread_construction(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &scope
+        )
+        .unwrap(),
+        None
+    );
 }
 
 #[test]
@@ -348,25 +651,27 @@ fn localized_sketch_scope_retains_its_generic_reference_table() {
     let header = DesignRecordHeader {
         id: "generated:scope-header#0".into(),
         record_index: 12,
-        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned()).unwrap(),
         byte_offset: 0,
     };
 
     let scope = parse_parameter_scope(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
         header.byte_offset,
     )
+    .unwrap()
     .expect("localized Sketch scope");
     assert_eq!(
         scope.kind(),
-        crate::records::feature::DesignFeatureKind::Esquisse
+        crate::records::feature::scope::DesignFeatureKind::Esquisse
     );
     assert_eq!(
         scope
-            .reference_members
+            .reference_members()
             .values()
             .copied()
             .collect::<Vec<_>>(),

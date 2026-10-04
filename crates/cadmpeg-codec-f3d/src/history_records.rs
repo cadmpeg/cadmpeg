@@ -9,27 +9,34 @@ use cadmpeg_ir::math::{Point3, Vector3};
 /// Stream-size and history-entry-count pair from an ASM history preamble.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct AsmPreamble {
-    pub stream_size: i64,
-    pub history_entry_count: i64,
+    pub(crate) stream_size: i64,
+    pub(crate) history_entry_count: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "AsmHistorySerde", into = "AsmHistorySerde")]
 pub(crate) struct AsmHistory {
-    pub id: String,
-    pub byte_offset: u64,
-    pub preamble: Option<AsmPreamble>,
+    pub(crate) id: String,
+    pub(crate) byte_offset: u64,
+    pub(crate) preamble: Option<AsmPreamble>,
     /// True when historical topology binding was not attempted because its
     /// state-by-record work estimate exceeded the decoder safety budget.
-    pub record_table_binding_budget_exceeded: bool,
-    /// Historical projection consumers finished and any temporary complete
-    /// topology snapshots were released. A compact plane-selection topology can
-    /// remain for late feature projection.
-    pub projection_finalized: bool,
-    pub states: Vec<AsmDeltaState>,
+    pub(crate) record_table_binding_budget_exceeded: bool,
+    pub(crate) states: Vec<AsmDeltaState>,
 }
 
 impl AsmHistory {
+    /// Historical projection consumers finished and every temporary complete
+    /// topology snapshot this history holds was released. A history with no
+    /// states has released nothing and is not finalized.
+    pub(crate) fn projection_finalized(&self) -> bool {
+        !self.states.is_empty()
+            && self
+                .states
+                .iter()
+                .all(super::history_records::AsmDeltaState::projection_released)
+    }
+
     pub(crate) fn stream_size(&self) -> Option<i64> {
         self.preamble.map(|preamble| preamble.stream_size)
     }
@@ -43,15 +50,21 @@ impl AsmHistory {
 struct AsmHistorySerde {
     id: String,
     byte_offset: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_stream_size"
+    )]
     stream_size: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_history_entry_count"
+    )]
     #[serde(alias = "high_water_mark")]
     history_entry_count: Option<i64>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     record_table_binding_budget_exceeded: bool,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    projection_finalized: bool,
     states: Vec<AsmDeltaState>,
 }
 
@@ -76,7 +89,6 @@ impl TryFrom<AsmHistorySerde> for AsmHistory {
             byte_offset: wire.byte_offset,
             preamble,
             record_table_binding_budget_exceeded: wire.record_table_binding_budget_exceeded,
-            projection_finalized: wire.projection_finalized,
             states: wire.states,
         })
     }
@@ -92,7 +104,6 @@ impl From<AsmHistory> for AsmHistorySerde {
             stream_size,
             history_entry_count,
             record_table_binding_budget_exceeded: history.record_table_binding_budget_exceeded,
-            projection_finalized: history.projection_finalized,
             states: history.states,
         }
     }
@@ -101,33 +112,33 @@ impl From<AsmHistory> for AsmHistorySerde {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "AsmDeltaStateWire", into = "AsmDeltaStateWire")]
 pub(crate) struct AsmDeltaState {
-    pub id: String,
-    pub parent: String,
-    pub byte_offset: u64,
-    pub state_id: i64,
-    pub version_flag: i64,
-    pub state_flag: i64,
+    pub(crate) id: String,
+    pub(crate) parent: String,
+    pub(crate) byte_offset: u64,
+    pub(crate) state_id: i64,
+    pub(crate) version_flag: i64,
+    pub(crate) state_flag: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub previous_ref: Option<i64>,
+    pub(crate) previous_ref: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub next_ref: Option<i64>,
-    pub node_index: i64,
+    pub(crate) next_ref: Option<i64>,
+    pub(crate) node_index: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub partner_ref: Option<i64>,
-    pub owner_ref: i64,
+    pub(crate) partner_ref: Option<i64>,
+    pub(crate) owner_ref: i64,
     #[serde(default)]
-    pub bulletin_boards: Vec<AsmBulletinBoard>,
+    pub(crate) bulletin_boards: Vec<AsmBulletinBoard>,
     #[serde(default)]
-    pub records: Vec<AsmHistoryRecord>,
+    pub(crate) records: Vec<AsmHistoryRecord>,
     /// Topology-entity slot to record-revision map at this state. The decoder
     /// retains this compact map for late persistent-selection binding after
     /// projection caches are finalized.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub entity_versions: Vec<AsmEntityVersion>,
-    pub topology_cache: AsmTopologyCache,
+    pub(crate) entity_versions: Vec<AsmEntityVersion>,
+    pub(crate) topology_cache: AsmTopologyCache,
     /// Forward change from the state reached by `next_ref` to this state.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub transition: Option<AsmHistoricalTransition>,
+    pub(crate) transition: Option<AsmHistoricalTransition>,
 }
 
 /// Historical topology retained for projection or for late identity resolution.
@@ -137,12 +148,30 @@ pub(crate) enum AsmTopologyCache {
     Absent,
     Complete(AsmHistoricalTopology),
     Retained(AsmHistoricalTopology),
+    /// The complete snapshot was released at finalization and nothing was kept.
+    Released,
+}
+
+/// Serialized discriminant of one state's topology cache.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum AsmTopologyCacheKind {
+    #[default]
+    Absent,
+    Complete,
+    Retained,
+    Released,
+}
+
+/// Whether a serialized field still holds its default.
+pub(crate) fn is_default<T: Default + PartialEq>(value: &T) -> bool {
+    *value == T::default()
 }
 
 impl AsmDeltaState {
     pub(crate) fn topology(&self) -> Option<&AsmHistoricalTopology> {
         match &self.topology_cache {
-            AsmTopologyCache::Absent => None,
+            AsmTopologyCache::Absent | AsmTopologyCache::Released => None,
             AsmTopologyCache::Complete(topology) | AsmTopologyCache::Retained(topology) => {
                 Some(topology)
             }
@@ -152,15 +181,34 @@ impl AsmDeltaState {
     #[cfg(test)]
     pub(crate) fn topology_mut(&mut self) -> Option<&mut AsmHistoricalTopology> {
         match &mut self.topology_cache {
-            AsmTopologyCache::Absent => None,
+            AsmTopologyCache::Absent | AsmTopologyCache::Released => None,
             AsmTopologyCache::Complete(topology) | AsmTopologyCache::Retained(topology) => {
                 Some(topology)
             }
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn record_table_complete(&self) -> bool {
         matches!(self.topology_cache, AsmTopologyCache::Complete(_))
+    }
+
+    /// The serialized discriminant of this state's topology cache.
+    pub(crate) fn topology_cache_kind(&self) -> AsmTopologyCacheKind {
+        match self.topology_cache {
+            AsmTopologyCache::Absent => AsmTopologyCacheKind::Absent,
+            AsmTopologyCache::Complete(_) => AsmTopologyCacheKind::Complete,
+            AsmTopologyCache::Retained(_) => AsmTopologyCacheKind::Retained,
+            AsmTopologyCache::Released => AsmTopologyCacheKind::Released,
+        }
+    }
+
+    /// The state's complete projection snapshot was released at finalization.
+    fn projection_released(&self) -> bool {
+        matches!(
+            self.topology_cache,
+            AsmTopologyCache::Retained(_) | AsmTopologyCache::Released
+        )
     }
 }
 
@@ -172,12 +220,24 @@ struct AsmDeltaStateWire {
     state_id: i64,
     version_flag: i64,
     state_flag: i64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_previous_ref"
+    )]
     previous_ref: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_next_ref"
+    )]
     next_ref: Option<i64>,
     node_index: i64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_partner_ref"
+    )]
     partner_ref: Option<i64>,
     owner_ref: i64,
     #[serde(default)]
@@ -189,16 +249,23 @@ struct AsmDeltaStateWire {
     /// projection caches are finalized.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     entity_versions: Vec<AsmEntityVersion>,
-    /// Every selected record frames and every entity reference resolves after
-    /// revision identities are normalized to stable entity slots.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    record_table_complete: bool,
+    /// Which form of topology snapshot this state holds.
+    #[serde(default, skip_serializing_if = "is_default")]
+    topology_cache: AsmTopologyCacheKind,
     /// Stable `RecordTable` identities emitted by the ordinary B-rep decoder for
     /// this historical state.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_topology"
+    )]
     topology: Option<AsmHistoricalTopology>,
     /// Forward change from the state reached by `next_ref` to this state.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_transition"
+    )]
     transition: Option<AsmHistoricalTransition>,
 }
 
@@ -206,11 +273,21 @@ impl TryFrom<AsmDeltaStateWire> for AsmDeltaState {
     type Error = String;
 
     fn try_from(wire: AsmDeltaStateWire) -> Result<Self, Self::Error> {
-        let topology_cache = match (wire.record_table_complete, wire.topology) {
-            (false, None) => AsmTopologyCache::Absent,
-            (false, Some(topology)) => AsmTopologyCache::Retained(topology),
-            (true, Some(topology)) => AsmTopologyCache::Complete(topology),
-            (true, None) => return Err("record_table_complete requires topology".into()),
+        let topology_cache = match (wire.topology_cache, wire.topology) {
+            (AsmTopologyCacheKind::Absent, None) => AsmTopologyCache::Absent,
+            (AsmTopologyCacheKind::Released, None) => AsmTopologyCache::Released,
+            (AsmTopologyCacheKind::Complete, Some(topology)) => {
+                AsmTopologyCache::Complete(topology)
+            }
+            (AsmTopologyCacheKind::Retained, Some(topology)) => {
+                AsmTopologyCache::Retained(topology)
+            }
+            (AsmTopologyCacheKind::Absent | AsmTopologyCacheKind::Released, Some(_)) => {
+                return Err("topology_cache carries no topology in this form".into())
+            }
+            (AsmTopologyCacheKind::Complete | AsmTopologyCacheKind::Retained, None) => {
+                return Err("topology_cache requires topology".into())
+            }
         };
         Ok(Self {
             id: wire.id,
@@ -235,11 +312,14 @@ impl TryFrom<AsmDeltaStateWire> for AsmDeltaState {
 
 impl From<AsmDeltaState> for AsmDeltaStateWire {
     fn from(state: AsmDeltaState) -> Self {
-        let record_table_complete = state.record_table_complete();
-        let topology = match state.topology_cache {
-            AsmTopologyCache::Absent => None,
-            AsmTopologyCache::Complete(topology) | AsmTopologyCache::Retained(topology) => {
-                Some(topology)
+        let (topology_cache, topology) = match state.topology_cache {
+            AsmTopologyCache::Absent => (AsmTopologyCacheKind::Absent, None),
+            AsmTopologyCache::Released => (AsmTopologyCacheKind::Released, None),
+            AsmTopologyCache::Complete(topology) => {
+                (AsmTopologyCacheKind::Complete, Some(topology))
+            }
+            AsmTopologyCache::Retained(topology) => {
+                (AsmTopologyCacheKind::Retained, Some(topology))
             }
         };
         Self {
@@ -258,7 +338,7 @@ impl From<AsmDeltaState> for AsmDeltaStateWire {
             records: state.records,
             entity_versions: state.entity_versions,
             transition: state.transition,
-            record_table_complete,
+            topology_cache,
             topology,
         }
     }
@@ -267,221 +347,294 @@ impl From<AsmDeltaState> for AsmDeltaStateWire {
 /// Record revision occupying one stable entity slot at an ASM history state.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct AsmEntityVersion {
-    pub entity_ref: i64,
-    pub record_ref: i64,
+    pub(crate) entity_ref: i64,
+    pub(crate) record_ref: i64,
 }
 
 /// Stable entity-slot membership of one re-derived historical B-rep.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalTopology {
-    pub bodies: Vec<i64>,
-    pub regions: Vec<i64>,
-    pub shells: Vec<i64>,
-    pub faces: Vec<i64>,
-    pub loops: Vec<i64>,
-    pub coedges: Vec<i64>,
-    pub edges: Vec<i64>,
-    pub vertices: Vec<i64>,
-    pub points: Vec<i64>,
-    pub surfaces: Vec<i64>,
+    pub(crate) bodies: Vec<i64>,
+    pub(crate) regions: Vec<i64>,
+    pub(crate) shells: Vec<i64>,
+    pub(crate) faces: Vec<i64>,
+    pub(crate) loops: Vec<i64>,
+    pub(crate) coedges: Vec<i64>,
+    pub(crate) edges: Vec<i64>,
+    pub(crate) vertices: Vec<i64>,
+    pub(crate) points: Vec<i64>,
+    pub(crate) surfaces: Vec<i64>,
     /// Characteristic radii of analytic or constant-radius blend carriers.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub surface_radii: Vec<AsmHistoricalSurfaceRadius>,
+    pub(crate) surface_radii: Vec<AsmHistoricalSurfaceRadius>,
     /// Exact right-circular cylinder carriers in this historical state.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub surface_cylinders: Vec<AsmHistoricalCylinder>,
+    pub(crate) surface_cylinders: Vec<AsmHistoricalCylinder>,
     /// Exact plane carriers in this historical state.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub surface_planes: Vec<AsmHistoricalPlane>,
+    pub(crate) surface_planes: Vec<AsmHistoricalPlane>,
     /// Model-space axes of axis-bearing analytic surface carriers in this state.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub surface_axes: Vec<AsmHistoricalSurfaceAxis>,
-    pub curves: Vec<i64>,
+    pub(crate) surface_axes: Vec<AsmHistoricalSurfaceAxis>,
+    pub(crate) curves: Vec<i64>,
     /// Model-space axes of axis-bearing curve carriers in this state.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub curve_axes: Vec<AsmHistoricalCurveAxis>,
-    pub pcurves: Vec<i64>,
+    pub(crate) curve_axes: Vec<AsmHistoricalCurveAxis>,
+    pub(crate) pcurves: Vec<i64>,
     /// Persistent tag groups attached to face and edge revisions in this state.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub persistent_subentity_tags: Vec<AsmHistoricalPersistentSubentityTag>,
+    pub(crate) persistent_subentity_tags: Vec<AsmHistoricalPersistentSubentityTag>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub body_regions: Vec<AsmHistoricalRelation>,
+    pub(crate) body_regions: Vec<AsmHistoricalRelation>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub region_shells: Vec<AsmHistoricalRelation>,
+    pub(crate) region_shells: Vec<AsmHistoricalRelation>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub shell_faces: Vec<AsmHistoricalRelation>,
+    pub(crate) shell_faces: Vec<AsmHistoricalRelation>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub shell_wire_edges: Vec<AsmHistoricalRelation>,
+    pub(crate) shell_wire_edges: Vec<AsmHistoricalRelation>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub shell_free_vertices: Vec<AsmHistoricalRelation>,
+    pub(crate) shell_free_vertices: Vec<AsmHistoricalRelation>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub face_loops: Vec<AsmHistoricalRelation>,
+    pub(crate) face_loops: Vec<AsmHistoricalRelation>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub loop_coedges: Vec<AsmHistoricalRelation>,
+    pub(crate) loop_coedges: Vec<AsmHistoricalRelation>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub coedge_topology: Vec<AsmHistoricalCoedge>,
+    pub(crate) coedge_topology: Vec<AsmHistoricalCoedge>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub edge_vertices: Vec<AsmHistoricalEdge>,
+    pub(crate) edge_vertices: Vec<AsmHistoricalEdge>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub face_surfaces: Vec<AsmHistoricalCarrierBinding>,
+    pub(crate) face_surfaces: Vec<AsmHistoricalCarrierBinding>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub edge_curves: Vec<AsmHistoricalOptionalCarrierBinding>,
+    pub(crate) edge_curves: Vec<AsmHistoricalOptionalCarrierBinding>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub coedge_pcurves: Vec<AsmHistoricalOptionalCarrierBinding>,
+    pub(crate) coedge_pcurves: Vec<AsmHistoricalOptionalCarrierBinding>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub vertex_points: Vec<AsmHistoricalCarrierBinding>,
+    pub(crate) vertex_points: Vec<AsmHistoricalCarrierBinding>,
     /// Model-space values of the point carriers in this historical state.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub point_positions: Vec<AsmHistoricalPoint>,
+    pub(crate) point_positions: Vec<AsmHistoricalPoint>,
 }
 
 /// One persistent tag group attached to a historical face or edge revision.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalPersistentSubentityTag {
-    pub entity_kind: crate::records::topology::AsmHistoricalEntityKind,
-    pub entity_ref: i64,
-    pub selector: i64,
-    pub token: String,
-    pub design_references: Vec<i64>,
-    pub ordinal: u32,
+    pub(crate) entity_kind: crate::records::topology::body_recipe::AsmHistoricalEntityKind,
+    pub(crate) entity_ref: i64,
+    pub(crate) selector: i64,
+    pub(crate) token: String,
+    pub(crate) design_references: Vec<i64>,
+    pub(crate) ordinal: u32,
 }
 
 /// Stable axis-bearing curve carrier value in one historical B-rep state.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalCurveAxis {
-    pub curve: i64,
-    pub origin: Point3,
-    pub direction: Vector3,
+    pub(crate) curve: i64,
+    pub(crate) origin: Point3,
+    pub(crate) direction: Vector3,
 }
 
 /// Stable axis line of one cylinder, cone, or torus carrier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalSurfaceAxis {
-    pub surface: i64,
-    pub origin: Point3,
-    pub direction: Vector3,
+    pub(crate) surface: i64,
+    pub(crate) origin: Point3,
+    pub(crate) direction: Vector3,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalSurfaceRadius {
-    pub surface: i64,
-    pub radius: f64,
+    pub(crate) surface: i64,
+    pub(crate) radius: f64,
 }
 
 /// Stable geometry of one right-circular cylinder carrier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalCylinder {
-    pub surface: i64,
-    pub origin: Point3,
-    pub axis: Vector3,
-    pub radius: f64,
+    pub(crate) surface: i64,
+    pub(crate) origin: Point3,
+    pub(crate) axis: Vector3,
+    pub(crate) radius: f64,
 }
 
 /// Stable geometry of one plane carrier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalPlane {
-    pub surface: i64,
-    pub origin: Point3,
-    pub normal: Vector3,
+    pub(crate) surface: i64,
+    pub(crate) origin: Point3,
+    pub(crate) normal: Vector3,
 }
 
 /// Stable point-carrier value in one historical B-rep state.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalPoint {
-    pub point: i64,
-    pub position: Point3,
+    pub(crate) point: i64,
+    pub(crate) position: Point3,
 }
 
 /// Ordered stable entity-slot relation in a historical B-rep.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalRelation {
-    pub owner_ref: i64,
-    pub member_refs: Vec<i64>,
+    pub(crate) owner_ref: i64,
+    pub(crate) member_refs: Vec<i64>,
 }
 
 /// Stable topology links of one historical coedge.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalCoedge {
-    pub coedge: i64,
-    pub owner_loop: i64,
-    pub edge: i64,
-    pub next: i64,
-    pub previous: i64,
-    pub radial_next: i64,
+    pub(crate) coedge: i64,
+    pub(crate) owner_loop: i64,
+    pub(crate) edge: i64,
+    pub(crate) next: i64,
+    pub(crate) previous: i64,
+    pub(crate) radial_next: i64,
 }
 
 /// Ordered endpoint links of one historical edge.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalEdge {
-    pub edge: i64,
-    pub start_vertex: i64,
-    pub end_vertex: i64,
+    pub(crate) edge: i64,
+    pub(crate) start_vertex: i64,
+    pub(crate) end_vertex: i64,
 }
 
 /// Stable binding from a topology entity to its required geometry carrier.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalCarrierBinding {
-    pub entity: i64,
-    pub carrier: i64,
+    pub(crate) entity: i64,
+    pub(crate) carrier: i64,
 }
 
 /// Stable binding from a topology entity to its optional geometry carrier.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalOptionalCarrierBinding {
-    pub entity: i64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub carrier: Option<i64>,
+    pub(crate) entity: i64,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_carrier"
+    )]
+    pub(crate) carrier: Option<i64>,
 }
 
 /// Forward stable-slot changes from an older ASM state to a newer state.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalTransition {
     /// Older state identity; absent only at the end of the reverse-history chain.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub previous_state_id: Option<i64>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_previous_state_id"
+    )]
+    pub(crate) previous_state_id: Option<i64>,
     /// Changes across the complete normalized `RecordTable`.
-    pub records: AsmHistoricalEntityDelta,
+    pub(crate) records: AsmHistoricalEntityDelta,
     /// Changes restricted to each normalized topology family.
-    pub topology: AsmHistoricalTopologyDelta,
+    pub(crate) topology: AsmHistoricalTopologyDelta,
 }
 
 /// Stable entity slots inserted, deleted, or assigned a different record revision.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalEntityDelta {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub inserted: Vec<i64>,
+    pub(crate) inserted: Vec<i64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub deleted: Vec<i64>,
+    pub(crate) deleted: Vec<i64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub updated: Vec<i64>,
+    pub(crate) updated: Vec<i64>,
 }
 
 /// Per-family topology changes between two complete historical states.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalTopologyDelta {
-    pub bodies: AsmHistoricalEntityDelta,
-    pub regions: AsmHistoricalEntityDelta,
-    pub shells: AsmHistoricalEntityDelta,
-    pub faces: AsmHistoricalEntityDelta,
-    pub loops: AsmHistoricalEntityDelta,
-    pub coedges: AsmHistoricalEntityDelta,
-    pub edges: AsmHistoricalEntityDelta,
-    pub vertices: AsmHistoricalEntityDelta,
-    pub points: AsmHistoricalEntityDelta,
-    pub surfaces: AsmHistoricalEntityDelta,
-    pub curves: AsmHistoricalEntityDelta,
-    pub pcurves: AsmHistoricalEntityDelta,
+    pub(crate) bodies: AsmHistoricalEntityDelta,
+    pub(crate) regions: AsmHistoricalEntityDelta,
+    pub(crate) shells: AsmHistoricalEntityDelta,
+    pub(crate) faces: AsmHistoricalEntityDelta,
+    pub(crate) loops: AsmHistoricalEntityDelta,
+    pub(crate) coedges: AsmHistoricalEntityDelta,
+    pub(crate) edges: AsmHistoricalEntityDelta,
+    pub(crate) vertices: AsmHistoricalEntityDelta,
+    pub(crate) points: AsmHistoricalEntityDelta,
+    pub(crate) surfaces: AsmHistoricalEntityDelta,
+    pub(crate) curves: AsmHistoricalEntityDelta,
+    pub(crate) pcurves: AsmHistoricalEntityDelta,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "AsmHistoryRecordWire", into = "AsmHistoryRecordWire")]
+#[derive(Debug, PartialEq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "AsmHistoryRecordWire")]
 pub(crate) struct AsmHistoryRecord {
-    pub id: String,
-    pub parent: String,
-    pub revision_id: Option<i64>,
-    pub byte_offset: u64,
-    pub framing: AsmHistoryRecordFraming,
-    pub raw_bytes: Vec<u8>,
+    pub(crate) id: String,
+    pub(crate) parent: String,
+    pub(crate) revision_id: Option<i64>,
+    pub(crate) byte_offset: u64,
+    pub(crate) framing: AsmHistoryRecordFraming,
+    pub(crate) raw_bytes: Vec<u8>,
+}
+
+#[cfg(test)]
+std::thread_local! {
+    static HISTORY_RECORD_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for AsmHistoryRecord {
+    fn clone(&self) -> Self {
+        HISTORY_RECORD_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            parent: self.parent.clone(),
+            revision_id: self.revision_id,
+            byte_offset: self.byte_offset,
+            framing: self.framing.clone(),
+            raw_bytes: self.raw_bytes.clone(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct AsmHistoryRecordWireRef<'a> {
+    id: &'a str,
+    parent: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    revision_id: Option<i64>,
+    index: u64,
+    byte_offset: u64,
+    name: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    framing_error: Option<&'a str>,
+    #[serde(skip_serializing_if = "<[i64]>::is_empty")]
+    entity_references: &'a [i64],
+    #[serde(with = "cadmpeg_ir::bytes")]
+    raw_bytes: &'a [u8],
+}
+
+impl Serialize for AsmHistoryRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let (index, name, framing_error, entity_references) = match &self.framing {
+            AsmHistoryRecordFraming::Framed {
+                index,
+                name,
+                entity_references,
+            } => (*index, name.as_str(), None, entity_references.as_slice()),
+            AsmHistoryRecordFraming::Opaque { error } => {
+                (0, "opaque_history_payload", Some(error.as_str()), &[][..])
+            }
+        };
+        AsmHistoryRecordWireRef {
+            id: &self.id,
+            parent: &self.parent,
+            revision_id: self.revision_id,
+            index,
+            byte_offset: self.byte_offset,
+            name,
+            framing_error,
+            entity_references,
+            raw_bytes: &self.raw_bytes,
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -497,14 +650,14 @@ pub(crate) enum AsmHistoryRecordFraming {
 }
 
 impl AsmHistoryRecord {
-    pub fn name(&self) -> &str {
+    pub(crate) fn name(&self) -> &str {
         match &self.framing {
             AsmHistoryRecordFraming::Framed { name, .. } => name,
             AsmHistoryRecordFraming::Opaque { .. } => "opaque_history_payload",
         }
     }
 
-    pub fn framing_error(&self) -> Option<&str> {
+    pub(crate) fn framing_error(&self) -> Option<&str> {
         match &self.framing {
             AsmHistoryRecordFraming::Framed { .. } => None,
             AsmHistoryRecordFraming::Opaque { error } => Some(error),
@@ -512,14 +665,19 @@ impl AsmHistoryRecord {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 struct AsmHistoryRecordWire {
     id: String,
     parent: String,
     /// Construction-history revision identity paired from the ordered
     /// old-reference run; absent only for the stream terminator or an opaque
     /// snapshot whose pairing cannot be established.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_revision_id"
+    )]
     revision_id: Option<i64>,
     /// Snapshot-local record ordinal. This is not the revision identity.
     index: u64,
@@ -528,7 +686,11 @@ struct AsmHistoryRecordWire {
     byte_offset: u64,
     name: String,
     /// Framing failure that forced this span to remain opaque.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_framing_error"
+    )]
     framing_error: Option<String>,
     /// Ordered `0x0c` entity-reference tokens in the history revision namespace.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -568,6 +730,7 @@ impl TryFrom<AsmHistoryRecordWire> for AsmHistoryRecord {
     }
 }
 
+#[cfg(test)]
 impl From<AsmHistoryRecord> for AsmHistoryRecordWire {
     fn from(record: AsmHistoryRecord) -> Self {
         let (index, name, framing_error, entity_references) = match record.framing {
@@ -596,21 +759,77 @@ impl From<AsmHistoryRecord> for AsmHistoryRecordWire {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AsmBulletinBoard {
-    pub id: String,
-    pub parent: String,
-    pub byte_offset: u64,
-    pub owner_ref: i64,
-    pub number: i64,
-    pub changes: Vec<AsmEntityChange>,
+    pub(crate) id: String,
+    pub(crate) parent: String,
+    pub(crate) byte_offset: u64,
+    pub(crate) owner_ref: i64,
+    pub(crate) number: i64,
+    pub(crate) changes: Vec<AsmEntityChange>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "AsmEntityChangeSerde", into = "AsmEntityChangeSerde")]
+#[derive(Debug, PartialEq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "AsmEntityChangeSerde")]
 pub(crate) struct AsmEntityChange {
-    pub id: String,
-    pub parent: String,
-    pub byte_offset: u64,
-    pub kind: AsmEntityChangeKind,
+    pub(crate) id: String,
+    pub(crate) parent: String,
+    pub(crate) byte_offset: u64,
+    pub(crate) kind: AsmEntityChangeKind,
+}
+
+#[cfg(test)]
+std::thread_local! {
+    static ENTITY_CHANGE_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for AsmEntityChange {
+    fn clone(&self) -> Self {
+        ENTITY_CHANGE_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            parent: self.parent.clone(),
+            byte_offset: self.byte_offset,
+            kind: self.kind,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct AsmEntityChangeWireRef<'a> {
+    id: &'a str,
+    parent: &'a str,
+    byte_offset: u64,
+    kind: AsmEntityChangeKindWire,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    old_ref: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    new_ref: Option<i64>,
+}
+
+impl Serialize for AsmEntityChange {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let (kind, old_ref, new_ref) = match self.kind {
+            AsmEntityChangeKind::Insert { new } => {
+                (AsmEntityChangeKindWire::Insert, None, Some(new))
+            }
+            AsmEntityChangeKind::Delete { old } => {
+                (AsmEntityChangeKindWire::Delete, Some(old), None)
+            }
+            AsmEntityChangeKind::Update { old, new } => {
+                (AsmEntityChangeKindWire::Update, Some(old), Some(new))
+            }
+        };
+        AsmEntityChangeWireRef {
+            id: &self.id,
+            parent: &self.parent,
+            byte_offset: self.byte_offset,
+            kind,
+            old_ref,
+            new_ref,
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -640,15 +859,24 @@ impl AsmEntityChange {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 struct AsmEntityChangeSerde {
     id: String,
     parent: String,
     byte_offset: u64,
     kind: AsmEntityChangeKindWire,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_old_ref"
+    )]
     old_ref: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_new_ref"
+    )]
     new_ref: Option<i64>,
 }
 
@@ -687,6 +915,7 @@ impl TryFrom<AsmEntityChangeSerde> for AsmEntityChange {
     }
 }
 
+#[cfg(test)]
 impl From<AsmEntityChange> for AsmEntityChangeSerde {
     fn from(change: AsmEntityChange) -> Self {
         let (kind, old_ref, new_ref) = match change.kind {
@@ -716,34 +945,204 @@ mod tests {
     use super::{AsmDeltaState, AsmHistoricalTopology, AsmTopologyCache};
 
     #[test]
-    fn topology_cache_wire_preserves_three_states_and_rejects_complete_absence() {
+    fn history_record_borrowed_wire_matches_owned_wire_bytes() {
+        use super::{AsmHistoryRecord, AsmHistoryRecordFraming, AsmHistoryRecordWire};
+
+        for framing in [
+            AsmHistoryRecordFraming::Framed {
+                index: 4,
+                name: "edge".into(),
+                entity_references: vec![7, -1],
+            },
+            AsmHistoryRecordFraming::Opaque {
+                error: "invalid frame".into(),
+            },
+        ] {
+            let record = AsmHistoryRecord {
+                id: "f3d:native:history_record#1".into(),
+                parent: "f3d:native:state#1".into(),
+                revision_id: Some(7),
+                byte_offset: 12,
+                framing,
+                raw_bytes: b"history payload".to_vec(),
+            };
+            let old = AsmHistoryRecordWire::from(record.clone());
+            assert_eq!(
+                serde_json::to_vec(&record).unwrap(),
+                serde_json::to_vec(&old).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn history_record_native_retained_limit_refuses_before_raw_bytes_clone() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let record = super::AsmHistoryRecord {
+            id: "f3d:native:history_record#1".into(),
+            parent: "f3d:native:state#1".into(),
+            revision_id: Some(7),
+            byte_offset: 12,
+            framing: super::AsmHistoryRecordFraming::Framed {
+                index: 4,
+                name: "edge".into(),
+                entity_references: vec![7, -1],
+            },
+            raw_bytes: vec![0xab; 4096],
+        };
+        let needed = serde_json::to_vec(&record).unwrap().len();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
+        let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        super::HISTORY_RECORD_CLONE_COUNT.with(|count| count.set(0));
+        let error = namespace
+            .set_arena(
+                &limited,
+                "asm_history_records",
+                std::slice::from_ref(&record),
+            )
+            .unwrap_err();
+        super::HISTORY_RECORD_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
+        assert!(matches!(
+            cadmpeg_core::CodecError::from(error),
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "serialize native record"
+        ));
+
+        let (service, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        namespace
+            .set_arena(
+                &service,
+                "asm_history_records",
+                std::slice::from_ref(&record),
+            )
+            .unwrap();
+        let stored = &namespace.arenas()["asm_history_records"][0];
+        assert_eq!(
+            serde_json::to_value(stored).unwrap(),
+            serde_json::to_value(&record).unwrap()
+        );
+    }
+
+    #[test]
+    fn entity_change_borrowed_wire_matches_owned_wire_bytes() {
+        use super::{AsmEntityChange, AsmEntityChangeKind, AsmEntityChangeSerde};
+
+        for kind in [
+            AsmEntityChangeKind::Insert { new: 7 },
+            AsmEntityChangeKind::Delete { old: 8 },
+            AsmEntityChangeKind::Update { old: 8, new: 7 },
+        ] {
+            let change = AsmEntityChange {
+                id: "f3d:native:entity_change#1".into(),
+                parent: "f3d:native:bulletin#1".into(),
+                byte_offset: 12,
+                kind,
+            };
+            let owned = AsmEntityChangeSerde::from(change.clone());
+            assert_eq!(
+                serde_json::to_vec(&change).unwrap(),
+                serde_json::to_vec(&owned).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn entity_change_native_retained_limit_refuses_before_string_clone() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let change = super::AsmEntityChange {
+            id: "f3d:native:entity_change#1".into(),
+            parent: "f3d:native:bulletin#1".into(),
+            byte_offset: 12,
+            kind: super::AsmEntityChangeKind::Update { old: 8, new: 7 },
+        };
+        let needed = "asm_entity_changes".len()
+            + 4 * std::mem::size_of::<cadmpeg_ir::NativeRecord>()
+            + "id".len();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
+        let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        super::ENTITY_CHANGE_CLONE_COUNT.with(|count| count.set(0));
+        let error = namespace
+            .set_arena(
+                &limited,
+                "asm_entity_changes",
+                std::slice::from_ref(&change),
+            )
+            .unwrap_err();
+        super::ENTITY_CHANGE_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
+        assert!(matches!(
+            cadmpeg_core::CodecError::from(error),
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "serialize native record"
+        ));
+
+        let (service, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        namespace
+            .set_arena(
+                &service,
+                "asm_entity_changes",
+                std::slice::from_ref(&change),
+            )
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(&namespace.arenas()["asm_entity_changes"][0]).unwrap(),
+            serde_json::to_value(&change).unwrap()
+        );
+    }
+
+    #[test]
+    fn topology_cache_wire_preserves_every_form_and_rejects_a_missing_topology() {
         let prefix = r#"{"id":"state","parent":"history","byte_offset":0,"state_id":1,"version_flag":1,"state_flag":0,"node_index":1,"owner_ref":0,"bulletin_boards":[],"records":[]"#;
         let topology = serde_json::to_string(&AsmHistoricalTopology::default()).unwrap();
-        for (complete, fields) in [
-            (false, String::new()),
-            (false, format!(",\"topology\":{topology}")),
+        for (complete, released, has_topology, fields) in [
+            (false, false, false, String::new()),
             (
                 true,
-                format!(",\"record_table_complete\":true,\"topology\":{topology}"),
+                false,
+                true,
+                format!(",\"topology_cache\":\"complete\",\"topology\":{topology}"),
+            ),
+            (
+                false,
+                true,
+                true,
+                format!(",\"topology_cache\":\"retained\",\"topology\":{topology}"),
+            ),
+            (
+                false,
+                true,
+                false,
+                ",\"topology_cache\":\"released\"".to_owned(),
             ),
         ] {
             let wire = format!("{prefix}{fields}}}");
             let state: AsmDeltaState = serde_json::from_str(&wire).unwrap();
             assert_eq!(state.record_table_complete(), complete);
-            assert_eq!(state.topology().is_some(), !fields.is_empty());
-            match (&state.topology_cache, complete, fields.is_empty()) {
-                (AsmTopologyCache::Absent, false, true)
-                | (AsmTopologyCache::Retained(_), false, false)
-                | (AsmTopologyCache::Complete(_), true, false) => {}
-                other => panic!("unexpected topology cache: {other:?}"),
-            }
+            assert_eq!(state.topology().is_some(), has_topology);
+            assert_eq!(state.projection_released(), released);
+            let expected = match &state.topology_cache {
+                AsmTopologyCache::Absent => (false, false),
+                AsmTopologyCache::Complete(_) => (true, false),
+                AsmTopologyCache::Retained(_) | AsmTopologyCache::Released => (false, true),
+            };
+            assert_eq!(expected, (complete, released));
             assert_eq!(serde_json::to_string(&state).unwrap(), wire);
         }
-        let invalid = format!("{prefix},\"record_table_complete\":true}}");
+        let invalid = format!("{prefix},\"topology_cache\":\"complete\"}}");
         let error = serde_json::from_str::<AsmDeltaState>(&invalid)
             .unwrap_err()
             .to_string();
-        assert!(error.contains("record_table_complete"));
+        assert!(error.contains("topology_cache"));
         assert!(error.contains("topology"));
     }
     #[test]
@@ -770,3 +1169,22 @@ mod tests {
         }
     }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_stream_size, i64, "stream_size");
+cadmpeg_core::named_optional_field!(deserialize_history_entry_count, i64, "history_entry_count");
+cadmpeg_core::named_optional_field!(deserialize_previous_ref, i64, "previous_ref");
+cadmpeg_core::named_optional_field!(deserialize_next_ref, i64, "next_ref");
+cadmpeg_core::named_optional_field!(deserialize_partner_ref, i64, "partner_ref");
+cadmpeg_core::named_optional_field!(deserialize_topology, AsmHistoricalTopology, "topology");
+cadmpeg_core::named_optional_field!(
+    deserialize_transition,
+    AsmHistoricalTransition,
+    "transition"
+);
+cadmpeg_core::named_optional_field!(deserialize_carrier, i64, "carrier");
+cadmpeg_core::named_optional_field!(deserialize_previous_state_id, i64, "previous_state_id");
+cadmpeg_core::named_optional_field!(deserialize_revision_id, i64, "revision_id");
+cadmpeg_core::named_optional_field!(deserialize_framing_error, String, "framing_error");
+cadmpeg_core::named_optional_field!(deserialize_old_ref, i64, "old_ref");
+cadmpeg_core::named_optional_field!(deserialize_new_ref, i64, "new_ref");

@@ -1,8 +1,8 @@
 //! Construction-line endpoint resolution tests.
 
 use super::super::super::LEGACY_SKETCH_MARKER;
-use super::super::*;
 use crate::records::{SketchInputEntity, SketchInputKind};
+use crate::resolved_features::endpoints::roster_curve_endpoint_markers;
 
 #[test]
 fn compact_84_construction_line_prefers_points_and_accepts_one_curve_marker() {
@@ -22,18 +22,17 @@ fn compact_84_construction_line_prefers_points_and_accepts_one_curve_marker() {
     payload[80..84].copy_from_slice(&4u32.to_le_bytes());
     payload[84..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
-    let entity = |id: &str, object_index, coordinates_m, kind| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset: 0,
-        object_index,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, object_index, coordinates_m: Option<[f64; 2]>, kind| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(marker_id, marker_parent, 0, 0, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker = constructed_marker.with_test_identity(object_index, None);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let curve = entity("curve", Some(1), None, SketchInputKind::LineOrCircle);
     let point_impostor = entity(
@@ -52,10 +51,16 @@ fn compact_84_construction_line_prefers_points_and_accepts_one_curve_marker() {
     let markers = [&curve, &point_impostor, &first, &second];
 
     assert_eq!(
-        roster_curve_endpoint_markers(&payload, &curve, &markers)
-            .iter()
-            .map(|marker| marker.id.as_str())
-            .collect::<Vec<_>>(),
+        roster_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &curve,
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker.id())
+        .collect::<Vec<_>>(),
         ["first", "second-curve"]
     );
 
@@ -66,5 +71,12 @@ fn compact_84_construction_line_prefers_points_and_accepts_one_curve_marker() {
         SketchInputKind::LineOrCircle,
     );
     let ambiguous = [&curve, &point_impostor, &first, &second, &second_collision];
-    assert!(roster_curve_endpoint_markers(&payload, &curve, &ambiguous).is_empty());
+    assert!(roster_curve_endpoint_markers(
+        &cadmpeg_test_support::service_decode_context(),
+        &payload,
+        &curve,
+        &ambiguous
+    )
+    .unwrap()
+    .is_empty());
 }

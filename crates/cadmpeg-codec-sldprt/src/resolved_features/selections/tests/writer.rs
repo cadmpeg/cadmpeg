@@ -6,12 +6,24 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::container::make_block;
+use crate::test_support::container::sldprt_with_body;
+use crate::test_support::history::resolved_feature_classes_with_ids;
+use crate::test_support::native::update_sldprt_native;
+use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
 
 #[test]
 fn semantic_writer_rejects_compact_edge_selection_edits() {
-    use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition};
+    use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition, FeatureOperation};
+
+    let reference_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (reference_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &reference_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -48,16 +60,18 @@ fn semantic_writer_rejects_compact_edge_selection_edits() {
             ]);
             lane.native_payload.extend(7u32.to_le_bytes());
             let components = crate::resolved_features::selections::compact_edge_component_path_at(
+                &reference_ctx,
                 &lane.native_payload,
                 marker,
             )
+            .unwrap()
             .unwrap();
             lane.edge_selections
                 .push(crate::records::FeatureInputEdgeSelection {
                     id: "sldprt:test:edge-selection#0".into(),
                     parent: lane.id.clone(),
                     ordinal: 0,
-                    offset: marker as u64,
+                    offset: cadmpeg_core::decode::u64_from_index(marker),
                     object_name_ref: lane.names[0].id.clone(),
                     feature_ref,
                     local_edge_ids: vec![7],
@@ -73,10 +87,13 @@ fn semantic_writer_rejects_compact_edge_selection_edits() {
             .iter_mut()
             .find(|feature| feature.name.as_deref() == Some("Round"))
             .unwrap();
-        let FeatureDefinition::Fillet { groups } = &mut feature.definition else {
-            panic!("typed fillet");
-        };
-        groups[0].edges = EdgeSelection::Native("changed".into());
+        feature.evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) = definition
+            else {
+                panic!("typed fillet");
+            };
+            groups[0].edges = EdgeSelection::Native("changed".into());
+        });
     }
 
     let error = crate::test_support::plan_inherited_write(
@@ -96,7 +113,7 @@ fn semantic_writer_rejects_compact_edge_selection_edits() {
 #[test]
 fn semantic_writer_rejects_compact_surface_selection_edits() {
     use cadmpeg_ir::features::{
-        ExtrudeExtent, FaceSelection, FeatureDefinition, LinearTermination,
+        ExtrudeExtent, FaceSelection, FeatureDefinition, FeatureOperation, LinearTermination,
     };
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -144,7 +161,7 @@ fn semantic_writer_rejects_compact_surface_selection_edits() {
                     id: "sldprt:test:surface-selection#0".into(),
                     parent: lane.id.clone(),
                     ordinal: 0,
-                    offset: marker as u64,
+                    offset: cadmpeg_core::decode::u64_from_index(marker),
                     selector: 0,
                     kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
                     object_name_ref: lane
@@ -170,10 +187,12 @@ fn semantic_writer_rejects_compact_surface_selection_edits() {
             .iter_mut()
             .find(|feature| feature.name.as_deref() == Some("UpTo"))
             .unwrap();
-        let FeatureDefinition::Extrude {
+        let updated_feature_evaluation = &mut feature.evaluation;
+        let mut updated_feature_definition = updated_feature_evaluation.definition().clone();
+        let FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided { side },
             ..
-        } = &mut feature.definition
+        }) = &mut updated_feature_definition
         else {
             panic!("typed extrusion");
         };
@@ -181,6 +200,7 @@ fn semantic_writer_rejects_compact_surface_selection_edits() {
             panic!("to-face termination");
         };
         *face = FaceSelection::Native("changed".into());
+        updated_feature_evaluation.set_definition(updated_feature_definition);
     }
 
     let error = crate::test_support::plan_inherited_write(

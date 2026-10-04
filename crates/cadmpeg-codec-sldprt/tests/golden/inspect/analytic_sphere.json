@@ -1,23 +1,5 @@
 {
   "container_kind": "sldprt-blocks",
-  "dialects": {
-    "extra": [
-      {
-        "admission": "admitted",
-        "declared": {
-          "carrier": "block@8:Contents/Config-0-Partition+0",
-          "schema": "SCH_SW_33103_11000"
-        },
-        "dialect": "parasolid:sch-sw-33103",
-        "format": "parasolid"
-      }
-    ],
-    "primary": {
-      "admission": "residual",
-      "dialect": "sldprt:unknown",
-      "format": "sldprt"
-    }
-  },
   "entries": [
     {
       "attributes": {
@@ -28,20 +10,40 @@
         "sha256": "9fa793ffa885b63e4dbde8ee1deee2623713c6eedc896fd01406c5b46e7e43ca",
         "type_id": "0x00000020"
       },
-      "compressed_size": 221,
       "compression": "deflate",
+      "expanded": 849,
       "name": "Contents/Config-0-Partition",
       "role": "block",
-      "uncompressed_size": 849
+      "stored": 221
     }
   ],
-  "format": "sldprt",
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [
+        {
+          "admission": "admitted",
+          "declared": {
+            "carrier": "block@8:Contents/Config-0-Partition+0",
+            "schema": "SCH_SW_33103_11000"
+          },
+          "dialect": "parasolid:sch-sw-33103"
+        }
+      ],
+      "primary": {
+        "admission": "residual",
+        "dialect": "sldprt:unknown"
+      }
+    }
+  },
   "losses": [
     {
       "code": {
         "code": "source.dialect-unverified",
         "kind": "source_dialect_unverified",
-        "namespace": "sldprt"
+        "namespace": "sldprt",
+        "scope": "namespaced",
+        "strict_floor": "warning"
       },
       "message": "the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on the `sldprt:unknown` residual path without substituting a declared dialect grammar: the feature-operation form-code padding filter is not applied, and an operation code binds only where the four- and eight-byte candidates agree. Agreement is consistency, not a declaration.",
       "severity": "warning"

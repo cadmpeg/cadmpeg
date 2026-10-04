@@ -2,21 +2,56 @@
 //! End-to-end contracts over synthesized IGES card streams.
 #![allow(clippy::unwrap_used)]
 
-use super::*;
+use cadmpeg_test_support::EditableDecodeResult;
+
+use super::IgesCodec;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use std::io::Cursor;
 
 use crate::loss::IgesLossCode;
-use crate::test_support::*;
+use crate::test_support::detect_and_decode;
+use crate::test_support::test_curves_and_surfaces::{
+    circular_arc_file, conic_arc_file, copious_data_file, direction_file,
+    function_offset_line_file, line_file, linear_offset_line_file,
+    mixed_analytic_composite_curve_file, nurbs_curve_file, parametric_spline_curve_file,
+    parametric_spline_surface_file, point_file, rational_nurbs_curve_file,
+    uniform_offset_circle_file,
+};
+use crate::test_support::test_drawing_and_trimming::test_surface_domains::nested_transformed_point_file;
+use crate::test_support::test_drawing_and_trimming::{
+    associativity_definition_file, bounded_associativity_forms_file,
+    connected_network_subfigure_file, dimension_forms_file, explicit_cylinder_seam_file,
+    explicit_multi_pcurve_loop_file, flow_associativity_forms_file,
+    legacy_dimension_and_label_forms_file, multi_pcurve_boundary_file, nested_subfigure_file,
+    network_subfigure_file, recalculable_dimension_associativity_file,
+    symbol_and_sectioned_area_file, text_display_template_forms_file, text_font_definition_file,
+    trimmed_plane_with_inner_loop_file, units_data_file, view_list_associativity_file,
+};
+use crate::test_support::test_owned::{
+    explicit_void_solid_file, owned_test_file_with_global, OwnedTestEntity,
+};
+use crate::test_support::test_solids_and_structure::test_annotation_variants::leader_forms_file;
+use crate::test_support::test_solids_and_structure::{
+    attribute_definition_forms_file, attribute_instance_forms_file,
+    colored_explicit_vertex_loop_file, dimension_property_forms_file,
+    drawing_metadata_property_forms_file, drawing_with_properties_file,
+    explicit_non_manifold_open_shell_file, explicit_open_shell_file,
+    explicit_tetrahedron_solid_file, explicit_tetrahedron_solid_with_boolean_file,
+    explicit_vertex_loop_file, external_reference_forms_file, grid_property_file, group_forms_file,
+    parametrically_bounded_plane_file, patterned_instance_file, primitive_solids_file,
+    procedural_and_boolean_solids_file, product_property_file, scalar_property_forms_file,
+    segmented_view_visibility_file, solid_assembly_file, solid_instance_file, text_annotation_file,
+    variable_schema_property_forms_file, view_forms_file, view_visibility_forms_file,
+};
+use crate::test_support::test_surface_fixtures::{
+    bounded_plane_with_significance_gap_file, nurbs_surface_file, offset_plane_file,
+    placed_surface_of_revolution_file, ruled_surface_file, surface_of_revolution_file,
+    tabulated_cylinder_file,
+};
 
-fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
-    assert_eq!(IgesCodec.detect(&bytes), Confidence::High);
-    IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("synthesized IGES stream should decode")
-}
-
-fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+fn assert_valid(result: &EditableDecodeResult) {
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
     assert!(result.ir().native.namespace("iges").is_some());
 }
@@ -37,7 +72,7 @@ enum ExpectedArena {
     Native(&'static str),
 }
 
-fn arena_count(result: &cadmpeg_ir::codec::DecodeResult, arena: ExpectedArena) -> usize {
+fn arena_count(result: &EditableDecodeResult, arena: ExpectedArena) -> usize {
     match arena {
         ExpectedArena::ModelBodies => result.ir().model.bodies.len(),
         ExpectedArena::ModelCoedges => result.ir().model.coedges.len(),
@@ -59,7 +94,7 @@ fn arena_count(result: &cadmpeg_ir::codec::DecodeResult, arena: ExpectedArena) -
     }
 }
 
-fn arena_ids(result: &cadmpeg_ir::codec::DecodeResult, arena: ExpectedArena) -> Vec<&str> {
+fn arena_ids(result: &EditableDecodeResult, arena: ExpectedArena) -> Vec<&str> {
     match arena {
         ExpectedArena::ModelBodies => result
             .ir()
@@ -236,54 +271,60 @@ fn expected_counts(name: &str) -> (usize, usize, usize) {
 
 fn decode_matrix(
     fixtures: Vec<(&'static str, Vec<u8>, i64, ExpectedArena)>,
-) -> Vec<cadmpeg_ir::codec::DecodeResult> {
-    let matrix_path =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/iges-envelope-a.toml");
-    let source = std::fs::read_to_string(matrix_path).unwrap();
-    let matrix = toml::from_str::<toml::Value>(&source).unwrap();
-    fixtures
-        .into_iter()
-        .map(|(name, bytes, subject_type, expected_arena)| {
-            assert_matrix_destination(&matrix, subject_type, expected_arena);
-            let (expected_subjects, expected_total, expected_associated) = expected_counts(name);
-            let scan = crate::card::scan(&bytes).expect("integration fixture cards");
-            let (global, _global_losses) = crate::global::parse(&scan).expect("integration global");
-            let (directory, _quarantined) = crate::directory::parse(&scan, global.global_table());
-            let subject_count = directory
-                .iter()
-                .filter(|entry| entry.entity_type == subject_type)
-                .count();
-            let subject_sequences = directory
-                .iter()
-                .filter(|entry| entry.entity_type == subject_type)
-                .map(|entry| entry.sequence)
-                .collect::<Vec<_>>();
-            let result = decode(bytes);
-            let subject_output_count = arena_ids(&result, expected_arena)
-                .into_iter()
-                .filter(|identity| {
-                    subject_sequences
-                        .iter()
-                        .any(|sequence| identity_mentions_sequence(identity, *sequence))
-                })
-                .count();
-            assert_eq!(
-                subject_count, expected_subjects,
-                "fixture {name} subject entity count"
-            );
-            assert_eq!(
-                arena_count(&result, expected_arena),
-                expected_total,
-                "fixture {name} exact arena count for {expected_arena:?}"
-            );
-            assert_eq!(
-                subject_output_count, expected_associated,
-                "fixture {name} outputs associated with entity type {subject_type}"
-            );
-            assert_valid(&result);
-            result
-        })
-        .collect()
+) -> Vec<EditableDecodeResult> {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+        let matrix_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../corpus/iges-envelope-a.toml");
+        let source = std::fs::read_to_string(matrix_path).unwrap();
+        let matrix = toml::from_str::<toml::Value>(&source).unwrap();
+        fixtures
+            .into_iter()
+            .map(|(name, bytes, subject_type, expected_arena)| {
+                assert_matrix_destination(&matrix, subject_type, expected_arena);
+                let (expected_subjects, expected_total, expected_associated) =
+                    expected_counts(name);
+                let scan = crate::test_support::scan(&bytes).expect("integration fixture cards");
+                let (global, _global_losses) =
+                    crate::test_support::parse_global(&scan).expect("integration global");
+                let (directory, _quarantined) =
+                    crate::directory::parse(&scan, global.global_table(), decode_ctx)
+                        .expect("integration directory");
+                let subject_count = directory
+                    .iter()
+                    .filter(|entry| entry.entity_type == subject_type)
+                    .count();
+                let subject_sequences = directory
+                    .iter()
+                    .filter(|entry| entry.entity_type == subject_type)
+                    .map(|entry| entry.sequence)
+                    .collect::<Vec<_>>();
+                let result = EditableDecodeResult::from(detect_and_decode(bytes));
+                let subject_output_count = arena_ids(&result, expected_arena)
+                    .into_iter()
+                    .filter(|identity| {
+                        subject_sequences
+                            .iter()
+                            .any(|sequence| identity_mentions_sequence(identity, *sequence))
+                    })
+                    .count();
+                assert_eq!(
+                    subject_count, expected_subjects,
+                    "fixture {name} subject entity count"
+                );
+                assert_eq!(
+                    arena_count(&result, expected_arena),
+                    expected_total,
+                    "fixture {name} exact arena count for {expected_arena:?}"
+                );
+                assert_eq!(
+                    subject_output_count, expected_associated,
+                    "fixture {name} outputs associated with entity type {subject_type}"
+                );
+                assert_valid(&result);
+                result
+            })
+            .collect()
+    })
 }
 
 fn matrix_destination(arena: ExpectedArena) -> &'static str {
@@ -380,7 +421,7 @@ fn envelope_pipeline_aligns_cards_global_units_directories_transforms_and_inspec
 #[test]
 fn v4_outside_envelope_records_remain_native_without_neutral_projection() {
     let global_v4 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
-    let result = decode(owned_test_file_with_global(
+    let result = EditableDecodeResult::from(detect_and_decode(owned_test_file_with_global(
         &[
             OwnedTestEntity {
                 entity_type: 110,
@@ -398,7 +439,7 @@ fn v4_outside_envelope_records_remain_native_without_neutral_projection() {
             },
         ],
         global_v4,
-    ));
+    )));
 
     assert!(result.ir().model.curves.is_empty());
     assert_eq!(result.ir().model.points.len(), 1);
@@ -534,7 +575,8 @@ fn surface_pipeline_composes_nurbs_power_patches_sweeps_revolution_offsets_and_t
 
 #[test]
 fn boundary_vertex_sewing_native_arena_preserves_source_coordinates() {
-    let result = decode(bounded_plane_with_significance_gap_file());
+    let result =
+        EditableDecodeResult::from(detect_and_decode(bounded_plane_with_significance_gap_file()));
     let records = &result
         .ir()
         .native
@@ -836,18 +878,22 @@ fn metadata_pipeline_composes_properties_attributes_associativity_and_native_own
 #[test]
 fn repeated_decode_is_canonical() {
     let bytes = explicit_tetrahedron_solid_with_boolean_file();
-    let first = IgesCodec
-        .decode(
-            &mut Cursor::new(bytes.as_slice()),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    let second = IgesCodec
-        .decode(
-            &mut Cursor::new(bytes.as_slice()),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
+    let first = EditableDecodeResult::from(
+        IgesCodec
+            .decode(
+                &mut Cursor::new(bytes.as_slice()),
+                &DecodeOptions::default(),
+            )
+            .unwrap(),
+    );
+    let second = EditableDecodeResult::from(
+        IgesCodec
+            .decode(
+                &mut Cursor::new(bytes.as_slice()),
+                &DecodeOptions::default(),
+            )
+            .unwrap(),
+    );
 
     assert_eq!(
         first.ir().to_canonical_json().unwrap(),
@@ -901,12 +947,14 @@ fn cumulative_l8_domain_fixtures_validate_without_loss() {
     ];
 
     for (name, bytes) in fixtures {
-        let result = IgesCodec
-            .decode(
-                &mut Cursor::new(bytes.as_slice()),
-                &DecodeOptions::default(),
-            )
-            .unwrap_or_else(|error| panic!("{name}: {error}"));
+        let result = EditableDecodeResult::from(
+            IgesCodec
+                .decode(
+                    &mut Cursor::new(bytes.as_slice()),
+                    &DecodeOptions::default(),
+                )
+                .unwrap_or_else(|error| panic!("{name}: {error}")),
+        );
         let loss_codes = result
             .report()
             .losses
@@ -931,7 +979,8 @@ fn cumulative_l8_domain_fixtures_validate_without_loss() {
             result.ir(),
             result.source_fidelity(),
             Vec::new(),
-        );
+        )
+        .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{name}: {:#?}", validation.findings);
     }
 }

@@ -9,13 +9,22 @@ use crate::nurbs::reader::{
 use crate::nurbs::toks::{self, Cur};
 use crate::sab::Token;
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::geometry::PcurveNurbs;
+use cadmpeg_ir::geometry::pcurve::{PcurveNurbs, PcurveNurbsPoles, WeightedPole2};
 use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::scalar::NonZeroReal;
+use cadmpeg_ir::units::FinitePoint2;
+
+macro_rules! propagate_resource {
+    ($result:expr) => {
+        match $result {
+            Ok(value) => value,
+            Err(error) => return Some(Err(error)),
+        }
+    };
+}
 
 /// Writable value offsets for one 2D pcurve cache.
 pub struct PcurvePatchLayout {
-    /// Payload width of integer and enum fields.
-    pub int_width: RefWidth,
     /// Tagged-integer payload offset for the curve degree.
     pub degree_value_offset: usize,
     control_start: usize,
@@ -64,7 +73,7 @@ impl PcurvePatchLayout {
 
 /// Locate the final valid 2D pcurve block at the stream's known integer width.
 pub fn final_pcurve_patch_layout(record: &[u8], int_width: RefWidth) -> Option<PcurvePatchLayout> {
-    construction_marker_positions(record, int_width)
+    construction_marker_positions(record, int_width)?
         .into_iter()
         .filter_map(|marker_pos| {
             let marker = marker_at(record, marker_pos)?;
@@ -81,8 +90,13 @@ pub fn final_pcurve_patch_layout(record: &[u8], int_width: RefWidth) -> Option<P
             if !(1..=1000).contains(&unique) {
                 return None;
             }
-            let (_knots, control_count, knot_layout) =
-                read_knots(record, &mut pos, unique as usize, degree, int_width)?;
+            let (_knots, control_count, knot_layout) = read_knots(
+                record,
+                &mut pos,
+                usize::try_from(unique).ok()?,
+                degree,
+                int_width,
+            )?;
             let control_start = pos;
             let components = if rational { 3 } else { 2 };
             for _ in 0..control_count * components {
@@ -92,7 +106,6 @@ pub fn final_pcurve_patch_layout(record: &[u8], int_width: RefWidth) -> Option<P
                 pos += 9;
             }
             Some(PcurvePatchLayout {
-                int_width,
                 degree_value_offset,
                 control_start,
                 rational,
@@ -108,11 +121,17 @@ fn decode_pcurve_block(b: &[u8], marker_pos: usize, int_width: RefWidth) -> Opti
     decode_pcurve_block_with_end(b, marker_pos, int_width).map(|(pcurve, _)| pcurve)
 }
 
-pub(crate) fn decode_pcurve_block_with_end(
+pub(super) fn decode_pcurve_block_with_end(
     b: &[u8],
     marker_pos: usize,
     int_width: RefWidth,
 ) -> Option<(PcurveNurbs, usize)> {
+    // Byte-addressed inspection supplies writer patch layouts under its own policy.
+    let writer_arena = cadmpeg_core::decode::DecodeArena::new();
+    let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let (writer_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &writer_arena, &writer_policy)
+            .ok()?;
     let marker = marker_at(b, marker_pos)?;
     let rational = marker.rational();
     let mut pos = marker_pos + marker.byte_len();
@@ -125,10 +144,17 @@ pub(crate) fn decode_pcurve_block_with_end(
     if !(1..=1000).contains(&n_uniq) {
         return None;
     }
-    let (knots, n_poles, _knot_layout) =
-        read_knots(b, &mut pos, n_uniq as usize, degree, int_width)?;
-    let mut control_points = Vec::with_capacity(n_poles);
-    let mut weights = rational.then(|| Vec::with_capacity(n_poles));
+    let (knots, n_poles, _knot_layout) = read_knots(
+        b,
+        &mut pos,
+        usize::try_from(n_uniq).ok()?,
+        degree,
+        int_width,
+    )?;
+    // The record states a pole and its weight together, so the reader states
+    // rows: there is no pole lane and no weight lane for a reader to pair.
+    let mut points = Vec::new();
+    let mut weighted = Vec::new();
     for _ in 0..n_poles {
         if *b.get(pos)? != 0x06 {
             return None;
@@ -140,23 +166,35 @@ pub(crate) fn decode_pcurve_block_with_end(
         }
         let v = View::f64_le_at(b, pos + 1)?;
         pos += 9;
-        control_points.push(Point2::new(u, v));
-        if let Some(weights) = weights.as_mut() {
+        let point = Point2::new(u, v);
+        if rational {
             if *b.get(pos)? != 0x06 {
                 return None;
             }
-            weights.push(View::f64_le_at(b, pos + 1)?);
+            let weight = View::f64_le_at(b, pos + 1)?;
             pos += 9;
+            weighted.push(WeightedPole2 {
+                point,
+                weight: NonZeroReal::new(weight)?,
+            });
+        } else {
+            points.push(point);
         }
     }
+    let poles = if rational {
+        PcurveNurbsPoles::Rational { points: weighted }
+    } else {
+        PcurveNurbsPoles::Polynomial { points }
+    };
     Some((
         PcurveNurbs::new(
-            degree as u32,
+            &writer_ctx,
+            u32::try_from(degree).ok()?,
             knots,
-            control_points,
-            weights,
+            poles,
             is_periodic(closure),
         )
+        .ok()?
         .ok()?,
         pos,
     ))
@@ -184,10 +222,11 @@ pub fn decode_pcurve_cache(record_bytes: &[u8]) -> Option<PcurveNurbs> {
 /// Decode a 2D `nubs`/`nurbs` pcurve block at token `marker_pos`, returning
 /// the pcurve and the token index just past the block. Token-space counterpart
 /// of [`decode_pcurve_block_with_end`].
-pub(crate) fn pcurve_block_with_end(
+pub(super) fn pcurve_block_with_end(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
     marker_pos: usize,
-) -> Option<(PcurveNurbs, usize)> {
+) -> Option<Result<(PcurveNurbs, usize), cadmpeg_core::CodecError>> {
     let rational = toks::marker_at(toks, marker_pos)?.rational();
     let mut cur = Cur::at(toks, marker_pos + 1);
     let degree = cur.take_long()?;
@@ -199,63 +238,116 @@ pub(crate) fn pcurve_block_with_end(
     if !(1..=1000).contains(&n_uniq) {
         return None;
     }
-    let (knots, n_poles) = toks::take_knot_table(&mut cur, n_uniq as usize, degree)?;
-    let mut control_points = Vec::new();
-    let mut weights = rational.then(Vec::new);
+    let (knots, n_poles) =
+        match toks::take_knot_table(ctx, &mut cur, usize::try_from(n_uniq).ok()?, degree)? {
+            Ok(knots) => knots,
+            Err(error) => return Some(Err(error)),
+        };
+    let mut points = Vec::new();
+    let mut weighted = Vec::new();
+    if rational {
+        weighted = match ctx.collection_vec(n_poles, "ASM rational pcurve poles") {
+            Ok(weighted) => weighted,
+            Err(error) => return Some(Err(error)),
+        };
+    } else {
+        points = match ctx.collection_vec(n_poles, "ASM polynomial pcurve poles") {
+            Ok(points) => points,
+            Err(error) => return Some(Err(error)),
+        };
+    }
     for _ in 0..n_poles {
         let u = cur.take_f64()?;
         let v = cur.take_f64()?;
-        control_points.push(Point2::new(u, v));
-        if let Some(weights) = weights.as_mut() {
-            weights.push(cur.take_f64()?);
+        let point = FinitePoint2::new(Point2::new(u, v))?;
+        if rational {
+            weighted.push(WeightedPole2 {
+                point,
+                weight: NonZeroReal::new(cur.take_f64()?)?,
+            });
+        } else {
+            points.push(point);
         }
     }
-    Some((
-        PcurveNurbs::new(
-            degree as u32,
+    let poles = if rational {
+        PcurveNurbsPoles::Rational { points: weighted }
+    } else {
+        PcurveNurbsPoles::Polynomial { points }
+    };
+    Some(Ok((
+        propagate_resource!(PcurveNurbs::new(
+            ctx,
+            u32::try_from(degree).ok()?,
             knots,
-            control_points,
-            weights,
+            poles,
             is_periodic(closure),
-        )
+        ))
         .ok()?,
         cur.pos(),
-    ))
+    )))
 }
 
-fn pcurve_block(toks: &[Token], marker_pos: usize) -> Option<PcurveNurbs> {
-    pcurve_block_with_end(toks, marker_pos).map(|(pcurve, _)| pcurve)
+fn pcurve_block(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    toks: &[Token],
+    marker_pos: usize,
+) -> Option<Result<PcurveNurbs, cadmpeg_core::CodecError>> {
+    pcurve_block_with_end(ctx, toks, marker_pos).map(|result| result.map(|(pcurve, _)| pcurve))
 }
 
 /// Decode the BS2 field owned directly by an `exp_par_cur` scope.
 ///
 /// The scope grammar makes its first owned B-spline block the pcurve. Nested
 /// support references are not searched because they belong to other fields.
-pub fn explicit_pcurve_cache(toks: &[Token]) -> Option<PcurveNurbs> {
-    let position = toks::owned_marker_positions(toks).into_iter().next()?;
-    pcurve_block(toks, position)
+///
+/// The argument is the scope, so the marker walk is total: the unbalanced
+/// stream the free walk refuses is a state [`toks::SubtypeScope`] cannot hold.
+/// Marker positions index the scope's own tokens.
+pub fn explicit_pcurve_cache(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scope: toks::SubtypeScope<'_>,
+) -> Option<Result<PcurveNurbs, cadmpeg_core::CodecError>> {
+    let position = propagate_resource!(scope.owned_marker_positions(ctx))
+        .into_iter()
+        .next()?;
+    pcurve_block(ctx, scope.tokens(), position)
 }
 
 /// Resolve an explicit pcurve through one subtype-table reference.
 pub fn explicit_pcurve_cache_from_subtype_ref(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     index: i64,
     table: &toks::SubtypeTable,
-) -> Option<PcurveNurbs> {
+) -> Option<Result<PcurveNurbs, cadmpeg_core::CodecError>> {
     let index = usize::try_from(index).ok()?;
-    explicit_pcurve_cache(table.span(index)?)
+    explicit_pcurve_cache(ctx, table.span(index)?)
 }
 
 /// The parameter-space fit tolerance immediately following the final valid 2D
-/// pcurve block in `toks`. Token-space counterpart of
-/// [`decode_pcurve_fit_tolerance`].
-pub fn pcurve_fit_tolerance(toks: &[Token]) -> Option<f64> {
-    let scope = toks::owned_cache_scope(toks).unwrap_or(toks);
-    let (_, end) = toks::owned_marker_positions(scope)
+/// pcurve block the scope itself owns.
+///
+/// The blocks searched are the ones [`explicit_pcurve_cache`] selects from, so
+/// the tolerance belongs to the pcurve that function returns. Nested support
+/// references are not searched because they belong to other fields.
+///
+/// The argument is the scope, so the marker walk is total: the unbalanced
+/// stream the free walk refuses is a state [`toks::SubtypeScope`] cannot hold.
+/// Marker positions index the scope's own tokens.
+pub fn pcurve_fit_tolerance(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scope: toks::SubtypeScope<'_>,
+) -> Option<Result<f64, cadmpeg_core::CodecError>> {
+    let tokens = scope.tokens();
+    let (_, end) = match propagate_resource!(scope.owned_marker_positions(ctx))
         .into_iter()
-        .filter_map(|pos| pcurve_block_with_end(scope, pos))
-        .next_back()?;
-    match scope.get(end) {
-        Some(Token::Double(value)) => Some(*value),
+        .rev()
+        .find_map(|pos| pcurve_block_with_end(ctx, tokens, pos))?
+    {
+        Ok(decoded) => decoded,
+        Err(error) => return Some(Err(error)),
+    };
+    match tokens.get(end) {
+        Some(Token::Double(value)) => Some(Ok(*value)),
         _ => None,
     }
 }

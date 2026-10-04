@@ -12,15 +12,19 @@
 //! severity from the code so the two cannot drift apart across sites, and it
 //! leaves only the per-instance message to the caller.
 //!
-use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::{
+    loss::{LossKind, LossNamespace, LossNote, LossTaxonomy, NamespacedLossKind},
+    Severity,
+};
+
+const NAMESPACE: LossNamespace<'static> = cadmpeg_ir::loss_namespace!("fcstd");
 
 /// A stable, machine-readable identifier for one `.fcstd` transfer loss.
 ///
 /// Variants are grouped by the record family whose transfer degraded. The
 /// string form (via [`FreecadLossCode::code`]) is the stable contract.
-#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum FreecadLossCode {
+pub(crate) enum FreecadLossCode {
     /// Feature history cannot enter a neutral definition because its ordering is cyclic.
     FeatureCyclicHistory,
     /// Feature retains its native kind without a complete neutral operation.
@@ -31,28 +35,37 @@ pub enum FreecadLossCode {
     SketchNativeConstraint,
     /// Topology color values were retained because their count did not match mapped topology.
     AppearanceTopologyColorCountMismatch,
+    /// A primitive style size could not enter the neutral appearance.
+    AppearancePrimitiveSizeNotTransferred,
     /// The declared persistence schema names no dialect this codec has a strategy for.
     SourceDialectUnverified,
     /// The GUI document used schema-1 vocabulary under another declaration.
     SourceGuiSchemaUnverified,
+    /// A GUI property states a blank key, so its value has no name to carry.
+    SourceGuiPropertyKeyBlank,
+    /// A parameter-space curve could not enter neutral geometry.
+    PcurveNotTransferred,
 }
 
 impl FreecadLossCode {
     /// Every code, in declaration order.
     #[cfg(test)]
-    pub const ALL: &'static [FreecadLossCode] = &[
+    const ALL: &'static [FreecadLossCode] = &[
         Self::FeatureCyclicHistory,
         Self::FeatureNativeKindRetained,
         Self::SketchNativeGeometry,
         Self::SketchNativeConstraint,
         Self::AppearanceTopologyColorCountMismatch,
+        Self::AppearancePrimitiveSizeNotTransferred,
         Self::SourceDialectUnverified,
         Self::SourceGuiSchemaUnverified,
+        Self::SourceGuiPropertyKeyBlank,
+        Self::PcurveNotTransferred,
     ];
 
     /// The stable string identifier. This is the gating contract.
     #[must_use]
-    pub const fn code(self) -> &'static str {
+    const fn code(self) -> &'static str {
         match self {
             Self::FeatureCyclicHistory => "feature.cyclic-history",
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
@@ -61,22 +74,30 @@ impl FreecadLossCode {
             Self::AppearanceTopologyColorCountMismatch => {
                 "appearance.topology-color-count-mismatch"
             }
+            Self::AppearancePrimitiveSizeNotTransferred => {
+                "appearance.primitive-size-not-transferred"
+            }
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::SourceGuiSchemaUnverified => "source.gui-schema-unverified",
+            Self::SourceGuiPropertyKeyBlank => "source.gui-property-key-blank",
+            Self::PcurveNotTransferred => "pcurve.not-transferred",
         }
     }
 
     /// The severity of this loss.
     #[must_use]
-    pub const fn severity(self) -> Severity {
+    const fn severity(self) -> Severity {
         match self {
             Self::FeatureCyclicHistory
             | Self::FeatureNativeKindRetained
             | Self::SketchNativeGeometry
             | Self::SketchNativeConstraint => Severity::Blocking,
             Self::AppearanceTopologyColorCountMismatch
+            | Self::AppearancePrimitiveSizeNotTransferred
             | Self::SourceDialectUnverified
-            | Self::SourceGuiSchemaUnverified => Severity::Warning,
+            | Self::SourceGuiSchemaUnverified
+            | Self::SourceGuiPropertyKeyBlank
+            | Self::PcurveNotTransferred => Severity::Warning,
         }
     }
 
@@ -85,10 +106,12 @@ impl FreecadLossCode {
             Self::FeatureCyclicHistory | Self::FeatureNativeKindRetained => {
                 LossTaxonomy::FeatureHistoryRetained
             }
-            Self::SketchNativeGeometry | Self::SketchNativeConstraint => {
-                LossTaxonomy::RecordNotTyped
-            }
-            Self::AppearanceTopologyColorCountMismatch => LossTaxonomy::MaterialNotTransferred,
+            Self::SketchNativeGeometry
+            | Self::SketchNativeConstraint
+            | Self::SourceGuiPropertyKeyBlank
+            | Self::PcurveNotTransferred => LossTaxonomy::RecordNotTyped,
+            Self::AppearanceTopologyColorCountMismatch
+            | Self::AppearancePrimitiveSizeNotTransferred => LossTaxonomy::MaterialNotTransferred,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::SourceGuiSchemaUnverified => LossTaxonomy::SourceDialectUnverified,
         }
@@ -96,13 +119,14 @@ impl FreecadLossCode {
 
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
-    pub fn kind(self) -> LossKind {
+    fn kind(self) -> LossKind {
         let strict_floor = match self {
             Self::SourceGuiSchemaUnverified => None,
             other => other.shared_taxonomy().strict_floor(),
         };
-        LossKind::namespaced("fcstd", self.code(), self.shared_taxonomy())
+        NamespacedLossKind::new(NAMESPACE, self.code(), self.shared_taxonomy())
             .with_strict_floor(strict_floor)
+            .into()
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
@@ -110,7 +134,7 @@ impl FreecadLossCode {
     /// The structured code is `fcstd/<local>`. Severity comes from the local
     /// code; the strict floor comes from the taxonomy.
     #[must_use]
-    pub fn note(self, message: impl Into<String>) -> LossNote {
+    pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
     }
 }
@@ -133,8 +157,11 @@ mod tests {
                 "sketch.native-geometry",
                 "sketch.native-constraint",
                 "appearance.topology-color-count-mismatch",
+                "appearance.primitive-size-not-transferred",
                 "source.dialect-unverified",
                 "source.gui-schema-unverified",
+                "source.gui-property-key-blank",
+                "pcurve.not-transferred",
             ]
         );
     }

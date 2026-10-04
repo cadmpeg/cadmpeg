@@ -5,17 +5,7 @@ use super::{
     Deserialize, DisplayColorFrame, LinkedRow, PaletteIndex, RmDisplayColorAssignment,
     RmDisplayColorAssignmentEncoding, Serialize, TargetRow,
 };
-use crate::om::compact::CompactIndexAtom;
-
-fn atom(value: u32, raw: &[u8], field: &str) -> Result<CompactIndexAtom, String> {
-    CompactIndexAtom::from_wire(value, raw).map_err(|error| format!("{field}: {error}"))
-}
-
-// This conversion consumes the input carrier at the typed construction boundary.
-#[allow(clippy::needless_pass_by_value)]
-fn row_indices(values: [u32; 3], raw: [Vec<u8>; 3]) -> [Result<CompactIndexAtom, String>; 3] {
-    std::array::from_fn(|i| atom(values[i], &raw[i], "indices/raw_indices"))
-}
+use crate::om::compact::{atom, row_indices};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -66,6 +56,7 @@ pub(super) enum EncodingWire {
     },
 }
 
+#[cfg(test)]
 impl From<RmDisplayColorAssignmentEncoding> for EncodingWire {
     fn from(value: RmDisplayColorAssignmentEncoding) -> Self {
         match value {
@@ -114,7 +105,7 @@ impl TryFrom<EncodingWire> for RmDisplayColorAssignmentEncoding {
                 discriminator,
                 flag,
             } => {
-                let [a, b, c] = row_indices(indices, raw_indices);
+                let [a, b, c] = row_indices(&indices, &raw_indices);
                 let indices = [a?.into(), b?.into(), c?.into()];
                 let target = atom(
                     target_index,
@@ -157,7 +148,7 @@ impl TryFrom<EncodingWire> for RmDisplayColorAssignmentEncoding {
                 index_source_offsets,
                 mode,
             } => {
-                let [a, b, c] = row_indices(indices, raw_indices);
+                let [a, b, c] = row_indices(&indices, &raw_indices);
                 let indices = [a?.into(), b?.into(), c?.into()];
                 let target = atom(
                     target_index,
@@ -182,27 +173,31 @@ impl TryFrom<EncodingWire> for RmDisplayColorAssignmentEncoding {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(super) struct RmDisplayColorAssignmentWire {
     /// Globally unique assignment identity.
-    pub id: String,
+    id: String,
     /// Zero-based source order.
-    pub ordinal: u32,
+    ordinal: u32,
     /// Complete self-framed row carrying the color token.
-    pub encoding: RmDisplayColorAssignmentEncoding,
+    encoding: RmDisplayColorAssignmentEncoding,
     /// Member addressed by the row target index when it resolves in the
     /// `RMFastLoad` object-ID table.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub target_object_id: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_target_object_id"
+    )]
+    target_object_id: Option<String>,
     /// One-based part palette index.
-    pub color_index: u16,
+    color_index: u16,
     /// Target in `part_color_definitions`.
-    pub color_definition: String,
+    color_definition: String,
     /// Exact color-index token.
-    pub raw_color_index: Vec<u8>,
+    raw_color_index: Vec<u8>,
     /// Owning directory entry.
-    pub source_entry: String,
+    source_entry: String,
     /// Absolute color-token offset.
-    pub source_offset: u64,
+    source_offset: u64,
     /// Absolute row-opener offset.
-    pub row_source_offset: u64,
+    row_source_offset: u64,
 }
 
 impl TryFrom<RmDisplayColorAssignmentWire> for RmDisplayColorAssignment {
@@ -210,7 +205,8 @@ impl TryFrom<RmDisplayColorAssignmentWire> for RmDisplayColorAssignment {
     fn try_from(wire: RmDisplayColorAssignmentWire) -> Result<Self, Self::Error> {
         let color_index =
             PaletteIndex::new(wire.color_index).ok_or("color_index: must be in 1..=216")?;
-        if color_index.display_raw() != wire.raw_color_index {
+        let (raw, width) = color_index.display_token();
+        if raw[..width] != wire.raw_color_index {
             return Err("raw_color_index differs from color_index display token".into());
         }
         let frame = DisplayColorFrame::new(wire.encoding, color_index)
@@ -232,6 +228,7 @@ impl TryFrom<RmDisplayColorAssignmentWire> for RmDisplayColorAssignment {
     }
 }
 
+#[cfg(test)]
 impl From<RmDisplayColorAssignment> for RmDisplayColorAssignmentWire {
     fn from(value: RmDisplayColorAssignment) -> Self {
         let source_offset = value.frame.offset();
@@ -253,7 +250,9 @@ impl From<RmDisplayColorAssignment> for RmDisplayColorAssignmentWire {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::RmDisplayColorAssignment;
+    use super::super::RmDisplayColorAssignmentEncoding;
+    use crate::test_support::test_wire::check_wire;
 
     #[test]
     fn color_assignment_derives_both_offsets_from_its_row_and_token() {
@@ -275,47 +274,6 @@ mod tests {
         let assignment: RmDisplayColorAssignment = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(assignment).unwrap(), wire);
     }
-    fn check_wire<T: serde::de::DeserializeOwned + Serialize + std::fmt::Debug>(
-        json: &str,
-        field: &str,
-        invalid: serde_json::Value,
-    ) {
-        let row: T = serde_json::from_str(json).unwrap();
-        assert_eq!(serde_json::to_string(&row).unwrap(), json);
-        let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
-        wire[field] = invalid;
-        let error = serde_json::from_value::<T>(wire).unwrap_err();
-        assert!(error.to_string().contains(field), "{error}");
-        let original: serde_json::Value = serde_json::from_str(json).unwrap();
-        for field in [
-            "first_index_source_offset",
-            "object_index_source_offset",
-            "target_index_source_offset",
-            "source_offset",
-        ] {
-            if original.get(field).is_none() {
-                continue;
-            }
-            let mut invalid = original.clone();
-            invalid[field] = serde_json::json!(u64::MAX);
-            let error = serde_json::from_value::<T>(invalid).unwrap_err();
-            assert!(error.to_string().contains(field), "{error}");
-        }
-        if let Some(offsets) = original
-            .get("index_source_offsets")
-            .and_then(serde_json::Value::as_array)
-        {
-            for index in 0..offsets.len() {
-                let mut invalid = original.clone();
-                invalid["index_source_offsets"][index] = serde_json::json!(u64::MAX);
-                let error = serde_json::from_value::<T>(invalid).unwrap_err();
-                assert!(
-                    error.to_string().contains("index_source_offsets"),
-                    "{error}"
-                );
-            }
-        }
-    }
 
     #[test]
     fn display_color_encodings_keep_wire_order_and_reject_mismatched_tokens() {
@@ -331,3 +289,6 @@ mod tests {
         );
     }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_target_object_id, String, "target_object_id");

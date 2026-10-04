@@ -1,76 +1,87 @@
 {
   "container_kind": "fixed-ascii",
-  "dialects": {
-    "extra": [],
-    "primary": {
-      "admission": "admitted",
-      "declared": {
-        "effective_version": "5.3",
-        "representation": "fixed-ascii",
-        "version_flag": "11"
-      },
-      "dialect": "iges:5.3-fixed-ascii",
-      "format": "iges"
-    }
-  },
   "entries": [
     {
       "attributes": {
         "cards": "1",
         "line_endings": "lf:1"
       },
-      "compressed_size": 81,
       "compression": "none",
       "name": "start",
       "role": "section",
-      "uncompressed_size": 81
+      "size": {
+        "form": "exact",
+        "size": 81
+      }
     },
     {
       "attributes": {
         "cards": "2",
         "line_endings": "lf:2"
       },
-      "compressed_size": 162,
       "compression": "none",
       "name": "global",
       "role": "section",
-      "uncompressed_size": 162
+      "size": {
+        "form": "exact",
+        "size": 162
+      }
     },
     {
       "attributes": {
         "cards": "64",
         "line_endings": "lf:64"
       },
-      "compressed_size": 5184,
       "compression": "none",
       "name": "directory-entry",
       "role": "section",
-      "uncompressed_size": 5184
+      "size": {
+        "form": "exact",
+        "size": 5184
+      }
     },
     {
       "attributes": {
         "cards": "33",
         "line_endings": "lf:33"
       },
-      "compressed_size": 2673,
       "compression": "none",
       "name": "parameter-data",
       "role": "section",
-      "uncompressed_size": 2673
+      "size": {
+        "form": "exact",
+        "size": 2673
+      }
     },
     {
       "attributes": {
         "cards": "1",
         "line_endings": "lf:1"
       },
-      "compressed_size": 81,
       "compression": "none",
       "name": "terminate",
       "role": "section",
-      "uncompressed_size": 81
+      "size": {
+        "form": "exact",
+        "size": 81
+      }
     }
   ],
-  "format": "iges",
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "effective_version": "5.3",
+          "representation": "fixed-ascii",
+          "version_flag": "11"
+        },
+        "dialect": "iges:5.3-fixed-ascii"
+      }
+    }
+  },
   "notes": [
     "source_bytes=8181",
     "parameter_delimiter=,",

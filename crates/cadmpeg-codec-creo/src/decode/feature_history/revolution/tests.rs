@@ -1,14 +1,172 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::super::transfer_resolved_revolution_surfaces;
+use super::super::revolution::transfer_resolved_revolution_surfaces;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve};
+use cadmpeg_ir::geometry::{nurbs::NurbsCurve, Curve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::AnnotationBuilder;
 
-fn saved_spline_definition() -> crate::feature::FeatureDefinition {
-    crate::feature::FeatureDefinition {
+#[test]
+fn revolution_axis_error_refuses_retained_text_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let direction =
+        cadmpeg_ir::features::FeatureDirection3::new(cadmpeg_ir::math::Vector3::new(2.0, 0.0, 0.0))
+            .expect("finite nonzero direction");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = super::revolution_unit_axis(&ctx, 40, direction)
+        .expect_err("axis error text exceeds retained limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo revolution axis error text"));
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let error = super::revolution_unit_axis(ctx, 40, direction)
+            .expect_err("nonunit direction is malformed");
+        assert!(matches!(error, CodecError::Malformed(message)
+            if message == "feature 40 revolution axis direction does not have unit length"));
+        Ok::<(), CodecError>(())
+    })
+    .expect("service error text admitted");
+}
+
+#[test]
+fn revolution_knot_error_refuses_retained_text_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = super::directrix_parameter_range(&ctx, 17, &[])
+        .expect_err("knot error text exceeds retained limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo revolution knot error text"));
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let error = super::directrix_parameter_range(ctx, 17, &[])
+            .expect_err("empty knot list is malformed");
+        assert!(matches!(error, CodecError::Malformed(message)
+            if message == "FeatDefs saved spline at offset 17 has no knots"));
+        assert_eq!(
+            super::directrix_parameter_range(ctx, 17, &[0.0, 1.0])?,
+            [0.0, 1.0]
+        );
+        Ok::<(), CodecError>(())
+    })
+    .expect("service error text admitted");
+}
+
+#[test]
+fn revolved_saved_spline_loss_refuses_text_and_row_below_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    for (bytes, items, dimension, operation) in [
+        (
+            0,
+            u64::MAX,
+            ResourceDimension::RetainedBytes,
+            "creo revolved saved spline loss text",
+        ),
+        (
+            u64::MAX,
+            0,
+            ResourceDimension::CollectionItems,
+            "creo revolved saved spline losses",
+        ),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = bytes;
+        policy.limits.max_collection_items = items;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let error =
+            super::push_revolution_surface_loss(&ctx, &mut Vec::new(), "saved spline refused")
+                .expect_err("below-need loss cap");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.dimension == dimension && resource.operation == operation));
+    }
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let mut losses = Vec::new();
+    super::push_revolution_surface_loss(&ctx, &mut losses, "saved spline refused")
+        .expect("service loss");
+    assert_eq!(losses[0].message, "saved spline refused");
+}
+
+#[test]
+fn revolution_generating_ids_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+    let mut ids = std::collections::BTreeSet::new();
+    let error = super::insert_generating_segment_id(&ctx, &mut ids, 9)
+        .expect_err("one generating ID exceeds the collection limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo revolution generating segment IDs"),
+        "{error:?}"
+    );
+    crate::decode::with_test_decode_ctx(|ctx| {
+        super::insert_generating_segment_id(ctx, &mut ids, 9)
+    })
+    .expect("service profile admits one generating ID");
+    assert_eq!(ids, std::collections::BTreeSet::from([9]));
+}
+
+#[test]
+fn revolution_profile_id_merge_refuses_second_node() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let segment = crate::feature::definitions::FeatureSegment {
+        kind: crate::feature::definitions::FeatureSegmentKind::Line([1, 2]),
+        directions: [None; 3],
+        center_id: None,
+        arc_orientation: None,
+        vertical_horizontal: None,
+        radius_ref: None,
+        radius2_ref: None,
+        external_id: 9,
+        body: Vec::new(),
+        offset: 0,
+    };
+    let profiles = [vec![cadmpeg_ir::sketches::SketchEntityUse {
+        entity: cadmpeg_ir::sketches::SketchEntityId::mint(
+            "creo:featdefs:sketch_entity#2:9".to_string(),
+        )
+        .expect("profile entity identity"),
+        reversed: false,
+    }]];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+    let profile_ids =
+        crate::decode::feature_history::link::profile_segment_ids(&ctx, 2, &[&segment], &profiles)
+            .expect("one profile ID is admitted");
+    let mut generating_ids = std::collections::BTreeSet::new();
+    let error = super::insert_generating_segment_id(
+        &ctx,
+        &mut generating_ids,
+        *profile_ids.first().expect("one profile ID"),
+    )
+    .expect_err("a second BTreeSet node exceeds the limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo revolution generating segment IDs"),
+        "{error:?}"
+    );
+}
+
+fn saved_spline_definition() -> crate::feature::definitions::FeatureDefinition {
+    crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(40),
             owner_feature_id: Some(40),
@@ -17,31 +175,31 @@ fn saved_spline_definition() -> crate::feature::FeatureDefinition {
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
         variables: Some(crate::feature::definitions::test_support::with_points(
-            crate::feature::FeatureVariableTable {
+            crate::feature::definitions::FeatureVariableTable {
                 declared_count: 0,
                 entity_ref: None,
                 rows: Vec::new(),
                 offset: 0,
             },
             vec![
-                crate::feature::FeatureSectionPoint {
+                crate::feature::definitions::FeatureSectionPoint {
                     point_id: 1,
                     u: Some(0.0),
                     v: Some(-1.0),
                 },
-                crate::feature::FeatureSectionPoint {
+                crate::feature::definitions::FeatureSectionPoint {
                     point_id: 2,
                     u: Some(0.0),
                     v: Some(1.0),
                 },
             ],
         )),
-        segments: Some(crate::feature::FeatureSegmentTable {
+        segments: Some(crate::feature::definitions::FeatureSegmentTable {
             declared_count: 1,
             has_elided_prototype: false,
             entity_ref: None,
-            rows: (vec![crate::feature::FeatureSegment {
-                kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
+            rows: (vec![crate::feature::definitions::FeatureSegment {
+                kind: crate::feature::definitions::FeatureSegmentKind::Line([1, 2]),
                 directions: [None; 3],
                 center_id: None,
                 arc_orientation: None,
@@ -59,11 +217,11 @@ fn saved_spline_definition() -> crate::feature::FeatureDefinition {
         }),
         trim_entities: None,
         trim_vertices: None,
-        order_table: Some(crate::feature::FeatureOrderTable {
+        order_table: Some(crate::feature::definitions::FeatureOrderTable {
             declared_count: 1,
             has_prototype: false,
             entity_ref: None,
-            rows: vec![crate::feature::FeatureOrderRow {
+            rows: vec![crate::feature::definitions::FeatureOrderRow {
                 external_id: 7,
                 internal_id: 1,
                 bitmask: 0,
@@ -71,20 +229,20 @@ fn saved_spline_definition() -> crate::feature::FeatureDefinition {
             }],
             offset: 0,
         }),
-        section_3d: Some(crate::feature::FeatureSection3d {
+        section_3d: Some(crate::feature::definitions::FeatureSection3d {
             sketch_plane_entity_id: None,
             sketch_plane_flip: None,
             reference_planes: crate::feature::definitions::ReferencePlanes::Named(Vec::new()),
             reference_plane_datum_geometry_id: None,
-            orientation: crate::feature::FeatureSectionOrientation::default(),
+            orientation: crate::feature::definitions::FeatureSectionOrientation::default(),
             dimension_ids: Vec::new(),
             offset: 0,
         }),
         dimensions: None,
         relations: None,
-        saved_section: Some(crate::feature::FeatureSavedSection {
-            entities: vec![crate::feature::FeatureSavedEntity::Spline(
-                crate::feature::FeatureSavedSpline {
+        saved_section: Some(crate::feature::definitions::FeatureSavedSection {
+            entities: vec![crate::feature::definitions::FeatureSavedEntity::Spline(
+                crate::feature::definitions::FeatureSavedSpline {
                     entity_id: Some(1),
                     declared_point_count: Some(2),
                     interpolation_points: vec![[2.0, 0.0, 0.0], [2.0, 0.0, 1.0]],
@@ -110,88 +268,77 @@ fn saved_spline_curve() -> Curve {
     Curve {
         id: CurveId::mint("creo:featdefs:saved_spline_curve#40:1".to_string())
             .expect("identity grammar"),
-        geometry: CurveGeometry::Nurbs(
-            NurbsCurve::new(
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+            NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 0.0, 1.0)],
                 None,
                 false,
             )
+            .expect("fixture constructor admission")
             .expect("valid saved-spline curve"),
-        ),
+        )),
         source_object: None,
     }
 }
 
 fn transfer_with_curve_count(curve_count: usize) -> (usize, CadIr) {
-    let mut scan = crate::container::scan_bytes(Vec::new());
-    scan.features.definitions.push(saved_spline_definition());
-    scan.features
-        .section_transforms
-        .push(crate::placement::FeatureSectionTransform {
-            definition_id: 40,
-            feature_id: Some(40),
-            origin: [0.0; 3],
-            u_axis: [1.0, 0.0, 0.0],
-            v_axis: [0.0, 1.0, 0.0],
-            normal: [0.0, 0.0, 1.0],
-            offset: 0,
-        });
-    scan.features
-        .operations
-        .push(crate::feature::FeatureOperation {
-            feature_id: 40,
-            kind: crate::feature::OperationKind::Revolve,
-            name: crate::feature::operations::OperationName::Derived,
-            recipe: crate::feature::RecipeResolution::Resolved(
-                crate::feature::FeatureRecipe::ProtrudeRevolve,
-            ),
-            display_state_conflict: false,
-            depdb: None,
-            offset: 0,
-            state_offset: 0,
-        });
-    scan.features
-        .revolution_extents
-        .push(crate::feature::FeatureRevolutionExtent {
-            feature_id: 40,
-            offset: 0,
-        });
-    scan.surfaces.rows.push(crate::surface::SurfaceRow {
-        id: 20,
-        kind: crate::surface::SurfaceKind::Spline,
-        feature_id: 40,
-        reversed: false,
-        boundary_type: crate::surface::BoundaryType::Code00,
-        next_surface: 0,
-        offset: 0,
-    });
-    scan.features.entity_tables.push(
-        crate::feature::FeatureEntityTable {
-            feature_id: 40,
-            table_class_id: 29,
-            entries: vec![crate::feature::FeatureEntityTableEntry {
-                entity_id: 20,
-                class_id: 200,
-                payload: crate::feature::entry_payload(200, Some(7), None, None),
-                prefixed: false,
-                offset: 0,
-                end_offset: 0,
-                is_surface: false,
-            }],
-            offset: 0,
-        }
-        .with_surface_ids([20]),
-    );
+    transfer_with_curve_count_and_scale(curve_count, None)
+}
+
+fn transfer_with_curve_count_and_scale(
+    curve_count: usize,
+    length_scale_mm: Option<cadmpeg_ir::scalar::PositiveReal>,
+) -> (usize, CadIr) {
+    let scan = saved_spline_revolution_scan();
 
     let mut ir = CadIr::empty();
-    ir.model
-        .curves
-        .extend((0..curve_count).map(|_| saved_spline_curve()));
-    let transferred =
-        transfer_resolved_revolution_surfaces(&scan, &mut ir, &mut AnnotationBuilder::new());
+    let mut source_carriers =
+        crate::decode::source_carriers::SourceUnitCarriers::new(length_scale_mm);
+    for curve in (0..curve_count).map(|_| saved_spline_curve()) {
+        if length_scale_mm.is_some() {
+            crate::decode::with_test_decode_ctx(|ctx| {
+                source_carriers.admit_curve(ctx, &mut ir, curve)
+            })
+            .expect("saved spline admission");
+        } else {
+            ir.model.curves.push(curve);
+        }
+    }
+    let transferred = crate::decode::with_test_decode_ctx(|ctx| {
+        transfer_resolved_revolution_surfaces(
+            ctx,
+            &scan,
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &mut Vec::new(),
+            &mut source_carriers,
+        )
+    })
+    .expect("valid source object identity");
     (transferred, ir)
+}
+
+#[test]
+fn saved_spline_revolution_uses_source_directrix_after_mm_admission() {
+    let scale = cadmpeg_ir::scalar::PositiveReal::new(25.4).expect("inch scale");
+    let (transferred, ir) = transfer_with_curve_count_and_scale(1, Some(scale));
+    assert_eq!(transferred, 1);
+    let Some(SolvedCurveGeometry::Nurbs(directrix)) = ir.model.curves[0].geometry.solved() else {
+        panic!("saved directrix changed family");
+    };
+    assert_eq!(
+        directrix.control_points()[0].get(),
+        Point3::new(50.8, 0.0, 0.0)
+    );
+    let Some(cadmpeg_ir::geometry::SolvedSurfaceGeometry::Nurbs(surface)) =
+        ir.model.surfaces[0].geometry.solved()
+    else {
+        panic!("revolved surface changed family");
+    };
+    assert_eq!(surface.poles()[0].get(), Point3::new(50.8, 0.0, 0.0));
 }
 
 #[test]
@@ -205,4 +352,88 @@ fn saved_spline_revolution_rejects_duplicate_model_curve_ids() {
     assert_eq!(transferred, 0);
     assert!(ir.model.surfaces.is_empty());
     assert!(ir.model.procedural_surfaces.is_empty());
+}
+
+fn saved_spline_revolution_scan() -> crate::container::ContainerScan<'static> {
+    let mut scan = crate::test_support::empty_container_scan();
+    scan.features.definitions.push(saved_spline_definition());
+    scan.features.section_transforms.push(
+        crate::placement::FeatureSectionTransform::new(
+            40,
+            Some(40),
+            [0.0; 3],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            0,
+        )
+        .expect("valid section frame"),
+    );
+    scan.features
+        .operations
+        .push(crate::feature::operations::FeatureOperation {
+            feature_id: 40,
+            kind: crate::feature::operations::OperationKind::Revolve,
+            name: crate::feature::operations::OperationName::Derived,
+            recipe: crate::feature::operations::RecipeResolution::Resolved(
+                crate::feature::operations::FeatureRecipe::ProtrudeRevolve,
+            ),
+            display_state_conflict: false,
+            depdb: None,
+            offset: 0,
+            state_offset: 0,
+        });
+    scan.features
+        .revolution_extents
+        .push(crate::feature::rows::FeatureRevolutionExtent {
+            feature_id: 40,
+            offset: 0,
+        });
+    scan.surfaces.rows.push(crate::surface::SurfaceRow {
+        id: 20,
+        kind: crate::surface::SurfaceKind::Spline,
+        feature_id: 40,
+        reversed: false,
+        boundary_type: crate::surface::BoundaryType::Code00,
+        next_surface: 0,
+        offset: 0,
+    });
+    scan.features.entity_tables.push(
+        crate::feature::entity::FeatureEntityTable::new(
+            40,
+            29,
+            vec![crate::feature::entity::FeatureEntityTableEntry {
+                entity_id: 20,
+                payload: crate::feature::entity::entry_payload(200, Some(7), None, None),
+                prefixed: false,
+                offset: 0,
+                end_offset: 0,
+            }],
+            &std::collections::BTreeSet::new(),
+            0,
+        )
+        .with_surface_ids([20]),
+    );
+
+    scan
+}
+
+#[test]
+fn saved_spline_revolution_refuses_construction_surface_identity_copy() {
+    let scan = saved_spline_revolution_scan();
+    let count = crate::test_support::assert_retained_boundaries(
+        &["creo construction surface identity copy"],
+        |ctx| {
+            let mut ir = CadIr::empty();
+            ir.model.curves.push(saved_spline_curve());
+            transfer_resolved_revolution_surfaces(
+                ctx,
+                &scan,
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                &mut Vec::new(),
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
+        },
+    );
+    assert_eq!(count, 1);
 }

@@ -1,45 +1,50 @@
 {
   "container_kind": "iso-10303-21-clear-text",
-  "dialects": {
-    "extra": [],
-    "primary": {
-      "admission": "admitted",
-      "declared": {
-        "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
-        "implementation_level": "2;1"
-      },
-      "dialect": "step:ap242",
-      "format": "step"
-    }
-  },
   "entries": [
     {
       "attributes": {},
-      "compressed_size": 0,
       "compression": "none",
       "name": "HEADER",
       "role": "metadata",
-      "uncompressed_size": 0
+      "size": {
+        "form": "unreported"
+      }
     },
     {
       "attributes": {
         "entity_count": "4",
         "unknown_entities": ""
       },
-      "compressed_size": 0,
       "compression": "none",
       "name": "DATA[0]",
-      "role": "entity_records",
-      "uncompressed_size": 0
+      "role": "entity-records",
+      "size": {
+        "form": "unreported"
+      }
     }
   ],
-  "format": "step",
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
+          "implementation_level": "2;1"
+        },
+        "dialect": "step:ap242"
+      }
+    }
+  },
   "losses": [
     {
       "code": {
         "code": "geometry.document-length-unit-unresolved",
         "kind": "geometry_not_transferred",
-        "namespace": "step"
+        "namespace": "step",
+        "scope": "namespaced",
+        "strict_floor": "warning"
       },
       "message": "the document length unit did not resolve; coordinates are unscaled and reported as millimetres",
       "severity": "error"
@@ -48,7 +53,9 @@
       "code": {
         "code": "geometry.document-angle-unit-unresolved",
         "kind": "geometry_not_transferred",
-        "namespace": "step"
+        "namespace": "step",
+        "scope": "namespaced",
+        "strict_floor": "warning"
       },
       "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
       "severity": "error"

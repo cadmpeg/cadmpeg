@@ -1,13 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
+mod admission_limits;
+mod components;
 mod draft;
-mod faces;
-mod sheets;
-mod shells;
+pub(crate) mod faces;
+pub(crate) mod sheets;
+pub(crate) mod shells;
 mod wires;
 
-pub(crate) use faces::face_outer_bound_is_canonicalized_ahead_of_inner_bounds;
-pub(crate) use sheets::{
-    decode_and_write_singular_vertex_loops, decode_builds_a_valid_ap203_sheet_brep,
-    decode_builds_a_valid_connected_sheet_brep, reader_recovers_a_valid_solid_from_writer_output,
-};
-pub(crate) use shells::every_region_of_a_body_is_retained_as_a_shape_item;
+mod numerical_range;
+mod representation_bodies;
+
+#[test]
+fn topology_failure_count_refuses_overflow() {
+    let mut outcome = super::BuildOutcome::Partial {
+        built: Vec::new(),
+        failures: super::BuildFailures {
+            count: std::num::NonZeroUsize::new(usize::MAX).expect("nonzero maximum"),
+            first: None,
+        },
+    };
+    assert!(format!("{:?}", outcome.fail(None)).contains("ResourceLimit"));
+}

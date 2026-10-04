@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::{wire, EditableDecodeResult};
+
+use crate::test_support::allfeatur_row;
+use crate::test_support::assert_annotation;
+use crate::test_support::build_prt;
+use crate::test_support::push_generated_scalar;
+use crate::test_support::visibgeom_payload;
 use std::collections::BTreeSet;
 use std::io::Cursor;
 
@@ -9,7 +16,6 @@ use cadmpeg_ir::Exactness;
 
 use crate::container::{self};
 use crate::loss::CreoLossCode;
-use crate::test_support::*;
 use crate::CreoCodec;
 
 #[test]
@@ -55,11 +61,11 @@ fn decode_identifies_variable_round_form_from_differing_complete_envelopes() {
         .find(|feature| feature.id.as_str() == "creo:model:feature#4")
         .expect("round feature");
     assert!(matches!(
-        feature.definition,
-        cadmpeg_ir::features::FeatureDefinition::Fillet {
+        feature.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Fillet {
             ref groups,
-        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            radius: cadmpeg_ir::features::RadiusSpec::UnresolvedVariable, ..
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
+            radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable) }, ..
         }])
     ));
 
@@ -75,11 +81,11 @@ fn decode_identifies_variable_round_form_from_differing_complete_envelopes() {
         .decode(&mut Cursor::new(mixed), &DecodeOptions::default())
         .expect("decode");
     assert!(matches!(
-        mixed.ir().model.features[0].definition,
-        cadmpeg_ir::features::FeatureDefinition::Fillet {
+        mixed.ir().model.features[0].evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Fillet {
             ref groups,
-        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            radius: cadmpeg_ir::features::RadiusSpec::Unresolved, ..
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
+            radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Unresolved { form: None }, ..
         }])
     ));
 }
@@ -132,7 +138,8 @@ fn decode_transfers_strong_parents_as_ordered_dependencies() {
             .collect::<Vec<_>>(),
         vec!["creo:model:feature#1", "creo:model:feature#2"]
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -183,7 +190,8 @@ fn decode_resolves_feature_dependencies_independently_of_storage_order() {
             .collect::<Vec<_>>(),
         vec!["creo:model:feature#1", "creo:model:feature#2"]
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -203,11 +211,11 @@ fn decode_retains_recipe_proven_revolution_with_unresolved_operands() {
         .expect("revolution feature");
 
     assert!(matches!(
-        &feature.definition,
-        cadmpeg_ir::features::FeatureDefinition::Revolve {
+        feature.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Revolve {
             construction,
             op: cadmpeg_ir::features::BooleanOp::Cut,
-        } if construction.profile().is_none()
+        }) if construction.profile().is_none()
             && construction.axis().is_none()
             && construction.extent().is_none()
     ));
@@ -229,19 +237,23 @@ fn decode_retains_recipe_proven_extrusion_with_unresolved_operands() {
         .expect("extrusion feature");
 
     assert!(matches!(
-        &feature.definition,
-        cadmpeg_ir::features::FeatureDefinition::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
-            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
-            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
-                side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::LinearTermination::Unresolved,
-                    ..
-                }
-            },
-            op: cadmpeg_ir::features::BooleanOp::Cut,
-            ..
-        }
+        feature.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Extrude {
+                profile: cadmpeg_ir::features::ProfileRef::Planar(
+                    cadmpeg_ir::features::PlanarProfileRef::Unresolved(_)
+                ),
+                direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
+                extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                    side: cadmpeg_ir::features::ExtrudeSide {
+                        termination: cadmpeg_ir::features::LinearTermination::Unresolved {},
+                        ..
+                    }
+                },
+                op: cadmpeg_ir::features::BooleanOp::Cut,
+                ..
+            }
+        )
     ));
 }
 
@@ -262,19 +274,23 @@ fn decode_recipe_supplies_reference_backed_extrusion_boolean_effect() {
 
     assert_eq!(feature.name.as_deref(), Some("Extrude 1 id 40"));
     assert!(matches!(
-        feature.definition,
-        cadmpeg_ir::features::FeatureDefinition::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
-            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
-            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
-                side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::LinearTermination::Unresolved,
-                    ..
-                }
-            },
-            op: cadmpeg_ir::features::BooleanOp::Cut,
-            ..
-        }
+        feature.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Extrude {
+                profile: cadmpeg_ir::features::ProfileRef::Planar(
+                    cadmpeg_ir::features::PlanarProfileRef::Unresolved(_)
+                ),
+                direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
+                extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                    side: cadmpeg_ir::features::ExtrudeSide {
+                        termination: cadmpeg_ir::features::LinearTermination::Unresolved {},
+                        ..
+                    }
+                },
+                op: cadmpeg_ir::features::BooleanOp::Cut,
+                ..
+            }
+        )
     ));
 }
 
@@ -287,17 +303,19 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
     payload.extend_from_slice(&[3, 6, 0x46, 0x10, 0, 0, 0, 0, 0, 0, 0x0f, 1, 0, 6, 0xe2]);
     let definition_length = payload.len();
     let data = build_prt("c", &[("FeatDefs", payload)]);
-    let scan = container::scan_bytes(data.clone());
-    let offset = scan.features.definitions[0].offset as u64;
+    let scan = container::scan_bytes_ok(data.clone());
+    let offset = cadmpeg_core::decode::u64_from_index(scan.features.definitions[0].offset);
     let variable_offset = scan.features.definitions[0]
         .variables
         .as_ref()
         .unwrap()
         .rows[0]
         .offset;
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
+    let result = EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
 
     let namespace = result
         .ir()
@@ -406,7 +424,7 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
             ),
         ],
     );
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
     assert_eq!(scan.features.definitions[0].identity.id(), 917);
     assert_eq!(
         scan.features.definitions[0].identity.owner_feature_id(),
@@ -449,7 +467,7 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Angle(
-            cadmpeg_ir::features::Angle(1.0)
+            cadmpeg_ir::scalar::Angle::new(1.0).unwrap()
         ))
     );
     assert!(relation.dependencies.is_empty());
@@ -457,7 +475,7 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
     assert_eq!(
         relation.value,
         Some(cadmpeg_ir::features::ParameterValue::Angle(
-            cadmpeg_ir::features::Angle(1.0 + 1.0f64.to_radians())
+            cadmpeg_ir::scalar::Angle::new(1.0 + 1.0f64.to_radians()).unwrap()
         ))
     );
     let model_feature = result
@@ -468,18 +486,18 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
         .find(|feature| feature.id.as_str() == "creo:model:feature#40")
         .expect("model feature");
     assert!(matches!(
-        &model_feature.definition,
-        cadmpeg_ir::features::FeatureDefinition::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Native(profile),
+        model_feature.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Extrude {
+            profile: cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Native(profile)),
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::LinearTermination::Unresolved,
+                    termination: cadmpeg_ir::features::LinearTermination::Unresolved {},
                     ..
                 }
             },
             op: cadmpeg_ir::features::BooleanOp::Unresolved,
             ..
-        } if profile == "creo:featdefs:sketch#917"
+        }) if profile == "creo:featdefs:sketch#917"
     ));
     assert_eq!(
         model_feature.source_properties["native_parameter.dimension_count"],
@@ -493,13 +511,14 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
         .find(|feature| feature.id.as_str() == "creo:model:sketch_feature#917")
         .expect("sketch feature");
     assert_eq!(
-        sketch_feature.source_content,
+        (&*sketch_feature.source_content),
         [
             cadmpeg_ir::features::FeatureSourceContent::Parameter(parameter.id.clone()),
             cadmpeg_ir::features::FeatureSourceContent::Parameter(repeated.id.clone()),
         ]
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -519,7 +538,7 @@ fn decode_transfers_decoded_dimensions_from_an_incomplete_table() {
             ("MdlStatus", b"Extrude id 40\0".to_vec()),
         ],
     );
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
     let dimensions = scan.features.definitions[0]
         .dimensions
         .as_ref()
@@ -540,52 +559,80 @@ fn decode_transfers_decoded_dimensions_from_an_incomplete_table() {
             == "creo:model:sketch_feature#917"));
     let coverage = result.report();
     assert_eq!(
-        coverage.coverage_count(crate::coverage::DECODED_FEATURE_DIMENSION_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_DIMENSION_COUNT.as_str()
+        ),
         2
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::TRANSFERRED_FEATURE_DIMENSION_PARAMETER_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::TRANSFERRED_FEATURE_DIMENSION_PARAMETER_COUNT.as_str()
+        ),
         2
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::RESOLVED_FEATURE_DIMENSION_VALUE_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::RESOLVED_FEATURE_DIMENSION_VALUE_COUNT.as_str()
+        ),
         2
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::UNRESOLVED_FEATURE_DIMENSION_VALUE_COUNT),
-        0
-    );
-    assert_eq!(
-        coverage.coverage_count(crate::coverage::DECODED_FEATURE_SOLVER_VARIABLE_COUNT),
-        0
-    );
-    assert_eq!(
-        coverage.coverage_count(crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT),
-        0
-    );
-    assert_eq!(
-        coverage.coverage_count(crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_GUESS_COUNT),
-        0
-    );
-    assert_eq!(
-        coverage.coverage_count(crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT),
-        0
-    );
-    assert_eq!(
-        coverage.coverage_count(
-            crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::UNRESOLVED_FEATURE_DIMENSION_VALUE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        coverage.coverage_count(
-            crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_SOLVER_VARIABLE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        coverage
-            .coverage_count(crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_GUESS_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT.as_str()
+        ),
         0
     );
 }
@@ -606,64 +653,86 @@ fn decode_reports_unresolved_dimension_driven_solver_variables() {
     let coverage = result.report();
 
     assert_eq!(
-        coverage.coverage_count(crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT.as_str()
+        ),
         2
     );
     assert_eq!(
-        coverage.coverage_count(
-            crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        coverage
-            .coverage_count(crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_GUESS_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_GUESS_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT),
-        0
-    );
-    assert_eq!(
-        coverage.coverage_count(
-            crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        coverage.coverage_count(
-            crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        coverage
-            .coverage_count(crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT.as_str()
+        ),
         2
     );
     assert_eq!(
-        coverage.coverage_count(
-            crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT
+        wire::coverage_count(
+            &(coverage),
+            (crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT)
+                .as_str()
         ),
         1
     );
     assert_eq!(
-        coverage.coverage_count(
-            crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_GUESS_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_GUESS_COUNT.as_str()
+        ),
         1
     );
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
-            && loss.severity == cadmpeg_ir::Severity::Warning
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::DesignIntent
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss.message.contains(
                 "2 dimension-driven section solver variable(s) retain unresolved exact values: 1 \
                  coordinate variable(s) lack a complete dimension equation and 1 variable(s) \
@@ -671,8 +740,8 @@ fn decode_reports_unresolved_dimension_driven_solver_variables() {
             )
     }));
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
-            && loss.severity == cadmpeg_ir::Severity::Warning
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::DesignIntent
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss.message.contains(
                 "1 section solver variable pre-solve estimate(s) use a dimension-driven sentinel",
             )
@@ -732,31 +801,44 @@ fn decode_retains_bounded_unresolved_dimension_value_tokens() {
     assert_eq!(dimensions[2]["unresolved_value_token"][3], 242);
     let coverage = result.report();
     assert_eq!(
-        coverage.coverage_count(crate::coverage::DECODED_FEATURE_DIMENSION_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_DIMENSION_COUNT.as_str()
+        ),
         3
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::TRANSFERRED_FEATURE_DIMENSION_PARAMETER_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::TRANSFERRED_FEATURE_DIMENSION_PARAMETER_COUNT.as_str()
+        ),
         3
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::RESOLVED_FEATURE_DIMENSION_VALUE_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::RESOLVED_FEATURE_DIMENSION_VALUE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::UNRESOLVED_FEATURE_DIMENSION_VALUE_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::UNRESOLVED_FEATURE_DIMENSION_VALUE_COUNT.as_str()
+        ),
         2
     );
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == CreoLossCode::SectionDimensionValueUnresolved.kind()
-            && loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
-            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.code.category() == cadmpeg_ir::report::loss::LossCategory::DesignIntent
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss.message.contains(
                 "2 section dimension(s) retain source-native value tokens because their exact \
                  scalar encodings remain unresolved",
             )
     }));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -776,7 +858,7 @@ fn decode_retains_dimensions_from_repeated_feature_definition_ids() {
             ("MdlStatus", b"Extrude id 40\0".to_vec()),
         ],
     );
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
     assert_eq!(scan.features.definitions.len(), 2);
     assert!(scan
         .features
@@ -821,10 +903,11 @@ fn decode_retains_dimensions_from_repeated_feature_definition_ids() {
     assert!(result.ir().model.parameters.iter().all(|parameter| {
         parameter.value
             == Some(cadmpeg_ir::features::ParameterValue::Length(
-                cadmpeg_ir::features::Length(1.0),
+                cadmpeg_ir::scalar::Length::new(1.0).unwrap(),
             ))
     }));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -853,27 +936,45 @@ fn decode_reports_missing_declared_constraint_table_rows() {
     let coverage = result.report();
 
     assert_eq!(
-        coverage.coverage_count(crate::coverage::DECODED_FEATURE_RELATION_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_RELATION_COUNT.as_str()
+        ),
         2
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::MISSING_FEATURE_RELATION_ROW_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::MISSING_FEATURE_RELATION_ROW_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::DECODED_FEATURE_SKAMP_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_SKAMP_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::MISSING_FEATURE_SKAMP_ROW_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::MISSING_FEATURE_SKAMP_ROW_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::DECODED_FEATURE_RELATION_TRIPLE_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_RELATION_TRIPLE_COUNT.as_str()
+        ),
         2
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::MISSING_FEATURE_RELATION_TRIPLE_ROW_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::MISSING_FEATURE_RELATION_TRIPLE_ROW_COUNT.as_str()
+        ),
         1
     );
     for (code, message) in [
@@ -892,8 +993,8 @@ fn decode_reports_missing_declared_constraint_table_rows() {
     ] {
         assert!(result.report().losses.iter().any(|loss| {
             loss.code == code.kind()
-                && loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
-                && loss.severity == cadmpeg_ir::Severity::Warning
+                && loss.code.category() == cadmpeg_ir::report::loss::LossCategory::DesignIntent
+                && loss.severity == cadmpeg_ir::report::Severity::Warning
                 && loss.message.contains(message)
         }));
     }
@@ -910,15 +1011,16 @@ fn decode_reports_malformed_relation_table_allocation_count() {
         .expect("decode malformed relation table");
 
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::MALFORMED_FEATURE_RELATION_TABLE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::MALFORMED_FEATURE_RELATION_TABLE_COUNT.as_str()
+        ),
         1
     );
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == CreoLossCode::SectionRelationTableMalformed.kind()
-            && loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
-            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.code.category() == cadmpeg_ir::report::loss::LossCategory::DesignIntent
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss
                 .message
                 .contains("use the invalid zero allocation count")
@@ -936,21 +1038,24 @@ fn decode_accepts_the_count_one_empty_relation_table() {
         .expect("decode empty relation table");
 
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::DECODED_FEATURE_RELATION_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::DECODED_FEATURE_RELATION_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::MISSING_FEATURE_RELATION_ROW_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::MISSING_FEATURE_RELATION_ROW_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::MALFORMED_FEATURE_RELATION_TABLE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::MALFORMED_FEATURE_RELATION_TABLE_COUNT.as_str()
+        ),
         0
     );
     assert!(!result
@@ -966,7 +1071,7 @@ fn decode_promotes_unnamed_depdb_recipe_into_feature_history() {
         \xf7\x50\x9f\x75\x83\x95\xf6\x9f\x73Profile 1\0\xf6\0protextrude\0"
         .to_vec();
     let data = build_prt("c", &[("DEPDB_DATA", depdb)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
     assert_eq!(scan.features.operations.len(), 2);
     assert_eq!(scan.features.depdb_recipe_rows.len(), 1);
     assert_eq!(scan.features.depdb_recipe_rows[0].feature_id, 8053);
@@ -977,9 +1082,11 @@ fn decode_promotes_unnamed_depdb_recipe_into_feature_history() {
         .find(|operation| operation.feature_id == 8053)
         .expect("recipe operation");
 
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
+    let result = EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
     let feature = result
         .ir()
         .model
@@ -1021,7 +1128,7 @@ fn decode_promotes_unnamed_depdb_recipe_into_feature_history() {
         &result.source_fidelity().annotations,
         "creo:model:feature#8053",
         "creo:DEPDB_DATA",
-        operation.offset as u64,
+        cadmpeg_core::decode::u64_from_index(operation.offset),
         "feature_recipe",
         Exactness::ByteExact,
     );
@@ -1033,13 +1140,13 @@ fn decode_retains_conflicting_recipe_candidates_without_projecting_one() {
         \xf7\x50\x9f\x75\x83\x95\xf6\x9f\x73Profile 2\0\xf6\0protrevolve\0"
         .to_vec();
     let data = build_prt("c", &[("DEPDB_DATA", depdb)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.features.operation_states.len(), 2);
     assert_eq!(scan.features.operations.len(), 1);
     assert_eq!(
         scan.features.operations[0].recipe,
-        crate::feature::RecipeResolution::Conflicting
+        crate::feature::operations::RecipeResolution::Conflicting
     );
     assert!(scan.features.operations[0].recipe.is_conflicting());
     assert_eq!(scan.features.depdb_recipe_rows.len(), 2);
@@ -1075,8 +1182,8 @@ fn decode_retains_conflicting_recipe_candidates_without_projecting_one() {
         .iter()
         .all(|state| state.fields()["recipe_conflict"] == true));
     assert!(matches!(
-        &feature.definition,
-        cadmpeg_ir::features::FeatureDefinition::Native { kind, .. }
+        feature.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Native { kind, .. })
             if kind.as_str() == "Native Feature"
     ));
     assert_eq!(
@@ -1094,7 +1201,7 @@ fn decode_retains_conflicting_recipe_candidates_without_projecting_one() {
 fn decode_preserves_unowned_depdb_section_instances_with_unique_native_ids() {
     let depdb = b"feat_defs_917\0template\xe3S2D0004\0first\xe3S2D0004\0second".to_vec();
     let data = build_prt("c", &[("DEPDB_DATA", depdb)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
     let positional = scan
         .features
         .definitions

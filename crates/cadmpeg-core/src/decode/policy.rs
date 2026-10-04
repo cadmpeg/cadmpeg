@@ -12,6 +12,7 @@ const GIB: u64 = 1024 * MIB;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum DecodeMode {
     /// Reject a completed decode that reports a mandatory transfer loss.
     Strict,
@@ -23,6 +24,7 @@ pub enum DecodeMode {
 /// Absolute resource ceilings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct ResourceLimits {
     /// Maximum physical input bytes read at the root.
     pub max_input_bytes: u64,
@@ -91,6 +93,7 @@ impl Default for ResourceLimits {
 /// Decode mode and resource ceilings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct DecodePolicy {
     /// How mandatory transfer losses are handled.
     pub mode: DecodeMode,
@@ -125,19 +128,20 @@ impl Default for DecodePolicy {
 /// Resource options for container inspection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct InspectOptions {
     /// The absolute ceilings applied during inspection.
     pub limits: ResourceLimits,
 }
 
-pub(crate) const DECOMPRESSED_TOTAL_BASE: u64 = 16 * MIB;
-pub(crate) const DECOMPRESSED_TOTAL_PER_INPUT_BYTE: u64 = 1000;
-pub(crate) const DECOMPRESSED_PER_EXPAND_BASE: u64 = 16 * MIB;
-pub(crate) const DECOMPRESSED_PER_EXPAND_PER_INPUT_BYTE: u64 = 256;
-pub(crate) const MATERIALIZED_BASE: u64 = 16 * MIB;
-pub(crate) const MATERIALIZED_PER_INPUT_BYTE: u64 = 1000;
-pub(crate) const RETAINED_BASE: u64 = 16 * MIB;
-pub(crate) const RETAINED_PER_INPUT_BYTE: u64 = 1000;
+pub(super) const DECOMPRESSED_TOTAL_BASE: u64 = 16 * MIB;
+pub(super) const DECOMPRESSED_TOTAL_PER_INPUT_BYTE: u64 = 1000;
+pub(super) const DECOMPRESSED_PER_EXPAND_BASE: u64 = 16 * MIB;
+pub(super) const DECOMPRESSED_PER_EXPAND_PER_INPUT_BYTE: u64 = 256;
+pub(super) const MATERIALIZED_BASE: u64 = 16 * MIB;
+pub(super) const MATERIALIZED_PER_INPUT_BYTE: u64 = 1000;
+pub(super) const RETAINED_BASE: u64 = 16 * MIB;
+pub(super) const RETAINED_PER_INPUT_BYTE: u64 = 1000;
 
 const fn default_max_materialized_bytes() -> u64 {
     ResourceLimits::desktop().max_materialized_bytes
@@ -167,7 +171,7 @@ const fn default_max_work_units() -> u64 {
 mod tests {
     #![allow(clippy::unwrap_used)]
 
-    use super::*;
+    use super::{ResourceLimits, GIB, MIB};
 
     #[test]
     fn desktop_ceilings_are_explicit() {

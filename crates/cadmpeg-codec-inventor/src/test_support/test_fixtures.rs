@@ -2,6 +2,9 @@
 
 use std::io::Write as _;
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
+use cadmpeg_test_support::bytes::{put_u16, put_u32};
+
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
 
@@ -48,6 +51,39 @@ pub(crate) fn fixture(inventor: bool) -> Vec<u8> {
     file
 }
 
+pub(crate) fn fixture_with_ufrx(ufrx: &[u8]) -> Vec<u8> {
+    const STREAM_LEN: usize = 4096;
+    assert!(ufrx.len() <= STREAM_LEN);
+    let mut file = fixture(true);
+    file.resize(3 * SECTOR_SIZE + STREAM_LEN, 0);
+    let directory = sector_mut(&mut file, 0);
+    put_u32(directory, 128 + 68, 3);
+    directory_entry(
+        directory,
+        3,
+        "UFRxDoc",
+        2,
+        NO_STREAM,
+        2,
+        cadmpeg_core::decode::u64_from_index(STREAM_LEN),
+    );
+    directory[3 * 128 + 67] = 0;
+    let fat = sector_mut(&mut file, 1);
+    for sector in 2..10 {
+        put_u32(
+            fat,
+            sector * 4,
+            if sector == 9 {
+                END_OF_CHAIN
+            } else {
+                u32::try_from(sector).expect("fixture value fits u32") + 1
+            },
+        );
+    }
+    file[3 * SECTOR_SIZE..3 * SECTOR_SIZE + ufrx.len()].copy_from_slice(ufrx);
+    file
+}
+
 fn directory_entry(
     directory: &mut [u8],
     index: usize,
@@ -62,7 +98,11 @@ fn directory_entry(
     for (offset, unit) in encoded.iter().enumerate() {
         put_u16(entry, offset * 2, *unit);
     }
-    put_u16(entry, 64, ((encoded.len() + 1) * 2) as u16);
+    put_u16(
+        entry,
+        64,
+        u16::try_from((encoded.len() + 1) * 2).expect("fixture value fits u16"),
+    );
     entry[66] = object_type;
     entry[67] = 1;
     put_u32(entry, 68, NO_STREAM);
@@ -75,14 +115,6 @@ fn directory_entry(
 fn sector_mut(file: &mut [u8], id: usize) -> &mut [u8] {
     let start = SECTOR_SIZE * (id + 1);
     &mut file[start..start + SECTOR_SIZE]
-}
-
-fn put_u16(bytes: &mut [u8], offset: usize, value: u16) {
-    bytes[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
-}
-
-fn put_u32(bytes: &mut [u8], offset: usize, value: u32) {
-    bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
 }
 
 /// The `RSe` version declarations a synthetic primary envelope carries.
@@ -227,22 +259,23 @@ fn primary_envelope_fixture_with_carrier_and_failures(
             let end = (begin + MINI_SECTOR_SIZE).min(bytes.len());
             mini_stream.extend_from_slice(&bytes[begin..end]);
             mini_stream.resize(mini_stream.len() + MINI_SECTOR_SIZE - (end - begin), 0);
-            let id = start + ordinal as u32;
-            mini_fat[id as usize] = if ordinal + 1 == count {
+            let id = start + u32::try_from(ordinal).expect("fixture value fits u32");
+            mini_fat[cadmpeg_core::decode::index_from_u32(id)] = if ordinal + 1 == count {
                 END_OF_CHAIN
             } else {
                 id + 1
             };
         }
-        allocations.push((start, bytes.len() as u64));
+        allocations.push((start, cadmpeg_core::decode::u64_from_index(bytes.len())));
     }
     let root_mini_sectors = mini_stream.len().div_ceil(SECTOR_SIZE);
     mini_stream.resize(root_mini_sectors * SECTOR_SIZE, 0);
 
-    let root_mini_start = DIRECTORY_SECTORS as u32;
-    let mini_fat_sector = root_mini_start + root_mini_sectors as u32;
+    let root_mini_start = u32::try_from(DIRECTORY_SECTORS).expect("fixture value fits u32");
+    let mini_fat_sector =
+        root_mini_start + u32::try_from(root_mini_sectors).expect("fixture value fits u32");
     let fat_sector = mini_fat_sector + 1;
-    let sector_count = fat_sector as usize + 1;
+    let sector_count = cadmpeg_core::decode::index_from_u32(fat_sector) + 1;
     let mut file = vec![0_u8; (sector_count + 1) * SECTOR_SIZE];
     file[..8].copy_from_slice(&MAGIC);
     put_u16(&mut file, 24, 0x003e);
@@ -274,9 +307,9 @@ fn primary_envelope_fixture_with_carrier_and_failures(
         5,
         NO_STREAM,
         NO_STREAM,
-        RSE_STORAGE as u32,
+        u32::try_from(RSE_STORAGE).expect("fixture value fits u32"),
         root_mini_start,
-        mini_stream.len() as u64,
+        cadmpeg_core::decode::u64_from_index(mini_stream.len()),
     );
     directory_node(
         &mut directory,
@@ -285,7 +318,7 @@ fn primary_envelope_fixture_with_carrier_and_failures(
         1,
         NO_STREAM,
         NO_STREAM,
-        V1 as u32,
+        u32::try_from(V1).expect("fixture value fits u32"),
         END_OF_CHAIN,
         0,
     );
@@ -295,8 +328,8 @@ fn primary_envelope_fixture_with_carrier_and_failures(
         "V1",
         1,
         NO_STREAM,
-        BULK as u32,
-        DATABASE as u32,
+        u32::try_from(BULK).expect("fixture value fits u32"),
+        u32::try_from(DATABASE).expect("fixture value fits u32"),
         END_OF_CHAIN,
         0,
     );
@@ -306,7 +339,7 @@ fn primary_envelope_fixture_with_carrier_and_failures(
         "RSeSegInfo",
         2,
         NO_STREAM,
-        REVISION_INFO as u32,
+        u32::try_from(REVISION_INFO).expect("fixture value fits u32"),
         NO_STREAM,
         allocations[0].0,
         allocations[0].1,
@@ -339,7 +372,7 @@ fn primary_envelope_fixture_with_carrier_and_failures(
         "Bseg",
         2,
         NO_STREAM,
-        META as u32,
+        u32::try_from(META).expect("fixture value fits u32"),
         NO_STREAM,
         allocations[3].0,
         allocations[3].1,
@@ -350,7 +383,7 @@ fn primary_envelope_fixture_with_carrier_and_failures(
         "Mseg",
         2,
         NO_STREAM,
-        SEGMENT_INFO as u32,
+        u32::try_from(SEGMENT_INFO).expect("fixture value fits u32"),
         NO_STREAM,
         allocations[4].0,
         allocations[4].1,
@@ -362,28 +395,29 @@ fn primary_envelope_fixture_with_carrier_and_failures(
         *entry = if sector + 1 == DIRECTORY_SECTORS {
             END_OF_CHAIN
         } else {
-            (sector + 1) as u32
+            u32::try_from(sector + 1).expect("fixture value fits u32")
         };
     }
     for sector in 0..root_mini_sectors {
-        let id = root_mini_start as usize + sector;
+        let id = cadmpeg_core::decode::index_from_u32(root_mini_start) + sector;
         fat[id] = if sector + 1 == root_mini_sectors {
             END_OF_CHAIN
         } else {
-            (id + 1) as u32
+            u32::try_from(id + 1).expect("fixture value fits u32")
         };
     }
-    fat[mini_fat_sector as usize] = END_OF_CHAIN;
-    fat[fat_sector as usize] = FAT_SECTOR;
+    fat[cadmpeg_core::decode::index_from_u32(mini_fat_sector)] = END_OF_CHAIN;
+    fat[cadmpeg_core::decode::index_from_u32(fat_sector)] = FAT_SECTOR;
     for (ordinal, chunk) in mini_stream.chunks_exact(SECTOR_SIZE).enumerate() {
-        let start = (root_mini_start as usize + ordinal + 1) * SECTOR_SIZE;
+        let start =
+            (cadmpeg_core::decode::index_from_u32(root_mini_start) + ordinal + 1) * SECTOR_SIZE;
         file[start..start + SECTOR_SIZE].copy_from_slice(chunk);
     }
-    let mini_fat_offset = (mini_fat_sector as usize + 1) * SECTOR_SIZE;
+    let mini_fat_offset = (cadmpeg_core::decode::index_from_u32(mini_fat_sector) + 1) * SECTOR_SIZE;
     for (index, value) in mini_fat.iter().enumerate() {
         put_u32(&mut file, mini_fat_offset + index * 4, *value);
     }
-    let fat_offset = (fat_sector as usize + 1) * SECTOR_SIZE;
+    let fat_offset = (cadmpeg_core::decode::index_from_u32(fat_sector) + 1) * SECTOR_SIZE;
     for (index, value) in fat.iter().enumerate() {
         put_u32(&mut file, fat_offset + index * 4, *value);
     }
@@ -392,38 +426,38 @@ fn primary_envelope_fixture_with_carrier_and_failures(
 
 fn database_fixture(schema: u32) -> Vec<u8> {
     let mut bytes = vec![0x21; 16];
-    put_u32_vec(&mut bytes, schema);
+    push_u32(&mut bytes, schema);
     push_version(&mut bytes, 24);
     bytes.extend_from_slice(&17_u64.to_le_bytes());
     push_version(&mut bytes, 25);
     bytes.extend_from_slice(&18_u64.to_le_bytes());
-    push_utf16_vec(&mut bytes, "synthetic primary document");
+    push_utf16(&mut bytes, "synthetic primary document");
     bytes
 }
 
 fn registry_fixture() -> Vec<u8> {
     let mut bytes = Vec::new();
-    put_u32_vec(&mut bytes, 1);
-    push_utf16_vec(&mut bytes, "PmBRepSegment");
+    push_u32(&mut bytes, 1);
+    push_utf16(&mut bytes, "PmBRepSegment");
     bytes.extend_from_slice(&[0x5a; 16]);
     bytes.extend_from_slice(&[0x20; 16]);
-    put_u32_vec(&mut bytes, 3);
-    put_u32_vec(&mut bytes, 1);
+    push_u32(&mut bytes, 3);
+    push_u32(&mut bytes, 1);
     for value in 4..9 {
-        put_u32_vec(&mut bytes, value);
+        push_u32(&mut bytes, value);
     }
-    put_u32_vec(&mut bytes, 9);
-    push_utf16_vec(&mut bytes, "PmBrepSegmentType");
-    put_u32_vec(&mut bytes, 10);
-    put_u32_vec(&mut bytes, 11);
+    push_u32(&mut bytes, 9);
+    push_utf16(&mut bytes, "PmBrepSegmentType");
+    push_u32(&mut bytes, 10);
+    push_u32(&mut bytes, 11);
     push_version(&mut bytes, 18);
-    put_u32_vec(&mut bytes, 12);
+    push_u32(&mut bytes, 12);
     bytes.extend_from_slice(&[0x20; 16]);
     bytes.extend_from_slice(&[0x30; 9]);
     bytes.extend_from_slice(&[0x5a; 16]);
-    put_u32_vec(&mut bytes, 13);
-    put_u32_vec(&mut bytes, 2);
-    put_u32_vec(&mut bytes, 14);
+    push_u32(&mut bytes, 13);
+    push_u32(&mut bytes, 2);
+    push_u32(&mut bytes, 14);
     bytes.extend_from_slice(&(-1_i16).to_le_bytes());
     bytes.extend_from_slice(&2_i16.to_le_bytes());
     for value in 15_u16..21 {
@@ -432,9 +466,9 @@ fn registry_fixture() -> Vec<u8> {
     bytes.extend_from_slice(&21_u16.to_le_bytes());
     bytes.extend_from_slice(&22_u16.to_le_bytes());
     bytes.extend_from_slice(&23_u16.to_le_bytes());
-    put_u32_vec(&mut bytes, 1);
+    push_u32(&mut bytes, 1);
     bytes.extend_from_slice(&[0x61; 16]);
-    put_u32_vec(&mut bytes, 0);
+    push_u32(&mut bytes, 0);
     bytes
 }
 
@@ -448,7 +482,7 @@ fn meta_stream_fixture(payload_len: usize, declarations: EnvelopeDeclarations) -
     push_bytes_vec(&mut bytes, declarations.meta_marker.as_bytes());
     bytes.extend_from_slice(&declarations.meta_version.to_le_bytes());
     bytes.extend_from_slice(&[1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8, 0]);
-    push_utf16_vec(&mut bytes, "PmBRepSegment");
+    push_utf16(&mut bytes, "PmBRepSegment");
     bytes.extend_from_slice(&[0x5a; 16]);
     bytes.extend_from_slice(
         &[5_u32, 6, 7]
@@ -476,23 +510,30 @@ fn meta_table_body(payload_len: usize) -> Vec<u8> {
     for value in [3_u16, 0, 2, 1, 0, 4, 0] {
         body.extend_from_slice(&value.to_le_bytes());
     }
-    push_counted_section(&mut body, &[0x8000_0000 | payload_len as u32], 4);
+    push_counted_section(
+        &mut body,
+        &[0x8000_0000 | u32::try_from(payload_len).expect("fixture value fits u32")],
+        4,
+    );
     push_counted_section(&mut body, &[], 10);
     push_counted_section(&mut body, &[], 28);
-    put_u32_vec(&mut body, 1);
+    push_u32(&mut body, 1);
     body.extend_from_slice(&type_id);
     body.extend_from_slice(&1_u16.to_le_bytes());
-    put_u32_vec(&mut body, 2);
+    push_u32(&mut body, 2);
     body.extend_from_slice(&3_u16.to_le_bytes());
-    put_u32_vec(&mut body, 4);
-    put_u32_vec(&mut body, 32);
+    push_u32(&mut body, 4);
+    push_u32(&mut body, 32);
     let payloads = [0_usize, 0, 0, 0, 0, 0, 0x48];
     let discriminators = [u32::MAX, 0, 0, 0, 0, 0, 18];
-    put_u32_vec(&mut body, discriminators[0]);
+    push_u32(&mut body, discriminators[0]);
     body.resize(body.len() + payloads[0], 0);
     for index in 1..payloads.len() {
-        put_u32_vec(&mut body, payloads[index - 1] as u32 + 4);
-        put_u32_vec(&mut body, discriminators[index]);
+        push_u32(
+            &mut body,
+            u32::try_from(payloads[index - 1]).expect("fixture value fits u32") + 4,
+        );
+        push_u32(&mut body, discriminators[index]);
         body.resize(body.len() + payloads[index], 0);
     }
     body.extend_from_slice(&[0x77; 16]);
@@ -503,7 +544,9 @@ fn bulk_stream_fixture(carrier: &[u8]) -> Vec<u8> {
     let mut expanded = Vec::new();
     expanded.extend_from_slice(&0_u32.to_le_bytes());
     expanded.extend_from_slice(carrier);
-    expanded.extend_from_slice(&(carrier.len() as u32).to_le_bytes());
+    expanded.extend_from_slice(
+        &(u32::try_from(carrier.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     expanded.extend_from_slice(&u32::MAX.to_le_bytes());
     let mut bytes = vec![0x3c; 16];
     bytes.extend_from_slice(&0x0104_u16.to_le_bytes());
@@ -555,7 +598,7 @@ pub(crate) fn acis_sphere_kernel_stream(save_format_version: u32) -> Vec<u8> {
 fn append_sphere_records(bytes: &mut Vec<u8>) {
     fn ident(bytes: &mut Vec<u8>, tag: u8, name: &str) {
         bytes.push(tag);
-        bytes.push(name.len() as u8);
+        bytes.push(u8::try_from(name.len()).expect("fixture value fits u8"));
         bytes.extend_from_slice(name.as_bytes());
     }
     fn reference(bytes: &mut Vec<u8>, value: i32) {
@@ -632,7 +675,7 @@ fn append_sphere_records(bytes: &mut Vec<u8>) {
 fn kernel_trailer(kernel: &mut Vec<u8>, product: &str) {
     for value in ["Inventor", product, "2000-01-01"] {
         kernel.push(0x07);
-        kernel.push(value.len() as u8);
+        kernel.push(u8::try_from(value.len()).expect("fixture value fits u8"));
         kernel.extend_from_slice(value.as_bytes());
     }
     for value in [1.0_f64, 1.0e-6, 1.0e-10] {
@@ -673,7 +716,11 @@ fn directory_node(
     for (offset, unit) in encoded.iter().enumerate() {
         put_u16(entry, offset * 2, *unit);
     }
-    put_u16(entry, 64, ((encoded.len() + 1) * 2) as u16);
+    put_u16(
+        entry,
+        64,
+        u16::try_from((encoded.len() + 1) * 2).expect("fixture value fits u16"),
+    );
     entry[66] = object_type;
     entry[67] = 1;
     put_u32(entry, 68, left);
@@ -684,31 +731,71 @@ fn directory_node(
 }
 
 fn push_counted_section(bytes: &mut Vec<u8>, values: &[u32], item_size: usize) {
-    put_u32_vec(bytes, values.len() as u32);
+    push_u32(
+        bytes,
+        u32::try_from(values.len()).expect("fixture value fits u32"),
+    );
     for value in values {
-        put_u32_vec(bytes, *value);
+        push_u32(bytes, *value);
         bytes.resize(bytes.len() + item_size - 4, 0);
     }
-    put_u32_vec(bytes, (4 + values.len() * item_size) as u32);
+    push_u32(
+        bytes,
+        u32::try_from(4 + values.len() * item_size).expect("fixture value fits u32"),
+    );
 }
 
 fn push_bytes_vec(bytes: &mut Vec<u8>, value: &[u8]) {
-    put_u32_vec(bytes, value.len() as u32);
+    push_u32(
+        bytes,
+        u32::try_from(value.len()).expect("fixture value fits u32"),
+    );
     bytes.extend_from_slice(value);
 }
 
-fn push_utf16_vec(bytes: &mut Vec<u8>, value: &str) {
+/// Append a UTF-16LE string: a `u32` code-unit count, then the units.
+pub(crate) fn push_utf16(bytes: &mut Vec<u8>, value: &str) {
     let units = value.encode_utf16().collect::<Vec<_>>();
-    put_u32_vec(bytes, units.len() as u32);
+    push_u32(
+        bytes,
+        u32::try_from(units.len()).expect("fixture value fits u32"),
+    );
     for unit in units {
-        bytes.extend_from_slice(&unit.to_le_bytes());
+        push_u16(bytes, unit);
     }
 }
 
-fn push_version(bytes: &mut Vec<u8>, major: u8) {
+/// Append an eight-byte version stamp carrying `major` in its third byte.
+pub(crate) fn push_version(bytes: &mut Vec<u8>, major: u8) {
     bytes.extend_from_slice(&[1, 2, major, 4, 5, 6, 7, 8]);
 }
 
-fn put_u32_vec(bytes: &mut Vec<u8>, value: u32) {
+/// Append a little-endian `u16`.
+pub(crate) fn push_u16(bytes: &mut Vec<u8>, value: u16) {
     bytes.extend_from_slice(&value.to_le_bytes());
+}
+
+/// Append a little-endian `u32`.
+pub(crate) fn push_u32(bytes: &mut Vec<u8>, value: u32) {
+    bytes.extend_from_slice(&value.to_le_bytes());
+}
+
+/// Build a `PmDc` entity content header for `index`.
+pub(crate) fn content(index: u32) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.extend_from_slice(&index.to_le_bytes()[..2]);
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.extend_from_slice(&0x0002_0200u32.to_le_bytes());
+    bytes.extend_from_slice(&0x8000_0003u32.to_le_bytes());
+    bytes.extend_from_slice(&index.to_le_bytes());
+    bytes
+}
+
+/// Run `parser` over `bytes` in a default-policy decode context.
+pub(crate) fn parse<T>(bytes: &[u8], parser: impl FnOnce(&DecodeContext<'_>, View<'_>) -> T) -> T {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, source) = DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("view");
+    parser(&ctx, source)
 }

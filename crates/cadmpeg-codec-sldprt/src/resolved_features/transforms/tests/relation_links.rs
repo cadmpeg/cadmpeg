@@ -1,50 +1,69 @@
 //! Relation link identity and inactive-constraint tests.
 
-use super::super::*;
 use super::marker;
+use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputScalar,
     FeatureInputScalarRole, SketchInputKind, SketchInputLink, SketchRelationKind,
 };
-use cadmpeg_ir::features::Angle;
+use crate::resolved_features::endpoints::inferred_point_coordinates_by_index;
+use crate::resolved_features::relation_loci::relation_operand_loci;
+use crate::resolved_features::typed_relations::legacy_terminal_profile_indexed_endpoints;
+use crate::resolved_features::typed_relations::marker_owns_constraint;
+use crate::resolved_features::typed_relations::marker_relation_is_inactive;
+use crate::resolved_features::typed_relations::relation_owner_markers;
+use crate::resolved_features::typed_relations::typed_marker_relation_definition;
+use crate::resolved_features::typed_relations::typed_marker_relation_definition_in_sketch;
 use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::scalar::PositiveAngle;
 use cadmpeg_ir::sketches::{
-    SketchConstraintDefinition, SketchCoordinateAxis, SketchEntity, SketchEntityId, SketchGeometry,
-    SketchId, SketchLocus, SketchNativeOperand,
+    SketchConstraintDefinitionInput, SketchCoordinateAxis, SketchEntity, SketchEntityId,
+    SketchGeometry, SketchGeometryDefinition, SketchId, SketchLocus, SketchNativeOperand,
 };
 use std::collections::HashMap;
 
 #[test]
 fn coordinate_curve_links_carry_reverse_constraint_incidence() {
     let mut relation = marker("relation", None);
-    relation.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
+    relation.reclassify(SketchInputKind::Relation(SketchRelationKind::Horizontal));
     let mut owner = marker("owner", Some([1.0, 2.0]));
-    owner.kind = SketchInputKind::LineOrCircle;
-    owner.object_index = Some(7);
-    owner.offset = 1;
+    owner.reclassify(SketchInputKind::LineOrCircle);
+    owner = owner.with_test_identity(Some(7), owner.local_id());
+    owner = owner.with_test_position(owner.ordinal(), 1);
     owner.links = crate::records::SketchInputLinks::new(
         0,
         vec![SketchInputLink {
             local_id: 4,
-            entity_ref: relation.id.clone(),
+            entity_ref: relation.id().to_string(),
         }],
     );
     let mut point = marker("point", Some([1.0, 2.0]));
-    point.object_index = Some(8);
-    point.offset = 2;
+    point = point.with_test_identity(Some(8), point.local_id());
+    point = point.with_test_position(point.ordinal(), 2);
     point.links = owner.links.clone();
     let markers = HashMap::from([
-        (relation.id.as_str(), &relation),
-        (owner.id.as_str(), &owner),
-        (point.id.as_str(), &point),
+        (relation.id(), &relation),
+        (owner.id(), &owner),
+        (point.id(), &point),
     ]);
 
     assert_eq!(
-        relation_owner_markers(&relation, &markers),
+        relation_owner_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &relation,
+            &markers
+        )
+        .unwrap(),
         vec![&owner, &point]
     );
-    let Some(SketchConstraintDefinition::Native { operands, .. }) =
-        typed_marker_relation_definition(&relation, &markers, &HashMap::new())
+    let Some(SketchConstraintDefinitionInput::Native { operands, .. }) =
+        typed_marker_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
+            &relation,
+            &markers,
+            &HashMap::new(),
+        )
+        .unwrap()
     else {
         panic!("native relation");
     };
@@ -52,22 +71,22 @@ fn coordinate_curve_links_carry_reverse_constraint_incidence() {
         operands,
         vec![
             SketchNativeOperand {
-                native_kind: cadmpeg_ir::products::NonEmptyString::new(
+                native_kind: cadmpeg_core::text::NonBlankString::new(
                     "sldprt:marker-constraint-owner"
                 )
                 .expect("source operand kind is nonempty"),
                 field: None,
-                object_index: 7,
-                native_ref: Some(owner.id),
+                object_index: Some(7),
+                native_ref: Some(owner.id().to_string()),
             },
             SketchNativeOperand {
-                native_kind: cadmpeg_ir::products::NonEmptyString::new(
+                native_kind: cadmpeg_core::text::NonBlankString::new(
                     "sldprt:marker-constraint-owner"
                 )
                 .expect("source operand kind is nonempty"),
                 field: None,
-                object_index: 8,
-                native_ref: Some(point.id),
+                object_index: Some(8),
+                native_ref: Some(point.id().to_string()),
             },
         ]
     );
@@ -76,60 +95,79 @@ fn coordinate_curve_links_carry_reverse_constraint_incidence() {
 #[test]
 fn self_link_does_not_make_a_relation_operand_bearing() {
     let mut relation = marker("relation", Some([0.0, 0.0]));
-    relation.kind = SketchInputKind::Relation(SketchRelationKind::Perpendicular);
+    relation.reclassify(SketchInputKind::Relation(SketchRelationKind::Perpendicular));
     relation.links = crate::records::SketchInputLinks::new(
         0,
         vec![SketchInputLink {
             local_id: 0,
-            entity_ref: relation.id.clone(),
+            entity_ref: relation.id().to_string(),
         }],
     );
-    let markers = HashMap::from([(relation.id.as_str(), &relation)]);
+    let markers = HashMap::from([(relation.id(), &relation)]);
 
-    assert!(!marker_owns_constraint(&relation, &markers));
+    assert!(!marker_owns_constraint(
+        &cadmpeg_test_support::service_decode_context(),
+        &relation,
+        &markers
+    )
+    .unwrap());
     assert_eq!(
-        typed_marker_relation_definition(&relation, &markers, &HashMap::new()),
+        typed_marker_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
+            &relation,
+            &markers,
+            &HashMap::new()
+        )
+        .unwrap(),
         None
     );
 
     let mut collision = marker("collision", Some([1.0, 0.0]));
-    collision.local_id = Some(7);
+    collision = collision.with_test_identity(collision.object_index(), Some(7));
     let mut relation = marker("relation", None);
-    relation.kind = SketchInputKind::Relation(SketchRelationKind::Tangent);
-    relation.local_id = Some(7);
-    relation.object_index = Some(8);
+    relation.reclassify(SketchInputKind::Relation(SketchRelationKind::Tangent));
+    relation = relation.with_test_identity(relation.object_index(), Some(7));
+    relation = relation.with_test_identity(Some(8), relation.local_id());
     relation.links = crate::records::SketchInputLinks::new(
         0,
         vec![
             SketchInputLink {
                 local_id: 7,
-                entity_ref: collision.id.clone(),
+                entity_ref: collision.id().to_string(),
             },
             SketchInputLink {
                 local_id: 7,
-                entity_ref: collision.id.clone(),
+                entity_ref: collision.id().to_string(),
             },
         ],
     );
-    let markers = HashMap::from([
-        (relation.id.as_str(), &relation),
-        (collision.id.as_str(), &collision),
-    ]);
+    let markers = HashMap::from([(relation.id(), &relation), (collision.id(), &collision)]);
 
-    assert!(!marker_owns_constraint(&relation, &markers));
+    assert!(!marker_owns_constraint(
+        &cadmpeg_test_support::service_decode_context(),
+        &relation,
+        &markers
+    )
+    .unwrap());
     assert_eq!(
-        typed_marker_relation_definition(&relation, &markers, &HashMap::new()),
+        typed_marker_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
+            &relation,
+            &markers,
+            &HashMap::new()
+        )
+        .unwrap(),
         None
     );
 }
 
 #[test]
 fn axis_relation_accepts_two_forward_points_through_identity_collisions() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let mut relation = marker("relation", None);
-    relation.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
-    relation.local_id = Some(7);
-    relation.object_index = Some(8);
+    relation.reclassify(SketchInputKind::Relation(SketchRelationKind::Horizontal));
+    relation = relation.with_test_identity(relation.object_index(), Some(7));
+    relation = relation.with_test_identity(Some(8), relation.local_id());
     relation.links = crate::records::SketchInputLinks::new(
         0,
         vec![
@@ -146,41 +184,53 @@ fn axis_relation_accepts_two_forward_points_through_identity_collisions() {
     let first = marker("first-point", Some([0.0, 0.0]));
     let second = marker("second-point", Some([1.0, 0.0]));
     let markers = HashMap::from([
-        (relation.id.as_str(), &relation),
-        (first.id.as_str(), &first),
-        (second.id.as_str(), &second),
+        (relation.id(), &relation),
+        (first.id(), &first),
+        (second.id(), &second),
     ]);
     let first_entity = SketchEntity::new(
-        SketchEntityId("first-entity".into()),
+        SketchEntityId::mint("synthetic:test:id#first-entity").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(0.0, 0.0),
-        },
+        })
+        .unwrap(),
     )
-    .with_native_ref(Some(first.id.clone()));
+    .with_native_ref(Some(first.id().to_string()));
     let second_entity = SketchEntity::new(
-        SketchEntityId("second-entity".into()),
+        SketchEntityId::mint("synthetic:test:id#second-entity").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(1.0, 0.0),
-        },
+        })
+        .unwrap(),
     )
-    .with_native_ref(Some(second.id.clone()));
+    .with_native_ref(Some(second.id().to_string()));
     let entities = vec![first_entity.clone(), second_entity.clone()];
 
-    assert!(marker_owns_constraint(&relation, &markers));
+    assert!(marker_owns_constraint(
+        &cadmpeg_test_support::service_decode_context(),
+        &relation,
+        &markers
+    )
+    .unwrap());
     assert_eq!(
         typed_marker_relation_definition_in_sketch(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             &sketch,
             &entities,
             &markers,
             &HashMap::new(),
-        ),
-        Some(SketchConstraintDefinition::SameCoordinate {
-            first: SketchLocus::Entity(first_entity.id().clone()),
-            second: SketchLocus::Entity(second_entity.id().clone()),
-            axis: SketchCoordinateAxis::V,
+        )
+        .unwrap(),
+        Some(SketchConstraintDefinitionInput::SameCoordinate {
+            relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                SketchLocus::Entity(first_entity.id().clone()),
+                SketchLocus::Entity(second_entity.id().clone()),
+                SketchCoordinateAxis::V
+            )
+            .unwrap()
         })
     );
 }
@@ -188,9 +238,9 @@ fn axis_relation_accepts_two_forward_points_through_identity_collisions() {
 #[test]
 fn object_index_collision_remains_a_forward_curve_operand() {
     let mut relation = marker("relation", None);
-    relation.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
-    relation.local_id = Some(2);
-    relation.object_index = Some(1);
+    relation.reclassify(SketchInputKind::Relation(SketchRelationKind::Horizontal));
+    relation = relation.with_test_identity(relation.object_index(), Some(2));
+    relation = relation.with_test_identity(Some(1), relation.local_id());
     relation.links = crate::records::SketchInputLinks::new(
         0,
         vec![SketchInputLink {
@@ -199,18 +249,26 @@ fn object_index_collision_remains_a_forward_curve_operand() {
         }],
     );
     let mut line = marker("line", None);
-    line.kind = SketchInputKind::LineOrCircle;
-    line.local_id = Some(1);
-    let markers = HashMap::from([(relation.id.as_str(), &relation), (line.id.as_str(), &line)]);
+    line.reclassify(SketchInputKind::LineOrCircle);
+    line = line.with_test_identity(line.object_index(), Some(1));
+    let markers = HashMap::from([(relation.id(), &relation), (line.id(), &line)]);
     let loci = HashMap::from([(
-        line.id.clone(),
-        vec![SketchLocus::Entity(SketchEntityId("line-entity".into()))],
+        line.id().to_string(),
+        vec![SketchLocus::Entity(
+            SketchEntityId::mint("synthetic:test:id#line-entity").unwrap(),
+        )],
     )]);
 
     assert_eq!(
-        typed_marker_relation_definition(&relation, &markers, &loci),
-        Some(SketchConstraintDefinition::Horizontal {
-            entity: SketchEntityId("line-entity".into()),
+        typed_marker_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
+            &relation,
+            &markers,
+            &loci
+        )
+        .unwrap(),
+        Some(SketchConstraintDefinitionInput::Horizontal {
+            entity: SketchEntityId::mint("synthetic:test:id#line-entity").unwrap(),
         })
     );
 }
@@ -218,9 +276,9 @@ fn object_index_collision_remains_a_forward_curve_operand() {
 #[test]
 fn self_identifying_forward_curve_link_is_excluded_from_arc_relation() {
     let mut relation = marker("relation", None);
-    relation.kind = SketchInputKind::Relation(SketchRelationKind::ArcAngle90);
-    relation.local_id = Some(7);
-    relation.object_index = Some(7);
+    relation.reclassify(SketchInputKind::Relation(SketchRelationKind::ArcAngle90));
+    relation = relation.with_test_identity(relation.object_index(), Some(7));
+    relation = relation.with_test_identity(Some(7), relation.local_id());
     relation.links = crate::records::SketchInputLinks::new(
         0,
         vec![
@@ -235,30 +293,40 @@ fn self_identifying_forward_curve_link_is_excluded_from_arc_relation() {
         ],
     );
     let mut ignored_arc = marker("ignored-arc", None);
-    ignored_arc.kind = SketchInputKind::Arc;
+    ignored_arc.reclassify(SketchInputKind::Arc);
     let mut operand_arc = marker("operand-arc", None);
-    operand_arc.kind = SketchInputKind::Arc;
+    operand_arc.reclassify(SketchInputKind::Arc);
     let markers = HashMap::from([
-        (relation.id.as_str(), &relation),
-        (ignored_arc.id.as_str(), &ignored_arc),
-        (operand_arc.id.as_str(), &operand_arc),
+        (relation.id(), &relation),
+        (ignored_arc.id(), &ignored_arc),
+        (operand_arc.id(), &operand_arc),
     ]);
     let loci = HashMap::from([
         (
-            ignored_arc.id.clone(),
-            vec![SketchLocus::Entity(SketchEntityId("ignored-entity".into()))],
+            ignored_arc.id().to_string(),
+            vec![SketchLocus::Entity(
+                SketchEntityId::mint("synthetic:test:id#ignored-entity").unwrap(),
+            )],
         ),
         (
-            operand_arc.id.clone(),
-            vec![SketchLocus::Entity(SketchEntityId("operand-entity".into()))],
+            operand_arc.id().to_string(),
+            vec![SketchLocus::Entity(
+                SketchEntityId::mint("synthetic:test:id#operand-entity").unwrap(),
+            )],
         ),
     ]);
 
     assert_eq!(
-        typed_marker_relation_definition(&relation, &markers, &loci),
-        Some(SketchConstraintDefinition::ArcAngle {
-            entity: SketchEntityId("operand-entity".into()),
-            angle: Angle(std::f64::consts::FRAC_PI_2),
+        typed_marker_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
+            &relation,
+            &markers,
+            &loci
+        )
+        .unwrap(),
+        Some(SketchConstraintDefinitionInput::ArcAngle {
+            entity: SketchEntityId::mint("synthetic:test:id#operand-entity").unwrap(),
+            angle: PositiveAngle::new(std::f64::consts::FRAC_PI_2).unwrap(),
         })
     );
 }
@@ -266,9 +334,9 @@ fn self_identifying_forward_curve_link_is_excluded_from_arc_relation() {
 #[test]
 fn self_identifying_forward_link_is_not_a_relation_locus() {
     let mut relation = marker("relation", None);
-    relation.kind = SketchInputKind::Relation(SketchRelationKind::Vertical);
-    relation.local_id = Some(1);
-    relation.object_index = Some(1);
+    relation.reclassify(SketchInputKind::Relation(SketchRelationKind::Vertical));
+    relation = relation.with_test_identity(relation.object_index(), Some(1));
+    relation = relation.with_test_identity(Some(1), relation.local_id());
     relation.links = crate::records::SketchInputLinks::new(
         0,
         vec![SketchInputLink {
@@ -277,45 +345,57 @@ fn self_identifying_forward_link_is_not_a_relation_locus() {
         }],
     );
     let mut center = marker("center", Some([0.0, 1.0]));
-    center.kind = SketchInputKind::Arc;
+    center.reclassify(SketchInputKind::Arc);
     let mut first = marker("first", Some([-1.0, 0.0]));
-    first.offset = 1;
+    first = first.with_test_position(first.ordinal(), 1);
     first.links = crate::records::SketchInputLinks::new(
         0,
         vec![SketchInputLink {
             local_id: 3,
-            entity_ref: relation.id.clone(),
+            entity_ref: relation.id().to_string(),
         }],
     );
     let mut second = marker("second", Some([1.0, 0.0]));
-    second.offset = 2;
+    second = second.with_test_position(second.ordinal(), 2);
     second.links = first.links.clone();
     let markers = HashMap::from([
-        (relation.id.as_str(), &relation),
-        (center.id.as_str(), &center),
-        (first.id.as_str(), &first),
-        (second.id.as_str(), &second),
+        (relation.id(), &relation),
+        (center.id(), &center),
+        (first.id(), &first),
+        (second.id(), &second),
     ]);
     let loci = HashMap::from([
         (
-            center.id.clone(),
-            vec![SketchLocus::Center(SketchEntityId("arc".into()))],
+            center.id().to_string(),
+            vec![SketchLocus::Center(
+                SketchEntityId::mint("synthetic:test:id#arc").unwrap(),
+            )],
         ),
         (
-            first.id.clone(),
-            vec![SketchLocus::Entity(SketchEntityId("first-point".into()))],
+            first.id().to_string(),
+            vec![SketchLocus::Entity(
+                SketchEntityId::mint("synthetic:test:id#first-point").unwrap(),
+            )],
         ),
         (
-            second.id.clone(),
-            vec![SketchLocus::Entity(SketchEntityId("second-point".into()))],
+            second.id().to_string(),
+            vec![SketchLocus::Entity(
+                SketchEntityId::mint("synthetic:test:id#second-point").unwrap(),
+            )],
         ),
     ]);
 
     assert_eq!(
-        relation_operand_loci(&relation, &markers, &loci),
+        relation_operand_loci(
+            &cadmpeg_test_support::service_decode_context(),
+            &relation,
+            &markers,
+            &loci
+        )
+        .unwrap(),
         Some(vec![
-            SketchLocus::Entity(SketchEntityId("first-point".into())),
-            SketchLocus::Entity(SketchEntityId("second-point".into())),
+            SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#first-point").unwrap()),
+            SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#second-point").unwrap()),
         ])
     );
 }
@@ -323,8 +403,8 @@ fn self_identifying_forward_link_is_not_a_relation_locus() {
 #[test]
 fn native_fallback_entities_exclude_self_identity_collisions() {
     let mut relation = marker("relation", None);
-    relation.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
-    relation.local_id = Some(3);
+    relation.reclassify(SketchInputKind::Relation(SketchRelationKind::Horizontal));
+    relation = relation.with_test_identity(relation.object_index(), Some(3));
     relation.links = crate::records::SketchInputLinks::new(
         0,
         vec![
@@ -341,35 +421,48 @@ fn native_fallback_entities_exclude_self_identity_collisions() {
     let collision = marker("collision", Some([0.0, 0.0]));
     let operand = marker("operand", Some([1.0, 0.0]));
     let markers = HashMap::from([
-        (relation.id.as_str(), &relation),
-        (collision.id.as_str(), &collision),
-        (operand.id.as_str(), &operand),
+        (relation.id(), &relation),
+        (collision.id(), &collision),
+        (operand.id(), &operand),
     ]);
     let loci = HashMap::from([
         (
-            collision.id.clone(),
-            vec![SketchLocus::Entity(SketchEntityId("collision".into()))],
+            collision.id().to_string(),
+            vec![SketchLocus::Entity(
+                SketchEntityId::mint("synthetic:test:id#collision").unwrap(),
+            )],
         ),
         (
-            operand.id.clone(),
-            vec![SketchLocus::Entity(SketchEntityId("operand".into()))],
+            operand.id().to_string(),
+            vec![SketchLocus::Entity(
+                SketchEntityId::mint("synthetic:test:id#operand").unwrap(),
+            )],
         ),
     ]);
 
-    let Some(SketchConstraintDefinition::Native {
+    let Some(SketchConstraintDefinitionInput::Native {
         entities, operands, ..
-    }) = typed_marker_relation_definition(&relation, &markers, &loci)
+    }) = typed_marker_relation_definition(
+        &cadmpeg_test_support::service_decode_context(),
+        &relation,
+        &markers,
+        &loci,
+    )
+    .unwrap()
     else {
         panic!("native fallback");
     };
-    assert_eq!(entities, [SketchEntityId("operand".into())]);
+    assert_eq!(
+        entities,
+        [SketchEntityId::mint("synthetic:test:id#operand").unwrap()]
+    );
     assert_eq!(operands.len(), 2);
 }
 
 #[test]
 fn exact_curve_identity_precedes_incident_locus_expansion() {
     let mut relation = marker("relation", None);
-    relation.kind = SketchInputKind::Relation(SketchRelationKind::Vertical);
+    relation.reclassify(SketchInputKind::Relation(SketchRelationKind::Vertical));
     relation.links = crate::records::SketchInputLinks::new(
         0,
         vec![SketchInputLink {
@@ -378,15 +471,12 @@ fn exact_curve_identity_precedes_incident_locus_expansion() {
         }],
     );
     let mut curve = marker("curve-marker", Some([1.0, 1.0]));
-    curve.kind = SketchInputKind::LineOrCircle;
-    let markers = HashMap::from([
-        (relation.id.as_str(), &relation),
-        (curve.id.as_str(), &curve),
-    ]);
-    let exact = SketchEntityId("exact".into());
-    let incident = SketchEntityId("incident".into());
+    curve.reclassify(SketchInputKind::LineOrCircle);
+    let markers = HashMap::from([(relation.id(), &relation), (curve.id(), &curve)]);
+    let exact = SketchEntityId::mint("synthetic:test:id#exact").unwrap();
+    let incident = SketchEntityId::mint("synthetic:test:id#incident").unwrap();
     let loci = HashMap::from([(
-        curve.id.clone(),
+        curve.id().to_string(),
         vec![
             SketchLocus::Start(exact.clone()),
             SketchLocus::End(incident.clone()),
@@ -395,15 +485,15 @@ fn exact_curve_identity_precedes_incident_locus_expansion() {
     let entity = |id: SketchEntityId, native_ref: Option<&str>, start, end| {
         SketchEntity::new(
             id,
-            SketchId("sketch".into()),
-            SketchGeometry::Line { start, end },
+            SketchId::mint("synthetic:test:id#sketch").unwrap(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }).unwrap(),
         )
         .with_native_ref(native_ref.map(str::to_string))
     };
     let entities = vec![
         entity(
             exact.clone(),
-            Some(curve.id.as_str()),
+            Some(curve.id()),
             Point2::new(1.0, 0.0),
             Point2::new(1.0, 2.0),
         ),
@@ -412,20 +502,22 @@ fn exact_curve_identity_precedes_incident_locus_expansion() {
 
     assert_eq!(
         typed_marker_relation_definition_in_sketch(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
-            &SketchId("sketch".into()),
+            &SketchId::mint("synthetic:test:id#sketch").unwrap(),
             &entities,
             &markers,
             &loci,
-        ),
-        Some(SketchConstraintDefinition::Vertical { entity: exact })
+        )
+        .unwrap(),
+        Some(SketchConstraintDefinitionInput::Vertical { entity: exact })
     );
 }
 
 #[test]
 fn fixed_relation_selects_one_geometry_operand_beside_auxiliary_relation_handles() {
     let mut relation = marker("fixed", None);
-    relation.kind = SketchInputKind::Relation(SketchRelationKind::Fixed);
+    relation.reclassify(SketchInputKind::Relation(SketchRelationKind::Fixed));
     relation.links = crate::records::SketchInputLinks::new(
         0,
         vec![
@@ -440,43 +532,46 @@ fn fixed_relation_selects_one_geometry_operand_beside_auxiliary_relation_handles
         ],
     );
     let mut point = marker("point", Some([1.0, 2.0]));
-    point.kind = SketchInputKind::Point;
+    point.reclassify(SketchInputKind::Point);
     let mut radius = marker("radius", None);
-    radius.kind = SketchInputKind::Relation(SketchRelationKind::Radius);
+    radius.reclassify(SketchInputKind::Relation(SketchRelationKind::Radius));
     let markers = HashMap::from([
-        (relation.id.as_str(), &relation),
-        (point.id.as_str(), &point),
-        (radius.id.as_str(), &radius),
+        (relation.id(), &relation),
+        (point.id(), &point),
+        (radius.id(), &radius),
     ]);
-    let point_id = SketchEntityId("point-entity".into());
+    let point_id = SketchEntityId::mint("synthetic:test:id#point-entity").unwrap();
     let loci = HashMap::from([(
-        point.id.clone(),
+        point.id().to_string(),
         vec![SketchLocus::Entity(point_id.clone())],
     )]);
     let point_entity = SketchEntity::new(
         point_id.clone(),
-        SketchId("sketch".into()),
-        SketchGeometry::Point {
+        SketchId::mint("synthetic:test:id#sketch").unwrap(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(1.0, 2.0),
-        },
+        })
+        .unwrap(),
     )
-    .with_native_ref(Some(point.id.clone()));
+    .with_native_ref(Some(point.id().to_string()));
 
     assert_eq!(
         typed_marker_relation_definition_in_sketch(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
-            &SketchId("sketch".into()),
+            &SketchId::mint("synthetic:test:id#sketch").unwrap(),
             std::slice::from_ref(&point_entity),
             &markers,
             &loci,
-        ),
-        Some(SketchConstraintDefinition::Fixed {
+        )
+        .unwrap(),
+        Some(SketchConstraintDefinitionInput::Fixed {
             entity: point_id.clone(),
         })
     );
 
     let mut second = marker("second", Some([3.0, 4.0]));
-    second.kind = SketchInputKind::Point;
+    second.reclassify(SketchInputKind::Point);
     relation.links = crate::records::SketchInputLinks::new(
         0,
         relation
@@ -485,45 +580,51 @@ fn fixed_relation_selects_one_geometry_operand_beside_auxiliary_relation_handles
             .cloned()
             .chain(std::iter::once(SketchInputLink {
                 local_id: 8,
-                entity_ref: second.id.clone(),
+                entity_ref: second.id().to_string(),
             }))
             .collect(),
     );
     let markers = HashMap::from([
-        (relation.id.as_str(), &relation),
-        (point.id.as_str(), &point),
-        (radius.id.as_str(), &radius),
-        (second.id.as_str(), &second),
+        (relation.id(), &relation),
+        (point.id(), &point),
+        (radius.id(), &radius),
+        (second.id(), &second),
     ]);
     let loci = HashMap::from([
         (
-            point.id.clone(),
+            point.id().to_string(),
             vec![SketchLocus::Entity(point_id.clone())],
         ),
         (
-            second.id.clone(),
-            vec![SketchLocus::Entity(SketchEntityId("second-entity".into()))],
+            second.id().to_string(),
+            vec![SketchLocus::Entity(
+                SketchEntityId::mint("synthetic:test:id#second-entity").unwrap(),
+            )],
         ),
     ]);
     assert!(matches!(
         typed_marker_relation_definition_in_sketch(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
-            &SketchId("sketch".into()),
+            &SketchId::mint("synthetic:test:id#sketch").unwrap(),
             &[point_entity],
             &markers,
             &loci,
-        ),
-        Some(SketchConstraintDefinition::Native { .. })
+        )
+        .unwrap(),
+        Some(SketchConstraintDefinitionInput::Native { .. })
     ));
 }
 
 #[test]
 fn resolved_wrong_family_relation_is_inactive() {
     let mut relation = marker("relation", None);
-    relation.kind = SketchInputKind::Relation(SketchRelationKind::EllipseAngle180);
-    let entity_id = SketchEntityId("line".into());
-    let definition = SketchConstraintDefinition::Native {
-        native_kind: "sldprt:marker-relation:34".into(),
+    relation.reclassify(SketchInputKind::Relation(
+        SketchRelationKind::EllipseAngle180,
+    ));
+    let entity_id = SketchEntityId::mint("synthetic:test:id#line").unwrap();
+    let definition = SketchConstraintDefinitionInput::Native {
+        native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-relation:34").unwrap(),
         native_state: None,
         native_flags: None,
         native_properties: std::collections::BTreeMap::new(),
@@ -533,30 +634,33 @@ fn resolved_wrong_family_relation_is_inactive() {
     };
     let entities = vec![SketchEntity::new(
         entity_id,
-        SketchId("sketch".into()),
-        SketchGeometry::Line {
+        SketchId::mint("synthetic:test:id#sketch").unwrap(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(1.0, 0.0),
-        },
+        })
+        .unwrap(),
     )];
 
     assert!(marker_relation_is_inactive(
+        &cadmpeg_test_support::service_decode_context(),
         &relation,
         &definition,
         &entities
-    ));
+    )
+    .unwrap());
 }
 
 #[test]
 fn geometrically_contradicted_point_coincidence_is_inactive() {
     let mut relation = marker("relation", None);
-    relation.kind = SketchInputKind::Relation(SketchRelationKind::Coincident);
+    relation.reclassify(SketchInputKind::Relation(SketchRelationKind::Coincident));
     let ids = [
-        SketchEntityId("first".into()),
-        SketchEntityId("second".into()),
+        SketchEntityId::mint("synthetic:test:id#first").unwrap(),
+        SketchEntityId::mint("synthetic:test:id#second").unwrap(),
     ];
-    let definition = SketchConstraintDefinition::Native {
-        native_kind: "sldprt:marker-relation:9".into(),
+    let definition = SketchConstraintDefinitionInput::Native {
+        native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-relation:9").unwrap(),
         native_state: None,
         native_flags: None,
         native_properties: std::collections::BTreeMap::new(),
@@ -567,8 +671,8 @@ fn geometrically_contradicted_point_coincidence_is_inactive() {
     let point = |id: SketchEntityId, position| {
         SketchEntity::new(
             id,
-            SketchId("sketch".into()),
-            SketchGeometry::Point { position },
+            SketchId::mint("synthetic:test:id#sketch").unwrap(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Point { position }).unwrap(),
         )
     };
     let first = point(ids[0].clone(), Point2::new(1.0, 2.0));
@@ -576,30 +680,34 @@ fn geometrically_contradicted_point_coincidence_is_inactive() {
     let distinct = point(ids[1].clone(), Point2::new(1.0, 3.0));
 
     assert!(!marker_relation_is_inactive(
+        &cadmpeg_test_support::service_decode_context(),
         &relation,
         &definition,
         &[first.clone(), coincident],
-    ));
+    )
+    .unwrap());
     assert!(marker_relation_is_inactive(
+        &cadmpeg_test_support::service_decode_context(),
         &relation,
         &definition,
         &[first, distinct],
-    ));
+    )
+    .unwrap());
 }
 
 #[test]
 fn horizontal_relation_requires_one_line_or_two_points() {
     let mut relation = marker("relation", None);
-    relation.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
+    relation.reclassify(SketchInputKind::Relation(SketchRelationKind::Horizontal));
     let entity = |id: &str, geometry| {
         SketchEntity::new(
-            SketchEntityId(id.into()),
-            SketchId("sketch".into()),
+            SketchEntityId::mint(id).unwrap(),
+            SketchId::mint("synthetic:test:id#sketch").unwrap(),
             geometry,
         )
     };
-    let definition = |entities| SketchConstraintDefinition::Native {
-        native_kind: "sldprt:marker-relation:4".into(),
+    let definition = |entities| SketchConstraintDefinitionInput::Native {
+        native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-relation:4").unwrap(),
         native_state: None,
         native_flags: None,
         native_properties: std::collections::BTreeMap::new(),
@@ -608,46 +716,60 @@ fn horizontal_relation_requires_one_line_or_two_points() {
         operands: Vec::new(),
     };
     let point = entity(
-        "point",
-        SketchGeometry::Point {
+        "synthetic:test:id#point",
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(0.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
     let line = entity(
-        "line",
-        SketchGeometry::Line {
+        "synthetic:test:id#line",
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(1.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
 
     assert!(marker_relation_is_inactive(
+        &cadmpeg_test_support::service_decode_context(),
         &relation,
         &definition(vec![point.id().clone()]),
         std::slice::from_ref(&point),
-    ));
+    )
+    .unwrap());
     assert!(!marker_relation_is_inactive(
+        &cadmpeg_test_support::service_decode_context(),
         &relation,
         &definition(vec![line.id().clone()]),
         std::slice::from_ref(&line),
-    ));
+    )
+    .unwrap());
     assert!(!marker_relation_is_inactive(
+        &cadmpeg_test_support::service_decode_context(),
         &relation,
-        &definition(vec![point.id().clone(), SketchEntityId("second".into())]),
+        &definition(vec![
+            point.id().clone(),
+            SketchEntityId::mint("synthetic:test:id#second").unwrap()
+        ]),
         &[
             point,
             entity(
-                "second",
-                SketchGeometry::Point {
+                "synthetic:test:id#second",
+                SketchGeometry::try_from(SketchGeometryDefinition::Point {
                     position: Point2::new(1.0, 0.0),
-                },
+                })
+                .unwrap(),
             ),
         ],
-    ));
+    )
+    .unwrap());
     assert!(marker_relation_is_inactive(
+        &cadmpeg_test_support::service_decode_context(),
         &relation,
-        &SketchConstraintDefinition::Native {
-            native_kind: "sldprt:marker-relation:4".into(),
+        &SketchConstraintDefinitionInput::Native {
+            native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-relation:4")
+                .unwrap(),
             native_state: None,
             native_flags: None,
             native_properties: std::collections::BTreeMap::new(),
@@ -655,44 +777,41 @@ fn horizontal_relation_requires_one_line_or_two_points() {
             parameter: None,
             operands: vec![
                 SketchNativeOperand {
-                    native_kind: cadmpeg_ir::products::NonEmptyString::new(
-                        "sldprt:marker-local-id"
-                    )
-                    .expect("source operand kind is nonempty"),
+                    native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-local-id")
+                        .expect("source operand kind is nonempty"),
                     field: None,
-                    object_index: 3,
+                    object_index: Some(3),
                     native_ref: Some("same-marker".into()),
                 },
                 SketchNativeOperand {
-                    native_kind: cadmpeg_ir::products::NonEmptyString::new(
-                        "sldprt:marker-local-id"
-                    )
-                    .expect("source operand kind is nonempty"),
+                    native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-local-id")
+                        .expect("source operand kind is nonempty"),
                     field: None,
-                    object_index: 3,
+                    object_index: Some(3),
                     native_ref: Some("same-marker".into()),
                 },
             ],
         },
         &[],
-    ));
+    )
+    .unwrap());
 }
 
 #[test]
 fn driving_point_distances_resolve_omitted_solver_points() {
     for tag in [0x8100, 0x820f] {
         let mut origin = marker("origin", Some([0.0, 0.0]));
-        origin.offset = 0;
+        origin = origin.with_test_position(origin.ordinal(), 0);
         let mut negative = marker("negative", Some([-0.007, 0.0]));
-        negative.offset = 1;
+        negative = negative.with_test_position(negative.ordinal(), 1);
         let mut first_center = marker("first-center", Some([0.008, 0.0]));
-        first_center.offset = 2;
+        first_center = first_center.with_test_position(first_center.ordinal(), 2);
         let mut second_center = marker("second-center", Some([0.0015, 0.0]));
-        second_center.offset = 3;
+        second_center = second_center.with_test_position(second_center.ordinal(), 3);
         let operand = |index, marker: Option<&str>| FeatureInputOperand {
             offset: u64::from(index),
             reference_ref: format!("reference-{index}"),
-            kind: FeatureInputOperandKind::Native(tag),
+            kind: FeatureInputOperandKind::Native(tag.try_into().unwrap()),
             entity_index: index,
             entity_ref: marker.map(str::to_string),
         };
@@ -704,7 +823,7 @@ fn driving_point_distances_resolve_omitted_solver_points() {
             offset: 0,
             object_id: 0,
             name: "name".into(),
-            value,
+            value: cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite test scalar"),
             role: FeatureInputScalarRole::Driving,
 
             operands,
@@ -743,7 +862,12 @@ fn driving_point_distances_resolve_omitted_solver_points() {
         };
 
         assert_eq!(
-            inferred_point_coordinates_by_index(&lane, "feature-native"),
+            inferred_point_coordinates_by_index(
+                &cadmpeg_test_support::service_decode_context(),
+                &lane,
+                "feature-native"
+            )
+            .unwrap(),
             HashMap::from([
                 (3, [0.008, 0.0]),
                 (4, [0.0015, 0.0]),
@@ -757,15 +881,15 @@ fn driving_point_distances_resolve_omitted_solver_points() {
 #[test]
 fn ambiguous_driving_point_distance_does_not_assign_solver_points() {
     let mut first = marker("first", Some([0.0, 0.0]));
-    first.offset = 0;
+    first = first.with_test_position(first.ordinal(), 0);
     let mut second = marker("second", Some([1.0, 0.0]));
-    second.offset = 1;
+    second = second.with_test_position(second.ordinal(), 1);
     let mut third = marker("third", Some([2.0, 0.0]));
-    third.offset = 2;
+    third = third.with_test_position(third.ordinal(), 2);
     let operand = |index| FeatureInputOperand {
         offset: u64::from(index),
         reference_ref: format!("reference-{index}"),
-        kind: FeatureInputOperandKind::Native(0x8100),
+        kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8100),
         entity_index: index,
         entity_ref: None,
     };
@@ -783,7 +907,7 @@ fn ambiguous_driving_point_distance_does_not_assign_solver_points() {
             offset: 0,
             object_id: 0,
             name: "name".into(),
-            value: 1.0,
+            value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
             role: FeatureInputScalarRole::Driving,
 
             operands: vec![operand(12), operand(13)],
@@ -798,7 +922,13 @@ fn ambiguous_driving_point_distance_does_not_assign_solver_points() {
         sketch_entities: vec![first, second, third],
     };
 
-    assert!(inferred_point_coordinates_by_index(&lane, "feature-native").is_empty());
+    assert!(inferred_point_coordinates_by_index(
+        &cadmpeg_test_support::service_decode_context(),
+        &lane,
+        "feature-native"
+    )
+    .unwrap()
+    .is_empty());
 }
 
 #[test]
@@ -817,16 +947,16 @@ fn terminal_profile_curve_resolves_point_identity_endpoints() {
     payload[80..84].copy_from_slice(&[0x00, 0x00, 0x02, 0x00]);
     payload[92..].copy_from_slice(super::LEGACY_SKETCH_MARKER);
     let mut curve = marker("curve", None);
-    curve.kind = SketchInputKind::LineOrCircle;
+    curve.reclassify(SketchInputKind::LineOrCircle);
     let mut first = marker("first", Some([1.0, 0.0]));
-    first.local_id = Some(15);
-    first.object_index = Some(14);
+    first = first.with_test_identity(first.object_index(), Some(15));
+    first = first.with_test_identity(Some(14), first.local_id());
     let mut second = marker("second", Some([2.0, 0.0]));
-    second.object_index = Some(15);
+    second = second.with_test_identity(Some(15), second.local_id());
 
     assert_eq!(
         legacy_terminal_profile_indexed_endpoints(&payload, &curve, &[&curve, &first, &second])
-            .map(|endpoints| endpoints.map(|endpoint| endpoint.id.as_str())),
+            .map(|endpoints| endpoints.map(crate::records::SketchInputEntity::id)),
         Some(["first", "second"])
     );
 }

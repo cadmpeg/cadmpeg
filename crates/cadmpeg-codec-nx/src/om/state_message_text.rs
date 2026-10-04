@@ -5,22 +5,27 @@ use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::printable_string::PrintableString;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct StateMessageText<S>(PrintableString<S>);
+pub(crate) struct StateMessageText<S>(PrintableString<S>, u8);
 
-impl<S: AsRef<str>> StateMessageText<S> {
-    pub(crate) fn new(text: S) -> Result<Self, &'static str> {
+impl<S: crate::immutable_text::ImmutableText> StateMessageText<S> {
+    pub(super) fn new(text: S) -> Result<Self, &'static str> {
         let text =
             PrintableString::new(text).map_err(|_| "text: must be nonempty printable ASCII")?;
         if text.as_str().len() > usize::from(u8::MAX) - 2 {
             return Err("text: length plus two must fit declared_length");
         }
-        Ok(Self(text))
+        let count = u8::try_from(text.as_str().len())
+            .map_err(|_| "text: length plus two must fit declared_length")?
+            + 2;
+        Ok(Self(text, count))
     }
 
-    pub(crate) fn declared_length(&self) -> u8 {
-        self.0.as_str().len() as u8 + 2
+    pub(super) fn declared_length(&self) -> u8 {
+        self.1
     }
 
     pub(crate) fn as_str(&self) -> &str {
@@ -29,12 +34,21 @@ impl<S: AsRef<str>> StateMessageText<S> {
 }
 
 impl StateMessageText<&str> {
-    pub(crate) fn into_owned(self) -> StateMessageText<String> {
-        StateMessageText(self.0.into_owned())
+    pub(super) fn into_owned(
+        self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<StateMessageText<String>, CodecError> {
+        let text = self.as_str();
+        let mut owned = ctx.retained_string(text.len(), "NX state message text")?;
+        owned.push_str(text);
+        Ok(StateMessageText(
+            PrintableString::new(owned).map_err(CodecError::malformed)?,
+            self.1,
+        ))
     }
 }
 
-impl<S: AsRef<str>> Serialize for StateMessageText<S> {
+impl<S: crate::immutable_text::ImmutableText> Serialize for StateMessageText<S> {
     fn serialize<T: Serializer>(&self, serializer: T) -> Result<T::Ok, T::Error> {
         let mut state = serializer.serialize_struct("StateMessageText", 2)?;
         state.serialize_field("declared_length", &self.declared_length())?;
@@ -68,7 +82,12 @@ mod tests {
     #[test]
     fn message_text_derives_length_and_preserves_spaces() {
         for text in [" ".to_string(), "x".repeat(253)] {
-            let value = StateMessageText::new(text.as_str()).unwrap().into_owned();
+            let value = crate::test_support::with_decode_context(|ctx| {
+                StateMessageText::new(text.as_str())
+                    .unwrap()
+                    .into_owned(ctx)
+            })
+            .unwrap();
             assert_eq!(usize::from(value.declared_length()), text.len() + 2);
             let json = format!(
                 r#"{{"declared_length":{},"text":{}}}"#,

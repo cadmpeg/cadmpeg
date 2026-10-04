@@ -6,14 +6,7 @@
 //! `TargetRequest` carries it. Export-loss rejection is an application decision
 //! over the completed plan, not an encoder-construction option.
 
-#[cfg(test)]
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::Encoder;
-#[cfg(test)]
-use cadmpeg_ir::codec::write::TargetRequest;
-
-#[cfg(test)]
-use cadmpeg_ir::codec::FormatId;
 
 use crate::Format;
 
@@ -29,7 +22,12 @@ pub fn build_encoder(format: Format) -> Box<dyn Encoder> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::codec::write::target::TargetRequest;
+    use cadmpeg_ir::codec::FormatId;
+
+    use super::build_encoder;
+    use crate::Format;
 
     /// Every request an encoder catalog can be asked for, checked against the
     /// identity registry and against the catalog's own rules.
@@ -89,7 +87,18 @@ mod tests {
                 panic!("{}: expected a target refusal, got {error}", encoder.id());
             };
             assert_eq!(refusal.format(), encoder.id().as_str());
-            assert_eq!(refusal.requested(), Some(requested.as_str()));
+            assert_eq!(
+                ({
+                    let wire = serde_json::to_value(refusal).expect("serialize refusal");
+                    wire["refusal"]
+                        .get("requested")
+                        .or_else(|| wire["refusal"].get("source"))
+                        .and_then(serde_json::Value::as_str)
+                        .map(str::to_owned)
+                })
+                .as_deref(),
+                Some(requested.as_str())
+            );
             for target in encoder.targets() {
                 assert!(
                     refusal
@@ -118,7 +127,7 @@ mod tests {
             for target in encoder.targets() {
                 for token in target.accepted_tokens() {
                     assert!(
-                        !Format::is_known_name(token),
+                        !Format::is_known_name(token).expect("embedded registry loads"),
                         "{}: accepted token {token} of {} is also an output format name",
                         encoder.id(),
                         target.id

@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! V5 text-extra class-userdata admission and retention contracts.
 
+use cadmpeg_test_support::EditableDecodeResult;
+
+use super::fixtures::plane;
 use super::{assert_valid, decode};
 use crate::chunks::{ArchiveVersion, TCODE_CRC};
-use crate::test_support as support;
+use crate::test_support::test_archive as support;
+use crate::test_support::test_dump::utf16_bytes;
 use crate::wire::Uuid;
 
 const LEGACY_TEXT: [u8; 16] = [
@@ -16,46 +20,23 @@ const OPENNURBS5_APPLICATION: [u8; 16] = [
     0xc8, 0xcd, 0xa5, 0x97, 0xd9, 0x57, 0x46, 0x25, 0xa4, 0xb3, 0xa0, 0xb5, 0x10, 0xfc, 0x30, 0xd4,
 ];
 
-fn utf16(value: &str) -> Vec<u8> {
-    let mut units = value.encode_utf16().collect::<Vec<_>>();
-    units.push(0);
-    let mut bytes = (units.len() as u32).to_le_bytes().to_vec();
-    for unit in units {
-        bytes.extend(unit.to_le_bytes());
-    }
-    bytes
-}
-
-fn plane() -> Vec<u8> {
-    [
-        0.0, 0.0, 0.0, // origin
-        1.0, 0.0, 0.0, // x axis
-        0.0, 1.0, 0.0, // y axis
-        0.0, 0.0, 1.0, // z axis
-        0.0, 0.0, 1.0, 0.0, // equation
-    ]
-    .into_iter()
-    .flat_map(f64::to_le_bytes)
-    .collect()
-}
-
 fn legacy_text_payload(archive: ArchiveVersion) -> Vec<u8> {
     let mut fields = 7_i32.to_le_bytes().to_vec();
     fields.extend(0_i32.to_le_bytes());
     fields.extend(plane());
     fields.extend(0_i32.to_le_bytes());
-    fields.extend(utf16("legacy text"));
+    fields.extend(utf16_bytes("legacy text"));
     fields.extend(0_i32.to_le_bytes());
     fields.extend(0_i32.to_le_bytes());
     fields.extend(1.5_f64.to_le_bytes());
     fields.extend(0_i32.to_le_bytes());
     fields.push(0);
-    fields.extend(utf16(""));
+    fields.extend(utf16_bytes(""));
     fields.extend(0_i32.to_le_bytes());
     fields.extend((-1_i32).to_le_bytes());
 
-    let base = support::test_dump::anonymous_chunk(archive, 3, &fields);
-    support::test_dump::anonymous_chunk(archive, 0, &base)
+    let base = crate::test_support::test_dump::anonymous_chunk(archive, 3, &fields);
+    crate::test_support::test_dump::anonymous_chunk(archive, 0, &base)
 }
 
 fn versioned_text_extra_payload(
@@ -75,11 +56,11 @@ fn versioned_text_extra_payload(
     let mut body = major.to_le_bytes().to_vec();
     body.extend(0_i32.to_le_bytes());
     body.extend(fields);
-    support::test_dump::crc_chunk(archive, 0x4000_8000, &body)
+    crate::test_support::test_dump::crc_chunk(archive, 0x4000_8000, &body)
 }
 
 fn text_userdata(archive: ArchiveVersion, payload: &[u8]) -> Vec<u8> {
-    support::test_dump::class_userdata_v2_with_direct_payload(
+    crate::test_support::test_dump::class_userdata_v2_with_direct_payload(
         archive,
         Uuid::from_canonical(V5_TEXT_EXTRA).to_wire(),
         Uuid::from_canonical(OPENNURBS5_APPLICATION).to_wire(),
@@ -90,44 +71,45 @@ fn text_userdata(archive: ArchiveVersion, payload: &[u8]) -> Vec<u8> {
 }
 
 fn text_record(archive: ArchiveVersion, userdata: &[u8]) -> Vec<u8> {
-    let object_type = support::test_dump::short_chunk(archive, 0x8200_0071, 0x20);
+    let object_type = crate::test_support::test_dump::short_chunk(archive, 0x8200_0071, 0x20);
     let legacy_text_wire = Uuid::from_canonical(LEGACY_TEXT).to_wire();
     let mut uuid_body = legacy_text_wire.to_vec();
     uuid_body.extend(crc32fast::hash(&legacy_text_wire).to_le_bytes());
-    let class_uuid = support::test_dump::long_chunk(archive, 0x0002_fffb, &uuid_body);
-    let class_data =
-        support::test_dump::crc_chunk(archive, 0x0002_fffc, &legacy_text_payload(archive));
-    let class_end = support::test_dump::short_chunk(archive, 0x8002_7fff, 0);
-    let class = support::test_dump::long_chunk(
+    let class_uuid = crate::test_support::test_dump::long_chunk(archive, 0x0002_fffb, &uuid_body);
+    let class_data = crate::test_support::test_dump::crc_chunk(
+        archive,
+        0x0002_fffc,
+        &legacy_text_payload(archive),
+    );
+    let class_end = crate::test_support::test_dump::short_chunk(archive, 0x8002_7fff, 0);
+    let class = crate::test_support::test_dump::long_chunk(
         archive,
         0x0002_7ffa,
         &[class_uuid, class_data, userdata.to_vec(), class_end].concat(),
     );
-    let object_end = support::test_dump::short_chunk(archive, 0x8200_007f, 0);
-    support::test_dump::nested_crc_chunk(
+    let object_end = crate::test_support::test_dump::short_chunk(archive, 0x8200_007f, 0);
+    crate::test_support::test_dump::nested_crc_chunk(
         archive,
         0x2000_8070 | TCODE_CRC,
         &[object_type, class, object_end].concat(),
     )
 }
 
-fn annotation(result: &cadmpeg_ir::codec::DecodeResult) -> &cadmpeg_ir::native::NativeRecord {
+fn annotation(result: &EditableDecodeResult) -> &cadmpeg_ir::native::NativeRecord {
     let arena = &result.ir().native.namespace("rhino").unwrap().arenas()["annotations"];
     assert_eq!(arena.len(), 1);
     &arena[0]
 }
 
 fn assert_text_and_retention<'a>(
-    result: &'a cadmpeg_ir::codec::DecodeResult,
+    result: &'a EditableDecodeResult,
     record: &[u8],
 ) -> &'a cadmpeg_ir::native::NativeRecord {
     let annotation = annotation(result);
     assert_eq!(annotation.field("kind"), Some(serde_json::json!("text")));
     let retained = result
         .source_fidelity()
-        .retained_records
-        .iter()
-        .find(|value| value.id() == "rhino:object:record#000000")
+        .retained_record("rhino:object:record#000000")
         .expect("text object record is retained");
     assert_eq!(retained.data(), Some(record));
     annotation

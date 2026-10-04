@@ -3,18 +3,27 @@
 
 use assert_cmd::Command;
 use cadmpeg_ir::examples::unit_cube;
-use predicates::prelude::*;
+use predicates::prelude::{predicate, PredicateBooleanExt};
 use tempfile::tempdir;
 
-use crate::support::*;
+use crate::support::{cube_with_source, fixture, minimal_rhino_archive};
 
 #[test]
 fn diff_reports_modified_entities_and_uses_diff_exit_codes() {
     let dir = tempdir().unwrap();
-    let left = unit_cube();
+    let left = unit_cube().expect("unit cube fixture is admitted");
     let mut right = left.clone();
-    right.model.points[0].position.x += 0.5;
-    right.model.edges[0].tolerance = Some(0.01);
+    let moved = right.model.points[0].position().get();
+    right.model.points[0].set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            moved.x + 0.5,
+            moved.y,
+            moved.z,
+        ))
+        .expect("a finite position is a point"),
+    );
+    right.model.edges[0].tolerance =
+        Some(cadmpeg_ir::scalar::PositiveReal::new(0.01).expect("positive finite tolerance"));
     right.model.coedges[0].sense = match right.model.coedges[0].sense {
         cadmpeg_ir::topology::Sense::Forward => cadmpeg_ir::topology::Sense::Reversed,
         cadmpeg_ir::topology::Sense::Reversed => cadmpeg_ir::topology::Sense::Forward,
@@ -68,23 +77,25 @@ fn diff_reports_a_source_attribute_change_and_exits_one() {
 
 #[test]
 fn diff_reports_dialect_admission_and_declaration_changes() {
-    use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
+    use cadmpeg_core::dialect::{DialectLayers, DialectMatch};
     use std::collections::BTreeMap;
 
     let dir = tempdir().unwrap();
-    let mut left = unit_cube();
+    let mut left = unit_cube().expect("unit cube fixture is admitted");
     left.source = Some(cadmpeg_ir::SourceMeta::classified(
         DialectLayers::of(
-            DialectMatch::admitted(DialectId::pinned("synthetic:v1"))
-                .with_declared(BTreeMap::from([("version".into(), "1".into())])),
+            DialectMatch::admitted(cadmpeg_core::dialect_id!("synthetic:v1")).with_declared(
+                BTreeMap::from([(cadmpeg_core::nonblank_literal!("version"), "1".into())]),
+            ),
         ),
         BTreeMap::new(),
     ));
-    let mut right = unit_cube();
+    let mut right = unit_cube().expect("unit cube fixture is admitted");
     right.source = Some(cadmpeg_ir::SourceMeta::classified(
         DialectLayers::of(
-            DialectMatch::residual(DialectId::pinned("synthetic:v1"))
-                .with_declared(BTreeMap::from([("version".into(), "2".into())])),
+            DialectMatch::residual(cadmpeg_core::dialect_id!("synthetic:v1")).with_declared(
+                BTreeMap::from([(cadmpeg_core::nonblank_literal!("version"), "2".into())]),
+            ),
         ),
         BTreeMap::new(),
     ));
@@ -154,7 +165,7 @@ fn diff_reports_a_machine_local_digest_difference_without_a_verdict() {
 #[test]
 fn diff_handles_absent_source_metadata() {
     let dir = tempdir().unwrap();
-    let mut bare = unit_cube();
+    let mut bare = unit_cube().expect("unit cube fixture is admitted");
     bare.source = None;
     let a = fixture(dir.path(), "a.json", &bare);
     let b = fixture(
@@ -211,8 +222,16 @@ fn diff_rejects_input_format_override() {
 #[test]
 fn diff_input_format_forces_the_reader_per_input() {
     let dir = tempdir().unwrap();
-    let a = fixture(dir.path(), "a.cadir.json", &unit_cube());
-    let b = fixture(dir.path(), "b.cadir.json", &unit_cube());
+    let a = fixture(
+        dir.path(),
+        "a.cadir.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
+    let b = fixture(
+        dir.path(),
+        "b.cadir.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
 
     // Two identical CADIR documents compare equal.
     Command::cargo_bin("cadmpeg")

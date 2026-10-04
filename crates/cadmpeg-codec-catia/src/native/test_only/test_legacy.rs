@@ -1,4 +1,14 @@
-use super::*;
+use cadmpeg_core::decode::u64_from_index;
+
+use crate::entity_table;
+use crate::legacy_entity;
+use crate::native::entity_record::CatiaEntityRecord;
+use crate::native::{
+    entity_suffix_value, legacy_evaluated_value_name, CatiaLegacyEntityRun,
+    CatiaLegacyIntegerEncoding, CatiaLegacyRelation, CatiaLegacyRoleSelector,
+    CatiaLegacyScalarEvaluation, CatiaLegacySchemaField, CatiaLegacySchemaIdentifier,
+    CatiaLegacySchemaProgram, CatiaLegacyTextEncoding, CatiaLegacyTextField, CatiaLegacyTypeValue,
+};
 
 pub(super) fn valid_entity_record_shape(record: &CatiaEntityRecord) -> bool {
     if let Some(body) = &record.inline_body() {
@@ -8,7 +18,6 @@ pub(super) fn valid_entity_record_shape(record: &CatiaEntityRecord) -> bool {
             && record.definition_schema_selections.is_empty()
             && record.definition_suffix().is_empty()
             && record.value_payload().is_empty()
-            && record.value_fields().is_empty()
             && record.value_schema_selections.is_empty()
             && record.reference_signature.is_none()
             && record.record_suffix().is_empty()
@@ -20,26 +29,33 @@ pub(super) fn valid_entity_record_shape(record: &CatiaEntityRecord) -> bool {
         .reference_signature
         .as_ref()
         .map(|signature| &signature.production)
-        == entity_table::parse_reference_signature(record.value_payload()).as_ref()
+        == crate::test_support::with_service_context(|ctx| {
+            entity_table::parse_reference_signature(ctx, record.value_payload())
+        })
+        .expect("service reference signature budget")
+        .as_ref()
         && record.suffix_value() == entity_suffix_value(record.record_suffix()).as_ref()
 }
 
-pub(super) fn legacy_schema_identifiers(
+fn legacy_schema_identifiers(
     program: &CatiaLegacySchemaProgram,
 ) -> Option<Vec<CatiaLegacySchemaIdentifier>> {
     let program_offset = usize::try_from(program.byte_offset).ok()?;
     Some(
-        legacy_entity::parse_schema_identifiers(&program.data, program_offset)
-            .into_iter()
-            .map(|identifier| CatiaLegacySchemaIdentifier {
-                byte_offset: identifier.offset as u64,
-                value: identifier.value,
-            })
-            .collect(),
+        crate::test_support::with_service_context(|ctx| {
+            legacy_entity::parse_schema_identifiers(ctx, &program.data, program_offset)
+        })
+        .ok()?
+        .into_iter()
+        .map(|identifier| CatiaLegacySchemaIdentifier {
+            byte_offset: u64_from_index(identifier.offset),
+            value: identifier.value,
+        })
+        .collect(),
     )
 }
 
-pub(super) fn legacy_value_name(
+fn legacy_value_name(
     roles: &[CatiaLegacyRoleSelector],
     fields: &[CatiaLegacyTextField],
     entity_id: u32,
@@ -86,7 +102,11 @@ fn legacy_schema_boundary_closes_text(
 }
 
 fn valid_legacy_relation(run: &CatiaLegacyEntityRun, relation: &CatiaLegacyRelation) -> bool {
-    let Some(parsed) = legacy_entity::parse_relation_signature(&relation.type_signature) else {
+    let Some(parsed) = crate::test_support::with_service_context(|ctx| {
+        legacy_entity::parse_relation_signature(ctx, &relation.type_signature)
+    })
+    .ok()
+    .flatten() else {
         return false;
     };
     let Some(expression_field) = run.text_fields.iter().find(|field| {
@@ -186,7 +206,7 @@ fn valid_legacy_relation_field_pair(
         [prelude, selected_expression, selected_signature]
             if prelude.value.is_empty()
                 && prelude.role.as_ref().is_none_or(|role| {
-                    matches!(&role.name, CatiaLegacyRoleName::Selector(_))
+                    matches!(&role.name, legacy_entity::LegacyRoleName::Selector(_))
                 })
                 && prelude.encoding == CatiaLegacyTextEncoding::U8InclusiveLengthE3RoleTail
                 && selected_expression.encoding
@@ -194,10 +214,10 @@ fn valid_legacy_relation_field_pair(
                 && selected_signature.encoding
                     == CatiaLegacyTextEncoding::U8InclusiveLengthE3RoleTail
                 && selected_expression.role.as_ref().is_some_and(|role| {
-                    matches!(&role.name, CatiaLegacyRoleName::Selector(_))
+                    matches!(&role.name, legacy_entity::LegacyRoleName::Selector(_))
                 })
                 && selected_signature.role.as_ref().is_some_and(|role| {
-                    matches!(&role.name, CatiaLegacyRoleName::Selector(_))
+                    matches!(&role.name, legacy_entity::LegacyRoleName::Selector(_))
                 })
                 && *selected_expression == expression
                 && *selected_signature == signature
@@ -240,11 +260,10 @@ pub(super) fn validate_legacy_entity_runs(
                     && pair[0].entity_id < pair[1].entity_id
             })
             && run.identities.iter().all(|identity| {
-                matches!(identity.lead, 0x81 | 0x82 | 0xe5 | 0xfd)
-                    && identity
-                        .byte_offset
-                        .checked_add(6)
-                        .is_some_and(|end| end <= run.catalog_offset)
+                identity
+                    .byte_offset
+                    .checked_add(6)
+                    .is_some_and(|end| end <= run.catalog_offset)
             })
             && run
                 .role_selectors
@@ -255,8 +274,10 @@ pub(super) fn validate_legacy_entity_runs(
                     && role.byte_offset < run.catalog_offset
                     && role.selector != 0
                     && match &role.name {
-                        CatiaLegacyRoleName::Literal(name) => valid_legacy_identifier(name),
-                        CatiaLegacyRoleName::Selector(selector) => *selector != 0,
+                        legacy_entity::LegacyRoleName::Literal(name) => {
+                            legacy_entity::valid_identifier(name)
+                        }
+                        legacy_entity::LegacyRoleName::Selector(selector) => *selector != 0,
                     }
                     && run
                         .identities
@@ -301,8 +322,10 @@ pub(super) fn validate_legacy_entity_runs(
                             && role.entity_id == field.entity_id
                             && role.selector != 0
                             && match &role.name {
-                                CatiaLegacyRoleName::Literal(name) => valid_legacy_identifier(name),
-                                CatiaLegacyRoleName::Selector(selector) => *selector != 0,
+                                legacy_entity::LegacyRoleName::Literal(name) => {
+                                    legacy_entity::valid_identifier(name)
+                                }
+                                legacy_entity::LegacyRoleName::Selector(selector) => *selector != 0,
                             }
                             && run.role_selectors.contains(role)
                             && role.end_offset().is_none_or(|end| end == field.byte_offset)
@@ -359,16 +382,18 @@ pub(super) fn validate_legacy_entity_runs(
                             role.byte_offset == state.role_byte_offset
                                 && role.entity_id == state.entity_id
                                 && (role.name.literal() == Some("synchrone")
-                                    || (matches!(&role.name, CatiaLegacyRoleName::Selector(_))
-                                        && role
-                                            .end_offset()
-                                            .and_then(|end| end.checked_add(5))
-                                            .is_some_and(|next_role_offset| {
-                                                run.role_selectors.iter().any(|next| {
-                                                    next.entity_id == state.entity_id
-                                                        && next.byte_offset == next_role_offset
-                                                })
-                                            })))
+                                    || (matches!(
+                                        &role.name,
+                                        legacy_entity::LegacyRoleName::Selector(_)
+                                    ) && role
+                                        .end_offset()
+                                        .and_then(|end| end.checked_add(5))
+                                        .is_some_and(|next_role_offset| {
+                                            run.role_selectors.iter().any(|next| {
+                                                next.entity_id == state.entity_id
+                                                    && next.byte_offset == next_role_offset
+                                            })
+                                        })))
                                 && role.selector == state.selector
                         })
                         .count()
@@ -387,7 +412,9 @@ pub(super) fn validate_legacy_entity_runs(
                         .rfind(|identity| identity.byte_offset < descriptor.byte_offset)
                         .is_some_and(|identity| identity.entity_id == descriptor.entity_id)
                     && match &descriptor.value {
-                        CatiaLegacyTypeValue::Name { value } => valid_legacy_identifier(value),
+                        CatiaLegacyTypeValue::Name { value } => {
+                            legacy_entity::valid_identifier(value)
+                        }
                         CatiaLegacyTypeValue::Selector { value } => *value != 0,
                     }
             })

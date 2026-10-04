@@ -2730,8 +2730,17 @@ incidence activity. The point operand is either a sense-zero point entity, the
 center of a sense-zero arc or circle, or an endpoint or center locus selected
 by sense `2`, `3`, or `4`. Exactly one operand pairing must supply a bounded
 target and a point locus; zero or two pairings retain the native incidence.
-Operand order does not change these roles. A circle is not a bounded midpoint
-target.
+Operand order does not change these roles. A circle, a type-25
+section-reference line, and an axis line are not bounded midpoint targets.
+A type-35 target role does not establish a midpoint target. The target is an
+arc, or a line by its `segtab` row, its saved-section entity, or the line family
+of its other incidence roles. An endpoint-bearing native curve without line or
+arc evidence is not a midpoint target.
+A sense-zero type-35 target whose geometry remains native and whose other
+operand resolves to a point locus retains the native line-or-arc family. The
+role does not select a line or an arc. Line evidence narrows the family to
+line, and circular evidence narrows it to arc. The role narrows an
+endpoint-bearing curve family to line-or-arc.
 An unresolved centered type-47 construction line remains a native line carrier,
 but its sense-four center is a valid midpoint locus. This center role does not
 establish line coordinates or any other line geometry.

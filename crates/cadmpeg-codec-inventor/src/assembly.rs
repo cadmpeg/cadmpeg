@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed assembly occurrence and placement records.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
+use std::num::NonZeroUsize;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::OccurrenceId;
-use cadmpeg_ir::products::{
-    ExternalDocumentReference, Occurrence, OccurrenceParent, PrototypeReference,
-};
+use cadmpeg_ir::products::{Occurrence, OccurrenceParent, PrototypeReference};
 use cadmpeg_ir::transform::Transform;
 
+use crate::compact_matrix::CompactMatrix;
 use crate::native::ufrx::{ExternalReferenceRecord, UfrxOccurrenceRecord};
 use crate::native::{AssemblyOccurrenceRecord, AssemblyPlacementRecord};
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
@@ -62,8 +62,7 @@ pub(crate) struct AssemblyPlacement<'a> {
     pub(crate) attribute_reference: u32,
     pub(crate) state: u8,
     pub(crate) transform_prefix: bool,
-    pub(crate) transform_encoding: [u16; 2],
-    pub(crate) transform: [[f64; 4]; 4],
+    pub(crate) transform: CompactMatrix,
     pub(crate) branch: u8,
     pub(crate) graphics_state: u8,
     pub(crate) occurrence_id: u32,
@@ -72,16 +71,56 @@ pub(crate) struct AssemblyPlacement<'a> {
     pub(crate) suffix: View<'a>,
 }
 
-struct CompactTransform {
-    prefixed: bool,
-    encoding: [u16; 2],
-    matrix: [[f64; 4]; 4],
+/// Records one more occurrence of `cause` in a non-zero tally.
+pub(crate) fn count_unresolved<C: Ord>(
+    ctx: &DecodeContext<'_>,
+    counts: &mut BTreeMap<C, NonZeroUsize>,
+    cause: C,
+) -> Result<(), CodecError> {
+    if let Some(count) = counts.get_mut(&cause) {
+        *count = count.checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "count unresolved Inventor projection cause",
+                u64::MAX,
+                u64::MAX,
+            )
+        })?;
+        return Ok(());
+    }
+    ctx.insert_btree_map(
+        counts,
+        cause,
+        NonZeroUsize::MIN,
+        "count unresolved Inventor projection cause",
+    )?;
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum UnresolvedCause {
+    ExternalReference,
+    OccurrenceRecord,
+    DuplicateOccurrence,
+    InvalidTransform,
+    Placement,
+}
+
+impl UnresolvedCause {
+    pub(crate) fn description(self) -> &'static str {
+        match self {
+            Self::ExternalReference => "external reference is missing or ambiguous",
+            Self::OccurrenceRecord => "AmDc occurrence is missing or ambiguous",
+            Self::DuplicateOccurrence => "occurrence ID is duplicated",
+            Self::InvalidTransform => "placement transform is not affine after unit conversion",
+            Self::Placement => "AmGraphics placement is missing or ambiguous",
+        }
+    }
 }
 
 #[derive(Debug)]
 pub(crate) struct AssemblyProjection {
     pub(crate) occurrences: Vec<Occurrence>,
-    pub(crate) unresolved_placements: usize,
+    pub(crate) unresolved_placements: BTreeMap<UnresolvedCause, NonZeroUsize>,
 }
 
 /// Projects the current document's occurrence table without loading prototypes.
@@ -91,62 +130,144 @@ pub(crate) struct AssemblyProjection {
 /// assemblies remain one unresolved external prototype, so their internal trees
 /// are not invented as children of this document.
 pub(crate) fn project_occurrences(
+    ctx: &DecodeContext<'_>,
     ufrx_occurrences: &[UfrxOccurrenceRecord],
     external_references: &[ExternalReferenceRecord],
     assembly_occurrences: &[AssemblyOccurrenceRecord],
     assembly_placements: &[AssemblyPlacementRecord],
-) -> AssemblyProjection {
-    let references = unique_by(external_references, |record| record.reference_id);
-    let occurrence_records = unique_by(assembly_occurrences, |record| record.occurrence_id);
-    let placements = unique_by(assembly_placements, |record| record.occurrence_id);
+) -> Result<AssemblyProjection, CodecError> {
+    let (references, _references_storage) = ctx.unique_index(
+        external_references
+            .iter()
+            .map(|record| (record.reference_id, record)),
+        |_| Ok(4),
+        "index Inventor external references",
+    )?;
+    let (occurrence_records, _occurrence_records_storage) = ctx.unique_index(
+        assembly_occurrences
+            .iter()
+            .map(|record| (record.occurrence_id, record)),
+        |_| Ok(4),
+        "index Inventor assembly occurrences",
+    )?;
+    let (placements, _placements_storage) = ctx.unique_index(
+        assembly_placements
+            .iter()
+            .map(|record| (record.occurrence_id, record)),
+        |_| Ok(4),
+        "index Inventor assembly placements",
+    )?;
     let mut emitted_ids = HashSet::new();
     let mut occurrences = Vec::new();
-    let mut unresolved_placements = 0;
+    let mut unresolved_placements = BTreeMap::new();
 
     for source in ufrx_occurrences {
-        let Some(reference) = references.get(&source.file_reference_id) else {
-            unresolved_placements += 1;
+        let Some(reference) = references
+            .get(&source.file_reference_id)
+            .and_then(Option::as_ref)
+        else {
+            count_unresolved(
+                ctx,
+                &mut unresolved_placements,
+                UnresolvedCause::ExternalReference,
+            )?;
             continue;
         };
-        if !occurrence_records.contains_key(&source.occurrence_id)
-            || !emitted_ids.insert(source.occurrence_id)
-        {
-            unresolved_placements += 1;
+        if !occurrence_records.contains_key(&source.occurrence_id) {
+            count_unresolved(
+                ctx,
+                &mut unresolved_placements,
+                UnresolvedCause::OccurrenceRecord,
+            )?;
             continue;
         }
+        if emitted_ids.contains(&source.occurrence_id) {
+            count_unresolved(
+                ctx,
+                &mut unresolved_placements,
+                UnresolvedCause::DuplicateOccurrence,
+            )?;
+            continue;
+        }
+        ctx.insert_hash_set(
+            &mut emitted_ids,
+            source.occurrence_id,
+            "track Inventor emitted occurrence id",
+        )?;
 
         let suppressed = reference.state[0] & SUPPRESSED_REFERENCE_STATE != 0;
-        let (transform, visible) = match placements.get(&source.occurrence_id) {
+        let (transform, visible) = match placements
+            .get(&source.occurrence_id)
+            .and_then(Option::as_ref)
+        {
             Some(placement) => {
-                let mut rows = placement.transform;
-                for row in rows.iter_mut().take(3) {
-                    row[3] *= INVENTOR_LENGTH_TO_MILLIMETRES;
-                }
-                let Some(transform) = Transform::from_rows(rows) else {
-                    unresolved_placements += 1;
+                let source = placement.transform.checked_rows();
+                let mut rows = [source[0], source[1], source[2]];
+                let Some(transform) = (source[3].map(cadmpeg_ir::scalar::FiniteReal::get)
+                    == [0.0, 0.0, 0.0, 1.0])
+                .then(|| {
+                    for row in &mut rows {
+                        row[3] = cadmpeg_ir::scalar::FiniteReal::new(
+                            row[3].get() * INVENTOR_LENGTH_TO_MILLIMETRES,
+                        )?;
+                    }
+                    Some(Transform::from_finite_rows(rows))
+                })
+                .flatten() else {
+                    count_unresolved(
+                        ctx,
+                        &mut unresolved_placements,
+                        UnresolvedCause::InvalidTransform,
+                    )?;
                     continue;
                 };
                 (transform, suppressed.then_some(false))
             }
             None if suppressed => (Transform::identity(), Some(false)),
             None => {
-                unresolved_placements += 1;
+                count_unresolved(ctx, &mut unresolved_placements, UnresolvedCause::Placement)?;
                 continue;
             }
         };
 
+        ctx.charge_collection_items(1, "project Inventor occurrence")?;
+        ctx.charge_entities(1, "project Inventor occurrence")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(
+                "inventor:assembly:instance#".len()
+                    + usize::try_from(source.occurrence_id.max(1).ilog10()).map_err(|_| {
+                        CodecError::Malformed("Inventor numeric value exceeds target range".into())
+                    })?
+                    + 1,
+            ),
+            "retain projected Inventor occurrence id",
+        )?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(reference.document_copy_len()),
+            "retain projected Inventor external document",
+        )?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(source.title.as_ref().map_or(0, String::len)),
+            "retain projected Inventor occurrence title",
+        )?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(source.id.len()),
+            "retain projected Inventor occurrence native reference",
+        )?;
         occurrences.push(Occurrence {
-            id: OccurrenceId::mint(format!(
-                "inventor:assembly:instance#{}",
-                source.occurrence_id
-            ))
-            .expect("identity grammar"),
-            prototype: external_prototype(reference),
-            parent: OccurrenceParent::Root,
+            id: OccurrenceId::compose(
+                &cadmpeg_ir::identity_namespace!("inventor", "assembly", "instance"),
+                source.occurrence_id,
+            ),
+            prototype: PrototypeReference::External {
+                document: reference.document(),
+                object: None,
+            },
+            parent: OccurrenceParent::Root {},
             ordinal: source.ordinal,
             transform,
             linked_prototype: None,
-            scale: [1.0; 3],
+            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
             name: source.title.clone().filter(|title| !title.is_empty()),
             visible,
             link: None,
@@ -154,46 +275,10 @@ pub(crate) fn project_occurrences(
         });
     }
 
-    AssemblyProjection {
+    Ok(AssemblyProjection {
         occurrences,
         unresolved_placements,
-    }
-}
-
-fn unique_by<T, K>(records: &[T], key: impl Fn(&T) -> K) -> HashMap<K, &T>
-where
-    K: Eq + std::hash::Hash + Copy,
-{
-    let mut unique = HashMap::new();
-    let mut duplicates = HashSet::new();
-    for record in records {
-        let key = key(record);
-        if unique.insert(key, record).is_some() {
-            duplicates.insert(key);
-        }
-    }
-    for duplicate in duplicates {
-        unique.remove(&duplicate);
-    }
-    unique
-}
-
-fn external_prototype(reference: &ExternalReferenceRecord) -> PrototypeReference {
-    let path = (!reference.path.is_empty()).then(|| reference.path.clone());
-    let document_id = reference
-        .document_id
-        .chars()
-        .any(|character| character != '0');
-    if path.is_none() && !document_id {
-        return PrototypeReference::Unresolved;
-    }
-    PrototypeReference::External {
-        document: match path {
-            Some(path) => ExternalDocumentReference::path(path),
-            None => ExternalDocumentReference::document_id(reference.document_id.clone()),
-        },
-        object: None,
-    }
+    })
 }
 
 pub(crate) fn inventory<'a>(
@@ -216,39 +301,57 @@ pub(crate) fn inventory<'a>(
         };
         for record in &table.records {
             let result = if segment.kind == SegmentKind::AmDc && record.type_id == OCCURRENCE_TYPE {
-                parse_occurrence(ctx, record.payload).map(|mut occurrence| {
+                parse_occurrence(ctx, record.payload).and_then(|mut occurrence| {
+                    ctx.charge_collection_items(1, "admit Inventor assembly occurrence record")?;
+                    ctx.charge_retained(
+                        cadmpeg_core::decode::u64_from_index(segment.pair.token.as_str().len()),
+                        "retain Inventor assembly occurrence token",
+                    )?;
                     occurrence.segment_token = segment.pair.token.as_str().into();
                     occurrence.record_ordinal = record.ordinal;
                     occurrences.push(occurrence);
+                    Ok(())
                 })
             } else if segment.kind == SegmentKind::AmGraphics
                 && matches!(record.type_id, PLACEMENT_TYPE_CA | PLACEMENT_TYPE_B9)
             {
-                parse_placement(ctx, record.payload).map(|mut placement| {
+                parse_placement(ctx, record.payload).and_then(|mut placement| {
+                    ctx.charge_collection_items(1, "admit Inventor assembly placement record")?;
+                    ctx.charge_retained(
+                        cadmpeg_core::decode::u64_from_index(segment.pair.token.as_str().len()),
+                        "retain Inventor assembly placement token",
+                    )?;
                     placement.segment_token = segment.pair.token.as_str().into();
                     placement.record_ordinal = record.ordinal;
                     placements.push(placement);
+                    Ok(())
                 })
             } else {
                 continue;
             };
             if let Err(error) = result {
+                if matches!(error, CodecError::ResourceLimit(_)) {
+                    return Err(error);
+                }
+                ctx.charge_collection_items(1, "admit Inventor assembly issue")?;
+                ctx.charge_entities(1, "admit Inventor assembly issue")?;
+                ctx.charge_formatted_retained(
+                    format_args!("{error}"),
+                    "retain Inventor assembly issue detail",
+                )?;
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(segment.pair.token.as_str().len()),
+                    "retain Inventor assembly issue token",
+                )?;
                 issues.push(RecordIssue {
                     family: RecordIssueFamily::Assembly,
-                    segment_token: segment.pair.token.as_str().into(),
+                    segment_token: segment.pair.token.key().clone(),
                     record_ordinal: record.ordinal,
                     detail: crate::issue_detail(error)?,
                 });
             }
         }
     }
-    ctx.charge_collection_items(
-        occurrences
-            .len()
-            .saturating_add(placements.len())
-            .saturating_add(issues.len()) as u64,
-        "admit Inventor assembly records",
-    )?;
     Ok(AssemblyInventory {
         occurrences,
         placements,
@@ -288,7 +391,14 @@ fn parse_occurrence<'a>(
         "occurrence related-list marker",
     )?;
     let related_count = cursor.count32("occurrence related-list count", 65_536)?;
-    let mut related_references = Vec::with_capacity(related_count);
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(related_count),
+        "admit Inventor occurrence related references",
+    )?;
+    let mut related_references = ctx.vector_storage(
+        related_count,
+        "admit Inventor occurrence related references",
+    )?;
     if related_count != 0 {
         cursor.u32("occurrence related-list metadata")?;
         cursor.u32("occurrence related-list metadata")?;
@@ -346,7 +456,7 @@ fn parse_placement<'a>(
     let owner_reference = cursor.u32("placement owner reference")?;
     let attribute_reference = cursor.u32("placement attribute reference")?;
     let state = cursor.u8("placement state")?;
-    let compact_transform = cursor.transform()?;
+    let (transform_prefix, transform) = cursor.transform()?;
     let branch = cursor.u8("placement branch")?;
     let graphics_state = cursor.u8("placement graphics state")?;
     let occurrence_id = cursor.u32("placement occurrence id")?;
@@ -377,9 +487,8 @@ fn parse_placement<'a>(
         owner_reference,
         attribute_reference,
         state,
-        transform_prefix: compact_transform.prefixed,
-        transform_encoding: compact_transform.encoding,
-        transform: compact_transform.matrix,
+        transform_prefix,
+        transform,
         branch,
         graphics_state,
         occurrence_id,
@@ -408,41 +517,19 @@ impl<'a> Cursor<'a> {
     }
 
     fn u8(&mut self, field: &'static str) -> Result<u8, CodecError> {
-        Ok(self.source.req_u8().map_err(|error| error.during(field))?)
+        crate::reader::u8(&mut self.source, field)
     }
 
     fn u16(&mut self, field: &'static str) -> Result<u16, CodecError> {
-        Ok(self
-            .source
-            .req_u16_le()
-            .map_err(|error| error.during(field))?)
+        crate::reader::u16(&mut self.source, field)
     }
 
     fn u32(&mut self, field: &'static str) -> Result<u32, CodecError> {
-        Ok(self
-            .source
-            .req_u32_le()
-            .map_err(|error| error.during(field))?)
+        crate::reader::u32(&mut self.source, field)
     }
 
     fn i32(&mut self, field: &'static str) -> Result<i32, CodecError> {
-        Ok(self
-            .source
-            .req_i32_le()
-            .map_err(|error| error.during(field))?)
-    }
-
-    fn f64(&mut self, field: &'static str) -> Result<f64, CodecError> {
-        let value = self
-            .source
-            .req_f64_le()
-            .map_err(|error| error.during(field))?;
-        if !value.is_finite() {
-            return Err(CodecError::malformed(format_args!(
-                "Inventor {field} is not finite"
-            )));
-        }
-        Ok(value)
+        crate::reader::i32(&mut self.source, field)
     }
 
     fn count32(&mut self, field: &'static str, maximum: usize) -> Result<usize, CodecError> {
@@ -463,16 +550,16 @@ impl<'a> Cursor<'a> {
         maximum: usize,
     ) -> Result<String, CodecError> {
         let count = self.count32(field, maximum)?;
-        let len = count.checked_mul(2).ok_or_else(|| {
-            CodecError::malformed(format_args!("Inventor {field} length overflows"))
-        })?;
-        ctx.charge_retained(len as u64, "retain Inventor assembly string", None)?;
-        self.source
-            .utf16_le(count)
-            .ok_or_else(|| CodecError::malformed(format_args!("Inventor {field} is not UTF-16")))
+        crate::reader::utf16_text(
+            ctx,
+            &mut self.source,
+            count,
+            field,
+            "retain Inventor assembly string",
+        )
     }
 
-    fn transform(&mut self) -> Result<CompactTransform, CodecError> {
+    fn transform(&mut self) -> Result<(bool, CompactMatrix), CodecError> {
         let mut peek = self.source;
         let prefixed = peek.u32_le() == Some(0x0000_0203);
         if prefixed {
@@ -482,26 +569,13 @@ impl<'a> Cursor<'a> {
         }
         let set = self.u16("placement transform set mask")?;
         let zero = self.u16("placement transform zero mask")?;
-        let mut rows = [[0.0; 4]; 4];
-        for (index, value) in rows.iter_mut().flatten().enumerate() {
-            let bit = 1_u16 << index;
-            *value = if zero & bit == 0 {
-                if set & bit == 0 {
-                    self.f64("placement transform value")?
-                } else {
-                    1.0
-                }
-            } else if set & bit == 0 {
-                0.0
-            } else {
-                -1.0
-            };
-        }
-        Ok(CompactTransform {
-            prefixed,
-            encoding: [set, zero],
-            matrix: rows,
-        })
+        let matrix = CompactMatrix::try_new(set, zero, |index| {
+            let value = self.source.req_f64_le()?;
+            cadmpeg_ir::scalar::FiniteReal::new(value).ok_or_else(|| {
+                CodecError::malformed(format_args!("compact matrix[{index}] is not finite"))
+            })
+        })?;
+        Ok((prefixed, matrix))
     }
 
     fn remaining(&mut self, field: &'static str) -> Result<View<'a>, CodecError> {
@@ -520,10 +594,372 @@ impl<'a> Cursor<'a> {
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+    use crate::container::InventorContainer;
+    use crate::rse::{RecordFrameState, SegmentBulkState, SegmentKind};
+    use crate::test_support::test_fixtures::primary_envelope_fixture;
+    use crate::test_support::test_fixtures::push_u16;
+    use crate::test_support::test_fixtures::push_u32;
+    use crate::test_support::test_fixtures::push_utf16;
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension, View};
+    use cadmpeg_core::CodecError;
     use cadmpeg_ir::products::PrototypeReference;
 
-    use super::*;
+    use super::{
+        inventory, parse_occurrence, parse_placement, OCCURRENCE_TYPE, PLACEMENT_TYPE_CA,
+        SUPPRESSED_REFERENCE_STATE,
+    };
+    use crate::compact_matrix::CompactMatrix;
+    use crate::native::ufrx::{ExternalReferenceRecord, UfrxOccurrenceRecord};
+    use crate::native::{AssemblyOccurrenceRecord, AssemblyPlacementRecord};
+    use cadmpeg_core::decode::DecodeContext;
+    use cadmpeg_ir::transform::Transform;
+    use std::collections::BTreeMap;
+    use std::num::NonZeroUsize;
+
+    #[test]
+    fn assembly_utf16_text_charges_utf8_size_and_preserves_refusal() {
+        let bytes = [1, 0, 0, 0, 0, 8];
+        for retained in [2, 3] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = retained;
+            let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("test root fits input admission");
+            let mut cursor = super::Cursor::new(root);
+            let result = cursor.utf16(&ctx, "label", 256);
+            if retained == 2 {
+                assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::RetainedBytes && limit.additional == 3));
+                assert_eq!(cursor.source.position(), 4);
+            } else {
+                assert_eq!(result.expect("three retained bytes fit exact text"), "ࠀ");
+                assert_eq!(cursor.source.position(), bytes.len());
+                assert!(ctx.charge_retained(1, "after assembly text").is_err());
+            }
+        }
+    }
+
+    fn project_under_service(
+        ufrx_occurrences: &[UfrxOccurrenceRecord],
+        external_references: &[ExternalReferenceRecord],
+        assembly_occurrences: &[AssemblyOccurrenceRecord],
+        assembly_placements: &[AssemblyPlacementRecord],
+    ) -> super::AssemblyProjection {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("projection context");
+        super::project_occurrences(
+            &ctx,
+            ufrx_occurrences,
+            external_references,
+            assembly_occurrences,
+            assembly_placements,
+        )
+        .expect("projection fits service policy")
+    }
+
+    #[test]
+    fn occurrence_projection_refuses_collection_limit_before_output() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 7;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
+        let projected = super::project_occurrences(
+            &ctx,
+            &[ufrx_occurrence(4, 7, 0)],
+            &[external_reference(4, "part.ipt", [0, 0])],
+            &[assembly_occurrence(7)],
+            &[assembly_placement(7)],
+        )
+        .expect("one table for each of three indexes fits seven slots");
+        assert_eq!(projected.occurrences.len(), 1);
+
+        // Three unique indexes and the emitted-id set use four slots.
+        policy.limits.max_collection_items = 4;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
+        assert!(matches!(
+            super::project_occurrences(
+                &ctx,
+                &[ufrx_occurrence(4, 7, 0)],
+                &[external_reference(4, "part.ipt", [0, 0])],
+                &[assembly_occurrence(7)],
+                &[assembly_placement(7)],
+            ),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "project Inventor occurrence"
+        ));
+        assert_eq!(
+            project_under_service(
+                &[ufrx_occurrence(4, 7, 0)],
+                &[external_reference(4, "part.ipt", [0, 0])],
+                &[assembly_occurrence(7)],
+                &[assembly_placement(7)],
+            )
+            .occurrences
+            .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn occurrence_projection_refuses_entity_limit_before_creation() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_entities = 0;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
+        assert!(matches!(
+            super::project_occurrences(
+                &ctx,
+                &[ufrx_occurrence(4, 7, 0)],
+                &[external_reference(4, "part.ipt", [0, 0])],
+                &[assembly_occurrence(7)],
+                &[assembly_placement(7)],
+            ),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::Entities
+                    && limit.operation == "project Inventor occurrence"
+        ));
+        assert_eq!(
+            project_under_service(
+                &[ufrx_occurrence(4, 7, 0)],
+                &[external_reference(4, "part.ipt", [0, 0])],
+                &[assembly_occurrence(7)],
+                &[assembly_placement(7)],
+            )
+            .occurrences
+            .len(),
+            1
+        );
+    }
+
+    fn inventory_with_record(
+        kind: SegmentKind,
+        type_id: [u8; 16],
+        payload: &[u8],
+        policy: DecodePolicy,
+    ) -> Result<
+        (
+            usize,
+            usize,
+            Vec<crate::record_issue::RecordIssue>,
+            Option<String>,
+        ),
+        CodecError,
+    > {
+        let bytes = primary_envelope_fixture();
+        let payload = payload.to_vec();
+        let arena = DecodeArena::new();
+        let (setup_ctx, source) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+                .expect("envelope view");
+        let mut container = InventorContainer::open(&setup_ctx, source).expect("framed envelope");
+        let segment = &mut container.rse.segments[0];
+        segment.kind = kind;
+        let SegmentBulkState::Framed(bulk) = &mut segment.bulk else {
+            panic!("framed bulk fixture");
+        };
+        let RecordFrameState::Framed(table) = &mut bulk.records else {
+            panic!("framed record fixture");
+        };
+        table.records[0].type_id = type_id;
+        table.records[0].payload = View::over_retained(&payload);
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input view");
+        let result = inventory(&ctx, &container.rse)?;
+        let token = result
+            .occurrences
+            .first()
+            .map(|record| record.segment_token.clone())
+            .or_else(|| {
+                result
+                    .placements
+                    .first()
+                    .map(|record| record.segment_token.clone())
+            });
+        Ok((
+            result.occurrences.len(),
+            result.placements.len(),
+            result.issues,
+            token,
+        ))
+    }
+
+    #[test]
+    fn assembly_record_forms_refuse_collection_limit_before_push() {
+        for (kind, type_id, payload, operation) in [
+            (
+                SegmentKind::AmDc,
+                OCCURRENCE_TYPE,
+                occurrence_fixture(7, &[]),
+                "admit Inventor assembly occurrence record",
+            ),
+            (
+                SegmentKind::AmGraphics,
+                PLACEMENT_TYPE_CA,
+                placement_fixture(7, false, 0x8421, 0x7bde, &[]),
+                "admit Inventor assembly placement record",
+            ),
+        ] {
+            let admitted =
+                inventory_with_record(kind.clone(), type_id, &payload, DecodePolicy::service())
+                    .expect("assembly record is admitted");
+            assert_eq!(admitted.0 + admitted.1, 1);
+            assert!(admitted.2.is_empty());
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = 0;
+            assert!(matches!(
+                inventory_with_record(kind, type_id, &payload, policy),
+                Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::CollectionItems
+                        && limit.operation == operation
+                        && limit.used == 0
+            ));
+        }
+    }
+
+    #[test]
+    fn assembly_related_references_refuse_collection_limit_before_allocation() {
+        let payload = occurrence_fixture(7, &[8]);
+        assert_eq!(
+            inventory_with_record(
+                SegmentKind::AmDc,
+                OCCURRENCE_TYPE,
+                &payload,
+                DecodePolicy::service()
+            )
+            .expect("related reference is admitted")
+            .0,
+            1
+        );
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        assert!(matches!(
+            inventory_with_record(SegmentKind::AmDc, OCCURRENCE_TYPE, &payload, policy),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "admit Inventor occurrence related references"
+                    && limit.used == 0
+        ));
+    }
+
+    #[test]
+    fn assembly_parse_issue_refuses_collection_limit_before_push() {
+        assert_eq!(
+            inventory_with_record(
+                SegmentKind::AmDc,
+                OCCURRENCE_TYPE,
+                &[],
+                DecodePolicy::service()
+            )
+            .expect("truncated occurrence becomes an issue")
+            .2
+            .len(),
+            1
+        );
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        assert!(matches!(
+            inventory_with_record(SegmentKind::AmDc, OCCURRENCE_TYPE, &[], policy),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "admit Inventor assembly issue"
+                    && limit.used == 0
+        ));
+    }
+
+    #[test]
+    fn assembly_parse_issue_refuses_entity_limit_before_push() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_entities = 0;
+        assert!(matches!(
+            inventory_with_record(SegmentKind::AmDc, OCCURRENCE_TYPE, &[], policy),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::Entities
+                    && limit.operation == "admit Inventor assembly issue"
+        ));
+        assert_eq!(
+            inventory_with_record(
+                SegmentKind::AmDc,
+                OCCURRENCE_TYPE,
+                &[],
+                DecodePolicy::service()
+            )
+            .expect("service issue")
+            .2
+            .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn assembly_record_tokens_refuse_retained_limit_before_copy() {
+        for (kind, type_id, payload, label, operation) in [
+            (
+                SegmentKind::AmDc,
+                OCCURRENCE_TYPE,
+                occurrence_fixture(7, &[]),
+                "DCx",
+                "retain Inventor assembly occurrence token",
+            ),
+            (
+                SegmentKind::AmGraphics,
+                PLACEMENT_TYPE_CA,
+                placement_fixture(7, false, 0x8421, 0x7bde, &[]),
+                "GRx",
+                "retain Inventor assembly placement token",
+            ),
+        ] {
+            let admitted =
+                inventory_with_record(kind.clone(), type_id, &payload, DecodePolicy::service())
+                    .expect("assembly record is admitted");
+            let token_len = admitted.3.as_deref().expect("record token").len();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes =
+                cadmpeg_core::decode::u64_from_index(label.len() + token_len - 1);
+            assert!(matches!(
+                inventory_with_record(kind, type_id, &payload, policy),
+                Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::RetainedBytes
+                        && limit.operation == operation
+                        && limit.used == cadmpeg_core::decode::u64_from_index(label.len())
+                        && limit.additional == cadmpeg_core::decode::u64_from_index(token_len)
+            ));
+        }
+    }
+
+    #[test]
+    fn assembly_issue_copies_refuse_retained_limits_before_creation() {
+        let admitted = inventory_with_record(
+            SegmentKind::AmDc,
+            OCCURRENCE_TYPE,
+            &[],
+            DecodePolicy::service(),
+        )
+        .expect("truncated occurrence becomes an issue");
+        let detail_len = admitted.2[0].detail.len();
+        let token_len = admitted.2[0].segment_token.as_str().len();
+        for (limit_bytes, operation, used) in [
+            (detail_len - 1, "retain Inventor assembly issue detail", 0),
+            (
+                detail_len + token_len - 1,
+                "retain Inventor assembly issue token",
+                detail_len,
+            ),
+        ] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(limit_bytes);
+            assert!(matches!(
+                inventory_with_record(SegmentKind::AmDc, OCCURRENCE_TYPE, &[], policy),
+                Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::RetainedBytes
+                        && limit.operation == operation
+                        && limit.used == cadmpeg_core::decode::u64_from_index(used)
+            ));
+        }
+    }
 
     #[test]
     fn frames_occurrence_identity_and_variable_related_references() {
@@ -554,10 +990,10 @@ mod tests {
                     .expect("synthetic placement fits policy");
             let placement = parse_placement(&ctx, root).expect("synthetic placement parses");
             assert_eq!(placement.transform_prefix, prefixed);
-            assert_eq!(placement.transform[0][3], expected[0]);
-            assert_eq!(placement.transform[1][3], expected[1]);
-            assert_eq!(placement.transform[2][3], expected[2]);
-            assert_eq!(placement.transform[3][3], 1.0);
+            assert_eq!(placement.transform.rows()[0][3], expected[0]);
+            assert_eq!(placement.transform.rows()[1][3], expected[1]);
+            assert_eq!(placement.transform.rows()[2][3], expected[2]);
+            assert_eq!(placement.transform.rows()[3][3], 1.0);
         }
 
         let rotation = placement_fixture(9, false, 0x8412, 0x7bef, &[]);
@@ -566,8 +1002,8 @@ mod tests {
             DecodeContext::from_root_bytes(&rotation, &arena, &DecodePolicy::default())
                 .expect("synthetic rotation fits policy");
         let placement = parse_placement(&ctx, root).expect("synthetic rotation parses");
-        assert_eq!(placement.transform[0][1], -1.0);
-        assert_eq!(placement.transform[1][0], 1.0);
+        assert_eq!(placement.transform.rows()[0][1], -1.0);
+        assert_eq!(placement.transform.rows()[1][0], 1.0);
     }
 
     #[test]
@@ -576,12 +1012,15 @@ mod tests {
         let reference = external_reference(4, "components/part.ipt", [0, 0]);
         let occurrence = assembly_occurrence(7);
         let mut placement = assembly_placement(7);
-        placement.transform[0][3] = 1.25;
-        placement.transform[1][3] = -2.0;
+        let mut rows = placement.transform.rows();
+        rows[0][3] = 1.25;
+        rows[1][3] = -2.0;
+        placement.transform =
+            CompactMatrix::try_from_rows(0, 0, rows).expect("finite explicit matrix fixture");
 
-        let projection = project_occurrences(&[ufrx], &[reference], &[occurrence], &[placement]);
+        let projection = project_under_service(&[ufrx], &[reference], &[occurrence], &[placement]);
 
-        assert_eq!(projection.unresolved_placements, 0);
+        assert!(projection.unresolved_placements.is_empty());
         let [projected] = projection.occurrences.as_slice() else {
             panic!("one occurrence must be projected");
         };
@@ -591,9 +1030,25 @@ mod tests {
         let PrototypeReference::External { document, object } = &projected.prototype else {
             panic!("the persisted file reference must remain external");
         };
-        assert_eq!(document.as_path(), Some("components/part.ipt"));
-        assert_eq!(document.as_document_id(), None);
-        assert!(!document.is_missing());
+        assert_eq!(
+            (match &document {
+                cadmpeg_ir::products::ExternalDocument::Path { path } => Some(path.as_str()),
+                _ => None,
+            }),
+            Some("components/part.ipt")
+        );
+        assert_eq!(
+            (match &document {
+                cadmpeg_ir::products::ExternalDocument::DocumentId { document_id } =>
+                    Some(document_id.as_str()),
+                _ => None,
+            }),
+            None
+        );
+        assert!(!matches!(
+            document,
+            cadmpeg_ir::products::ExternalDocument::Missing {}
+        ));
         assert_eq!(object, &None);
     }
 
@@ -603,13 +1058,19 @@ mod tests {
         let reference = external_reference(4, "components/part.ipt", [0, 0]);
         let occurrences = [assembly_occurrence(7), assembly_occurrence(8)];
         let mut first = assembly_placement(7);
-        first.transform[0][3] = 1.0;
+        let mut rows = first.transform.rows();
+        rows[0][3] = 1.0;
+        first.transform =
+            CompactMatrix::try_from_rows(0, 0, rows).expect("finite explicit matrix fixture");
         let mut second = assembly_placement(8);
-        second.transform[0][3] = 2.0;
+        let mut rows = second.transform.rows();
+        rows[0][3] = 2.0;
+        second.transform =
+            CompactMatrix::try_from_rows(0, 0, rows).expect("finite explicit matrix fixture");
 
-        let projection = project_occurrences(&ufrx, &[reference], &occurrences, &[first, second]);
+        let projection = project_under_service(&ufrx, &[reference], &occurrences, &[first, second]);
 
-        assert_eq!(projection.unresolved_placements, 0);
+        assert!(projection.unresolved_placements.is_empty());
         assert_eq!(projection.occurrences.len(), 2);
         assert_ne!(projection.occurrences[0].id, projection.occurrences[1].id);
         assert_ne!(
@@ -620,9 +1081,13 @@ mod tests {
 
     #[test]
     fn path_identity_takes_precedence_on_external_prototypes() {
-        let mut reference = external_reference(4, "components/part.ipt", [0, 0]);
-        reference.document_id = "00112233445566778899aabbccddeeff".into();
-        let projection = project_occurrences(
+        let reference = external_reference_with_document_id(
+            4,
+            "components/part.ipt",
+            [0, 0],
+            "00112233445566778899aabbccddeeff",
+        );
+        let projection = project_under_service(
             &[ufrx_occurrence(4, 7, 0)],
             &[reference],
             &[assembly_occurrence(7)],
@@ -635,21 +1100,38 @@ mod tests {
         let PrototypeReference::External { document, .. } = &projected.prototype else {
             panic!("the persisted document identity must remain external");
         };
-        assert_eq!(document.as_path(), Some("components/part.ipt"));
-        assert_eq!(document.as_document_id(), None);
+        assert_eq!(
+            (match &document {
+                cadmpeg_ir::products::ExternalDocument::Path { path } => Some(path.as_str()),
+                _ => None,
+            }),
+            Some("components/part.ipt")
+        );
+        assert_eq!(
+            (match &document {
+                cadmpeg_ir::products::ExternalDocument::DocumentId { document_id } =>
+                    Some(document_id.as_str()),
+                _ => None,
+            }),
+            None
+        );
     }
 
     #[test]
     fn projects_suppressed_occurrence_without_graphics_placement() {
         let ufrx = ufrx_occurrence(4, 7, 0);
-        let mut reference = external_reference(4, "", [SUPPRESSED_REFERENCE_STATE, 0]);
-        reference.document_id = "00112233445566778899aabbccddeeff".into();
-        let expected_document_id = reference.document_id.clone();
+        let expected_document_id = "00112233445566778899aabbccddeeff".to_owned();
+        let reference = external_reference_with_document_id(
+            4,
+            "",
+            [SUPPRESSED_REFERENCE_STATE, 0],
+            &expected_document_id,
+        );
         let occurrence = assembly_occurrence(7);
 
-        let projection = project_occurrences(&[ufrx], &[reference], &[occurrence], &[]);
+        let projection = project_under_service(&[ufrx], &[reference], &[occurrence], &[]);
 
-        assert_eq!(projection.unresolved_placements, 0);
+        assert!(projection.unresolved_placements.is_empty());
         let [projected] = projection.occurrences.as_slice() else {
             panic!("one suppressed occurrence must be projected");
         };
@@ -658,16 +1140,26 @@ mod tests {
         let PrototypeReference::External { document, .. } = &projected.prototype else {
             panic!("the persisted document identity must remain external");
         };
-        assert_eq!(document.as_path(), None);
         assert_eq!(
-            document.as_document_id(),
+            (match &document {
+                cadmpeg_ir::products::ExternalDocument::Path { path } => Some(path.as_str()),
+                _ => None,
+            }),
+            None
+        );
+        assert_eq!(
+            (match &document {
+                cadmpeg_ir::products::ExternalDocument::DocumentId { document_id } =>
+                    Some(document_id.as_str()),
+                _ => None,
+            }),
             Some(expected_document_id.as_str())
         );
     }
 
     #[test]
     fn reports_active_occurrence_without_placement() {
-        let projection = project_occurrences(
+        let projection = project_under_service(
             &[ufrx_occurrence(4, 7, 0)],
             &[external_reference(4, "part.ipt", [0, 0])],
             &[assembly_occurrence(7)],
@@ -675,7 +1167,10 @@ mod tests {
         );
 
         assert!(projection.occurrences.is_empty());
-        assert_eq!(projection.unresolved_placements, 1);
+        assert_eq!(
+            projection.unresolved_placements,
+            BTreeMap::from([(super::UnresolvedCause::Placement, NonZeroUsize::MIN)])
+        );
     }
 
     fn ufrx_occurrence(
@@ -683,7 +1178,7 @@ mod tests {
         occurrence_id: u32,
         ordinal: u32,
     ) -> UfrxOccurrenceRecord {
-        UfrxOccurrenceRecord {
+        UfrxOccurrenceRecord::try_from(crate::native::ufrx::UfrxOccurrenceRecordWire {
             id: format!("inventor:ufrx:occurrence#{ordinal}"),
             ordinal,
             end_string_flag: 0,
@@ -694,7 +1189,8 @@ mod tests {
             header_padding_words: 0,
             record_len: 1,
             record_sha256: "0".repeat(64),
-        }
+        })
+        .expect("valid native record fixture")
     }
 
     fn external_reference(
@@ -702,7 +1198,16 @@ mod tests {
         path: &str,
         state: [u16; 2],
     ) -> ExternalReferenceRecord {
-        ExternalReferenceRecord {
+        external_reference_with_document_id(reference_id, path, state, &"0".repeat(32))
+    }
+
+    fn external_reference_with_document_id(
+        reference_id: u32,
+        path: &str,
+        state: [u16; 2],
+        document_id: &str,
+    ) -> ExternalReferenceRecord {
+        ExternalReferenceRecord::try_from(crate::native::ufrx::ExternalReferenceRecordWire {
             id: format!("inventor:ufrx:external-reference#{reference_id}"),
             ordinal: reference_id,
             path: path.into(),
@@ -711,13 +1216,14 @@ mod tests {
             display_name: String::new(),
             state_groups: Vec::new(),
             state,
-            document_id: "0".repeat(32),
+            document_id: Some(document_id.into()),
             database_id: "0".repeat(32),
             reference_id,
             occurrence_count: 1,
             version: 0,
             flags: 0,
-        }
+        })
+        .expect("valid reference fixture")
     }
 
     fn assembly_occurrence(occurrence_id: u32) -> AssemblyOccurrenceRecord {
@@ -740,7 +1246,7 @@ mod tests {
     }
 
     fn assembly_placement(occurrence_id: u32) -> AssemblyPlacementRecord {
-        AssemblyPlacementRecord {
+        AssemblyPlacementRecord::try_from(crate::native::AssemblyPlacementRecordWire {
             id: format!("inventor:assembly:placement#{occurrence_id}"),
             segment_token: "synthetic".into(),
             record_ordinal: occurrence_id,
@@ -749,16 +1255,17 @@ mod tests {
             attribute_reference: 0,
             state: 0,
             transform_prefix: false,
-            transform_encoding: [0, 0],
-            transform: Transform::identity().rows(),
+            transform: CompactMatrix::try_from_rows(0, 0, Transform::identity().rows())
+                .expect("finite explicit matrix fixture"),
             branch: 0,
             graphics_state: 0,
             occurrence_id,
             graphics_index: 0,
             object_reference: 0,
-            suffix_len: 0,
+            suffix_len: 48,
             suffix_sha256: "0".repeat(64),
-        }
+        })
+        .expect("valid placement fixture")
     }
 
     fn occurrence_fixture(occurrence_id: u32, related: &[u32]) -> Vec<u8> {
@@ -775,7 +1282,10 @@ mod tests {
         push_u32(&mut bytes, 0);
         push_u32(&mut bytes, 5);
         push_u32(&mut bytes, 0x3000_0002);
-        push_u32(&mut bytes, related.len() as u32);
+        push_u32(
+            &mut bytes,
+            u32::try_from(related.len()).expect("fixture value fits u32"),
+        );
         if !related.is_empty() {
             push_u32(&mut bytes, 1);
             push_u32(&mut bytes, 0);
@@ -822,21 +1332,5 @@ mod tests {
         push_u32(&mut bytes, occurrence_id);
         bytes.extend_from_slice(&[0; 48]);
         bytes
-    }
-
-    fn push_utf16(bytes: &mut Vec<u8>, value: &str) {
-        let units = value.encode_utf16().collect::<Vec<_>>();
-        push_u32(bytes, units.len() as u32);
-        for unit in units {
-            push_u16(bytes, unit);
-        }
-    }
-
-    fn push_u16(bytes: &mut Vec<u8>, value: u16) {
-        bytes.extend_from_slice(&value.to_le_bytes());
-    }
-
-    fn push_u32(bytes: &mut Vec<u8>, value: u32) {
-        bytes.extend_from_slice(&value.to_le_bytes());
     }
 }

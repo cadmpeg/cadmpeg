@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Statically declared decode-coverage measures.
 
-use cadmpeg_ir::CoverageKey;
+use cadmpeg_ir::report::decode::CoverageKey;
 
 pub(crate) const AMBIGUOUS_FORMULA_PARAMETER_DEPENDENCY_COUNT: CoverageKey =
     CoverageKey::new("ambiguous_formula_parameter_dependency_count");
@@ -903,7 +903,7 @@ pub(crate) const TYPED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_03_COUNT: Coverage
     CoverageKey::new("typed_object_stream_loop_framing_controls_05_03_count");
 
 #[cfg(test)]
-pub(crate) const ALL: &[CoverageKey] = &[
+const ALL: &[CoverageKey] = &[
     RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_03_03_COUNT,
     RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_03_05_COUNT,
     RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_03_COUNT,
@@ -1359,7 +1359,7 @@ mod tests {
     fn coverage_keys_are_unique() {
         let unique = ALL
             .iter()
-            .map(cadmpeg_ir::CoverageKey::as_str)
+            .map(cadmpeg_ir::report::decode::CoverageKey::as_str)
             .collect::<BTreeSet<_>>();
         assert_eq!(unique.len(), ALL.len());
     }

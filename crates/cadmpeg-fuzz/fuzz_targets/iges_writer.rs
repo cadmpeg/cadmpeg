@@ -6,10 +6,10 @@
 use std::io::Cursor;
 
 use cadmpeg_codec_iges::{IgesCodec, IgesVersion};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
 use cadmpeg_ir::ids::UnknownId;
-use cadmpeg_ir::report::WritePath;
+use cadmpeg_ir::report::export::WritePath;
 use cadmpeg_ir::{CadIr, SourceFidelity, UnknownRecord};
 use libfuzzer_sys::fuzz_target;
 
@@ -36,8 +36,15 @@ fuzz_target!(|data: &[u8]| {
     let encoder = IgesCodec;
 
     if control & 0x80 != 0 {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let Ok((ctx, _)) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+        else {
+            return;
+        };
         let mut source_fidelity = SourceFidelity::default();
-        source_fidelity
+        if source_fidelity
             .attach_native_unknown_records(
                 &mut ir,
                 "iges",
@@ -46,9 +53,16 @@ fuzz_target!(|data: &[u8]| {
                     0,
                     vec![control],
                     Vec::new(),
-                )],
+                )]
+                .into(),
+                &ctx,
             )
-            .expect("fuzz retained record converts to native identity");
+            .is_err()
+        {
+            // Arbitrary native input can have an unreadable unknown arena or
+            // already own the fixture identity. Neither reaches this export probe.
+            return;
+        }
         assert!(encoder
             .plan(
                 EncodeInput::new(&ir, Some(&source_fidelity)),
@@ -81,7 +95,11 @@ fuzz_target!(|data: &[u8]| {
     let decoded = codec
         .decode(&mut decode, &DecodeOptions::default())
         .expect("writer output must decode");
-    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).is_ok());
+    assert!(
+        cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
     let (mut decoded_ir, _decode_report, source_fidelity) = decoded.into_parts();
 
     if control & 0x40 != 0 {
@@ -89,21 +107,28 @@ fuzz_target!(|data: &[u8]| {
             .source
             .as_mut()
             .expect("IGES decode supplies source metadata");
-        source
-            .attributes
-            .insert("iges_fuzz_edit".into(), "edited".into());
+        source.attributes.insert(
+            cadmpeg_core::nonblank_literal!("iges_fuzz_edit"),
+            "edited".into(),
+        );
     }
 
     let replay = encoder
-            .plan(
-                EncodeInput::new(&decoded_ir, Some(&source_fidelity)),
-                TargetRequest::Explicit(version.descriptor().id.as_str()),
-            )
+        .plan(
+            EncodeInput::new(&decoded_ir, Some(&source_fidelity)),
+            TargetRequest::Explicit(version.descriptor().id.as_str()),
+        )
         .expect("writer output must plan after the optional source edit");
     if control & 0x40 == 0 {
-        assert_eq!(replay.report().write_path(), WritePath::VerbatimReplay);
+        assert!(matches!(
+            replay.report().write_path(),
+            WritePath::VerbatimReplay { .. }
+        ));
     } else {
-        assert_ne!(replay.report().write_path(), WritePath::VerbatimReplay);
+        assert!(!matches!(
+            replay.report().write_path(),
+            WritePath::VerbatimReplay { .. }
+        ));
     }
     let mut replayed = Vec::new();
     replay
@@ -117,7 +142,9 @@ fuzz_target!(|data: &[u8]| {
             .decode(&mut edited_decode, &DecodeOptions::default())
             .expect("edited writer output must decode");
         assert!(
-            cadmpeg_ir::validate_neutral(edited.ir(), edited.report().losses.clone()).is_ok()
+            cadmpeg_ir::validate_neutral(edited.ir(), edited.report().losses.clone())
+                .expect("resource allocation did not fail")
+                .is_ok()
         );
     }
 });

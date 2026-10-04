@@ -6,29 +6,116 @@ use super::{
     Q155,
 };
 
+#[derive(Serialize)]
+struct FixedPairRef<'a, T: Serialize> {
+    id: &'a str,
+    operation_label: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    datum_csys_payload: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    construction_payload: Option<&'a str>,
+    ordinal: u32,
+    #[serde(flatten)]
+    values: T,
+    discriminator: &'a [u8],
+    payload_offset: u64,
+    value_payload_offsets: [u64; 2],
+    source_offset: u64,
+    value_source_offsets: [u64; 2],
+}
+
+#[derive(Serialize)]
+struct FixedValues {
+    values: [f64; 2],
+    raw_values: [[u8; 7]; 2],
+}
+
+impl Serialize for FeatureDatumCsysPayloadFixedPair {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        FixedPairRef {
+            id: &self.id,
+            operation_label: &self.operation_label,
+            datum_csys_payload: Some(&self.datum_csys_payload),
+            construction_payload: None,
+            ordinal: self.ordinal,
+            values: FixedValues {
+                values: self.values.map(Q155::value),
+                raw_values: self.values.map(Q155::raw),
+            },
+            discriminator: self.position.discriminator(),
+            payload_offset: self.position.offset(),
+            value_payload_offsets: self.position.value_offsets(),
+            source_offset: self.source_offset,
+            value_source_offsets: self.value_source_offsets,
+        }
+        .serialize(serializer)
+    }
+}
+
+impl Serialize for FeatureSketchPayloadFixedPair {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        FixedPairRef {
+            id: &self.id,
+            operation_label: &self.operation_label,
+            datum_csys_payload: None,
+            construction_payload: Some(&self.construction_payload),
+            ordinal: self.ordinal,
+            values: FixedValues {
+                values: self.values.map(SketchScaledAtom::value),
+                raw_values: self.values.map(SketchScaledAtom::raw),
+            },
+            discriminator: self.position.discriminator(),
+            payload_offset: self.position.offset(),
+            value_payload_offsets: self.position.value_offsets(),
+            source_offset: self.source_offset,
+            value_source_offsets: self.value_source_offsets,
+        }
+        .serialize(serializer)
+    }
+}
+
+impl Serialize for FeatureSketchPayloadMixedPair {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        FixedPairRef {
+            id: &self.id,
+            operation_label: &self.operation_label,
+            datum_csys_payload: None,
+            construction_payload: Some(&self.construction_payload),
+            ordinal: self.ordinal,
+            values: &self.scalars,
+            discriminator: self.position.discriminator(),
+            payload_offset: self.position.offset(),
+            value_payload_offsets: self.position.value_offsets(),
+            source_offset: self.source_offset,
+            value_source_offsets: self.value_source_offsets,
+        }
+        .serialize(serializer)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(super) struct FeatureDatumCsysPayloadFixedPairWire {
     /// Globally unique fixed-pair identity.
-    pub id: String,
+    id: String,
     /// Owning `DATUM_CSYS` operation label.
-    pub operation_label: String,
+    operation_label: String,
     /// Reconstructed payload carrying the frame.
-    pub datum_csys_payload: String,
+    datum_csys_payload: String,
     /// Zero-based frame order within the payload.
-    pub ordinal: u32,
+    ordinal: u32,
     /// Ordered dimensionless Q1.55 values.
     #[serde(flatten, with = "crate::om::fixed::pair_wire")]
-    pub values: [Q155; 2],
+    values: [Q155; 2],
     /// Exact discriminator selecting the pair branch.
-    pub discriminator: Vec<u8>,
+    discriminator: Vec<u8>,
     /// Payload-relative offset of the discriminator.
-    pub payload_offset: u64,
+    payload_offset: u64,
     /// Payload-relative offsets of the two `30` atom markers.
-    pub value_payload_offsets: [u64; 2],
+    value_payload_offsets: [u64; 2],
     /// Absolute source offset of the discriminator.
-    pub source_offset: u64,
+    source_offset: u64,
     /// Absolute source offsets of the two `30` atom markers.
-    pub value_source_offsets: [u64; 2],
+    value_source_offsets: [u64; 2],
 }
 
 impl TryFrom<FeatureDatumCsysPayloadFixedPairWire> for FeatureDatumCsysPayloadFixedPair {
@@ -50,6 +137,7 @@ impl TryFrom<FeatureDatumCsysPayloadFixedPairWire> for FeatureDatumCsysPayloadFi
         })
     }
 }
+#[cfg(test)]
 impl From<FeatureDatumCsysPayloadFixedPair> for FeatureDatumCsysPayloadFixedPairWire {
     fn from(value: FeatureDatumCsysPayloadFixedPair) -> Self {
         Self {
@@ -70,26 +158,26 @@ impl From<FeatureDatumCsysPayloadFixedPair> for FeatureDatumCsysPayloadFixedPair
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(super) struct FeatureSketchPayloadFixedPairWire {
     /// Globally unique fixed-pair identity.
-    pub id: String,
+    id: String,
     /// Owning `SKETCH` operation label.
-    pub operation_label: String,
+    operation_label: String,
     /// Reconstructed sketch payload carrying the frame.
-    pub construction_payload: String,
+    construction_payload: String,
     /// Zero-based frame order within the payload.
-    pub ordinal: u32,
+    ordinal: u32,
     /// Ordered values reconstructed from the `30` shifted-binary64 atoms and scaled by `1/4`.
     #[serde(flatten, with = "crate::om::sketch_scalar::pair_wire")]
-    pub values: [SketchScaledAtom; 2],
+    values: [SketchScaledAtom; 2],
     /// Exact discriminator and branch prefix selecting the pair layout.
-    pub discriminator: Vec<u8>,
+    discriminator: Vec<u8>,
     /// Payload-relative offset of the discriminator.
-    pub payload_offset: u64,
+    payload_offset: u64,
     /// Payload-relative offsets of the two atom markers.
-    pub value_payload_offsets: [u64; 2],
+    value_payload_offsets: [u64; 2],
     /// Absolute source offset of the discriminator.
-    pub source_offset: u64,
+    source_offset: u64,
     /// Absolute source offsets of the two atom markers.
-    pub value_source_offsets: [u64; 2],
+    value_source_offsets: [u64; 2],
 }
 
 impl TryFrom<FeatureSketchPayloadFixedPairWire> for FeatureSketchPayloadFixedPair {
@@ -111,6 +199,7 @@ impl TryFrom<FeatureSketchPayloadFixedPairWire> for FeatureSketchPayloadFixedPai
         })
     }
 }
+#[cfg(test)]
 impl From<FeatureSketchPayloadFixedPair> for FeatureSketchPayloadFixedPairWire {
     fn from(value: FeatureSketchPayloadFixedPair) -> Self {
         Self {
@@ -131,26 +220,26 @@ impl From<FeatureSketchPayloadFixedPair> for FeatureSketchPayloadFixedPairWire {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(super) struct FeatureSketchPayloadMixedPairWire {
     /// Globally unique mixed-pair identity.
-    pub id: String,
+    id: String,
     /// Owning `SKETCH` operation label.
-    pub operation_label: String,
+    operation_label: String,
     /// Reconstructed sketch payload carrying the frame.
-    pub construction_payload: String,
+    construction_payload: String,
     /// Zero-based frame order within the payload.
-    pub ordinal: u32,
+    ordinal: u32,
     /// Exact scaled binary64 and binary32 atoms.
     #[serde(flatten)]
-    pub scalars: SketchMixedScalars,
+    scalars: SketchMixedScalars,
     /// Exact discriminator selecting the mixed pair layout.
-    pub discriminator: Vec<u8>,
+    discriminator: Vec<u8>,
     /// Payload-relative offset of the discriminator.
-    pub payload_offset: u64,
+    payload_offset: u64,
     /// Payload-relative offsets of the two atom markers.
-    pub value_payload_offsets: [u64; 2],
+    value_payload_offsets: [u64; 2],
     /// Absolute source offset of the discriminator.
-    pub source_offset: u64,
+    source_offset: u64,
     /// Absolute source offsets of the two atom markers.
-    pub value_source_offsets: [u64; 2],
+    value_source_offsets: [u64; 2],
 }
 
 impl TryFrom<FeatureSketchPayloadMixedPairWire> for FeatureSketchPayloadMixedPair {
@@ -172,6 +261,7 @@ impl TryFrom<FeatureSketchPayloadMixedPairWire> for FeatureSketchPayloadMixedPai
         })
     }
 }
+#[cfg(test)]
 impl From<FeatureSketchPayloadMixedPair> for FeatureSketchPayloadMixedPairWire {
     fn from(value: FeatureSketchPayloadMixedPair) -> Self {
         Self {
@@ -191,8 +281,84 @@ impl From<FeatureSketchPayloadMixedPair> for FeatureSketchPayloadMixedPairWire {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::FeatureSketchPayloadFixedPair;
+    use super::super::PairPosition;
+    use super::super::SketchScaledAtom;
+    use super::super::{FeatureDatumCsysPayloadFixedPair, FeatureSketchPayloadMixedPair};
+    use super::{
+        FeatureDatumCsysPayloadFixedPairWire, FeatureSketchPayloadFixedPairWire,
+        FeatureSketchPayloadMixedPairWire,
+    };
     use crate::om::scalar_pair::SketchPairForm;
+
+    #[test]
+    fn datum_fixed_pair_borrowed_wire_matches_owned_bytes_and_retained_limit() {
+        let scalar = crate::om::fixed::Q155::from_wire(0.0, [0; 7]).unwrap();
+        let pair = FeatureDatumCsysPayloadFixedPair {
+            id: "nx:feature:datum-pair#0".into(),
+            operation_label: "operation".into(),
+            datum_csys_payload: "payload".into(),
+            ordinal: 0,
+            values: [scalar; 2],
+            position: PairPosition::new(crate::om::scalar_pair::DatumPairForm::Initial, 20)
+                .unwrap(),
+            source_offset: 1020,
+            value_source_offsets: [1035, 1044],
+        };
+        assert_eq!(
+            serde_json::to_vec(&pair).unwrap(),
+            serde_json::to_vec(&FeatureDatumCsysPayloadFixedPairWire::from(pair.clone())).unwrap()
+        );
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &pair,
+            serde_json::to_value(&pair).unwrap(),
+        );
+    }
+
+    #[test]
+    fn sketch_fixed_pair_borrowed_wire_matches_owned_bytes_and_retained_limit() {
+        let pair = FeatureSketchPayloadFixedPair {
+            id: "nx:feature:sketch-fixed-pair#0".into(),
+            operation_label: "operation".into(),
+            construction_payload: "payload".into(),
+            ordinal: 0,
+            values: [SketchScaledAtom::from_raw([0; 7]); 2],
+            position: PairPosition::new(SketchPairForm::Legacy, 20).unwrap(),
+            source_offset: 1020,
+            value_source_offsets: [1028, 1037],
+        };
+        assert_eq!(
+            serde_json::to_vec(&pair).unwrap(),
+            serde_json::to_vec(&FeatureSketchPayloadFixedPairWire::from(pair.clone())).unwrap()
+        );
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &pair,
+            serde_json::to_value(&pair).unwrap(),
+        );
+    }
+
+    #[test]
+    fn sketch_mixed_pair_borrowed_wire_matches_owned_bytes_and_retained_limit() {
+        let scalars = serde_json::from_str(r#"{"fixed_value":0.5,"binary32_value":0.5,"fixed_raw_value":[0,0,0,0,0,0,0],"binary32_raw_value":[79,0,0,0]}"#).unwrap();
+        let pair = FeatureSketchPayloadMixedPair {
+            id: "nx:feature:sketch-mixed-pair#0".into(),
+            operation_label: "operation".into(),
+            construction_payload: "payload".into(),
+            ordinal: 0,
+            scalars,
+            position: PairPosition::new(crate::om::scalar_pair::MixedPairForm, 20).unwrap(),
+            source_offset: 1020,
+            value_source_offsets: [1028, 1037],
+        };
+        assert_eq!(
+            serde_json::to_vec(&pair).unwrap(),
+            serde_json::to_vec(&FeatureSketchPayloadMixedPairWire::from(pair.clone())).unwrap()
+        );
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &pair,
+            serde_json::to_value(&pair).unwrap(),
+        );
+    }
 
     #[test]
     fn fixed_pair_wire_rejects_unknown_framing_and_inconsistent_offsets() {

@@ -1,7 +1,13 @@
-use super::super::*;
-use super::*;
-use crate::resolved_features::curves::sketch_plane_frames;
-use std::collections::HashSet;
+use super::super::{
+    classed_offset_plane_sources, legacy_offset_plane_face_alias, offset_plane_reference_source,
+    select_reference_plane_frame_source, structured_offset_plane_sources,
+};
+use crate::records::{Feature, FeatureSource};
+use crate::resolved_features::curves::{sketch_plane_frames, SketchPlaneUAxisSource};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation, PrincipalPlane};
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::scalar::Length;
+use std::collections::{BTreeMap, HashSet};
 
 #[test]
 fn legacy_offset_plane_face_alias_requires_the_complete_nested_record() {
@@ -48,9 +54,12 @@ fn structured_offset_plane_source_requires_repeated_identities_and_terminator() 
     payload[116..120].copy_from_slice(&2600u32.to_le_bytes());
     payload[132..140].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff]);
 
-    assert_eq!(structured_offset_plane_sources(&payload), [3]);
+    assert_eq!(
+        structured_offset_plane_sources(&payload).collect::<Vec<_>>(),
+        [3]
+    );
     payload[80] ^= 1;
-    assert!(structured_offset_plane_sources(&payload).is_empty());
+    assert!(structured_offset_plane_sources(&payload).next().is_none());
 }
 
 #[test]
@@ -58,9 +67,12 @@ fn classed_offset_plane_source_requires_exact_length_delimited_type() {
     let mut payload = 4u32.to_le_bytes().to_vec();
     payload.extend(b"\xff\xff\x01\x00\x1b\x00moFromSktEnt3IntSurfIdRep_c\x00\x00");
 
-    assert_eq!(classed_offset_plane_sources(&payload), [4]);
+    assert_eq!(
+        classed_offset_plane_sources(&payload).collect::<Vec<_>>(),
+        [4]
+    );
     payload[8] = 0;
-    assert!(classed_offset_plane_sources(&payload).is_empty());
+    assert!(classed_offset_plane_sources(&payload).next().is_none());
 }
 
 #[test]
@@ -137,7 +149,7 @@ fn frame_only_offset_plane_reference_requires_one_unique_source() {
     );
     assert_eq!(
         select_reference_plane_frame_source(["same", "same"].into_iter()),
-        Some("same".into())
+        Some("same")
     );
     assert_eq!(
         select_reference_plane_frame_source(["first", "second"].into_iter()),
@@ -153,7 +165,7 @@ fn frame_only_offset_plane_reference_does_not_use_feature_order() {
     );
     assert_eq!(
         select_reference_plane_frame_source(["source", "source"].into_iter()),
-        Some("source".into())
+        Some("source")
     );
     assert_eq!(
         select_reference_plane_frame_source(["first", "second"].into_iter()),
@@ -170,9 +182,9 @@ fn offset_plane_frame_translates_its_reference_frame() {
         parent: "history".into(),
         xml_tag: "Feature".into(),
         tree_parent: None,
-        source_id: Some(source.into()),
+        source_id: Some(FeatureSource::try_from(source).expect("test feature source id")),
         ordinal: source.parse().expect("required invariant"),
-        name: id.into(),
+        name: id.to_string(),
         kind: String::new(),
         input_class: None,
         suppressed: false,
@@ -187,32 +199,39 @@ fn offset_plane_frame_translates_its_reference_frame() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+            definition,
+            cadmpeg_ir::features::DistinctMembers::try_from(
+                Vec::new(),
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .unwrap(),
+        ),
         native_ref: Some(native_ref.into()),
     };
     let features = vec![
         neutral(
-            "plane",
+            "synthetic:test:id#plane",
             "plane-native",
-            FeatureDefinition::DatumPrincipalPlane {
+            FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane {
                 plane: PrincipalPlane::Top,
-            },
+            }),
         ),
         neutral(
-            "offset",
+            "synthetic:test:id#offset",
             "offset-native",
-            FeatureDefinition::DatumOffsetPlane {
-                reference: Some(cadmpeg_ir::features::DatumPlaneReference::Feature(
-                    FeatureId::mint("plane").expect("identity grammar"),
-                )),
-                distance: Length(3.0),
-            },
+            FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+                reference: Some(cadmpeg_ir::features::DatumPlaneReference::Feature {
+                    feature: FeatureId::mint("synthetic:test:id#plane").expect("identity grammar"),
+                }),
+                distance: Length::new(3.0).unwrap(),
+            }),
         ),
     ];
     let history = crate::records::FeatureHistory {
@@ -224,8 +243,17 @@ fn offset_plane_frame_translates_its_reference_frame() {
         features: vec![native("plane-native", "3"), native("offset-native", "549")],
     };
 
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     assert_eq!(
-        sketch_plane_frames(&features, &[history]).get(&549),
+        sketch_plane_frames(&ctx, &features, &[history])
+            .unwrap()
+            .get(&549),
         Some(&crate::resolved_features::curves::SketchPlaneFrame {
             origin: Point3::new(0.0, 0.0, 3.0),
             normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),

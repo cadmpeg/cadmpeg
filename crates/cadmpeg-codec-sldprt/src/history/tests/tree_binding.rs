@@ -2,14 +2,20 @@
 //! Feature-tree typing, class-token, and name-binding decode tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
-use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
+use crate::records::FeatureSource;
+use crate::test_support::container::make_block;
+use crate::test_support::container::sldprt_with_body;
+use crate::test_support::history::resolved_feature_classes_with_ids;
+use crate::test_support::history::sldprt_with_body_and_history;
+use crate::test_support::native::sldprt_native;
+use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
 
 #[test]
@@ -24,7 +30,10 @@ fn decode_extracts_parametric_history() {
     assert_eq!(history.part_name.as_deref(), Some("Bracket"));
     assert_eq!(history.configurations[0].material.as_deref(), Some("Steel"));
     assert_eq!(result.ir().model.configurations.len(), 1);
-    assert_eq!(result.ir().model.configurations[0].name, "Default");
+    assert_eq!(
+        result.ir().model.configurations[0].name.as_deref(),
+        Some("Default")
+    );
     assert_eq!(
         result.ir().model.configurations[0].material.as_deref(),
         Some("Steel")
@@ -37,7 +46,10 @@ fn decode_extracts_parametric_history() {
     assert_eq!(history.features[0].xml_tag, "Extrusion");
     assert_eq!(history.features[0].parameters["Depth"], "12.5mm");
     assert_eq!(history.features[0].properties["Scope"], "Body1");
-    assert_eq!(history.features[1].parent_source_id(), Some("7"));
+    assert_eq!(
+        history.features[1].parent_source_id(),
+        FeatureSource::from_value(7)
+    );
     assert_eq!(history.features[1].xml_tag, "EquationDrivenCurve");
     assert_eq!(result.ir().model.features.len(), 2);
     let neutral = &result.ir().model.features[0];
@@ -47,15 +59,15 @@ fn decode_extracts_parametric_history() {
         Some(history.features[0].id.as_str())
     );
     assert!(matches!(
-        &neutral.definition,
-        cadmpeg_ir::features::FeatureDefinition::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Unresolved(profile),
-            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
-            start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
+        neutral.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Extrude {
+            profile: cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Unresolved(profile)),
+            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
+            start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
                     termination: cadmpeg_ir::features::LinearTermination::Blind {
-                        length: cadmpeg_ir::features::Length(12.5),
+                        length: actual_length,
                     },
                     draft: None,
                     ..
@@ -63,7 +75,7 @@ fn decode_extracts_parametric_history() {
             },
             op: cadmpeg_ir::features::BooleanOp::Join,
             ..
-        } if profile == &history.features[0].id
+        }) if (profile == &history.features[0].id) && actual_length.get() == 12.5
     ));
     assert_eq!(
         result
@@ -112,7 +124,7 @@ fn decode_prefers_explicit_feature_input_lanes_over_plain_config_streams() {
 
 #[test]
 fn decode_types_non_modeling_feature_tree_nodes() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureTreeNodeRole};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, FeatureTreeNodeRole};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -146,44 +158,48 @@ fn decode_types_non_modeling_feature_tree_nodes() {
         .model
         .features
         .iter()
-        .map(|feature| &feature.definition)
+        .map(|feature| feature.evaluation.definition())
         .collect::<Vec<_>>();
     assert!(matches!(
         definitions[0],
-        FeatureDefinition::TreeNode {
+        FeatureDefinition::Operation(FeatureOperation::TreeNode {
             role: FeatureTreeNodeRole::Annotations,
             ..
-        }
+        })
     ));
     assert!(matches!(
         definitions[1],
-        FeatureDefinition::TreeNode {
+        FeatureDefinition::Operation(FeatureOperation::TreeNode {
             role: FeatureTreeNodeRole::Equations,
             ..
-        }
+        })
     ));
     assert!(matches!(
         definitions[2],
-        FeatureDefinition::TreeNode {
+        FeatureDefinition::Operation(FeatureOperation::TreeNode {
             role: FeatureTreeNodeRole::SolidBodies,
             ..
-        }
+        })
     ));
-    assert!(matches!(definitions[3], FeatureDefinition::Native { .. }));
-    assert!(matches!(definitions[4], FeatureDefinition::Native { .. }));
+    assert!(matches!(
+        definitions[3],
+        FeatureDefinition::Operation(FeatureOperation::Native { .. })
+    ));
+    assert!(matches!(
+        definitions[4],
+        FeatureDefinition::Operation(FeatureOperation::Native { .. })
+    ));
     assert!(matches!(
         definitions[5],
-        FeatureDefinition::TreeNode {
+        FeatureDefinition::Operation(FeatureOperation::TreeNode {
             role: FeatureTreeNodeRole::ModelOrigin,
             ..
-        }
+        })
     ));
-    assert!(!decoded
-        .ir()
-        .model
-        .features
-        .iter()
-        .any(|feature| matches!(feature.definition, FeatureDefinition::Sketch { .. })));
+    assert!(!decoded.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Sketch { .. })
+    )));
     decoded.ir_mut().model.features[0].name = Some("Document annotations".into());
     let mut encoded = Vec::new();
     SldprtCodec
@@ -197,17 +213,17 @@ fn decode_types_non_modeling_feature_tree_nodes() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        regenerated.ir().model.features[0].definition,
-        FeatureDefinition::TreeNode {
+        regenerated.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::TreeNode {
             role: FeatureTreeNodeRole::Annotations,
             ..
-        }
+        })
     ));
 }
 
 #[test]
 fn decode_leaves_position_allocated_tree_nodes_untyped() {
-    use cadmpeg_ir::features::FeatureDefinition;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -226,17 +242,17 @@ fn decode_leaves_position_allocated_tree_nodes_untyped() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert!(decoded
-        .ir()
-        .model
-        .features
-        .iter()
-        .all(|feature| matches!(feature.definition, FeatureDefinition::Native { .. })));
+    assert!(decoded.ir().model.features.iter().all(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Native { .. })
+    )));
 }
 
 #[test]
 fn reserved_tree_node_ids_require_builtin_record_shape() {
-    use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, FeatureDefinition, LinearTermination};
+    use cadmpeg_ir::features::{
+        ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureOperation, LinearTermination,
+    };
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -252,26 +268,26 @@ fn reserved_tree_node_ids_require_builtin_record_shape() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir().model.features[0].definition,
-        FeatureDefinition::Extrude {
+        decoded.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: LinearTermination::Unresolved,
+                    termination: LinearTermination::Unresolved {},
                     ..
                 }
             },
             ..
-        }
+        })
     ));
     assert!(matches!(
-        decoded.ir().model.features[1].definition,
-        FeatureDefinition::Native { .. }
+        decoded.ir().model.features[1].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Native { .. })
     ));
 }
 
 #[test]
 fn decode_binds_duplicate_feature_names_by_native_object_id() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureTreeNodeRole};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, FeatureTreeNodeRole};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -295,18 +311,18 @@ fn decode_binds_duplicate_feature_names_by_native_object_id() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir().model.features[0].definition,
-        FeatureDefinition::TreeNode {
+        decoded.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::TreeNode {
             role: FeatureTreeNodeRole::Equations,
             ..
-        }
+        })
     ));
     assert!(matches!(
-        decoded.ir().model.features[1].definition,
-        FeatureDefinition::TreeNode {
+        decoded.ir().model.features[1].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::TreeNode {
             role: FeatureTreeNodeRole::SolidBodies,
             ..
-        }
+        })
     ));
 }
 
@@ -352,7 +368,14 @@ fn decode_binds_repeated_instances_by_class_token() {
     let mut payload = resolved_feature_classes_with_ids(&[("Fillet_c", "Seed", 41)]);
     for (name, object_id) in [("TokenSeed", 42u32), ("TokenOnly", 43)] {
         payload.extend_from_slice(&0x37a5u16.to_le_bytes());
-        payload.extend_from_slice(&[0x04, 0x80, 0xff, 0xfe, 0xff, name.len() as u8]);
+        payload.extend_from_slice(&[
+            0x04,
+            0x80,
+            0xff,
+            0xfe,
+            0xff,
+            u8::try_from(name.len()).unwrap(),
+        ]);
         for unit in name.encode_utf16() {
             payload.extend_from_slice(&unit.to_le_bytes());
         }
@@ -423,7 +446,14 @@ fn decode_does_not_bind_ambiguous_repeated_class_token() {
     ]);
     for (name, object_id) in [("FilletToken", 43u32), ("PlaneToken", 44), ("Unknown", 45)] {
         payload.extend_from_slice(&0x37a5u16.to_le_bytes());
-        payload.extend_from_slice(&[0x04, 0x80, 0xff, 0xfe, 0xff, name.len() as u8]);
+        payload.extend_from_slice(&[
+            0x04,
+            0x80,
+            0xff,
+            0xfe,
+            0xff,
+            u8::try_from(name.len()).unwrap(),
+        ]);
         for unit in name.encode_utf16() {
             payload.extend_from_slice(&unit.to_le_bytes());
         }
@@ -445,7 +475,7 @@ fn decode_does_not_bind_ambiguous_repeated_class_token() {
 
 #[test]
 fn decode_does_not_bind_object_class_by_display_name() {
-    use cadmpeg_ir::features::FeatureDefinition;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -463,8 +493,8 @@ fn decode_does_not_bind_object_class_by_display_name() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir().model.features[0].definition,
-        FeatureDefinition::Native { .. }
+        decoded.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Native { .. })
     ));
     assert_eq!(
         sldprt_native(decoded.ir()).feature_histories[0].features[0].input_class,
@@ -487,6 +517,14 @@ fn keywords_root_id_does_not_create_feature_parentage() {
     let history = &native.feature_histories[0];
     assert_eq!(history.properties["id"], "document");
     assert_eq!(history.features[0].parent_source_id(), None);
-    assert_eq!(history.features[1].parent_source_id(), Some("1"));
-    assert!(crate::resolved_features::validate::validate_native(decoded.ir()).is_empty());
+    assert_eq!(
+        history.features[1].parent_source_id(),
+        FeatureSource::from_value(1)
+    );
+    assert!(crate::resolved_features::validate::validate_native(
+        &cadmpeg_test_support::service_decode_context(),
+        decoded.ir()
+    )
+    .unwrap()
+    .is_empty());
 }

@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Object-attributes class-userdata admission and retention contracts.
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use super::{assert_valid, decode};
 use crate::chunks::{ArchiveVersion, TCODE_CRC};
-use crate::test_support as support;
+use crate::test_support::test_archive as support;
 use crate::wire::Uuid;
 
 const PER_OBJECT_APPLICATION: [u8; 16] = [
@@ -11,33 +13,33 @@ const PER_OBJECT_APPLICATION: [u8; 16] = [
 ];
 
 fn object_record(archive: ArchiveVersion, userdata: &[u8], attributes: &[u8]) -> Vec<u8> {
-    let object_type = support::test_dump::short_chunk(archive, 0x8200_0071, 1);
-    let mut uuid_body = support::test_dump::POINT_CLASS.to_vec();
-    uuid_body.extend(crc32fast::hash(&support::test_dump::POINT_CLASS).to_le_bytes());
-    let class_uuid = support::test_dump::long_chunk(archive, 0x0002_fffb, &uuid_body);
-    let class_data = support::test_dump::crc_chunk(
+    let object_type = crate::test_support::test_dump::short_chunk(archive, 0x8200_0071, 1);
+    let mut uuid_body = crate::test_support::test_dump::POINT_CLASS.to_vec();
+    uuid_body.extend(crc32fast::hash(&crate::test_support::test_dump::POINT_CLASS).to_le_bytes());
+    let class_uuid = crate::test_support::test_dump::long_chunk(archive, 0x0002_fffb, &uuid_body);
+    let class_data = crate::test_support::test_dump::crc_chunk(
         archive,
         0x0002_fffc,
         &support::point_payload([1.25, -2.5, 3.75]),
     );
-    let class_end = support::test_dump::short_chunk(archive, 0x8002_7fff, 0);
-    let class = support::test_dump::long_chunk(
+    let class_end = crate::test_support::test_dump::short_chunk(archive, 0x8002_7fff, 0);
+    let class = crate::test_support::test_dump::long_chunk(
         archive,
         0x0002_7ffa,
         &[class_uuid, class_data, class_end].concat(),
     );
-    let attributes = support::test_dump::crc_chunk(archive, 0x0200_8072, attributes);
-    let attribute_userdata = support::test_dump::long_chunk(
+    let attributes = crate::test_support::test_dump::crc_chunk(archive, 0x0200_8072, attributes);
+    let attribute_userdata = crate::test_support::test_dump::long_chunk(
         archive,
         0x0200_0073,
         &[
             userdata,
-            &support::test_dump::short_chunk(archive, 0x8002_7fff, 0),
+            &crate::test_support::test_dump::short_chunk(archive, 0x8002_7fff, 0),
         ]
         .concat(),
     );
-    let object_end = support::test_dump::short_chunk(archive, 0x8200_007f, 0);
-    support::test_dump::nested_crc_chunk(
+    let object_end = crate::test_support::test_dump::short_chunk(archive, 0x8200_007f, 0);
+    crate::test_support::test_dump::nested_crc_chunk(
         archive,
         0x2000_8070 | TCODE_CRC,
         &[
@@ -52,7 +54,7 @@ fn object_record(archive: ArchiveVersion, userdata: &[u8], attributes: &[u8]) ->
 }
 
 fn userdata(archive: ArchiveVersion, payload: &[u8]) -> Vec<u8> {
-    support::test_dump::class_userdata_v2_with_direct_payload(
+    crate::test_support::test_dump::class_userdata_v2_with_direct_payload(
         archive,
         crate::objects::PER_OBJECT_MESH_PARAMETERS_USERDATA.to_wire(),
         Uuid::from_canonical(PER_OBJECT_APPLICATION).to_wire(),
@@ -63,7 +65,7 @@ fn userdata(archive: ArchiveVersion, payload: &[u8]) -> Vec<u8> {
 }
 
 fn obsolete_custom_mesh_userdata(archive: ArchiveVersion, payload: &[u8]) -> Vec<u8> {
-    support::test_dump::class_userdata_v2_with_direct_payload(
+    crate::test_support::test_dump::class_userdata_v2_with_direct_payload(
         archive,
         crate::objects::OBSOLETE_CUSTOM_MESH_USERDATA.to_wire(),
         [0; 16],
@@ -77,17 +79,17 @@ fn obsolete_custom_mesh_payload(archive: ArchiveVersion) -> Vec<u8> {
     [
         37_i32.to_le_bytes().as_slice(),
         [1].as_slice(),
-        support::test_dump::mesh_parameters(archive).as_slice(),
+        crate::test_support::test_dump::mesh_parameters(archive).as_slice(),
         [0xde, 0xad].as_slice(),
     ]
     .concat()
 }
 
 fn current_payload(archive: ArchiveVersion) -> Vec<u8> {
-    let inner = support::test_dump::crc_chunk(
+    let inner = crate::test_support::test_dump::crc_chunk(
         archive,
         0x4000_8000,
-        &support::test_dump::mesh_parameters(archive),
+        &crate::test_support::test_dump::mesh_parameters(archive),
     );
     let mut body = [
         1_i32.to_le_bytes().as_slice(),
@@ -96,11 +98,11 @@ fn current_payload(archive: ArchiveVersion) -> Vec<u8> {
     .concat();
     body.extend(inner);
     body.extend([0xde, 0xad]);
-    support::test_dump::crc_chunk(archive, 0x4000_8000, &body)
+    crate::test_support::test_dump::crc_chunk(archive, 0x4000_8000, &body)
 }
 
 fn future_payload(archive: ArchiveVersion) -> Vec<u8> {
-    support::test_dump::crc_chunk(
+    crate::test_support::test_dump::crc_chunk(
         archive,
         0x4000_8000,
         &[
@@ -113,8 +115,8 @@ fn future_payload(archive: ArchiveVersion) -> Vec<u8> {
 }
 
 fn malformed_payload(archive: ArchiveVersion) -> Vec<u8> {
-    let inner = support::test_dump::short_chunk(archive, 0x4000_8000, 0);
-    support::test_dump::crc_chunk(
+    let inner = crate::test_support::test_dump::short_chunk(archive, 0x4000_8000, 0);
+    crate::test_support::test_dump::crc_chunk(
         archive,
         0x4000_8000,
         &[
@@ -126,27 +128,23 @@ fn malformed_payload(archive: ArchiveVersion) -> Vec<u8> {
     )
 }
 
-fn object_presentation(
-    result: &cadmpeg_ir::codec::DecodeResult,
-) -> &cadmpeg_ir::native::NativeRecord {
+fn object_presentation(result: &EditableDecodeResult) -> &cadmpeg_ir::native::NativeRecord {
     let arena = &result.ir().native.namespace("rhino").unwrap().arenas()["object_presentation"];
     assert_eq!(arena.len(), 1);
     &arena[0]
 }
 
-fn assert_point_and_retention(result: &cadmpeg_ir::codec::DecodeResult, record: &[u8]) {
+fn assert_point_and_retention(result: &EditableDecodeResult, record: &[u8]) {
     assert_eq!(result.ir().model.points.len(), 1);
     assert_eq!(
-        result.ir().model.points[0].position,
+        result.ir().model.points[0].position().get(),
         cadmpeg_ir::math::Point3::new(1.25, -2.5, 3.75)
     );
     let presentation = object_presentation(result);
     assert!(presentation.field("layer_index").is_some());
     let retained = result
         .source_fidelity()
-        .retained_records
-        .iter()
-        .find(|value| value.id() == "rhino:object:record#000000")
+        .retained_record("rhino:object:record#000000")
         .expect("object record is retained");
     assert_eq!(retained.data(), Some(record));
 }
@@ -154,7 +152,7 @@ fn assert_point_and_retention(result: &cadmpeg_ir::codec::DecodeResult, record: 
 #[test]
 fn current_per_object_mesh_userdata_reaches_object_presentation() {
     let archive = ArchiveVersion::V5;
-    let attributes = support::test_dump::tagged_attributes(&[], 0);
+    let attributes = crate::test_support::test_dump::tagged_attributes(&[], 0);
     let userdata = userdata(archive, &current_payload(archive));
     let record = object_record(archive, &userdata, &attributes);
     let result = decode(support::archive_writer(
@@ -176,7 +174,7 @@ fn current_per_object_mesh_userdata_reaches_object_presentation() {
 #[test]
 fn future_per_object_mesh_userdata_keeps_point_and_attributes() {
     let archive = ArchiveVersion::V5;
-    let attributes = support::test_dump::tagged_attributes(&[], 0);
+    let attributes = crate::test_support::test_dump::tagged_attributes(&[], 0);
     let userdata = userdata(archive, &future_payload(archive));
     let record = object_record(archive, &userdata, &attributes);
     let result = decode(support::archive_writer(
@@ -198,7 +196,7 @@ fn future_per_object_mesh_userdata_keeps_point_and_attributes() {
 #[test]
 fn malformed_per_object_mesh_userdata_keeps_point_and_attributes() {
     let archive = ArchiveVersion::V5;
-    let attributes = support::test_dump::tagged_attributes(&[], 0);
+    let attributes = crate::test_support::test_dump::tagged_attributes(&[], 0);
     let userdata = userdata(archive, &malformed_payload(archive));
     let record = object_record(archive, &userdata, &attributes);
     let result = decode(support::archive_writer(
@@ -220,7 +218,7 @@ fn malformed_per_object_mesh_userdata_keeps_point_and_attributes() {
 #[test]
 fn obsolete_custom_mesh_userdata_reaches_object_presentation() {
     let archive = ArchiveVersion::V5;
-    let attributes = support::test_dump::tagged_attributes(&[], 0);
+    let attributes = crate::test_support::test_dump::tagged_attributes(&[], 0);
     let userdata = obsolete_custom_mesh_userdata(archive, &obsolete_custom_mesh_payload(archive));
     let record = object_record(archive, &userdata, &attributes);
     let result = decode(support::archive_writer(
@@ -243,7 +241,7 @@ fn obsolete_custom_mesh_userdata_reaches_object_presentation() {
 #[test]
 fn malformed_obsolete_custom_mesh_userdata_keeps_point_and_attributes() {
     let archive = ArchiveVersion::V5;
-    let attributes = support::test_dump::tagged_attributes(&[], 0);
+    let attributes = crate::test_support::test_dump::tagged_attributes(&[], 0);
     let userdata = obsolete_custom_mesh_userdata(archive, &[7, 2]);
     let record = object_record(archive, &userdata, &attributes);
     let result = decode(support::archive_writer(

@@ -75,7 +75,11 @@
         "preview_images": [],
         "reference_signature_cohorts": [],
         "schema_configuration_row_chains": [],
-        "unknowns": [],
+        "unknowns": [
+          {
+            "id": "catia:payload:unknown#container"
+          }
+        ],
         "value_blocks": [],
         "value_schema_selections": [],
         "zero_entity_edge_strides": [],
@@ -96,15 +100,16 @@
         "outer_dir_offset": "36",
         "preview_count": "0"
       },
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": "residual",
-          "dialect": "catia:unknown",
-          "format": "catia"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "residual",
+            "dialect": "catia:unknown"
+          }
         }
-      },
-      "format": "catia"
+      }
     },
     "tolerances": {
       "angular": 1e-10,
@@ -115,7 +120,6 @@
     }
   },
   "report": {
-    "container_only": false,
     "coverage": {
       "ambiguous_formula_parameter_dependency_count": 0,
       "ambiguous_relation_program_parameter_dependency_count": 0,
@@ -450,22 +454,24 @@
       "unresolved_storage_record_count": 0,
       "unresolved_unreferenced_relation_expression_count": 0
     },
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "residual",
-        "dialect": "catia:unknown",
-        "format": "catia"
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "residual",
+          "dialect": "catia:unknown"
+        }
       }
     },
-    "format": "catia",
-    "geometry_transferred": false,
     "losses": [
       {
         "code": {
           "code": "geometry.brep-not-transferred",
           "kind": "geometry_not_transferred",
-          "namespace": "catia"
+          "namespace": "catia",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "No B-rep geometry was transferred. This file's storage variant is `catia:unknown` (unrecognized storage layout); the applicable decoded record families transfer geometry in this codec.",
         "severity": "blocking"
@@ -474,7 +480,9 @@
         "code": {
           "code": "topology.graph-not-built",
           "kind": "topology_not_transferred",
-          "namespace": "catia"
+          "namespace": "catia",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built for this file.",
         "severity": "blocking"
@@ -483,7 +491,9 @@
         "code": {
           "code": "source.dialect-unverified",
           "kind": "source_dialect_unverified",
-          "namespace": "catia"
+          "namespace": "catia",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "This container matched no CATIA V5 storage family's structural invariants, so it is `catia:unknown`. No decode route declares a grammar for that row, and no declared dialect grammar was substituted; the file was admitted under the metadata-IR fallback, which enumerates the container and retains the source bytes without applying any family's record grammar.",
         "severity": "warning"
@@ -494,9 +504,37 @@
       "outer CATIA_V5 CB0001 directory with 1 stream(s)",
       "no nested V5_CFV2 sub-container (outer-preamble record families only)",
       "container-level enumeration; `decode` applies the identified storage family's standard, freeform, E5, zero-entity, or metadata-fallback route"
-    ]
+    ],
+    "transfer": {
+      "geometry_transferred": false,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {
+      "exactness": {
+        "catia:payload:unknown#container": {
+          "entity": "unknown",
+          "scope": "entity"
+        }
+      },
+      "provenance": {
+        "catia:payload:unknown#container": {
+          "offset": 0,
+          "stream": "catia:CATPart",
+          "tag": "catia:unknown"
+        }
+      }
+    },
+    "retained_records": {
+      "catia:payload:unknown#container": {
+        "bytes": {
+          "data": "VjVfQ0ZWMgAAAAAkAAAAf291dGVyIGxvZ2ljYWwgc3RyZWFtQ0FUSUFfVjUgQ0IwMDAxAAAAAAAAAAAAAAAAAAAAABRSAG8AbwB0AFMAdABvAHIAYQBnAGUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAABAAAAAUAAAAFAAAAAAAAAAAQ0JfX0VORA==",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "catia:CATPart"
+      }
+    }
   }
 }

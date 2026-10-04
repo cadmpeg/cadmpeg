@@ -1,24 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded Rhino point and simple-curve payload decoding.
 
+use crate::loss::Diagnostics;
 use std::f64::consts::{FRAC_PI_2, TAU};
 use std::ops::Range;
 
-use cadmpeg_core::decode::alloc_filled;
-use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::geometry::{nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal, PositiveLength, PositiveReal};
+use cadmpeg_ir::units::OrthonormalFrame3;
 
-use crate::chunks::{checked_count_bytes, ArchiveVersion, BoundedReader, FramingError};
+use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
 use crate::objects::parse_class_wrapper;
-use crate::settings::{bbox, interval, plane, Point3 as NativePoint3};
-use crate::wire::Uuid;
+use crate::settings::{bbox, interval, plane, MillimeterScale, Point3 as NativePoint3};
+use crate::wire::{vector, Uuid};
 
 const EPS_CURVE_POSITION: f64 = 1.0e-8;
 const EPS_CURVE_DEGENERATE: f64 = 1.0e-10;
 
 /// Maximum embedded curve nesting depth.
-pub(crate) const MAX_CURVE_DEPTH: usize = 32;
-/// Maximum points or polycurve segments in one payload.
+const MAX_CURVE_DEPTH: usize = 32;
+/// Acceptance tolerance for circle plane axes and evaluated radius points.
 const CIRCLE_TOLERANCE: f64 = EPS_CURVE_DEGENERATE;
 
 const POINT: Uuid = Uuid::from_canonical([
@@ -70,7 +75,7 @@ pub(crate) enum DecodedGeometry {
     /// One point.
     Point {
         /// Decoded coordinates.
-        position: Point3,
+        position: FinitePoint3,
         /// Whether a unit conversion was applied.
         scaled: bool,
     },
@@ -93,11 +98,11 @@ pub(crate) enum DecodedGeometry {
 #[derive(Debug, Clone)]
 pub(crate) struct PointCloud {
     /// Ordered points.
-    pub(crate) points: Vec<Point3>,
+    pub(crate) points: Vec<FinitePoint3>,
     /// Whether a unit conversion was applied.
     pub(crate) scaled: bool,
     /// Repairs applied to optional channels that do not match the point count.
-    pub(crate) warnings: Vec<String>,
+    pub(crate) warnings: Diagnostics,
 }
 
 /// A curve carrier or a recursive polycurve construction.
@@ -108,47 +113,52 @@ pub(crate) enum DecodedCurve {
         /// Solved carrier geometry.
         geometry: CurveGeometry,
         /// Non-fatal source warnings.
-        warnings: Vec<String>,
+        warnings: Diagnostics,
     },
     /// Polycurve with one start parameter per child and a closing end parameter.
     Compound {
         /// Child curve trees with their start parameters.
-        children: Vec<(f64, DecodedCurve)>,
+        children: Vec<(FiniteReal, DecodedCurve)>,
         /// End parameter of the last child.
-        end_parameter: f64,
+        end_parameter: FiniteReal,
         /// Non-fatal source warnings.
-        warnings: Vec<String>,
+        warnings: Diagnostics,
     },
 }
 
 impl DecodedCurve {
-    pub(crate) fn leaf(geometry: CurveGeometry, warnings: Vec<String>) -> Self {
+    pub(crate) fn leaf(geometry: CurveGeometry, warnings: Diagnostics) -> Self {
         Self::Leaf { geometry, warnings }
     }
 
-    pub(crate) fn warnings(&self) -> &[String] {
+    pub(crate) fn warnings(&self) -> &Diagnostics {
         match self {
             Self::Leaf { warnings, .. } | Self::Compound { warnings, .. } => warnings,
         }
     }
 
-    pub(crate) fn warnings_mut(&mut self) -> &mut Vec<String> {
+    pub(crate) fn into_warnings(self) -> Diagnostics {
         match self {
             Self::Leaf { warnings, .. } | Self::Compound { warnings, .. } => warnings,
         }
     }
 
-    pub(crate) fn is_compound(&self) -> bool {
-        matches!(self, Self::Compound { .. })
+    fn warnings_mut(&mut self) -> &mut Diagnostics {
+        match self {
+            Self::Leaf { warnings, .. } | Self::Compound { warnings, .. } => warnings,
+        }
     }
 
-    pub(crate) fn reported_geometry(&self) -> CurveGeometry {
+    pub(crate) fn reported_geometry(&self) -> &CurveGeometry {
         match self {
-            Self::Leaf { geometry, .. } => geometry.clone(),
-            Self::Compound { .. } => CurveGeometry::Unknown { record: None },
+            Self::Leaf { geometry, .. } => geometry,
+            Self::Compound { .. } => &UNKNOWN_REPORTED_CURVE,
         }
     }
 }
+
+static UNKNOWN_REPORTED_CURVE: CurveGeometry =
+    CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None });
 
 /// A semantic geometry error.
 #[derive(Debug)]
@@ -157,6 +167,8 @@ pub(crate) enum GeometryError {
     UnsupportedVersion { offset: usize, message: String },
     /// A bounded payload is malformed.
     Malformed(FramingError),
+    /// A codec-level refusal that must leave geometry fallback.
+    Codec(CodecError),
 }
 
 impl GeometryError {
@@ -164,11 +176,20 @@ impl GeometryError {
         Self::Malformed(FramingError::structural(offset, message))
     }
 
+    /// Refuses a derived or already-decoded value that has no byte position.
+    pub(crate) fn unpositioned(message: impl Into<String>) -> Self {
+        Self::Malformed(FramingError::unpositioned(message))
+    }
+
     pub(crate) fn unsupported(offset: usize, message: impl Into<String>) -> Self {
         Self::UnsupportedVersion {
             offset,
             message: message.into(),
         }
+    }
+
+    pub(crate) fn not_implemented(message: impl Into<String>) -> Self {
+        Self::Codec(CodecError::NotImplemented(message.into()))
     }
 }
 
@@ -179,25 +200,50 @@ impl std::fmt::Display for GeometryError {
                 write!(formatter, "unsupported version at {offset}: {message}")
             }
             Self::Malformed(error) => error.fmt(formatter),
+            Self::Codec(error) => error.fmt(formatter),
         }
+    }
+}
+
+impl From<CodecError> for GeometryError {
+    fn from(error: CodecError) -> Self {
+        Self::Codec(error)
     }
 }
 
 impl From<FramingError> for GeometryError {
     fn from(error: FramingError) -> Self {
-        Self::Malformed(error)
+        match error {
+            FramingError::Resource(limit) => Self::Codec(CodecError::ResourceLimit(limit)),
+            other => Self::Malformed(other),
+        }
     }
 }
 
 impl From<cadmpeg_core::decode::ParseError> for GeometryError {
     fn from(error: cadmpeg_core::decode::ParseError) -> Self {
         use cadmpeg_core::decode::ParseErrorKind;
-        let offset = error.location.offset as usize;
+        let Ok(offset) = usize::try_from(error.location.offset) else {
+            return Self::Codec(cadmpeg_core::decode::refuse_local_limit(
+                "Rhino parse error offset",
+                cadmpeg_core::decode::u64_from_index(usize::MAX),
+                error.location.offset,
+            ));
+        };
         match error.kind {
             ParseErrorKind::UnexpectedEof { needed, .. } => {
                 Self::Malformed(FramingError::Truncated {
                     offset,
-                    needed: needed as usize,
+                    needed: match usize::try_from(needed) {
+                        Ok(needed) => needed,
+                        Err(_) => {
+                            return Self::Codec(cadmpeg_core::decode::refuse_local_limit(
+                                "Rhino parse error length",
+                                cadmpeg_core::decode::u64_from_index(usize::MAX),
+                                needed,
+                            ))
+                        }
+                    },
                 })
             }
             ParseErrorKind::InvalidValue => Self::Malformed(FramingError::Structural {
@@ -272,7 +318,24 @@ pub(crate) fn surface_class(uuid: Uuid) -> bool {
 
 #[cfg(test)]
 mod alias_tests {
-    use super::*;
+    use super::{
+        curve_class, supported_class, surface_class, NURBS_CURVE_LEGACY, NURBS_CURVE_TL,
+        NURBS_SURFACE_LEGACY, NURBS_SURFACE_TL, POLYCURVE_LEGACY,
+    };
+    use crate::chunks::BoundedReader;
+    use crate::settings::MillimeterScale;
+    use cadmpeg_ir::math::Point3;
+
+    fn read_cloud(
+        reader: &mut BoundedReader<'_>,
+        scale: MillimeterScale,
+    ) -> Result<super::PointCloud, super::GeometryError> {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("test input fits service profile");
+        super::read_cloud(&ctx, reader, scale)
+    }
 
     #[test]
     fn registered_aliases_keep_their_base_and_dispatch_families() {
@@ -302,7 +365,8 @@ mod alias_tests {
         bytes.extend_from_slice(&0_i32.to_le_bytes());
 
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("point-cloud reader");
-        let cloud = read_cloud(&mut reader, 1.0).expect("optional channel is recoverable");
+        let cloud = read_cloud(&mut reader, MillimeterScale::IDENTITY)
+            .expect("optional channel is recoverable");
         assert_eq!(cloud.points.len(), 2);
         assert_eq!(cloud.warnings.len(), 1);
         assert_eq!(reader.remaining(), 0);
@@ -337,8 +401,16 @@ mod alias_tests {
         bytes.extend_from_slice(&12.5_f64.to_le_bytes());
 
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("point-cloud reader");
-        let cloud = read_cloud(&mut reader, 1.0).expect("matching channels are recoverable");
-        assert_eq!(cloud.points, vec![Point3::new(1.0, 2.0, 3.0)]);
+        let cloud = read_cloud(&mut reader, MillimeterScale::IDENTITY)
+            .expect("matching channels are recoverable");
+        assert_eq!(
+            cloud
+                .points
+                .iter()
+                .map(|point| point.get())
+                .collect::<Vec<_>>(),
+            vec![Point3::new(1.0, 2.0, 3.0)]
+        );
         assert!(cloud.warnings.is_empty());
         assert_eq!(reader.remaining(), 0);
     }
@@ -346,48 +418,56 @@ mod alias_tests {
 
 /// Decode one top-level class-data payload.
 pub(crate) fn decode(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     class_uuid: Uuid,
     range: Range<usize>,
-    scale: f64,
+    scale: MillimeterScale,
     archive: ArchiveVersion,
 ) -> Result<DecodedGeometry, GeometryError> {
-    decode_inner(data, class_uuid, range, scale, archive, 0)
+    decode_inner(ctx, data, class_uuid, range, scale, archive, 0)
 }
 
 /// Decodes a Brep C2 curve in surface parameter space.
 pub(crate) fn decode_2d(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     class_uuid: Uuid,
     range: Range<usize>,
     archive: ArchiveVersion,
 ) -> Result<DecodedGeometry, GeometryError> {
-    decode_inner_2d(data, class_uuid, range, archive, 0)
+    decode_inner_2d(ctx, data, class_uuid, range, archive, 0)
 }
 
 pub(crate) fn decode_inner(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     class_uuid: Uuid,
     range: Range<usize>,
-    scale: f64,
+    scale: MillimeterScale,
     archive: ArchiveVersion,
     depth: usize,
 ) -> Result<DecodedGeometry, GeometryError> {
+    let _depth_guard = ctx.enter_nested("Rhino curve tree")?;
     if depth > MAX_CURVE_DEPTH {
-        return Err(GeometryError::malformed(
-            range.start,
-            "curve recursion limit exceeded",
-        ));
+        return Err(ctx
+            .refuse_codec_limit(
+                "Rhino curve depth limit",
+                cadmpeg_core::decode::u64_from_index(MAX_CURVE_DEPTH),
+                cadmpeg_core::decode::u64_from_index(depth),
+            )
+            .into());
     }
     if class_uuid == CURVE_ON_SURFACE {
-        let construction = crate::curve_on_surface::decode(data, range, scale, archive, depth + 1)?;
+        let construction =
+            crate::curve_on_surface::decode(ctx, data, range, scale, archive, depth + 1)?;
         let Some(mut curve) = construction.model_curve else {
             return Err(GeometryError::unsupported(
                 construction.source_range.start,
                 "curve-on-surface has no stored model-space carrier",
             ));
         };
-        curve.warnings_mut().splice(0..0, construction.warnings);
+        curve.warnings_mut().prepend(construction.warnings);
         return Ok(DecodedGeometry::Curve { curve });
     }
     if matches!(
@@ -402,7 +482,7 @@ pub(crate) fn decode_inner(
             | SUM_SURFACE
     ) {
         return Ok(DecodedGeometry::Surface {
-            surface: crate::surfaces::decode(data, class_uuid, range, scale, archive, depth)?,
+            surface: crate::surfaces::decode(ctx, data, class_uuid, range, scale, archive, depth)?,
         });
     }
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
@@ -411,36 +491,48 @@ pub(crate) fn decode_inner(
             let position = read_point(&mut reader, scale)?;
             DecodedGeometry::Point {
                 position,
-                scaled: scale != 1.0,
+                scaled: scale != MillimeterScale::IDENTITY,
             }
         }
-        POINT_CLOUD => DecodedGeometry::PointCloud(read_cloud(&mut reader, scale)?),
+        POINT_CLOUD => DecodedGeometry::PointCloud(read_cloud(ctx, &mut reader, scale)?),
         LINE => DecodedGeometry::Curve {
             curve: DecodedCurve::leaf(
-                CurveGeometry::Nurbs(read_line(&mut reader, scale, None)?),
-                Vec::new(),
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(read_line(
+                    ctx,
+                    &mut reader,
+                    scale,
+                    None,
+                )?)),
+                Diagnostics::new(),
             ),
         },
         ARC => {
-            let (geometry, warnings) = read_arc(&mut reader, scale, None, false)?;
+            let (geometry, warnings) = read_arc(ctx, &mut reader, scale, None, false)?;
             DecodedGeometry::Curve {
                 curve: DecodedCurve::leaf(geometry, warnings),
             }
         }
         POLYLINE => DecodedGeometry::Curve {
             curve: DecodedCurve::leaf(
-                CurveGeometry::Nurbs(read_polyline(&mut reader, scale, None)?),
-                Vec::new(),
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(read_polyline(
+                    ctx,
+                    &mut reader,
+                    scale,
+                    None,
+                )?)),
+                Diagnostics::new(),
             ),
         },
         POLYCURVE | POLYCURVE_LEGACY => {
-            let curve = read_polycurve(data, &mut reader, scale, archive, depth)?;
+            let curve = read_polycurve(ctx, data, &mut reader, scale, archive, depth)?;
             DecodedGeometry::Curve { curve }
         }
         NURBS_CURVE | NURBS_CURVE_TL | NURBS_CURVE_LEGACY => DecodedGeometry::Curve {
             curve: DecodedCurve::leaf(
-                CurveGeometry::Nurbs(crate::surfaces::read_nurbs_curve(&mut reader, scale)?),
-                Vec::new(),
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                    crate::surfaces::read_nurbs_curve(ctx, &mut reader, scale)?,
+                )),
+                Diagnostics::new(),
             ),
         },
         _ => {
@@ -456,22 +548,27 @@ pub(crate) fn decode_inner(
 
 /// Reads one bounded polymorphic child and requires it to be a curve.
 pub(crate) fn decode_embedded_curve(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
-    scale: f64,
+    scale: MillimeterScale,
     archive: ArchiveVersion,
     depth: usize,
 ) -> Result<DecodedCurve, GeometryError> {
     if depth > MAX_CURVE_DEPTH {
-        return Err(GeometryError::malformed(
-            reader.position(),
-            "curve recursion limit exceeded",
-        ));
+        return Err(ctx
+            .refuse_codec_limit(
+                "Rhino embedded curve depth limit",
+                cadmpeg_core::decode::u64_from_index(MAX_CURVE_DEPTH),
+                cadmpeg_core::decode::u64_from_index(depth),
+            )
+            .into());
     }
     let start = reader.position();
     let wrapper = crate::chunks::chunk_at(data, start, reader.end(), archive, false)?;
-    let mut wrapper_warnings = Vec::new();
+    let mut wrapper_warnings = Diagnostics::new();
     let class = parse_class_wrapper(
+        ctx,
         data,
         start..wrapper.next_offset(),
         archive,
@@ -494,6 +591,7 @@ pub(crate) fn decode_embedded_curve(
         ));
     }
     let decoded = decode_inner(
+        ctx,
         data,
         class.class_uuid,
         class.class_data_range,
@@ -507,28 +605,33 @@ pub(crate) fn decode_embedded_curve(
             "embedded surface child is not a curve",
         ));
     };
-    curve.warnings_mut().splice(0..0, wrapper_warnings);
+    curve.warnings_mut().prepend(wrapper_warnings);
     Ok(curve)
 }
 
 /// Reads one bounded polymorphic plane-space curve and applies length scaling.
 pub(crate) fn decode_embedded_curve_2d(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
-    scale: f64,
+    scale: MillimeterScale,
     archive: ArchiveVersion,
     depth: usize,
 ) -> Result<DecodedCurve, GeometryError> {
     if depth > MAX_CURVE_DEPTH {
-        return Err(GeometryError::malformed(
-            reader.position(),
-            "plane-space curve recursion limit exceeded",
-        ));
+        return Err(ctx
+            .refuse_codec_limit(
+                "Rhino embedded C2 curve depth limit",
+                cadmpeg_core::decode::u64_from_index(MAX_CURVE_DEPTH),
+                cadmpeg_core::decode::u64_from_index(depth),
+            )
+            .into());
     }
     let start = reader.position();
     let wrapper = crate::chunks::chunk_at(data, start, reader.end(), archive, false)?;
-    let mut wrapper_warnings = Vec::new();
+    let mut wrapper_warnings = Diagnostics::new();
     let class = parse_class_wrapper(
+        ctx,
         data,
         start..wrapper.next_offset(),
         archive,
@@ -543,6 +646,7 @@ pub(crate) fn decode_embedded_curve_2d(
         ));
     }
     let decoded = decode_inner_2d(
+        ctx,
         data,
         class.class_uuid,
         class.class_data_range,
@@ -555,62 +659,92 @@ pub(crate) fn decode_embedded_curve_2d(
             "embedded plane-space object is not a curve",
         ));
     };
-    scale_decoded_curve(&mut curve, scale, start)?;
-    curve.warnings_mut().splice(0..0, wrapper_warnings);
+    scale_decoded_curve(ctx, &mut curve, scale, start)?;
+    curve.warnings_mut().prepend(wrapper_warnings);
     Ok(curve)
 }
 
 fn scale_decoded_curve(
+    ctx: &DecodeContext<'_>,
     curve: &mut DecodedCurve,
-    scale: f64,
+    scale: MillimeterScale,
     offset: usize,
 ) -> Result<(), GeometryError> {
+    ctx.charge_work(1, "Rhino plane-space curve scaling visit")?;
     match curve {
         DecodedCurve::Compound { children, .. } => {
+            let _depth = ctx.enter_nested("Rhino plane-space curve scaling nesting")?;
             for (_, child) in children {
-                scale_decoded_curve(child, scale, offset)?;
+                scale_decoded_curve(ctx, child, scale, offset)?;
             }
             return Ok(());
         }
         DecodedCurve::Leaf { geometry, .. } => match geometry {
-            CurveGeometry::Nurbs(nurbs) => {
-                let scaled = nurbs
-                    .control_points()
-                    .iter()
-                    .copied()
-                    .map(|point| {
-                        scale_ir_point(point, scale).ok_or_else(|| {
-                            GeometryError::malformed(offset, "scaled plane-space curve is invalid")
-                        })
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                nurbs
-                    .edit_control_points(|points| points.copy_from_slice(&scaled))
-                    .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
-            }
-            CurveGeometry::Circle { center, radius, .. } => {
-                *center = scale_ir_point(*center, scale).ok_or_else(|| {
-                    GeometryError::malformed(offset, "scaled plane-space circle is invalid")
-                })?;
-                *radius *= scale;
-                if !radius.is_finite() || *radius <= 0.0 {
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
+                if let Err(message) = nurbs.try_map_control_points(
+                    |_, point| {
+                        point
+                            .scaled(scale.positive())
+                            .ok_or("scaled plane-space curve is invalid")
+                    },
+                    ctx,
+                )? {
                     return Err(GeometryError::malformed(
                         offset,
-                        "scaled plane-space circle radius is invalid",
+                        ctx.copy_retained_text(message, "Rhino pole mapping refusal")?,
                     ));
                 }
             }
-            CurveGeometry::Line { origin, .. } => {
-                *origin = scale_ir_point(*origin, scale).ok_or_else(|| {
-                    GeometryError::malformed(offset, "scaled plane-space line is invalid")
-                })?;
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
+                let radius = circle_curve.radius().get();
+                let center = circle_curve
+                    .center()
+                    .scaled(scale.positive())
+                    .ok_or_else(|| {
+                        GeometryError::malformed(
+                            offset,
+                            "scaled plane-space curve point is invalid",
+                        )
+                    })?;
+                let radius = cadmpeg_ir::scalar::PositiveLength::new(radius * scale.value())
+                    .ok_or_else(|| {
+                        GeometryError::malformed(
+                            offset,
+                            "CircleCurve.radius must be positive and finite",
+                        )
+                    })?;
+                *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::new(
+                    center,
+                    *circle_curve.frame(),
+                    radius,
+                );
             }
-            CurveGeometry::Degenerate { point } => {
-                *point = scale_ir_point(*point, scale).ok_or_else(|| {
-                    GeometryError::malformed(offset, "scaled plane-space point is invalid")
-                })?;
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
+                let direction = line_curve.direction();
+                let origin = line_curve
+                    .origin()
+                    .scaled(scale.positive())
+                    .ok_or_else(|| {
+                        GeometryError::malformed(
+                            offset,
+                            "scaled plane-space curve point is invalid",
+                        )
+                    })?;
+                *line_curve = cadmpeg_ir::geometry::analytic::LineCurve::new(origin, direction);
             }
-            CurveGeometry::Unknown { .. } => {
+            CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate_curve)) => {
+                let point = degenerate_curve
+                    .point()
+                    .scaled(scale.positive())
+                    .ok_or_else(|| {
+                        GeometryError::malformed(
+                            offset,
+                            "scaled plane-space curve point is invalid",
+                        )
+                    })?;
+                *degenerate_curve = cadmpeg_ir::geometry::analytic::DegenerateCurve::new(point);
+            }
+            CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. }) => {
                 return Err(GeometryError::malformed(
                     offset,
                     "plane-space curve has unknown geometry",
@@ -627,34 +761,31 @@ fn scale_decoded_curve(
     Ok(())
 }
 
-fn scale_ir_point(value: Point3, scale: f64) -> Option<Point3> {
-    let point = Point3::new(value.x * scale, value.y * scale, value.z * scale);
-    (point.x.is_finite() && point.y.is_finite() && point.z.is_finite()).then_some(point)
-}
-
 /// Converts a decoded curve tree to one exact NURBS curve when possible.
 pub(crate) fn exact_nurbs(
+    ctx: &DecodeContext<'_>,
     curve: &DecodedCurve,
     offset: usize,
 ) -> Result<NurbsCurve, GeometryError> {
     match curve {
         DecodedCurve::Leaf { geometry, .. } => match geometry {
-            CurveGeometry::Nurbs(nurbs) => Ok(nurbs.clone()),
-            CurveGeometry::Circle {
-                center,
-                axis,
-                ref_direction,
-                radius,
-            } => {
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
+                Ok(nurbs.try_clone_for_decode(ctx, "Rhino exact NURBS copy")?)
+            }
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
+                let center = circle_curve.center();
+                let axis = circle_curve.frame().axis().as_raw();
+                let ref_direction = circle_curve.frame().reference().as_raw();
+                let radius = circle_curve.radius();
                 let yaxis = axis.cross(*ref_direction);
                 let circle = Circle {
-                    center: *center,
+                    center,
                     axis: *axis,
                     xaxis: *ref_direction,
                     yaxis,
-                    radius: *radius,
+                    radius,
                 };
-                arc_nurbs(&circle, [0.0, TAU], [0.0, TAU], TAU, offset)
+                arc_nurbs(ctx, &circle, [0.0, TAU], [0.0, TAU], TAU, offset)
             }
             _ => Err(error(offset, "curve has no exact NURBS representation")),
         },
@@ -663,29 +794,33 @@ pub(crate) fn exact_nurbs(
             end_parameter,
             ..
         } => {
-            let mut segments = Vec::with_capacity(children.len());
+            let mut segments = ctx
+                .collection_vec(children.len(), "Rhino exact NURBS segments")
+                .map_err(crate::curves::GeometryError::from)?;
             for (index, (start, child)) in children.iter().enumerate() {
                 let end = children
                     .get(index + 1)
                     .map_or(*end_parameter, |(next, _)| *next);
                 let target = [*start, end];
-                if !target[0].is_finite() || !target[1].is_finite() || target[0] >= target[1] {
+                if target[0] >= target[1] {
                     return Err(error(offset, "polycurve segment domain is invalid"));
                 }
                 segments.push(remap_nurbs_domain(
-                    exact_nurbs(child, offset)?,
+                    ctx,
+                    exact_nurbs(ctx, child, offset)?,
                     target,
                     offset,
                 )?);
             }
-            Ok(join_nurbs_segments(segments, offset)?.curve)
+            Ok(join_nurbs_segments(ctx, segments, offset)?.curve)
         }
     }
 }
 
 pub(crate) fn remap_nurbs_domain(
-    mut curve: NurbsCurve,
-    target: [f64; 2],
+    ctx: &DecodeContext<'_>,
+    curve: NurbsCurve,
+    target: [FiniteReal; 2],
     offset: usize,
 ) -> Result<NurbsCurve, GeometryError> {
     let degree =
@@ -702,33 +837,43 @@ pub(crate) fn remap_nurbs_domain(
             .ok_or_else(|| error(offset, "curve knot vector is invalid"))?,
         curve.knots()[end_index],
     ];
-    let denominator = source[1] - source[0];
-    if !denominator.is_finite() || denominator <= 0.0 {
+    if source[0] >= source[1] {
         return Err(error(offset, "curve domain is invalid"));
     }
-    let factor = (target[1] - target[0]) / denominator;
-    let remapped = curve
-        .knots()
-        .iter()
-        .copied()
-        .map(|knot| {
-            let value = target[0] + (knot - source[0]) * factor;
+    if target[0] >= target[1] {
+        return Err(error(offset, "curve target domain is invalid"));
+    }
+    let target = target.map(FiniteReal::get);
+    let mut remapped = ctx
+        .collection_vec(curve.knots().len(), "Rhino remapped NURBS knots")
+        .map_err(crate::curves::GeometryError::from)?;
+    for knot in curve.knots().iter().copied() {
+        let fraction = cadmpeg_ir::math::parameter_fraction(knot, source[0], source[1])
+            .map(cadmpeg_ir::scalar::FiniteReal::get)
+            .ok_or_else(|| error(offset, "curve knot remap overflowed"))?;
+        let value = if fraction == 0.0 {
+            target[0]
+        } else if fraction == 1.0 {
+            target[1]
+        } else {
+            (1.0 - fraction) * target[0] + fraction * target[1]
+        };
+        remapped.push(
             value
                 .is_finite()
                 .then_some(value)
-                .ok_or_else(|| error(offset, "curve knot remap overflowed"))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+                .ok_or_else(|| error(offset, "curve knot remap overflowed"))?,
+        );
+    }
     curve
-        .edit_knots(|knots| knots.copy_from_slice(&remapped))
-        .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
-    Ok(curve)
+        .with_knots(ctx, remapped)?
+        .map_err(|error| GeometryError::malformed(offset, error.to_string()))
 }
 
 /// Exact joined curve and recoverable join diagnostics.
 pub(crate) struct NurbsJoin {
     pub(crate) curve: NurbsCurve,
-    pub(crate) warnings: Vec<String>,
+    pub(crate) warnings: Diagnostics,
 }
 
 #[derive(Clone, Copy)]
@@ -742,57 +887,82 @@ impl Homogeneous {
     }
 }
 
-fn elevate_bezier(mut values: Vec<Homogeneous>, target: usize) -> Vec<Homogeneous> {
+fn elevate_bezier(
+    ctx: &DecodeContext<'_>,
+    mut values: Vec<Homogeneous>,
+    target: usize,
+) -> Result<Vec<Homogeneous>, GeometryError> {
     while values.len() - 1 < target {
         let degree = values.len() - 1;
-        let mut elevated = Vec::with_capacity(values.len() + 1);
+        let count = values.len() + 1;
+        let mut elevated = ctx.collection_vec(count, "Rhino polycurve Bezier elevation")?;
         elevated.push(values[0]);
         for index in 1..=degree {
-            elevated
-                .push(values[index].blend(values[index - 1], index as f64 / (degree + 1) as f64));
+            elevated.push(values[index].blend(
+                values[index - 1],
+                cadmpeg_core::convert::f64_from_index(index).ok_or_else(|| {
+                    GeometryError::unpositioned("geometry index exceeds exact float range")
+                })? / cadmpeg_core::convert::f64_from_index(degree + 1).ok_or_else(|| {
+                    GeometryError::unpositioned("geometry index exceeds exact float range")
+                })?,
+            ));
         }
         elevated.push(values[degree]);
         values = elevated;
     }
-    values
+    Ok(values)
 }
 
 fn insert_knot_once(
+    ctx: &DecodeContext<'_>,
     knots: &mut Vec<f64>,
     points: &mut Vec<Homogeneous>,
     degree: usize,
     value: f64,
-) -> Result<(), ()> {
+    offset: usize,
+    failure: &'static str,
+) -> Result<(), GeometryError> {
     let n = points.len() - 1;
-    let k = (degree..=n)
-        .find(|index| value < knots[index + 1])
-        .unwrap_or(n);
+    // Endpoint clamping can select a span beyond the last control point.
+    let k = knots
+        .iter()
+        .rposition(|knot| *knot <= value)
+        .ok_or_else(|| error(offset, failure))?;
+    let k = if degree == 0 { k.min(n) } else { k };
     let multiplicity = knots.iter().filter(|knot| **knot == value).count();
-    if multiplicity > degree {
-        return Err(());
+    if multiplicity > degree
+        || k < degree
+        || k - degree > n
+        || k.checked_sub(multiplicity).is_none_or(|tail| tail > n)
+    {
+        return Err(error(offset, failure));
     }
-    let mut output = alloc_filled(
-        points.len().checked_add(1).ok_or(())?,
+    let mut output = ctx.alloc_filled(
+        points
+            .len()
+            .checked_add(1)
+            .ok_or_else(|| error(offset, failure))?,
         points[0],
         "Rhino polycurve knot insertion points",
-    )
-    .map_err(|_| ())?;
+    )?;
     output[..=k - degree].copy_from_slice(&points[..=k - degree]);
     output[k - multiplicity + 1..=n + 1].copy_from_slice(&points[k - multiplicity..=n]);
     for index in k - degree + 1..=k - multiplicity {
         let denominator = knots[index + degree] - knots[index];
         if denominator <= 0.0 || !denominator.is_finite() {
-            return Err(());
+            return Err(error(offset, failure));
         }
         let alpha = (value - knots[index]) / denominator;
         output[index] = points[index - 1].blend(points[index], alpha);
     }
+    ctx.reserve_vec(knots, 1, "Rhino polycurve inserted knot")?;
     knots.insert(k + 1, value);
     *points = output;
     Ok(())
 }
 
 fn elevate_to_degree(
+    ctx: &DecodeContext<'_>,
     curve: &NurbsCurve,
     target: usize,
     offset: usize,
@@ -802,112 +972,181 @@ fn elevate_to_degree(
     if degree > target || curve.periodic() {
         return Err(error(offset, "polycurve segment knot vector is invalid"));
     }
-    let weights = match curve.weights() {
-        Some(weights) => weights.to_vec(),
-        None => alloc_filled(
-            curve.control_points().len(),
-            1.0,
-            "Rhino polycurve segment weights",
-        )
-        .map_err(|error| {
-            GeometryError::malformed(
-                offset,
-                format!("polycurve weight allocation refused: {error}"),
-            )
-        })?,
+    let pole_count = curve.pole_rows().count();
+    let fallback_weights = match curve.pole_rows() {
+        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { .. } => {
+            Some(ctx.alloc_filled(pole_count, 1.0, "Rhino polycurve segment weights")?)
+        }
+        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { .. } => None,
     };
-    let rational = weights.iter().any(|weight| *weight != 1.0);
-    let mut points = curve
-        .control_points()
-        .iter()
-        .copied()
-        .zip(weights)
-        .map(|(point, weight)| {
-            Homogeneous([point.x * weight, point.y * weight, point.z * weight, weight])
+    let source_weight_at = |index: usize| match curve.pole_rows() {
+        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { .. } => fallback_weights
+            .as_ref()
+            .map_or(1.0, |weights| weights[index]),
+        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => points[index].weight.get(),
+    };
+    let rational = (0..pole_count).any(|index| source_weight_at(index) != 1.0);
+    let point_at = |index: usize| match curve.pole_rows() {
+        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => points[index].get(),
+        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => points[index].point.get(),
+    };
+    let normalize = (0..pole_count).any(|index| {
+        let point = point_at(index);
+        let weight = source_weight_at(index);
+        [point.x, point.y, point.z].into_iter().any(|coordinate| {
+            let product = coordinate * weight;
+            !product.is_finite() || (product == 0.0 && coordinate != 0.0)
         })
-        .collect::<Vec<_>>();
-    let mut knots = curve.knots().to_vec();
-    let domain = [knots[degree], knots[knots.len() - degree - 1]];
-    for endpoint in domain {
-        while knots.iter().filter(|value| **value == endpoint).count() < degree + 1 {
-            insert_knot_once(&mut knots, &mut points, degree, endpoint)
-                .map_err(|()| error(offset, "polycurve endpoint clamping failed"))?;
+    });
+    let exponent = if normalize {
+        let maximum_weight = (0..pole_count)
+            .map(|index| source_weight_at(index).abs())
+            .fold(0.0, f64::max);
+        let exponent = cadmpeg_ir::math::power_of_two_bound(maximum_weight)
+            .ok_or_else(|| error(offset, "polycurve weight scale is invalid"))?;
+        for index in 0..pole_count {
+            cadmpeg_ir::math::scale_power_of_two(source_weight_at(index), -exponent)
+                .filter(|weight| weight.get() != 0.0)
+                .ok_or_else(|| error(offset, "polycurve weight normalization lost its range"))?;
         }
-    }
-    let mut internal = knots[degree + 1..knots.len() - degree - 1].to_vec();
-    internal.dedup();
-    for knot in internal {
-        while knots.iter().filter(|value| **value == knot).count() < degree {
-            insert_knot_once(&mut knots, &mut points, degree, knot)
-                .map_err(|()| error(offset, "polycurve knot insertion failed"))?;
-        }
-    }
-    let boundaries = knots
-        .windows(2)
-        .filter_map(|pair| (pair[0] < pair[1]).then_some([pair[0], pair[1]]))
-        .collect::<Vec<_>>();
-    if boundaries.is_empty() {
-        return Err(error(offset, "polycurve segment has no nonempty span"));
-    }
-    let mut elevated = Vec::new();
-    for (span, boundary) in boundaries.iter().enumerate() {
-        let start = span * degree;
-        let bezier = elevate_bezier(points[start..=start + degree].to_vec(), target);
-        if span == 0 {
-            elevated.extend(bezier);
-        } else {
-            elevated.extend(bezier.into_iter().skip(1));
-        }
-        let _ = boundary;
-    }
-    let mut elevated_knots = alloc_filled(
+        Some(exponent)
+    } else {
+        None
+    };
+
+    let source_knots = curve.knots();
+    let domain = [
+        source_knots[degree],
+        source_knots[source_knots.len() - degree - 1],
+    ];
+    let mut elevated_knots = ctx.alloc_filled(
         target
             .checked_add(1)
             .ok_or_else(|| error(offset, "polycurve elevated knot count overflow"))?,
-        boundaries[0][0],
+        domain[0],
         "Rhino polycurve elevated knots",
-    )
-    .map_err(|error| {
-        GeometryError::malformed(
-            offset,
-            format!("polycurve knot allocation refused: {error}"),
-        )
-    })?;
-    for boundary in boundaries.iter().take(boundaries.len() - 1) {
-        elevated_knots.extend(std::iter::repeat_n(boundary[1], target));
+    )?;
+
+    let mut points = ctx.alloc_filled(
+        pole_count,
+        Homogeneous([0.0; 4]),
+        "Rhino polycurve homogeneous points",
+    )?;
+    for (index, value) in points.iter_mut().enumerate() {
+        let point = point_at(index);
+        let weight = match exponent {
+            Some(exponent) => {
+                cadmpeg_ir::math::scale_power_of_two(source_weight_at(index), -exponent)
+                    .ok_or_else(|| error(offset, "polycurve weight normalization lost its range"))?
+                    .get()
+            }
+            None => source_weight_at(index),
+        };
+        *value = Homogeneous([point.x * weight, point.y * weight, point.z * weight, weight]);
     }
-    elevated_knots.extend(std::iter::repeat_n(
-        boundaries.last().expect("nonempty spans")[1],
+    let mut knots = ctx.collection_vec(source_knots.len(), "Rhino polycurve knots")?;
+    knots.extend_from_slice(source_knots);
+    for endpoint in domain {
+        while knots.iter().filter(|value| **value == endpoint).count() < degree + 1 {
+            insert_knot_once(
+                ctx,
+                &mut knots,
+                &mut points,
+                degree,
+                endpoint,
+                offset,
+                "polycurve endpoint clamping failed",
+            )?;
+        }
+    }
+    let mut internal = Vec::new();
+    for knot in knots
+        .iter()
+        .copied()
+        .filter(|knot| *knot > domain[0] && *knot < domain[1])
+    {
+        ctx.reserve_vec(&mut internal, 1, "Rhino polycurve internal knots")?;
+        internal.push(knot);
+    }
+    internal.dedup();
+    for knot in internal {
+        while knots.iter().filter(|value| **value == knot).count() < degree {
+            insert_knot_once(
+                ctx,
+                &mut knots,
+                &mut points,
+                degree,
+                knot,
+                offset,
+                "polycurve knot insertion failed",
+            )?;
+        }
+    }
+    let mut spans = Vec::new();
+    for span in (degree..points.len()).filter(|&span| {
+        knots[span] < knots[span + 1] && knots[span] >= domain[0] && knots[span + 1] <= domain[1]
+    }) {
+        ctx.reserve_vec(&mut spans, 1, "Rhino polycurve spans")?;
+        spans.push(span);
+    }
+    if spans.is_empty() {
+        return Err(error(offset, "polycurve segment has no nonempty span"));
+    }
+    let mut elevated = Vec::new();
+    for (index, span) in spans.into_iter().enumerate() {
+        let bezier_count = degree + 1;
+        let mut bezier = ctx.collection_vec(bezier_count, "Rhino polycurve Bezier span")?;
+        bezier.extend_from_slice(&points[span - degree..=span]);
+        let bezier = elevate_bezier(ctx, bezier, target)?;
+        let disconnected = knots.iter().filter(|knot| **knot == knots[span]).count() > degree;
+        let skip = usize::from(index > 0 && !disconnected);
+        if index > 0 {
+            let added = target + usize::from(disconnected);
+            ctx.reserve_vec(&mut elevated_knots, added, "Rhino polycurve elevated knots")?;
+            elevated_knots.extend(std::iter::repeat_with(|| knots[span]).take(added));
+        }
+        let added = bezier.len() - skip;
+        ctx.reserve_vec(&mut elevated, added, "Rhino polycurve elevated points")?;
+        elevated.extend(bezier.into_iter().skip(skip));
+    }
+    ctx.reserve_vec(
+        &mut elevated_knots,
         target + 1,
-    ));
-    let mut output_weights = Vec::with_capacity(elevated.len());
-    let mut control_points = Vec::with_capacity(elevated.len());
+        "Rhino polycurve elevated knots",
+    )?;
+    elevated_knots.extend(std::iter::repeat_with(|| domain[1]).take(target + 1));
+    let mut output_weights =
+        ctx.collection_vec(elevated.len(), "Rhino polycurve output weights")?;
+    let mut control_points = ctx.collection_vec(elevated.len(), "Rhino polycurve output points")?;
     for point in elevated {
-        let weight = point.0[3];
-        if weight == 0.0 || !weight.is_finite() {
+        let Some(weight) = NonZeroReal::new(point.0[3]) else {
             return Err(error(
                 offset,
                 "polycurve degree elevation produced an invalid weight",
             ));
-        }
+        };
         control_points.push(Point3::new(
-            point.0[0] / weight,
-            point.0[1] / weight,
-            point.0[2] / weight,
+            point.0[0] / weight.get(),
+            point.0[1] / weight.get(),
+            point.0[2] / weight.get(),
         ));
         output_weights.push(weight);
     }
-    NurbsCurve::new(
-        target as u32,
+    let target = u32::try_from(target)
+        .map_err(|_| GeometryError::unpositioned("polycurve degree exceeds u32"))?;
+    NurbsCurve::from_checked_lanes(
+        ctx,
+        target,
         elevated_knots,
         control_points,
         rational.then_some(output_weights),
         false,
-    )
+    )?
     .map_err(|error| GeometryError::malformed(offset, error.to_string()))
 }
 
 pub(crate) fn join_nurbs_segments(
+    ctx: &DecodeContext<'_>,
     mut segments: Vec<NurbsCurve>,
     offset: usize,
 ) -> Result<NurbsJoin, GeometryError> {
@@ -918,19 +1157,22 @@ pub(crate) fn join_nurbs_segments(
         .iter()
         .map(NurbsCurve::degree)
         .max()
-        .expect("nonempty segments");
+        .ok_or_else(|| error(offset, "polycurve has no segments"))?;
     let target = usize::try_from(degree).map_err(|_| error(offset, "curve degree overflow"))?;
     if target == 0 {
         return Err(error(offset, "polycurve segment degree must be positive"));
     }
-    segments = segments
-        .iter()
-        .map(|segment| elevate_to_degree(segment, target, offset))
-        .collect::<Result<_, _>>()?;
+    let mut elevated_segments = ctx
+        .collection_vec(segments.len(), "Rhino elevated polycurve segments")
+        .map_err(crate::curves::GeometryError::from)?;
+    for segment in &segments {
+        elevated_segments.push(elevate_to_degree(ctx, segment, target, offset)?);
+    }
+    segments = elevated_segments;
     if segments.len() == 1 {
         return Ok(NurbsJoin {
             curve: segments.remove(0),
-            warnings: Vec::new(),
+            warnings: Diagnostics::new(),
         });
     }
     let multiplicity = usize::try_from(degree)
@@ -957,128 +1199,178 @@ pub(crate) fn join_nurbs_segments(
             return Err(error(offset, "polycurve segment is not endpoint-clamped"));
         }
     }
-    let rational = segments.iter().any(|segment| segment.weights().is_some());
-    let control_count = segments
-        .iter()
-        .try_fold(0_usize, |total, segment| {
-            total.checked_add(segment.control_points().len())
-        })
-        .ok_or_else(|| error(offset, "polycurve size overflow"))?;
-    let knot_count = segments
-        .iter()
-        .try_fold(0_usize, |total, segment| {
-            total.checked_add(segment.knots().len())
-        })
-        .and_then(|total| {
-            (segments.len() - 1)
-                .checked_mul(multiplicity + 1)
-                .and_then(|duplicates| total.checked_sub(duplicates))
-        })
-        .ok_or_else(|| error(offset, "polycurve size overflow"))?;
-    let mut control_points: Vec<Point3> = Vec::with_capacity(control_count);
-    let mut knots: Vec<f64> = Vec::with_capacity(knot_count);
-    let mut weights = rational.then(|| Vec::with_capacity(control_count));
-    let mut warnings = Vec::new();
-    for (index, mut segment) in segments.into_iter().enumerate() {
-        if index > 0 {
-            let previous = *control_points.last().expect("previous segment endpoint");
-            let next = segment.control_points()[0];
-            let midpoint = Point3::new(
-                (previous.x + next.x) * 0.5,
-                (previous.y + next.y) * 0.5,
-                (previous.z + next.z) * 0.5,
-            );
-            let gap = ((previous.x - next.x).powi(2)
-                + (previous.y - next.y).powi(2)
-                + (previous.z - next.z).powi(2))
-            .sqrt();
-            if gap > 0.0 {
-                warnings.push(format!(
-                    "polycurve join moved endpoints by half of gap {gap}"
+    let rational = segments.iter().any(|segment| {
+        matches!(
+            segment.pole_rows(),
+            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { .. }
+        )
+    });
+    let mut control_points: Vec<Point3> = Vec::new();
+    let mut knots: Vec<f64> = Vec::new();
+    let mut weights = rational.then(Vec::new);
+    let mut warnings = Diagnostics::new();
+    for (index, segment) in segments.into_iter().enumerate() {
+        let midpoint = if index > 0 {
+            let Some(previous) = control_points.last().copied() else {
+                return Err(error(
+                    offset,
+                    "polycurve join has no previous segment endpoint",
                 ));
+            };
+            let next = segment
+                .pole_rows()
+                .point_at(0)
+                .ok_or_else(|| error(offset, "polycurve segment has no control point"))?
+                .get();
+            let midpoint = Point3::new(
+                previous.x.midpoint(next.x),
+                previous.y.midpoint(next.y),
+                previous.z.midpoint(next.z),
+            );
+            let gap = previous.distance(next);
+            if gap > 0.0 {
+                warnings.push_coded_admitted(
+                    ctx,
+                    crate::loss::RhinoLossCode::PolycurveJoinGap,
+                    format_args!("polycurve join moved endpoints by half of gap {gap}"),
+                )?;
             }
-            *control_points.last_mut().expect("previous endpoint") = midpoint;
-            segment
-                .edit_control_points(|points| points[0] = midpoint)
-                .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
-        }
-        let skip = usize::from(index > 0);
+            let Some(previous) = control_points.last_mut() else {
+                return Err(error(offset, "polycurve join has no previous endpoint"));
+            };
+            *previous = midpoint;
+            Some(midpoint)
+        } else {
+            None
+        };
+        // Unequal endpoint weights are different homogeneous poles. Keep both
+        // with a full-multiplicity knot so neither segment's rational shape changes.
+        let unit = NonZeroReal::from(PositiveReal::ONE);
+        let previous_weight = weights
+            .as_ref()
+            .and_then(|weights| weights.last())
+            .copied()
+            .unwrap_or(unit);
+        let next_weight = match segment.pole_rows() {
+            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { .. } => unit,
+            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
+                points.first().map_or(unit, |point| point.weight)
+            }
+        };
+        let skip = usize::from(index > 0 && previous_weight.get() == next_weight.get());
+        let count = segment.pole_rows().count() - skip;
         if let Some(target) = &mut weights {
-            match segment.weights() {
-                Some(values) => target.extend(values.iter().copied().skip(skip)),
-                None => target.extend(std::iter::repeat_n(
-                    1.0,
-                    segment.control_points().len() - skip,
-                )),
+            ctx.reserve_vec(target, count, "Rhino joined polycurve weights")?;
+            for point_index in skip..segment.pole_rows().count() {
+                let weight = match segment.pole_rows() {
+                    cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { .. } => unit,
+                    cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
+                        points[point_index].weight
+                    }
+                };
+                target.push(weight);
             }
         }
-        control_points.extend(segment.control_points().iter().copied().skip(skip));
+        ctx.reserve_vec(&mut control_points, count, "Rhino joined polycurve points")?;
+        for point_index in skip..segment.pole_rows().count() {
+            let point = segment
+                .pole_rows()
+                .point_at(point_index)
+                .ok_or_else(|| error(offset, "polycurve segment has no control point"))?
+                .get();
+            control_points.push(if point_index == 0 {
+                midpoint.unwrap_or(point)
+            } else {
+                point
+            });
+        }
         let segment_start = segment.knots()[multiplicity - 1];
         let dk = if index == 0 {
             0.0
         } else {
             knots.last().copied().unwrap_or(0.0) - segment_start
         };
-        if index > 0 {
+        if skip > 0 {
             knots.pop();
         }
+        let knot_skip = if index == 0 { 0 } else { multiplicity };
+        let knot_added = segment.knots().len() - knot_skip;
+        ctx.reserve_vec(&mut knots, knot_added, "Rhino joined polycurve knots")?;
         knots.extend(
             segment
                 .knots()
                 .iter()
                 .copied()
                 .map(|knot| knot + dk)
-                .skip(if index == 0 { 0 } else { multiplicity }),
+                .skip(knot_skip),
         );
     }
     Ok(NurbsJoin {
-        curve: NurbsCurve::new(degree, knots, control_points, weights, false)
+        curve: NurbsCurve::from_checked_lanes(ctx, degree, knots, control_points, weights, false)?
             .map_err(|error| GeometryError::malformed(offset, error.to_string()))?,
         warnings,
     })
 }
 
 pub(crate) fn decode_inner_2d(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     class_uuid: Uuid,
     range: Range<usize>,
     archive: ArchiveVersion,
     depth: usize,
 ) -> Result<DecodedGeometry, GeometryError> {
+    let _depth_guard = ctx.enter_nested("Rhino C2 curve tree")?;
     if depth > MAX_CURVE_DEPTH {
-        return Err(GeometryError::malformed(
-            range.start,
-            "C2 curve recursion limit exceeded",
-        ));
+        return Err(ctx
+            .refuse_codec_limit(
+                "Rhino C2 curve depth limit",
+                cadmpeg_core::decode::u64_from_index(MAX_CURVE_DEPTH),
+                cadmpeg_core::decode::u64_from_index(depth),
+            )
+            .into());
     }
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let result = match class_uuid {
         NURBS_CURVE | NURBS_CURVE_TL | NURBS_CURVE_LEGACY => DecodedGeometry::Curve {
             curve: DecodedCurve::leaf(
-                CurveGeometry::Nurbs(crate::surfaces::read_nurbs_curve_2d(&mut reader)?),
-                Vec::new(),
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                    crate::surfaces::read_nurbs_curve_2d(ctx, &mut reader)?,
+                )),
+                Diagnostics::new(),
             ),
         },
         LINE => DecodedGeometry::Curve {
             curve: DecodedCurve::leaf(
-                CurveGeometry::Nurbs(read_line(&mut reader, 1.0, Some(2))?),
-                Vec::new(),
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(read_line(
+                    ctx,
+                    &mut reader,
+                    MillimeterScale::IDENTITY,
+                    Some(2),
+                )?)),
+                Diagnostics::new(),
             ),
         },
         POLYLINE => DecodedGeometry::Curve {
             curve: DecodedCurve::leaf(
-                CurveGeometry::Nurbs(read_polyline(&mut reader, 1.0, Some(2))?),
-                Vec::new(),
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(read_polyline(
+                    ctx,
+                    &mut reader,
+                    MillimeterScale::IDENTITY,
+                    Some(2),
+                )?)),
+                Diagnostics::new(),
             ),
         },
         ARC => {
-            let (geometry, warnings) = read_arc(&mut reader, 1.0, Some(2), true)?;
+            let (geometry, warnings) =
+                read_arc(ctx, &mut reader, MillimeterScale::IDENTITY, Some(2), true)?;
             DecodedGeometry::Curve {
                 curve: DecodedCurve::leaf(geometry, warnings),
             }
         }
         POLYCURVE | POLYCURVE_LEGACY => {
-            let curve = read_polycurve_2d(data, &mut reader, archive, depth)?;
+            let curve = read_polycurve_2d(ctx, data, &mut reader, archive, depth)?;
             DecodedGeometry::Curve { curve }
         }
         _ => {
@@ -1093,6 +1385,7 @@ pub(crate) fn decode_inner_2d(
 }
 
 fn read_polycurve_2d(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
@@ -1105,7 +1398,7 @@ fn read_polycurve_2d(
             "unsupported C2 polycurve payload version",
         ));
     }
-    let segment_count = count(reader, 1)?;
+    let segment_count = crate::wire::element_count(reader, 1)?;
     if segment_count == 0 {
         return Err(GeometryError::malformed(
             reader.position(),
@@ -1116,13 +1409,16 @@ fn read_polycurve_2d(
     reader.i32()?;
     reader.skip(48)?;
     let (parameters, end_parameter) =
-        read_polycurve_parameters(reader, segment_count, "C2 polycurve")?;
-    let mut children = Vec::with_capacity(segment_count);
+        read_polycurve_parameters(ctx, reader, segment_count, "C2 polycurve")?;
+    let mut children = ctx
+        .collection_vec(segment_count, "Rhino C2 polycurve children")
+        .map_err(crate::curves::GeometryError::from)?;
     for parameter in parameters {
         let start = reader.position();
         let wrapper = crate::chunks::chunk_at(data, start, reader.end(), archive, false)?;
-        let mut wrapper_warnings = Vec::new();
+        let mut wrapper_warnings = Diagnostics::new();
         let class = parse_class_wrapper(
+            ctx,
             data,
             start..wrapper.next_offset(),
             archive,
@@ -1130,6 +1426,7 @@ fn read_polycurve_2d(
         )?;
         reader.skip(wrapper.next_offset() - start)?;
         let child = decode_inner_2d(
+            ctx,
             data,
             class.class_uuid,
             class.class_data_range,
@@ -1142,81 +1439,100 @@ fn read_polycurve_2d(
                 "C2 polycurve child is not a curve",
             ));
         };
-        curve.warnings_mut().splice(0..0, wrapper_warnings);
+        curve.warnings_mut().prepend(wrapper_warnings);
         children.push((parameter, curve));
     }
     Ok(DecodedCurve::Compound {
         children,
         end_parameter,
-        warnings: Vec::new(),
+        warnings: Diagnostics::new(),
     })
 }
 
 /// Consumes one legacy Brep C2 polycurve payload and returns its byte range.
 pub(crate) fn consume_legacy_polycurve_2d(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
 ) -> Result<Range<usize>, GeometryError> {
     let start = reader.position();
-    let _ = read_polycurve_2d(data, reader, archive, 0)?;
+    // discarded-value: the payload is consumed for the byte range the caller returns; the decoded curve has no reader
+    let _ = read_polycurve_2d(ctx, data, reader, archive, 0)?;
     Ok(start..reader.position())
 }
 
-fn read_point(reader: &mut BoundedReader<'_>, scale: f64) -> Result<Point3, GeometryError> {
+fn read_point(
+    reader: &mut BoundedReader<'_>,
+    scale: MillimeterScale,
+) -> Result<FinitePoint3, GeometryError> {
     let version = reader.u8()?;
     require_major(version, reader.position() - 1)?;
     let point = native_point(reader)?;
-    scale_point(point, scale)
+    crate::wire::scaled_point(point.0.get(), scale)
         .ok_or_else(|| error(reader.position(), "scaled point coordinate is invalid"))
 }
 
-fn read_cloud(reader: &mut BoundedReader<'_>, scale: f64) -> Result<PointCloud, GeometryError> {
+fn read_cloud(
+    ctx: &DecodeContext<'_>,
+    reader: &mut BoundedReader<'_>,
+    scale: MillimeterScale,
+) -> Result<PointCloud, GeometryError> {
     let version = reader.u8()?;
     require_major(version, reader.position() - 1)?;
     let minor = version & 0x0f;
-    let point_count = count(reader, 24)?;
-    let mut points = Vec::with_capacity(point_count);
+    let point_count = crate::wire::element_count(reader, 24)?;
+    let mut points = ctx.collection_vec(point_count, "Rhino point-cloud points")?;
     for _ in 0..point_count {
         let point = native_point(reader)?;
         points.push(
-            scale_point(point, scale)
+            crate::wire::scaled_point(point.0.get(), scale)
                 .ok_or_else(|| error(reader.position(), "scaled point coordinate is invalid"))?,
         );
     }
     plane(reader)?;
     bbox(reader)?;
     reader.i32()?;
-    let mut warnings = Vec::new();
+    let mut warnings = Diagnostics::new();
     if minor >= 1 {
-        let normal_count = count(reader, 24)?;
+        let normal_count = crate::wire::element_count(reader, 24)?;
         if normal_count != 0 && normal_count != point_count {
-            warnings
-                .push("redundant point-cloud normal count mismatch; channel dropped".to_string());
+            warnings.push_coded_admitted(
+                ctx,
+                crate::loss::RhinoLossCode::RedundantFieldRepaired,
+                format_args!("redundant point-cloud normal count mismatch; channel dropped"),
+            )?;
         }
         for _ in 0..normal_count {
             crate::settings::vector(reader)?;
         }
-        let color_count = count(reader, 4)?;
+        let color_count = crate::wire::element_count(reader, 4)?;
         for _ in 0..color_count {
             reader.take(4)?;
         }
         if color_count != 0 && color_count != point_count {
-            warnings
-                .push("redundant point-cloud color count mismatch; channel dropped".to_string());
+            warnings.push_coded_admitted(
+                ctx,
+                crate::loss::RhinoLossCode::RedundantFieldRepaired,
+                format_args!("redundant point-cloud color count mismatch; channel dropped"),
+            )?;
         }
     }
     if minor >= 2 {
-        let value_count = count(reader, 8)?;
+        let value_count = crate::wire::element_count(reader, 8)?;
         for _ in 0..value_count {
+            let value_offset = reader.position();
             let value = reader.f64()?;
             if !value.is_finite() {
-                return Err(error(reader.position(), "point-cloud value is not finite"));
+                return Err(error(value_offset, "point-cloud value is not finite"));
             }
         }
         if value_count != 0 && value_count != point_count {
-            warnings
-                .push("redundant point-cloud scalar count mismatch; channel dropped".to_string());
+            warnings.push_coded_admitted(
+                ctx,
+                crate::loss::RhinoLossCode::RedundantFieldRepaired,
+                format_args!("redundant point-cloud scalar count mismatch; channel dropped"),
+            )?;
         }
     }
     if point_count == 0 {
@@ -1228,23 +1544,26 @@ fn read_cloud(reader: &mut BoundedReader<'_>, scale: f64) -> Result<PointCloud, 
     reader.skip_remaining()?;
     Ok(PointCloud {
         points,
-        scaled: scale != 1.0,
+        scaled: scale != MillimeterScale::IDENTITY,
         warnings,
     })
 }
 
 fn read_line(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
-    scale: f64,
+    scale: MillimeterScale,
     expected_dimension: Option<i32>,
 ) -> Result<NurbsCurve, GeometryError> {
     let version = reader.u8()?;
     require_major(version, reader.position() - 1)?;
-    let from = scale_point(native_point(reader)?, scale)
-        .ok_or_else(|| error(reader.position(), "scaled line coordinate is invalid"))?;
-    let to = scale_point(native_point(reader)?, scale)
-        .ok_or_else(|| error(reader.position(), "scaled line coordinate is invalid"))?;
-    let domain = finite_interval(interval(reader)?, reader.position())?;
+    let from = crate::wire::scaled_point(native_point(reader)?.0.get(), scale)
+        .ok_or_else(|| error(reader.position(), "scaled line coordinate is invalid"))?
+        .get();
+    let to = crate::wire::scaled_point(native_point(reader)?.0.get(), scale)
+        .ok_or_else(|| error(reader.position(), "scaled line coordinate is invalid"))?
+        .get();
+    let domain = interval(reader)?.0.get();
     let dimension = reader.i32()?;
     if expected_dimension.is_some_and(|expected| dimension != expected)
         || !(dimension == 2 || dimension == 3)
@@ -1253,49 +1572,65 @@ fn read_line(
     {
         return Err(error(reader.position(), "invalid bounded line"));
     }
-    NurbsCurve::new(
+    cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        ctx,
         1,
         vec![domain[0], domain[0], domain[1], domain[1]],
         vec![from, to],
         None,
         false,
     )
+    .map_err(GeometryError::from)?
     .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))
 }
 
 fn read_polyline(
+    ctx: &DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
-    scale: f64,
+    scale: MillimeterScale,
     expected_dimension: Option<i32>,
 ) -> Result<NurbsCurve, GeometryError> {
     let version = reader.u8()?;
     require_major(version, reader.position() - 1)?;
-    let point_count = count(reader, 24)?;
+    let point_count = crate::wire::element_count(reader, 24)?;
     if point_count < 2 {
         return Err(error(
             reader.position(),
             "polyline needs at least two points",
         ));
     }
-    let mut points = Vec::with_capacity(point_count);
+    let mut points = ctx
+        .collection_vec(point_count, "Rhino polyline points")
+        .map_err(crate::curves::GeometryError::from)?;
     for _ in 0..point_count {
         let point = native_point(reader)?;
-        points
-            .push(scale_point(point, scale).ok_or_else(|| {
-                error(reader.position(), "scaled polyline coordinate is invalid")
-            })?);
+        points.push(
+            crate::wire::scaled_point(point.0.get(), scale)
+                .ok_or_else(|| error(reader.position(), "scaled polyline coordinate is invalid"))?,
+        );
     }
-    let parameter_count = count(reader, 8)?;
+    let parameter_count = crate::wire::element_count(reader, 8)?;
     if parameter_count != point_count {
         return Err(error(
             reader.position(),
             "polyline parameter count mismatch",
         ));
     }
-    let mut parameters = Vec::with_capacity(parameter_count);
+    let mut parameters = ctx
+        .collection_vec(parameter_count, "Rhino polyline parameters")
+        .map_err(crate::curves::GeometryError::from)?;
     for _ in 0..parameter_count {
         let value = reader.f64()?;
-        if !value.is_finite() || parameters.last().is_some_and(|previous| value <= *previous) {
+        let Some(value) = FiniteReal::new(value) else {
+            return Err(error(
+                reader.position(),
+                "polyline parameters are not increasing",
+            ));
+        };
+        if parameters
+            .last()
+            .is_some_and(|previous: &FiniteReal| value.get() <= previous.get())
+        {
             return Err(error(
                 reader.position(),
                 "polyline parameters are not increasing",
@@ -1309,34 +1644,45 @@ fn read_polyline(
     {
         return Err(error(reader.position(), "polyline dimension is invalid"));
     }
-    let mut knots = Vec::with_capacity(point_count + 2);
+    let knot_count = point_count
+        .checked_add(2)
+        .ok_or_else(|| error(reader.position(), "polyline knot count overflow"))?;
+    let mut knots = ctx
+        .collection_vec(knot_count, "Rhino polyline knots")
+        .map_err(crate::curves::GeometryError::from)?;
     knots.push(parameters[0]);
     knots.push(parameters[0]);
     knots.extend_from_slice(&parameters[1..point_count - 1]);
     knots.push(parameters[point_count - 1]);
     knots.push(parameters[point_count - 1]);
-    NurbsCurve::new(1, knots, points, None, false)
+    let knots = cadmpeg_ir::geometry::nurbs::KnotVector::from_finite_lanes(ctx, knots)?
+        .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))?;
+    NurbsCurve::from_checked_lanes(ctx, 1, knots, points, None, false)?
         .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))
 }
 
 fn read_arc(
+    ctx: &DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
-    scale: f64,
+    scale: MillimeterScale,
     expected_dimension: Option<i32>,
     force_nurbs: bool,
-) -> Result<(CurveGeometry, Vec<String>), GeometryError> {
+) -> Result<(CurveGeometry, Diagnostics), GeometryError> {
     let version = reader.u8()?;
     require_major(version, reader.position() - 1)?;
     let circle = read_circle(reader, scale)?;
-    let angle = finite_interval(interval(reader)?, reader.position())?;
-    let domain = finite_interval(interval(reader)?, reader.position())?;
+    let angle = interval(reader)?.0.get();
+    let domain = interval(reader)?.0.get();
     let dimension = reader.i32()?;
-    let mut warnings = Vec::new();
+    let mut warnings = Diagnostics::new();
     if expected_dimension.is_some_and(|expected| dimension != expected) {
         return Err(error(reader.position(), "arc dimension is invalid"));
     }
     if dimension != 2 && dimension != 3 {
-        warnings.push(format!("arc dimension {dimension} normalized to native 3D"));
+        warnings.push_admitted(
+            ctx,
+            format_args!("arc dimension {dimension} normalized to native 3D"),
+        )?;
     }
     if domain[0] >= domain[1] || angle[0] >= angle[1] {
         return Err(error(reader.position(), "arc interval is not increasing"));
@@ -1347,44 +1693,62 @@ fn read_arc(
     }
     if !force_nurbs && canonical_circle(&circle, angle, domain, delta) {
         return Ok((
-            CurveGeometry::Circle {
-                center: circle.center,
-                axis: circle.axis,
-                ref_direction: circle.xaxis,
-                radius: circle.radius,
-            },
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                cadmpeg_ir::geometry::analytic::CircleCurve::new(
+                    circle.center,
+                    OrthonormalFrame3::new(circle.axis, circle.xaxis).ok_or_else(|| {
+                        error(
+                            reader.position(),
+                            "CircleCurve.axis/ref_direction must form an orthonormal frame",
+                        )
+                    })?,
+                    circle.radius,
+                ),
+            )),
             warnings,
         ));
     }
     Ok((
-        CurveGeometry::Nurbs(arc_nurbs(&circle, angle, domain, delta, reader.position())?),
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(arc_nurbs(
+            ctx,
+            &circle,
+            angle,
+            domain,
+            delta,
+            reader.position(),
+        )?)),
         warnings,
     ))
 }
 
 #[derive(Debug, Clone, Copy)]
 struct Circle {
-    center: Point3,
+    center: FinitePoint3,
+    // The source circle uses a stricter unit and orthogonality tolerance than
+    // the IR frame. These axes keep their source values until frame assembly.
     axis: Vector3,
     xaxis: Vector3,
     yaxis: Vector3,
-    radius: f64,
+    radius: PositiveLength,
 }
 
-fn read_circle(reader: &mut BoundedReader<'_>, scale: f64) -> Result<Circle, GeometryError> {
+fn read_circle(
+    reader: &mut BoundedReader<'_>,
+    scale: MillimeterScale,
+) -> Result<Circle, GeometryError> {
     let native = plane(reader)?;
     let radius = reader.f64()?;
     let zero = native_point(reader)?;
     let half_pi = native_point(reader)?;
     let at_pi = native_point(reader)?;
-    let scaled_radius = radius * scale;
-    if !radius.is_finite() || radius <= 0.0 || !scaled_radius.is_finite() || scaled_radius <= 0.0 {
-        return Err(error(reader.position(), "circle radius is invalid"));
-    }
-    let xaxis = vector(native.xaxis);
-    let yaxis = vector(native.yaxis);
-    let axis = vector(native.zaxis);
-    let center = scale_point(native.origin, scale)
+    let radius = PositiveReal::new(radius)
+        .ok_or_else(|| error(reader.position(), "circle radius is invalid"))?;
+    let scaled_radius = PositiveLength::new(radius.get() * scale.value())
+        .ok_or_else(|| error(reader.position(), "circle radius is invalid"))?;
+    let xaxis = vector(native.xaxis.get());
+    let yaxis = vector(native.yaxis.get());
+    let axis = vector(native.zaxis.get());
+    let center = crate::wire::scaled_point(native.origin.get(), scale)
         .ok_or_else(|| error(reader.position(), "scaled circle center is invalid"))?;
     let norm_x = xaxis.norm();
     let norm_y = yaxis.norm();
@@ -1398,10 +1762,25 @@ fn read_circle(reader: &mut BoundedReader<'_>, scale: f64) -> Result<Circle, Geo
         && xaxis.dot(yaxis).abs() < CIRCLE_TOLERANCE
         && xaxis.dot(axis).abs() < CIRCLE_TOLERANCE
         && yaxis.dot(axis).abs() < CIRCLE_TOLERANCE
-        && close_vector(xaxis.cross(yaxis), axis, CIRCLE_TOLERANCE)
-        && close_native_point(zero, native.origin, native.xaxis, radius)
-        && close_native_point(half_pi, native.origin, native.yaxis, radius)
-        && close_native_point(at_pi, native.origin, negate(native.xaxis), radius))
+        && crate::wire::close_vector(xaxis.cross(yaxis), axis, CIRCLE_TOLERANCE)
+        && close_native_point(
+            zero.0.get(),
+            native.origin.get(),
+            native.xaxis.get(),
+            radius.get(),
+        )
+        && close_native_point(
+            half_pi.0.get(),
+            native.origin.get(),
+            native.yaxis.get(),
+            radius.get(),
+        )
+        && close_native_point(
+            at_pi.0.get(),
+            native.origin.get(),
+            negate(native.xaxis.get()),
+            radius.get(),
+        ))
     {
         return Err(error(reader.position(), "circle plane axes are invalid"));
     }
@@ -1415,9 +1794,10 @@ fn read_circle(reader: &mut BoundedReader<'_>, scale: f64) -> Result<Circle, Geo
 }
 
 fn read_polycurve(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
-    scale: f64,
+    scale: MillimeterScale,
     archive: ArchiveVersion,
     depth: usize,
 ) -> Result<DecodedCurve, GeometryError> {
@@ -1428,7 +1808,7 @@ fn read_polycurve(
             "unsupported polycurve payload version",
         ));
     }
-    let segment_count = count(reader, 1)?;
+    let segment_count = crate::wire::element_count(reader, 1)?;
     if segment_count == 0 {
         return Err(GeometryError::malformed(
             reader.position(),
@@ -1439,13 +1819,16 @@ fn read_polycurve(
     reader.i32()?;
     reader.skip(48)?;
     let (parameters, end_parameter) =
-        read_polycurve_parameters(reader, segment_count, "polycurve")?;
-    let mut children = Vec::with_capacity(segment_count);
+        read_polycurve_parameters(ctx, reader, segment_count, "polycurve")?;
+    let mut children = ctx
+        .collection_vec(segment_count, "Rhino polycurve children")
+        .map_err(crate::curves::GeometryError::from)?;
     for parameter in parameters {
         let start = reader.position();
         let wrapper = crate::chunks::chunk_at(data, start, reader.end(), archive, false)?;
-        let mut wrapper_warnings = Vec::new();
+        let mut wrapper_warnings = Diagnostics::new();
         let class = parse_class_wrapper(
+            ctx,
             data,
             start..wrapper.next_offset(),
             archive,
@@ -1459,6 +1842,7 @@ fn read_polycurve(
             ));
         }
         let child = decode_inner(
+            ctx,
             data,
             class.class_uuid,
             class.class_data_range,
@@ -1472,41 +1856,46 @@ fn read_polycurve(
                 "polycurve child is not a curve",
             ));
         };
-        curve.warnings_mut().splice(0..0, wrapper_warnings);
+        curve.warnings_mut().prepend(wrapper_warnings);
         children.push((parameter, curve));
     }
     Ok(DecodedCurve::Compound {
         children,
         end_parameter,
-        warnings: Vec::new(),
+        warnings: Diagnostics::new(),
     })
 }
 
 /// Consumes one legacy Brep C3 polycurve payload and returns its byte range.
 pub(crate) fn consume_legacy_polycurve(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
-    scale: f64,
+    scale: MillimeterScale,
     archive: ArchiveVersion,
 ) -> Result<Range<usize>, GeometryError> {
     let start = reader.position();
-    let _ = read_polycurve(data, reader, scale, archive, 0)?;
+    // discarded-value: the payload is consumed for the byte range the caller returns; the decoded curve has no reader
+    let _ = read_polycurve(ctx, data, reader, scale, archive, 0)?;
     Ok(start..reader.position())
 }
 
 fn read_polycurve_parameters(
+    ctx: &DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     segment_count: usize,
     label: &str,
-) -> Result<(Vec<f64>, f64), GeometryError> {
-    let parameter_count = count(reader, 8)?;
+) -> Result<(Vec<FiniteReal>, FiniteReal), GeometryError> {
+    let parameter_count = crate::wire::element_count(reader, 8)?;
     if parameter_count != segment_count + 1 {
         return Err(GeometryError::malformed(
             reader.position(),
             format!("{label} parameter count mismatch"),
         ));
     }
-    let mut parameters = Vec::with_capacity(segment_count);
+    let mut parameters = ctx
+        .collection_vec(segment_count, "Rhino polycurve parameters")
+        .map_err(crate::curves::GeometryError::from)?;
     for _ in 0..segment_count {
         let value = reader.f64()?;
         parameters.push(checked_polycurve_parameter(
@@ -1523,35 +1912,74 @@ fn read_polycurve_parameters(
 }
 
 fn checked_polycurve_parameter(
-    previous: Option<f64>,
+    previous: Option<FiniteReal>,
     value: f64,
     offset: usize,
     label: &str,
-) -> Result<f64, GeometryError> {
-    if !value.is_finite() || previous.is_some_and(|previous| value <= previous) {
-        return Err(GeometryError::malformed(
-            offset,
-            format!("{label} parameters are invalid"),
-        ));
-    }
-    Ok(value)
+) -> Result<FiniteReal, GeometryError> {
+    FiniteReal::new(value)
+        .filter(|value| previous.is_none_or(|previous| value.get() > previous.get()))
+        .ok_or_else(|| GeometryError::malformed(offset, format!("{label} parameters are invalid")))
 }
 
 fn arc_nurbs(
+    ctx: &DecodeContext<'_>,
     circle: &Circle,
     angle: [f64; 2],
     domain: [f64; 2],
     delta: f64,
     offset: usize,
 ) -> Result<NurbsCurve, GeometryError> {
-    let spans = (delta / FRAC_PI_2).ceil().max(1.0) as usize;
-    let step = delta / spans as f64;
-    let mut control_points = Vec::with_capacity(spans * 2 + 1);
-    let mut weights = Vec::with_capacity(spans * 2 + 1);
-    let mut knots = Vec::with_capacity(spans * 2 + 4);
+    let spans = cadmpeg_core::convert::truncate_f64_to_usize((delta / FRAC_PI_2).ceil().max(1.0))
+        .ok_or_else(|| error(offset, "arc span count exceeds address space"))?;
+    let step = delta
+        / cadmpeg_core::convert::f64_from_index(spans)
+            .ok_or_else(|| error(offset, "geometry index exceeds exact float range"))?;
+    let domain_at = |index: usize| -> Result<f64, GeometryError> {
+        let fraction = cadmpeg_core::convert::f64_from_index(index)
+            .ok_or_else(|| error(offset, "geometry index exceeds exact float range"))?
+            / cadmpeg_core::convert::f64_from_index(spans)
+                .ok_or_else(|| error(offset, "geometry index exceeds exact float range"))?;
+        let ordinary = domain[0]
+            + (domain[1] - domain[0])
+                * cadmpeg_core::convert::f64_from_index(index)
+                    .ok_or_else(|| error(offset, "geometry index exceeds exact float range"))?
+                / cadmpeg_core::convert::f64_from_index(spans)
+                    .ok_or_else(|| error(offset, "geometry index exceeds exact float range"))?;
+        if ordinary.is_finite() {
+            Ok(ordinary)
+        } else {
+            cadmpeg_ir::math::interpolate(domain[0], domain[1], fraction)
+                .map(cadmpeg_ir::scalar::FiniteReal::get)
+                .ok_or_else(|| error(offset, "arc parameter domain is invalid"))
+        }
+    };
+    let point_count = spans
+        .checked_mul(2)
+        .and_then(|count| count.checked_add(1))
+        .ok_or_else(|| error(offset, "arc control point count overflow"))?;
+    let knot_count = spans
+        .checked_mul(2)
+        .and_then(|count| count.checked_add(4))
+        .ok_or_else(|| error(offset, "arc knot count overflow"))?;
+    let mut control_points = ctx
+        .collection_vec(point_count, "Rhino arc control points")
+        .map_err(crate::curves::GeometryError::from)?;
+    let mut weights = ctx
+        .collection_vec(point_count, "Rhino arc weights")
+        .map_err(crate::curves::GeometryError::from)?;
+    let mut knots = ctx
+        .collection_vec(knot_count, "Rhino arc knots")
+        .map_err(crate::curves::GeometryError::from)?;
     for span in 0..spans {
-        let a0 = angle[0] + step * span as f64;
-        let a1 = angle[0] + step * (span + 1) as f64;
+        let a0 = angle[0]
+            + step
+                * cadmpeg_core::convert::f64_from_index(span)
+                    .ok_or_else(|| error(offset, "geometry index exceeds exact float range"))?;
+        let a1 = angle[0]
+            + step
+                * cadmpeg_core::convert::f64_from_index(span + 1)
+                    .ok_or_else(|| error(offset, "geometry index exceeds exact float range"))?;
         let amid = (a0 + a1) * 0.5;
         let weight = ((a1 - a0) * 0.5).cos();
         let p0 = circle_point(circle, a0);
@@ -1565,8 +1993,8 @@ fn arc_nurbs(
         weights.push(weight);
         control_points.push(p1);
         weights.push(1.0);
-        let t0 = domain[0] + (domain[1] - domain[0]) * span as f64 / spans as f64;
-        let t1 = domain[0] + (domain[1] - domain[0]) * (span + 1) as f64 / spans as f64;
+        let t0 = domain_at(span)?;
+        let t1 = domain_at(span + 1)?;
         if span == 0 {
             knots.extend([t0, t0, t0]);
         } else {
@@ -1576,8 +2004,16 @@ fn arc_nurbs(
             knots.extend([t1, t1, t1]);
         }
     }
-    NurbsCurve::new(2, knots, control_points, Some(weights), false)
-        .map_err(|error| GeometryError::malformed(offset, error.to_string()))
+    cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        ctx,
+        2,
+        knots,
+        control_points,
+        Some(weights),
+        false,
+    )
+    .map_err(GeometryError::from)?
+    .map_err(|error| GeometryError::malformed(offset, error.to_string()))
 }
 
 fn canonical_circle(circle: &Circle, angle: [f64; 2], domain: [f64; 2], delta: f64) -> bool {
@@ -1598,50 +2034,17 @@ fn circle_point_scaled(circle: &Circle, angle: f64, radial_scale: f64) -> Point3
         circle.xaxis.y * angle.cos() + circle.yaxis.y * angle.sin(),
         circle.xaxis.z * angle.cos() + circle.yaxis.z * angle.sin(),
     );
+    let center = circle.center.get();
+    let radius = circle.radius.get();
     Point3::new(
-        circle.center.x + radial.x * circle.radius * radial_scale,
-        circle.center.y + radial.y * circle.radius * radial_scale,
-        circle.center.z + radial.z * circle.radius * radial_scale,
+        center.x + radial.x * radius * radial_scale,
+        center.y + radial.y * radius * radial_scale,
+        center.z + radial.z * radius * radial_scale,
     )
-}
-
-fn vector(value: crate::settings::Vector3) -> Vector3 {
-    Vector3::new(value.0[0], value.0[1], value.0[2])
 }
 
 fn native_point(reader: &mut BoundedReader<'_>) -> Result<NativePoint3, FramingError> {
     crate::settings::point(reader)
-}
-
-fn scale_point(value: NativePoint3, scale: f64) -> Option<Point3> {
-    Some(Point3::new(
-        crate::wire::scaled_coordinate(value.0[0], scale)?,
-        crate::wire::scaled_coordinate(value.0[1], scale)?,
-        crate::wire::scaled_coordinate(value.0[2], scale)?,
-    ))
-}
-
-fn finite_interval(
-    value: crate::settings::Interval,
-    offset: usize,
-) -> Result<[f64; 2], GeometryError> {
-    if value.0[0].is_finite() && value.0[1].is_finite() {
-        Ok(value.0)
-    } else {
-        Err(error(offset, "interval contains a nonfinite value"))
-    }
-}
-
-fn count(reader: &mut BoundedReader<'_>, width: usize) -> Result<usize, GeometryError> {
-    let raw = reader.i32()?;
-    let bytes = checked_count_bytes(
-        raw,
-        width,
-        reader.remaining(),
-        reader.remaining() / width,
-        reader.position() - 4,
-    )?;
-    Ok(bytes / width)
 }
 
 fn require_major(version: u8, offset: usize) -> Result<(), GeometryError> {
@@ -1655,52 +2058,758 @@ fn require_major(version: u8, offset: usize) -> Result<(), GeometryError> {
     }
 }
 
-fn close_vector(left: Vector3, right: Vector3, tolerance: f64) -> bool {
-    (left.x - right.x).abs() <= tolerance
-        && (left.y - right.y).abs() <= tolerance
-        && (left.z - right.z).abs() <= tolerance
+fn negate(value: [f64; 3]) -> [f64; 3] {
+    [-value[0], -value[1], -value[2]]
 }
 
-fn negate(value: crate::settings::Vector3) -> crate::settings::Vector3 {
-    crate::settings::Vector3([-value.0[0], -value.0[1], -value.0[2]])
-}
-
-fn close_native_point(
-    point: NativePoint3,
-    origin: NativePoint3,
-    direction: crate::settings::Vector3,
-    radius: f64,
-) -> bool {
+fn close_native_point(point: [f64; 3], origin: [f64; 3], direction: [f64; 3], radius: f64) -> bool {
     let expected = [
-        origin.0[0] + direction.0[0] * radius,
-        origin.0[1] + direction.0[1] * radius,
-        origin.0[2] + direction.0[2] * radius,
+        origin[0] + direction[0] * radius,
+        origin[1] + direction[1] * radius,
+        origin[2] + direction[2] * radius,
     ];
     point
-        .0
         .iter()
         .zip(expected)
         .all(|(actual, expected)| (*actual - expected).abs() <= EPS_CURVE_POSITION)
 }
 
-pub(crate) fn error(offset: usize, message: &str) -> GeometryError {
+pub(crate) fn error(offset: usize, message: impl Into<String>) -> GeometryError {
     GeometryError::malformed(offset, message)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    #[test]
+    fn numerical_audit_nurbs_elevation_preserves_active_spans_and_discontinuities() {
+        use cadmpeg_ir::geometry::SolvedCurveGeometry;
+        let cases = [
+            NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                2,
+                vec![-1.0, -1.0, 0.0, 1.0, 2.0, 2.0],
+                vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(1.0, 1.0, 0.0),
+                    Point3::new(2.0, 0.0, 0.0),
+                ],
+                None,
+                false,
+            )
+            .expect("fixture constructor admission")
+            .unwrap(),
+            NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                2,
+                vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0],
+                (0..6)
+                    .map(|x| Point3::new(f64::from(x), 0.0, 0.0))
+                    .collect(),
+                None,
+                false,
+            )
+            .expect("fixture constructor admission")
+            .unwrap(),
+        ];
+        for curve in cases {
+            for degree in [2, 3] {
+                let elevated =
+                    with_test_context(|ctx| super::elevate_to_degree(ctx, &curve, degree, 0))
+                        .unwrap();
+                let start = curve.knots()
+                    [usize::try_from(curve.degree()).expect("fixture value fits usize")];
+                let end = curve.knots()[curve.control_points().len()];
+                assert_eq!(elevated.knots()[degree], start);
+                assert_eq!(elevated.knots()[elevated.control_points().len()], end);
+                for fraction in [0.0, 0.125, 0.25, 0.5, 0.625, 0.875, 1.0] {
+                    let at = start + (end - start) * fraction;
+                    let expected = cadmpeg_ir::eval::decode::curve_point_solved(
+                        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                        &SolvedCurveGeometry::Nurbs(curve.clone()),
+                        at,
+                    )
+                    .unwrap();
+                    let actual = cadmpeg_ir::eval::decode::curve_point_solved(
+                        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                        &SolvedCurveGeometry::Nurbs(elevated.clone()),
+                        at,
+                    )
+                    .unwrap();
+                    assert!(actual.distance(expected.get()) <= 64.0 * f64::EPSILON);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn numerical_audit_join_preserves_independently_scaled_rational_segments() {
+        use cadmpeg_ir::geometry::SolvedCurveGeometry;
+        let first = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            2,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![
+                Point3::new(-2.0, 0.0, 0.0),
+                Point3::new(-1.0, 0.0, 0.0),
+                Point3::new(0.0, 0.0, 0.0),
+            ],
+            Some(vec![2.0; 3]),
+            false,
+        )
+        .expect("fixture constructor admission")
+        .unwrap();
+        let second = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            2,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+                Point3::new(1.0, 1.0, 0.0),
+            ],
+            Some(vec![1.0; 3]),
+            false,
+        )
+        .expect("fixture constructor admission")
+        .unwrap();
+        let joined =
+            with_test_context(|ctx| super::join_nurbs_segments(ctx, vec![first, second], 0))
+                .unwrap();
+        let actual = cadmpeg_ir::eval::decode::curve_point_solved(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &SolvedCurveGeometry::Nurbs(joined.curve),
+            1.5,
+        )
+        .unwrap();
+        assert_eq!(actual, Point3::new(0.25, 0.75, 0.0));
+    }
+
+    #[test]
+    fn numerical_audit_remap_and_join_keep_large_finite_values() {
+        let curve = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            1,
+            vec![0.0, 0.0, 1.0e-200, 1.0e-200],
+            vec![Point3::new(f64::MAX, 0.0, 0.0); 2],
+            None,
+            false,
+        )
+        .expect("fixture constructor admission")
+        .unwrap();
+        let remapped = with_test_context(|ctx| {
+            super::remap_nurbs_domain(
+                ctx,
+                curve,
+                [FiniteReal::ZERO, FiniteReal::new(1.0e200).unwrap()],
+                0,
+            )
+        })
+        .unwrap();
+        assert_eq!(remapped.knots().as_slice(), &[0.0, 0.0, 1.0e200, 1.0e200]);
+        let joined = with_test_context(|ctx| {
+            super::join_nurbs_segments(ctx, vec![remapped.clone(), remapped], 0)
+        })
+        .unwrap();
+        assert!(joined
+            .curve
+            .control_points()
+            .iter()
+            .all(|point| point.x == f64::MAX));
+    }
+
+    use super::{
+        arc_nurbs, canonical_circle, checked_polycurve_parameter, circle_point, exact_nurbs,
+        join_nurbs_segments, read_line, read_polyline, scale_decoded_curve, Circle, DecodedCurve,
+        GeometryError, CURVE_ON_SURFACE, LINE, MAX_CURVE_DEPTH,
+    };
+    use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
+    use crate::loss::Diagnostics;
+    use crate::settings::MillimeterScale;
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::geometry::analytic::{CircleCurve, DegenerateCurve, LineCurve};
+    use cadmpeg_ir::geometry::{nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry};
+    use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::scalar::{FiniteReal, PositiveLength};
+    use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 
     const EPS_EXACT_ARC: f64 = 1.0e-12;
+
+    fn with_test_context<R>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> R) -> R {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("test context input fits service profile");
+        f(&ctx)
+    }
+
+    fn with_collection_limit<R>(
+        limit: u64,
+        f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> R,
+    ) -> R {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("test context input fits service profile");
+        f(&ctx)
+    }
+
+    fn with_retained_limit<R>(
+        limit: u64,
+        f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> R,
+    ) -> R {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test input fits service profile");
+        f(&ctx)
+    }
+
+    fn rational_line_for_limits() -> NurbsCurve {
+        NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            Some(vec![2.0, 1.0]),
+            false,
+        )
+        .expect("fixture constructor admission")
+        .expect("valid rational line")
+    }
+
+    fn exact_line_for_limits() -> DecodedCurve {
+        DecodedCurve::leaf(
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(rational_line_for_limits())),
+            Diagnostics::new(),
+        )
+    }
+
+    #[test]
+    fn exact_nurbs_knots_refuse_collection_limit() {
+        let error = with_collection_limit(3, |ctx| exact_nurbs(ctx, &exact_line_for_limits(), 0))
+            .expect_err("four knot copies exceed three collection items");
+        assert!(matches!(
+            error,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                if refusal.operation == "Rhino exact NURBS copy"
+        ));
+    }
+
+    #[test]
+    fn exact_nurbs_poles_refuse_collection_limit() {
+        let error = with_collection_limit(5, |ctx| exact_nurbs(ctx, &exact_line_for_limits(), 0))
+            .expect_err("two copied poles exceed five collection items after four knots");
+        assert!(matches!(
+            error,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                if refusal.operation == "Rhino exact NURBS copy"
+        ));
+        assert!(with_test_context(|ctx| exact_nurbs(ctx, &exact_line_for_limits(), 0)).is_ok());
+    }
+
+    #[test]
+    fn exact_nurbs_copy_refuses_retained_limit_one_byte_below_full_copy() {
+        let curve = rational_line_for_limits();
+        let bytes = curve.knots().len() * std::mem::size_of::<f64>()
+            + curve.pole_count()
+                * std::mem::size_of::<cadmpeg_ir::geometry::nurbs::WeightedPole3<FinitePoint3>>();
+        let limit = u64::try_from(bytes - 1).expect("copy fits in u64");
+        let error = with_retained_limit(limit, |ctx| exact_nurbs(ctx, &exact_line_for_limits(), 0))
+            .expect_err("the full copy exceeds the retained limit by one byte");
+        assert!(matches!(
+            error,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                if refusal.operation == "Rhino exact NURBS copy"
+                    && refusal.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+        ));
+    }
+
+    #[test]
+    fn remapped_nurbs_knots_refuse_collection_limit() {
+        let target = [
+            FiniteReal::new(2.0).expect("finite"),
+            FiniteReal::new(3.0).expect("finite"),
+        ];
+        let error = with_collection_limit(3, |ctx| {
+            super::remap_nurbs_domain(ctx, rational_line_for_limits(), target, 0)
+        })
+        .expect_err("four remapped knots exceed three collection items");
+        assert!(matches!(
+            error,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                if refusal.operation == "Rhino remapped NURBS knots"
+        ));
+        let remapped = with_test_context(|ctx| {
+            super::remap_nurbs_domain(ctx, rational_line_for_limits(), target, 0)
+        })
+        .expect("service profile admits remapped knots");
+        assert_eq!(remapped.knots().as_slice(), &[2.0, 2.0, 3.0, 3.0]);
+    }
+
+    fn assert_elevation_refusal(limit: u64, target: usize, operation: &str) {
+        let curve = rational_line_for_limits();
+        let error = with_collection_limit(limit, |ctx| {
+            super::elevate_to_degree(ctx, &curve, target, 0)
+        })
+        .expect_err("collection limit is below the input's need");
+        assert!(
+            matches!(
+                &error,
+                GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                    if refusal.operation == operation
+            ),
+            "unexpected resource refusal: {error}"
+        );
+    }
+
+    fn two_point_polyline_bytes() -> Vec<u8> {
+        let mut bytes = vec![0x10];
+        bytes.extend(2_i32.to_le_bytes());
+        for value in [0.0_f64, 0.0, 0.0, 1.0, 2.0, 0.0] {
+            bytes.extend(value.to_le_bytes());
+        }
+        bytes.extend(2_i32.to_le_bytes());
+        bytes.extend(10.0_f64.to_le_bytes());
+        bytes.extend(12.0_f64.to_le_bytes());
+        bytes.extend(3_i32.to_le_bytes());
+        bytes
+    }
+
+    fn assert_polyline_refusal(limit: u64, operation: &str) {
+        let bytes = two_point_polyline_bytes();
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded polyline");
+        let error = with_collection_limit(limit, |ctx| {
+            read_polyline(ctx, &mut reader, MillimeterScale::IDENTITY, None)
+        })
+        .expect_err("collection limit is below the polyline's need");
+        assert!(matches!(
+            error,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                if refusal.operation == operation
+        ));
+    }
+
+    fn assert_join_refusal(mut limit: u64, operation: &str) {
+        let segments = vec![rational_line_for_limits(), rational_line_for_limits()];
+        for _ in 0..4096 {
+            let error = with_collection_limit(limit, |ctx| {
+                let result = super::join_nurbs_segments(ctx, segments.clone(), 0);
+                if let Err(GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(first))) =
+                    &result
+                {
+                    assert_eq!(ctx.resource_refusal(), Some(*first));
+                }
+                result
+            })
+            .err()
+            .expect("collection limit is below the joined curve's need");
+            let GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(first)) = error else {
+                panic!("unexpected join refusal");
+            };
+            assert_eq!(
+                first.dimension,
+                cadmpeg_core::decode::ResourceDimension::CollectionItems
+            );
+            assert_eq!(first.limit, limit);
+            if first.operation == operation {
+                return;
+            }
+            let next = first.used.checked_add(first.additional).unwrap();
+            assert!(next > limit);
+            limit = next;
+        }
+        panic!("join admission must be reached: {operation}");
+    }
+
+    #[test]
+    fn elevated_polycurve_segments_refuse_collection_limit() {
+        assert_join_refusal(1, "Rhino elevated polycurve segments");
+    }
+
+    #[test]
+    fn joined_polycurve_weights_refuse_collection_limit() {
+        assert_join_refusal(40, "Rhino joined polycurve weights");
+    }
+
+    #[test]
+    fn joined_polycurve_points_refuse_collection_limit() {
+        assert_join_refusal(42, "Rhino joined polycurve points");
+    }
+
+    #[test]
+    fn joined_polycurve_knots_refuse_collection_limit() {
+        assert_join_refusal(44, "Rhino joined polycurve knots");
+    }
+
+    #[test]
+    fn polyline_points_refuse_collection_limit() {
+        assert_polyline_refusal(1, "Rhino polyline points");
+    }
+
+    #[test]
+    fn polyline_parameters_refuse_collection_limit() {
+        assert_polyline_refusal(3, "Rhino polyline parameters");
+    }
+
+    #[test]
+    fn polyline_knots_refuse_collection_limit() {
+        assert_polyline_refusal(7, "Rhino polyline knots");
+    }
+
+    #[test]
+    fn polycurve_parameters_refuse_collection_limit() {
+        let mut bytes = 2_i32.to_le_bytes().to_vec();
+        bytes.extend(0.0_f64.to_le_bytes());
+        bytes.extend(1.0_f64.to_le_bytes());
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded parameters");
+        let error = with_collection_limit(0, |ctx| {
+            super::read_polycurve_parameters(ctx, &mut reader, 1, "polycurve")
+        })
+        .expect_err("one polycurve parameter exceeds zero collection items");
+        assert!(matches!(
+            error,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                if refusal.operation == "Rhino polycurve parameters"
+        ));
+    }
+
+    #[test]
+    fn polycurve_homogeneous_points_refuse_collection_limit() {
+        assert_elevation_refusal(2, 1, "Rhino polycurve homogeneous points");
+    }
+
+    #[test]
+    fn polycurve_knots_refuse_collection_limit() {
+        assert_elevation_refusal(4, 1, "Rhino polycurve knots");
+    }
+
+    #[test]
+    fn polycurve_spans_refuse_collection_limit() {
+        assert_elevation_refusal(8, 1, "Rhino polycurve spans");
+    }
+
+    #[test]
+    fn polycurve_bezier_span_refuses_collection_limit() {
+        assert_elevation_refusal(9, 1, "Rhino polycurve Bezier span");
+    }
+
+    #[test]
+    fn polycurve_bezier_elevation_refuses_collection_limit() {
+        assert_elevation_refusal(12, 2, "Rhino polycurve Bezier elevation");
+    }
+
+    #[test]
+    fn polycurve_elevated_points_refuse_collection_limit() {
+        assert_elevation_refusal(11, 1, "Rhino polycurve elevated points");
+    }
+
+    #[test]
+    fn polycurve_final_knots_refuse_collection_limit() {
+        assert_elevation_refusal(13, 1, "Rhino polycurve elevated knots");
+    }
+
+    #[test]
+    fn polycurve_output_weights_refuse_collection_limit() {
+        assert_elevation_refusal(15, 1, "Rhino polycurve output weights");
+    }
+
+    #[test]
+    fn polycurve_output_points_refuse_collection_limit() {
+        assert_elevation_refusal(17, 1, "Rhino polycurve output points");
+    }
+
+    #[test]
+    fn polycurve_internal_knots_refuse_collection_limit() {
+        let curve = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            1,
+            vec![0.0, 0.0, 0.5, 1.0, 1.0],
+            vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(0.5, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+            ],
+            Some(vec![1.0, 1.0, 1.0]),
+            false,
+        )
+        .expect("fixture constructor admission")
+        .expect("valid rational curve with an interior knot");
+        let error = with_collection_limit(10, |ctx| super::elevate_to_degree(ctx, &curve, 1, 0))
+            .expect_err("interior knot exceeds ten collection items");
+        assert!(matches!(
+            error,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino polycurve internal knots"
+        ));
+    }
+
+    #[test]
+    fn polycurve_inserted_knot_refuses_collection_limit() {
+        let mut knots = vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0];
+        let mut points = vec![super::Homogeneous([1.0; 4]); 3];
+        let error = with_collection_limit(4, |ctx| {
+            super::insert_knot_once(
+                ctx,
+                &mut knots,
+                &mut points,
+                2,
+                0.5,
+                0,
+                "polycurve knot insertion failed",
+            )
+        })
+        .expect_err("inserted knot exceeds four collection items");
+        assert!(matches!(
+            error,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino polycurve inserted knot"
+        ));
+    }
+
+    #[test]
+    fn polycurve_knot_insertion_refuses_collection_limit() {
+        let mut knots = vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0];
+        let mut points = vec![super::Homogeneous([1.0; 4]); 3];
+        let error = with_collection_limit(3, |ctx| {
+            super::insert_knot_once(
+                ctx,
+                &mut knots,
+                &mut points,
+                2,
+                0.5,
+                0,
+                "polycurve knot insertion failed",
+            )
+        })
+        .expect_err("four output points exceed three collection items");
+        assert!(matches!(
+            error,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino polycurve knot insertion points"
+        ));
+        with_test_context(|ctx| {
+            super::insert_knot_once(
+                ctx,
+                &mut knots,
+                &mut points,
+                2,
+                0.5,
+                0,
+                "polycurve knot insertion failed",
+            )
+            .expect("service profile admits knot insertion");
+        });
+        assert_eq!(points.len(), 4);
+    }
+
+    #[test]
+    fn polycurve_segment_weights_refuse_collection_limit() {
+        let curve = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("fixture constructor admission")
+        .expect("valid line");
+        let error = with_collection_limit(1, |ctx| super::elevate_to_degree(ctx, &curve, 1, 0))
+            .expect_err("two weights exceed one collection item");
+        assert!(matches!(
+            error,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino polycurve segment weights"
+        ));
+        with_test_context(|ctx| super::elevate_to_degree(ctx, &curve, 1, 0))
+            .expect("service profile admits segment weights");
+    }
+
+    #[test]
+    fn polycurve_elevated_knots_refuse_collection_limit() {
+        let curve = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            Some(vec![1.0, 1.0]),
+            false,
+        )
+        .expect("fixture constructor admission")
+        .expect("valid rational line");
+        let error = with_collection_limit(1, |ctx| super::elevate_to_degree(ctx, &curve, 1, 0))
+            .expect_err("two initial knots exceed one collection item");
+        assert!(matches!(
+            error,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino polycurve elevated knots"
+        ));
+        with_test_context(|ctx| super::elevate_to_degree(ctx, &curve, 1, 0))
+            .expect("service profile admits elevated knots");
+    }
+
+    fn read_cloud(
+        reader: &mut BoundedReader<'_>,
+        scale: MillimeterScale,
+    ) -> Result<super::PointCloud, GeometryError> {
+        with_test_context(|ctx| super::read_cloud(ctx, reader, scale))
+    }
+
+    fn decode_inner(
+        data: &[u8],
+        class: crate::wire::Uuid,
+        range: std::ops::Range<usize>,
+        scale: MillimeterScale,
+        archive: ArchiveVersion,
+        depth: usize,
+    ) -> Result<super::DecodedGeometry, GeometryError> {
+        with_test_context(|ctx| super::decode_inner(ctx, data, class, range, scale, archive, depth))
+    }
+
+    fn read_polycurve(
+        data: &[u8],
+        reader: &mut BoundedReader<'_>,
+        scale: MillimeterScale,
+        archive: ArchiveVersion,
+        depth: usize,
+    ) -> Result<DecodedCurve, GeometryError> {
+        with_test_context(|ctx| super::read_polycurve(ctx, data, reader, scale, archive, depth))
+    }
+
+    fn read_polycurve_2d(
+        data: &[u8],
+        reader: &mut BoundedReader<'_>,
+        archive: ArchiveVersion,
+        depth: usize,
+    ) -> Result<DecodedCurve, GeometryError> {
+        with_test_context(|ctx| super::read_polycurve_2d(ctx, data, reader, archive, depth))
+    }
+
+    /// A point cloud whose optional channels disagree with the point count.
+    fn mismatched_point_cloud_payload() -> Vec<u8> {
+        let mut payload = vec![0x12];
+        payload.extend(2_i32.to_le_bytes());
+        for point in [[0.0_f64, 0.0, 0.0], [1.0, 1.0, 1.0]] {
+            payload.extend(point.into_iter().flat_map(f64::to_le_bytes));
+        }
+        payload.extend(
+            [
+                0.0_f64, 0.0, 0.0, // origin
+                1.0, 0.0, 0.0, // x
+                0.0, 1.0, 0.0, // y
+                0.0, 0.0, 1.0, // z
+                0.0, 0.0, 1.0, 0.0, // equation
+            ]
+            .into_iter()
+            .flat_map(f64::to_le_bytes),
+        );
+        payload.extend([0.0_f64; 6].into_iter().flat_map(f64::to_le_bytes));
+        payload.extend(0_i32.to_le_bytes());
+        payload.extend(1_i32.to_le_bytes());
+        payload.extend([0.0_f64, 0.0, 1.0].into_iter().flat_map(f64::to_le_bytes));
+        payload.extend(1_i32.to_le_bytes());
+        payload.extend([0_u8; 4]);
+        payload.extend(1_i32.to_le_bytes());
+        payload.extend(0.5_f64.to_le_bytes());
+        payload
+    }
+
+    #[test]
+    fn point_cloud_points_refuse_collection_limit_before_reserve() {
+        let payload = mismatched_point_cloud_payload();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
+                .expect("point-cloud input fits service profile");
+        let mut reader =
+            BoundedReader::new(&payload, 0, payload.len()).expect("point-cloud bounds");
+        let refusal = super::read_cloud(&ctx, &mut reader, MillimeterScale::IDENTITY)
+            .expect_err("two points exceed one collection item");
+        assert!(
+            matches!(refusal, GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "Rhino point-cloud points")
+        );
+        let mut reader =
+            BoundedReader::new(&payload, 0, payload.len()).expect("point-cloud bounds");
+        assert!(read_cloud(&mut reader, MillimeterScale::IDENTITY).is_ok());
+    }
+
+    /// A refused scalar names its own first byte, not the byte after it.
+    #[test]
+    fn nonfinite_point_cloud_value_is_refused_at_the_value_first_byte() {
+        let mut payload = mismatched_point_cloud_payload();
+        let value_offset = payload.len() - 8;
+        payload[value_offset..].copy_from_slice(&f64::NAN.to_le_bytes());
+        let mut reader = BoundedReader::new(&payload, 0, payload.len()).expect("reader");
+        let error = read_cloud(&mut reader, MillimeterScale::IDENTITY)
+            .expect_err("nonfinite point-cloud value");
+        assert!(matches!(
+            error,
+            GeometryError::Malformed(FramingError::Structural { offset, ref message })
+                if offset == value_offset && message == "point-cloud value is not finite"
+        ));
+    }
+
+    /// Every redundant point-cloud channel repair carries the repair code itself.
+    #[test]
+    fn point_cloud_channel_repairs_carry_the_redundant_field_code() {
+        let payload = mismatched_point_cloud_payload();
+        let mut reader = BoundedReader::new(&payload, 0, payload.len()).expect("reader");
+        let cloud = read_cloud(&mut reader, MillimeterScale::IDENTITY).expect("point cloud");
+        assert_eq!(
+            cloud
+                .warnings
+                .iter()
+                .map(|diagnostic| (diagnostic.code, diagnostic.message.as_str()))
+                .collect::<Vec<_>>(),
+            [
+                (
+                    Some(crate::loss::RhinoLossCode::RedundantFieldRepaired),
+                    "redundant point-cloud normal count mismatch; channel dropped"
+                ),
+                (
+                    Some(crate::loss::RhinoLossCode::RedundantFieldRepaired),
+                    "redundant point-cloud color count mismatch; channel dropped"
+                ),
+                (
+                    Some(crate::loss::RhinoLossCode::RedundantFieldRepaired),
+                    "redundant point-cloud scalar count mismatch; channel dropped"
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn point_cloud_channel_diagnostic_refuses_collection_limit() {
+        let payload = mismatched_point_cloud_payload();
+        let refusal = with_collection_limit(2, |ctx| {
+            let mut reader = BoundedReader::new(&payload, 0, payload.len()).expect("reader");
+            super::read_cloud(ctx, &mut reader, MillimeterScale::IDENTITY)
+                .expect_err("the first channel diagnostic exceeds two collection items")
+        });
+        assert!(matches!(
+            refusal,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino diagnostics"
+        ));
+    }
 
     #[test]
     fn stored_count_above_legacy_limit_is_bounded_by_payload() {
         let item_count = 65_537_usize;
-        let mut bytes = (item_count as i32).to_le_bytes().to_vec();
+        let mut bytes = (i32::try_from(item_count).expect("fixture value fits i32"))
+            .to_le_bytes()
+            .to_vec();
         bytes.resize(4 + item_count, 0);
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
         assert_eq!(
-            count(&mut reader, 1).expect("payload-bounded count"),
+            crate::wire::element_count(&mut reader, 1).expect("payload-bounded count"),
             item_count
         );
     }
@@ -1711,47 +2820,167 @@ mod tests {
             &[],
             CURVE_ON_SURFACE,
             0..0,
-            1.0,
+            MillimeterScale::IDENTITY,
             ArchiveVersion::V8,
             MAX_CURVE_DEPTH + 1,
         )
         .expect_err("excessive cross-family recursion must stop before payload parsing");
-        assert!(error.to_string().contains("curve recursion limit exceeded"));
+        assert!(
+            matches!(error, GeometryError::Codec(CodecError::ResourceLimit(refusal))
+            if refusal.operation == "Rhino curve depth limit" && refusal.limit == 32 && refusal.additional == 1)
+        );
+    }
+    #[test]
+    fn curve_depth_gates_preserve_context_refusal() {
+        for gate in 0..4 {
+            with_test_context(|ctx| {
+                let mut reader = BoundedReader::new(&[], 0, 0).expect("empty reader");
+                let depth = MAX_CURVE_DEPTH + 1;
+                let error = match gate {
+                    0 => super::decode_inner(
+                        ctx,
+                        &[],
+                        LINE,
+                        0..0,
+                        MillimeterScale::IDENTITY,
+                        ArchiveVersion::V8,
+                        depth,
+                    )
+                    .expect_err("depth"),
+                    1 => super::decode_inner_2d(ctx, &[], LINE, 0..0, ArchiveVersion::V8, depth)
+                        .expect_err("depth"),
+                    2 => super::decode_embedded_curve(
+                        ctx,
+                        &[],
+                        &mut reader,
+                        MillimeterScale::IDENTITY,
+                        ArchiveVersion::V8,
+                        depth,
+                    )
+                    .expect_err("depth"),
+                    _ => super::decode_embedded_curve_2d(
+                        ctx,
+                        &[],
+                        &mut reader,
+                        MillimeterScale::IDENTITY,
+                        ArchiveVersion::V8,
+                        depth,
+                    )
+                    .expect_err("depth"),
+                };
+                let GeometryError::Codec(CodecError::ResourceLimit(refusal)) = error else {
+                    panic!("depth must be a resource refusal");
+                };
+                assert_eq!(refusal.limit, 32);
+                assert_eq!(refusal.additional, 1);
+                assert_eq!(ctx.resource_refusal(), Some(refusal));
+            });
+        }
     }
     use std::f64::consts::{PI, TAU};
 
     fn unit_circle() -> Circle {
         Circle {
-            center: Point3::new(2.0, -1.0, 3.0),
+            center: FinitePoint3::new(Point3::new(2.0, -1.0, 3.0)).expect("finite center"),
             axis: Vector3::new(0.0, 0.0, 1.0),
             xaxis: Vector3::new(1.0, 0.0, 0.0),
             yaxis: Vector3::new(0.0, 1.0, 0.0),
-            radius: 4.0,
+            radius: PositiveLength::new(4.0).expect("positive radius"),
         }
+    }
+
+    #[test]
+    fn source_circle_keeps_checked_center_and_radius() {
+        let values = [
+            1.0_f64, 2.0, 3.0, // plane origin
+            1.0, 0.0, 0.0, // x axis
+            0.0, 1.0, 0.0, // y axis
+            0.0, 0.0, 1.0, // z axis
+            0.0, 0.0, 1.0, -3.0, // plane equation
+            2.0,  // radius
+            3.0, 2.0, 3.0, // zero angle
+            1.0, 4.0, 3.0, // quarter turn
+            -1.0, 2.0, 3.0, // half turn
+        ];
+        let mut bytes = values
+            .into_iter()
+            .flat_map(f64::to_le_bytes)
+            .collect::<Vec<_>>();
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("circle reader");
+        let circle = super::read_circle(&mut reader, crate::test_support::millimeter_scale(2.0))
+            .expect("valid circle");
+        assert_eq!(circle.center.get(), Point3::new(2.0, 4.0, 6.0));
+        assert_eq!(circle.radius.get(), 4.0);
+
+        bytes[128..136].copy_from_slice(&0.0_f64.to_le_bytes());
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("circle reader");
+        let error = super::read_circle(&mut reader, MillimeterScale::IDENTITY)
+            .expect_err("zero circle radius");
+        assert!(error.to_string().contains("circle radius is invalid"));
     }
 
     #[test]
     fn arc_nurbs_preserves_endpoints_midpoint_and_weights() {
         let circle = unit_circle();
-        let arc = arc_nurbs(&circle, [0.0, PI], [10.0, 20.0], PI, 0).expect("valid arc");
+        let arc = with_test_context(|ctx| arc_nurbs(ctx, &circle, [0.0, PI], [10.0, 20.0], PI, 0))
+            .expect("valid arc");
         assert_eq!(arc.degree(), 2);
         assert_eq!(
-            arc.control_points().first(),
+            arc.pole_rows().raw_points().first(),
             Some(&circle_point(&circle, 0.0))
         );
         assert_eq!(
-            arc.control_points().last(),
+            arc.pole_rows().raw_points().last(),
             Some(&circle_point(&circle, PI))
         );
         assert_eq!(
-            arc.weights().expect("rational arc")[1],
+            arc.weights().expect("rational arc")[1].get(),
             2.0_f64.sqrt() / 2.0
         );
         let midpoint = circle_point(&circle, PI / 2.0);
         let pole = arc.control_points()[2];
-        let weight = arc.weights().expect("rational arc")[2];
+        let weight = arc.weights().expect("rational arc")[2].get();
         assert!((pole.x * weight - midpoint.x).abs() < EPS_EXACT_ARC);
         assert!((pole.y * weight - midpoint.y).abs() < EPS_EXACT_ARC);
+    }
+
+    fn arc_collection_refusal(limit: u64, operation: &str) {
+        let error = with_collection_limit(limit, |ctx| {
+            arc_nurbs(ctx, &unit_circle(), [0.0, PI], [10.0, 20.0], PI, 0)
+        })
+        .expect_err("arc arrays exceed the collection limit");
+        assert!(matches!(
+            error,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+                if refusal.operation == operation
+        ));
+    }
+
+    #[test]
+    fn arc_control_points_refuse_collection_limit() {
+        arc_collection_refusal(4, "Rhino arc control points");
+    }
+
+    #[test]
+    fn arc_weights_refuse_collection_limit() {
+        arc_collection_refusal(9, "Rhino arc weights");
+    }
+
+    #[test]
+    fn arc_knots_refuse_collection_limit() {
+        arc_collection_refusal(17, "Rhino arc knots");
+    }
+
+    #[test]
+    fn arc_nurbs_maps_a_wide_finite_parameter_domain() {
+        let arc = with_test_context(|ctx| {
+            arc_nurbs(ctx, &unit_circle(), [0.0, PI], [-f64::MAX, f64::MAX], PI, 0)
+        })
+        .expect("wide arc domain has finite knots");
+        let knots = arc.knots().as_slice();
+        assert_eq!(knots.first(), Some(&-f64::MAX));
+        assert!(knots.contains(&0.0));
+        assert_eq!(knots.last(), Some(&f64::MAX));
     }
 
     #[test]
@@ -1775,7 +3004,10 @@ mod tests {
     #[test]
     fn arc_spans_never_exceed_quarter_turn() {
         let circle = unit_circle();
-        let arc = arc_nurbs(&circle, [0.0, 3.0 * PI], [0.0, 3.0], 3.0 * PI, 0).expect("valid arc");
+        let arc = with_test_context(|ctx| {
+            arc_nurbs(ctx, &circle, [0.0, 3.0 * PI], [0.0, 3.0], 3.0 * PI, 0)
+        })
+        .expect("valid arc");
         assert_eq!(arc.control_points().len(), 2 * 6 + 1);
         assert_eq!(arc.knots().len(), arc.control_points().len() + 3);
     }
@@ -1789,8 +3021,18 @@ mod tests {
             }
             bytes.extend(dimension.to_le_bytes());
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded");
-            let curve = read_line(&mut reader, 1.0, None).expect("valid line");
-            assert_eq!(curve.knots(), vec![2.0, 2.0, 5.0, 5.0]);
+            let curve = ({
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    &[],
+                    &arena,
+                    &cadmpeg_core::decode::DecodePolicy::service(),
+                )
+                .expect("root");
+                read_line(&ctx, &mut reader, MillimeterScale::IDENTITY, None)
+            })
+            .expect("valid line");
+            assert_eq!(curve.knots().as_slice(), vec![2.0, 2.0, 5.0, 5.0]);
         }
     }
 
@@ -1807,30 +3049,144 @@ mod tests {
             bytes.extend(12.0_f64.to_le_bytes());
             bytes.extend(dimension.to_le_bytes());
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded");
-            let curve = read_polyline(&mut reader, 1.0, None).expect("valid polyline");
+            let curve = with_test_context(|ctx| {
+                read_polyline(ctx, &mut reader, MillimeterScale::IDENTITY, None)
+            })
+            .expect("valid polyline");
             assert_eq!(curve.control_points().len(), 2);
-            assert_eq!(curve.knots(), vec![10.0, 10.0, 12.0, 12.0]);
+            assert_eq!(curve.knots().as_slice(), vec![10.0, 10.0, 12.0, 12.0]);
         }
     }
 
     #[test]
+    fn bounded_polyline_refuses_nonfinite_and_decreasing_parameters_at_source() {
+        for (parameters, refused_offset) in [([f64::NAN, 12.0], 65), ([10.0, 9.0], 73)] {
+            let mut bytes = vec![0x10];
+            bytes.extend(2_i32.to_le_bytes());
+            for value in [0.0_f64, 0.0, 0.0, 1.0, 2.0, 0.0] {
+                bytes.extend(value.to_le_bytes());
+            }
+            bytes.extend(2_i32.to_le_bytes());
+            for value in parameters {
+                bytes.extend(value.to_le_bytes());
+            }
+            bytes.extend(3_i32.to_le_bytes());
+            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded");
+            let result = with_test_context(|ctx| {
+                read_polyline(ctx, &mut reader, MillimeterScale::IDENTITY, None)
+            });
+            assert!(matches!(
+                result,
+                Err(GeometryError::Malformed(FramingError::Structural { offset, message }))
+                    if offset == refused_offset && message == "polyline parameters are not increasing"
+            ));
+        }
+    }
+
+    #[test]
+    fn plane_space_curve_scaling_preserves_work_and_depth_refusals() {
+        let original = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            1,
+            vec![0., 0., 1., 1.],
+            vec![Point3::new(1., 2., 3.); 2],
+            None,
+            false,
+        )
+        .expect("admission")
+        .expect("curve");
+        let leaf = || {
+            DecodedCurve::leaf(
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(original.clone())),
+                Diagnostics::new(),
+            )
+        };
+        for cap in 0..5 {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("root");
+            let mut decoded = leaf();
+            let Err(GeometryError::Codec(CodecError::ResourceLimit(limit))) = scale_decoded_curve(
+                &ctx,
+                &mut decoded,
+                crate::test_support::millimeter_scale(2.),
+                17,
+            ) else {
+                panic!("work refusal must escape geometry fallback");
+            };
+            assert_eq!(
+                decoded.reported_geometry(),
+                &CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(original.clone()))
+            );
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+            );
+        }
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_recursion_depth = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("root");
+        let mut decoded = DecodedCurve::Compound {
+            children: vec![(FiniteReal::ZERO, leaf())],
+            end_parameter: FiniteReal::ONE,
+            warnings: Diagnostics::new(),
+        };
+        let Err(GeometryError::Codec(CodecError::ResourceLimit(limit))) = scale_decoded_curve(
+            &ctx,
+            &mut decoded,
+            crate::test_support::millimeter_scale(2.),
+            17,
+        ) else {
+            panic!("session depth refusal must escape");
+        };
+        assert_eq!(
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::RecursionDepth
+        );
+        let DecodedCurve::Compound { children, .. } = decoded else {
+            panic!("compound retained");
+        };
+        assert_eq!(
+            children[0].1.reported_geometry(),
+            &CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(original))
+        );
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+        );
+    }
+
+    #[test]
     fn plane_space_nurbs_scaling_rejects_coordinate_overflow() {
-        let curve = NurbsCurve::new(
+        let curve = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(2.0, 0.0, 0.0), Point3::new(3.0, 0.0, 0.0)],
             None,
             false,
         )
+        .expect("fixture constructor admission")
         .expect("valid test curve");
-        let mut decoded = DecodedCurve::leaf(CurveGeometry::Nurbs(curve), Vec::new());
-        let error = scale_decoded_curve(&mut decoded, f64::MAX, 17)
-            .expect_err("scaling overflow must reject the NURBS curve");
+        let mut decoded = DecodedCurve::leaf(
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
+            Diagnostics::new(),
+        );
+        let error = scale_decoded_curve(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut decoded,
+            crate::test_support::millimeter_scale(f64::MAX),
+            17,
+        )
+        .expect_err("scaling overflow must reject the NURBS curve");
         assert!(error
             .to_string()
             .contains("scaled plane-space curve is invalid"));
         let DecodedCurve::Leaf {
-            geometry: CurveGeometry::Nurbs(curve),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
             ..
         } = decoded
         else {
@@ -1840,10 +3196,98 @@ mod tests {
     }
 
     #[test]
+    fn plane_space_circle_scaling_keeps_admitted_center_and_frame() {
+        let center = FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).expect("finite center");
+        let circle = CircleCurve::new(
+            center,
+            OrthonormalFrame3::IDENTITY,
+            PositiveLength::new(2.0).expect("positive radius"),
+        );
+        let mut decoded = DecodedCurve::leaf(
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)),
+            Diagnostics::new(),
+        );
+        scale_decoded_curve(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut decoded,
+            crate::test_support::millimeter_scale(2.0),
+            17,
+        )
+        .expect("scaled circle");
+        let DecodedCurve::Leaf {
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)),
+            ..
+        } = decoded
+        else {
+            panic!("circle remains solved");
+        };
+        assert_eq!(circle.center().get(), Point3::new(2.0, 4.0, 6.0));
+        assert_eq!(circle.radius().get(), 4.0);
+        assert_eq!(*circle.frame(), OrthonormalFrame3::IDENTITY);
+    }
+
+    #[test]
+    fn plane_space_line_scaling_keeps_admitted_origin_and_direction() {
+        let origin = FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).expect("finite origin");
+        let line = LineCurve::new(origin, UnitVector3::Z_AXIS);
+        let mut decoded = DecodedCurve::leaf(
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(line)),
+            Diagnostics::new(),
+        );
+        scale_decoded_curve(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut decoded,
+            crate::test_support::millimeter_scale(2.0),
+            17,
+        )
+        .expect("scaled line");
+        let DecodedCurve::Leaf {
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(line)),
+            ..
+        } = decoded
+        else {
+            panic!("line remains solved");
+        };
+        assert_eq!(line.origin().get(), Point3::new(2.0, 4.0, 6.0));
+        assert_eq!(line.direction(), UnitVector3::Z_AXIS);
+    }
+
+    #[test]
+    fn plane_space_degenerate_scaling_keeps_admitted_point() {
+        let point = FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).expect("finite point");
+        let curve = DegenerateCurve::new(point);
+        let mut decoded = DecodedCurve::leaf(
+            CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(curve)),
+            Diagnostics::new(),
+        );
+        scale_decoded_curve(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut decoded,
+            crate::test_support::millimeter_scale(2.0),
+            17,
+        )
+        .expect("scaled degenerate curve");
+        let DecodedCurve::Leaf {
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(curve)),
+            ..
+        } = decoded
+        else {
+            panic!("degenerate curve remains solved");
+        };
+        assert_eq!(curve.point().get(), Point3::new(2.0, 4.0, 6.0));
+    }
+
+    #[test]
     fn cadir_rejects_future_polycurve_major_for_typed_admission() {
         let bytes = [0x20];
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded");
-        let result = read_polycurve(&bytes, &mut reader, 1.0, ArchiveVersion::V5, 0);
+        let result = read_polycurve(
+            &bytes,
+            &mut reader,
+            MillimeterScale::IDENTITY,
+            ArchiveVersion::V5,
+            0,
+        );
         assert!(matches!(
             result,
             Err(GeometryError::UnsupportedVersion { .. })
@@ -1863,34 +3307,40 @@ mod tests {
 
     #[test]
     fn top_level_polycurve_rejects_equal_adjacent_boundaries() {
-        assert!(checked_polycurve_parameter(Some(1.0), 1.0, 8, "polycurve").is_err());
+        let previous = FiniteReal::new(1.0);
+        assert!(checked_polycurve_parameter(previous, 1.0, 8, "polycurve").is_err());
     }
 
     #[test]
     fn c2_polycurve_rejects_equal_adjacent_boundaries() {
-        assert!(checked_polycurve_parameter(Some(1.0), 1.0, 8, "C2 polycurve").is_err());
+        let previous = FiniteReal::new(1.0);
+        assert!(checked_polycurve_parameter(previous, 1.0, 8, "C2 polycurve").is_err());
     }
 
     #[test]
     fn analytic_full_circle_converts_to_exact_quadratic_nurbs() {
         let circle = unit_circle();
         let decoded = DecodedCurve::leaf(
-            CurveGeometry::Circle {
-                center: circle.center,
-                axis: circle.axis,
-                ref_direction: circle.xaxis,
-                radius: circle.radius,
-            },
-            Vec::new(),
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                    circle.center.get(),
+                    circle.axis,
+                    circle.xaxis,
+                    circle.radius.get(),
+                )
+                .unwrap(),
+            )),
+            Diagnostics::new(),
         );
-        let nurbs = exact_nurbs(&decoded, 0).expect("required invariant");
+        let nurbs =
+            with_test_context(|ctx| exact_nurbs(ctx, &decoded, 0)).expect("required invariant");
         assert_eq!(nurbs.degree(), 2);
         assert_eq!(nurbs.control_points().len(), 9);
         assert_eq!(nurbs.knots().len(), 12);
         assert_eq!(nurbs.knots()[0], 0.0);
         assert_eq!(*nurbs.knots().last().expect("nonempty knots"), TAU);
         assert_eq!(
-            nurbs.weights().expect("rational circle")[1],
+            nurbs.weights().expect("rational circle")[1].get(),
             2.0_f64.sqrt() / 2.0
         );
     }
@@ -1899,40 +3349,47 @@ mod tests {
     fn recursive_compound_conversion_preserves_parent_domain_when_exact() {
         let line = |start: f64, end: f64| {
             DecodedCurve::leaf(
-                CurveGeometry::Nurbs(
-                    NurbsCurve::new(
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                    NurbsCurve::from_lanes(
+                        &cadmpeg_test_support::service_decode_context(),
                         1,
                         vec![start, start, end, end],
                         vec![Point3::new(start, 0.0, 0.0), Point3::new(end, 0.0, 0.0)],
                         None,
                         false,
                     )
+                    .expect("fixture constructor admission")
                     .expect("valid test line"),
-                ),
-                Vec::new(),
+                )),
+                Diagnostics::new(),
             )
         };
+        let finite = |value: f64| FiniteReal::new(value).expect("finite parameter");
         let nested = DecodedCurve::Compound {
-            children: vec![(2.0, line(0.0, 1.0)), (3.0, line(0.0, 1.0))],
-            end_parameter: 5.0,
-            warnings: Vec::new(),
+            children: vec![(finite(2.0), line(0.0, 1.0)), (finite(3.0), line(0.0, 1.0))],
+            end_parameter: finite(5.0),
+            warnings: Diagnostics::new(),
         };
-        let converted = exact_nurbs(&nested, 0).expect("required invariant");
-        assert_eq!(converted.knots(), vec![2.0, 2.0, 3.0, 5.0, 5.0]);
+        let converted =
+            with_test_context(|ctx| exact_nurbs(ctx, &nested, 0)).expect("required invariant");
+        assert_eq!(converted.knots().as_slice(), vec![2.0, 2.0, 3.0, 5.0, 5.0]);
         assert_eq!(converted.control_points().len(), 3);
     }
 
     #[test]
     fn join_elevates_degree_and_midpoints_a_gap() {
-        let line = NurbsCurve::new(
+        let line = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
         )
+        .expect("fixture constructor admission")
         .expect("valid test line");
-        let quadratic = NurbsCurve::new(
+        let quadratic = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             2,
             vec![5.0, 5.0, 5.0, 7.0, 7.0, 7.0],
             vec![
@@ -1943,16 +3400,69 @@ mod tests {
             None,
             false,
         )
+        .expect("fixture constructor admission")
         .expect("valid test quadratic");
-        let joined = join_nurbs_segments(vec![line, quadratic], 0).expect("join");
+        let joined = with_test_context(|ctx| join_nurbs_segments(ctx, vec![line, quadratic], 0))
+            .expect("join");
         assert_eq!(joined.curve.degree(), 2);
         assert_eq!(
-            joined.curve.knots(),
+            joined.curve.knots().as_slice(),
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 3.0, 3.0, 3.0]
         );
         assert_eq!(joined.curve.control_points().len(), 5);
         assert_eq!(joined.curve.control_points()[2], Point3::new(2.0, 0.0, 0.0));
         assert_eq!(joined.warnings.len(), 1);
         assert!(joined.warnings[0].contains("gap 2"));
+    }
+    #[test]
+    fn audit_regression_degree_elevation_normalizes_large_common_weights() {
+        let line = |weight| {
+            NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                1,
+                vec![0., 0., 1., 1.],
+                vec![Point3::new(1e200, 0., 0.), Point3::new(1e200, 1., 0.)],
+                Some(vec![weight, weight]),
+                false,
+            )
+            .expect("fixture constructor admission")
+            .unwrap()
+        };
+        for degree in [1, 2] {
+            let normalized =
+                with_test_context(|ctx| super::elevate_to_degree(ctx, &line(1.), degree, 0))
+                    .unwrap();
+            let rescaled =
+                with_test_context(|ctx| super::elevate_to_degree(ctx, &line(1e200), degree, 0))
+                    .unwrap();
+            for (a, b) in normalized
+                .control_points()
+                .iter()
+                .zip(rescaled.control_points())
+            {
+                assert!((a.x / b.x - 1.).abs() <= 8. * f64::EPSILON);
+                assert!((a.y - b.y).abs() <= 8. * f64::EPSILON);
+            }
+        }
+    }
+    #[test]
+    fn numerical_0922b_wide_curve_domain_remap() {
+        for domain in [[0., 1.], [-1e308, 1e308]] {
+            let n = NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                1,
+                vec![domain[0], domain[0], domain[1], domain[1]],
+                vec![Point3::new(0., 0., 0.), Point3::new(1., 0., 0.)],
+                None,
+                false,
+            )
+            .expect("fixture constructor admission")
+            .unwrap();
+            let r = with_test_context(|ctx| {
+                super::remap_nurbs_domain(ctx, n, [FiniteReal::ZERO, FiniteReal::ONE], 0)
+            });
+            println!("Rhino remap{domain:?}: {r:?}");
+            assert_eq!(r.unwrap().knots().as_slice(), &[0., 0., 1., 1.]);
+        }
     }
 }

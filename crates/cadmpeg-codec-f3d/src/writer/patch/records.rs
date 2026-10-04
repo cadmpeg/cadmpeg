@@ -1,24 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Record patchers that apply validated edit sets to archive bytes.
 
+use cadmpeg_core::decode::{index_from_u32, u64_from_index};
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::records::{
-    ActEntity, ActRootComponent, DesignMaterialAssignment, LostEdgeReference, SketchCurveGeometry,
+    act::{ActEntity, ActRootComponent},
+    references::{DesignMaterialAssignment, LostEdgeReference},
+    sketch_geometry::SketchCurveGeometry,
 };
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
 use super::edits::{
-    BodyMemberEdit, ConstructionRecipeEdit, DesignTypeEdit, Edit, EntityHeaderEdit, HistoryEdits,
-    PersistentReferenceEdit, SketchCurveEdit, SketchPointEdit,
+    BodyMemberEdit, ByteEdit, ConstructionRecipeEdit, DesignTypeEdit, EntityHeaderEdit,
+    HistoryEdits, PersistentReferenceEdit, SketchCurveEdit, SketchPointEdit,
 };
 use cadmpeg_asm::edit::AsmEditSet;
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 
 const EPS_RECORDS_LINE_SCALAR_COUNT_E9: f64 = 1.0e-9;
 
-pub(crate) fn patch_material_assignments(
+pub(super) fn patch_material_assignments(
     bytes: &mut [u8],
     edits: &[DesignMaterialAssignment],
 ) -> Result<(), CodecError> {
@@ -43,30 +47,26 @@ pub(crate) fn patch_material_assignments(
             "material-assignment visual token",
         )?;
         if let Some(field) = &assignment.physical_token {
-            if let Some(offset) = field.offset {
-                patch_utf16_if_changed(
-                    bytes,
-                    offset,
-                    &field.value,
-                    "material-assignment physical token",
-                )?;
-            }
+            patch_utf16_if_changed(
+                bytes,
+                field.offset,
+                &field.value,
+                "material-assignment physical token",
+            )?;
         }
         if let Some(field) = &assignment.visual_preset {
-            if let Some(offset) = field.offset {
-                patch_utf16_if_changed(
-                    bytes,
-                    offset,
-                    &field.value,
-                    "material-assignment visual preset",
-                )?;
-            }
+            patch_utf16_if_changed(
+                bytes,
+                field.offset,
+                &field.value,
+                "material-assignment visual preset",
+            )?;
         }
     }
     Ok(())
 }
 
-pub(crate) fn patch_lost_edge_references(
+pub(super) fn patch_lost_edge_references(
     bytes: &mut [u8],
     edits: &[LostEdgeReference],
 ) -> Result<(), CodecError> {
@@ -87,10 +87,10 @@ pub(crate) fn patch_lost_edge_references(
     Ok(())
 }
 
-pub(crate) fn patch_act_entities(bytes: &mut [u8], edits: &[ActEntity]) -> Result<(), CodecError> {
+pub(super) fn patch_act_entities(bytes: &mut [u8], edits: &[ActEntity]) -> Result<(), CodecError> {
     for entity in edits {
         let encoded_id = entity
-            .entity_id
+            .entity_id()
             .encode_utf16()
             .flat_map(u16::to_le_bytes)
             .collect::<Vec<_>>();
@@ -103,11 +103,7 @@ pub(crate) fn patch_act_entities(bytes: &mut [u8], edits: &[ActEntity]) -> Resul
         {
             patch_bytes_at(bytes, offset, &encoded_id, "ACT entity id")?;
         }
-        for guid in entity
-            .channel_group()
-            .into_iter()
-            .flat_map(|group| group.channels.values())
-        {
+        for guid in entity.channel_group().channels().values() {
             let encoded = guid
                 .value
                 .as_str()
@@ -120,31 +116,31 @@ pub(crate) fn patch_act_entities(bytes: &mut [u8], edits: &[ActEntity]) -> Resul
     Ok(())
 }
 
-pub(crate) fn patch_act_guids(bytes: &mut [u8], edits: &[Edit<Vec<u8>>]) -> Result<(), CodecError> {
+pub(super) fn patch_act_guids(bytes: &mut [u8], edits: &[ByteEdit]) -> Result<(), CodecError> {
     for edit in edits {
         patch_bytes_at(bytes, edit.offset, &edit.value, "ACT GUID")?;
     }
     Ok(())
 }
 
-pub(crate) fn patch_act_roots(
+pub(super) fn patch_act_roots(
     bytes: &mut [u8],
     edits: &[ActRootComponent],
 ) -> Result<(), CodecError> {
     for root in edits {
         for (offset, value, field) in [
             (
-                root.layout.instance_root_record_offset(),
+                root.layout().instance_root_record_offset(),
                 root.instance_root_record,
                 "ACT instance-root reference",
             ),
             (
-                root.layout.components_root_record_offset(),
+                root.layout().components_root_record_offset(),
                 root.components_root_record,
                 "ACT components-root reference",
             ),
             (
-                root.layout.registry_flag_offset(),
+                root.layout().registry_flag_offset(),
                 root.registry_flag.code(),
                 "ACT registry flag",
             ),
@@ -153,14 +149,14 @@ pub(crate) fn patch_act_roots(
         }
         patch_utf16_if_changed(
             bytes,
-            root.layout.entity_id_offset(),
-            root.layout.entity_id(),
+            root.layout().entity_id_offset(),
+            root.layout().entity_id(),
             "ACT root entity id",
         )?;
         patch_utf16_if_changed(
             bytes,
-            root.layout.display_name_offset(),
-            root.layout.display_name(),
+            root.layout().display_name_offset(),
+            root.layout().display_name(),
             "ACT root display name",
         )?;
     }
@@ -181,9 +177,21 @@ fn patch_utf16_if_changed(
 }
 
 pub(crate) fn native_stream(id: &str, delimiter: &str) -> Result<String, CodecError> {
-    id.strip_prefix(crate::ids::SCHEME_PREFIX)
+    let decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &decode_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )?;
+    let Some((stream, _)) = id
+        .strip_prefix(crate::ids::SCHEME_PREFIX)
         .and_then(|id| id.rsplit_once(delimiter))
-        .and_then(|(stream, _)| crate::ids::decode_identity_key_component(stream))
+    else {
+        return Err(CodecError::malformed(format_args!(
+            "invalid native record id {id}"
+        )));
+    };
+    crate::ids::decode_identity_key_component(&ctx, stream)?
         .ok_or_else(|| CodecError::malformed(format_args!("invalid native record id {id}")))
 }
 
@@ -202,7 +210,7 @@ fn patch_bytes_at(
     Ok(())
 }
 
-pub(crate) fn patch_design_types(
+pub(super) fn patch_design_types(
     bytes: &mut [u8],
     edits: &[DesignTypeEdit],
 ) -> Result<(), CodecError> {
@@ -220,7 +228,7 @@ pub(crate) fn patch_design_types(
     Ok(())
 }
 
-pub(crate) fn patch_entity_headers(
+pub(super) fn patch_entity_headers(
     bytes: &mut [u8],
     edits: &[EntityHeaderEdit],
 ) -> Result<(), CodecError> {
@@ -255,7 +263,7 @@ fn patch_u32_at(bytes: &mut [u8], offset: u64, value: u32, field: &str) -> Resul
     Ok(())
 }
 
-pub(crate) fn patch_body_members(
+pub(super) fn patch_body_members(
     bytes: &mut [u8],
     edits: &[BodyMemberEdit],
 ) -> Result<(), CodecError> {
@@ -283,7 +291,7 @@ pub(crate) fn patch_body_members(
     Ok(())
 }
 
-pub(crate) fn patch_body_visibilities(
+pub(super) fn patch_body_visibilities(
     bytes: &mut [u8],
     edits: &[(u64, bool)],
 ) -> Result<(), CodecError> {
@@ -302,7 +310,7 @@ pub(crate) fn patch_body_visibilities(
     Ok(())
 }
 
-pub(crate) fn patch_design_body_keys(
+pub(super) fn patch_design_body_keys(
     bytes: &mut [u8],
     edits: &BTreeSet<(u64, u64)>,
 ) -> Result<(), CodecError> {
@@ -318,7 +326,7 @@ pub(crate) fn patch_design_body_keys(
     Ok(())
 }
 
-pub(crate) fn patch_body_native_keys(
+pub(super) fn patch_body_native_keys(
     bytes: &mut [u8],
     edits: &BTreeMap<usize, i64>,
 ) -> Result<(), CodecError> {
@@ -343,7 +351,7 @@ pub(crate) fn patch_body_native_keys(
     })
 }
 
-pub(crate) fn patch_transform_hints(
+pub(super) fn patch_transform_hints(
     bytes: &mut [u8],
     edits: &BTreeMap<usize, [bool; 3]>,
 ) -> Result<(), CodecError> {
@@ -371,7 +379,7 @@ pub(crate) fn patch_transform_hints(
     })
 }
 
-pub(crate) fn patch_tolerant_coedge_parameters(
+pub(super) fn patch_tolerant_coedge_parameters(
     bytes: &mut [u8],
     edits: &BTreeMap<usize, [f64; 2]>,
 ) -> Result<(), CodecError> {
@@ -400,7 +408,7 @@ pub(crate) fn patch_tolerant_coedge_parameters(
     })
 }
 
-pub(crate) fn patch_wire_topologies(
+pub(super) fn patch_wire_topologies(
     bytes: &mut [u8],
     edits: &BTreeMap<usize, cadmpeg_asm::brep::records::WireSide>,
 ) -> Result<(), CodecError> {
@@ -425,7 +433,7 @@ pub(crate) fn patch_wire_topologies(
     })
 }
 
-pub(crate) fn patch_edge_ownerships(
+pub(super) fn patch_edge_ownerships(
     bytes: &mut [u8],
     edits: &BTreeMap<usize, i64>,
 ) -> Result<(), CodecError> {
@@ -451,7 +459,7 @@ pub(crate) fn patch_edge_ownerships(
     })
 }
 
-pub(crate) fn patch_construction_recipes(
+pub(super) fn patch_construction_recipes(
     bytes: &mut [u8],
     edits: &[ConstructionRecipeEdit],
 ) -> Result<(), CodecError> {
@@ -488,7 +496,7 @@ pub(crate) fn patch_construction_recipes(
     Ok(())
 }
 
-pub(crate) fn patch_persistent_references(
+pub(super) fn patch_persistent_references(
     bytes: &mut [u8],
     edits: &[PersistentReferenceEdit],
 ) -> Result<(), CodecError> {
@@ -498,7 +506,7 @@ pub(crate) fn patch_persistent_references(
         let value = edit.identity;
         let start = usize::try_from(record_offset)
             .ok()
-            .and_then(|offset| offset.checked_add(value_offset as usize))
+            .and_then(|offset| offset.checked_add(index_from_u32(value_offset)))
             .ok_or_else(|| {
                 CodecError::Malformed("persistent-reference offset exceeds address space".into())
             })?;
@@ -510,7 +518,7 @@ pub(crate) fn patch_persistent_references(
     Ok(())
 }
 
-pub(crate) fn patch_history_states(
+pub(super) fn patch_history_states(
     bytes: &mut [u8],
     edits: &HistoryEdits,
 ) -> Result<(), CodecError> {
@@ -519,7 +527,7 @@ pub(crate) fn patch_history_states(
     if let Some(history) = &edits.preamble {
         let start = history
             .byte_offset
-            .checked_add(PREAMBLE_LEN as u64)
+            .checked_add(u64_from_index(PREAMBLE_LEN))
             .ok_or_else(|| {
                 CodecError::Malformed("ASM preamble offset exceeds address space".into())
             })?;
@@ -532,7 +540,7 @@ pub(crate) fn patch_history_states(
     for state in &edits.states {
         let first_tag = state
             .byte_offset
-            .checked_add(DELTA_HEADER_LEN as u64)
+            .checked_add(u64_from_index(DELTA_HEADER_LEN))
             .ok_or_else(|| {
                 CodecError::Malformed("ASM history offset exceeds address space".into())
             })?;
@@ -573,7 +581,7 @@ pub(crate) fn patch_history_states(
     Ok(())
 }
 
-pub(crate) fn patch_sketch_points(
+pub(super) fn patch_sketch_points(
     bytes: &mut [u8],
     edits: &[SketchPointEdit],
 ) -> Result<(), CodecError> {
@@ -583,7 +591,7 @@ pub(crate) fn patch_sketch_points(
         let coordinates = &edit.coordinates;
         let start = usize::try_from(record_offset)
             .ok()
-            .and_then(|record| record.checked_add(coordinate_offset as usize))
+            .and_then(|record| record.checked_add(index_from_u32(coordinate_offset)))
             .ok_or_else(|| {
                 CodecError::Malformed("sketch-point offset exceeds address space".into())
             })?;
@@ -606,7 +614,7 @@ pub(crate) fn patch_sketch_curves(
         let geometry = &edit.geometry;
         let start = usize::try_from(record_offset)
             .ok()
-            .and_then(|record| record.checked_add(geometry_offset as usize))
+            .and_then(|record| record.checked_add(index_from_u32(geometry_offset)))
             .ok_or_else(|| {
                 CodecError::Malformed("sketch-curve offset exceeds address space".into())
             })?;
@@ -617,6 +625,10 @@ pub(crate) fn patch_sketch_curves(
                 direction,
                 normal,
             } => {
+                let line_start = line_start.get();
+                let end = end.get();
+                let direction = direction.as_raw();
+                let normal = normal.as_raw();
                 let scalar_count = line_scalar_count(bytes, start)?;
                 if scalar_count == 9 && (normal.x != 0.0 || normal.y != 0.0 || normal.z != 1.0) {
                     return Err(CodecError::NotImplemented(
@@ -648,30 +660,37 @@ pub(crate) fn patch_sketch_curves(
                 radius,
                 start_angle,
                 end_angle,
-            } => (
-                [
-                    center.x / LEN_TO_MM,
-                    center.y / LEN_TO_MM,
-                    center.z / LEN_TO_MM,
-                    normal.x,
-                    normal.y,
-                    normal.z,
-                    reference_direction.x,
-                    reference_direction.y,
-                    reference_direction.z,
-                    radius / LEN_TO_MM,
-                    *start_angle,
-                    *end_angle,
-                ],
-                12,
-            ),
-            SketchCurveGeometry::Nurbs {
-                fit_tolerance,
-                knots,
-                poles,
-                ..
             } => {
-                patch_sketch_nurbs(bytes, start, *fit_tolerance, knots, poles)?;
+                let center = center.as_raw();
+                let normal = normal.as_raw();
+                let reference_direction = reference_direction.as_raw();
+                (
+                    [
+                        center.x / LEN_TO_MM,
+                        center.y / LEN_TO_MM,
+                        center.z / LEN_TO_MM,
+                        normal.x,
+                        normal.y,
+                        normal.z,
+                        reference_direction.x,
+                        reference_direction.y,
+                        reference_direction.z,
+                        radius.get() / LEN_TO_MM,
+                        start_angle.get(),
+                        end_angle.get(),
+                    ],
+                    12,
+                )
+            }
+            SketchCurveGeometry::Nurbs { geometry, .. } => {
+                let knots = geometry.knots();
+                patch_sketch_nurbs(
+                    bytes,
+                    start,
+                    geometry.fit_tolerance().get(),
+                    knots,
+                    geometry.poles(),
+                )?;
                 continue;
             }
         };
@@ -719,7 +738,7 @@ fn patch_sketch_nurbs(
     start: usize,
     fit_tolerance: f64,
     knots: &[f64],
-    poles: &crate::records::SketchNurbsPoles,
+    poles: &crate::records::sketch_geometry::SketchNurbsPoles,
 ) -> Result<(), CodecError> {
     let fit_at = start + 94;
     let knots_at = start + 114;
@@ -753,9 +772,9 @@ fn patch_sketch_nurbs(
     Ok(())
 }
 
-pub(crate) fn patch_sketch_relations(
+pub(super) fn patch_sketch_relations(
     bytes: &mut [u8],
-    edits: &[Vec<Edit<Vec<u8>>>],
+    edits: &[Vec<ByteEdit>],
 ) -> Result<(), CodecError> {
     for edit in edits {
         for member in edit {
@@ -763,4 +782,59 @@ pub(crate) fn patch_sketch_relations(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::patch_material_assignments;
+    use crate::records::references::DesignMaterialAssignment;
+
+    const SUFFIX_AT: usize = 0;
+    const ENTITY_ID_AT: usize = 8;
+    const VISUAL_GUID_AT: usize = 18;
+    const PHYSICAL_TOKEN_AT: usize = 90;
+
+    fn utf16(value: &str) -> Vec<u8> {
+        value.encode_utf16().flat_map(u16::to_le_bytes).collect()
+    }
+
+    fn assignment_document(located: bool) -> serde_json::Value {
+        let mut document = serde_json::json!({
+            "id": "material#0",
+            "asm_body_key": 42,
+            "asm_body_key_offset": 200,
+            "entity_suffix_offset": SUFFIX_AT,
+            "entity_id": "0_985",
+            "entity_id_offset": ENTITY_ID_AT,
+            "visual_guid": "11111111-2222-3333-4444-555555555555",
+            "visual_guid_offset": VISUAL_GUID_AT,
+            "physical_token": "Prism-002"
+        });
+        if located {
+            document["physical_token_offset"] = PHYSICAL_TOKEN_AT.into();
+        }
+        document
+    }
+
+    #[test]
+    fn every_admitted_material_physical_token_is_patched_into_the_source_bytes() {
+        let error = serde_json::from_value::<DesignMaterialAssignment>(assignment_document(false))
+            .expect_err("a token the patch cannot write is not admitted")
+            .to_string();
+        assert!(error.contains("physical_token"), "{error}");
+        assert!(error.contains("physical_token_offset"), "{error}");
+
+        let assignment: DesignMaterialAssignment =
+            serde_json::from_value(assignment_document(true)).expect("located material token");
+        let mut bytes = vec![0u8; 128];
+        patch_material_assignments(&mut bytes, std::slice::from_ref(&assignment))
+            .expect("patch material assignment");
+        let token = utf16("Prism-002");
+        assert_eq!(
+            &bytes[PHYSICAL_TOKEN_AT..PHYSICAL_TOKEN_AT + token.len()],
+            &token[..]
+        );
+        assert_eq!(&bytes[ENTITY_ID_AT..VISUAL_GUID_AT], &utf16("0_985")[..]);
+        assert_eq!(&bytes[SUFFIX_AT..SUFFIX_AT + 8], &985u64.to_le_bytes()[..]);
+    }
 }

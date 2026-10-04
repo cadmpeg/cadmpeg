@@ -7,7 +7,7 @@ use crate::topology::Graph;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum GroupNodeFamily {
+pub(in crate::native) enum GroupNodeFamily {
     Body,
     Shell,
     Face,
@@ -42,7 +42,7 @@ impl GroupNodeFamily {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum GroupMemberTarget {
+pub(in crate::native) enum GroupMemberTarget {
     Fin,
     Node {
         family: GroupNodeFamily,
@@ -79,7 +79,7 @@ impl GroupMemberTarget {
                 let current_xmt = graph
                     .get(family.kind(), member_xmt)
                     .filter(|node| node.node_id() == Some(node_id))
-                    .map(|node| node.xmt)
+                    .map(crate::topology::Node::xmt)
                     .or_else(|| graph.unique_xmt_by_node_id(family.kind(), node_id));
                 Self::Node {
                     family,
@@ -91,7 +91,8 @@ impl GroupMemberTarget {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 pub(super) struct MemberWire {
     id: String,
     partition_stream_ordinal: u32,
@@ -101,11 +102,67 @@ pub(super) struct MemberWire {
     list_record_xmt: u32,
     member_xmt: u32,
     member_family: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_member_node_id"
+    )]
     member_node_id: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_current_member_xmt"
+    )]
     current_member_xmt: Option<u32>,
 }
+
+// The family and the node identity are stated together, so the refusal names
+// which half the document left unstated.
+cadmpeg_core::named_optional_field!(deserialize_member_node_id, u32, "member_node_id");
+
+#[derive(Serialize)]
+struct MemberRef<'a> {
+    id: &'a str,
+    partition_stream_ordinal: u32,
+    group_xmt: u32,
+    group_node_id: u32,
+    ordinal: u32,
+    list_record_xmt: u32,
+    member_xmt: u32,
+    member_family: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    member_node_id: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    current_member_xmt: Option<u32>,
+}
+
+impl Serialize for ParasolidGroupMember {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let (member_family, member_node_id, current_member_xmt) = match self.target {
+            GroupMemberTarget::Fin => ("FIN", None, None),
+            GroupMemberTarget::Node {
+                family,
+                node_id,
+                current_xmt,
+            } => (family.name(), Some(node_id), current_xmt),
+        };
+        MemberRef {
+            id: &self.id,
+            partition_stream_ordinal: self.partition_stream_ordinal,
+            group_xmt: self.group_xmt,
+            group_node_id: self.group_node_id,
+            ordinal: self.ordinal,
+            list_record_xmt: self.list_record_xmt,
+            member_xmt: self.member_xmt,
+            member_family,
+            member_node_id,
+            current_member_xmt,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(test)]
 impl From<ParasolidGroupMember> for MemberWire {
     fn from(value: ParasolidGroupMember) -> Self {
         let (member_family, member_node_id, current_member_xmt) = match value.target {
@@ -172,7 +229,8 @@ impl TryFrom<MemberWire> for ParasolidGroupMember {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::{ParasolidGroupMember, GROUP_MEMBER_CLONE_COUNT};
+    use super::MemberWire;
 
     #[test]
     fn family_owns_the_node_identity_on_the_wire() {
@@ -185,6 +243,10 @@ mod tests {
             );
             let member: ParasolidGroupMember = serde_json::from_str(&json).unwrap();
             assert_eq!(serde_json::to_string(&member).unwrap(), json);
+            assert_eq!(
+                serde_json::to_vec(&member).unwrap(),
+                serde_json::to_vec(&MemberWire::from(member.clone())).unwrap()
+            );
             let mut wire: serde_json::Value = serde_json::from_str(&json).unwrap();
             wire["member_node_id"] = if fields.contains("FIN") {
                 serde_json::json!(50)
@@ -197,4 +259,24 @@ mod tests {
                 .contains("member_node_id"));
         }
     }
+
+    #[test]
+    fn group_member_retained_limit_refuses_before_clone() {
+        for fields in [
+            r#""member_family":"FIN""#,
+            r#""member_family":"FACE","member_node_id":50,"current_member_xmt":100"#,
+        ] {
+            let json = format!(
+                r#"{{"id":"nx:s4:group-member#10-20","partition_stream_ordinal":4,"group_xmt":10,"group_node_id":7,"ordinal":0,"list_record_xmt":20,"member_xmt":30,{fields}}}"#
+            );
+            let record: ParasolidGroupMember = serde_json::from_str(&json).unwrap();
+            let expected: serde_json::Value = serde_json::from_str(&json).unwrap();
+            GROUP_MEMBER_CLONE_COUNT.with(|count| count.set(0));
+            cadmpeg_test_support::native_serialization::assert_native_limit(&record, expected);
+            GROUP_MEMBER_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
+        }
+    }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_current_member_xmt, u32, "current_member_xmt");

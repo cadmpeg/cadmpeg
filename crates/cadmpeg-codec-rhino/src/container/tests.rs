@@ -9,8 +9,124 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::IR_VERSION;
 
 use crate::chunks::{parse_header, ArchiveVersion, FramingError, TCODE_ENDOFTABLE};
-use crate::test_support::test_dump::*;
+use crate::test_support::test_dump::{
+    anonymous_chunk, crc_chunk, crc_chunk_excluding, crc_table, header, long_chunk,
+    minimal_document, object_record, object_record_with_payload, point_payload, short_chunk, table,
+    POINT_CLASS,
+};
 use crate::RhinoCodec;
+
+mod resource_limits;
+
+#[test]
+fn object_typecode_count_refuses_collection_limit_before_map_insertion() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let error = super::count_object_typecode(&ctx, &mut std::collections::BTreeMap::new(), 0x20)
+        .expect_err("one typecode map node exceeds zero items");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit) if limit.operation == "Rhino object typecode counts"
+    ));
+    let mut counts = std::collections::BTreeMap::new();
+    let ctx = cadmpeg_test_support::service_decode_context();
+    super::count_object_typecode(&ctx, &mut counts, 0x20).expect("first count admitted");
+    super::count_object_typecode(&ctx, &mut counts, 0x20).expect("existing count admitted");
+    assert_eq!(counts[&0x20], 2);
+}
+
+#[test]
+fn source_metadata_refuses_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let refusal = super::source_meta(
+        &ctx,
+        ArchiveVersion::V1.classify(None),
+        super::SourceMetaDetail::FlatLegacyArchive,
+    )
+    .expect_err("archive-version attribute exceeds zero collection items");
+    assert!(matches!(
+        refusal,
+        CodecError::ResourceLimit(limit)
+            if limit.operation == "Rhino source metadata attributes"
+    ));
+    let meta = super::source_meta(
+        &cadmpeg_test_support::service_decode_context(),
+        ArchiveVersion::V1.classify(None),
+        super::SourceMetaDetail::FlatLegacyArchive,
+    )
+    .expect("service profile admits source metadata");
+    assert_eq!(
+        meta.attributes.get("archive_version"),
+        Some(&"1".to_string())
+    );
+}
+
+#[test]
+fn container_summary_attributes_refuse_collection_limit() {
+    let scan = crate::test_support::test_dump::scan_with_objects(&[]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
+        .expect("summary input admitted");
+    let refusal = super::summarize(&ctx, &scan)
+        .expect_err("first table attribute exceeds zero collection items");
+    assert!(matches!(
+        refusal,
+        CodecError::ResourceLimit(limit)
+            if limit.operation == "Rhino container summary attributes"
+    ));
+    let summary = super::summarize(&cadmpeg_test_support::service_decode_context(), &scan)
+        .expect("service profile admits container summary");
+    assert_eq!(summary.entries.len(), scan.tables.len());
+}
+
+#[test]
+fn container_only_loss_refuses_collection_limit() {
+    let mut scan = crate::test_support::test_dump::scan_with_objects(&[]);
+    scan.warnings = crate::loss::Diagnostics::new();
+    scan.warnings.push("fixture warning");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
+        .expect("container-only input admitted");
+    let refusal = super::container_only_result(&ctx, &scan)
+        .expect_err("two notes leave no collection item for the loss");
+    assert!(matches!(
+        refusal,
+        CodecError::ResourceLimit(limit)
+            if limit.operation == "Rhino container-only losses"
+    ));
+    let decoded =
+        super::container_only_result(&cadmpeg_test_support::service_decode_context(), &scan)
+            .expect("service profile admits notes and loss");
+    assert_eq!(decoded.body.notes.len(), 2);
+    assert_eq!(decoded.body.losses.len(), 1);
+}
+
+fn checksum_warning(
+    data: &[u8],
+    typecode: u32,
+    offset: usize,
+    parent_end: usize,
+    archive: ArchiveVersion,
+) -> Result<Option<String>, CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        data,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+    super::checksum_warning(&ctx, data, typecode, offset, parent_end, archive)
+}
 
 #[test]
 fn document_table_record_budget_rejects_compact_record_amplification() {
@@ -118,9 +234,12 @@ fn aggregates_object_classes_after_table_entries() {
 #[test]
 fn container_only_returns_empty_current_ir_for_full_bands() {
     for version in ["50", "60", "70", "80", "90"] {
-        let archive = parse_header(&header(version))
-            .expect("required invariant")
-            .archive_version;
+        let archive = parse_header(
+            &cadmpeg_test_support::service_decode_context(),
+            &header(version),
+        )
+        .expect("required invariant")
+        .archive_version;
         let bytes = minimal_document(
             version,
             &[
@@ -149,9 +268,12 @@ fn container_only_returns_empty_current_ir_for_full_bands() {
 #[test]
 fn container_only_returns_empty_current_ir_for_v3_and_v4() {
     for version in ["3", "4"] {
-        let archive = parse_header(&header(version))
-            .expect("required invariant")
-            .archive_version;
+        let archive = parse_header(
+            &cadmpeg_test_support::service_decode_context(),
+            &header(version),
+        )
+        .expect("required invariant")
+        .archive_version;
         let bytes = minimal_document(
             version,
             &[
@@ -216,7 +338,7 @@ fn v2_class_records_use_four_byte_chunks_and_container_only_stays_empty() {
         .expect("V2 class-record decode");
     assert_eq!(decoded.ir().model.points.len(), 1, "{:?}", decoded.report());
     assert_eq!(
-        decoded.ir().model.points[0].position,
+        decoded.ir().model.points[0].position().get(),
         cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
     );
 }
@@ -452,10 +574,56 @@ fn counted_view_list_crc_excludes_nested_children() {
     );
 
     assert_eq!(
-        super::checksum_warning(&record, 0x2000_8035, 0, record.len(), archive)
+        checksum_warning(&record, 0x2000_8035, 0, record.len(), archive)
             .expect("view-list checksum framing"),
         None
     );
+}
+
+#[test]
+fn named_view_checksum_ranges_refuse_materialized_limit_before_copy() {
+    let archive = ArchiveVersion::V5;
+    let child = crc_chunk(archive, 0x2000_813b, &[1, 2, 3]);
+    let mut body = 1_i32.to_le_bytes().to_vec();
+    let child_range = 4..4 + child.len();
+    body.extend(child);
+    let record = crc_chunk_excluding(
+        archive,
+        0x2000_8035,
+        &body,
+        std::slice::from_ref(&child_range),
+    );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 15;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&record, &arena, &policy)
+        .expect("record fits service input limit");
+    let refusal = super::checksum_warning(&ctx, &record, 0x2000_8035, 0, record.len(), archive)
+        .expect_err("one range exceeds the materialized limit");
+    assert!(matches!(refusal, CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+
+    let service = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&record, &arena, &service)
+        .expect("record fits service input limit");
+    assert_eq!(
+        super::checksum_warning(&ctx, &record, 0x2000_8035, 0, record.len(), archive)
+            .expect("service admits checksum ranges"),
+        None
+    );
+}
+
+#[test]
+fn negative_view_list_count_is_reported_by_checksum_warning() {
+    let archive = ArchiveVersion::V5;
+    let body = (-1_i32).to_le_bytes();
+    let record = crc_chunk(archive, 0x2000_8035, &body);
+
+    let warning = checksum_warning(&record, 0x2000_8035, 0, record.len(), archive)
+        .expect("negative view-list checksum framing");
+    let warning = warning.expect("negative child count must remain observable");
+    assert!(warning.contains("checksum child framing"));
+    assert!(warning.contains("negative view-list child count"));
 }
 
 #[test]
@@ -471,7 +639,7 @@ fn mesh_settings_crc_excludes_nested_subd_display_chunk() {
         let record =
             crc_chunk_excluding(archive, typecode, &body, std::slice::from_ref(&child_range));
         assert_eq!(
-            super::checksum_warning(&record, typecode, 0, record.len(), archive)
+            checksum_warning(&record, typecode, 0, record.len(), archive)
                 .expect("mesh-settings checksum framing"),
             None
         );
@@ -492,7 +660,7 @@ fn modern_render_settings_crc_excludes_anonymous_body() {
     );
 
     assert_eq!(
-        super::checksum_warning(&record, 0x2000_803d, 0, record.len(), archive)
+        checksum_warning(&record, 0x2000_803d, 0, record.len(), archive)
             .expect("render-settings checksum framing"),
         None
     );
@@ -527,7 +695,7 @@ fn compressed_preview_crc_excludes_deflate_child() {
     );
 
     assert_eq!(
-        super::checksum_warning(&record, 0x2000_8025, 0, record.len(), archive)
+        checksum_warning(&record, 0x2000_8025, 0, record.len(), archive)
             .expect("compressed-preview checksum framing"),
         None
     );
@@ -566,7 +734,7 @@ fn compressed_preview_crc_tracks_noncontiguous_palette_and_image_buffers() {
     );
 
     assert_eq!(
-        super::checksum_warning(&record, 0x2000_8025, 0, record.len(), archive)
+        checksum_warning(&record, 0x2000_8025, 0, record.len(), archive)
             .expect("non-contiguous preview checksum framing"),
         None
     );
@@ -580,7 +748,7 @@ fn legacy_render_settings_crc_covers_direct_body() {
     let record = crc_chunk(archive, 0x2000_803d, &body);
 
     assert_eq!(
-        super::checksum_warning(&record, 0x2000_803d, 0, record.len(), archive)
+        checksum_warning(&record, 0x2000_803d, 0, record.len(), archive)
             .expect("legacy render-settings checksum framing"),
         None
     );
@@ -622,7 +790,7 @@ fn settings_attributes_crc_excludes_all_nested_children() {
     let record = crc_chunk_excluding(archive, 0x2000_8134, &body, &children);
 
     assert_eq!(
-        super::checksum_warning(&record, 0x2000_8134, 0, record.len(), archive)
+        checksum_warning(&record, 0x2000_8134, 0, record.len(), archive)
             .expect("settings-attributes checksum framing"),
         None
     );
@@ -646,10 +814,40 @@ fn plugin_list_crc_excludes_plugin_reference_chunks() {
     );
 
     assert_eq!(
-        super::checksum_warning(&record, 0x2000_8135, 0, record.len(), archive)
+        checksum_warning(&record, 0x2000_8135, 0, record.len(), archive)
             .expect("plugin-list checksum framing"),
         None
     );
+}
+
+#[test]
+fn plugin_list_child_ranges_refuse_collection_limit_without_warning() {
+    let archive = ArchiveVersion::V5;
+    let child = anonymous_chunk(archive, 2, &[0xde, 0xad]);
+    let mut body = vec![0x10];
+    body.extend(1_i32.to_le_bytes());
+    let child_start = body.len();
+    body.extend(child);
+    let child_range = child_start..body.len();
+    body.extend([0xbe, 0xef]);
+    let record = crc_chunk_excluding(
+        archive,
+        0x2000_8135,
+        &body,
+        std::slice::from_ref(&child_range),
+    );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&record, &arena, &policy)
+        .expect("root bytes admitted");
+    let error = super::checksum_warning(&ctx, &record, 0x2000_8135, 0, record.len(), archive)
+        .expect_err("one plugin child exceeds zero collection items");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(refusal)
+            if refusal.operation == "Rhino plugin-list child ranges"
+    ));
 }
 
 #[test]
@@ -698,7 +896,7 @@ fn render_userdata_crc_excludes_userdata_and_class_end_chunks() {
     );
 
     assert_eq!(
-        super::checksum_warning(&record, 0x2000_8136, 0, record.len(), archive)
+        checksum_warning(&record, 0x2000_8136, 0, record.len(), archive)
             .expect("render-settings userdata checksum framing"),
         None
     );
@@ -720,7 +918,7 @@ fn user_table_uuid_crc_excludes_record_header() {
     );
 
     assert_eq!(
-        super::checksum_warning(&record, 0x2000_8080, 0, record.len(), archive)
+        checksum_warning(&record, 0x2000_8080, 0, record.len(), archive)
             .expect("user-table UUID checksum framing"),
         None
     );
@@ -734,10 +932,57 @@ fn user_table_uuid_crc_covers_uuid_without_record_header() {
     let record = crc_chunk(archive, 0x2000_8080, &body);
 
     assert_eq!(
-        super::checksum_warning(&record, 0x2000_8080, 0, record.len(), archive)
+        checksum_warning(&record, 0x2000_8080, 0, record.len(), archive)
             .expect("user-table UUID checksum framing"),
         None
     );
+}
+
+#[test]
+fn user_table_uuid_direct_suffixes_are_checked_without_child_headers() {
+    for archive in [ArchiveVersion::V4, ArchiveVersion::V5, ArchiveVersion::V8] {
+        for suffix_len in 0..=20 {
+            let mut body = vec![0x41; 16];
+            body.extend(std::iter::repeat_n(0xbe, suffix_len));
+            let mut record = crc_chunk(archive, 0x2000_8080, &body);
+            assert_eq!(
+                checksum_warning(&record, 0x2000_8080, 0, record.len(), archive)
+                    .expect("bounded direct suffix"),
+                None,
+                "archive={archive:?} suffix_len={suffix_len}"
+            );
+            let last = record.len() - 1;
+            record[last] ^= 1;
+            let warning = checksum_warning(&record, 0x2000_8080, 0, record.len(), archive)
+                .expect("bounded checksum mismatch")
+                .expect("direct bytes must remain covered by the checksum");
+            assert!(warning.starts_with("CRC mismatch"), "{warning}");
+        }
+    }
+}
+
+#[test]
+fn user_table_uuid_known_child_header_cannot_be_discarded_after_framing_failure() {
+    for archive in [ArchiveVersion::V4, ArchiveVersion::V5, ArchiveVersion::V8] {
+        let length_width = if archive.uses_eight_byte_values() {
+            8
+        } else {
+            4
+        };
+        for length in [Vec::new(), vec![0xff; length_width], vec![0; length_width]] {
+            let body = [
+                vec![0x41; 16],
+                0x2000_8082_u32.to_le_bytes().to_vec(),
+                length,
+            ]
+            .concat();
+            let record = crc_chunk(archive, 0x2000_8080, &body);
+            let warning = checksum_warning(&record, 0x2000_8080, 0, record.len(), archive)
+                .expect("outer boundary remains recoverable")
+                .expect("recognized child framing failure must remain visible");
+            assert!(warning.starts_with("checksum child framing"), "{warning}");
+        }
+    }
 }
 
 #[test]
@@ -870,4 +1115,48 @@ fn skips_short_and_long_unknown_table_records() {
         .notes
         .iter()
         .any(|note| note.contains("unknown bounded record")));
+}
+
+#[test]
+fn a_table_body_must_leave_framing_inside_its_chunk_range() {
+    const INVERTED_BODY: std::ops::Range<usize> = std::ops::Range { start: 30, end: 10 };
+    let empty = || std::collections::BTreeMap::new();
+    let table = crate::container::Table::new(0x1000_0014, 0..40, 4..36, Vec::new(), 0, empty())
+        .expect("a body inside its chunk range");
+    assert_eq!(table.framing().get(), 8);
+    assert_eq!(table.body(), &(4..36));
+    assert_eq!(table.range(), &(0..40));
+    assert!(
+        crate::container::Table::new(0x1000_0014, 0..40, 0..40, Vec::new(), 0, empty()).is_none()
+    );
+    assert!(
+        crate::container::Table::new(0x1000_0014, 4..40, 0..36, Vec::new(), 0, empty()).is_none()
+    );
+    assert!(
+        crate::container::Table::new(0x1000_0014, 0..40, 4..44, Vec::new(), 0, empty()).is_none()
+    );
+    assert!(crate::container::Table::new(
+        0x1000_0014,
+        0..40,
+        INVERTED_BODY,
+        Vec::new(),
+        0,
+        empty()
+    )
+    .is_none());
+}
+
+#[cfg(target_pointer_width = "64")]
+#[test]
+fn a_table_framing_wider_than_u32_is_rejected() {
+    let range_len = usize::try_from(u64::from(u32::MAX) + 2).expect("64-bit target");
+    assert!(crate::container::Table::new(
+        0x1000_0014,
+        0..range_len,
+        0..0,
+        Vec::new(),
+        0,
+        std::collections::BTreeMap::new()
+    )
+    .is_none());
 }

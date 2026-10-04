@@ -23,7 +23,7 @@ use super::{cell, print_json};
 const EXAMPLE_MAX: usize = 80;
 
 /// Infers a field table from a decoded CADIR document.
-pub(crate) fn run(file: &str, arena: Option<&str>, json: bool) -> Result<()> {
+pub(super) fn run(file: &str, arena: Option<&str>, json: bool) -> Result<()> {
     let path = Path::new(file);
     let bytes = super::read_input(path)?;
     reject_non_cadir(&bytes, path, "schema")?;
@@ -39,10 +39,10 @@ pub(crate) fn run(file: &str, arena: Option<&str>, json: bool) -> Result<()> {
         bail!("{}", unknown_arena_message(&target, &doc.addressable()));
     };
 
-    let entry_count = arena_rec.records.len() as u64;
+    let entry_count = cadmpeg_core::decode::u64_from_index(arena_rec.records.len());
     let rows = infer_fields(&arena_rec.records, &doc.all_ids());
     if json {
-        print_json("schema", json_payload(&target.dotted(), entry_count, &rows));
+        print_json("schema", json_payload(&target.dotted(), entry_count, &rows))?;
         return Ok(());
     }
     println!("path\tpresence\ttype\texample\trelation");
@@ -317,8 +317,9 @@ fn unknown_arena_message(target: &ArenaTarget, addressable: &[(String, u64)]) ->
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{infer_fields, FieldRow, Relation, EXAMPLE_MAX};
     use serde_json::json;
+    use std::collections::{BTreeMap, BTreeSet};
 
     #[test]
     fn infers_presence_types_and_nested_paths() {

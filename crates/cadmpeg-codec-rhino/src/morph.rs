@@ -6,14 +6,16 @@ use std::ops::Range;
 
 use serde::{Deserialize, Serialize};
 
-use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface};
+use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface};
+use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal, NonZeroReal};
+use cadmpeg_ir::units::FiniteVector;
 
 use crate::cage::Cage;
 use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader};
 use crate::curves::GeometryError;
 use crate::mesh::MeshExpand;
-use crate::settings::{interval, point, vector, xform};
-use crate::wire::{scaled_coordinate, Uuid};
+use crate::settings::{interval, point, vector, xform, MillimeterScale};
+use crate::wire::{scaled_coordinate, uuid, Uuid};
 
 const ANONYMOUS: u32 = 0x4000_8000;
 const MAX_LOCALIZERS: usize = 1 << 16;
@@ -33,7 +35,7 @@ pub(crate) enum Control {
         end: NurbsSurface,
     },
     Cage {
-        start_transform: [f64; 16],
+        start_transform: FiniteVector<16>,
         end: Cage,
     },
 }
@@ -45,13 +47,13 @@ pub(crate) enum Control {
 pub(crate) struct LocalizerKind(pub(crate) i32);
 
 impl LocalizerKind {
-    pub(crate) const NONE: Self = Self(0);
-    pub(crate) const SPHERE: Self = Self(1);
-    pub(crate) const PLANE: Self = Self(2);
-    pub(crate) const CYLINDER: Self = Self(3);
-    pub(crate) const CURVE: Self = Self(4);
-    pub(crate) const SURFACE: Self = Self(5);
-    pub(crate) const DISTANCE: Self = Self(6);
+    const NONE: Self = Self(0);
+    const SPHERE: Self = Self(1);
+    const PLANE: Self = Self(2);
+    const CYLINDER: Self = Self(3);
+    const CURVE: Self = Self(4);
+    const SURFACE: Self = Self(5);
+    const DISTANCE: Self = Self(6);
 }
 
 impl fmt::Debug for LocalizerKind {
@@ -79,20 +81,20 @@ impl fmt::Display for LocalizerKind {
 #[derive(Debug, Clone)]
 pub(crate) struct Localizer {
     pub(crate) kind: LocalizerKind,
-    pub(crate) point: [f64; 3],
-    pub(crate) vector: [f64; 3],
-    pub(crate) interval: [f64; 2],
+    pub(crate) point: FiniteVector<3>,
+    pub(crate) vector: FiniteVector<3>,
+    pub(crate) interval: FiniteVector<2>,
     pub(crate) curve: Option<NurbsCurve>,
     pub(crate) surface: Option<NurbsSurface>,
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct Morph {
-    pub(crate) source_range: Range<usize>,
+    source_range: Range<usize>,
     pub(crate) control: Control,
     pub(crate) captive_ids: Vec<Uuid>,
     pub(crate) localizers: Vec<Localizer>,
-    pub(crate) tolerance: f64,
+    pub(crate) tolerance: NonNegativeReal,
     pub(crate) quick_preview: bool,
     pub(crate) preserve_structure: bool,
 }
@@ -129,11 +131,8 @@ fn count(
         .map_err(|_| GeometryError::malformed(offset, "morph-control count overflows"))
 }
 
-fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, GeometryError> {
-    Ok(Uuid::from_wire(reader.array()?))
-}
-
 fn captive_ids(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
@@ -152,7 +151,9 @@ fn captive_ids(
         });
     }
     let count = count(&mut ids, 16, MAX_CAPTIVES)?;
-    let mut values = Vec::with_capacity(count);
+    let mut values = ctx
+        .collection_vec(count, "Rhino morph captive IDs")
+        .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..count {
         values.push(uuid(&mut ids)?);
     }
@@ -163,89 +164,72 @@ fn captive_ids(
 
 fn scale_point(
     value: crate::settings::Point3,
-    scale: f64,
+    scale: MillimeterScale,
     offset: usize,
-) -> Result<[f64; 3], GeometryError> {
-    let mut result = [0.0; 3];
-    for (target, coordinate) in result.iter_mut().zip(value.0) {
-        *target = scaled_coordinate(coordinate, scale).ok_or_else(|| {
-            GeometryError::malformed(offset, "scaled morph-control coordinate is invalid")
-        })?;
-    }
-    Ok(result)
+) -> Result<FiniteVector<3>, GeometryError> {
+    let [x, y, z] = value
+        .0
+        .get()
+        .map(|coordinate| scaled_real(coordinate, scale));
+    let (Some(x), Some(y), Some(z)) = (x, y, z) else {
+        return Err(GeometryError::malformed(
+            offset,
+            "scaled morph-control coordinate is invalid",
+        ));
+    };
+    Ok(FiniteVector::from([x, y, z]))
 }
 
-fn scale_interval(value: [f64; 2], scale: f64, offset: usize) -> Result<[f64; 2], GeometryError> {
-    Ok([
-        scaled_coordinate(value[0], scale).ok_or_else(|| {
-            GeometryError::malformed(offset, "scaled localizer interval is invalid")
-        })?,
-        scaled_coordinate(value[1], scale).ok_or_else(|| {
-            GeometryError::malformed(offset + 8, "scaled localizer interval is invalid")
-        })?,
-    ])
+/// Multiply an admitted archive coordinate by the unit scale and admit the
+/// product, as `scaled_coordinate` does.
+fn scaled_real(coordinate: f64, scale: MillimeterScale) -> Option<FiniteReal> {
+    FiniteReal::new(coordinate * scale.value())
 }
 
-fn optional_curve(
+fn scale_interval(
+    value: [f64; 2],
+    scale: MillimeterScale,
+    offset: usize,
+) -> Result<FiniteVector<2>, GeometryError> {
+    let start = scaled_real(value[0], scale)
+        .ok_or_else(|| GeometryError::malformed(offset, "scaled localizer interval is invalid"))?;
+    let end = scaled_real(value[1], scale).ok_or_else(|| {
+        GeometryError::malformed(offset + 8, "scaled localizer interval is invalid")
+    })?;
+    Ok(FiniteVector::from([start, end]))
+}
+
+fn optional_localizer<T>(
     data: &[u8],
     reader: &mut BoundedReader<'_>,
-    scale: f64,
     archive: ArchiveVersion,
-) -> Result<Option<NurbsCurve>, GeometryError> {
+    kind: &str,
+    parse: impl FnOnce(&mut BoundedReader<'_>) -> Result<T, GeometryError>,
+) -> Result<Option<T>, GeometryError> {
     let (mut child, next, major, minor) = anonymous(
         data,
         reader.position(),
         reader.end(),
         archive,
-        "localizer curve",
+        &format!("localizer {kind}"),
     )?;
     if major != 1 || minor < 0 {
         return Err(GeometryError::UnsupportedVersion {
             offset: child.position() - 8,
-            message: format!("unsupported localizer-curve version {major}.{minor}"),
+            message: format!("unsupported localizer-{kind} version {major}.{minor}"),
         });
     }
-    let value = child
-        .bool()?
-        .then(|| crate::surfaces::read_nurbs_curve(&mut child, scale))
-        .transpose()?;
-    child.skip_remaining()?;
-    reader.skip(next - reader.position())?;
-    Ok(value)
-}
-
-fn optional_surface(
-    data: &[u8],
-    reader: &mut BoundedReader<'_>,
-    scale: f64,
-    archive: ArchiveVersion,
-) -> Result<Option<NurbsSurface>, GeometryError> {
-    let (mut child, next, major, minor) = anonymous(
-        data,
-        reader.position(),
-        reader.end(),
-        archive,
-        "localizer surface",
-    )?;
-    if major != 1 || minor < 0 {
-        return Err(GeometryError::UnsupportedVersion {
-            offset: child.position() - 8,
-            message: format!("unsupported localizer-surface version {major}.{minor}"),
-        });
-    }
-    let value = child
-        .bool()?
-        .then(|| crate::surfaces::read_nurbs_surface(&mut child, scale))
-        .transpose()?;
+    let value = child.bool()?.then(|| parse(&mut child)).transpose()?;
     child.skip_remaining()?;
     reader.skip(next - reader.position())?;
     Ok(value)
 }
 
 fn localizer(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
-    scale: f64,
+    scale: MillimeterScale,
     archive: ArchiveVersion,
 ) -> Result<Localizer, GeometryError> {
     let (mut value, next, major, minor) =
@@ -261,9 +245,13 @@ fn localizer(
     let point = scale_point(point(&mut value)?, scale, offset)?;
     let vector = vector(&mut value)?.0;
     let offset = value.position();
-    let interval = scale_interval(interval(&mut value)?.0, scale, offset)?;
-    let curve = optional_curve(data, &mut value, scale, archive)?;
-    let surface = optional_surface(data, &mut value, scale, archive)?;
+    let interval = scale_interval(interval(&mut value)?.0.get(), scale, offset)?;
+    let curve = optional_localizer(data, &mut value, archive, "curve", |child| {
+        crate::surfaces::read_nurbs_curve(ctx, child, scale)
+    })?;
+    let surface = optional_localizer(data, &mut value, archive, "surface", |child| {
+        crate::surfaces::read_nurbs_surface(ctx, child, scale)
+    })?;
     value.skip_remaining()?;
     reader.skip(next - reader.position())?;
     Ok(Localizer {
@@ -299,11 +287,14 @@ fn control_child<T>(
 
 fn scaled_transform(
     reader: &mut BoundedReader<'_>,
-    scale: f64,
-) -> Result<[f64; 16], GeometryError> {
+    scale: MillimeterScale,
+) -> Result<FiniteVector<16>, GeometryError> {
     let mut transform = xform(reader)?.0;
     for index in [3, 7, 11] {
-        transform[index] = scaled_coordinate(transform[index], scale).ok_or_else(|| {
+        let scaled = scaled_coordinate(transform[index], scale).ok_or_else(|| {
+            GeometryError::malformed(reader.position() - 128, "scaled cage transform is invalid")
+        })?;
+        transform = transform.with_component(index, scaled).ok_or_else(|| {
             GeometryError::malformed(reader.position() - 128, "scaled cage transform is invalid")
         })?;
     }
@@ -313,7 +304,7 @@ fn scaled_transform(
 fn cage_at(
     expand: MeshExpand<'_>,
     reader: &mut BoundedReader<'_>,
-    scale: f64,
+    scale: MillimeterScale,
     archive: ArchiveVersion,
 ) -> Result<Cage, GeometryError> {
     let (cage, next) =
@@ -325,7 +316,7 @@ fn cage_at(
 pub(crate) fn decode(
     expand: MeshExpand<'_>,
     range: Range<usize>,
-    scale: f64,
+    scale: MillimeterScale,
     archive: ArchiveVersion,
 ) -> Result<Morph, GeometryError> {
     let data = expand.data();
@@ -339,7 +330,7 @@ pub(crate) fn decode(
     }
     if major == 1 {
         let end = cage_at(expand, &mut outer, scale, archive)?;
-        let captive_ids = captive_ids(data, &mut outer, archive)?;
+        let captive_ids = captive_ids(expand.ctx(), data, &mut outer, archive)?;
         let start_transform = scaled_transform(&mut outer, scale)?;
         outer.skip_remaining()?;
         return Ok(Morph {
@@ -350,7 +341,7 @@ pub(crate) fn decode(
             },
             captive_ids,
             localizers: Vec::new(),
-            tolerance: 0.0,
+            tolerance: NonNegativeReal::ZERO,
             quick_preview: false,
             preserve_structure: false,
         });
@@ -359,18 +350,18 @@ pub(crate) fn decode(
     let control = match outer.i32()? {
         1 => Control::Curve {
             start: control_child(data, &mut outer, archive, "morph start control", |reader| {
-                crate::surfaces::read_nurbs_curve(reader, scale)
+                crate::surfaces::read_nurbs_curve(expand.ctx(), reader, scale)
             })?,
             end: control_child(data, &mut outer, archive, "morph end control", |reader| {
-                crate::surfaces::read_nurbs_curve(reader, scale)
+                crate::surfaces::read_nurbs_curve(expand.ctx(), reader, scale)
             })?,
         },
         2 => Control::Surface {
             start: control_child(data, &mut outer, archive, "morph start control", |reader| {
-                crate::surfaces::read_nurbs_surface(reader, scale)
+                crate::surfaces::read_nurbs_surface(expand.ctx(), reader, scale)
             })?,
             end: control_child(data, &mut outer, archive, "morph end control", |reader| {
-                crate::surfaces::read_nurbs_surface(reader, scale)
+                crate::surfaces::read_nurbs_surface(expand.ctx(), reader, scale)
             })?,
         },
         3 => Control::Cage {
@@ -392,8 +383,38 @@ pub(crate) fn decode(
             ))
         }
     };
-    let captive_ids = captive_ids(data, &mut outer, archive)?;
+    let captive_ids = captive_ids(expand.ctx(), data, &mut outer, archive)?;
 
+    let localizers = localizers(expand.ctx(), data, &mut outer, scale, archive)?;
+    let (tolerance, quick_preview, preserve_structure) = if minor >= 1 {
+        let tolerance = scaled_coordinate(outer.f64()?, scale)
+            .and_then(NonNegativeReal::from_finite)
+            .ok_or_else(|| {
+                GeometryError::malformed(outer.position() - 8, "invalid morph tolerance")
+            })?;
+        (tolerance, outer.bool()?, outer.bool()?)
+    } else {
+        (NonNegativeReal::ZERO, false, false)
+    };
+    outer.skip_remaining()?;
+    Ok(Morph {
+        source_range: range,
+        control,
+        captive_ids,
+        localizers,
+        tolerance,
+        quick_preview,
+        preserve_structure,
+    })
+}
+
+fn localizers(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    data: &[u8],
+    outer: &mut BoundedReader<'_>,
+    scale: MillimeterScale,
+    archive: ArchiveVersion,
+) -> Result<Vec<Localizer>, GeometryError> {
     let (mut list, list_next, list_major, list_minor) = anonymous(
         data,
         outer.position(),
@@ -408,145 +429,281 @@ pub(crate) fn decode(
         });
     }
     let localizer_count = count(&mut list, 12, MAX_LOCALIZERS)?;
-    let mut localizers = Vec::new();
+    let mut localizers = ctx
+        .collection_vec(localizer_count, "Rhino morph localizers")
+        .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..localizer_count {
-        localizers.push(localizer(data, &mut list, scale, archive)?);
+        localizers.push(localizer(ctx, data, &mut list, scale, archive)?);
     }
     list.skip_remaining()?;
     outer.skip(list_next - outer.position())?;
-    let (tolerance, quick_preview, preserve_structure) = if minor >= 1 {
-        let tolerance = scaled_coordinate(outer.f64()?, scale)
-            .filter(|value| *value >= 0.0)
-            .ok_or_else(|| {
-                GeometryError::malformed(outer.position() - 8, "invalid morph tolerance")
-            })?;
-        (tolerance, outer.bool()?, outer.bool()?)
-    } else {
-        (0.0, false, false)
-    };
-    outer.skip_remaining()?;
-    Ok(Morph {
-        source_range: range,
-        control,
-        captive_ids,
-        localizers,
-        tolerance,
-        quick_preview,
-        preserve_structure,
-    })
+    Ok(localizers)
 }
 
-fn numbers(values: impl IntoIterator<Item = f64>) -> String {
-    values
-        .into_iter()
-        .map(|value| value.to_string())
-        .collect::<Vec<_>>()
-        .join(",")
+struct CommaList<I>(I);
+
+impl<I> fmt::Display for CommaList<I>
+where
+    I: Clone + Iterator,
+    I::Item: fmt::Display,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (index, value) in self.0.clone().enumerate() {
+            if index > 0 {
+                f.write_str(",")?;
+            }
+            write!(f, "{value}")?;
+        }
+        Ok(())
+    }
 }
 
-fn points(values: &[cadmpeg_ir::math::Point3]) -> String {
-    values
-        .iter()
-        .map(|point| format!("{},{},{}", point.x, point.y, point.z))
-        .collect::<Vec<_>>()
-        .join(";")
+fn write_points(
+    f: &mut fmt::Formatter<'_>,
+    values: impl Iterator<Item = cadmpeg_ir::math::Point3>,
+) -> fmt::Result {
+    for (index, point) in values.enumerate() {
+        if index > 0 {
+            f.write_str(";")?;
+        }
+        write!(f, "{},{},{}", point.x, point.y, point.z)?;
+    }
+    Ok(())
+}
+
+struct CurvePoints<'a>(&'a NurbsPoles3<cadmpeg_ir::features::FinitePoint3>);
+
+impl fmt::Display for CurvePoints<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.0 {
+            NurbsPoles3::Polynomial { points } => {
+                write_points(f, points.iter().map(|point| point.get()))
+            }
+            NurbsPoles3::Rational { points } => {
+                write_points(f, points.iter().map(|pole| pole.point.get()))
+            }
+        }
+    }
+}
+
+struct SurfacePoints<'a>(&'a NurbsPoleGrid<cadmpeg_ir::features::FinitePoint3>);
+
+impl fmt::Display for SurfacePoints<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.0 {
+            NurbsPoleGrid::Polynomial { rows } => {
+                write_points(f, rows.iter().flatten().map(|point| point.get()))
+            }
+            NurbsPoleGrid::Rational { rows } => {
+                write_points(f, rows.iter().flatten().map(|pole| pole.point.get()))
+            }
+        }
+    }
+}
+
+struct CagePoints<'a>(&'a [Vec<FiniteReal>]);
+
+impl fmt::Display for CagePoints<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (index, point) in self.0.iter().enumerate() {
+            if index > 0 {
+                f.write_str(";")?;
+            }
+            write!(
+                f,
+                "{}",
+                CommaList(point.iter().copied().map(FiniteReal::get))
+            )?;
+        }
+        Ok(())
+    }
+}
+
+fn insert_property(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    properties: &mut std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+    key: fmt::Arguments<'_>,
+    value: fmt::Arguments<'_>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let key = ctx.format_retained(key, "Rhino morph property key")?;
+    let key = cadmpeg_core::text::NonBlankString::new(key)
+        .ok_or_else(|| cadmpeg_core::CodecError::malformed("blank generated Rhino morph key"))?;
+    let value = ctx.format_retained(value, "Rhino morph property value")?;
+    ctx.insert_btree_map(properties, key, value, "Rhino morph property entries")?;
+    Ok(())
 }
 
 fn curve_properties(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     prefix: &str,
     curve: &NurbsCurve,
-    properties: &mut std::collections::BTreeMap<String, String>,
-) {
-    properties.insert(format!("{prefix}_degree"), curve.degree().to_string());
-    properties.insert(
-        format!("{prefix}_knots"),
-        numbers(curve.knots().iter().copied()),
-    );
-    properties.insert(
-        format!("{prefix}_control_points"),
-        points(curve.control_points()),
-    );
-    properties.insert(format!("{prefix}_periodic"), curve.periodic().to_string());
-    if let Some(weights) = curve.weights() {
-        properties.insert(
-            format!("{prefix}_weights"),
-            numbers(weights.iter().copied()),
-        );
+    properties: &mut std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}_degree"),
+        format_args!("{}", curve.degree()),
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}_knots"),
+        format_args!("{}", CommaList(curve.knots().iter().copied())),
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}_control_points"),
+        format_args!("{}", CurvePoints(curve.pole_rows())),
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}_periodic"),
+        format_args!("{}", curve.periodic()),
+    )?;
+    if let NurbsPoles3::Rational { points } = curve.pole_rows() {
+        insert_property(
+            ctx,
+            properties,
+            format_args!("{prefix}_weights"),
+            format_args!("{}", CommaList(points.iter().map(|pole| pole.weight.get()))),
+        )?;
     }
+    Ok(())
 }
 
 fn surface_properties(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     prefix: &str,
     surface: &NurbsSurface,
-    properties: &mut std::collections::BTreeMap<String, String>,
-) {
-    properties.insert(format!("{prefix}_u_degree"), surface.u_degree().to_string());
-    properties.insert(format!("{prefix}_v_degree"), surface.v_degree().to_string());
-    properties.insert(
-        format!("{prefix}_u_knots"),
-        numbers(surface.u_knots().iter().copied()),
-    );
-    properties.insert(
-        format!("{prefix}_v_knots"),
-        numbers(surface.v_knots().iter().copied()),
-    );
-    properties.insert(format!("{prefix}_u_count"), surface.u_count().to_string());
-    properties.insert(format!("{prefix}_v_count"), surface.v_count().to_string());
-    properties.insert(
-        format!("{prefix}_control_points"),
-        points(surface.control_points()),
-    );
-    properties.insert(
-        format!("{prefix}_u_periodic"),
-        surface.u_periodic().to_string(),
-    );
-    properties.insert(
-        format!("{prefix}_v_periodic"),
-        surface.v_periodic().to_string(),
-    );
-    if let Some(weights) = surface.weights() {
-        properties.insert(
-            format!("{prefix}_weights"),
-            numbers(weights.iter().copied()),
-        );
+    properties: &mut std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}_u_degree"),
+        format_args!("{}", surface.u_degree()),
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}_v_degree"),
+        format_args!("{}", surface.v_degree()),
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}_u_knots"),
+        format_args!("{}", CommaList(surface.u_knots().iter().copied())),
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}_v_knots"),
+        format_args!("{}", CommaList(surface.v_knots().iter().copied())),
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}_u_count"),
+        format_args!("{}", surface.u_count()),
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}_v_count"),
+        format_args!("{}", surface.v_count()),
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}_control_points"),
+        format_args!("{}", SurfacePoints(surface.pole_grid())),
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}_u_periodic"),
+        format_args!("{}", surface.u_periodic()),
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}_v_periodic"),
+        format_args!("{}", surface.v_periodic()),
+    )?;
+    if let NurbsPoleGrid::Rational { rows } = surface.pole_grid() {
+        insert_property(
+            ctx,
+            properties,
+            format_args!("{prefix}_weights"),
+            format_args!(
+                "{}",
+                CommaList(rows.iter().flatten().map(|pole| pole.weight.get()))
+            ),
+        )?;
     }
+    Ok(())
 }
 
 fn cage_properties(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     prefix: &str,
     cage: &Cage,
-    properties: &mut std::collections::BTreeMap<String, String>,
-) {
-    properties.insert(format!("{prefix}_dimension"), cage.dimension.to_string());
-    properties.insert(format!("{prefix}_rational"), cage.rational().to_string());
-    properties.insert(
-        format!("{prefix}_orders"),
-        format!("{},{},{}", cage.orders[0], cage.orders[1], cage.orders[2]),
-    );
-    properties.insert(
-        format!("{prefix}_counts"),
-        format!("{},{},{}", cage.counts[0], cage.counts[1], cage.counts[2]),
-    );
+    properties: &mut std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}_dimension"),
+        format_args!("{}", cage.dimension),
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}_rational"),
+        format_args!("{}", cage.rational()),
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}_orders"),
+        format_args!("{},{},{}", cage.orders[0], cage.orders[1], cage.orders[2]),
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}_counts"),
+        format_args!("{},{},{}", cage.counts[0], cage.counts[1], cage.counts[2]),
+    )?;
     for (axis, knots) in ["u", "v", "w"].into_iter().zip(&cage.knots) {
-        properties.insert(
-            format!("{prefix}_{axis}_knots"),
-            numbers(knots.iter().copied()),
-        );
+        insert_property(
+            ctx,
+            properties,
+            format_args!("{prefix}_{axis}_knots"),
+            format_args!("{}", CommaList(knots.iter().copied().map(FiniteReal::get))),
+        )?;
     }
-    properties.insert(
-        format!("{prefix}_control_points"),
-        cage.control_points
-            .iter()
-            .map(|point| numbers(point.iter().copied()))
-            .collect::<Vec<_>>()
-            .join(";"),
-    );
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}_control_points"),
+        format_args!("{}", CagePoints(&cage.control_points)),
+    )?;
     if let Some(weights) = &cage.weights {
-        properties.insert(
-            format!("{prefix}_weights"),
-            numbers(weights.iter().copied()),
-        );
+        insert_property(
+            ctx,
+            properties,
+            format_args!("{prefix}_weights"),
+            format_args!(
+                "{}",
+                CommaList(weights.iter().copied().map(NonZeroReal::get))
+            ),
+        )?;
     }
+    Ok(())
 }
 
 /// Projects one decoded morph control into a native feature.
@@ -554,108 +711,175 @@ fn cage_properties(
 /// `resolve_captive` maps each captive UUID to its native record identity.
 /// It charges unresolved references as needed; raw UUIDs stay in `captive_ids`.
 pub(crate) fn project(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     morph: &Morph,
     key: &str,
     name: Option<String>,
     native_ref: String,
-    mut resolve_captive: impl FnMut(Uuid) -> Option<String>,
-) -> cadmpeg_ir::features::Feature {
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
+    mut resolve_captive: impl FnMut(Uuid) -> Result<Option<String>, cadmpeg_core::CodecError>,
+) -> Result<cadmpeg_ir::features::Feature, cadmpeg_core::CodecError> {
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use std::collections::BTreeMap;
 
     let (variant, mut properties) = match &morph.control {
         Control::Curve { start, end } => {
             let mut properties = BTreeMap::new();
-            curve_properties("start", start, &mut properties);
-            curve_properties("end", end, &mut properties);
+            curve_properties(ctx, "start", start, &mut properties)?;
+            curve_properties(ctx, "end", end, &mut properties)?;
             ("curve", properties)
         }
         Control::Surface { start, end } => {
             let mut properties = BTreeMap::new();
-            surface_properties("start", start, &mut properties);
-            surface_properties("end", end, &mut properties);
+            surface_properties(ctx, "start", start, &mut properties)?;
+            surface_properties(ctx, "end", end, &mut properties)?;
             ("surface", properties)
         }
         Control::Cage {
             start_transform,
             end,
         } => {
-            let mut properties = BTreeMap::from([(
-                "start_transform".to_string(),
-                numbers(start_transform.iter().copied()),
-            )]);
-            cage_properties("end", end, &mut properties);
+            let mut properties = BTreeMap::new();
+            insert_property(
+                ctx,
+                &mut properties,
+                format_args!("start_transform"),
+                format_args!("{}", CommaList(start_transform.iter().copied())),
+            )?;
+            cage_properties(ctx, "end", end, &mut properties)?;
             ("cage", properties)
         }
     };
     for (index, localizer) in morph.localizers.iter().enumerate() {
-        let prefix = format!("localizer_{index}");
-        properties.insert(format!("{prefix}_type"), localizer.kind.to_string());
-        properties.insert(format!("{prefix}_point"), numbers(localizer.point));
-        properties.insert(format!("{prefix}_vector"), numbers(localizer.vector));
-        properties.insert(format!("{prefix}_interval"), numbers(localizer.interval));
+        let prefix = ctx.format_retained(
+            format_args!("localizer_{index}"),
+            "Rhino morph localizer prefix",
+        )?;
+        insert_property(
+            ctx,
+            &mut properties,
+            format_args!("{prefix}_type"),
+            format_args!("{}", localizer.kind),
+        )?;
+        insert_property(
+            ctx,
+            &mut properties,
+            format_args!("{prefix}_point"),
+            format_args!("{}", CommaList(localizer.point.into_iter())),
+        )?;
+        insert_property(
+            ctx,
+            &mut properties,
+            format_args!("{prefix}_vector"),
+            format_args!("{}", CommaList(localizer.vector.into_iter())),
+        )?;
+        insert_property(
+            ctx,
+            &mut properties,
+            format_args!("{prefix}_interval"),
+            format_args!("{}", CommaList(localizer.interval.into_iter())),
+        )?;
         if let Some(curve) = &localizer.curve {
-            curve_properties(&format!("{prefix}_curve"), curve, &mut properties);
+            let curve_prefix = ctx.format_retained(
+                format_args!("{prefix}_curve"),
+                "Rhino morph localizer prefix",
+            )?;
+            curve_properties(ctx, &curve_prefix, curve, &mut properties)?;
         }
         if let Some(surface) = &localizer.surface {
-            surface_properties(&format!("{prefix}_surface"), surface, &mut properties);
+            let surface_prefix = ctx.format_retained(
+                format_args!("{prefix}_surface"),
+                "Rhino morph localizer prefix",
+            )?;
+            surface_properties(ctx, &surface_prefix, surface, &mut properties)?;
         }
     }
-    Feature {
-        id: FeatureId::mint(format!("rhino:morph:feature#{key}")).expect("identity grammar"),
-        ordinal: u64::try_from(morph.source_range.start).expect("source offset fits u64"),
+    let key = ctx.copy_retained_text(key, "Rhino morph feature key")?;
+    let key = cadmpeg_ir::ids::IdentityKey::try_new(key)
+        .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))?;
+    let feature_id = FeatureId::compose(
+        &cadmpeg_ir::identity_namespace!("rhino", "morph", "feature"),
+        key,
+    );
+    let ordinal = cadmpeg_core::decode::u64_from_index(morph.source_range.start);
+    let mut parameters = BTreeMap::new();
+    insert_property(
+        ctx,
+        &mut parameters,
+        format_args!("variant"),
+        format_args!("{variant}"),
+    )?;
+    insert_property(
+        ctx,
+        &mut parameters,
+        format_args!("captive_ids"),
+        format_args!("{}", CommaList(morph.captive_ids.iter().copied())),
+    )?;
+    insert_property(
+        ctx,
+        &mut parameters,
+        format_args!("tolerance"),
+        format_args!("{}", morph.tolerance.get()),
+    )?;
+    insert_property(
+        ctx,
+        &mut parameters,
+        format_args!("quick_preview"),
+        format_args!("{}", morph.quick_preview),
+    )?;
+    insert_property(
+        ctx,
+        &mut parameters,
+        format_args!("preserve_structure"),
+        format_args!("{}", morph.preserve_structure),
+    )?;
+    for (index, id) in morph.captive_ids.iter().enumerate() {
+        if let Some(record) = resolve_captive(*id)? {
+            let key = ctx.format_retained(
+                format_args!("captive_{index}_object"),
+                "Rhino morph property key",
+            )?;
+            let key = cadmpeg_core::text::NonBlankString::new(key).ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("blank generated Rhino morph key")
+            })?;
+            ctx.insert_btree_map(&mut parameters, key, record, "Rhino morph property entries")?;
+        }
+    }
+    Ok(Feature {
+        id: feature_id.try_clone_for_decode(ctx, "Rhino morph feature identity copy")?,
+        ordinal,
         name,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: properties,
         source_tag: Some("RhinoMorphControl".to_string()),
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Native {
-            kind: "morph_control".into(),
-            parameters: {
-                let mut parameters = BTreeMap::from([
-                    ("variant".to_string(), variant.to_string()),
-                    (
-                        "captive_ids".to_string(),
-                        morph
-                            .captive_ids
-                            .iter()
-                            .map(Uuid::to_string)
-                            .collect::<Vec<_>>()
-                            .join(","),
-                    ),
-                    ("tolerance".to_string(), morph.tolerance.to_string()),
-                    ("quick_preview".to_string(), morph.quick_preview.to_string()),
-                    (
-                        "preserve_structure".to_string(),
-                        morph.preserve_structure.to_string(),
-                    ),
-                ]);
-                parameters.extend(morph.captive_ids.iter().enumerate().filter_map(
-                    |(index, id)| {
-                        resolve_captive(*id)
-                            .map(|record| (format!("captive_{index}_object"), record))
-                    },
-                ));
-                parameters
-            },
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Native {
+                kind: "morph_control".into(),
+                parameters,
+            }),
+        ),
         native_ref: Some(native_ref),
-    }
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::test_support::crc_chunk;
+    use super::{
+        captive_ids, decode, localizer, localizers, project, Control, LocalizerKind, ANONYMOUS,
+    };
+    use crate::chunks::{ArchiveVersion, BoundedReader};
+    use crate::curves::GeometryError;
+    use crate::settings::MillimeterScale;
+    use crate::test_support::test_dump::crc_chunk;
 
     fn anonymous(major: i32, minor: i32, suffix: &[u8]) -> Vec<u8> {
         let mut body = major.to_le_bytes().to_vec();
         body.extend(minor.to_le_bytes());
         body.extend(suffix);
-        crc_chunk(ANONYMOUS, &body)
+        crc_chunk(ArchiveVersion::V5, ANONYMOUS, &body)
     }
 
     fn cage() -> Vec<u8> {
@@ -669,7 +893,7 @@ mod tests {
             body.extend(1.0_f64.to_le_bytes());
         }
         for index in 0..8 {
-            for coordinate in [index as f64, 0.0, 0.0] {
+            for coordinate in [f64::from(index), 0.0, 0.0] {
                 body.extend(coordinate.to_le_bytes());
             }
         }
@@ -691,6 +915,60 @@ mod tests {
         }
         bytes.push(0);
         bytes
+    }
+
+    #[test]
+    fn captive_ids_refuse_collection_limit() {
+        let mut body = 1_i32.to_le_bytes().to_vec();
+        body.extend([0; 16]);
+        let bytes = anonymous(1, 0, &body);
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded fixture");
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("root bytes admitted");
+        let error = captive_ids(&ctx, &bytes, &mut reader, ArchiveVersion::V5)
+            .expect_err("one captive exceeds zero collection items");
+        assert!(matches!(
+            error,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                if refusal.operation == "Rhino morph captive IDs"
+        ));
+    }
+
+    #[test]
+    fn localizers_refuse_collection_limit() {
+        let mut localizer_body = 6_i32.to_le_bytes().to_vec();
+        for value in [1.0_f64, 2.0, 3.0, 0.0, 0.0, 1.0, 4.0, 5.0] {
+            localizer_body.extend(value.to_le_bytes());
+        }
+        localizer_body.extend(anonymous(1, 0, &[0]));
+        localizer_body.extend(anonymous(1, 0, &[0]));
+        let mut body = 1_i32.to_le_bytes().to_vec();
+        body.extend(anonymous(1, 0, &localizer_body));
+        let bytes = anonymous(1, 0, &body);
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded fixture");
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("root bytes admitted");
+        let error = localizers(
+            &ctx,
+            &bytes,
+            &mut reader,
+            MillimeterScale::IDENTITY,
+            ArchiveVersion::V5,
+        )
+        .expect_err("one localizer exceeds zero collection items");
+        assert!(matches!(
+            error,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                if refusal.operation == "Rhino morph localizers"
+        ));
     }
 
     #[test]
@@ -718,11 +996,16 @@ mod tests {
         let bytes = anonymous(2, 2, &content);
 
         let morph = crate::decode::with_expand_bytes(&bytes, |expand| {
-            decode(expand, 0..bytes.len(), 10.0, ArchiveVersion::V8)
+            decode(
+                expand,
+                0..bytes.len(),
+                crate::test_support::millimeter_scale(10.0),
+                ArchiveVersion::V8,
+            )
         })
         .expect("required invariant");
         assert_eq!(morph.captive_ids.len(), 1);
-        assert_eq!(morph.tolerance, 0.1);
+        assert_eq!(morph.tolerance.get(), 0.1);
         assert!(morph.quick_preview);
         assert!(!morph.preserve_structure);
         let Control::Cage {
@@ -735,22 +1018,38 @@ mod tests {
         assert_eq!(start_transform[3], 20.0);
         assert_eq!(start_transform[7], 30.0);
         assert_eq!(start_transform[11], 40.0);
-        assert_eq!(end.control_points[7][0], 70.0);
+        assert_eq!(end.control_points[7][0].get(), 70.0);
         // One nil captive: no resolved identity and no charge.
         assert_eq!(morph.captive_ids.len(), 1);
-        let feature = project(&morph, "test", None, "native".to_string(), |_| None);
+        let feature = project(
+            &cadmpeg_test_support::service_decode_context(),
+            &morph,
+            "test",
+            None,
+            "native".to_string(),
+            |_| Ok(None),
+        )
+        .expect("the fixture states named properties");
         assert_eq!(feature.source_tag.as_deref(), Some("RhinoMorphControl"));
-        let cadmpeg_ir::features::FeatureDefinition::Native { parameters, .. } =
-            &feature.definition
+        let cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Native { parameters, .. },
+        ) = feature.evaluation.definition()
         else {
             panic!("expected a native morph definition");
         };
         assert!(!parameters.contains_key("captive_0_object"));
-        let resolved = project(&morph, "test", None, "native".to_string(), |_| {
-            Some("rhino:object:record#000007".to_string())
-        });
-        let cadmpeg_ir::features::FeatureDefinition::Native { parameters, .. } =
-            &resolved.definition
+        let resolved = project(
+            &cadmpeg_test_support::service_decode_context(),
+            &morph,
+            "test",
+            None,
+            "native".to_string(),
+            |_| Ok(Some("rhino:object:record#000007".to_string())),
+        )
+        .expect("the fixture states named properties");
+        let cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Native { parameters, .. },
+        ) = resolved.evaluation.definition()
         else {
             panic!("expected a native morph definition");
         };
@@ -758,10 +1057,88 @@ mod tests {
     }
 
     #[test]
+    fn morph_projection_refuses_property_and_captive_limits() {
+        let curve = super::NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
+            ],
+            None,
+            false,
+        )
+        .expect("fixture constructor admission")
+        .expect("valid test curve");
+        let morph = super::Morph {
+            source_range: 0..1,
+            control: super::Control::Curve {
+                start: curve.clone(),
+                end: curve,
+            },
+            captive_ids: vec![super::Uuid::nil()],
+            localizers: Vec::new(),
+            tolerance: super::NonNegativeReal::new(0.0).expect("valid tolerance"),
+            quick_preview: false,
+            preserve_structure: false,
+        };
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admitted");
+        let refusal = super::project(&ctx, &morph, "fixture", None, "native".into(), |_| Ok(None))
+            .expect_err("first property exceeds zero collection items");
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "Rhino morph property entries"
+        ));
+        let mut captive_policy = cadmpeg_core::decode::DecodePolicy::service();
+        captive_policy.limits.max_collection_items = 13;
+        let (captive_ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &captive_policy)
+                .expect("empty root admitted");
+        let refusal = super::project(
+            &captive_ctx,
+            &morph,
+            "fixture",
+            None,
+            "native".into(),
+            |_| {
+                captive_ctx.charge_collection_items(1, "Rhino morph captive resolution")?;
+                Ok(None)
+            },
+        )
+        .expect_err("captive resolution exceeds the collection limit");
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "Rhino morph captive resolution"
+        ));
+        let feature = super::project(
+            &cadmpeg_test_support::service_decode_context(),
+            &morph,
+            "fixture",
+            None,
+            "native".into(),
+            |_| Ok(None),
+        )
+        .expect("service profile admits morph properties");
+        assert_eq!(feature.source_properties["start_degree"], "1");
+    }
+
+    #[test]
     fn rejects_unknown_morph_control_major() {
         let bytes = anonymous(3, 0, &[]);
         let result = crate::decode::with_expand_bytes(&bytes, |expand| {
-            decode(expand, 0..bytes.len(), 1.0, ArchiveVersion::V8)
+            decode(
+                expand,
+                0..bytes.len(),
+                MillimeterScale::IDENTITY,
+                ArchiveVersion::V8,
+            )
         });
         assert!(matches!(
             result,
@@ -794,7 +1171,12 @@ mod tests {
         let bytes = anonymous(2, 1, &content);
 
         let morph = crate::decode::with_expand_bytes(&bytes, |expand| {
-            decode(expand, 0..bytes.len(), 10.0, ArchiveVersion::V8)
+            decode(
+                expand,
+                0..bytes.len(),
+                crate::test_support::millimeter_scale(10.0),
+                ArchiveVersion::V8,
+            )
         })
         .expect("required invariant");
         let Control::Curve { start, end } = &morph.control else {
@@ -802,9 +1184,9 @@ mod tests {
         };
         assert_eq!(start.control_points()[1].x, 10.0);
         assert_eq!(end.control_points()[1].x, 20.0);
-        assert_eq!(morph.localizers[0].point, [10.0, 20.0, 30.0]);
-        assert_eq!(morph.localizers[0].vector, [0.0, 0.0, 1.0]);
-        assert_eq!(morph.localizers[0].interval, [40.0, 50.0]);
+        assert_eq!(morph.localizers[0].point.get(), [10.0, 20.0, 30.0]);
+        assert_eq!(morph.localizers[0].vector.get(), [0.0, 0.0, 1.0]);
+        assert_eq!(morph.localizers[0].interval.get(), [40.0, 50.0]);
         assert!(morph.preserve_structure);
     }
 
@@ -850,8 +1232,19 @@ mod tests {
             payload.extend(anonymous(1, 0, &surface_payload));
             let bytes = anonymous(1, 0, &payload);
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("localizer bounds");
-            let value =
-                localizer(&bytes, &mut reader, 1.0, ArchiveVersion::V8).expect("localizer fields");
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let policy = cadmpeg_core::decode::DecodePolicy::service();
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                    .expect("localizer fixture fits service profile");
+            let value = localizer(
+                &ctx,
+                &bytes,
+                &mut reader,
+                MillimeterScale::IDENTITY,
+                ArchiveVersion::V8,
+            )
+            .expect("localizer fields");
             assert_eq!(value.kind, kind);
             assert!(value.curve.is_some());
             assert!(value.surface.is_some());

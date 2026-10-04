@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Parses IR JSON, applies one of 14 deterministic semantic mutations selected
+//! Parses IR JSON, applies one of 13 deterministic semantic mutations selected
 //! by the first input byte, and validates the result. Validation findings are
 //! expected; panics are failures.
 
 #![no_main]
 
+use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::CadIr;
 use libfuzzer_sys::fuzz_target;
 
@@ -27,13 +28,16 @@ fuzz_target!(|data: &[u8]| {
     };
     let mut source_fidelity = cadmpeg_ir::source_fidelity::SourceFidelity::default();
 
-    match strategy % 14 {
+    match strategy % 13 {
         0 => {
-            // Mutate vertex positions with NaN/infinity
+            // Drive vertex positions to the finite extremes; a point refuses anything else.
+            let Some(extreme) = cadmpeg_ir::features::FinitePoint3::new(
+                cadmpeg_ir::math::Point3::new(f64::MAX, f64::MIN, f64::MIN_POSITIVE),
+            ) else {
+                return;
+            };
             for point in &mut ir.model.points {
-                point.position.x = f64::NAN;
-                point.position.y = f64::INFINITY;
-                point.position.z = f64::NEG_INFINITY;
+                point.set_position(extreme);
             }
         }
         1 => {
@@ -44,6 +48,14 @@ fuzz_target!(|data: &[u8]| {
             }
         }
         2 => {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[],
+                &arena,
+                &cadmpeg_core::decode::DecodePolicy::service(),
+            ) else {
+                return;
+            };
             if let Some(loop_) = ir
                 .model
                 .loops
@@ -54,8 +66,14 @@ fuzz_target!(|data: &[u8]| {
                 if coedges.len() >= 2 {
                     coedges.swap(0, 1);
                     let vertex_uses = loop_.anchored_vertex_uses().to_vec();
-                    let _ = loop_.replace_ring(coedges, vertex_uses);
+                    match loop_.replace_ring(&ctx, coedges, vertex_uses) {
+                        Ok(()) | Err(cadmpeg_ir::topology::LoopRingAdmissionError::Invalid(_)) => {}
+                        Err(cadmpeg_ir::topology::LoopRingAdmissionError::Resource(_)) => return,
+                    }
                 }
+            }
+            if ctx.finish_session().is_err() {
+                return;
             }
         }
         3 => {
@@ -66,69 +84,85 @@ fuzz_target!(|data: &[u8]| {
             }
         }
         4 => {
-            // Mutate surface geometry with degenerate values
-            for surface in &mut ir.model.surfaces {
-                if let cadmpeg_ir::geometry::SurfaceGeometry::Plane { normal, .. } =
-                    &mut surface.geometry
-                {
-                    normal.x = 0.0;
-                    normal.y = 0.0;
-                    normal.z = 0.0;
-                }
-            }
-        }
-        5 => {
             // Create empty body (no regions)
             if !ir.model.bodies.is_empty() {
                 ir.model.bodies[0].regions.clear();
             }
         }
-        6 => {
+        5 => {
             // Create face with no loops
             if !ir.model.faces.is_empty() {
-                ir.model.faces[0].loops.clear();
+                ir.model.faces[0].loops = cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new());
+            }
+        }
+        6 => {
+            // Duplicate a point identity in the document arena.
+            if let Some(point) = ir.model.points.first().cloned() {
+                ir.model.points.push(point);
             }
         }
         7 => {
-            // Mutate tolerances to invalid values
-            ir.tolerances.linear = -1.0;
-            ir.tolerances.angular = f64::NAN;
-        }
-        8 => {
             // Clear all geometry but keep topology
             ir.model.points.clear();
             ir.model.curves.clear();
             ir.model.surfaces.clear();
         }
-        9 => {
+        8 => {
             // Break a radial ring with an unresolved coedge.
             if let Some(coedge) = ir.model.coedges.first_mut() {
                 coedge.radial_next = cadmpeg_ir::ids::CoedgeId::mint("fuzz:missing:coedge#0")
                     .expect("identity grammar");
             }
         }
-        10 => {
+        9 => {
             // Violate canonical arena ordering.
             ir.model.coedges.reverse();
         }
-        11 => {
+        10 => {
             // Put a coedge-owned edge into a shell's wire set.
             if let (Some(shell), Some(edge)) = (ir.model.shells.first_mut(), ir.model.edges.first())
             {
-                shell.wire_edges.push(edge.id.clone());
+                shell.add_wire_edge(edge.id.clone());
+            }
+        }
+        11 => {
+            // Add an annotation for an entity that does not exist.
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let policy = cadmpeg_core::decode::DecodePolicy::service();
+            let Ok((annotation_ctx, _)) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            else {
+                return;
+            };
+            let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+            let Ok(stream) = StreamHandle::new(
+                &annotation_ctx,
+                cadmpeg_ir::stream_name!("fuzz:nonexistent"),
+                "fuzz stream handle",
+            ) else {
+                return;
+            };
+            if annotations
+                .note(&annotation_ctx, "nonexistent", &stream, u64::MAX, None)
+                .is_err()
+            {
+                return;
+            }
+            let Ok(appended) = source_fidelity.annotations.append(
+                &annotation_ctx,
+                annotations.build(),
+                "fuzz annotation append",
+            ) else {
+                return;
+            };
+            appended.expect("annotation arena append");
+            if annotation_ctx.finish_session().is_err() {
+                return;
             }
         }
         12 => {
-            // Add an annotation for an entity that does not exist.
-            let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-            let stream = annotations.stream("fuzz:nonexistent");
-            annotations.note("nonexistent", stream, u64::MAX);
-            source_fidelity.annotations.append(annotations.build());
-        }
-        13 => {
-            // Put an invalid range on a canonical curve parameterization.
-            if let Some(edge) = ir.model.edges.first_mut() {
-                edge.param_range = Some([f64::INFINITY, f64::NEG_INFINITY]);
+            if let Some(edge) = ir.model.edges.first().cloned() {
+                ir.model.edges.push(edge);
             }
         }
         _ => {}

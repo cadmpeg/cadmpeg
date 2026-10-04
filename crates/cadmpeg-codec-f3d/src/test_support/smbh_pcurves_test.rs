@@ -2,8 +2,14 @@
 #![allow(clippy::unwrap_used)]
 
 use cadmpeg_asm::asm_header;
+use cadmpeg_test_support::service_decode_context;
 
-use crate::test_support::*;
+use crate::test_support::smbh_blocks_test::{
+    generated_curve_block, generated_pcurve_block, generated_planar_pcurve_block,
+    generated_planar_rational_pcurve_block, generated_surface_block,
+};
+use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
+use crate::test_support::tokens_test::{t_dbl, t_end, t_ident, t_long, t_ref, t_subident};
 
 /// Add a generated inline 2D `nubs` pcurve to the first coedge of the base
 /// topology fixture. The new record is appended at `RecordTable` index 19.
@@ -55,8 +61,10 @@ pub(crate) fn synthetic_geometry_with_inline_pcurve_on_nurbs_surface_smbh() -> V
 pub(crate) fn synthetic_inline_pcurve_with_referenced_support_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_with_inline_pcurve_on_nurbs_surface_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -88,7 +96,7 @@ pub(crate) fn synthetic_inline_pcurve_with_referenced_support_smbh() -> Vec<u8> 
     bytes
 }
 
-pub(crate) fn replace_generated_face_with_nurbs_surface(mut bytes: Vec<u8>) -> Vec<u8> {
+fn replace_generated_face_with_nurbs_surface(mut bytes: Vec<u8>) -> Vec<u8> {
     let planar_pcurve = generated_planar_pcurve_block();
     if let Some(offset) = bytes
         .windows(planar_pcurve.len())
@@ -100,8 +108,10 @@ pub(crate) fn replace_generated_face_with_nurbs_surface(mut bytes: Vec<u8>) -> V
         );
     }
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -170,11 +180,13 @@ pub(crate) fn synthetic_geometry_with_rational_pcurve_smbh() -> Vec<u8> {
     synthetic_geometry_with_pcurve_block_smbh(generated_planar_rational_pcurve_block())
 }
 
-pub(crate) fn synthetic_geometry_with_pcurve_block_smbh(block: Vec<u8>) -> Vec<u8> {
+fn synthetic_geometry_with_pcurve_block_smbh(block: Vec<u8>) -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -226,8 +238,10 @@ pub(crate) fn synthetic_geometry_with_pcurve_block_smbh(block: Vec<u8>) -> Vec<u
 pub(crate) fn synthetic_geometry_with_ref_pcurve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -268,8 +282,10 @@ pub(crate) fn synthetic_geometry_with_ref_pcurve_smbh() -> Vec<u8> {
 
 pub(crate) fn with_pcurve_discriminator(mut bytes: Vec<u8>, discriminator: i64) -> Vec<u8> {
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -280,7 +296,7 @@ pub(crate) fn with_pcurve_discriminator(mut bytes: Vec<u8>, discriminator: i64) 
         .iter()
         .find(|record| record.head() == "pcurve")
         .expect("generated pcurve record");
-    let offsets = cadmpeg_asm::sab::payload_token_offsets(
+    let offsets = cadmpeg_asm::test_support::sab::payload_token_offsets(
         &bytes,
         pcurve,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -293,8 +309,10 @@ pub(crate) fn with_pcurve_discriminator(mut bytes: Vec<u8>, discriminator: i64) 
 
 pub(crate) fn with_inline_pcurve_non_boolean_wrapper(mut bytes: Vec<u8>) -> Vec<u8> {
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -305,7 +323,7 @@ pub(crate) fn with_inline_pcurve_non_boolean_wrapper(mut bytes: Vec<u8>) -> Vec<
         .iter()
         .find(|record| record.head() == "pcurve")
         .expect("generated pcurve record");
-    let integers = cadmpeg_asm::sab::payload_token_offsets(
+    let integers = cadmpeg_asm::test_support::sab::payload_token_offsets(
         &bytes,
         pcurve,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -320,8 +338,10 @@ pub(crate) fn with_inline_pcurve_non_boolean_wrapper(mut bytes: Vec<u8>) -> Vec<
 
 pub(crate) fn with_ref_pcurve_companion_name(mut bytes: Vec<u8>, name: &[u8; 8]) -> Vec<u8> {
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -345,8 +365,10 @@ pub(crate) fn with_ref_pcurve_companion_name(mut bytes: Vec<u8>, name: &[u8; 8])
 
 pub(crate) fn with_ref_pcurve_companion_reversed(mut bytes: Vec<u8>) -> Vec<u8> {
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,

@@ -20,13 +20,21 @@
 //! `split_schema_identifier` serves the admission here, the DATA section and
 //! `FILE_POPULATION` schema-name match, and the AP242 edition report.
 
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
+
 /// One `FILE_SCHEMA` identifier that the header admits.
 ///
 /// The header classifies each identifier once and keeps the result. The
 /// decoded text is owned: it comes from a string decode that has no home in the
 /// header record, so a borrow would have nothing to point at.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum AdmittedSchemaIdentifier {
+pub(super) struct AdmittedSchemaIdentifier {
+    state: AdmittedSchemaState,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum AdmittedSchemaState {
     /// The schema name and the optional object identifier are both valid.
     Valid {
         /// The decoded identifier text, as the source states it.
@@ -54,37 +62,69 @@ impl AdmittedSchemaIdentifier {
             }
             SchemaIdentifierForm::Invalid => return None,
         };
-        Some(match out_of_range {
-            None => Self::Valid { text: identifier },
-            Some((name, component)) => Self::ObjectIdentifierOutOfRange {
-                text: identifier,
-                name,
-                component,
+        Some(Self {
+            state: match out_of_range {
+                None => AdmittedSchemaState::Valid { text: identifier },
+                Some((name, component)) => AdmittedSchemaState::ObjectIdentifierOutOfRange {
+                    text: identifier,
+                    name,
+                    component,
+                },
             },
         })
     }
 
     /// The decoded identifier text, as the source states it.
     pub(super) fn text(&self) -> &str {
-        match self {
-            Self::Valid { text } | Self::ObjectIdentifierOutOfRange { text, .. } => text,
+        match &self.state {
+            AdmittedSchemaState::Valid { text }
+            | AdmittedSchemaState::ObjectIdentifierOutOfRange { text, .. } => text,
+        }
+    }
+
+    /// The proved schema name and first out-of-range component, when present.
+    pub(super) fn out_of_range(&self) -> Option<(&str, &str)> {
+        match &self.state {
+            AdmittedSchemaState::Valid { .. } => None,
+            AdmittedSchemaState::ObjectIdentifierOutOfRange {
+                name, component, ..
+            } => Some((name, component)),
         }
     }
 
     /// Numeric object-identifier components, with registered root names mapped
     /// to their assigned number.
-    pub(super) fn numeric_object_identifier(&self) -> Option<Vec<u64>> {
-        let (_, object_identifier) = split_schema_identifier(self.text())?;
-        let mut components = object_identifier?.split_whitespace();
-        let root = u64::from(schema_oid_root_number(components.next()?)?);
-        let mut numbers = vec![root];
+    pub(super) fn numeric_object_identifier(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<Vec<u64>>, CodecError> {
+        let Some((_, Some(object_identifier))) = split_schema_identifier(self.text()) else {
+            return Ok(None);
+        };
+        let mut components = object_identifier.split_whitespace();
+        let Some(root) = components.next().and_then(schema_oid_root_number) else {
+            return Ok(None);
+        };
+        let mut numbers = Vec::new();
+        ctx.push_vec(
+            &mut numbers,
+            u64::from(root),
+            "step_schema_object_identifier_components",
+        )?;
         for component in components {
             let ComponentForm::Number(number) = schema_oid_component_form(component) else {
-                return None;
+                return Ok(None);
             };
-            numbers.push(number.parse().ok()?);
+            let Ok(number) = number.parse() else {
+                return Ok(None);
+            };
+            ctx.push_vec(
+                &mut numbers,
+                number,
+                "step_schema_object_identifier_components",
+            )?;
         }
-        (numbers.len() >= 2).then_some(numbers)
+        Ok((numbers.len() >= 2).then_some(numbers))
     }
 }
 

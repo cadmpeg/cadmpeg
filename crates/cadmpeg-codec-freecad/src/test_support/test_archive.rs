@@ -5,6 +5,11 @@ use std::io::{Cursor, Write};
 
 use zip::write::SimpleFileOptions;
 
+pub(crate) const GEOMETRY: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corpus/freecad_fcstd/fixtures/geometry_topology.FCStd"
+));
+
 pub(crate) const CORE_DESIGN_PRODUCT: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../corpus/freecad_fcstd/fixtures/core_design_product.FCStd"
@@ -47,9 +52,10 @@ pub(crate) fn rewrite_schema_version(bytes: &[u8], version: &str) -> Vec<u8> {
 
 pub(crate) fn assert_valid_document(ir: &cadmpeg_ir::CadIr) {
     let errors = cadmpeg_ir::validate_neutral(ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .into_iter()
-        .filter(|finding| finding.severity >= cadmpeg_ir::Severity::Error)
+        .filter(|finding| finding.severity >= cadmpeg_ir::report::Severity::Error)
         .collect::<Vec<_>>();
     assert!(errors.is_empty(), "{errors:#?}");
 }

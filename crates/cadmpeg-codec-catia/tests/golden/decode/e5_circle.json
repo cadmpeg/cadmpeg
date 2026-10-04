@@ -85,12 +85,17 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [],
-          "free_vertices": [
-            "catia:e5:v#0",
-            "catia:e5:v#1"
-          ],
           "id": "catia:e5:shell#unbound-points",
+          "members": [
+            {
+              "id": "catia:e5:v#0",
+              "kind": "free_vertex"
+            },
+            {
+              "id": "catia:e5:v#1",
+              "kind": "free_vertex"
+            }
+          ],
           "region": "catia:e5:region#unbound-points"
         }
       ],
@@ -209,15 +214,16 @@
         "stream_count": "2",
         "vertex_records": "2"
       },
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": "admitted",
-          "dialect": "catia:e5-stream",
-          "format": "catia"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "dialect": "catia:e5-stream"
+          }
         }
-      },
-      "format": "catia"
+      }
     },
     "tolerances": {
       "angular": 1e-10,
@@ -228,7 +234,6 @@
     }
   },
   "report": {
-    "container_only": false,
     "coverage": {
       "ambiguous_formula_parameter_dependency_count": 0,
       "ambiguous_relation_program_parameter_dependency_count": 0,
@@ -563,22 +568,24 @@
       "unresolved_storage_record_count": 0,
       "unresolved_unreferenced_relation_expression_count": 0
     },
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "admitted",
-        "dialect": "catia:e5-stream",
-        "format": "catia"
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "dialect": "catia:e5-stream"
+        }
       }
     },
-    "format": "catia",
-    "geometry_transferred": true,
     "losses": [
       {
         "code": {
           "code": "topology.e5-graph-unclosed",
           "kind": "topology_not_transferred",
-          "namespace": "catia"
+          "namespace": "catia",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "E5 carriers were decoded, but the reference graph could not be transferred with a closed surface/pcurve/vertex binding.",
         "severity": "blocking"
@@ -590,105 +597,109 @@
       "reconstructed BREP stream from MainDataStream + SurfacicReps: 0 FBB group(s) containing 0 face row(s), 2 vertex record(s), 0 edge-table delimiter(s)",
       "record-family census: 0 a9 03, 11 e5 0d 03",
       "container-level enumeration; `decode` applies the identified storage family's standard, freeform, E5, zero-entity, or metadata-fallback route"
-    ]
+    ],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {
       "exactness": {
         "catia:e5:body#unbound-points": {
-          "entity": "inferred"
+          "entity": "inferred",
+          "scope": "entity"
         },
         "catia:e5:region#unbound-points": {
-          "entity": "inferred"
+          "entity": "inferred",
+          "scope": "entity"
         },
         "catia:e5:shell#unbound-points": {
-          "entity": "inferred"
+          "entity": "inferred",
+          "scope": "entity"
         },
         "catia:e5:v#0": {
-          "entity": "byte_exact",
           "fields": {
             "point": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:e5:v#1": {
-          "entity": "byte_exact",
           "fields": {
             "point": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "catia:payload:unknown#e5": {
           "entity": "unknown",
           "fields": {
             "links": "derived"
-          }
+          },
+          "scope": "entity"
         }
       },
       "provenance": {
         "catia:e5:body#unbound-points": {
           "offset": 0,
-          "stream": 1,
+          "stream": "catia:e5_0d_03",
           "tag": "unbound_point_owner"
         },
         "catia:e5:curve#0": {
           "offset": 32,
-          "stream": 1,
+          "stream": "catia:e5_0d_03",
           "tag": "circle_carrier"
         },
         "catia:e5:pt#0": {
           "offset": 0,
-          "stream": 1,
+          "stream": "catia:e5_0d_03",
           "tag": "vertex_05_08_01"
         },
         "catia:e5:pt#1": {
           "offset": 0,
-          "stream": 1,
+          "stream": "catia:e5_0d_03",
           "tag": "vertex_05_08_01"
         },
         "catia:e5:region#unbound-points": {
           "offset": 0,
-          "stream": 1,
+          "stream": "catia:e5_0d_03",
           "tag": "unbound_point_owner"
         },
         "catia:e5:shell#unbound-points": {
           "offset": 0,
-          "stream": 1,
+          "stream": "catia:e5_0d_03",
           "tag": "unbound_point_owner"
         },
         "catia:e5:surf#0": {
           "offset": 32,
-          "stream": 1,
+          "stream": "catia:e5_0d_03",
           "tag": "analytic_surface"
         },
         "catia:e5:v#0": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "vertex_05_08_01"
         },
         "catia:e5:v#1": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "vertex_05_08_01"
         },
         "catia:payload:unknown#e5": {
           "offset": 0,
-          "stream": 0,
+          "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "catia:e5-stream"
         }
-      },
-      "streams": [
-        "catia:MainDataStream+SurfacicReps",
-        "catia:e5_0d_03"
-      ]
+      }
     },
-    "retained_records": [
-      {
-        "byte_len": 280,
-        "data": "5Q0DyQBkAAAAAAAAAAAAAAAAAAAkQAAAAAAAADRAAAAAAAAAPkAAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAEQAAAAAAAAAAAAAAAAAAAAAAAAADlDQP/AAYAAAAAAAAAhYCBgoCABQgBAABIQQAAoEEAAPBBBQgBAADwQAAAoEEAAPBB5Q0D/gAAAAAAAgAAAOUNA/4AAAAAAAMAAADlDQP+AAAAAAAEAAAA5Q0D/gAAAAAABQAAAOUNA/4AAAAAAAYAAADlDQP+AAAAAAAHAAAA5Q0D/gAAAAAACAAAAOUNA/4AAAAAAAkAAADlDQP+AAAAAAAKAAAAAA==",
-        "id": "catia:payload:unknown#e5",
+    "retained_records": {
+      "catia:payload:unknown#e5": {
+        "bytes": {
+          "data": "5Q0DyQBkAAAAAAAAAAAAAAAAAAAkQAAAAAAAADRAAAAAAAAAPkAAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAEQAAAAAAAAAAAAAAAAAAAAAAAAADlDQP/AAYAAAAAAAAAhYCBgoCABQgBAABIQQAAoEEAAPBBBQgBAADwQAAAoEEAAPBB5Q0D/gAAAAAAAgAAAOUNA/4AAAAAAAMAAADlDQP+AAAAAAAEAAAA5Q0D/gAAAAAABQAAAOUNA/4AAAAAAAYAAADlDQP+AAAAAAAHAAAA5Q0D/gAAAAAACAAAAOUNA/4AAAAAAAkAAADlDQP+AAAAAAAKAAAAAA==",
+          "retention": "inline"
+        },
         "offset": 0,
-        "sha256": "c97d160a4e1cab022f297a75a98047f86019686f879b6b3fd0e84def83f25ee2",
         "stream": "catia:MainDataStream+SurfacicReps"
       }
-    ]
+    }
   }
 }

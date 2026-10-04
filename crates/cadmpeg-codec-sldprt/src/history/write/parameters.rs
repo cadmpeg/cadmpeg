@@ -13,21 +13,29 @@ use crate::history::literals::{
     parse_parameter_literal,
 };
 use crate::history::parameters::{
-    expression_identifier_is_syntax, expression_identifier_tokens, global_parameter_owners,
-    parameters_with_incoherent_dependencies, parse_native_parameter_literal, project_parameters,
+    expression_identifier_tokens, global_parameter_owners, parameters_with_incoherent_dependencies,
+    parse_native_parameter_literal, project_parameters,
 };
-use crate::history::project::neutral_feature_id;
+use crate::history::project::neutral_feature_id_charged;
 use crate::resolved_features::relation_geometry::is_reference_relation_parameter;
 
-pub fn prepare_parameters_for_write(
+pub(crate) fn prepare_parameters_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
     feature_parameter_changes_authorized: bool,
 ) -> Result<(), CodecError> {
-    let neutral_hash = parameter_hash(&ir.model.parameters);
+    let hash_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (hash_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &hash_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+
+    let neutral_hash = parameter_hash(&hash_ctx, &ir.model.parameters)?;
     let native_hash = native
         .as_ref()
-        .map(|value| native_parameter_hash(&value.feature_histories));
+        .map(|value| native_parameter_hash(&hash_ctx, &value.feature_histories))
+        .transpose()?;
     let baseline_neutral = ir.source.as_ref().and_then(|source| {
         source
             .attributes
@@ -56,11 +64,24 @@ pub fn prepare_parameters_for_write(
             if feature_parameter_changes_authorized {
                 return sync_neutral_parameters(ir, native);
             }
+            let lane_bytes = native
+                .as_ref()
+                .into_iter()
+                .flat_map(|native| &native.feature_input_lanes)
+                .flat_map(|lane| lane.native_payload.iter().copied())
+                .collect::<Vec<_>>();
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &lane_bytes,
+                &arena,
+                &cadmpeg_core::decode::DecodePolicy::service(),
+            )?;
             let projected = native
                 .as_ref()
-                .map(|value| project_parameters(&value.feature_histories))
+                .map(|value| project_parameters(&ctx, &value.feature_histories))
+                .transpose()?
                 .unwrap_or_default();
-            if parameter_hash(&projected) == neutral_hash {
+            if parameter_hash(&hash_ctx, &projected)? == neutral_hash {
                 Ok(())
             } else {
                 Err(CodecError::Malformed(
@@ -72,7 +93,7 @@ pub fn prepare_parameters_for_write(
     }
 }
 
-pub(crate) fn sync_neutral_parameters(
+fn sync_neutral_parameters(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
 ) -> Result<(), CodecError> {
@@ -99,23 +120,43 @@ pub(crate) fn sync_neutral_parameters(
                 .map(|name| (feature.id.clone(), name.clone()))
         })
         .collect::<HashMap<_, _>>();
+    let lane_bytes = native
+        .as_ref()
+        .into_iter()
+        .flat_map(|native| &native.feature_input_lanes)
+        .flat_map(|lane| lane.native_payload.iter().copied())
+        .collect::<Vec<_>>();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &lane_bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
     let global_owners = global_parameter_owners(&ir.model.features);
     if let Some(native) = native.as_ref() {
-        let original = project_parameters(&native.feature_histories);
+        let original = project_parameters(&ctx, &native.feature_histories)?;
         let original_feature_names = native
             .feature_histories
             .iter()
             .flat_map(|history| &history.features)
-            .map(|feature| (neutral_feature_id(&feature.id), feature.name.clone()))
-            .collect::<HashMap<_, _>>();
+            .map(|feature| {
+                Ok((
+                    neutral_feature_id_charged(&ctx, &feature.id)?,
+                    feature.name.clone(),
+                ))
+            })
+            .collect::<Result<HashMap<_, _>, CodecError>>()?;
         rewrite_renamed_parameter_references(
+            &ctx,
             &mut parameters,
             &original,
             &original_feature_names,
             &feature_names,
-        );
+        )?;
     }
-    if parameters_with_incoherent_dependencies(&parameters, &feature_names, &global_owners) > 0 {
+    if parameters_with_incoherent_dependencies(&ctx, &parameters, &feature_names, &global_owners)?
+        > 0
+    {
         return Err(CodecError::Malformed(
             "SLDPRT parameter dependencies are inconsistent with their expressions".into(),
         ));
@@ -197,17 +238,22 @@ pub(crate) fn sync_neutral_parameters(
             })?;
         let mut parameters = desired.remove(feature_id).unwrap_or_default();
         parameters.sort_by_key(|parameter| parameter.ordinal);
-        record.parameters = parameters
-            .iter()
-            .map(|parameter| (parameter.name.clone(), parameter.expression.clone()))
-            .collect();
+        record.parameters = cadmpeg_core::text::named_entries(
+            format_args!("the sldprt feature {feature_id} record"),
+            parameters
+                .iter()
+                .map(|parameter| (parameter.name.clone(), parameter.expression.clone())),
+        )?;
         record.dimension_properties = parameters
             .iter()
             .map(|parameter| {
                 let mut properties = parameter.properties.clone();
                 if parse_parameter_literal(&parameter.expression).is_none() {
                     if let Some(value) = &parameter.value {
-                        properties.insert("Value".into(), format_parameter_value(value));
+                        properties.insert(
+                            cadmpeg_core::nonblank_literal!("Value"),
+                            format_parameter_value(value),
+                        );
                     } else {
                         properties.remove("Value");
                     }
@@ -260,9 +306,9 @@ pub(crate) fn sync_neutral_parameters(
             )));
         }
         let value = match parameter.value {
-            Some(ParameterValue::Length(length)) => length.0 / 1000.0,
-            Some(ParameterValue::Angle(angle)) => angle.0,
-            Some(ParameterValue::Real(value)) => value,
+            Some(ParameterValue::Length(length)) => length.get() / 1000.0,
+            Some(ParameterValue::Angle(angle)) => angle.get(),
+            Some(ParameterValue::Real(value)) => value.get(),
             _ => {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT scalar {} requires a real-valued parameter",
@@ -282,18 +328,21 @@ pub(crate) fn sync_neutral_parameters(
                     scalar.id
                 ))
             })?;
+        let checked = cadmpeg_ir::scalar::FiniteReal::new(value)
+            .ok_or_else(|| CodecError::malformed("SLDPRT scalar update is non-finite"))?;
         bytes.copy_from_slice(&value.to_le_bytes());
-        scalar.value = value;
+        scalar.value = checked;
     }
     Ok(())
 }
 
-pub(crate) fn rewrite_renamed_parameter_references(
+fn rewrite_renamed_parameter_references(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     parameters: &mut [DesignParameter],
     original: &[DesignParameter],
     original_feature_names: &HashMap<FeatureId, String>,
     feature_names: &HashMap<FeatureId, String>,
-) {
+) -> Result<(), CodecError> {
     let original = original
         .iter()
         .map(|parameter| (&parameter.id, parameter))
@@ -367,44 +416,54 @@ pub(crate) fn rewrite_renamed_parameter_references(
         if aliases.is_empty() {
             continue;
         }
-        if let Some(rewritten) = rewrite_parameter_expression(&parameter.expression, &aliases) {
+        if let Some(rewritten) = rewrite_parameter_expression(ctx, &parameter.expression, &aliases)?
+        {
             parameter.expression = rewritten;
         }
     }
+    Ok(())
 }
 
-pub(crate) fn rewrite_parameter_expression(
+pub(in crate::history) fn rewrite_parameter_expression(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     expression: &str,
     aliases: &HashMap<String, String>,
-) -> Option<String> {
-    let tokens = expression_identifier_tokens(expression).identifiers;
+) -> Result<Option<String>, CodecError> {
+    let Some(tokens) = expression_identifier_tokens(ctx, expression)? else {
+        return Ok(None);
+    };
     let mut rewritten = String::with_capacity(expression.len());
-    let mut copied = 0;
+    let mut tail = expression;
+    let mut replaced = false;
     for token in tokens {
-        if expression_identifier_is_syntax(expression, &token) {
+        if token.is_syntax() {
             continue;
         }
-        let Some(replacement) = aliases.get(&token.value) else {
+        let Some(replacement) = aliases.get(token.value()) else {
             continue;
         };
-        rewritten.push_str(&expression[copied..token.start]);
-        if token.quoted || !unquoted_expression_identifier(replacement) {
+        let Some(preceding) = token.preceding(tail) else {
+            continue;
+        };
+        rewritten.push_str(preceding);
+        if token.is_quoted() || !unquoted_expression_identifier(replacement) {
             rewritten.push('"');
             rewritten.push_str(&replacement.replace('"', "\"\""));
             rewritten.push('"');
         } else {
             rewritten.push_str(replacement);
         }
-        copied = token.end;
+        tail = token.following();
+        replaced = true;
     }
-    if copied == 0 {
-        return None;
+    if !replaced {
+        return Ok(None);
     }
-    rewritten.push_str(&expression[copied..]);
-    Some(rewritten)
+    rewritten.push_str(tail);
+    Ok(Some(rewritten))
 }
 
-pub(crate) fn unquoted_expression_identifier(value: &str) -> bool {
+pub(in crate::history) fn unquoted_expression_identifier(value: &str) -> bool {
     let mut characters = value.chars();
     characters.next().is_some_and(|character| {
         !character.is_ascii_digit()
@@ -415,11 +474,11 @@ pub(crate) fn unquoted_expression_identifier(value: &str) -> bool {
     })
 }
 
-pub(crate) fn restore_equivalent_parameter_expressions(
+pub(super) fn restore_equivalent_parameter_expressions(
     feature: &Feature,
-    original_parameters: &HashMap<String, BTreeMap<String, String>>,
-    evaluated_parameters: &HashMap<String, BTreeMap<String, String>>,
-    desired_parameters: &mut BTreeMap<String, String>,
+    original_parameters: &HashMap<String, BTreeMap<cadmpeg_core::text::NonBlankString, String>>,
+    evaluated_parameters: &HashMap<String, BTreeMap<cadmpeg_core::text::NonBlankString, String>>,
+    desired_parameters: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
 ) {
     let Some(original) = original_parameters.get(&feature.id) else {
         return;
@@ -431,16 +490,19 @@ pub(crate) fn restore_equivalent_parameter_expressions(
         let Some(expression) = original.get(name) else {
             continue;
         };
-        if parse_native_parameter_literal(feature, name, expression).is_some() {
+        if parse_native_parameter_literal(feature, name.as_str(), expression).is_some() {
             continue;
         }
         let Some(evaluated) = evaluated.get(name) else {
             continue;
         };
-        let Some(desired_value) = parse_native_parameter_literal(feature, name, desired) else {
+        let Some(desired_value) = parse_native_parameter_literal(feature, name.as_str(), desired)
+        else {
             continue;
         };
-        let Some(evaluated_value) = parse_native_parameter_literal(feature, name, evaluated) else {
+        let Some(evaluated_value) =
+            parse_native_parameter_literal(feature, name.as_str(), evaluated)
+        else {
             continue;
         };
         if desired_value == evaluated_value {

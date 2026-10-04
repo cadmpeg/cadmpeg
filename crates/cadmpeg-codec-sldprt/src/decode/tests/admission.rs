@@ -6,9 +6,704 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::container;
-use crate::test_support::*;
+use crate::test_support::appearance::sldprt_with_body_and_material;
+use crate::test_support::container::add_solidworks_version;
+use crate::test_support::container::make_block;
+use crate::test_support::container::outer_header;
+use crate::test_support::container::sldprt_with_body;
+use crate::test_support::container::synthetic_sldprt;
+use crate::test_support::history::sldprt_with_body_and_history;
+use crate::test_support::ir::strict_options;
+use crate::test_support::parasolid::parasolid_with_body;
+use crate::test_support::parasolid::triangle_body;
+use crate::test_support::tessellation::display_list_payload;
+use crate::test_support::tessellation::sldprt_with_body_and_display_list;
 use crate::SldprtCodec;
+
+fn retained_refusal_at(
+    source: &[u8],
+    options: &mut DecodeOptions,
+    operation: &str,
+) -> cadmpeg_ir::DecodeFailure {
+    for _ in 0..4096 {
+        let refused = SldprtCodec
+            .decode(&mut Cursor::new(source), options)
+            .expect_err("fixture must refuse retained bytes");
+        let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+            &refused
+        else {
+            panic!("expected retained refusal: {refused:?}");
+        };
+        assert_eq!(
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes
+        );
+        if limit.operation == operation {
+            options.policy.limits.max_retained_bytes = limit.used + limit.additional - 1;
+            return SldprtCodec
+                .decode(&mut Cursor::new(source), options)
+                .expect_err("one byte below the requested copy need refuses");
+        }
+        let next = limit.used + limit.additional;
+        assert!(next > options.policy.limits.max_retained_bytes);
+        options.policy.limits.max_retained_bytes = next;
+    }
+    panic!("target charge was not reached within fixture admissions");
+}
+
+fn collection_refusal_at(source: &[u8], operation: &str) -> cadmpeg_core::decode::ResourceLimit {
+    collection_refusal_with_options(source, DecodeOptions::default(), operation)
+}
+
+fn collection_refusal_with_options(
+    source: &[u8],
+    mut options: DecodeOptions,
+    operation: &str,
+) -> cadmpeg_core::decode::ResourceLimit {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    options.policy.limits.max_collection_items = 0;
+    for _ in 0..1024 {
+        let error = SldprtCodec
+            .decode(&mut Cursor::new(source), &options)
+            .expect_err("collection limit must refuse the decode");
+        let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+            error
+        else {
+            panic!("expected a collection-item refusal");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+        if limit.operation == operation {
+            options.policy.limits.max_collection_items = limit.used + limit.additional - 1;
+            let repeated = SldprtCodec
+                .decode(&mut Cursor::new(source), &options)
+                .expect_err("one item below the target must refuse");
+            assert!(matches!(
+                repeated,
+                cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                    if refusal.dimension == ResourceDimension::CollectionItems
+                        && refusal.operation == operation
+            ));
+            return limit;
+        }
+        let next = limit.used + limit.additional;
+        assert!(next > options.policy.limits.max_collection_items);
+        options.policy.limits.max_collection_items = next;
+    }
+    panic!("target collection charge was not reached");
+}
+
+fn work_refusal_with_options(
+    source: &[u8],
+    mut options: DecodeOptions,
+    operation: &str,
+) -> cadmpeg_core::decode::ResourceLimit {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    options.policy.limits.max_work_units = 0;
+    for _ in 0..65_536 {
+        let error = SldprtCodec
+            .decode(&mut Cursor::new(source), &options)
+            .expect_err("work limit must refuse the decode");
+        let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+            error
+        else {
+            panic!("expected a work-unit refusal");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        if limit.operation == operation {
+            options.policy.limits.max_work_units = limit.used + limit.additional - 1;
+            let repeated = SldprtCodec
+                .decode(&mut Cursor::new(source), &options)
+                .expect_err("one work unit below the target must refuse");
+            assert!(matches!(
+                repeated,
+                cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                    if refusal.dimension == ResourceDimension::WorkUnits
+                        && refusal.operation == operation
+            ));
+            return limit;
+        }
+        let next = limit.used + limit.additional;
+        assert!(next > options.policy.limits.max_work_units);
+        options.policy.limits.max_work_units = next;
+    }
+    panic!("target work charge was not reached");
+}
+
+fn custom_property_source() -> Vec<u8> {
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x43,
+        "Contents/Keywords",
+        br#"<Keywords Name="Part"><CustomProperty Name="PartNumber">A-123</CustomProperty></Keywords>"#,
+    ));
+    source
+}
+
+fn semantic_note_source() -> Vec<u8> {
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x43,
+        "Contents/Keywords",
+        br#"<Keywords Name="Part"><Note Name="Inspection" Type="Note">REMOVE ALL BURRS</Note></Keywords>"#,
+    ));
+    source
+}
+
+fn configuration_source() -> Vec<u8> {
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x43,
+        "Contents/Keywords",
+        br#"<Keywords Name="Part"><Configuration Name="Inspect" SourceIndex="0" Material="Steel" Finish="Ground"/></Keywords>"#,
+    ));
+    source
+}
+
+#[test]
+fn decode_body_stream_selection_refuses_collection_limit() {
+    let source = sldprt_with_body(&triangle_body());
+    let limit = collection_refusal_at(&source, "collect SLDPRT body streams");
+    assert_eq!(limit.additional, 1);
+}
+
+#[test]
+fn decoded_brep_site_collection_refuses_limit() {
+    let source = sldprt_with_body(&triangle_body());
+    let limit = collection_refusal_at(&source, "collect SLDPRT B-rep sites");
+    assert_eq!(limit.additional, 1);
+}
+
+#[test]
+fn decoded_brep_header_copy_refuses_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let source = sldprt_with_body(&triangle_body());
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_retained_bytes = 1;
+    let error = retained_refusal_at(
+        &source,
+        &mut options,
+        "retain SLDPRT B-rep header description",
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain SLDPRT B-rep header description"
+    ));
+}
+
+#[test]
+fn merged_brep_site_identity_refuses_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let body = triangle_body();
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x20,
+        "Contents/Config-0-Partition",
+        &parasolid_with_body("first partition", "SCH_SW_33103_11000", &body),
+    ));
+    source.extend(make_block(
+        0x21,
+        "Contents/Config-1-Partition",
+        &parasolid_with_body("second partition", "SCH_SW_33103_11000", &body),
+    ));
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_retained_bytes = 1;
+    let error = retained_refusal_at(&source, &mut options, "qualify SLDPRT identity");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "qualify SLDPRT identity"
+    ));
+}
+
+#[test]
+fn geometry_configuration_partitions_refuse_collection_limit() {
+    let body = triangle_body();
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x20,
+        "Contents/Config-0-Partition",
+        &parasolid_with_body("first partition", "SCH_SW_33103_11000", &body),
+    ));
+    source.extend(make_block(
+        0x21,
+        "Contents/Config-1-Partition",
+        &parasolid_with_body("second partition", "SCH_SW_33103_11000", &body),
+    ));
+    let limit = collection_refusal_at(&source, "index SLDPRT configuration partitions");
+    assert_eq!(limit.additional, 1);
+}
+
+#[test]
+fn geometry_material_appearance_refuses_collection_limit() {
+    let source = sldprt_with_body_and_material(&triangle_body(), "Steel", [80, 90, 100]);
+    let limit = collection_refusal_at(&source, "admit SLDPRT material appearance");
+    assert_eq!(limit.additional, 1);
+}
+
+#[test]
+fn geometry_xml_metadata_refuses_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x43,
+        "Contents/SolidWorks",
+        br#"<swSolidWorks swPath="part.sldprt"/>"#,
+    ));
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_retained_bytes = 1;
+    let error = retained_refusal_at(&source, &mut options, "retain SLDPRT XML metadata");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain SLDPRT XML metadata"
+    ));
+}
+
+#[test]
+fn metadata_active_site_refuses_collection_limit() {
+    let source = sldprt_with_body(&triangle_body());
+    let options = DecodeOptions {
+        container_only: true,
+        ..DecodeOptions::default()
+    };
+    let limit = collection_refusal_with_options(&source, options, "retain SLDPRT metadata site");
+    assert_eq!(limit.additional, 1);
+}
+
+#[test]
+fn metadata_document_attributes_refuse_collection_limit() {
+    let mut source = outer_header();
+    let mut payload = b"moPart_c".to_vec();
+    payload.extend_from_slice(&7_u32.to_le_bytes());
+    payload.extend_from_slice(&0_u32.to_le_bytes());
+    payload.extend_from_slice(&8_u32.to_le_bytes());
+    source.extend(make_block(0x43, "SWObjects", &payload));
+    let options = DecodeOptions {
+        container_only: true,
+        ..DecodeOptions::default()
+    };
+    let limit =
+        collection_refusal_with_options(&source, options, "collect SLDPRT document attributes");
+    assert_eq!(limit.additional, 1);
+}
+
+#[test]
+fn metadata_linear_unit_name_refuses_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let source = crate::test_support::container::sldprt_with_body_and_envelope(&triangle_body());
+    let mut options = DecodeOptions {
+        container_only: true,
+        ..DecodeOptions::default()
+    };
+    options.policy.limits.max_retained_bytes = 1;
+    let error = retained_refusal_at(&source, &mut options, "retain SLDPRT linear unit name");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain SLDPRT linear unit name"
+    ));
+}
+
+#[test]
+fn metadata_history_xml_refuses_scoped_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let payload = br#"<Keywords Name="Part"><Configuration Name="Default"/></Keywords>"#;
+    let mut source = outer_header();
+    source.extend(make_block(0x43, "Contents/Keywords", payload));
+    let scan = crate::test_support::container::scan(&source);
+    let classification =
+        crate::dialect::classify_layers(&cadmpeg_test_support::service_decode_context(), &scan)
+            .unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(payload.len() - 1);
+    let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+    let mut admitted_entities = 0;
+    let error =
+        super::super::build_metadata_ir(&ctx, &scan, &classification, None, &mut admitted_entities)
+            .expect_err("history XML text exceeds the scoped materialization limit");
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("expected a resource refusal");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+    assert_eq!(limit.operation, "materialize SLDPRT history XML");
+}
+
+#[test]
+fn metadata_history_text_refuses_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x43,
+        "Contents/Keywords",
+        br#"<Keywords Name="Part"><Feature Name="Boss" Type="Custom">text</Feature></Keywords>"#,
+    ));
+    let mut options = DecodeOptions {
+        container_only: true,
+        ..DecodeOptions::default()
+    };
+    options.policy.limits.max_retained_bytes = 1;
+    let error = retained_refusal_at(&source, &mut options, "retain SLDPRT feature name");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain SLDPRT feature name"
+    ));
+}
+
+#[test]
+fn metadata_custom_property_projection_refuses_collection_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let source = custom_property_source();
+    let options = DecodeOptions {
+        container_only: true,
+        ..DecodeOptions::default()
+    };
+    let limit =
+        collection_refusal_with_options(&source, options, "project SLDPRT custom properties");
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(limit.additional, 1);
+}
+
+#[test]
+fn metadata_custom_property_projection_refuses_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let source = custom_property_source();
+    let mut options = DecodeOptions {
+        container_only: true,
+        ..DecodeOptions::default()
+    };
+    options.policy.limits.max_retained_bytes = 1;
+    let error = retained_refusal_at(&source, &mut options, "project SLDPRT custom properties");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "project SLDPRT custom properties"
+    ));
+}
+
+#[test]
+fn metadata_custom_property_projection_refuses_work_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let source = custom_property_source();
+    let options = DecodeOptions {
+        container_only: true,
+        ..DecodeOptions::default()
+    };
+    let limit = work_refusal_with_options(&source, options, "project SLDPRT custom properties");
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert!(limit.additional > 0);
+}
+
+#[test]
+fn metadata_semantic_note_projection_refuses_collection_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let source = semantic_note_source();
+    let options = DecodeOptions {
+        container_only: true,
+        ..DecodeOptions::default()
+    };
+    let limit = collection_refusal_with_options(&source, options, "project SLDPRT semantic notes");
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(limit.additional, 1);
+}
+
+#[test]
+fn metadata_semantic_note_projection_refuses_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let source = semantic_note_source();
+    let mut options = DecodeOptions {
+        container_only: true,
+        ..DecodeOptions::default()
+    };
+    options.policy.limits.max_retained_bytes = 1;
+    let error = retained_refusal_at(&source, &mut options, "project SLDPRT semantic notes");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "project SLDPRT semantic notes"
+    ));
+}
+
+#[test]
+fn metadata_semantic_note_projection_refuses_work_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let source = semantic_note_source();
+    let options = DecodeOptions {
+        container_only: true,
+        ..DecodeOptions::default()
+    };
+    let limit = work_refusal_with_options(&source, options, "project SLDPRT semantic notes");
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert!(limit.additional > 0);
+}
+
+#[test]
+fn metadata_configuration_projection_refuses_collection_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let source = configuration_source();
+    let options = DecodeOptions {
+        container_only: true,
+        ..DecodeOptions::default()
+    };
+    let limit = collection_refusal_with_options(&source, options, "project SLDPRT configurations");
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(limit.additional, 1);
+}
+
+#[test]
+fn metadata_configuration_projection_refuses_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let source = configuration_source();
+    let mut options = DecodeOptions {
+        container_only: true,
+        ..DecodeOptions::default()
+    };
+    options.policy.limits.max_retained_bytes = 1;
+    let error = retained_refusal_at(&source, &mut options, "project SLDPRT configurations");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "project SLDPRT configurations"
+    ));
+}
+
+#[test]
+fn metadata_configuration_projection_refuses_work_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let source = configuration_source();
+    let options = DecodeOptions {
+        container_only: true,
+        ..DecodeOptions::default()
+    };
+    let limit = work_refusal_with_options(&source, options, "project SLDPRT configurations");
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert!(limit.additional > 0);
+}
+
+#[test]
+fn geometry_history_xml_refuses_scoped_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let payload = br#"<Keywords Name="Part"><Configuration Name="Default"/></Keywords>"#;
+    let mut source = outer_header();
+    source.extend(make_block(0x43, "Contents/Keywords", payload));
+    let mut scan = crate::test_support::container::scan(&source);
+    let classification =
+        crate::dialect::classify_layers(&cadmpeg_test_support::service_decode_context(), &scan)
+            .unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(payload.len() - 1);
+    let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+    let decoded = super::super::DecodedBrep {
+        metadata_header: None,
+        brep: crate::brep::graph::Brep::default(),
+        configuration_bodies: Vec::new(),
+    };
+    let mut admitted_entities = 0;
+    let error = super::super::build_geometry_ir(
+        &ctx,
+        &mut scan,
+        &classification,
+        decoded,
+        None,
+        &mut admitted_entities,
+    )
+    .expect_err("history XML text exceeds the scoped materialization limit");
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("expected a resource refusal");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+    assert_eq!(limit.operation, "materialize SLDPRT history XML");
+}
+
+#[test]
+fn native_loss_validation_propagates_typed_load_retained_refusal() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let source = sldprt_with_body_and_history(&triangle_body());
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_retained_bytes = 1;
+    let error = retained_refusal_at(&source, &mut options, "load typed native record");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "load typed native record"
+    ));
+    options.policy = cadmpeg_core::decode::DecodePolicy::service();
+    SldprtCodec
+        .decode(&mut Cursor::new(source), &options)
+        .expect("service profile admits typed native loss validation");
+}
+
+#[test]
+fn direct_parasolid_stream_copy_refuses_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let body = triangle_body();
+    let stream = parasolid_with_body("partition body", "SCH_SW_33103_11000", &body);
+    let source = sldprt_with_body(&body);
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index(stream.len()) - 1;
+    let error = retained_refusal_at(&source, &mut options, "retain direct Parasolid stream");
+    assert!(
+        matches!(error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain direct Parasolid stream"),
+        "{error:?}"
+    );
+
+    options.policy = cadmpeg_core::decode::DecodePolicy::service();
+    SldprtCodec
+        .decode(&mut Cursor::new(source), &options)
+        .expect("service profile admits the direct stream");
+}
+
+#[test]
+fn active_site_copy_refuses_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let body = triangle_body();
+    let source = sldprt_with_body(&body);
+    let mut options = DecodeOptions {
+        container_only: true,
+        ..DecodeOptions::default()
+    };
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "retain SLDPRT active site",
+        |limit| {
+            let mut limited = options;
+            limited.policy.limits.max_retained_bytes = limit;
+            SldprtCodec
+                .decode(&mut Cursor::new(&source), &limited)
+                .map_err(|error| match error {
+                    cadmpeg_ir::DecodeFailure::Codec(error) => error,
+                    other => panic!("unexpected decode failure: {other:?}"),
+                })
+        },
+    );
+    assert!(
+        matches!(error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain SLDPRT active site"),
+        "{error:?}"
+    );
+
+    options.policy = cadmpeg_core::decode::DecodePolicy::service();
+    SldprtCodec
+        .decode(&mut Cursor::new(source), &options)
+        .expect("service profile admits the active site");
+}
+
+#[test]
+fn display_section_copy_refuses_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let body = triangle_body();
+    let stream = parasolid_with_body("partition body", "SCH_SW_33103_11000", &body);
+    let display = display_list_payload();
+    let source = sldprt_with_body_and_display_list(&body);
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index(stream.len() + display.len()) - 1;
+    let error = retained_refusal_at(&source, &mut options, "retain SLDPRT display section");
+    assert!(
+        matches!(error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain SLDPRT display section"),
+        "{error:?}"
+    );
+
+    options.policy = cadmpeg_core::decode::DecodePolicy::service();
+    SldprtCodec
+        .decode(&mut Cursor::new(source), &options)
+        .expect("service profile admits the display section");
+}
+
+#[test]
+fn neutral_brep_constructor_refuses_entity_limit_before_insertion() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let source = sldprt_with_body(&triangle_body());
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_entities = 2;
+    let error = SldprtCodec
+        .decode(&mut Cursor::new(source.clone()), &options)
+        .expect_err("neutral B-rep constructor must be admitted");
+    assert!(
+        matches!(error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::Entities
+                    && limit.operation == "admit SLDPRT B-rep entity"),
+        "{error:?}"
+    );
+
+    options.policy = cadmpeg_core::decode::DecodePolicy::service();
+    SldprtCodec
+        .decode(&mut Cursor::new(source), &options)
+        .expect("service profile admits neutral B-rep entities");
+}
+
+#[test]
+fn whole_source_copy_refuses_retained_limit_before_unknown_record() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let source = outer_header();
+    let mut options = DecodeOptions {
+        container_only: true,
+        ..DecodeOptions::default()
+    };
+    options.policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index(source.len()) - 1;
+    let error = retained_refusal_at(&source, &mut options, "retain SLDPRT source image");
+    assert!(
+        matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain SLDPRT source image"
+        ),
+        "{error:?}"
+    );
+
+    options.policy = cadmpeg_core::decode::DecodePolicy::service();
+    SldprtCodec
+        .decode(&mut Cursor::new(source), &options)
+        .expect("service profile admits a small source image");
+}
 
 #[test]
 fn decode_refuses_when_max_entities_is_zero_before_ir_build() {
@@ -24,7 +719,7 @@ fn decode_refuses_when_max_entities_is_zero_before_ir_build() {
             error,
             cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities
-                    && limit.context.operation == "admit SLDPRT container entities"
+                    && limit.operation == "admit SLDPRT block"
         ),
         "{error:?}"
     );
@@ -54,9 +749,21 @@ fn decode_keeps_container_stream_and_model_entity_admission_additive() {
     use cadmpeg_core::decode::ResourceDimension;
 
     let fixture = sldprt_with_body_and_history(&triangle_body());
-    let scan = container::scan_bytes(&fixture);
-    let container_entities = scan.blocks.len() + scan.compound_streams.len() + scan.directory.len();
-    let stream_entities = crate::decode::active_body_streams(&scan).len();
+    let scan = crate::test_support::container::scan(&fixture);
+    let container_entities = scan.blocks.len()
+        + scan.compound_streams.len()
+        + scan.directory.len()
+        + scan.cache_cells.len();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &fixture,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    let stream_entities = crate::decode::active_body_streams(&ctx, &scan)
+        .unwrap()
+        .len();
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(fixture.clone()), &DecodeOptions::default())
         .expect("decode triangle body");
@@ -65,7 +772,9 @@ fn decode_keeps_container_stream_and_model_entity_admission_additive() {
     assert!(stream_entities > 0);
     assert!(model_entities > 0);
 
-    let previous_undercount = (container_entities + stream_entities).max(model_entities) as u64;
+    let previous_undercount = cadmpeg_core::decode::u64_from_index(
+        (container_entities + stream_entities).max(model_entities),
+    );
     let mut options = DecodeOptions::default();
     options.policy.limits.max_entities = previous_undercount;
     let error = SldprtCodec
@@ -76,13 +785,13 @@ fn decode_keeps_container_stream_and_model_entity_admission_additive() {
             error,
             cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities
-                    && limit.context.operation == "admit SLDPRT entities"
+                    && limit.operation == "admit SLDPRT entities"
         ),
         "{error:?}"
     );
 
     options.policy.limits.max_entities =
-        (container_entities + stream_entities + model_entities) as u64;
+        cadmpeg_core::decode::u64_from_index(container_entities + stream_entities + model_entities);
     SldprtCodec
         .decode(&mut Cursor::new(fixture), &options)
         .expect("the exact additive entity limit must admit the fixture");
@@ -101,7 +810,7 @@ fn strict_accepts_operator_requested_container_only() {
 #[test]
 fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
     use crate::loss::SldprtLossCode;
-    use cadmpeg_ir::report::{LossTaxonomy, StrictConsequence};
+    use cadmpeg_ir::report::loss::{LossTaxonomy, StrictConsequence};
 
     let fixture = synthetic_sldprt();
 
@@ -145,7 +854,7 @@ fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
 
 #[test]
 fn strict_accepts_tolerable_gauge_substitution_geometry() {
-    use cadmpeg_ir::report::StrictConsequence;
+    use cadmpeg_ir::report::loss::StrictConsequence;
 
     // The fixture declares a `swVersion` so this test keeps asserting what it
     // is about. A part that declares nothing classifies as `sldprt:unknown`
@@ -199,13 +908,17 @@ fn strict_rejects_residual_parasolid_schema_while_salvage_reports_it() {
 /// Phase 5 freeze: export precondition (:50) rejects shared broken IR; empty accepts.
 #[test]
 fn phase5_freeze_export_precondition_admissibility_fixtures() {
-    let accepted = cadmpeg_ir::validate::admissibility_freeze::accepted_empty();
+    let accepted = cadmpeg_test_support::admissibility::accepted_empty();
     // Empty IR has no B-rep; writer refuses later for missing B-rep, but the
     // :50 precondition is full validate — empty passes validate.
-    assert!(cadmpeg_ir::validate_neutral(&accepted, Vec::new()).is_ok());
-    let rejected =
-        cadmpeg_ir::validate::admissibility_freeze::rejected_missing_point("sldprt:test");
-    assert!(!cadmpeg_ir::validate_neutral(&rejected, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(&accepted, Vec::new())
+        .expect("resource allocation did not fail")
+        .is_ok());
+    let rejected = cadmpeg_test_support::admissibility::rejected_missing_point("sldprt:test")
+        .expect("fixture identities are valid");
+    assert!(!cadmpeg_ir::validate_neutral(&rejected, Vec::new())
+        .expect("resource allocation did not fail")
+        .is_ok());
 }
 
 #[test]
@@ -213,5 +926,28 @@ fn configuration_source_index_allocation_rejects_exhaustion() {
     let mut used = std::collections::HashSet::from([u32::MAX]);
     let mut next = u32::MAX;
     let error = crate::writer::reserve_configuration_index(&mut used, &mut next).unwrap_err();
-    assert!(error.to_string().contains("index space is exhausted"));
+    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
 }
+
+mod projections;
+
+#[test]
+fn decoded_curve_carrier_copy_refuses_work_limit() {
+    let source = sldprt_with_body(&crate::test_support::parasolid::nurbs_sketch_body(true));
+    let options = DecodeOptions::default();
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(&source), &options)
+        .unwrap();
+    assert!(!decoded.ir().model.curves.is_empty());
+    work_refusal_with_options(&source, options, "copy Parasolid curve geometry");
+}
+
+#[test]
+fn decoded_curve_carrier_copy_refuses_collection_limit() {
+    let source = sldprt_with_body(&crate::test_support::parasolid::nurbs_sketch_body(true));
+    collection_refusal_at(&source, "copy Parasolid curve geometry");
+}
+
+mod baseline_hashes;
+
+mod surface_solver;

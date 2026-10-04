@@ -1,0 +1,943 @@
+// SPDX-License-Identifier: Apache-2.0
+#![allow(clippy::unwrap_used)]
+
+use crate::{
+    examples::unit_cube,
+    geometry::pcurve::{LinePcurve, OffsetPcurve, PcurveGeometry, PcurveNurbs},
+    math::Point2,
+    test_support::nurbs::pcurve,
+};
+
+#[test]
+fn admitted_pcurve_parts_keep_rational_pole_storage() {
+    use crate::geometry::pcurve::PcurveNurbsPoles;
+
+    let original = pcurve();
+    let poles = original.pole_rows().clone();
+    let PcurveNurbsPoles::Rational { points } = &poles else {
+        panic!("fixture must be rational");
+    };
+    let storage = points.as_ptr();
+    let rebuilt = PcurveNurbs::new(
+        &cadmpeg_test_support::service_decode_context(),
+        original.degree(),
+        original.knots().clone(),
+        poles,
+        original.periodic(),
+    )
+    .expect("fixture pcurve construction admission")
+    .unwrap();
+    let PcurveNurbsPoles::Rational { points } = rebuilt.pole_rows() else {
+        panic!("rebuilt pcurve must be rational");
+    };
+    assert_eq!(points.as_ptr(), storage);
+    assert_eq!(rebuilt, original);
+}
+
+#[test]
+fn admitted_pcurve_point_replacement_preserves_weights_and_rejects_short_lanes() {
+    use crate::units::FinitePoint2;
+
+    let mut curve = pcurve();
+    let prior = curve.clone();
+    assert!(!curve
+        .replace_admitted_control_points(&[], &cadmpeg_test_support::service_decode_context())
+        .expect("pole replacement admission"));
+    assert_eq!(curve, prior);
+    let mut positions = Vec::new();
+    let mut index = 0;
+    while curve.pole_rows().point_at(index).is_some() {
+        positions.push(
+            FinitePoint2::new(Point2::new(
+                cadmpeg_core::convert::f64_from_index(index)
+                    .expect("test index is exactly representable"),
+                2.0,
+            ))
+            .unwrap(),
+        );
+        index += 1;
+    }
+    let weights = curve.weights();
+    assert!(curve
+        .replace_admitted_control_points(
+            &positions,
+            &cadmpeg_test_support::service_decode_context()
+        )
+        .expect("pole replacement admission"));
+    assert_eq!(curve.control_points(), positions);
+    assert_eq!(curve.weights(), weights);
+}
+
+#[test]
+fn pcurve_pole_replacement_refuses_before_mutation_and_needs_no_storage() {
+    use crate::units::FinitePoint2;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let setup = cadmpeg_test_support::service_decode_context();
+    let polynomial = PcurveNurbs::from_lanes(
+        &setup,
+        1,
+        vec![0., 0., 1., 1.],
+        vec![Point2::new(1., 2.), Point2::new(3., 4.)],
+        None,
+        false,
+    )
+    .expect("admission")
+    .expect("polynomial curve");
+    let positions = [
+        FinitePoint2::new(Point2::new(5., 6.)).unwrap(),
+        FinitePoint2::new(Point2::new(7., 8.)).unwrap(),
+    ];
+    for original in [pcurve(), polynomial] {
+        for cap in 0..2 {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let mut edited = original.clone();
+            let Err(CodecError::ResourceLimit(limit)) =
+                edited.replace_admitted_control_points(&positions, &ctx)
+            else {
+                panic!("replacement requires work");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(limit.operation, "IR pcurve pole replacement");
+            assert_eq!(edited, original);
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+            );
+        }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 2;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let mut edited = original.clone();
+        assert!(!edited
+            .replace_admitted_control_points(&[], &ctx)
+            .expect("wrong lane costs no work"));
+        assert_eq!(edited, original);
+        assert!(edited
+            .replace_admitted_control_points(&positions, &ctx)
+            .expect("exact work"));
+        assert_eq!(edited.control_points(), positions);
+        assert_eq!(edited.weights(), original.weights());
+        assert_eq!(edited.knots(), original.knots());
+        ctx.finish_session().expect("exact work and zero storage");
+    }
+}
+
+#[test]
+fn pcurve_copy_refuses_knot_and_pole_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let source = pcurve();
+    let knot_count = u64::try_from(source.knots().len()).unwrap();
+    for (dimension, limit) in [
+        (ResourceDimension::CollectionItems, knot_count - 1),
+        (ResourceDimension::CollectionItems, knot_count + 1),
+        (ResourceDimension::RetainedBytes, knot_count * 8 - 1),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
+            _ => panic!("unexpected test dimension"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test input fits input limit");
+        let error = source
+            .try_clone_for_decode(&ctx, "copy pcurve")
+            .expect_err("copy exceeds resource limit");
+        let CodecError::ResourceLimit(refusal) = error else {
+            panic!("expected resource refusal, got {error:?}");
+        };
+        assert_eq!(refusal.dimension, dimension);
+        assert_eq!(refusal.operation, "copy pcurve");
+    }
+}
+
+#[test]
+fn hypot_axes_build_pcurves_without_changing_admitted_coordinates() {
+    use crate::geometry::pcurve::{CirclePcurve, EllipsePcurve, HyperbolaPcurve, ParabolaPcurve};
+    use crate::scalar::PositiveReal;
+    use crate::units::{FinitePoint2, HypotDirection2};
+
+    let x_axis = HypotDirection2::normalized_with_length([3.0, 4.0])
+        .unwrap()
+        .0;
+    let y_axis = x_axis.quarter_turn();
+    let [x_u, x_v] = x_axis.get();
+    let [y_u, y_v] = y_axis.get();
+    let x_raw = Point2::new(x_u, x_v);
+    let y_raw = Point2::new(y_u, y_v);
+    let center = Point2::new(2.0, -3.0);
+    let admitted_center = FinitePoint2::new(center).unwrap();
+    let (x_admitted, y_admitted) = (FinitePoint2::from(x_axis), FinitePoint2::from(y_axis));
+    let five = PositiveReal::new(5.0).unwrap();
+    let two = PositiveReal::new(2.0).unwrap();
+
+    assert_eq!(
+        CirclePcurve::from_parts(admitted_center, x_admitted, y_admitted, five),
+        CirclePcurve::try_new(center, x_raw, y_raw, 5.0).ok()
+    );
+    assert_eq!(
+        EllipsePcurve::from_parts(admitted_center, x_admitted, y_admitted, five, two),
+        EllipsePcurve::try_new(center, x_raw, y_raw, 5.0, 2.0).ok()
+    );
+    assert_eq!(
+        ParabolaPcurve::from_parts(admitted_center, x_admitted, y_admitted, five),
+        ParabolaPcurve::try_new(center, x_raw, y_raw, 5.0).ok()
+    );
+    assert_eq!(
+        HyperbolaPcurve::from_parts(admitted_center, x_admitted, y_admitted, five, two),
+        HyperbolaPcurve::try_new(center, x_raw, y_raw, 5.0, 2.0).ok()
+    );
+}
+
+#[test]
+fn a_refused_pcurve_pole_edit_keeps_the_prior_poles() {
+    let mut pcurve = pcurve();
+    let original = pcurve.clone();
+    let refusal = pcurve
+        .try_map_control_points(
+            |_, _| {
+                Err(crate::geometry::nurbs::NurbsError::EditRefused(
+                    "caller refused this pole".into(),
+                ))
+            },
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("pole edit admission");
+    assert_eq!(
+        refusal,
+        Err(crate::geometry::nurbs::NurbsError::EditRefused(
+            "caller refused this pole".into()
+        ))
+    );
+    assert_eq!(pcurve, original);
+}
+
+#[test]
+fn in_place_pcurve_pole_scale_refuses_atomically() {
+    use crate::geometry::nurbs::NurbsError;
+    use crate::units::FinitePoint2;
+
+    let mut nurbs = PcurveNurbs::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point2::new(1.0, 2.0), Point2::new(f64::MAX, 3.0)],
+        Some(vec![1.0, 2.0]),
+        false,
+    )
+    .expect("fixture pcurve construction admission")
+    .expect("finite source poles");
+    let original = nurbs.clone();
+    let error = nurbs
+        .try_map_control_points(
+            |_, point| {
+                let raw = point.get();
+                FinitePoint2::new(Point2::new(raw.u * 2.0, raw.v * 2.0))
+                    .ok_or_else(|| NurbsError::Structure("non-finite control point".into()))
+            },
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("pole edit admission")
+        .expect_err("second pole overflows");
+    assert!(matches!(error, NurbsError::Structure(_)));
+    assert_eq!(nurbs, original);
+}
+
+#[test]
+fn polynomial_pcurve_map_updates_all_poles_and_refuses_last_atomically() {
+    use crate::units::FinitePoint2;
+
+    let mut curve = PcurveNurbs::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point2::new(1.0, 2.0), Point2::new(3.0, 4.0)],
+        None,
+        false,
+    )
+    .expect("fixture pcurve construction admission")
+    .unwrap();
+    let original = curve.clone();
+    let refusal = curve
+        .try_map_control_points(
+            |index, point| {
+                if index == 1 {
+                    Err("last pole")
+                } else {
+                    FinitePoint2::new(Point2::new(point.get().u + 5.0, point.get().v))
+                        .ok_or("non-finite point")
+                }
+            },
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("pole edit admission");
+    assert_eq!(refusal, Err("last pole"));
+    assert_eq!(curve, original);
+    curve
+        .try_map_control_points(
+            |index, point| {
+                FinitePoint2::new(Point2::new(
+                    point.get().u + if index == 0 { 0.0 } else { 1.0 },
+                    point.get().v * 2.0,
+                ))
+                .ok_or("non-finite point")
+            },
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("pole edit admission")
+        .unwrap();
+    assert_eq!(
+        curve.control_points(),
+        vec![Point2::new(1.0, 4.0), Point2::new(4.0, 8.0)]
+    );
+    assert_eq!(curve.weights(), None);
+}
+
+#[test]
+fn rational_pcurve_map_updates_all_poles_keeps_weights_and_refuses_last_atomically() {
+    use crate::units::FinitePoint2;
+
+    let mut curve = pcurve();
+    let original = curve.clone();
+    let weights = curve.weights();
+    let refusal = curve
+        .try_map_control_points(
+            |index, point| {
+                if index == 1 {
+                    Err("last pole")
+                } else {
+                    FinitePoint2::new(Point2::new(point.get().u + 5.0, point.get().v))
+                        .ok_or("non-finite point")
+                }
+            },
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("pole edit admission");
+    assert_eq!(refusal, Err("last pole"));
+    assert_eq!(curve, original);
+    curve
+        .try_map_control_points(
+            |index, point| {
+                FinitePoint2::new(Point2::new(
+                    point.get().u + if index == 0 { 0.0 } else { 1.0 },
+                    point.get().v * 2.0,
+                ))
+                .ok_or("non-finite point")
+            },
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("pole edit admission")
+        .unwrap();
+    assert_eq!(
+        curve.control_points(),
+        vec![Point2::new(1.0, 4.0), Point2::new(4.0, 8.0)]
+    );
+    assert_eq!(curve.weights(), weights);
+}
+
+#[test]
+fn a_refused_nurbs_pcurve_scale_keeps_the_prior_poles() {
+    let mut geometry = PcurveGeometry::Nurbs { nurbs: pcurve() };
+    let original = geometry.clone();
+    assert!(geometry.try_scale_coordinates([1e308, 1e308]).is_err());
+    assert_eq!(geometry, original);
+}
+
+#[test]
+fn nurbs_pcurve_scaling_scales_the_poles_and_keeps_the_knot_lane() {
+    let mut geometry = PcurveGeometry::Nurbs { nurbs: pcurve() };
+    assert!(geometry.try_scale_coordinates([2.0, 3.0]).is_ok());
+    let expected = PcurveNurbs::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        pcurve().degree(),
+        pcurve().knots().to_vec(),
+        vec![Point2::new(2.0, 6.0), Point2::new(6.0, 12.0)],
+        pcurve().pole_rows().weights(),
+        pcurve().periodic(),
+    )
+    .expect("fixture pcurve construction admission")
+    .unwrap();
+    assert_eq!(geometry, PcurveGeometry::Nurbs { nurbs: expected });
+}
+
+#[test]
+fn admitted_pcurve_nurbs_parts_keep_the_raw_constructor_geometry() {
+    use crate::geometry::nurbs::KnotVector;
+    use crate::geometry::pcurve::{PcurveNurbsPoles, WeightedPole2};
+    use crate::scalar::NonZeroReal;
+    use crate::units::FinitePoint2;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let knots = vec![0.0, 0.0, 1.0, 1.0];
+    let points = [Point2::new(1.0, 2.0), Point2::new(3.0, 4.0)];
+    let weights = [1.0, 2.0];
+    let raw = PcurveNurbs::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        1,
+        knots.clone(),
+        points.to_vec(),
+        Some(weights.to_vec()),
+        false,
+    )
+    .expect("fixture pcurve construction admission")
+    .expect("raw pcurve");
+    let admitted = PcurveNurbs::new(
+        &cadmpeg_test_support::service_decode_context(),
+        1,
+        KnotVector::new(&ctx, knots)
+            .expect("fixture knot admission")
+            .expect("admitted knots"),
+        PcurveNurbsPoles::Rational {
+            points: points
+                .into_iter()
+                .zip(weights)
+                .map(|(point, weight)| WeightedPole2 {
+                    point: FinitePoint2::new(point).expect("finite point"),
+                    weight: NonZeroReal::new(weight).expect("nonzero weight"),
+                })
+                .collect(),
+        },
+        false,
+    )
+    .expect("fixture pcurve construction admission")
+    .expect("admitted pcurve");
+    assert_eq!(admitted, raw);
+    assert_eq!(
+        admitted
+            .try_clone_for_decode(&ctx, "copy rational pcurve")
+            .expect("charged rational copy"),
+        admitted
+    );
+}
+
+#[test]
+fn polynomial_pcurve_nurbs_try_clone_keeps_its_admitted_lanes() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let polynomial = PcurveNurbs::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
+        None,
+        false,
+    )
+    .expect("fixture pcurve construction admission")
+    .expect("polynomial pcurve");
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    assert_eq!(
+        polynomial
+            .try_clone_for_decode(&ctx, "copy polynomial pcurve")
+            .expect("charged polynomial copy"),
+        polynomial
+    );
+}
+mod metadata;
+
+#[test]
+fn pcurve_lift_rejects_non_finite_model_poles() {
+    let curve = crate::geometry::pcurve::PcurveNurbs::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![
+            crate::math::Point2::new(0.0, 0.0),
+            crate::math::Point2::new(1.0, 1.0),
+        ],
+        None,
+        false,
+    )
+    .expect("fixture pcurve construction admission")
+    .unwrap();
+    assert!(curve
+        .lift(|point| crate::math::Point3::new(point.u, point.v, f64::NAN))
+        .is_err());
+}
+
+#[test]
+fn asm_inline_pcurve_metadata_lives_under_its_own_nested_key() {
+    let pcurve = crate::geometry::pcurve::Pcurve {
+        id: crate::ids::PcurveId::mint("test:model:pcurve#inline").expect("valid identity"),
+        geometry: crate::geometry::pcurve::PcurveGeometry::Line(
+            crate::geometry::pcurve::LinePcurve::try_new(
+                crate::math::Point2::new(1.0, 2.0),
+                crate::math::Point2::new(3.0, 4.0),
+            )
+            .unwrap(),
+        ),
+        metadata: crate::geometry::pcurve::PcurveMetadata::AsmInline {
+            form: crate::geometry::pcurve::PcurveInlineForm::try_new(
+                false,
+                [true, false, true, false],
+                [-1.0, 2.0],
+                0.001,
+            )
+            .unwrap(),
+        },
+    };
+    let value = serde_json::to_value(&pcurve).unwrap();
+    assert_eq!(
+        value,
+        serde_json::json!({
+            "id": "test:model:pcurve#inline",
+            "geometry": {
+                "kind": "line",
+                "origin": {"u": 1.0, "v": 2.0},
+                "direction": {"u": 3.0, "v": 4.0}
+            },
+            "metadata": {
+                "source": "asm_inline",
+                "form": {
+                    "wrapper_reversed": false,
+                    "native_tail_flags": [true, false, true, false],
+                    "parameter_range": [-1.0, 2.0],
+                    "fit_tolerance": 0.001
+                }
+            }
+        })
+    );
+    assert_eq!(
+        serde_json::from_value::<crate::geometry::pcurve::Pcurve>(value).unwrap(),
+        pcurve
+    );
+}
+
+#[test]
+fn incomplete_asm_inline_pcurve_metadata_is_rejected() {
+    let result = serde_json::from_value::<crate::geometry::pcurve::Pcurve>(serde_json::json!({
+        "id": "test:model:pcurve#incomplete",
+        "geometry": {
+            "kind": "line",
+            "origin": {"u": 1.0, "v": 2.0},
+            "direction": {"u": 3.0, "v": 4.0}
+        },
+        "wrapper_reversed": false,
+        "native_tail_flags": [true, false, true, false],
+        "parameter_range": [-1.0, 2.0]
+    }));
+    assert!(result.is_err());
+}
+
+#[test]
+fn pcurve_coordinate_scaling_keeps_the_original_when_a_nested_result_overflows() {
+    let mut geometry = PcurveGeometry::Offset(
+        OffsetPcurve::try_new(1e300, Box::new(PcurveGeometry::Line(LinePcurve::U_AXIS))).unwrap(),
+    );
+    let original = geometry.clone();
+    assert!(geometry.try_scale_coordinates([1e300, 1e300]).is_err());
+    assert_eq!(geometry, original);
+}
+
+#[test]
+fn line_pcurve_direction_uses_the_shared_nonzero_vector_contract() {
+    let origin = Point2::new(0.0, 0.0);
+    let below = f64::EPSILON.sqrt() / 2.0;
+    let above = f64::EPSILON.sqrt() * 2.0;
+    for u in [0.0, 1e-300, below] {
+        assert!(LinePcurve::try_new(origin, Point2::new(u, 0.0)).is_err());
+        let wire =
+            serde_json::json!({"origin": {"u": 0.0, "v": 0.0}, "direction": {"u": u, "v": 0.0}});
+        assert!(serde_json::from_value::<LinePcurve>(wire).is_err());
+    }
+    let wire =
+        serde_json::json!({"origin": {"u": 0.0, "v": 0.0}, "direction": {"u": above, "v": 0.0}});
+    let line = LinePcurve::try_new(origin, Point2::new(above, 0.0)).unwrap();
+    assert_eq!(serde_json::to_value(line).unwrap(), wire);
+    assert_eq!(serde_json::from_value::<LinePcurve>(wire).unwrap(), line);
+}
+
+/// One-pcurve document built on the unit cube, used to drive the pcurve
+/// carriers over the same route a checked-in document takes.
+fn document_with_pcurve(geometry: &serde_json::Value) -> serde_json::Value {
+    let mut document = serde_json::to_value(unit_cube().expect("valid unit cube fixture")).unwrap();
+    document["model"]["pcurves"] = serde_json::json!([{
+        "id": "synthetic:cube:pcurve#0",
+        "geometry": geometry.clone(),
+    }]);
+    document
+}
+
+#[test]
+fn every_pcurve_carrier_refuses_an_unknown_key_on_the_document_route() {
+    let line = serde_json::json!({
+        "kind": "line",
+        "origin": {"u": 0.0, "v": 0.0},
+        "direction": {"u": 1.0, "v": 0.0},
+    });
+    let cases: [(&str, serde_json::Value); 11] = [
+        ("line", line.clone()),
+        (
+            "polar_harmonic",
+            serde_json::json!({
+                "kind": "polar_harmonic",
+                "radial_center": {"u": 0.0, "v": 0.0},
+                "radial_cos": {"u": 1.0, "v": 0.0},
+                "radial_sin": {"u": 0.0, "v": 1.0},
+                "axial_origin": 0.0,
+                "axial_cos": 1.0,
+                "axial_sin": 0.0,
+            }),
+        ),
+        (
+            "spherical_great_circle",
+            serde_json::json!({
+                "kind": "spherical_great_circle",
+                "azimuth_origin": 0.0,
+                "azimuth_rate": 1.0,
+                "plane_phase": 0.0,
+                "plane_slope": 1.0,
+            }),
+        ),
+        (
+            "circle",
+            serde_json::json!({
+                "kind": "circle",
+                "center": {"u": 0.0, "v": 0.0},
+                "x_axis": {"u": 1.0, "v": 0.0},
+                "y_axis": {"u": 0.0, "v": 1.0},
+                "radius": 1.0,
+            }),
+        ),
+        (
+            "ellipse",
+            serde_json::json!({
+                "kind": "ellipse",
+                "center": {"u": 0.0, "v": 0.0},
+                "x_axis": {"u": 1.0, "v": 0.0},
+                "y_axis": {"u": 0.0, "v": 1.0},
+                "major_radius": 2.0,
+                "minor_radius": 1.0,
+            }),
+        ),
+        (
+            "harmonic",
+            serde_json::json!({
+                "kind": "harmonic",
+                "center": {"u": 0.0, "v": 0.0},
+                "cosine": {"u": 1.0, "v": 0.0},
+                "sine": {"u": 0.0, "v": 1.0},
+            }),
+        ),
+        (
+            "parabola",
+            serde_json::json!({
+                "kind": "parabola",
+                "vertex": {"u": 0.0, "v": 0.0},
+                "x_axis": {"u": 1.0, "v": 0.0},
+                "y_axis": {"u": 0.0, "v": 1.0},
+                "focal_distance": 1.0,
+            }),
+        ),
+        (
+            "hyperbola",
+            serde_json::json!({
+                "kind": "hyperbola",
+                "center": {"u": 0.0, "v": 0.0},
+                "x_axis": {"u": 1.0, "v": 0.0},
+                "y_axis": {"u": 0.0, "v": 1.0},
+                "major_radius": 2.0,
+                "minor_radius": 1.0,
+            }),
+        ),
+        (
+            "hyperbolic",
+            serde_json::json!({
+                "kind": "hyperbolic",
+                "center": {"u": 0.0, "v": 0.0},
+                "cosine": {"u": 1.0, "v": 0.0},
+                "sine": {"u": 0.0, "v": 1.0},
+            }),
+        ),
+        (
+            "trimmed",
+            serde_json::json!({
+                "kind": "trimmed",
+                "parameter_range": [0.0, 1.0],
+                "same_sense": true,
+                "basis": line.clone(),
+            }),
+        ),
+        (
+            "offset",
+            serde_json::json!({
+                "kind": "offset",
+                "distance": 1.0,
+                "basis": line,
+            }),
+        ),
+    ];
+    for (kind, geometry) in cases {
+        let document = document_with_pcurve(&geometry);
+        serde_json::from_value::<crate::CadIr>(document)
+            .unwrap_or_else(|error| panic!("{kind} is a legal carrier: {error}"));
+
+        let mut stray = geometry.as_object().unwrap().clone();
+        stray.insert("zz_bogus".into(), serde_json::json!(1));
+        let document = document_with_pcurve(&serde_json::Value::Object(stray));
+        let error = serde_json::from_value::<crate::CadIr>(document)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("zz_bogus"), "{kind}: {error}");
+    }
+}
+
+#[test]
+fn parabola_coordinate_scaling_preserves_parameterization() {
+    use crate::geometry::pcurve::ParabolaPcurve;
+    let original = PcurveGeometry::Parabola(
+        ParabolaPcurve::try_new(
+            Point2::new(1.0, -2.0),
+            Point2::new(1.0, 0.0),
+            Point2::new(0.0, 1.0),
+            2.0,
+        )
+        .unwrap(),
+    );
+    for scales in [[3.0, 3.0], [2.0, 5.0]] {
+        let mut scaled = original.clone();
+        scaled.try_scale_coordinates(scales).unwrap();
+        for t in [-2.0, 0.0, 1.0, 3.0] {
+            let before = crate::eval::decode::pcurve_uv(
+                crate::eval::admission::EvaluationAdmission::Standard,
+                &original,
+                t,
+            )
+            .unwrap();
+            let after = crate::eval::decode::pcurve_uv(
+                crate::eval::admission::EvaluationAdmission::Standard,
+                &scaled,
+                t,
+            )
+            .unwrap();
+            assert_eq!(
+                after,
+                Point2::new(before.u * scales[0], before.v * scales[1])
+            );
+        }
+    }
+}
+
+#[test]
+fn isotropic_conics_scale_lengths_and_carry_their_admitted_axes() {
+    use crate::geometry::pcurve::{CirclePcurve, EllipsePcurve, HyperbolaPcurve};
+
+    let axes = [Point2::new(2.0, 0.0), Point2::new(0.0, -3.0)];
+    let mut cases = [
+        PcurveGeometry::Circle(
+            CirclePcurve::try_new(Point2::new(1.0, -2.0), axes[0], axes[1], 4.0).unwrap(),
+        ),
+        PcurveGeometry::Ellipse(
+            EllipsePcurve::try_new(Point2::new(1.0, -2.0), axes[0], axes[1], 4.0, 2.0).unwrap(),
+        ),
+        PcurveGeometry::Hyperbola(
+            HyperbolaPcurve::try_new(Point2::new(1.0, -2.0), axes[0], axes[1], 4.0, 2.0).unwrap(),
+        ),
+    ];
+    for geometry in &mut cases {
+        geometry.try_scale_coordinates([2.0, 2.0]).unwrap();
+        match geometry {
+            PcurveGeometry::Circle(curve) => {
+                assert_eq!(curve.center().get(), Point2::new(2.0, -4.0));
+                assert_eq!(curve.radius().get(), 8.0);
+                assert_eq!([curve.x_axis().get(), curve.y_axis().get()], axes);
+            }
+            PcurveGeometry::Ellipse(curve) => {
+                assert_eq!(curve.center().get(), Point2::new(2.0, -4.0));
+                assert_eq!(
+                    [curve.major_radius().get(), curve.minor_radius().get()],
+                    [8.0, 4.0]
+                );
+                assert_eq!([curve.x_axis().get(), curve.y_axis().get()], axes);
+            }
+            PcurveGeometry::Hyperbola(curve) => {
+                assert_eq!(curve.center().get(), Point2::new(2.0, -4.0));
+                assert_eq!(
+                    [curve.major_radius().get(), curve.minor_radius().get()],
+                    [8.0, 4.0]
+                );
+                assert_eq!([curve.x_axis().get(), curve.y_axis().get()], axes);
+            }
+            _ => unreachable!(),
+        }
+    }
+}
+
+#[test]
+fn finite_pcurve_parts_match_raw_analytic_admission() {
+    use crate::geometry::pcurve::{CirclePcurve, EllipsePcurve, HyperbolaPcurve, ParabolaPcurve};
+    use crate::scalar::PositiveReal;
+    use crate::units::FinitePoint2;
+
+    let center = Point2::new(1.0, -2.0);
+    let x_axis = Point2::new(1.0, 0.0);
+    let y_axis = Point2::new(0.0, 1.0);
+    let finite = |point| FinitePoint2::new(point).unwrap();
+    let positive = |value| PositiveReal::new(value).unwrap();
+    assert_eq!(
+        CirclePcurve::from_parts(
+            finite(center),
+            finite(x_axis),
+            finite(y_axis),
+            positive(3.0)
+        ),
+        CirclePcurve::try_new(center, x_axis, y_axis, 3.0).ok(),
+    );
+    assert_eq!(
+        EllipsePcurve::from_parts(
+            finite(center),
+            finite(x_axis),
+            finite(y_axis),
+            positive(3.0),
+            positive(2.0)
+        ),
+        EllipsePcurve::try_new(center, x_axis, y_axis, 3.0, 2.0).ok(),
+    );
+    assert_eq!(
+        ParabolaPcurve::from_parts(
+            finite(center),
+            finite(x_axis),
+            finite(y_axis),
+            positive(2.0)
+        ),
+        ParabolaPcurve::try_new(center, x_axis, y_axis, 2.0).ok(),
+    );
+    assert_eq!(
+        HyperbolaPcurve::from_parts(
+            finite(center),
+            finite(x_axis),
+            finite(y_axis),
+            positive(3.0),
+            positive(2.0)
+        ),
+        HyperbolaPcurve::try_new(center, x_axis, y_axis, 3.0, 2.0).ok(),
+    );
+    assert!(CirclePcurve::from_parts(
+        finite(center),
+        FinitePoint2::ZERO,
+        finite(y_axis),
+        positive(3.0)
+    )
+    .is_none());
+}
+
+#[test]
+fn finite_pcurve_wrapper_parts_match_raw_admission() {
+    use crate::geometry::pcurve::{LinePcurve, OffsetPcurve, PcurveGeometry, TrimmedPcurve};
+    use crate::scalar::FiniteReal;
+
+    let basis = || Box::new(PcurveGeometry::Line(LinePcurve::U_AXIS));
+    let finite = |value| FiniteReal::new(value).unwrap();
+    assert_eq!(
+        TrimmedPcurve::from_finite_parts([finite(0.0), finite(1.0)], true, basis()),
+        TrimmedPcurve::try_new([0.0, 1.0], true, basis()),
+    );
+    assert_eq!(
+        TrimmedPcurve::from_finite_parts([finite(1.0), finite(0.0)], true, basis()),
+        TrimmedPcurve::try_new([1.0, 0.0], true, basis()),
+    );
+    assert_eq!(
+        OffsetPcurve::from_finite_parts(finite(-0.25), basis()),
+        OffsetPcurve::try_new(-0.25, basis()),
+    );
+}
+
+#[test]
+fn a_line_pcurve_from_admitted_parts_matches_its_raw_admission() {
+    use crate::units::{FinitePoint2, NonzeroPoint2};
+
+    let origin = Point2::new(1.5, -2.0);
+    let direction = Point2::new(0.25, 3.0);
+    let admitted = LinePcurve::new(
+        FinitePoint2::new(origin).unwrap(),
+        NonzeroPoint2::new(direction).unwrap(),
+    );
+    assert_eq!(admitted, LinePcurve::try_new(origin, direction).unwrap());
+    assert_eq!(*admitted.origin().as_raw(), origin);
+    assert_eq!(*admitted.direction().as_raw(), direction);
+}
+
+#[test]
+fn a_reversed_nonzero_direction_is_the_admitted_negation() {
+    use crate::units::NonzeroPoint2;
+
+    for direction in [
+        Point2::new(0.25, -3.0),
+        Point2::new(-f64::MAX, 0.0),
+        Point2::new(0.0, 2.0e-8),
+    ] {
+        let reversed = NonzeroPoint2::new(direction).unwrap().reversed();
+        assert_eq!(
+            Some(reversed),
+            NonzeroPoint2::new(Point2::new(-direction.u, -direction.v))
+        );
+    }
+}
+
+#[test]
+fn a_reflected_great_circle_moves_its_origin_and_negates_its_rate() {
+    use crate::geometry::pcurve::SphericalGreatCirclePcurve;
+
+    let pcurve = SphericalGreatCirclePcurve::try_new(0.25, -1.5, 0.5, 2.0).unwrap();
+    let reflected = pcurve.reflected(3.0).unwrap();
+    assert_eq!(reflected.azimuth_origin().get(), 0.25 + -1.5 * 3.0);
+    assert_eq!(reflected.azimuth_rate().get().to_bits(), 1.5_f64.to_bits());
+    assert_eq!(reflected.plane_phase().get(), 0.5);
+    assert_eq!(reflected.plane_slope().get(), 2.0);
+    assert_eq!(
+        Some(reflected),
+        SphericalGreatCirclePcurve::try_new(0.25 + -1.5 * 3.0, 1.5, 0.5, 2.0).ok()
+    );
+    assert!(pcurve.reflected(f64::MAX).is_none());
+    assert!(pcurve.reflected(f64::NAN).is_none());
+}
+
+#[test]
+fn a_conic_pcurve_reversed_about_zero_negates_only_its_second_axis() {
+    use crate::geometry::pcurve::{EllipsePcurve, HyperbolaPcurve, ParabolaPcurve};
+
+    let center = Point2::new(1.0, -2.0);
+    let x_axis = Point2::new(0.6, 0.8);
+    let y_axis = Point2::new(-0.8, 0.6);
+    let negated = Point2::new(0.8, -0.6);
+    assert_eq!(
+        EllipsePcurve::try_new(center, x_axis, y_axis, 3.0, 2.0)
+            .unwrap()
+            .reversed_about_zero(),
+        EllipsePcurve::try_new(center, x_axis, negated, 3.0, 2.0).unwrap()
+    );
+    assert_eq!(
+        ParabolaPcurve::try_new(center, x_axis, y_axis, 0.5)
+            .unwrap()
+            .reversed_about_zero(),
+        ParabolaPcurve::try_new(center, x_axis, negated, 0.5).unwrap()
+    );
+    assert_eq!(
+        HyperbolaPcurve::try_new(center, x_axis, y_axis, 3.0, 2.0)
+            .unwrap()
+            .reversed_about_zero(),
+        HyperbolaPcurve::try_new(center, x_axis, negated, 3.0, 2.0).unwrap()
+    );
+    let point = crate::units::FinitePoint2::new(Point2::new(-0.0, 5.0e-324)).unwrap();
+    assert_eq!(
+        [point.negated().as_raw().u, point.negated().as_raw().v].map(f64::to_bits),
+        [0.0_f64, -5.0e-324].map(f64::to_bits)
+    );
+}
+
+mod line_parameters;

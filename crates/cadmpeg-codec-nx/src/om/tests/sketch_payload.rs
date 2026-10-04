@@ -1,7 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
-use crate::test_support::shifted_f64_bytes;
+fn sketch_payload_fixed_pairs(bytes: &[u8]) -> Vec<crate::om::SketchPayloadFixedPair> {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::om::sketch_payload_fixed_pairs(ctx, bytes)
+    })
+    .unwrap()
+}
+fn sketch_payload_mixed_pairs(bytes: &[u8]) -> Vec<crate::om::SketchPayloadMixedPair> {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::om::sketch_payload_mixed_pairs(ctx, bytes)
+    })
+    .unwrap()
+}
+fn sketch_payload_scalar_lanes(
+    bytes: &[u8],
+) -> Vec<crate::om::scalar_run::FramedScalarRun<crate::om::sketch_scalar::SketchScalarLaneForm, ()>>
+{
+    crate::test_support::with_decode_context(|ctx| {
+        crate::om::sketch_payload_scalar_lanes(ctx, bytes)
+    })
+    .unwrap()
+}
+use crate::test_support::test_bytes::shifted_f64_bytes;
 
 const EPS_SKETCH_FIXED_ATOM: f64 = 1e-12;
 
@@ -26,12 +46,134 @@ fn sketch_fixed_pair_bytes(
     bytes
 }
 
+fn pair_refusal(
+    fixed: bool,
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let discriminator = [0x04, 0xe0, 0x48, 0x0e, 0x02, 0x03, 0x80, 0x84];
+    let mut bytes = sketch_fixed_pair_bytes(&discriminator, 0.5, 0.75, true);
+    if !fixed {
+        bytes.truncate(bytes.len() - 8);
+        bytes.extend([0x50, 0x50, 0x00, 0x00]);
+    }
+
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            if fixed {
+                crate::om::sketch_payload_fixed_pairs(ctx, &bytes).unwrap_err()
+            } else {
+                crate::om::sketch_payload_mixed_pairs(ctx, &bytes).unwrap_err()
+            }
+        },
+    )
+}
+
+fn scalar_lane_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let mut bytes = vec![
+        0x25, 0x25, 0x41, 0x00, 0x04, 0x01, 0x07, 0x01, 0xc0, 0x45, 0x10, 0x00, 0x80, 0x86, 0x02,
+        0x00, 0x01, 0x00,
+    ];
+    let mut shifted_f64 = 1.5_f64.to_be_bytes();
+    shifted_f64[0] -= 0x10;
+    bytes.extend_from_slice(&shifted_f64);
+    let mut shifted_f32 = 3.25_f32.to_be_bytes();
+    shifted_f32[0] += 0x10;
+    bytes.extend_from_slice(&shifted_f32);
+    bytes.push(0x00);
+
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            configure(policy);
+        },
+        |ctx| crate::om::sketch_payload_scalar_lanes(ctx, &bytes).unwrap_err(),
+    )
+}
+
+#[test]
+fn sketch_scalar_lanes_refuse_collection_limit() {
+    let error = scalar_lane_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn sketch_scalar_lanes_refuse_retained_limit() {
+    let error = scalar_lane_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn sketch_scalar_lanes_refuse_work_limit() {
+    let error = scalar_lane_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
+}
+
+#[test]
+fn sketch_fixed_pairs_refuse_collection_limit() {
+    let error = pair_refusal(true, |policy| policy.limits.max_collection_items = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn sketch_fixed_pairs_refuse_retained_limit() {
+    let error = pair_refusal(true, |policy| policy.limits.max_retained_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn sketch_fixed_pairs_refuse_work_limit() {
+    let error = pair_refusal(true, |policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
+}
+
+#[test]
+fn sketch_mixed_pairs_refuse_collection_limit() {
+    let error = pair_refusal(false, |policy| policy.limits.max_collection_items = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn sketch_mixed_pairs_refuse_retained_limit() {
+    let error = pair_refusal(false, |policy| policy.limits.max_retained_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn sketch_mixed_pairs_refuse_work_limit() {
+    let error = pair_refusal(false, |policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
+}
+
 #[test]
 fn sketch_fixed_pair_parser_reads_scaled_shifted_binary64_atoms() {
     let discriminator = [0x04, 0xe0, 0x48, 0x0e, 0x02, 0x03, 0x80, 0x84];
     let bytes = sketch_fixed_pair_bytes(&discriminator, 0.5, 0.75, true);
 
-    let pairs = super::sketch_payload_fixed_pairs(&bytes);
+    let pairs = sketch_payload_fixed_pairs(&bytes);
     assert_eq!(pairs.len(), 1);
     assert_sketch_fixed_pair_values(
         pairs[0]
@@ -45,7 +187,7 @@ fn sketch_fixed_pair_parser_reads_scaled_shifted_binary64_atoms() {
     );
     let mut malformed = bytes;
     malformed[discriminator.len() + 8] = 1;
-    assert!(super::sketch_payload_fixed_pairs(&malformed).is_empty());
+    assert!(sketch_payload_fixed_pairs(&malformed).is_empty());
 }
 
 #[test]
@@ -61,7 +203,7 @@ fn sketch_fixed_pair_parser_accepts_adjacent_short_and_extended_branches() {
     ];
     let extended = sketch_fixed_pair_bytes(&extended_discriminator, 0.5, 0.5, false);
 
-    let short_pair = super::sketch_payload_fixed_pairs(&short);
+    let short_pair = sketch_payload_fixed_pairs(&short);
     assert_eq!(short_pair.len(), 1);
     assert_sketch_fixed_pair_values(
         short_pair[0]
@@ -70,7 +212,7 @@ fn sketch_fixed_pair_parser_accepts_adjacent_short_and_extended_branches() {
         [0.5, 0.75],
     );
 
-    let extended_pair = super::sketch_payload_fixed_pairs(&extended);
+    let extended_pair = sketch_payload_fixed_pairs(&extended);
     assert_eq!(extended_pair.len(), 1);
     assert_sketch_fixed_pair_values(
         extended_pair[0]
@@ -81,7 +223,7 @@ fn sketch_fixed_pair_parser_accepts_adjacent_short_and_extended_branches() {
 
     let mut malformed = short;
     malformed[short_discriminator.len() + 8] = 0x31;
-    assert!(super::sketch_payload_fixed_pairs(&malformed).is_empty());
+    assert!(sketch_payload_fixed_pairs(&malformed).is_empty());
 }
 
 #[test]
@@ -91,7 +233,7 @@ fn sketch_fixed_pair_parser_accepts_the_three_member_branch() {
     ];
     let bytes = sketch_fixed_pair_bytes(&discriminator, 0.5, 0.75, true);
 
-    let pairs = super::sketch_payload_fixed_pairs(&bytes);
+    let pairs = sketch_payload_fixed_pairs(&bytes);
     assert_eq!(pairs.len(), 1);
     assert_sketch_fixed_pair_values(
         pairs[0]
@@ -102,7 +244,7 @@ fn sketch_fixed_pair_parser_accepts_the_three_member_branch() {
 
     let mut malformed = bytes;
     malformed[14] = 0x02;
-    assert!(super::sketch_payload_fixed_pairs(&malformed).is_empty());
+    assert!(sketch_payload_fixed_pairs(&malformed).is_empty());
 }
 
 #[test]
@@ -113,13 +255,13 @@ fn sketch_mixed_pair_parser_requires_scaled_shifted_binary64_then_binary32() {
     let shifted = [0x50, 0x50, 0x00, 0x00];
     bytes.extend_from_slice(&shifted);
 
-    let pairs = super::sketch_payload_mixed_pairs(&bytes);
+    let pairs = sketch_payload_mixed_pairs(&bytes);
     assert!((pairs[0].scalars.fixed.value() - 0.5).abs() < EPS_SKETCH_FIXED_ATOM);
-    assert!((pairs[0].scalars.binary32.value() - 3.25).abs() < EPS_SKETCH_FIXED_ATOM);
+    assert!((pairs[0].scalars.binary32.value().get() - 3.25).abs() < EPS_SKETCH_FIXED_ATOM);
 
     let mut malformed = bytes;
     malformed[discriminator.len() + 8] = 1;
-    assert!(super::sketch_payload_mixed_pairs(&malformed).is_empty());
+    assert!(sketch_payload_mixed_pairs(&malformed).is_empty());
 }
 
 #[test]
@@ -144,7 +286,7 @@ fn sketch_scalar_lane_parser_reads_mixed_nonzero_scalar_atoms() {
     assert_eq!(
         lanes[0]
             .iter()
-            .map(|(_, scalar, ())| scalar.value())
+            .map(|(_, scalar, ())| scalar.value().get())
             .collect::<Vec<_>>(),
         [1.5, 3.25]
     );
@@ -179,7 +321,7 @@ fn sketch_scalar_lane_parser_reads_mixed_nonzero_scalar_atoms() {
     assert_eq!(
         long_lanes[0]
             .iter()
-            .map(|(_, scalar, ())| scalar.value())
+            .map(|(_, scalar, ())| scalar.value().get())
             .collect::<Vec<_>>(),
         [1.5, 3.25]
     );
@@ -196,4 +338,48 @@ fn sketch_scalar_lane_parser_reads_mixed_nonzero_scalar_atoms() {
     assert!(sketch_payload_scalar_lanes(&missing_terminator).is_empty());
     missing_terminator[18] = 0x00;
     assert!(sketch_payload_scalar_lanes(&missing_terminator).is_empty());
+}
+
+fn sketch_scalar_mapping_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let mut bytes = vec![
+        0x25, 0x25, 0x41, 0x00, 0x04, 0x01, 0x07, 0x01, 0xc0, 0x45, 0x10, 0x00, 0x80, 0x86, 0x02,
+        0x00, 0x01, 0x00,
+    ];
+    let mut shifted_f64 = 1.5_f64.to_be_bytes();
+    shifted_f64[0] -= 0x10;
+    bytes.extend_from_slice(&shifted_f64);
+    let mut shifted_f32 = 3.25_f32.to_be_bytes();
+    shifted_f32[0] += 0x10;
+    bytes.extend_from_slice(&shifted_f32);
+    bytes.push(0);
+    let lane = sketch_payload_scalar_lanes(&bytes).remove(0);
+
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            lane.try_map_locations(ctx, |offset, ()| Some(offset))
+                .unwrap_err()
+        },
+    )
+}
+
+#[test]
+fn sketch_scalar_mapping_refuses_collection_limit() {
+    let error = sketch_scalar_mapping_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn sketch_scalar_mapping_refuses_retained_limit() {
+    let error = sketch_scalar_mapping_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
 }

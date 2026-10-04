@@ -1,27 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature history transfer: dimensions, recipes, result topology, and named definitions.
 
-mod axes;
-mod dependencies;
-mod dimensions;
-mod draft;
-mod knit;
-mod link;
-mod named;
-mod outputs;
-mod revolution;
-mod round;
-mod selections;
-
-pub(super) use axes::*;
-pub(super) use dependencies::*;
-pub(super) use dimensions::*;
-pub(super) use draft::*;
-pub(super) use knit::*;
-#[allow(clippy::wildcard_imports)]
-pub(super) use link::*;
-pub(super) use named::*;
-pub(super) use outputs::*;
-pub(super) use revolution::*;
-pub(super) use round::*;
-pub(super) use selections::*;
+pub(super) mod axes;
+pub(super) mod dependencies;
+pub(super) mod dimensions;
+pub(super) mod draft;
+pub(super) mod knit;
+pub(super) mod link;
+pub(super) mod named;
+pub(super) mod outputs;
+pub(super) mod revolution;
+pub(super) mod round;
+pub(super) mod selections;

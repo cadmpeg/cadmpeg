@@ -19,7 +19,12 @@ pub(crate) enum HeaderSlot {
 impl HeaderSlot {
     pub(crate) const ALL: [Self; 4] = [Self::Zero, Self::One, Self::Two, Self::Three];
     pub(crate) fn number(self) -> u8 {
-        self as u8
+        match self {
+            HeaderSlot::Zero => 0,
+            HeaderSlot::One => 1,
+            HeaderSlot::Two => 2,
+            HeaderSlot::Three => 3,
+        }
     }
     pub(crate) fn index(self) -> usize {
         usize::from(self.number())
@@ -52,14 +57,14 @@ impl std::fmt::Display for HeaderSlot {
 }
 
 // Five marker bytes, eight scalar bytes, and two ff bytes precede the slots.
-const FIXED_HEADER_LEN: usize = 5 + 8 + 2;
+const FIXED_HEADER_LEN: u8 = 5 + 8 + 2;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(try_from = "HeaderReferencesWire", into = "HeaderReferencesWire")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(try_from = "HeaderReferencesWire")]
 pub(crate) struct HeaderReferences(pub(crate) [Option<FeatureReferenceToken>; 4]);
 
 impl HeaderReferences {
-    pub(crate) fn read(bytes: &[u8]) -> Option<Self> {
+    pub(super) fn read(bytes: &[u8]) -> Option<Self> {
         let mut at = 0;
         let mut tokens = [None; 4];
         for token in &mut tokens {
@@ -74,10 +79,10 @@ impl HeaderReferences {
         Some(Self(tokens))
     }
 
-    fn byte_len(self) -> usize {
+    fn byte_len(self) -> u8 {
         self.0
             .iter()
-            .map(|token| token.as_ref().map_or(1, |token| token.raw().len()))
+            .map(|token| token.as_ref().map_or(1, |token| token.byte_len()))
             .sum()
     }
 
@@ -100,14 +105,42 @@ impl HeaderReferences {
     }
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(serde::Deserialize)]
+#[cfg_attr(test, derive(serde::Serialize))]
 struct HeaderReferencesWire {
     object_indices: [Option<u32>; 4],
     raw_object_indices: [Vec<u8>; 4],
 }
 
+#[derive(serde::Serialize)]
+struct HeaderReferencesRef<'a> {
+    object_indices: [Option<u32>; 4],
+    raw_object_indices: [&'a [u8]; 4],
+}
+
+impl serde::Serialize for HeaderReferences {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        HeaderReferencesRef {
+            object_indices: self.values(),
+            raw_object_indices: self.0.each_ref().map(|token| {
+                token
+                    .as_ref()
+                    .map_or(&[0xff][..], FeatureReferenceToken::raw)
+            }),
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(test)]
+std::thread_local! {
+    static HEADER_INTO_WIRE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
 impl From<HeaderReferences> for HeaderReferencesWire {
     fn from(value: HeaderReferences) -> Self {
+        HEADER_INTO_WIRE_COUNT.with(|count| count.set(count.get() + 1));
         Self {
             object_indices: value.values(),
             raw_object_indices: value
@@ -139,7 +172,7 @@ macro_rules! checked_header {
     ($offset:ty) => {
         impl OperationHeader<$offset> {
             pub(crate) fn new(offset: $offset, objects: HeaderReferences) -> Option<Self> {
-                offset.checked_add((FIXED_HEADER_LEN + objects.byte_len()) as $offset)?;
+                offset.checked_add(<$offset>::from(FIXED_HEADER_LEN + objects.byte_len()))?;
                 Some(Self { offset, objects })
             }
         }
@@ -157,16 +190,16 @@ impl<O: Copy + std::ops::Add<Output = O> + From<u8>> OperationHeader<O> {
     }
     pub(crate) fn byte_len(self) -> u8 {
         // Four tokens of at most three bytes follow the 15-byte fixed prefix.
-        (FIXED_HEADER_LEN + self.objects.byte_len()) as u8
+        FIXED_HEADER_LEN + self.objects.byte_len()
     }
     pub(crate) fn end_offset(self) -> O {
         self.offset + O::from(self.byte_len())
     }
     pub(crate) fn object_offsets(self) -> [O; 4] {
-        let mut at = self.offset + O::from(FIXED_HEADER_LEN as u8);
+        let mut at = self.offset + O::from(FIXED_HEADER_LEN);
         self.objects.0.map(|token| {
             let offset = at;
-            at = at + O::from(token.as_ref().map_or(1, |token| token.raw().len() as u8));
+            at = at + O::from(token.as_ref().map_or(1, |token| token.byte_len()));
             offset
         })
     }
@@ -174,7 +207,37 @@ impl<O: Copy + std::ops::Add<Output = O> + From<u8>> OperationHeader<O> {
 
 #[cfg(test)]
 mod tests {
-    use super::{HeaderReferences, HeaderSlot, OperationHeader};
+    use super::{
+        HeaderReferences, HeaderReferencesWire, HeaderSlot, OperationHeader, HEADER_INTO_WIRE_COUNT,
+    };
+
+    #[test]
+    fn header_references_borrowed_wire_refuses_before_vec_conversion() {
+        #[derive(serde::Serialize)]
+        struct Record<'a> {
+            id: &'static str,
+            objects: &'a HeaderReferences,
+        }
+
+        for bytes in [&[0xff; 4][..], &[0xff, 0, 0x80, 0, 0x90, 0, 0x03][..]] {
+            let objects = HeaderReferences::read(bytes).unwrap();
+            let old = HeaderReferencesWire::from(objects);
+            assert_eq!(
+                serde_json::to_vec(&objects).unwrap(),
+                serde_json::to_vec(&old).unwrap()
+            );
+            let record = Record {
+                id: "nx:test:header-references#1",
+                objects: &objects,
+            };
+            HEADER_INTO_WIRE_COUNT.with(|count| count.set(0));
+            cadmpeg_test_support::native_serialization::assert_native_limit(
+                &record,
+                serde_json::json!({"id": record.id, "objects": old}),
+            );
+            HEADER_INTO_WIRE_COUNT.with(|count| assert_eq!(count.get(), 0));
+        }
+    }
 
     #[test]
     fn header_reference_widths_determine_every_position() {

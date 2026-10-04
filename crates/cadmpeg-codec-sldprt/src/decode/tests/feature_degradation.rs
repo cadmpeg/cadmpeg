@@ -6,12 +6,14 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::container::make_block;
+use crate::test_support::container::sldprt_with_body;
+use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
 
 #[test]
 fn decode_degrades_nonfinite_feature_dimensions() {
-    use cadmpeg_ir::features::FeatureDefinition;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -30,51 +32,51 @@ fn decode_degrades_nonfinite_feature_dimensions() {
         .unwrap();
     assert_eq!(decoded.ir().model.features.len(), 5);
     assert!(matches!(
-        decoded.ir().model.features[0].definition,
-        FeatureDefinition::Extrude {
+        decoded.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::LinearTermination::Unresolved,
+                    termination: cadmpeg_ir::features::LinearTermination::Unresolved {},
                     ..
                 },
             },
             op: cadmpeg_ir::features::BooleanOp::Join,
             ..
-        }
+        })
     ));
     assert!(matches!(
-        &decoded.ir().model.features[1].definition,
-        FeatureDefinition::Fillet {
+        decoded.ir().model.features[1].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Fillet {
             ref groups,
-        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            radius: cadmpeg_ir::features::RadiusSpec::UnresolvedConstant,
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
+            radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Constant) },
             ..
         }])
     ));
     assert!(matches!(
-        decoded.ir().model.features[2].definition,
-        FeatureDefinition::Shell {
+        decoded.ir().model.features[2].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Shell {
             removed_faces: cadmpeg_ir::features::FaceSelection::Unresolved,
             thickness: None,
             outward: Some(false),
             ..
-        }
+        })
     ));
     assert!(matches!(
-        decoded.ir().model.features[3].definition,
-        FeatureDefinition::Dome {
+        decoded.ir().model.features[3].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Dome {
             faces: cadmpeg_ir::features::FaceSelection::Native(_),
             height: None,
             elliptical: Some(false),
             reverse: Some(false),
-        }
+        })
     ));
     assert!(matches!(
-        decoded.ir().model.features[4].definition,
-        FeatureDefinition::Revolve {
+        decoded.ir().model.features[4].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Revolve {
             ref construction,
             op: cadmpeg_ir::features::BooleanOp::Join,
-        } if construction.profile().is_none()
+        }) if construction.profile().is_none()
             && construction.axis().is_some()
             && construction.extent().is_none()
     ));
@@ -82,7 +84,7 @@ fn decode_degrades_nonfinite_feature_dimensions() {
 
 #[test]
 fn decode_degrades_nonpositive_feature_dimensions() {
-    use cadmpeg_ir::features::FeatureDefinition;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -102,66 +104,64 @@ fn decode_degrades_nonpositive_feature_dimensions() {
         .unwrap();
     assert_eq!(decoded.ir().model.features.len(), 6);
     assert!(matches!(
-        decoded.ir().model.features[0].definition,
-        FeatureDefinition::Extrude {
+        decoded.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::LinearTermination::Unresolved,
+                    termination: cadmpeg_ir::features::LinearTermination::Unresolved {},
                     ..
                 },
             },
             op: cadmpeg_ir::features::BooleanOp::Join,
             ..
-        }
+        })
     ));
     assert!(matches!(
-        &decoded.ir().model.features[1].definition,
-        FeatureDefinition::Fillet {
+        decoded.ir().model.features[1].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Fillet {
             ref groups,
-        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            radius: cadmpeg_ir::features::RadiusSpec::UnresolvedConstant,
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
+            radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Constant) },
             ..
         }])
     ));
     assert!(matches!(
-        decoded.ir().model.features[2].definition,
-        FeatureDefinition::Shell {
+        decoded.ir().model.features[2].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Shell {
             removed_faces: cadmpeg_ir::features::FaceSelection::Unresolved,
             thickness: None,
             outward: Some(false),
             ..
-        }
+        })
     ));
     assert!(matches!(
-        decoded.ir().model.features[3].definition,
-        FeatureDefinition::Dome {
+        decoded.ir().model.features[3].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Dome {
             faces: cadmpeg_ir::features::FaceSelection::Native(_),
             height: None,
             elliptical: Some(false),
             reverse: Some(false),
-        }
+        })
     ));
     assert!(matches!(
-        decoded.ir().model.features[4].definition,
-        FeatureDefinition::Hole {
-            construction: cadmpeg_ir::features::HoleConstruction::Form {
-                kind: cadmpeg_ir::features::HoleKind::Simple,
-                ..
-            },
-            diameter: None,
+        decoded.ir().model.features[4].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
+            shape,
+
             extent: Some(cadmpeg_ir::features::LinearTermination::Blind {
-                length: cadmpeg_ir::features::Length(5.0),
+                length: actual_length,
             }),
             ..
-        }
-    ));
+        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
+                kind: cadmpeg_ir::features::holes::HoleKind::Simple,
+                ..
+            }, None,) if actual_length.get() == 5.0)));
     assert!(matches!(
-        &decoded.ir().model.features[5].definition,
-        FeatureDefinition::Chamfer {
+        decoded.ir().model.features[5].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Chamfer {
             ref groups,
             ..
-        } if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
-            spec: cadmpeg_ir::features::ChamferSpec::UnresolvedDistance,
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::ChamferGroup {
+            spec: cadmpeg_ir::features::edge_treatments::ChamferSpec::Unresolved { form: Some(cadmpeg_ir::features::edge_treatments::ChamferForm::Distance) },
             ..
         }])
     ));
@@ -169,7 +169,7 @@ fn decode_degrades_nonpositive_feature_dimensions() {
 
 #[test]
 fn decode_retains_invalid_feature_directions_and_angles_as_native() {
-    use cadmpeg_ir::features::{FeatureDefinition, PatternKind};
+    use cadmpeg_ir::features::{patterns::PatternTransform, FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -189,49 +189,50 @@ fn decode_retains_invalid_feature_directions_and_angles_as_native() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir().model.features.len(), 7);
+    assert!(
+        matches!(&(decoded.ir().model.features[1].evaluation.definition()),
+            FeatureDefinition::Operation(FeatureOperation::Pattern {
+                pattern: admitted_pattern,
+                ..
+            }) if matches!(admitted_pattern.definition(), PatternTransform::Unresolved { form: Some(cadmpeg_ir::features::patterns::PatternForm::Linear) })
+        )
+    );
     assert!(matches!(
-        decoded.ir().model.features[1].definition,
-        FeatureDefinition::Pattern {
-            pattern: PatternKind::UnresolvedLinear,
-            ..
-        }
-    ));
-    assert!(matches!(
-        decoded.ir().model.features[4].definition,
-        FeatureDefinition::Revolve {
+        decoded.ir().model.features[4].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Revolve {
             ref construction,
             op: cadmpeg_ir::features::BooleanOp::Join,
-        } if construction.profile().is_none()
+        }) if construction.profile().is_none()
             && construction.axis().is_some()
             && construction.extent().is_none()
     ));
     assert!(matches!(
-        decoded.ir().model.features[6].definition,
-        FeatureDefinition::Rib {
+        decoded.ir().model.features[6].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Rib {
             construction: cadmpeg_ir::features::RibConstruction {
                 profile: Some(_),
                 direction: None,
-                thickness: Some(cadmpeg_ir::features::Length(2.0)),
+                thickness: Some(actual_thickness),
                 side: Some(cadmpeg_ir::features::RibSide::OneSided),
                 draft: cadmpeg_ir::features::RibDraft::None,
             },
             op: cadmpeg_ir::features::BooleanOp::Join,
-        }
+        }) if actual_thickness.get() == 2.0
     ));
     assert!(matches!(
-        &decoded.ir().model.features[3].definition,
-        FeatureDefinition::Chamfer {
+        decoded.ir().model.features[3].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Chamfer {
             ref groups,
             ..
-        } if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
-            spec: cadmpeg_ir::features::ChamferSpec::UnresolvedDistanceAngle,
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::ChamferGroup {
+            spec: cadmpeg_ir::features::edge_treatments::ChamferSpec::Unresolved { form: Some(cadmpeg_ir::features::edge_treatments::ChamferForm::DistanceAngle) },
             ..
         }])
     ));
     for index in [2, 5] {
         assert!(matches!(
-            decoded.ir().model.features[index].definition,
-            FeatureDefinition::Native { .. }
+            decoded.ir().model.features[index].evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Native { .. })
         ));
     }
 }

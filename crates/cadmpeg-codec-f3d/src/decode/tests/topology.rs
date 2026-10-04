@@ -10,27 +10,42 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_test_support::service_decode_context;
+use cadmpeg_test_support::EditableDecodeResult;
+
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
-use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_asm::asm_header;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::native_test::{f3d_native, update_f3d_native};
+use crate::test_support::smbh_blends_test::synthetic_full_rolling_ball_smbh;
+use crate::test_support::smbh_curves_test::synthetic_geometry_with_procedural_curve_smbh;
+use crate::test_support::smbh_geometry_test::{
+    synthetic_free_vertex_body_smbh, synthetic_geometry_smbh,
+    synthetic_geometry_with_degenerate_curve_smbh, synthetic_geometry_with_face_attribute_smbh,
+    synthetic_mixed_face_wire_body_smbh, synthetic_mixed_smbh, synthetic_wire_body_smbh,
+};
+use crate::test_support::smbh_pcurves_test::synthetic_geometry_with_pcurve_smbh;
+use crate::test_support::smbh_surfaces_test::synthetic_exact_spl_sur_smbh;
+use crate::test_support::zip_test::f3d_with_smbh;
 use crate::F3dCodec;
 
 #[test]
 fn decode_builds_valid_topology_and_geometry() {
-    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
     use cadmpeg_ir::math::Point3;
 
     let f3d = f3d_with_smbh(&synthetic_geometry_smbh());
     let mut cur = Cursor::new(f3d);
-    let result = F3dCodec
-        .decode(&mut cur, &DecodeOptions::default())
-        .unwrap();
+    let result = EditableDecodeResult::from(
+        F3dCodec
+            .decode(&mut cur, &DecodeOptions::default())
+            .unwrap(),
+    );
 
     assert!(result.report().geometry_transferred());
     assert!(result
@@ -73,11 +88,10 @@ fn decode_builds_valid_topology_and_geometry() {
 
     // The plane decoded with its stored origin and complete parameter frame.
     match &result.ir().model.surfaces[0].geometry {
-        SurfaceGeometry::Plane {
-            origin,
-            normal,
-            u_axis,
-        } => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
+            let origin = plane_surface.origin();
+            let normal = plane_surface.frame().axis().as_raw();
+            let u_axis = plane_surface.frame().reference().as_raw();
             assert_eq!(*origin, Point3::new(0.0, 0.0, 0.0));
             assert_eq!(normal.z, 1.0);
             assert_eq!(*u_axis, cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0));
@@ -90,17 +104,18 @@ fn decode_builds_valid_topology_and_geometry() {
         .model
         .points
         .iter()
-        .map(|p| p.position.x)
+        .map(|p| p.position().get().x)
         .collect();
     assert!(xs.contains(&10.0));
 
     // The decoded document is internally valid: refs resolve, the loop ring
     // closes, no bounds violations.
-    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
 
     // Edges carry no analytic curve (their carriers were null), which is legal.
-    assert!(result.ir().model.edges.iter().all(|e| e.curve.is_none()));
+    assert!(result.ir().model.edges.iter().all(|e| e.curve().is_none()));
     // The loop's coedge ring is the three coedges in order.
     assert_eq!(result.ir().model.loops[0].coedges().len(), 3);
 }
@@ -112,9 +127,18 @@ fn history_topology_decode_matches_full_brep_graph() {
         (synthetic_geometry_with_face_attribute_smbh(), 3),
         (synthetic_full_rolling_ball_smbh("rb_blend_spl_sur"), 0),
     ] {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &bytes,
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .expect("fixture is within the service input limit");
         let start = asm_header::record_stream_start(&bytes).expect("record stream start");
-        let limit = asm_header::solved_record_limit(&bytes).expect("solved record limit");
-        let records = cadmpeg_asm::sab::frame(
+        let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+            .expect("history scan")
+            .expect("solved record limit");
+        let records = cadmpeg_asm::test_support::sab::frame(
             &bytes,
             start,
             limit,
@@ -122,13 +146,17 @@ fn history_topology_decode_matches_full_brep_graph() {
         )
         .expect("frame BREP");
 
-        let full_brep = crate::brep::decode(&records, &bytes, "full", crate::ids::ID_FORMAT);
-        let full =
-            crate::history::historical_topology_with_tags(&full_brep).expect("full topology");
+        let full_brep = crate::brep::decode(&ctx, &records, &bytes, "full", crate::ids::ID_FORMAT)
+            .expect("valid BREP tolerances");
+        let full = crate::history::historical_topology_with_tags(&ctx, &full_brep)
+            .expect("topology budget")
+            .expect("full topology");
         let history_brep =
-            crate::brep::decode_history_topology(&records, &bytes, crate::ids::ID_FORMAT);
-        let history =
-            crate::history::historical_topology_with_tags(&history_brep).expect("history topology");
+            crate::brep::decode_history_topology(&ctx, &records, &bytes, crate::ids::ID_FORMAT)
+                .expect("valid BREP tolerances");
+        let history = crate::history::historical_topology_with_tags(&ctx, &history_brep)
+            .expect("topology budget")
+            .expect("history topology");
 
         assert_eq!(history, full);
         assert_eq!(history.persistent_subentity_tags.len(), expected_tag_count);
@@ -143,15 +171,15 @@ fn decode_transfers_generated_wire_body_topology() {
             &DecodeOptions::default(),
         )
         .expect("generated wire body decode");
-    let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
+    let mut result = EditableDecodeResult::from(result);
     assert_eq!(result.ir().model.bodies.len(), 1);
     assert_eq!(
         result.ir().model.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Wire
     );
     assert_eq!(result.ir().model.shells.len(), 1);
-    assert!(result.ir().model.shells[0].faces.is_empty());
-    assert_eq!(result.ir().model.shells[0].wire_edges.len(), 1);
+    assert!(result.ir().model.shells[0].faces().is_empty());
+    assert_eq!(result.ir().model.shells[0].wire_edges().len(), 1);
     assert_eq!(result.ir().model.edges.len(), 1);
     assert_eq!(result.ir().model.vertices.len(), 2);
     assert_eq!(result.ir().model.points.len(), 2);
@@ -162,7 +190,7 @@ fn decode_transfers_generated_wire_body_topology() {
         cadmpeg_asm::brep::records::WireSide::Out
     );
     assert_eq!(
-        result.ir().model.shells[0].wire_edges[0],
+        result.ir().model.shells[0].wire_edges()[0],
         result.ir().model.edges[0].id
     );
     assert!(!result
@@ -183,7 +211,8 @@ fn decode_transfers_generated_wire_body_topology() {
         f3d_native(edited.ir()).wire_topologies[0].side,
         cadmpeg_asm::brep::records::WireSide::In
     );
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(
         validation.is_ok(),
         "wire findings: {:?}",
@@ -204,12 +233,12 @@ fn decode_transfers_isolated_vertex_wire_topology() {
         result.ir().model.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Wire
     );
-    assert!(result.ir().model.shells[0].wire_edges.is_empty());
-    assert_eq!(result.ir().model.shells[0].free_vertices.len(), 1);
+    assert!(result.ir().model.shells[0].wire_edges().is_empty());
+    assert_eq!(result.ir().model.shells[0].free_vertices().len(), 1);
     assert_eq!(result.ir().model.vertices.len(), 1);
     assert_eq!(result.ir().model.points.len(), 1);
     assert_eq!(
-        result.ir().model.points[0].position,
+        result.ir().model.points[0].position().get(),
         cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0)
     );
     assert!(f3d_native(result.ir()).vertex_ownerships.is_empty());
@@ -219,7 +248,8 @@ fn decode_transfers_isolated_vertex_wire_topology() {
         wire.members.free_vertex().cloned(),
         Some(result.ir().model.vertices[0].id.clone())
     );
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(
         validation.is_ok(),
         "free-vertex findings: {:?}",
@@ -246,10 +276,11 @@ fn decode_classifies_generated_mixed_face_wire_body_as_general() {
         cadmpeg_ir::topology::BodyKind::General
     );
     assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(result.ir().model.shells[0].wire_edges.len(), 1);
+    assert_eq!(result.ir().model.shells[0].wire_edges().len(), 1);
     assert_eq!(result.ir().model.edges.len(), 4);
     assert_eq!(result.ir().model.curves.len(), 1);
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(
         validation.is_ok(),
         "mixed-body findings: {:?}",
@@ -259,24 +290,33 @@ fn decode_classifies_generated_mixed_face_wire_body_as_general() {
 
 #[test]
 fn generated_degenerate_curve_decodes_regenerates_and_writes_source_less() {
-    use cadmpeg_ir::{geometry::CurveGeometry, math::Point3};
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+    use cadmpeg_ir::math::Point3;
 
     let source = f3d_with_smbh(&synthetic_geometry_with_degenerate_curve_smbh());
-    let decoded = F3dCodec
-        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
-        .expect("generated degenerate curve decode");
+    let decoded = EditableDecodeResult::from(
+        F3dCodec
+            .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+            .expect("generated degenerate curve decode"),
+    );
     let curve = decoded
         .ir()
         .model
         .curves
         .iter()
-        .find(|curve| matches!(curve.geometry, CurveGeometry::Degenerate { .. }))
+        .find(|curve| {
+            matches!(
+                curve.geometry,
+                CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(_))
+            )
+        })
         .expect("degenerate curve carrier");
     assert_eq!(
         curve.geometry,
-        CurveGeometry::Degenerate {
-            point: Point3::new(0.0, 0.0, 0.0)
-        }
+        CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
+            cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(Point3::new(0.0, 0.0, 0.0))
+                .unwrap()
+        ))
     );
     let curve_id = curve.id.clone();
 
@@ -287,9 +327,10 @@ fn generated_degenerate_curve_decodes_regenerates_and_writes_source_less() {
         .iter_mut()
         .find(|curve| curve.id == curve_id)
         .expect("editable degenerate curve");
-    edited_curve.geometry = CurveGeometry::Degenerate {
-        point: Point3::new(2.0, 3.0, 4.0),
-    };
+    edited_curve.geometry = CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
+        cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(Point3::new(2.0, 3.0, 4.0))
+            .unwrap(),
+    ));
     let mut regenerated = Vec::new();
     crate::test_support::plan_inherited_write(&edited, decoded.source_fidelity(), &mut regenerated)
         .expect("degenerate curve regeneration");
@@ -298,17 +339,23 @@ fn generated_degenerate_curve_decodes_regenerates_and_writes_source_less() {
         .expect("regenerated degenerate curve decode");
     assert!(regenerated.ir().model.curves.iter().any(|curve| {
         curve.geometry
-            == CurveGeometry::Degenerate {
-                point: Point3::new(2.0, 3.0, 4.0),
-            }
+            == CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
+                cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(Point3::new(
+                    2.0, 3.0, 4.0,
+                ))
+                .unwrap(),
+            ))
     }));
 
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
-    let expected = CurveGeometry::Degenerate {
-        point: Point3::new(0.0, 0.0, 0.0),
-    };
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
+    let expected = CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
+        cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(Point3::new(0.0, 0.0, 0.0))
+            .unwrap(),
+    ));
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -323,7 +370,8 @@ fn generated_degenerate_curve_decodes_regenerates_and_writes_source_less() {
         .curves
         .iter()
         .any(|curve| curve.geometry == expected));
-    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(
         validation.is_ok(),
         "degenerate-curve findings: {:?}",
@@ -341,7 +389,9 @@ fn generated_source_less_writes_general_face_wire_body() {
         .expect("generated mixed body decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
 
     let mut encoded = Vec::new();
     F3dCodec
@@ -357,9 +407,10 @@ fn generated_source_less_writes_general_face_wire_body() {
         cadmpeg_ir::topology::BodyKind::General
     );
     assert_eq!(round_trip.ir().model.faces.len(), 1);
-    assert_eq!(round_trip.ir().model.shells[0].wire_edges.len(), 1);
+    assert_eq!(round_trip.ir().model.shells[0].wire_edges().len(), 1);
     assert_eq!(round_trip.ir().model.edges.len(), 4);
-    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(
         validation.is_ok(),
         "mixed-body findings: {:?}",
@@ -383,7 +434,9 @@ fn generated_source_less_writes_general_face_and_point_wire_body() {
         .expect("generated free-vertex body decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let renamed = free
         .ir()
         .to_canonical_json()
@@ -391,9 +444,7 @@ fn generated_source_less_writes_general_face_and_point_wire_body() {
         .replace("f3d:brep:", "generated:general_point_wire:");
     let mut free =
         cadmpeg_ir::document::CadIr::from_json(&renamed).expect("renamed free-vertex IR");
-    source_less.model.shells[0]
-        .free_vertices
-        .push(free.model.vertices[0].id.clone());
+    source_less.model.shells[0].add_free_vertex(free.model.vertices[0].id.clone());
     source_less.model.vertices.append(&mut free.model.vertices);
     source_less.model.points.append(&mut free.model.points);
 
@@ -411,14 +462,15 @@ fn generated_source_less_writes_general_face_and_point_wire_body() {
         cadmpeg_ir::topology::BodyKind::General
     );
     assert_eq!(round_trip.ir().model.faces.len(), 1);
-    assert_eq!(round_trip.ir().model.shells[0].wire_edges.len(), 1);
-    assert_eq!(round_trip.ir().model.shells[0].free_vertices.len(), 1);
+    assert_eq!(round_trip.ir().model.shells[0].wire_edges().len(), 1);
+    assert_eq!(round_trip.ir().model.shells[0].free_vertices().len(), 1);
     assert_eq!(f3d_native(round_trip.ir()).wire_topologies.len(), 2);
     assert!(f3d_native(round_trip.ir())
         .wire_topologies
         .iter()
         .any(|wire| wire.members.edges().is_empty() && wire.members.free_vertex().is_some()));
-    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(
         validation.is_ok(),
         "face-and-point-wire findings: {:?}",
@@ -428,7 +480,7 @@ fn generated_source_less_writes_general_face_and_point_wire_body() {
 
 #[test]
 fn generated_source_less_writes_solid_and_wire_bodies_together() {
-    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let decoded_wire = F3dCodec
         .decode(
             &mut Cursor::new(f3d_with_smbh(&synthetic_wire_body_smbh())),
@@ -473,8 +525,9 @@ fn generated_source_less_writes_solid_and_wire_bodies_together() {
         ]
     );
     assert_eq!(round_trip.ir().model.faces.len(), 6);
-    assert_eq!(round_trip.ir().model.shells[1].wire_edges.len(), 1);
-    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new());
+    assert_eq!(round_trip.ir().model.shells[1].wire_edges().len(), 1);
+    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(
         validation.is_ok(),
         "combined-body findings: {:?}",
@@ -492,7 +545,9 @@ fn generated_source_less_writes_wire_body_topology() {
         .expect("generated wire body decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     update_f3d_native(&mut source_less, |native| {
         native.wire_topologies[0].side = cadmpeg_asm::brep::records::WireSide::In;
     });
@@ -501,7 +556,7 @@ fn generated_source_less_writes_wire_body_topology() {
         .model
         .points
         .iter()
-        .map(|point| point.position)
+        .map(|point| point.position().get())
         .collect::<Vec<_>>();
 
     let mut encoded = Vec::new();
@@ -517,7 +572,7 @@ fn generated_source_less_writes_wire_body_topology() {
         round_trip.ir().model.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Wire
     );
-    assert_eq!(round_trip.ir().model.shells[0].wire_edges.len(), 1);
+    assert_eq!(round_trip.ir().model.shells[0].wire_edges().len(), 1);
     assert_eq!(
         f3d_native(round_trip.ir()).wire_topologies[0].side,
         cadmpeg_asm::brep::records::WireSide::In
@@ -529,12 +584,13 @@ fn generated_source_less_writes_wire_body_topology() {
             .model
             .points
             .iter()
-            .map(|point| point.position)
+            .map(|point| point.position().get())
             .collect::<Vec<_>>(),
         expected_points
     );
     assert_eq!(round_trip.ir().model.curves[0].geometry, expected_curve);
-    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(
         validation.is_ok(),
         "wire findings: {:?}",
@@ -552,7 +608,9 @@ fn generated_source_less_writes_isolated_vertex_wire() {
         .expect("generated free-vertex body decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     update_f3d_native(&mut source_less, |native| {
         native.wire_topologies[0].side = cadmpeg_asm::brep::records::WireSide::In;
     });
@@ -570,12 +628,12 @@ fn generated_source_less_writes_isolated_vertex_wire() {
         round_trip.ir().model.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Wire
     );
-    assert!(round_trip.ir().model.shells[0].wire_edges.is_empty());
-    assert_eq!(round_trip.ir().model.shells[0].free_vertices.len(), 1);
+    assert!(round_trip.ir().model.shells[0].wire_edges().is_empty());
+    assert_eq!(round_trip.ir().model.shells[0].free_vertices().len(), 1);
     assert!(round_trip.ir().model.edges.is_empty());
     assert_eq!(round_trip.ir().model.vertices.len(), 1);
     assert_eq!(
-        round_trip.ir().model.points[0].position,
+        round_trip.ir().model.points[0].position().get(),
         cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0)
     );
     assert!(f3d_native(round_trip.ir()).vertex_ownerships.is_empty());
@@ -586,7 +644,8 @@ fn generated_source_less_writes_isolated_vertex_wire() {
         Some(round_trip.ir().model.vertices[0].id.clone())
     );
     assert_eq!(wire.side, cadmpeg_asm::brep::records::WireSide::In);
-    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(
         validation.is_ok(),
         "free-vertex findings: {:?}",
@@ -610,7 +669,9 @@ fn generated_source_less_writes_edge_and_point_wires_on_one_shell() {
         .expect("generated free-vertex body decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let free_json = free
         .ir()
         .to_canonical_json()
@@ -619,9 +680,7 @@ fn generated_source_less_writes_edge_and_point_wires_on_one_shell() {
         let renamed = free_json.replace("f3d:brep:", namespace);
         let mut free =
             cadmpeg_ir::document::CadIr::from_json(&renamed).expect("renamed free-vertex IR");
-        source_less.model.shells[0]
-            .free_vertices
-            .push(free.model.vertices[0].id.clone());
+        source_less.model.shells[0].add_free_vertex(free.model.vertices[0].id.clone());
         source_less.model.vertices.append(&mut free.model.vertices);
         source_less.model.points.append(&mut free.model.points);
     }
@@ -634,8 +693,8 @@ fn generated_source_less_writes_edge_and_point_wires_on_one_shell() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less mixed-wire shell round trip");
-    assert_eq!(round_trip.ir().model.shells[0].wire_edges.len(), 1);
-    assert_eq!(round_trip.ir().model.shells[0].free_vertices.len(), 2);
+    assert_eq!(round_trip.ir().model.shells[0].wire_edges().len(), 1);
+    assert_eq!(round_trip.ir().model.shells[0].free_vertices().len(), 2);
     assert_eq!(f3d_native(round_trip.ir()).wire_topologies.len(), 3);
     assert!(f3d_native(round_trip.ir())
         .wire_topologies
@@ -655,7 +714,8 @@ fn generated_source_less_writes_edge_and_point_wires_on_one_shell() {
     );
     assert_eq!(round_trip.ir().model.vertices.len(), 4);
     assert_eq!(round_trip.ir().model.points.len(), 4);
-    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(
         validation.is_ok(),
         "mixed-wire findings: {:?}",
@@ -673,7 +733,9 @@ fn generated_source_less_writes_two_independent_wire_bodies() {
         .expect("generated wire body decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let second_json = source_less
         .to_canonical_json()
         .expect("canonical wire JSON")
@@ -681,11 +743,10 @@ fn generated_source_less_writes_two_independent_wire_bodies() {
     let mut second =
         cadmpeg_ir::document::CadIr::from_json(&second_json).expect("renamed second wire IR");
     second.model.bodies[0].transform = Some(
-        cadmpeg_ir::transform::Transform::from_rows([
+        cadmpeg_ir::transform::Transform::affine([
             [1.0, 0.0, 0.0, 25.0],
             [0.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
         ])
         .expect("affine transform"),
     );
@@ -726,7 +787,8 @@ fn generated_source_less_writes_two_independent_wire_bodies() {
             .rows()[0][3],
         25.0
     );
-    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(
         validation.is_ok(),
         "wire findings: {:?}",
@@ -744,7 +806,9 @@ fn generated_source_less_writes_multi_edge_wire_ring() {
         .expect("generated wire body decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let second_json = source_less
         .to_canonical_json()
         .expect("canonical wire JSON")
@@ -752,7 +816,7 @@ fn generated_source_less_writes_multi_edge_wire_ring() {
     let mut second =
         cadmpeg_ir::document::CadIr::from_json(&second_json).expect("renamed second wire edge IR");
     let second_edge = second.model.edges[0].id.clone();
-    source_less.model.shells[0].wire_edges.push(second_edge);
+    source_less.model.shells[0].add_wire_edge(second_edge);
     source_less.model.edges.append(&mut second.model.edges);
     source_less
         .model
@@ -769,10 +833,11 @@ fn generated_source_less_writes_multi_edge_wire_ring() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less multi-edge wire round trip");
-    assert_eq!(round_trip.ir().model.shells[0].wire_edges.len(), 2);
+    assert_eq!(round_trip.ir().model.shells[0].wire_edges().len(), 2);
     assert_eq!(round_trip.ir().model.edges.len(), 2);
     assert_eq!(round_trip.ir().model.curves.len(), 2);
-    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(
         validation.is_ok(),
         "wire findings: {:?}",
@@ -790,7 +855,9 @@ fn generated_source_less_writes_multi_region_wire_body() {
         .expect("generated wire body decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let second_json = source_less
         .to_canonical_json()
         .expect("canonical wire JSON")
@@ -830,7 +897,8 @@ fn generated_source_less_writes_multi_region_wire_body() {
         .iter()
         .all(|region| region.body == round_trip.ir().model.bodies[0].id));
     assert_eq!(round_trip.ir().model.edges.len(), 2);
-    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(
         validation.is_ok(),
         "wire findings: {:?}",
@@ -848,7 +916,9 @@ fn generated_source_less_writes_multi_shell_wire_region() {
         .expect("generated wire body decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let second_json = source_less
         .to_canonical_json()
         .expect("canonical wire JSON")
@@ -887,7 +957,8 @@ fn generated_source_less_writes_multi_shell_wire_region() {
         .iter()
         .all(|shell| shell.region == round_trip.ir().model.regions[0].id));
     assert_eq!(round_trip.ir().model.edges.len(), 2);
-    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(
         validation.is_ok(),
         "wire findings: {:?}",
@@ -897,9 +968,9 @@ fn generated_source_less_writes_multi_shell_wire_region() {
 
 #[test]
 fn analytic_carrier_decode_covers_each_shape() {
-    use cadmpeg_asm::brep::geometry::{decode_curve, decode_surface};
+    use cadmpeg_asm::brep::geometry;
     use cadmpeg_asm::sab::{Record, Token};
-    use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry};
 
     fn rec(head: &str, tokens: Vec<Token>) -> Record {
         Record {
@@ -911,6 +982,13 @@ fn analytic_carrier_decode_covers_each_shape() {
             len: 0,
         }
     }
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let decode_surface =
+        |record: &Record| geometry::decode_surface(&ctx, record).transpose().unwrap();
+    let decode_curve = |record: &Record| geometry::decode_curve(&ctx, record).transpose().unwrap();
     let refn = || Token::Ref(-1);
     let base = || vec![refn(), Token::Long(-1), refn()];
 
@@ -926,12 +1004,10 @@ fn analytic_carrier_decode_covers_each_shape() {
         Token::Double(2.0),              // r1 = 2 cm
     ]);
     match decode_surface(&rec("cone", cyl)).unwrap().0 {
-        SurfaceGeometry::Cylinder {
-            radius,
-            axis,
-            ref_direction,
-            ..
-        } => {
+        SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
+            let axis = *cylinder_surface.frame().axis().as_raw();
+            let ref_direction = *cylinder_surface.frame().reference().as_raw();
+            let radius = cylinder_surface.radius().get();
             assert_eq!(radius, 20.0);
             assert_eq!(axis.z, 1.0);
             assert_eq!(ref_direction, cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0));
@@ -949,15 +1025,14 @@ fn analytic_carrier_decode_covers_each_shape() {
         Token::Double(1.0),
         Token::Double(2.0),
     ]);
-    assert!(matches!(
-        decode_surface(&rec("cone", elliptical_cylinder)).unwrap().0,
-        SurfaceGeometry::Cone {
-            radius: 20.0,
-            ratio: 0.4,
-            half_angle: 0.0,
-            ..
-        }
-    ));
+    assert!(
+        matches!(decode_surface(&rec("cone", elliptical_cylinder)).unwrap().0, SolvedSurfaceGeometry::Cone(cone_surface)
+        if {
+            (cone_surface.radius().get() == 20.0)
+                && (cone_surface.ratio().get() == 0.4)
+                && (cone_surface.half_angle().get() == 0.0)
+        })
+    );
 
     // cone with nonzero sine keeps the acute half-angle atan2(|sine|, |cosine|).
     // A both-negative sine/cosine pair has a positive slope (the radius still
@@ -976,15 +1051,16 @@ fn analytic_carrier_decode_covers_each_shape() {
     let (geo, inward) = decode_surface(&rec("cone", cone)).unwrap();
     assert!(inward, "negative cosine points the native normal inward");
     match geo {
-        SurfaceGeometry::Cone {
-            half_angle,
-            axis,
-            ref_direction,
-            ..
-        } => {
+        SolvedSurfaceGeometry::Cone(cone_surface) => {
+            let axis = cone_surface.frame().axis().as_raw();
+            let ref_direction = cone_surface.frame().reference().as_raw();
+            let half_angle = cone_surface.half_angle().get();
             assert!((half_angle - 0.5f64.atan2(0.866_025_4)).abs() < 1.0e-12);
             assert_eq!(axis.z, 1.0, "positive slope keeps the axis");
-            assert_eq!(ref_direction, cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0));
+            assert_eq!(
+                *ref_direction,
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+            );
         }
         other => panic!("expected cone, got {other:?}"),
     }
@@ -1006,12 +1082,10 @@ fn analytic_carrier_decode_covers_each_shape() {
     let (geo, inward) = decode_surface(&rec("cone", shrinking)).unwrap();
     assert!(!inward, "positive cosine keeps the outward normal");
     match geo {
-        SurfaceGeometry::Cone {
-            half_angle,
-            axis,
-            radius,
-            ..
-        } => {
+        SolvedSurfaceGeometry::Cone(cone_surface) => {
+            let axis = cone_surface.frame().axis().as_raw();
+            let radius = cone_surface.radius().get();
+            let half_angle = cone_surface.half_angle().get();
             assert!((half_angle - 0.5f64.atan2(0.866_025_4)).abs() < 1.0e-12);
             assert_eq!(axis.z, -1.0, "negative slope flips the axis");
             assert!((radius - 46.55).abs() < 1.0e-12);
@@ -1030,15 +1104,16 @@ fn analytic_carrier_decode_covers_each_shape() {
     let (geo, signed) = decode_surface(&rec("sphere", sph)).unwrap();
     assert!(!signed);
     match geo {
-        SurfaceGeometry::Sphere {
-            radius,
-            axis,
-            ref_direction,
-            ..
-        } => {
+        SolvedSurfaceGeometry::Sphere(sphere_surface) => {
+            let axis = sphere_surface.frame().axis().as_raw();
+            let ref_direction = sphere_surface.frame().reference().as_raw();
+            let radius = sphere_surface.radius().get();
             assert_eq!(radius, -10.0);
-            assert_eq!(axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
-            assert_eq!(ref_direction, cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0));
+            assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
+            assert_eq!(
+                *ref_direction,
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+            );
         }
         other => panic!("expected sphere, got {other:?}"),
     }
@@ -1055,15 +1130,16 @@ fn analytic_carrier_decode_covers_each_shape() {
     let (geo, inside_out) = decode_surface(&rec("torus", tor)).unwrap();
     assert!(!inside_out);
     match geo {
-        SurfaceGeometry::Torus {
-            major_radius,
-            minor_radius,
-            ref_direction,
-            ..
-        } => {
+        SolvedSurfaceGeometry::Torus(torus_surface) => {
+            let ref_direction = torus_surface.frame().reference().as_raw();
+            let major_radius = torus_surface.major_radius().get();
+            let minor_radius = torus_surface.minor_radius().get();
             assert_eq!(major_radius, 10.0);
             assert_eq!(minor_radius, -20.0);
-            assert_eq!(ref_direction, cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0));
+            assert_eq!(
+                *ref_direction,
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+            );
         }
         other => panic!("expected torus, got {other:?}"),
     }
@@ -1077,7 +1153,10 @@ fn analytic_carrier_decode_covers_each_shape() {
         Token::Double(1.0),
     ]);
     match decode_curve(&rec("ellipse", circ)).unwrap() {
-        CurveGeometry::Circle { radius, .. } => assert_eq!(radius, 30.0),
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
+            let radius = circle_curve.radius().get();
+            assert_eq!(radius, 30.0)
+        }
         other => panic!("expected circle, got {other:?}"),
     }
 
@@ -1090,11 +1169,9 @@ fn analytic_carrier_decode_covers_each_shape() {
         Token::Double(0.5),
     ]);
     match decode_curve(&rec("ellipse", ell)).unwrap() {
-        CurveGeometry::Ellipse {
-            major_radius,
-            minor_radius,
-            ..
-        } => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
+            let major_radius = ellipse_curve.major_radius().get();
+            let minor_radius = ellipse_curve.minor_radius().get();
             assert_eq!(major_radius, 40.0);
             assert_eq!(minor_radius, 20.0);
         }
@@ -1108,7 +1185,9 @@ fn analytic_carrier_decode_covers_each_shape() {
         Token::Vector3([0.0, 1.0, 0.0]),
     ]);
     match decode_curve(&rec("straight", line)).unwrap() {
-        CurveGeometry::Line { origin, direction } => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
+            let origin = line_curve.origin().get();
+            let direction = *line_curve.direction().as_raw();
             assert_eq!(origin.x, 10.0);
             assert_eq!(direction.y, 1.0);
         }
@@ -1129,7 +1208,7 @@ fn decode_succeeds_when_geometry_present() {
 
 #[test]
 fn decode_keeps_face_on_unknown_surface() {
-    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
     // Rename the plane so the face rests on an undecoded carrier.
     let mut smbh = synthetic_geometry_smbh();
@@ -1152,7 +1231,9 @@ fn decode_keeps_face_on_unknown_surface() {
     assert_eq!(result.ir().model.vertices.len(), 3);
     assert_eq!(result.ir().model.surfaces.len(), 1);
 
-    let SurfaceGeometry::Unknown { record } = &result.ir().model.surfaces[0].geometry else {
+    let Some(SolvedSurfaceGeometry::Unknown { record }) =
+        result.ir().model.surfaces[0].geometry.solved()
+    else {
         panic!("expected unknown surface geometry");
     };
     let link = record.as_ref().expect("unknown surface links to a record");
@@ -1176,13 +1257,14 @@ fn decode_keeps_face_on_unknown_surface() {
     assert!(note.message.contains("Native kinds: splne=1."));
 
     // The decoded document still validates.
-    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }
 
 #[test]
 fn cached_unmodeled_spline_families_retain_exact_shape_and_opaque_construction() {
-    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SolvedSurfaceGeometry};
 
     for family in [
         "crv_crv_v_bl_spl_sur",
@@ -1206,7 +1288,7 @@ fn cached_unmodeled_spline_families_retain_exact_shape_and_opaque_construction()
             .find(|surface| {
                 matches!(
                     surface.geometry.solved_cache(),
-                    Some(SurfaceGeometry::Nurbs(_))
+                    Some(SolvedSurfaceGeometry::Nurbs(_))
                 )
             })
             .unwrap_or_else(|| panic!("{family} must retain its solved NURBS carrier"));
@@ -1221,6 +1303,7 @@ fn cached_unmodeled_spline_families_retain_exact_shape_and_opaque_construction()
             .unwrap_or_else(|| panic!("{family} must retain its construction identity"));
         let ProceduralSurfaceDefinition::Unknown {
             record: Some(record),
+            ..
         } = procedural.definition()
         else {
             panic!("{family} must retain its opaque construction")
@@ -1244,8 +1327,10 @@ fn decode_reports_faces_with_missing_surface_references() {
     for (surface, condition) in [(-1i64, "null-reference=1"), (999, "dangling-reference=1")] {
         let mut smbh = synthetic_mixed_smbh();
         let start = asm_header::record_stream_start(&smbh).unwrap();
-        let limit = asm_header::solved_record_limit(&smbh).unwrap();
-        let records = cadmpeg_asm::sab::frame(
+        let limit = asm_header::solved_record_limit(&service_decode_context(), &smbh)
+            .expect("history scan")
+            .unwrap();
+        let records = cadmpeg_asm::test_support::sab::frame(
             &smbh,
             start,
             limit,
@@ -1317,8 +1402,10 @@ fn decode_reports_undecoded_edge_curve_kinds() {
 fn decode_reports_dangling_edge_curve_references() {
     let mut smbh = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&smbh).unwrap();
-    let limit = asm_header::solved_record_limit(&smbh).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &smbh)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &smbh,
         start,
         limit,

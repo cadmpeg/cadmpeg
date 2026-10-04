@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_ir::features::{FeatureDefinition, UnresolvedFamily};
+use crate::native::attach::feature_projection::non_boolean_feature_definition;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, UnresolvedFamily};
 
 #[test]
 fn nx_through_curve_mesh_retains_surface_family_without_roles() {
-    let definition =
-        super::non_boolean_feature_definition("THRU_CURVE_MESH", &[], None, None, None);
+    let definition = non_boolean_feature_definition("THRU_CURVE_MESH", &[], None, None, None);
 
     assert_eq!(
         definition,
-        FeatureDefinition::Unresolved {
+        FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::ThroughCurveMesh
-        }
+        })
     );
     assert_eq!(definition.body_output_family(), Some("through curve mesh"));
 }

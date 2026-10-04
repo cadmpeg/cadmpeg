@@ -6,6 +6,6 @@
 pub(crate) const FORMAT: &str = "inventor";
 
 /// Registry-owned dialect id `inventor:cfb3-rse31-meta8`.
-pub(crate) const INVENTOR_CFB3_RSE31_META8: DialectId = DialectId::pinned("inventor:cfb3-rse31-meta8");
+pub(crate) const INVENTOR_CFB3_RSE31_META8: DialectId = cadmpeg_core::dialect_id!("inventor:cfb3-rse31-meta8");
 /// Registry-owned dialect id `inventor:unknown`.
-pub(crate) const INVENTOR_UNKNOWN: DialectId = DialectId::pinned("inventor:unknown");
+pub(crate) const INVENTOR_UNKNOWN: DialectId = cadmpeg_core::dialect_id!("inventor:unknown");

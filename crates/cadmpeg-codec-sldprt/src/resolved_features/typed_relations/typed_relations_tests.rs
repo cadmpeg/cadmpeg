@@ -2,8 +2,15 @@
 
 use super::super::markers::sketch_input_entities;
 use super::super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
-use super::*;
-use crate::records::{SketchInputEntity, SketchInputKind};
+use super::{
+    consecutive_legacy_profile_line_endpoints, coordinate_centered_line_endpoints,
+    current_coordinate_linked_line_endpoints, extended_wide_selected_axis_endpoints,
+    legacy_point_roster_line_endpoint_markers, legacy_terminal_indexed_profile_line,
+    one_based_point_roster_line_endpoint_markers, typed_marker_relation_definition,
+};
+use crate::records::{SketchInputEntity, SketchInputKind, SketchInputLink};
+use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
+use std::collections::HashMap;
 
 #[test]
 fn compact_legacy_coordinate_line_ends_at_the_following_marker_coordinate() {
@@ -30,7 +37,9 @@ fn compact_legacy_coordinate_line_ends_at_the_following_marker_coordinate() {
     assert_eq!(
         consecutive_legacy_profile_line_endpoints(&payload, &entities[0], &markers)
             .iter()
-            .map(|marker| marker.coordinates_m)
+            .map(|marker| marker
+                .coordinates_m
+                .map(cadmpeg_ir::units::FiniteVector::get))
             .collect::<Vec<_>>(),
         vec![Some([1.25, -2.5]), Some([3.0, 4.0])]
     );
@@ -54,25 +63,34 @@ fn coordinate_lines_use_their_centered_endpoint_pairs() {
     payload[82..86].copy_from_slice(&1u32.to_le_bytes());
     payload[92..96].copy_from_slice(&(-2i32).to_le_bytes());
     payload[142..].copy_from_slice(SKETCH_MARKER);
-    let entity = |id: &str, offset, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind: SketchInputKind::LineOrCircle,
-        state_value: None,
-        coordinates_m: Some(coordinates_m),
-        links: None,
+    let entity = |id: &str, offset, coordinates_m| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = crate::records::SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            0,
+            offset,
+            SketchInputKind::LineOrCircle,
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.state_value = None;
+        constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new(coordinates_m);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let line = entity("line", 0, [2.0, 3.0]);
     let first = entity("first", 143, [1.0, 2.0]);
     let second = entity("second", 144, [3.0, 4.0]);
     let markers = [&line, &first, &second];
     assert_eq!(
-        coordinate_centered_line_endpoints(&payload, &line, &markers),
+        coordinate_centered_line_endpoints(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &line,
+            &markers
+        )
+        .unwrap(),
         Some([&first, &second])
     );
 
@@ -97,12 +115,24 @@ fn coordinate_lines_use_their_centered_endpoint_pairs() {
     extended_line.coordinates_m = None;
     let markers = [&extended_line, &first, &second];
     assert_eq!(
-        coordinate_centered_line_endpoints(&extended, &extended_line, &markers),
+        coordinate_centered_line_endpoints(
+            &cadmpeg_test_support::service_decode_context(),
+            &extended,
+            &extended_line,
+            &markers
+        )
+        .unwrap(),
         Some([&first, &second])
     );
     extended[84] ^= 1;
     assert_eq!(
-        coordinate_centered_line_endpoints(&extended, &extended_line, &markers),
+        coordinate_centered_line_endpoints(
+            &cadmpeg_test_support::service_decode_context(),
+            &extended,
+            &extended_line,
+            &markers
+        )
+        .unwrap(),
         None
     );
 }
@@ -125,18 +155,18 @@ fn current_coordinate_line_uses_its_single_local_link() {
     payload[90..94].fill(0xff);
     payload[102..106].copy_from_slice(&(-2i32).to_le_bytes());
     payload[152..].copy_from_slice(SKETCH_MARKER);
-    let entity = |id: &str, offset, local_id, kind, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id,
-        kind,
-        state_value: None,
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, offset, local_id, kind, coordinates_m: Option<[f64; 2]>| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            crate::records::SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker = constructed_marker.with_test_identity(None, local_id);
+        constructed_marker.state_value = None;
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let line = entity(
         "line",
@@ -176,18 +206,18 @@ fn current_coordinate_line_accepts_a_coordinate_bearing_curve_vertex() {
     payload[90..94].fill(0xff);
     payload[102..106].copy_from_slice(&(-2i32).to_le_bytes());
     payload[152..].copy_from_slice(SKETCH_MARKER);
-    let entity = |id: &str, offset, local_id, kind, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id,
-        kind,
-        state_value: None,
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, offset, local_id, kind, coordinates_m: Option<[f64; 2]>| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            crate::records::SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker = constructed_marker.with_test_identity(None, local_id);
+        constructed_marker.state_value = None;
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let line = entity(
         "line",
@@ -224,26 +254,29 @@ fn extended_wide_selected_axis_uses_object_ids_then_one_based_point_roster() {
     payload[80..84].copy_from_slice(&[0x00, 0x00, 0x02, 0x00]);
     payload[88..92].fill(0xff);
     payload[92..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
-    let entity = |id: &str,
-                  offset: u64,
-                  object_index: Option<u32>,
-                  coordinates_m: Option<[f64; 2]>| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("sketch".into()),
-        ordinal: 0,
-        offset,
-        object_index,
-        local_id: None,
-        kind: if coordinates_m.is_some() {
-            SketchInputKind::Point
-        } else {
-            SketchInputKind::LineOrCircle
-        },
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
-    };
+    let entity =
+        |id: &str, offset: u64, object_index: Option<u32>, coordinates_m: Option<[f64; 2]>| {
+            let marker_id: String = id.into();
+            let marker_parent: String = "lane".into();
+            let mut constructed_marker = crate::records::SketchInputEntity::new(
+                marker_id,
+                marker_parent,
+                0,
+                offset,
+                if coordinates_m.is_some() {
+                    SketchInputKind::Point
+                } else {
+                    SketchInputKind::LineOrCircle
+                },
+            );
+            constructed_marker.feature_ref = Some("sketch".into());
+            constructed_marker = constructed_marker.with_test_identity(object_index, None);
+            constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+            constructed_marker.coordinates_m =
+                coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+            constructed_marker.links = None;
+            constructed_marker
+        };
     let curve = entity("curve", 0, Some(8), None);
     let first = entity("first", 10, Some(1), Some([0.0, 0.0]));
     let second = entity("second", 20, Some(3), Some([1.0, 0.0]));
@@ -251,17 +284,29 @@ fn extended_wide_selected_axis_uses_object_ids_then_one_based_point_roster() {
     let markers = [&curve, &first, &second, &third];
 
     assert_eq!(
-        extended_wide_selected_axis_endpoints(&payload, &curve, &markers)
-            .expect("object-index endpoints")
-            .map(|endpoint| endpoint.id.as_str()),
+        extended_wide_selected_axis_endpoints(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &curve,
+            &markers
+        )
+        .unwrap()
+        .expect("object-index endpoints")
+        .map(crate::records::SketchInputEntity::id),
         ["first", "second"]
     );
 
     payload[64..66].copy_from_slice(&3u16.to_le_bytes());
     assert_eq!(
-        extended_wide_selected_axis_endpoints(&payload, &curve, &markers)
-            .expect("one-based roster endpoints")
-            .map(|endpoint| endpoint.id.as_str()),
+        extended_wide_selected_axis_endpoints(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &curve,
+            &markers
+        )
+        .unwrap()
+        .expect("one-based roster endpoints")
+        .map(crate::records::SketchInputEntity::id),
         ["third", "second"]
     );
 }
@@ -281,18 +326,17 @@ fn current_line_resolves_one_based_point_roster_endpoints() {
     payload[60..64].copy_from_slice(&1u32.to_le_bytes());
     payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
     payload[84..].copy_from_slice(SKETCH_MARKER);
-    let entity = |id: &str, offset, coordinates_m, kind: SketchInputKind| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("sketch".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, offset, coordinates_m: Option<[f64; 2]>, kind: SketchInputKind| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            crate::records::SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("sketch".into());
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let curve = entity("curve", 0, None, SketchInputKind::LineOrCircle);
     let points = [
@@ -305,10 +349,16 @@ fn current_line_resolves_one_based_point_roster_endpoints() {
         .chain(points.iter())
         .collect::<Vec<_>>();
 
-    let endpoints = one_based_point_roster_line_endpoint_markers(&payload, &curve, &markers)
-        .expect("one-based point roster");
+    let endpoints = one_based_point_roster_line_endpoint_markers(
+        &cadmpeg_test_support::service_decode_context(),
+        &payload,
+        &curve,
+        &markers,
+    )
+    .unwrap()
+    .expect("one-based point roster");
     assert_eq!(
-        endpoints.map(|endpoint| endpoint.id.as_str()),
+        endpoints.map(crate::records::SketchInputEntity::id),
         ["second", "fourth"]
     );
 
@@ -319,13 +369,25 @@ fn current_line_resolves_one_based_point_roster_endpoints() {
         .chain(std::iter::once(&arc))
         .collect::<Vec<_>>();
     assert_eq!(
-        one_based_point_roster_line_endpoint_markers(&payload, &curve, &mixed),
+        one_based_point_roster_line_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &curve,
+            &mixed
+        )
+        .unwrap(),
         None
     );
 
     payload[56..58].fill(0);
     assert_eq!(
-        one_based_point_roster_line_endpoint_markers(&payload, &curve, &markers),
+        one_based_point_roster_line_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &curve,
+            &markers
+        )
+        .unwrap(),
         None
     );
 }
@@ -346,18 +408,17 @@ fn legacy_geometry_locus_line_resolves_zero_based_point_roster_endpoints() {
     payload[76..80].copy_from_slice(&5u32.to_le_bytes());
     payload[80..84].copy_from_slice(&4u32.to_le_bytes());
     payload[84..].copy_from_slice(LEGACY_SKETCH_MARKER);
-    let entity = |id: &str, offset, coordinates_m, kind: SketchInputKind| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("sketch".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, offset, coordinates_m: Option<[f64; 2]>, kind: SketchInputKind| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            crate::records::SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("sketch".into());
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let curve = entity("curve", 0, None, SketchInputKind::LineOrCircle);
     let points = [
@@ -370,16 +431,28 @@ fn legacy_geometry_locus_line_resolves_zero_based_point_roster_endpoints() {
         .chain(points.iter())
         .collect::<Vec<_>>();
 
-    let endpoints = legacy_point_roster_line_endpoint_markers(&payload, &curve, &markers)
-        .expect("zero-based point roster");
+    let endpoints = legacy_point_roster_line_endpoint_markers(
+        &cadmpeg_test_support::service_decode_context(),
+        &payload,
+        &curve,
+        &markers,
+    )
+    .unwrap()
+    .expect("zero-based point roster");
     assert_eq!(
-        endpoints.map(|endpoint| endpoint.id.as_str()),
+        endpoints.map(crate::records::SketchInputEntity::id),
         ["second", "fourth"]
     );
 
     payload[80..84].fill(0xff);
     assert_eq!(
-        legacy_point_roster_line_endpoint_markers(&payload, &curve, &markers),
+        legacy_point_roster_line_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &curve,
+            &markers
+        )
+        .unwrap(),
         None
     );
 }
@@ -400,21 +473,23 @@ fn terminal_legacy_indexed_curve_retains_its_sibling_line_kind() {
         payload[offset + 60..offset + 64].copy_from_slice(&1u32.to_le_bytes());
         payload[offset + 64..offset + 72].copy_from_slice(&(-1.0f64).to_le_bytes());
     }
-    let entity = |id: &str, offset, kind| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("sketch".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m: None,
-        links: None,
+    let entity = |id: &str, offset, kind| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            crate::records::SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("sketch".into());
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m = None;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let sibling = entity("sibling", 0, SketchInputKind::LineOrCircle);
-    let terminal = entity("terminal", detail as u64, SketchInputKind::Arc);
+    let terminal = entity(
+        "terminal",
+        cadmpeg_core::decode::u64_from_index(detail),
+        SketchInputKind::Arc,
+    );
 
     assert!(legacy_terminal_indexed_profile_line(
         &payload,
@@ -429,7 +504,7 @@ fn terminal_legacy_indexed_curve_retains_its_sibling_line_kind() {
 }
 
 #[test]
-fn native_owner_operand_requires_a_source_index() {
+fn native_owner_operand_keeps_a_missing_source_index() {
     let relation = SketchInputEntity::new(
         "relation",
         "lane",
@@ -442,17 +517,20 @@ fn native_owner_operand_requires_a_source_index() {
         0,
         vec![SketchInputLink {
             local_id: 4,
-            entity_ref: relation.id.clone(),
+            entity_ref: relation.id().to_string(),
         }],
     );
     for index in [None, Some(7)] {
-        owner.local_id = index;
-        let markers = HashMap::from([
-            (relation.id.as_str(), &relation),
-            (owner.id.as_str(), &owner),
-        ]);
-        let Some(SketchConstraintDefinition::Native { operands, .. }) =
-            typed_marker_relation_definition(&relation, &markers, &HashMap::new())
+        owner = owner.with_test_identity(owner.object_index(), index);
+        let markers = HashMap::from([(relation.id(), &relation), (owner.id(), &owner)]);
+        let Some(SketchConstraintDefinitionInput::Native { operands, .. }) =
+            typed_marker_relation_definition(
+                &cadmpeg_test_support::service_decode_context(),
+                &relation,
+                &markers,
+                &HashMap::new(),
+            )
+            .unwrap()
         else {
             panic!("native relation");
         };
@@ -461,7 +539,84 @@ fn native_owner_operand_requires_a_source_index() {
                 .iter()
                 .map(|operand| operand.object_index)
                 .collect::<Vec<_>>(),
-            index.into_iter().collect::<Vec<_>>()
+            vec![index]
         );
     }
+}
+
+#[test]
+fn ellipse_membership_rejects_nonfinite_intermediates() {
+    use cadmpeg_ir::{
+        math::Point2,
+        scalar::{Angle, Length},
+        sketches::{SketchEntity, SketchEntityId, SketchGeometryDefinition, SketchId},
+    };
+    let ellipse = |center| {
+        SketchEntity::new(
+            SketchEntityId::mint("sldprt:model:sketch-entity#ellipse-regression").unwrap(),
+            SketchId::mint("sldprt:model:sketch#ellipse-regression").unwrap(),
+            SketchGeometryDefinition::Ellipse {
+                center,
+                major_angle: Angle::new(0.).unwrap(),
+                radii: cadmpeg_ir::sketches::EllipseRadii {
+                    major_radius: Length::new(1.).unwrap(),
+                    minor_radius: Length::new(0.5).unwrap(),
+                },
+                bounds: None,
+            }
+            .try_into()
+            .unwrap(),
+        )
+    };
+    assert!(!super::sketch_entity_contains_point(
+        &ellipse(Point2::new(-1e308, 0.)),
+        Point2::new(1e308, 0.)
+    ));
+    assert!(super::sketch_entity_contains_point(
+        &ellipse(Point2::new(0., 0.)),
+        Point2::new(1., 0.)
+    ));
+    assert!(!super::sketch_entity_contains_point(
+        &ellipse(Point2::new(0., 0.)),
+        Point2::new(2., 0.)
+    ));
+}
+
+#[test]
+fn numerical_followup_membership_preserves_large_finite_geometry() {
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometryDefinition, SketchId};
+    let entity = |geometry: SketchGeometryDefinition| {
+        SketchEntity::new(
+            SketchEntityId::mint("sldprt:test:entity#numeric").unwrap(),
+            SketchId::mint("sldprt:test:sketch#numeric").unwrap(),
+            geometry.try_into().unwrap(),
+        )
+    };
+    let line = entity(SketchGeometryDefinition::Line {
+        start: Point2::new(0., 0.),
+        end: Point2::new(1e200, 0.),
+    });
+    assert!(super::sketch_entity_contains_point(
+        &line,
+        Point2::new(5e199, 0.)
+    ));
+    assert!(!super::sketch_entity_contains_point(
+        &line,
+        Point2::new(5e199, 1.)
+    ));
+    let parabola = entity(SketchGeometryDefinition::Parabola {
+        vertex: Point2::new(0., 0.),
+        axis_angle: cadmpeg_ir::scalar::Angle::new(0.).unwrap(),
+        focal_length: cadmpeg_ir::scalar::Length::new(1e200).unwrap(),
+        bounds: Some([1e200, 2e200]),
+    });
+    assert!(super::sketch_entity_contains_point(
+        &parabola,
+        Point2::new(2.5e199, 1e200)
+    ));
+    assert!(!super::sketch_entity_contains_point(
+        &parabola,
+        Point2::new(2.5e199, 2e200)
+    ));
 }

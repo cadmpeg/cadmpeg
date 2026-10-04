@@ -3,12 +3,11 @@
 
 use crate::printable_string::PrintableString;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
-#[serde(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ProductText<S>(PrintableString<S>);
 
-impl<S: AsRef<str>> ProductText<S> {
-    pub(crate) fn new(value: S) -> Result<Self, &'static str> {
+impl<S: crate::immutable_text::ImmutableText> ProductText<S> {
+    fn new(value: S) -> Result<Self, &'static str> {
         let value = PrintableString::new(value)
             .map_err(|_| "product_version/version: requires printable ASCII")?;
         if !value.as_str().starts_with("NX ") || value.as_str().len() > 253 {
@@ -23,8 +22,21 @@ impl<S: AsRef<str>> ProductText<S> {
 }
 
 impl ProductText<&str> {
-    pub(crate) fn into_owned(self) -> ProductText<String> {
-        ProductText(self.0.into_owned())
+    pub(crate) fn try_into_owned_for_decode(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<ProductText<String>, cadmpeg_core::CodecError> {
+        let value = self.as_str();
+        let mut owned = ctx.retained_string(value.len(), "retain NX store version")?;
+        owned.push_str(value);
+        ProductText::new(owned)
+            .map_err(|_| ctx.refuse_codec_limit("validate NX store version", 0, 1))
+    }
+}
+
+impl<S: crate::immutable_text::ImmutableText> serde::Serialize for ProductText<S> {
+    fn serialize<T: serde::Serializer>(&self, serializer: T) -> Result<T::Ok, T::Error> {
+        serializer.serialize_str(self.as_str())
     }
 }
 
@@ -63,11 +75,11 @@ impl<'a> ProductRecord<'a> {
         (bytes.get(text_end) == Some(&0)).then_some(Self { form, text })
     }
 
-    pub(crate) fn text(self) -> ProductText<&'a str> {
+    pub(super) fn text(self) -> ProductText<&'a str> {
         self.text
     }
 
-    pub(crate) fn byte_len(self) -> usize {
+    pub(super) fn byte_len(self) -> usize {
         let header_len = match self.form {
             ProductRecordForm::Modern => 3,
             ProductRecordForm::LegacyFeature => 2,
@@ -83,20 +95,31 @@ mod tests {
     #[test]
     fn product_text_preserves_wire_and_length_bound() {
         let text = format!("NX {}", "x".repeat(250));
-        let value = ProductText::new(text.as_str()).unwrap().into_owned();
-        let wire = serde_json::to_string(&value).unwrap();
-        assert_eq!(wire, serde_json::to_string(&text).unwrap());
-        assert_eq!(
-            serde_json::from_str::<ProductText<String>>(&wire).unwrap(),
-            value
-        );
-        for text in ["NX", "NX μ", "NX \n", &format!("NX {}", "x".repeat(251))] {
-            assert!(ProductText::new(text).is_err());
-            let error =
-                serde_json::from_str::<ProductText<String>>(&serde_json::to_string(text).unwrap())
+
+        crate::test_support::with_decode_context_over(
+            text.as_bytes(),
+            |_| {},
+            |ctx| {
+                let value = ProductText::new(text.as_str())
+                    .unwrap()
+                    .try_into_owned_for_decode(ctx)
+                    .unwrap();
+                let wire = serde_json::to_string(&value).unwrap();
+                assert_eq!(wire, serde_json::to_string(&text).unwrap());
+                assert_eq!(
+                    serde_json::from_str::<ProductText<String>>(&wire).unwrap(),
+                    value
+                );
+                for text in ["NX", "NX μ", "NX \n", &format!("NX {}", "x".repeat(251))] {
+                    assert!(ProductText::new(text).is_err());
+                    let error = serde_json::from_str::<ProductText<String>>(
+                        &serde_json::to_string(text).unwrap(),
+                    )
                     .unwrap_err();
-            assert!(error.to_string().contains("product_version/version"));
-        }
+                    assert!(error.to_string().contains("product_version/version"));
+                }
+            },
+        );
     }
 
     #[test]

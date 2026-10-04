@@ -2,7 +2,9 @@
 //! STEP target resolution and export reporting.
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{Consumption, EncodeInput, ExportBody, ResolvedWrite, WritePath};
+use cadmpeg_ir::codec::write::{
+    target::ResolvedWrite, Consumption, EncodeInput, ExportBody, WritePath,
+};
 
 use crate::export::write_step_outcome;
 use crate::loss::StepLossCode;
@@ -28,10 +30,11 @@ pub(crate) fn plan(
     let Some(index) = resolved.index() else {
         return Err(resolved.unavailable(OFF_CATALOG_SOURCE_REASON));
     };
-    let schema = StepSchema::ALL[index];
+    let schema = StepSchema::from_target_index(index).ok_or_else(|| {
+        resolved.unavailable("the resolved target index is outside the STEP schema catalog")
+    })?;
     let mut bytes = Vec::new();
-    let outcome = write_step_outcome(input.ir, &mut bytes, schema, &codec.options)
-        .map_err(CodecError::from)?;
+    let outcome = write_step_outcome(input.ir, &mut bytes, schema, &codec.options)?;
     let mut losses = outcome.losses;
     if let Some(message) = resolved.displacement_message() {
         losses.push(StepLossCode::SourceDialectDisplaced.note(message));

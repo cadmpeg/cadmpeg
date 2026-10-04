@@ -1,4 +1,4 @@
-use super::*;
+use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 
 pub(crate) fn out_of_table_annotation_font_values_file() -> Vec<u8> {
     owned_test_file(&[

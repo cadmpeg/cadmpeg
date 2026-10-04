@@ -2,7 +2,7 @@
 //! Recovery of an archive word no registry row declares.
 
 use super::{assert_valid, decode};
-use crate::test_support as support;
+use crate::test_support::test_archive as support;
 
 #[test]
 fn an_undeclared_archive_word_recovers_its_content_under_an_unverified_admission() {
@@ -12,13 +12,13 @@ fn an_undeclared_archive_word_recovers_its_content_under_an_unverified_admission
     // substituted, and the dialect-unverified loss is charged.
     let object = support::object_record(
         1,
-        support::POINT_CLASS,
+        crate::test_support::test_dump::POINT_CLASS,
         &support::point_payload([1.0, 2.0, 3.0]),
     );
     let bytes = support::archive_version("100", &[object]);
     let result = decode(bytes);
     assert_eq!(
-        result.ir().model.points[0].position,
+        result.ir().model.points[0].position().get(),
         cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
     );
     assert_valid(&result);

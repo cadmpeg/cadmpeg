@@ -10,15 +10,40 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_core::convert::f64_from_index;
+
+use cadmpeg_test_support::{edit, EditableDecodeResult};
+
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
-use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::{Cursor, Read};
 
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::smbh_curves_test::{
+    synthetic_geometry_with_analytic_offset_supports_smbh,
+    synthetic_geometry_with_cacheless_helix_curve_smbh,
+    synthetic_geometry_with_compound_curve_smbh, synthetic_geometry_with_decoy_curve_sense_smbh,
+    synthetic_geometry_with_embedded_offset_supports_smbh,
+    synthetic_geometry_with_exact_curve_smbh, synthetic_geometry_with_helix_curve_smbh,
+    synthetic_geometry_with_law_curve_smbh, synthetic_geometry_with_procedural_curve_smbh,
+    synthetic_geometry_with_projection_smbh, synthetic_geometry_with_silhouette_smbh,
+    synthetic_geometry_with_spring_smbh, synthetic_geometry_with_subset_curve_smbh,
+    synthetic_geometry_with_surface_curve_smbh, synthetic_geometry_with_surface_intersection_smbh,
+    synthetic_geometry_with_surface_offset_smbh,
+    synthetic_geometry_with_two_sided_offset_curve_smbh,
+    synthetic_geometry_with_vector_offset_curve_smbh, with_legacy_subtype,
+};
+use crate::test_support::smbh_surfaces_test::{
+    synthetic_exact_spl_sur_smbh, synthetic_exact_spl_sur_with_decoy_sense_smbh,
+};
+use crate::test_support::tokens_test::{push_tagged_i64, t_dbl};
+use crate::test_support::zip_test::f3d_with_smbh;
 use crate::F3dCodec;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
+
+const EPS_CONE_ANGLE: f64 = 1.0e-12;
 
 #[test]
 fn transform_decodes_column_major_basis_and_scaled_translation() {
@@ -58,12 +83,12 @@ fn nurbs_curve_block_decodes_to_carrier() {
     push_tagged_i64(&mut b, 0x15, 0); // closure = open
     push_tagged_i64(&mut b, 0x04, 2); // n_unique_knots
     for (k, m) in [(0.0, 2i64), (1.0, 2)] {
-        push_tagged_f64(&mut b, k);
+        t_dbl(&mut b, k);
         push_tagged_i64(&mut b, 0x04, m);
     }
     for p in [[0.0, 0.0, 0.0], [1.0, 2.0, 0.0], [2.0, 0.0, 0.0]] {
         for c in p {
-            push_tagged_f64(&mut b, c);
+            t_dbl(&mut b, c);
         }
     }
 
@@ -71,7 +96,7 @@ fn nurbs_curve_block_decodes_to_carrier() {
     assert_eq!(c.degree(), 2);
     assert_eq!(c.control_points().len(), 3);
     // Clamped knots: [0,0,0,1,1,1] (endpoint mult 2 + 1 = 3 each).
-    assert_eq!(c.knots(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+    assert_eq!(c.knots().as_slice(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
     assert_eq!(c.control_points()[1].x, 10.0);
     assert_eq!(c.control_points()[1].y, 20.0);
     assert!(c.weights().is_none());
@@ -90,59 +115,78 @@ fn decode_retains_generated_procedural_curve_fit_contract() {
         cadmpeg_ir::geometry::ProceduralCurveDefinition::Unknown {
             native_kind: Some(native_kind),
             record: None,
-        } if native_kind == "surf_surf_int_cur"
+        ..
+    } if native_kind == "surf_surf_int_cur"
     ));
-    assert_eq!(procedural.cache_fit_tolerance(), Some(0.005));
+    assert_eq!(
+        procedural
+            .cache_fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
+        Some(0.005)
+    );
     assert_eq!(result.ir().model.curves.len(), 1);
 }
 
 #[test]
 fn decode_retains_generated_helix_construction() {
-    use cadmpeg_ir::{geometry::ProceduralCurveDefinition, math::Point3};
+    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+    use cadmpeg_ir::math::Point3;
 
-    let result = F3dCodec
-        .decode(
-            &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_helix_curve_smbh())),
-            &DecodeOptions::default(),
-        )
-        .expect("generated helix decode");
+    let result = EditableDecodeResult::from(
+        F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_helix_curve_smbh())),
+                &DecodeOptions::default(),
+            )
+            .expect("generated helix decode"),
+    );
     let procedural = result
         .ir()
         .model
         .procedural_curves
         .first()
         .expect("helix construction");
-    let ProceduralCurveDefinition::Helix {
-        angle_range,
-        center,
-        major,
-        minor,
-        pitch,
-        apex_factor,
-        axis,
-    } = procedural.definition()
-    else {
+    let ProceduralCurveDefinition::Helix(helix_payload) = procedural.definition() else {
         panic!("expected helix construction")
     };
-    assert_eq!(*angle_range, [0.0, std::f64::consts::TAU]);
+    let angle_range = helix_payload.angle_range();
+    let center = helix_payload.center().as_raw();
+    let major = helix_payload.major();
+    let minor = helix_payload.minor();
+    let pitch = helix_payload.pitch();
+    let apex_factor = helix_payload.apex_factor();
+    let axis = helix_payload.axis();
+
+    assert_eq!(angle_range.get(), [0.0, std::f64::consts::TAU]);
     assert_eq!(*center, Point3::new(10.0, 20.0, 30.0));
     assert_eq!(*major, cadmpeg_ir::math::Vector3::new(20.0, 0.0, 0.0));
     assert_eq!(*minor, cadmpeg_ir::math::Vector3::new(0.0, 20.0, 0.0));
     assert_eq!(*pitch, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 40.0));
-    assert_eq!(*apex_factor, 0.25);
+    assert_eq!(apex_factor.get(), 0.25);
     assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
-    assert_eq!(procedural.cache_fit_tolerance(), Some(0.005));
+    assert_eq!(
+        procedural
+            .cache_fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
+        Some(0.005)
+    );
 
     let mut edited = result.ir().clone();
-    edited.model.procedural_curves[0].replace_definition(ProceduralCurveDefinition::Helix {
-        angle_range: [-1.0, 7.0],
-        center: Point3::new(12.0, 23.0, 34.0),
-        major: cadmpeg_ir::math::Vector3::new(30.0, 0.0, 0.0),
-        minor: cadmpeg_ir::math::Vector3::new(0.0, -30.0, 0.0),
-        pitch: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 55.0),
-        apex_factor: 0.5,
-        axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-    });
+    edited.model.procedural_curves[0].replace_definition(ProceduralCurveDefinition::Helix(
+        cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+            [-1.0, 7.0],
+            cadmpeg_ir::geometry::HelixFrame {
+                center: Point3::new(12.0, 23.0, 34.0),
+                major: cadmpeg_ir::math::Vector3::new(30.0, 0.0, 0.0),
+                minor: cadmpeg_ir::math::Vector3::new(0.0, -30.0, 0.0),
+                pitch: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 55.0),
+                axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            },
+            0.5,
+            None,
+        )
+        .unwrap(),
+    ));
     edited.model.procedural_curves[0]
         .set_cache_fit_tolerance(Some(0.012))
         .unwrap();
@@ -164,21 +208,28 @@ fn decode_retains_generated_helix_construction() {
     else {
         panic!("expected procedural helix carrier")
     };
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(mut edited_cache) =
-        solved_cache.as_geometry().clone()
-    else {
+    let SolvedCurveGeometry::Nurbs(mut edited_cache) = solved_cache.clone() else {
         panic!("expected helix NURBS cache")
     };
     edited_cache
-        .edit_control_points(|points| {
-            points[1].x = 17.0;
-            points[1].z = -2.0;
-        })
+        .try_map_control_points(
+            |index, point| {
+                let mut point = point.get();
+                if index == 1 {
+                    point.x = 17.0;
+                    point.z = -2.0;
+                }
+                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            },
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("pole edit admission")
         .unwrap();
-    *solved_cache = cadmpeg_ir::geometry::SolvedCurveGeometry::new(
-        cadmpeg_ir::geometry::CurveGeometry::Nurbs(edited_cache),
-    )
-    .unwrap();
+    *solved_cache = SolvedCurveGeometry::Nurbs(edited_cache);
     let edited_definition = edited.model.procedural_curves[0].definition().clone();
     let edited_cache = solved_curve.geometry.clone();
     let mut regenerated = Vec::new();
@@ -192,7 +243,9 @@ fn decode_retains_generated_helix_construction() {
         &edited_definition
     );
     assert_eq!(
-        regenerated.ir().model.procedural_curves[0].cache_fit_tolerance(),
+        regenerated.ir().model.procedural_curves[0]
+            .cache_fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
         Some(0.012)
     );
     assert!(regenerated
@@ -204,7 +257,9 @@ fn decode_retains_generated_helix_construction() {
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let expected = source_less.model.procedural_curves[0].definition().clone();
     let mut encoded = Vec::new();
     F3dCodec
@@ -219,7 +274,9 @@ fn decode_retains_generated_helix_construction() {
         &expected
     );
     assert_eq!(
-        round_trip.ir().model.procedural_curves[0].cache_fit_tolerance(),
+        round_trip.ir().model.procedural_curves[0]
+            .cache_fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
         Some(0.005)
     );
 }
@@ -244,7 +301,7 @@ fn cacheless_helix_construction_is_the_exact_edge_carrier() {
         .expect("helix construction");
     assert!(matches!(
         procedural.definition(),
-        ProceduralCurveDefinition::Helix { .. }
+        ProceduralCurveDefinition::Helix(_)
     ));
     assert_eq!(procedural.cache_fit_tolerance(), None);
     assert!(matches!(
@@ -259,7 +316,8 @@ fn cacheless_helix_construction_is_the_exact_edge_carrier() {
             .map(|curve| &curve.geometry),
         Some(CurveGeometry::Procedural { construction, .. }) if *construction == procedural.id
     ));
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(
         validation.is_ok(),
         "validation findings: {:?}",
@@ -274,7 +332,9 @@ fn cacheless_helix_construction_is_the_exact_edge_carrier() {
     let expected = procedural.definition().clone();
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -324,18 +384,23 @@ fn generated_law_intcurve_decodes_and_writes_recursive_formulas() {
     else {
         unreachable!()
     };
-    assert_eq!(context.parameter_range, [-1.0, 2.0]);
+    assert_eq!(context.parameter_range().endpoints(), [-1.0, 2.0]);
     assert_eq!(*extension, 0);
-    assert_eq!(primary.name(), "primary_law");
+    assert!(
+        matches!(primary.formula(), cadmpeg_ir::geometry::LawFormula::Named { name, .. } if name.as_str() == "primary_law")
+    );
     assert!(matches!(
-        primary.variables()[0],
-        LawExpression::Edge { parameters, .. } if parameters == [-0.5, 1.5]
+        primary.formula().variables()[0],
+        LawExpression::Edge { parameters, .. }
+            if cadmpeg_ir::scalar::FiniteReal::raw_array(parameters) == [-0.5, 1.5]
     ));
     assert_eq!(additional.len(), 2);
 
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -348,7 +413,7 @@ fn generated_law_intcurve_decodes_and_writes_recursive_formulas() {
         matches!(
             curve.definition(),
             ProceduralCurveDefinition::Law { primary, .. }
-                if matches!(primary.variables()[0], LawExpression::Edge { .. })
+                if matches!(primary.formula().variables()[0], LawExpression::Edge { .. })
         )
     }));
 }
@@ -357,31 +422,32 @@ fn generated_law_intcurve_decodes_and_writes_recursive_formulas() {
 fn generated_vector_offset_curve_decodes_and_writes_source_less() {
     use cadmpeg_ir::geometry::{ProceduralCurveDefinition, VectorOffsetRoles};
 
-    let result = F3dCodec
-        .decode(
-            &mut Cursor::new(f3d_with_smbh(
-                &synthetic_geometry_with_vector_offset_curve_smbh(),
-            )),
-            &DecodeOptions::default(),
-        )
-        .expect("generated vector-offset decode");
+    let result = EditableDecodeResult::from(
+        F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(
+                    &synthetic_geometry_with_vector_offset_curve_smbh(),
+                )),
+                &DecodeOptions::default(),
+            )
+            .expect("generated vector-offset decode"),
+    );
     let procedural = &result.ir().model.procedural_curves[0];
-    let ProceduralCurveDefinition::VectorOffset {
-        source,
-        parameter_range,
-        offset,
-        roles,
-    } = procedural.definition()
+    let ProceduralCurveDefinition::VectorOffset(definition_payload) = procedural.definition()
     else {
         panic!("expected vector offset construction")
     };
-    assert_eq!(*parameter_range, [-2.0, 5.0]);
+    let source = definition_payload.source();
+    let parameter_range = definition_payload.parameter_range();
+    let offset = definition_payload.offset();
+    let roles = definition_payload.roles();
+    assert_eq!(parameter_range.endpoints(), [-2.0, 5.0]);
     assert_eq!(*offset, cadmpeg_ir::math::Vector3::new(5.0, -10.0, 20.0));
     assert_eq!(
         *roles,
         VectorOffsetRoles {
-            source_code: 7,
-            offset_code: 9,
+            source: 7,
+            offset: 9,
         }
     );
     assert!(result
@@ -390,23 +456,45 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
         .curves
         .iter()
         .any(|curve| curve.id == *source));
-    assert_eq!(procedural.cache_fit_tolerance(), Some(0.008));
+    assert_eq!(
+        procedural
+            .cache_fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
+        Some(0.008)
+    );
     let expected_range = *parameter_range;
     let expected_offset = *offset;
     let expected_roles = *roles;
 
     let mut edited = result.ir().clone();
     edited.model.procedural_curves[0].edit_definition(|definition| {
-        let ProceduralCurveDefinition::VectorOffset {
-            parameter_range,
-            offset,
-            ..
-        } = definition
-        else {
+        let ProceduralCurveDefinition::VectorOffset(definition_payload) = definition else {
             panic!("expected editable vector offset")
         };
-        *parameter_range = [-3.0, 6.0];
-        *offset = cadmpeg_ir::math::Vector3::new(8.0, -12.0, 25.0);
+        let mut parameter_range_value = definition_payload.parameter_range().endpoints();
+        let parameter_range = &mut parameter_range_value;
+        let mut offset_value = definition_payload.offset().get();
+        let offset = &mut offset_value;
+        {
+            *parameter_range = [-3.0, 6.0];
+            *offset = cadmpeg_ir::math::Vector3::new(8.0, -12.0, 25.0);
+        };
+        let restored_cache = definition_payload.legacy_cache();
+        *definition_payload =
+            cadmpeg_ir::geometry::curve_payloads::VectorOffsetCurveConstruction::try_new(
+                definition_payload.source().clone(),
+                parameter_range_value,
+                offset_value,
+                *definition_payload.roles(),
+                None,
+            )
+            .unwrap();
+        match restored_cache {
+            Some(cache) => definition
+                .set_legacy_cache(cache)
+                .expect("the rebuilt construction states the same legacy cache slot"),
+            None => definition.clear_legacy_cache(),
+        }
     });
     edited.model.procedural_curves[0]
         .set_cache_fit_tolerance(Some(0.015))
@@ -423,15 +511,22 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
         &edited_definition
     );
     assert_eq!(
-        regenerated.ir().model.procedural_curves[0].cache_fit_tolerance(),
+        regenerated.ir().model.procedural_curves[0]
+            .cache_fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
         Some(0.015)
     );
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let source_id = match source_less.model.procedural_curves[0].definition() {
-        ProceduralCurveDefinition::VectorOffset { source, .. } => source.clone(),
+        ProceduralCurveDefinition::VectorOffset(definition_payload) => {
+            let source = definition_payload.source();
+            source.clone()
+        }
         _ => unreachable!(),
     };
     source_less
@@ -440,10 +535,21 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
         .iter_mut()
         .find(|curve| curve.id == source_id)
         .expect("vector-offset source carrier")
-        .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
-        origin: cadmpeg_ir::math::Point3::new(-5.0, 4.0, 2.0),
-        direction: cadmpeg_ir::math::Vector3::new(2.0, 1.0, -0.5),
-    };
+        .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            1,
+            vec![-2.0, -2.0, 5.0, 5.0],
+            vec![
+                cadmpeg_ir::math::Point3::new(-9.0, 2.0, 3.0),
+                cadmpeg_ir::math::Point3::new(5.0, 9.0, -0.5),
+            ],
+            None,
+            false,
+        )
+        .expect("fixture constructor admission")
+        .unwrap(),
+    ));
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -452,15 +558,15 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less vector-offset round trip");
-    let ProceduralCurveDefinition::VectorOffset {
-        source,
-        parameter_range,
-        offset,
-        roles,
-    } = &round_trip.ir().model.procedural_curves[0].definition()
+    let ProceduralCurveDefinition::VectorOffset(definition_payload) =
+        &round_trip.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected round-trip vector offset")
     };
+    let source = definition_payload.source();
+    let parameter_range = definition_payload.parameter_range();
+    let offset = definition_payload.offset();
+    let roles = definition_payload.roles();
     assert_eq!(*parameter_range, expected_range);
     assert_eq!(*offset, expected_offset);
     assert_eq!(*roles, expected_roles);
@@ -471,7 +577,9 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
         .iter()
         .any(|curve| curve.id == *source));
     assert_eq!(
-        round_trip.ir().model.procedural_curves[0].cache_fit_tolerance(),
+        round_trip.ir().model.procedural_curves[0]
+            .cache_fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
         Some(0.008)
     );
     assert!(matches!(
@@ -482,9 +590,9 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
             .iter()
             .find(|curve| curve.id == *source)
             .map(|curve| &curve.geometry),
-        Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+        Some(cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
             if curve.degree() == 1
-                && curve.knots() == [-2.0, -2.0, 5.0, 5.0]
+                && curve.knots().as_slice() == [-2.0, -2.0, 5.0, 5.0]
                 && curve.control_points() == [
                     cadmpeg_ir::math::Point3::new(-9.0, 2.0, 3.0),
                     cadmpeg_ir::math::Point3::new(5.0, 9.0, -0.5),
@@ -496,21 +604,23 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
 fn generated_subset_curve_decodes_edits_and_writes_source_less() {
     use cadmpeg_ir::geometry::ProceduralCurveDefinition;
 
-    let result = F3dCodec
-        .decode(
-            &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_subset_curve_smbh())),
-            &DecodeOptions::default(),
-        )
-        .expect("generated subset decode");
-    let ProceduralCurveDefinition::Subset {
-        source,
-        parameter_range,
-        sense: _,
-    } = &result.ir().model.procedural_curves[0].definition()
+    let result = EditableDecodeResult::from(
+        F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_subset_curve_smbh())),
+                &DecodeOptions::default(),
+            )
+            .expect("generated subset decode"),
+    );
+    let ProceduralCurveDefinition::Subset(definition_payload) =
+        &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected subset construction")
     };
-    assert_eq!(*parameter_range, [-1.5, 3.5]);
+    let source = definition_payload.source();
+    let parameter_range = definition_payload.parameter_range();
+    let _ = definition_payload.sense();
+    assert_eq!(parameter_range.endpoints(), [-1.5, 3.5]);
     assert!(result
         .ir()
         .model
@@ -521,6 +631,7 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
         (result.ir().model.procedural_curves[0]
             .cache_fit_tolerance()
             .expect("subset fit tolerance")
+            .get()
             - 0.006)
             .abs()
             < 1.0e-12
@@ -528,13 +639,29 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
 
     let mut edited = result.ir().clone();
     edited.model.procedural_curves[0].edit_definition(|definition| {
-        let ProceduralCurveDefinition::Subset {
-            parameter_range, ..
-        } = definition
-        else {
+        let ProceduralCurveDefinition::Subset(definition_payload) = definition else {
             unreachable!()
         };
-        *parameter_range = [-2.0, 4.0];
+        let mut parameter_range_value = definition_payload.parameter_range().endpoints();
+        let parameter_range = &mut parameter_range_value;
+        {
+            *parameter_range = [-2.0, 4.0];
+        };
+        let restored_cache = definition_payload.legacy_cache();
+        *definition_payload =
+            cadmpeg_ir::geometry::curve_payloads::SubsetCurveConstruction::try_new(
+                definition_payload.source().clone(),
+                parameter_range_value,
+                *definition_payload.sense(),
+                None,
+            )
+            .unwrap();
+        match restored_cache {
+            Some(cache) => definition
+                .set_legacy_cache(cache)
+                .expect("the rebuilt construction states the same legacy cache slot"),
+            None => definition.clear_legacy_cache(),
+        }
     });
     let expected_edit = edited.model.procedural_curves[0].definition().clone();
     let mut regenerated = Vec::new();
@@ -550,9 +677,14 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let source_id = match source_less.model.procedural_curves[0].definition() {
-        ProceduralCurveDefinition::Subset { source, .. } => source.clone(),
+        ProceduralCurveDefinition::Subset(definition_payload) => {
+            let source = definition_payload.source();
+            source.clone()
+        }
         _ => unreachable!(),
     };
     source_less
@@ -561,10 +693,21 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
         .iter_mut()
         .find(|curve| curve.id == source_id)
         .expect("subset source carrier")
-        .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
-        origin: cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0),
-        direction: cadmpeg_ir::math::Vector3::new(1.0, -2.0, 0.5),
-    };
+        .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            1,
+            vec![-1.5, -1.5, 3.5, 3.5],
+            vec![
+                cadmpeg_ir::math::Point3::new(8.5, 23.0, 29.25),
+                cadmpeg_ir::math::Point3::new(13.5, 13.0, 31.75),
+            ],
+            None,
+            false,
+        )
+        .expect("fixture constructor admission")
+        .unwrap(),
+    ));
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -573,15 +716,15 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less subset round trip");
-    let ProceduralCurveDefinition::Subset {
-        source,
-        parameter_range,
-        sense: _,
-    } = &round_trip.ir().model.procedural_curves[0].definition()
+    let ProceduralCurveDefinition::Subset(definition_payload) =
+        &round_trip.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected round-trip subset")
     };
-    assert_eq!(*parameter_range, [-1.5, 3.5]);
+    let source = definition_payload.source();
+    let parameter_range = definition_payload.parameter_range();
+    let _ = definition_payload.sense();
+    assert_eq!(parameter_range.endpoints(), [-1.5, 3.5]);
     assert!(round_trip
         .ir()
         .model
@@ -597,8 +740,9 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
         .expect("round-trip subset source");
     assert_eq!(
         source_curve.geometry,
-        cadmpeg_ir::geometry::CurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::NurbsCurve::new(
+        cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![-1.5, -1.5, 3.5, 3.5],
                 vec![
@@ -608,8 +752,9 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
                 None,
                 false,
             )
+            .expect("fixture constructor admission")
             .expect("valid subset source curve")
-        )
+        ))
     );
 }
 
@@ -625,16 +770,22 @@ fn generated_exact_intcurve_preserves_native_construction_source_less() {
         .expect("generated exact intcurve decode");
     assert_eq!(
         result.ir().model.procedural_curves[0].definition(),
-        &ProceduralCurveDefinition::Exact
+        &ProceduralCurveDefinition::Exact {
+            cache: Some(cadmpeg_ir::geometry::LegacyCache::try_new(0.004).expect("fit tolerance"))
+        }
     );
     assert_eq!(
-        result.ir().model.procedural_curves[0].cache_fit_tolerance(),
+        result.ir().model.procedural_curves[0]
+            .cache_fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
         Some(0.004)
     );
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -645,10 +796,14 @@ fn generated_exact_intcurve_preserves_native_construction_source_less() {
         .expect("source-less exact intcurve round trip");
     assert_eq!(
         round_trip.ir().model.procedural_curves[0].definition(),
-        &ProceduralCurveDefinition::Exact
+        &ProceduralCurveDefinition::Exact {
+            cache: Some(cadmpeg_ir::geometry::LegacyCache::try_new(0.004).expect("fit tolerance"))
+        }
     );
     assert_eq!(
-        round_trip.ir().model.procedural_curves[0].cache_fit_tolerance(),
+        round_trip.ir().model.procedural_curves[0]
+            .cache_fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
         Some(0.004)
     );
 }
@@ -667,7 +822,9 @@ fn generated_spline_carriers_write_explicit_forward_sense() {
             .expect("generated spline carrier decode");
         let (mut source_less, _, _) = result.into_parts();
         source_less.source = None;
-        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        source_less
+            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .unwrap();
 
         let mut encoded = Vec::new();
         F3dCodec
@@ -685,7 +842,7 @@ fn generated_spline_carriers_write_explicit_forward_sense() {
             .windows(b"\x0d\x09asmheader".len())
             .position(|window| window == b"\x0d\x09asmheader")
             .expect("generated ASM record table");
-        let records = cadmpeg_asm::sab::frame(
+        let records = cadmpeg_asm::test_support::sab::frame(
             &generated_smbh,
             record_start,
             generated_smbh.len(),
@@ -862,7 +1019,9 @@ fn generated_legacy_intcurve_aliases_decode_and_write_canonically() {
         ));
         let (mut source_less, _, _) = result.into_parts();
         source_less.source = None;
-        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        source_less
+            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .unwrap();
         let mut encoded = Vec::new();
         F3dCodec
             .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -882,24 +1041,33 @@ fn generated_legacy_intcurve_aliases_decode_and_write_canonically() {
 fn generated_compound_intcurve_decodes_and_writes_source_less() {
     use cadmpeg_ir::geometry::ProceduralCurveDefinition;
 
-    let result = F3dCodec
-        .decode(
-            &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_compound_curve_smbh())),
-            &DecodeOptions::default(),
-        )
-        .expect("generated compound intcurve decode");
-    let ProceduralCurveDefinition::Compound {
-        parameters,
-        components,
-    } = &result.ir().model.procedural_curves[0].definition()
+    let result = EditableDecodeResult::from(
+        F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_compound_curve_smbh())),
+                &DecodeOptions::default(),
+            )
+            .expect("generated compound intcurve decode"),
+    );
+    let ProceduralCurveDefinition::Compound(compound) =
+        &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected compound construction")
     };
-    assert_eq!(parameters, &[0.0, 0.5, 1.0]);
+    let parameters = compound.parameters();
+    let components = compound.components();
+
+    assert_eq!(
+        parameters
+            .iter()
+            .map(|value| value.get())
+            .collect::<Vec<_>>(),
+        [0.0, 0.5, 1.0]
+    );
     assert_eq!(
         components
             .iter()
-            .map(|item| item.parameter)
+            .map(|item| item.parameter.get())
             .collect::<Vec<_>>(),
         [-2.0, 4.0]
     );
@@ -914,25 +1082,38 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
         (result.ir().model.procedural_curves[0]
             .cache_fit_tolerance()
             .expect("compound fit tolerance")
+            .get()
             - 0.003)
             .abs()
             < 1.0e-12
     );
-    let component_ids = components.clone();
+    let component_ids = components.to_vec();
 
     let mut edited = result.ir().clone();
     edited.model.procedural_curves[0].edit_definition(|definition| {
-        let ProceduralCurveDefinition::Compound {
-            parameters,
-            components,
-            ..
-        } = definition
-        else {
+        let ProceduralCurveDefinition::Compound(compound) = definition else {
             unreachable!()
         };
-        *parameters = vec![-0.25, 0.75, 1.25];
+        let mut components = compound
+            .components()
+            .iter()
+            .map(cadmpeg_ir::geometry::CompoundComponent::to_raw)
+            .collect::<Vec<_>>();
         for (component, parameter) in components.iter_mut().zip([-3.0, 5.0]) {
             component.parameter = parameter;
+        }
+        let restored_cache = compound.legacy_cache();
+        *compound = cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
+            vec![-0.25, 0.75, 1.25],
+            components,
+            None,
+        )
+        .unwrap();
+        match restored_cache {
+            Some(cache) => definition
+                .set_legacy_cache(cache)
+                .expect("the rebuilt construction states the same legacy cache slot"),
+            None => definition.clear_legacy_cache(),
         }
     });
     let expected_edit = edited.model.procedural_curves[0].definition().clone();
@@ -949,7 +1130,9 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     for (ordinal, component) in component_ids.iter().enumerate() {
         source_less
             .model
@@ -957,10 +1140,19 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
             .iter_mut()
             .find(|curve| curve.id == component.component)
             .expect("compound component curve")
-            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
-            origin: cadmpeg_ir::math::Point3::new(ordinal as f64, -1.0, 2.0),
-            direction: cadmpeg_ir::math::Vector3::new(2.0, 3.0, -4.0),
-        };
+            .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                cadmpeg_ir::math::Point3::new(
+                    f64_from_index(ordinal).expect("fixture index is exact in f64"),
+                    -1.0,
+                    2.0,
+                ),
+                cadmpeg_ir::math::Vector3::new(2.0, 3.0, -4.0)
+                    .unit()
+                    .unwrap(),
+            )
+            .unwrap(),
+        ));
     }
     let mut encoded = Vec::new();
     F3dCodec
@@ -970,18 +1162,25 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less compound intcurve round trip");
-    let ProceduralCurveDefinition::Compound {
-        parameters,
-        components,
-    } = &round_trip.ir().model.procedural_curves[0].definition()
+    let ProceduralCurveDefinition::Compound(compound) =
+        &round_trip.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected round-trip compound construction")
     };
-    assert_eq!(parameters, &[0.0, 0.5, 1.0]);
+    let parameters = compound.parameters();
+    let components = compound.components();
+
+    assert_eq!(
+        parameters
+            .iter()
+            .map(|value| value.get())
+            .collect::<Vec<_>>(),
+        [0.0, 0.5, 1.0]
+    );
     assert_eq!(
         components
             .iter()
-            .map(|item| item.parameter)
+            .map(|item| item.parameter.get())
             .collect::<Vec<_>>(),
         [-2.0, 4.0]
     );
@@ -994,12 +1193,18 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
             .iter()
             .find(|curve| curve.id == component.component)
             .expect("round-trip compound component");
-        let cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve) = &curve.geometry else {
+        let Some(SolvedCurveGeometry::Nurbs(curve)) = curve.geometry.solved() else {
             panic!("compound line component was not lowered to NURBS")
         };
         assert_eq!(curve.degree(), 1);
-        let range = [ordinal as f64 * 0.5, (ordinal + 1) as f64 * 0.5];
-        assert_eq!(curve.knots(), [range[0], range[0], range[1], range[1]]);
+        let range = [
+            f64_from_index(ordinal).expect("fixture index is exact in f64") * 0.5,
+            f64_from_index(ordinal + 1).expect("fixture index is exact in f64") * 0.5,
+        ];
+        assert_eq!(
+            curve.knots().as_slice(),
+            [range[0], range[0], range[1], range[1]]
+        );
     }
 }
 
@@ -1007,48 +1212,79 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
 fn generated_two_sided_offset_decodes_and_writes_source_less() {
     use cadmpeg_ir::geometry::ProceduralCurveDefinition;
 
-    let result = F3dCodec
-        .decode(
-            &mut Cursor::new(f3d_with_smbh(
-                &synthetic_geometry_with_two_sided_offset_curve_smbh(),
-            )),
-            &DecodeOptions::default(),
-        )
-        .expect("generated two-sided offset decode");
-    let ProceduralCurveDefinition::TwoSidedOffset {
-        context,
-        discontinuity_flag,
-        offsets,
-    } = &result.ir().model.procedural_curves[0].definition()
+    let result = EditableDecodeResult::from(
+        F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(
+                    &synthetic_geometry_with_two_sided_offset_curve_smbh(),
+                )),
+                &DecodeOptions::default(),
+            )
+            .expect("generated two-sided offset decode"),
+    );
+    let ProceduralCurveDefinition::TwoSidedOffset(definition_payload) =
+        &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected two-sided offset construction")
     };
-    assert_eq!(context.parameter_range, [-1.0, 2.0]);
+    let context = definition_payload.context();
+    let discontinuity_flag = definition_payload.discontinuity_flag();
+    let offsets = definition_payload.offsets();
+    assert_eq!(context.parameter_range().endpoints(), [-1.0, 2.0]);
     assert!(*discontinuity_flag);
     assert_eq!(
-        context.discontinuities,
+        cadmpeg_ir::scalar::FiniteReal::raw_lanes(context.discontinuities()),
         [vec![0.25, 0.75], vec![], vec![0.5]]
     );
     assert!(context
-        .sides
+        .sides()
         .iter()
         .all(|side| side.surface.is_none() && side.pcurve.is_none()));
-    assert_eq!(*offsets, [-2.0, 4.0]);
+    assert_eq!(offsets.get(), [-2.0, 4.0]);
 
     let mut edited = result.ir().clone();
     edited.model.procedural_curves[0].edit_definition(|definition| {
-        let ProceduralCurveDefinition::TwoSidedOffset {
-            context,
-            discontinuity_flag,
-            offsets,
-        } = definition
-        else {
+        let ProceduralCurveDefinition::TwoSidedOffset(definition_payload) = definition else {
             unreachable!()
         };
-        context.parameter_range = [-2.0, 3.0];
-        context.discontinuities = [vec![0.2, 0.8], vec![], vec![0.6]];
-        *discontinuity_flag = false;
-        *offsets = [-3.0, 5.0];
+        let mut context_value = definition_payload.context().clone();
+        let context = &mut context_value;
+        let mut discontinuity_flag_value = *definition_payload.discontinuity_flag();
+        let discontinuity_flag = &mut discontinuity_flag_value;
+        let mut offsets_value = definition_payload.offsets().get();
+        let offsets = &mut offsets_value;
+        edit::replace(context, |previous| {
+            let sides = previous.sides().clone();
+            let mut range = previous.parameter_range().endpoints();
+            let mut discontinuities =
+                cadmpeg_ir::scalar::FiniteReal::raw_lanes(previous.discontinuities());
+            {
+                let context_parameter_range: &mut [f64; 2] = &mut range;
+                let context_discontinuities: &mut [Vec<f64>; 3] = &mut discontinuities;
+
+                (*context_parameter_range) = [-2.0, 3.0];
+                (*context_discontinuities) = [vec![0.2, 0.8], vec![], vec![0.6]];
+                *discontinuity_flag = false;
+                *offsets = [-3.0, 5.0];
+            };
+            cadmpeg_ir::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+        })
+        .unwrap();
+        let restored_cache = definition_payload.legacy_cache();
+        *definition_payload =
+            cadmpeg_ir::geometry::curve_payloads::TwoSidedOffsetCurveConstruction::try_new(
+                context_value,
+                discontinuity_flag_value,
+                offsets_value,
+                None,
+            )
+            .unwrap();
+        match restored_cache {
+            Some(cache) => definition
+                .set_legacy_cache(cache)
+                .expect("the rebuilt construction states the same legacy cache slot"),
+            None => definition.clear_legacy_cache(),
+        }
     });
     let expected_edit = edited.model.procedural_curves[0].definition().clone();
     let mut regenerated = Vec::new();
@@ -1064,7 +1300,9 @@ fn generated_two_sided_offset_decodes_and_writes_source_less() {
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -1081,27 +1319,36 @@ fn generated_two_sided_offset_decodes_and_writes_source_less() {
 
 #[test]
 fn generated_embedded_offset_supports_decode_and_write_source_less() {
-    use cadmpeg_ir::geometry::{PcurveGeometry, ProceduralCurveDefinition, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{
+        pcurve::PcurveGeometry, ProceduralCurveDefinition, SolvedSurfaceGeometry, SurfaceGeometry,
+    };
 
-    let result = F3dCodec
-        .decode(
-            &mut Cursor::new(f3d_with_smbh(
-                &synthetic_geometry_with_embedded_offset_supports_smbh(),
-            )),
-            &DecodeOptions::default(),
-        )
-        .expect("embedded offset-support decode");
-    let ProceduralCurveDefinition::TwoSidedOffset {
-        context, offsets, ..
-    } = &result.ir().model.procedural_curves[0].definition()
+    let result = EditableDecodeResult::from(
+        F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(
+                    &synthetic_geometry_with_embedded_offset_supports_smbh(),
+                )),
+                &DecodeOptions::default(),
+            )
+            .expect("embedded offset-support decode"),
+    );
+    let ProceduralCurveDefinition::TwoSidedOffset(definition_payload) =
+        &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected embedded two-sided offset")
     };
-    assert_eq!(*offsets, [-1.0, 3.0]);
-    for side in &context.sides {
+    let context = definition_payload.context();
+    let offsets = definition_payload.offsets();
+    assert_eq!(offsets.get(), [-1.0, 3.0]);
+    for side in context.sides() {
         let surface_id = side.surface.as_ref().expect("embedded support surface");
         assert!(result.ir().model.surfaces.iter().any(|surface| {
-            surface.id == *surface_id && matches!(surface.geometry, SurfaceGeometry::Nurbs(_))
+            surface.id == *surface_id
+                && matches!(
+                    surface.geometry,
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
+                )
         }));
         assert!(matches!(
             side.pcurve.as_ref().map(|binding| &binding.geometry),
@@ -1109,28 +1356,59 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
         ));
     }
     assert!(matches!(
-        context.sides[1].pcurve.as_ref().map(|binding| &binding.geometry),
+        context.sides()[1].pcurve.as_ref().map(|binding| &binding.geometry),
         Some(PcurveGeometry::Nurbs { nurbs }) if nurbs.weights().is_some()
     ));
 
     let mut retained = result.ir().clone();
     retained.model.procedural_curves[0].edit_definition(|definition| {
-        let ProceduralCurveDefinition::TwoSidedOffset {
-            context,
-            discontinuity_flag,
-            offsets,
-        } = definition
-        else {
+        let ProceduralCurveDefinition::TwoSidedOffset(definition_payload) = definition else {
             unreachable!()
         };
-        context.parameter_range = [-2.0, 5.0];
-        for (side, discontinuities) in context.discontinuities.iter_mut().enumerate() {
-            for (ordinal, value) in discontinuities.iter_mut().enumerate() {
-                *value = 0.125 * (side + ordinal + 1) as f64;
-            }
+        let mut context_value = definition_payload.context().clone();
+        let context = &mut context_value;
+        let mut discontinuity_flag_value = *definition_payload.discontinuity_flag();
+        let discontinuity_flag = &mut discontinuity_flag_value;
+        let mut offsets_value = definition_payload.offsets().get();
+        let offsets = &mut offsets_value;
+        edit::replace(context, |previous| {
+            let sides = previous.sides().clone();
+            let mut range = previous.parameter_range().endpoints();
+            let mut discontinuities =
+                cadmpeg_ir::scalar::FiniteReal::raw_lanes(previous.discontinuities());
+            {
+                let context_parameter_range: &mut [f64; 2] = &mut range;
+                let context_discontinuities: &mut [Vec<f64>; 3] = &mut discontinuities;
+
+                (*context_parameter_range) = [-2.0, 5.0];
+                for (side, discontinuities) in (*context_discontinuities).iter_mut().enumerate() {
+                    for (ordinal, value) in discontinuities.iter_mut().enumerate() {
+                        *value = 0.125
+                            * f64_from_index(side + ordinal + 1)
+                                .expect("fixture index is exact in f64");
+                    }
+                }
+                *discontinuity_flag = false;
+                *offsets = [-2.5, 4.5];
+            };
+            cadmpeg_ir::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+        })
+        .unwrap();
+        let restored_cache = definition_payload.legacy_cache();
+        *definition_payload =
+            cadmpeg_ir::geometry::curve_payloads::TwoSidedOffsetCurveConstruction::try_new(
+                context_value,
+                discontinuity_flag_value,
+                offsets_value,
+                None,
+            )
+            .unwrap();
+        match restored_cache {
+            Some(cache) => definition
+                .set_legacy_cache(cache)
+                .expect("the rebuilt construction states the same legacy cache slot"),
+            None => definition.clear_legacy_cache(),
         }
-        *discontinuity_flag = false;
-        *offsets = [-2.5, 4.5];
     });
     let expected_retained = retained.model.procedural_curves[0].definition().clone();
     let mut retained_bytes = Vec::new();
@@ -1150,7 +1428,9 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let mut expected = source_less.model.procedural_curves[0].definition().clone();
     let mut encoded = Vec::new();
     F3dCodec
@@ -1160,37 +1440,41 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less embedded offset-support round trip");
-    let ProceduralCurveDefinition::TwoSidedOffset {
-        context: expected_context,
-        ..
-    } = &mut expected
-    else {
+    let ProceduralCurveDefinition::TwoSidedOffset(expected_payload) = &mut expected else {
         unreachable!()
     };
-    let ProceduralCurveDefinition::TwoSidedOffset {
-        context: actual_context,
-        ..
-    } = &round_trip.ir().model.procedural_curves[0].definition()
+    let mut expected_context = expected_payload.context().clone();
+    let ProceduralCurveDefinition::TwoSidedOffset(definition_payload) =
+        &round_trip.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected round-trip embedded offset supports")
     };
+    let actual_context = definition_payload.context();
     for side in 0..2 {
         let expected_surface = source_less
             .model
             .surfaces
             .iter()
-            .find(|surface| Some(&surface.id) == expected_context.sides[side].surface.as_ref())
+            .find(|surface| Some(&surface.id) == expected_context.sides()[side].surface.as_ref())
             .expect("source support surface");
         let actual_surface = round_trip
             .ir()
             .model
             .surfaces
             .iter()
-            .find(|surface| Some(&surface.id) == actual_context.sides[side].surface.as_ref())
+            .find(|surface| Some(&surface.id) == actual_context.sides()[side].surface.as_ref())
             .expect("round-trip support surface");
         assert_eq!(actual_surface.geometry, expected_surface.geometry);
-        expected_context.sides[side].surface = actual_context.sides[side].surface.clone();
+        expected_context.set_surface(side, actual_context.sides()[side].surface.clone());
     }
+    *expected_payload =
+        cadmpeg_ir::geometry::curve_payloads::TwoSidedOffsetCurveConstruction::try_new(
+            expected_context,
+            *expected_payload.discontinuity_flag(),
+            expected_payload.offsets().get(),
+            None,
+        )
+        .unwrap();
     assert_eq!(
         round_trip.ir().model.procedural_curves[0].definition(),
         &expected
@@ -1211,24 +1495,63 @@ fn generated_mixed_offset_supports_write_source_less() {
         .expect("generated embedded offset-support decode");
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let first_support = source_less.model.procedural_curves[0].edit_definition(|definition| {
-        let ProceduralCurveDefinition::TwoSidedOffset { context, .. } = definition else {
+        let ProceduralCurveDefinition::TwoSidedOffset(definition_payload) = definition else {
             panic!("expected two-sided offset construction")
         };
-        context.sides[1].surface = None;
-        context.sides[1].pcurve = None;
-        context.sides[0].pcurve = Some(
-            cadmpeg_ir::geometry::PcurveGeometry::Line {
-                origin: cadmpeg_ir::math::Point2::new(1.0, 2.0),
-                direction: cadmpeg_ir::math::Point2::new(3.0, -1.0),
-            }
-            .into(),
-        );
-        context.sides[0]
-            .surface
-            .clone()
-            .expect("retained first support id")
+        let mut context_value = definition_payload.context().clone();
+        let context = &mut context_value;
+        let edit_result = {
+            edit::with_output(context, |previous| {
+                let mut sides = previous.sides().clone();
+                let range = previous.parameter_range().endpoints();
+                let discontinuities =
+                    cadmpeg_ir::scalar::FiniteReal::raw_lanes(previous.discontinuities());
+                let output = {
+                    let context_sides: &mut [cadmpeg_ir::geometry::IntcurveSupportSide; 2] =
+                        &mut sides;
+
+                    (*context_sides)[1].surface = None;
+                    (*context_sides)[1].pcurve = None;
+                    (*context_sides)[0].pcurve = Some(
+                        cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
+                            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                                cadmpeg_ir::math::Point2::new(1.0, 2.0),
+                                cadmpeg_ir::math::Point2::new(3.0, -1.0),
+                            )
+                            .unwrap(),
+                        )
+                        .into(),
+                    );
+                    (*context_sides)[0]
+                        .surface
+                        .clone()
+                        .expect("retained first support id")
+                };
+                cadmpeg_ir::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+                    .map(|candidate| (candidate, output))
+            })
+            .unwrap()
+        };
+        let restored_cache = definition_payload.legacy_cache();
+        *definition_payload =
+            cadmpeg_ir::geometry::curve_payloads::TwoSidedOffsetCurveConstruction::try_new(
+                context_value,
+                *definition_payload.discontinuity_flag(),
+                definition_payload.offsets().get(),
+                None,
+            )
+            .unwrap();
+        match restored_cache {
+            Some(cache) => definition
+                .set_legacy_cache(cache)
+                .expect("the rebuilt construction states the same legacy cache slot"),
+            None => definition.clear_legacy_cache(),
+        }
+        edit_result
     });
     let expected_surface = source_less
         .model
@@ -1247,17 +1570,19 @@ fn generated_mixed_offset_supports_write_source_less() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less mixed offset-support round trip");
-    let ProceduralCurveDefinition::TwoSidedOffset { context, .. } =
+    let ProceduralCurveDefinition::TwoSidedOffset(definition_payload) =
         &round_trip.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected round-trip two-sided offset construction")
     };
-    assert!(context.sides[1].surface.is_none() && context.sides[1].pcurve.is_none());
+    let context = definition_payload.context();
+    assert!(context.sides()[1].surface.is_none() && context.sides()[1].pcurve.is_none());
     assert_eq!(
-        context.sides[0].pcurve,
+        context.sides()[0].pcurve,
         Some(
-            cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
-                nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+            cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs {
+                nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![
@@ -1267,6 +1592,7 @@ fn generated_mixed_offset_supports_write_source_less() {
                     None,
                     false,
                 )
+                .expect("fixture pcurve construction admission")
                 .unwrap(),
             }
             .into()
@@ -1277,14 +1603,14 @@ fn generated_mixed_offset_supports_write_source_less() {
         .model
         .surfaces
         .iter()
-        .find(|surface| Some(&surface.id) == context.sides[0].surface.as_ref())
+        .find(|surface| Some(&surface.id) == context.sides()[0].surface.as_ref())
         .expect("round-trip first support");
     assert_eq!(actual_surface.geometry, expected_surface);
 }
 
 #[test]
 fn generated_analytic_offset_supports_decode_and_write_source_less() {
-    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, SolvedSurfaceGeometry, SurfaceGeometry};
 
     let result = F3dCodec
         .decode(
@@ -1294,14 +1620,15 @@ fn generated_analytic_offset_supports_decode_and_write_source_less() {
             &DecodeOptions::default(),
         )
         .expect("analytic offset-support decode");
-    let ProceduralCurveDefinition::TwoSidedOffset {
-        context, offsets, ..
-    } = &result.ir().model.procedural_curves[0].definition()
+    let ProceduralCurveDefinition::TwoSidedOffset(definition_payload) =
+        &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected analytic two-sided offset")
     };
-    assert_eq!(*offsets, [-1.5, 2.5]);
-    let supports = context.sides.each_ref().map(|side| {
+    let context = definition_payload.context();
+    let offsets = definition_payload.offsets();
+    assert_eq!(offsets.get(), [-1.5, 2.5]);
+    let supports = context.sides().each_ref().map(|side| {
         result
             .ir()
             .model
@@ -1312,28 +1639,26 @@ fn generated_analytic_offset_supports_decode_and_write_source_less() {
             .geometry
             .clone()
     });
-    assert!(matches!(
-        supports[0],
-        SurfaceGeometry::Cone {
-            radius: 10.0,
-            ratio: 0.4,
-            half_angle,
-            axis,
-            ..
-        } if (half_angle - std::f64::consts::FRAC_PI_6).abs() < 1.0e-12
-            && axis == cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0)
-    ));
-    assert!(matches!(
-        supports[1],
-        SurfaceGeometry::Torus {
-            minor_radius: -7.5,
-            ..
-        }
-    ));
+    assert!(
+        matches!(supports[0], SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
+            if {
+                let axis = cone_surface.frame().axis().as_raw();
+        let half_angle = cone_surface.half_angle().get();
+                (cone_surface.radius().get() == 10.0)
+                    && (cone_surface.ratio().get() == 0.4)
+                    && ((half_angle - std::f64::consts::FRAC_PI_6).abs() < EPS_CONE_ANGLE
+                        && *axis == cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0))
+            })
+    );
+    assert!(
+        matches!(supports[1], SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) if { torus_surface.minor_radius().get() == -7.5 })
+    );
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let expected_geometries = supports;
     let mut encoded = Vec::new();
     F3dCodec
@@ -1343,14 +1668,15 @@ fn generated_analytic_offset_supports_decode_and_write_source_less() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less analytic offset-support round trip");
-    let ProceduralCurveDefinition::TwoSidedOffset {
-        context, offsets, ..
-    } = &round_trip.ir().model.procedural_curves[0].definition()
+    let ProceduralCurveDefinition::TwoSidedOffset(definition_payload) =
+        &round_trip.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected round-trip analytic offset supports")
     };
-    assert_eq!(*offsets, [-1.5, 2.5]);
-    for (side, expected) in context.sides.iter().zip(expected_geometries) {
+    let context = definition_payload.context();
+    let offsets = definition_payload.offsets();
+    assert_eq!(offsets.get(), [-1.5, 2.5]);
+    for (side, expected) in context.sides().iter().zip(expected_geometries) {
         let actual = round_trip
             .ir()
             .model
@@ -1364,25 +1690,28 @@ fn generated_analytic_offset_supports_decode_and_write_source_less() {
 
 #[test]
 fn generated_surface_intersection_decodes_and_writes_source_less() {
-    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, SolvedSurfaceGeometry, SurfaceGeometry};
 
-    let result = F3dCodec
-        .decode(
-            &mut Cursor::new(f3d_with_smbh(
-                &synthetic_geometry_with_surface_intersection_smbh(),
-            )),
-            &DecodeOptions::default(),
-        )
-        .expect("surface intersection decode");
+    let result = EditableDecodeResult::from(
+        F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(
+                    &synthetic_geometry_with_surface_intersection_smbh(),
+                )),
+                &DecodeOptions::default(),
+            )
+            .expect("surface intersection decode"),
+    );
     let ProceduralCurveDefinition::Intersection {
         context,
         discontinuity_flag,
+        ..
     } = &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected surface intersection")
     };
     assert!(*discontinuity_flag);
-    let expected_geometries = context.sides.each_ref().map(|side| {
+    let expected_geometries = context.sides().each_ref().map(|side| {
         result
             .ir()
             .model
@@ -1393,14 +1722,16 @@ fn generated_surface_intersection_decodes_and_writes_source_less() {
             .geometry
             .clone()
     });
-    assert!(matches!(
-        expected_geometries[0],
-        SurfaceGeometry::Cone { half_angle, .. }
-            if (half_angle - std::f64::consts::FRAC_PI_6).abs() < 1.0e-12
-    ));
+    assert!(
+        matches!(expected_geometries[0], SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
+        if {
+            let half_angle = cone_surface.half_angle().get();
+            (half_angle - std::f64::consts::FRAC_PI_6).abs() < EPS_CONE_ANGLE
+        })
+    );
     assert!(matches!(
         expected_geometries[1],
-        SurfaceGeometry::Torus { .. }
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_))
     ));
 
     let mut edited = result.ir().clone();
@@ -1408,12 +1739,25 @@ fn generated_surface_intersection_decodes_and_writes_source_less() {
         let ProceduralCurveDefinition::Intersection {
             context,
             discontinuity_flag,
+            ..
         } = definition
         else {
             unreachable!()
         };
-        context.parameter_range = [-1.0, 2.0];
-        *discontinuity_flag = false;
+        edit::replace(context, |previous| {
+            let sides = previous.sides().clone();
+            let mut range = previous.parameter_range().endpoints();
+            let discontinuities =
+                cadmpeg_ir::scalar::FiniteReal::raw_lanes(previous.discontinuities());
+            {
+                let context_parameter_range: &mut [f64; 2] = &mut range;
+
+                (*context_parameter_range) = [-1.0, 2.0];
+                *discontinuity_flag = false;
+            };
+            cadmpeg_ir::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+        })
+        .unwrap()
     });
     let mut regenerated = Vec::new();
     crate::test_support::plan_inherited_write(&edited, result.source_fidelity(), &mut regenerated)
@@ -1426,12 +1770,15 @@ fn generated_surface_intersection_decodes_and_writes_source_less() {
         ProceduralCurveDefinition::Intersection {
             ref context,
             discontinuity_flag: false,
-        } if context.parameter_range == [-1.0, 2.0]
+        ..
+    } if context.parameter_range().endpoints() == [-1.0, 2.0]
     ));
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -1443,12 +1790,13 @@ fn generated_surface_intersection_decodes_and_writes_source_less() {
     let ProceduralCurveDefinition::Intersection {
         context,
         discontinuity_flag,
+        ..
     } = &round_trip.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected round-trip surface intersection")
     };
     assert!(*discontinuity_flag);
-    for (side, expected) in context.sides.iter().zip(expected_geometries) {
+    for (side, expected) in context.sides().iter().zip(expected_geometries) {
         let actual = round_trip
             .ir()
             .model
@@ -1457,449 +1805,5 @@ fn generated_surface_intersection_decodes_and_writes_source_less() {
             .find(|surface| Some(&surface.id) == side.surface.as_ref())
             .expect("round-trip intersection support");
         assert_eq!(actual.geometry, expected);
-    }
-}
-
-#[test]
-fn generated_projection_decodes_and_writes_source_less() {
-    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, ProjectionRole, ProjectionTail};
-
-    let result = F3dCodec
-        .decode(
-            &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_projection_smbh())),
-            &DecodeOptions::default(),
-        )
-        .expect("projection decode");
-    let ProceduralCurveDefinition::Projection {
-        context,
-        discontinuity_flag,
-        source,
-        tail,
-    } = &result.ir().model.procedural_curves[0].definition()
-    else {
-        panic!("expected projection")
-    };
-    assert!(context.sides.iter().all(|side| side.surface.is_some()));
-    assert!(*discontinuity_flag);
-    assert!(result
-        .ir()
-        .model
-        .curves
-        .iter()
-        .any(|curve| curve.id == *source));
-    assert_eq!(
-        tail,
-        &ProjectionTail::Ranged {
-            flag: true,
-            parameter_range: [-2.0, 3.0],
-            role: ProjectionRole::Surf2,
-        }
-    );
-
-    let mut edited = result.ir().clone();
-    edited.model.procedural_curves[0].edit_definition(|definition| {
-        let ProceduralCurveDefinition::Projection {
-            context,
-            discontinuity_flag,
-            tail,
-            ..
-        } = definition
-        else {
-            unreachable!()
-        };
-        context.parameter_range = [-1.0, 2.0];
-        *discontinuity_flag = false;
-        let ProjectionTail::Ranged {
-            flag,
-            parameter_range,
-            role,
-        } = tail
-        else {
-            unreachable!()
-        };
-        *flag = false;
-        *parameter_range = [-4.0, 5.0];
-        *role = ProjectionRole::Surf1;
-    });
-    let mut regenerated = Vec::new();
-    crate::test_support::plan_inherited_write(&edited, result.source_fidelity(), &mut regenerated)
-        .expect("projection context regeneration");
-    let regenerated = F3dCodec
-        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
-        .expect("regenerated projection decode");
-    assert!(matches!(
-        regenerated.ir().model.procedural_curves[0].definition(),
-        ProceduralCurveDefinition::Projection {
-            ref context,
-            discontinuity_flag: false,
-            tail: ProjectionTail::Ranged {
-                flag: false,
-                parameter_range: [-4.0, 5.0],
-                ref role,
-            },
-            ..
-        } if context.parameter_range == [-1.0, 2.0] && *role == ProjectionRole::Surf1
-    ));
-
-    let (mut source_less, _, _) = result.into_parts();
-    source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
-    let mut encoded = Vec::new();
-    F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut encoded))
-        .expect("source-less projection encode");
-    let round_trip = F3dCodec
-        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
-        .expect("source-less projection round trip");
-    let ProceduralCurveDefinition::Projection {
-        discontinuity_flag,
-        tail,
-        ..
-    } = &round_trip.ir().model.procedural_curves[0].definition()
-    else {
-        panic!("expected round-trip projection")
-    };
-    assert!(*discontinuity_flag);
-    assert_eq!(
-        tail,
-        &ProjectionTail::Ranged {
-            flag: true,
-            parameter_range: [-2.0, 3.0],
-            role: ProjectionRole::Surf2,
-        }
-    );
-}
-
-#[test]
-fn generated_early_close_projection_decodes_and_writes_source_less() {
-    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, ProjectionTail};
-
-    let result = F3dCodec
-        .decode(
-            &mut Cursor::new(f3d_with_smbh(
-                &synthetic_geometry_with_early_close_projection_smbh(),
-            )),
-            &DecodeOptions::default(),
-        )
-        .expect("early-close projection decode");
-    assert!(matches!(
-        result.ir().model.procedural_curves[0].definition(),
-        ProceduralCurveDefinition::Projection {
-            discontinuity_flag: true,
-            tail: ProjectionTail::EarlyClose { flag: true },
-            ..
-        }
-    ));
-
-    let mut edited = result.ir().clone();
-    edited.model.procedural_curves[0].edit_definition(|definition| {
-        let ProceduralCurveDefinition::Projection {
-            tail: ProjectionTail::EarlyClose { flag },
-            ..
-        } = definition
-        else {
-            unreachable!()
-        };
-        *flag = false;
-    });
-    let mut regenerated = Vec::new();
-    crate::test_support::plan_inherited_write(&edited, result.source_fidelity(), &mut regenerated)
-        .expect("early-close projection regeneration");
-    let regenerated = F3dCodec
-        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
-        .expect("regenerated early-close projection decode");
-    assert!(matches!(
-        regenerated.ir().model.procedural_curves[0].definition(),
-        ProceduralCurveDefinition::Projection {
-            tail: ProjectionTail::EarlyClose { flag: false },
-            ..
-        }
-    ));
-
-    let (mut source_less, _, _) = result.into_parts();
-    source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
-    let mut encoded = Vec::new();
-    F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut encoded))
-        .expect("source-less early-close projection encode");
-    let round_trip = F3dCodec
-        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
-        .expect("source-less early-close projection round trip");
-    assert!(matches!(
-        round_trip.ir().model.procedural_curves[0].definition(),
-        ProceduralCurveDefinition::Projection {
-            discontinuity_flag: true,
-            tail: ProjectionTail::EarlyClose { flag: true },
-            ..
-        }
-    ));
-}
-
-#[test]
-fn generated_three_surface_intersection_decodes_and_writes_source_less() {
-    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, SurfaceGeometry};
-
-    let result = F3dCodec
-        .decode(
-            &mut Cursor::new(f3d_with_smbh(
-                &synthetic_geometry_with_three_surface_intersection_smbh(),
-            )),
-            &DecodeOptions::default(),
-        )
-        .expect("three-surface intersection decode");
-    let ProceduralCurveDefinition::ThreeSurfaceIntersection {
-        context,
-        selector,
-        third,
-    } = &result.ir().model.procedural_curves[0].definition()
-    else {
-        panic!("expected three-surface intersection")
-    };
-    assert_eq!(*selector, 7);
-    assert!(context.sides.iter().all(|side| side.surface.is_some()));
-    let third_surface = result
-        .ir()
-        .model
-        .surfaces
-        .iter()
-        .find(|surface| Some(&surface.id) == third.surface.as_ref())
-        .expect("third support surface");
-    assert!(matches!(
-        third_surface.geometry,
-        SurfaceGeometry::Sphere { radius: -12.5, .. }
-    ));
-
-    let mut edited = result.ir().clone();
-    edited.model.procedural_curves[0].edit_definition(|definition| {
-        let ProceduralCurveDefinition::ThreeSurfaceIntersection {
-            context, selector, ..
-        } = definition
-        else {
-            unreachable!()
-        };
-        context.parameter_range = [-1.0, 2.0];
-        *selector = -4;
-    });
-    let mut regenerated = Vec::new();
-    crate::test_support::plan_inherited_write(&edited, result.source_fidelity(), &mut regenerated)
-        .expect("three-surface intersection regeneration");
-    let regenerated = F3dCodec
-        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
-        .expect("regenerated three-surface intersection decode");
-    assert!(matches!(
-        regenerated.ir().model.procedural_curves[0].definition(),
-        ProceduralCurveDefinition::ThreeSurfaceIntersection {
-            ref context,
-            selector: -4,
-            ..
-        } if context.parameter_range == [-1.0, 2.0]
-    ));
-
-    let (mut source_less, _, _) = result.into_parts();
-    source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
-    let mut encoded = Vec::new();
-    F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut encoded))
-        .expect("source-less three-surface intersection encode");
-    let round_trip = F3dCodec
-        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
-        .expect("source-less three-surface intersection round trip");
-    let ProceduralCurveDefinition::ThreeSurfaceIntersection {
-        selector, third, ..
-    } = &round_trip.ir().model.procedural_curves[0].definition()
-    else {
-        panic!("expected round-trip three-surface intersection")
-    };
-    assert_eq!(*selector, 7);
-    let third_surface = round_trip
-        .ir()
-        .model
-        .surfaces
-        .iter()
-        .find(|surface| Some(&surface.id) == third.surface.as_ref())
-        .expect("round-trip third support surface");
-    assert!(matches!(
-        third_surface.geometry,
-        SurfaceGeometry::Sphere { radius: -12.5, .. }
-    ));
-}
-
-#[test]
-fn generated_prefix_only_surface_curves_decode_and_write_source_less() {
-    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, SurfaceCurveFamilyKind};
-
-    for (name, expected_family) in [
-        ("blend_int_cur", SurfaceCurveFamilyKind::Blend),
-        ("surf_int_cur", SurfaceCurveFamilyKind::SurfaceConstrained),
-        ("par_int_cur", SurfaceCurveFamilyKind::Parametric),
-        ("skin_int_cur", SurfaceCurveFamilyKind::Skin),
-    ] {
-        let result = F3dCodec
-            .decode(
-                &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_surface_curve_smbh(
-                    name,
-                ))),
-                &DecodeOptions::default(),
-            )
-            .unwrap_or_else(|error| panic!("{name} decode failed: {error}"));
-        let ProceduralCurveDefinition::SurfaceCurve { family } =
-            &result.ir().model.procedural_curves[0].definition()
-        else {
-            panic!("expected {name} surface curve")
-        };
-        assert_eq!(family.kind(), expected_family);
-        let context = family.context();
-        assert!(context.sides.iter().all(|side| side.surface.is_some()));
-
-        let mut edited = result.ir().clone();
-        edited.model.procedural_curves[0].edit_definition(|definition| {
-            let ProceduralCurveDefinition::SurfaceCurve { family } = definition else {
-                unreachable!()
-            };
-            family.context_mut().parameter_range = [-1.0, 2.0];
-        });
-        let mut regenerated = Vec::new();
-        crate::test_support::plan_inherited_write(
-            &edited,
-            result.source_fidelity(),
-            &mut regenerated,
-        )
-        .unwrap_or_else(|error| panic!("{name} context regeneration failed: {error}"));
-        let regenerated = F3dCodec
-            .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
-            .unwrap_or_else(|error| panic!("regenerated {name} decode failed: {error}"));
-        assert!(matches!(
-            regenerated.ir().model.procedural_curves[0].definition(),
-            ProceduralCurveDefinition::SurfaceCurve { ref family }
-                if family.context().parameter_range == [-1.0, 2.0]
-        ));
-
-        let (mut source_less, _, _) = result.into_parts();
-        source_less.source = None;
-        source_less.set_native_unknowns("f3d", &[]).unwrap();
-        let mut encoded = Vec::new();
-        F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-            .and_then(|plan| plan.write_to(&mut encoded))
-            .unwrap_or_else(|error| panic!("{name} source-less encode failed: {error}"));
-        let round_trip = F3dCodec
-            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
-            .unwrap_or_else(|error| panic!("{name} round trip failed: {error}"));
-        assert!(matches!(
-            &round_trip.ir().model.procedural_curves[0].definition(),
-            ProceduralCurveDefinition::SurfaceCurve { family } if family.kind() == expected_family
-        ));
-    }
-}
-
-#[test]
-fn generated_silhouette_curves_decode_and_write_source_less() {
-    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, SilhouetteKind};
-
-    for (name, draft_factor) in [
-        ("silh_int_cur", None),
-        ("para_silh_int_cur", None),
-        ("taper_silh_int_cur", Some(0.35)),
-    ] {
-        let result = F3dCodec
-            .decode(
-                &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_silhouette_smbh(
-                    name,
-                    draft_factor,
-                ))),
-                &DecodeOptions::default(),
-            )
-            .unwrap_or_else(|error| panic!("{name} decode failed: {error}"));
-        let ProceduralCurveDefinition::Silhouette {
-            silhouette,
-            cast_surface,
-            light_direction,
-            ..
-        } = &result.ir().model.procedural_curves[0].definition()
-        else {
-            panic!("expected {name} silhouette")
-        };
-        assert!(result
-            .ir()
-            .model
-            .surfaces
-            .iter()
-            .any(|surface| surface.id == *cast_surface));
-        assert_eq!(
-            *light_direction,
-            cadmpeg_ir::math::Vector3::new(0.0, -1.0, 0.0)
-        );
-        match (silhouette, draft_factor) {
-            (SilhouetteKind::Standard, None) if name == "silh_int_cur" => {}
-            (SilhouetteKind::Parametric, None) if name == "para_silh_int_cur" => {}
-            (
-                SilhouetteKind::Taper {
-                    draft_factor: actual,
-                },
-                Some(expected),
-            ) => {
-                assert_eq!(*actual, expected);
-            }
-            _ => panic!("wrong silhouette family for {name}"),
-        }
-
-        let mut edited = result.ir().clone();
-        edited.model.procedural_curves[0].edit_definition(|definition| {
-            let ProceduralCurveDefinition::Silhouette {
-                silhouette,
-                light_direction,
-                ..
-            } = definition
-            else {
-                unreachable!()
-            };
-            *light_direction = cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0);
-            if let SilhouetteKind::Taper { draft_factor } = silhouette {
-                *draft_factor = -0.2;
-            }
-        });
-        let mut regenerated = Vec::new();
-        crate::test_support::plan_inherited_write(
-            &edited,
-            result.source_fidelity(),
-            &mut regenerated,
-        )
-        .unwrap_or_else(|error| panic!("{name} regeneration failed: {error}"));
-        let regenerated = F3dCodec
-            .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
-            .unwrap_or_else(|error| panic!("regenerated {name} decode failed: {error}"));
-        assert!(matches!(
-            regenerated.ir().model.procedural_curves[0].definition(),
-            ProceduralCurveDefinition::Silhouette {
-                ref silhouette,
-                light_direction,
-                ..
-            } if *light_direction == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
-                && match silhouette {
-                    SilhouetteKind::Taper { draft_factor } => *draft_factor == -0.2,
-                    _ => true,
-                }
-        ));
-
-        let (mut source_less, _, _) = result.into_parts();
-        source_less.source = None;
-        source_less.set_native_unknowns("f3d", &[]).unwrap();
-        let mut encoded = Vec::new();
-        F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-            .and_then(|plan| plan.write_to(&mut encoded))
-            .unwrap_or_else(|error| panic!("{name} source-less encode failed: {error}"));
-        let round_trip = F3dCodec
-            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
-            .unwrap_or_else(|error| panic!("{name} round trip failed: {error}"));
-        assert!(matches!(
-            round_trip.ir().model.procedural_curves[0].definition(),
-            ProceduralCurveDefinition::Silhouette { .. }
-        ));
     }
 }

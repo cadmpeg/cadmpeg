@@ -3,25 +3,40 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+use cadmpeg_test_support::{wire, EditableDecodeResult};
+
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
-use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
-use cadmpeg_ir::report::{LossCategory, Severity};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+};
+use cadmpeg_ir::report::{loss::LossCategory, Severity};
 
-use crate::test_support::*;
+use crate::test_support::test_a5a8::{a8_catpart, inner_no_directory_a8_catpart};
+use crate::test_support::test_annotations::assert_every_entity_has_v1_annotation;
+use crate::test_support::test_container::{
+    fbb_only_catpart, fbb_only_quad_catpart, fbb_only_quad_unmatched_edge_catpart,
+    standard_catpart, tetrahedron_topology_catpart, zero_entity_catpart,
+    zero_entity_cylinder_catpart, zero_entity_cylinder_parametric_support_catpart,
+};
+use crate::test_support::test_e5::e5_catpart;
+use crate::test_support::test_topology::fbb_only_quad_unmatched_edge_topology_stream;
 use crate::variant::Variant;
 use crate::CatiaCodec;
 
-fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
-    CatiaCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("synthesized CATPart should decode")
+fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
+    EditableDecodeResult::from(
+        CatiaCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("synthesized CATPart should decode"),
+    )
 }
 
-fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+fn assert_valid(result: &EditableDecodeResult) {
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
     assert_every_entity_has_v1_annotation(result.ir(), &result.source_fidelity().annotations);
     assert!(result.ir().native.namespace("catia").is_some());
@@ -30,7 +45,10 @@ fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
 #[test]
 fn standard_nested_pipeline_aligns_detection_inspection_and_decode() {
     let bytes = standard_catpart();
-    assert_eq!(CatiaCodec.detect(&bytes), Confidence::High);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&CatiaCodec, &bytes),
+        Confidence::High
+    );
 
     let summary = CatiaCodec
         .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
@@ -55,8 +73,8 @@ fn standard_nested_pipeline_aligns_detection_inspection_and_decode() {
     assert_eq!(result.ir().model.surfaces.len(), 2);
     assert!(result
         .source_fidelity()
-        .retained_records
-        .iter()
+        .retained_records()
+        .values()
         .any(|record| record.data().is_some()));
     assert_valid(&result);
 }
@@ -70,15 +88,17 @@ fn standard_nested_pipeline_builds_a_valid_radial_topology_graph() {
     assert_eq!(result.ir().model.edges.len(), 6);
     assert_eq!(result.ir().model.coedges.len(), 12);
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::ATTEMPTED_STANDARD_TOPOLOGY_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::ATTEMPTED_STANDARD_TOPOLOGY_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT.as_str()
+        ),
         1
     );
     assert!(!result.report().losses.iter().any(|loss| {
@@ -94,7 +114,10 @@ fn standard_nested_pipeline_builds_a_valid_radial_topology_graph() {
 #[test]
 fn fbb_only_pipeline_transfers_carriers_without_inventing_topology() {
     let bytes = fbb_only_catpart();
-    let scan = crate::container::scan_bytes(bytes.clone());
+    let scan = crate::test_support::with_service_context(|ctx| {
+        crate::container::scan_bytes(ctx, bytes.clone())
+    })
+    .expect("service resource budget");
     assert_eq!(scan.variant, Variant::FbbOnly);
     assert!(scan.census.fbb_runs > 0);
     assert_eq!(scan.census.edge_delimiters, 0);
@@ -112,7 +135,10 @@ fn fbb_only_pipeline_transfers_carriers_without_inventing_topology() {
 #[test]
 fn fbb_only_pipeline_attaches_complete_boundary_topology() {
     let bytes = fbb_only_quad_catpart();
-    let scan = crate::container::scan_bytes(bytes.clone());
+    let scan = crate::test_support::with_service_context(|ctx| {
+        crate::container::scan_bytes(ctx, bytes.clone())
+    })
+    .expect("service resource budget");
     assert_eq!(scan.variant, Variant::FbbOnly);
     assert_eq!(scan.census.edge_delimiters, 0);
 
@@ -125,9 +151,10 @@ fn fbb_only_pipeline_attaches_complete_boundary_topology() {
     assert_eq!(result.ir().model.edges.len(), 4);
     assert_eq!(result.ir().model.coedges.len(), 4);
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT.as_str()
+        ),
         1
     );
     assert!(!result.report().losses.iter().any(|loss| {
@@ -143,16 +170,21 @@ fn fbb_only_pipeline_attaches_complete_boundary_topology() {
 #[test]
 fn fbb_only_pipeline_solves_an_unmatched_complete_run_with_mesh_incidence() {
     let topology = fbb_only_quad_unmatched_edge_topology_stream();
-    assert!(crate::families::standard::topology::parse_fbb(&topology).is_none());
+    assert!(crate::test_support::with_service_context(|ctx| {
+        crate::families::standard::topology::parse_fbb(ctx, &topology)
+    })
+    .expect("service resource budget")
+    .is_none());
 
     let result = decode(fbb_only_quad_unmatched_edge_catpart());
     assert!(result.report().geometry_transferred());
     assert_eq!(result.ir().model.faces.len(), 1);
     assert_eq!(result.ir().model.edges.len(), 4);
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT.as_str()
+        ),
         1
     );
     assert!(!result.report().losses.iter().any(|loss| {
@@ -169,18 +201,23 @@ fn fbb_only_pipeline_solves_an_unmatched_complete_run_with_mesh_incidence() {
 fn zero_entity_pipeline_binds_parametric_support_without_a_cached_curve() {
     let bytes = zero_entity_cylinder_parametric_support_catpart();
     assert_eq!(
-        crate::container::scan_bytes(bytes.clone()).variant,
+        crate::test_support::with_service_context(|ctx| crate::container::scan_bytes(
+            ctx,
+            bytes.clone()
+        ))
+        .expect("service resource budget")
+        .variant,
         Variant::ZeroEntity
     );
 
     let result = decode(bytes);
     assert!(result.report().geometry_transferred());
-    assert!(result
-        .ir()
-        .model
-        .surfaces
-        .iter()
-        .any(|surface| { matches!(surface.geometry, SurfaceGeometry::Cylinder { .. }) }));
+    assert!(result.ir().model.surfaces.iter().any(|surface| {
+        matches!(
+            surface.geometry,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_))
+        )
+    }));
     assert!(result
         .ir()
         .model
@@ -188,8 +225,9 @@ fn zero_entity_pipeline_binds_parametric_support_without_a_cached_curve() {
         .iter()
         .any(|curve| { matches!(curve.geometry, CurveGeometry::Procedural { .. }) }));
     assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::TRANSFERRED_ZERO_ENTITY_PARAMETRIC_SURFACE_CURVE_COUNT
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_ZERO_ENTITY_PARAMETRIC_SURFACE_CURVE_COUNT.as_str()
         ),
         1
     );
@@ -199,18 +237,21 @@ fn zero_entity_pipeline_binds_parametric_support_without_a_cached_curve() {
 #[test]
 fn e5_pipeline_uses_the_coherent_record_stream_over_the_nested_spine() {
     let bytes = e5_catpart();
-    let scan = crate::container::scan_bytes(bytes.clone());
+    let scan = crate::test_support::with_service_context(|ctx| {
+        crate::container::scan_bytes(ctx, bytes.clone())
+    })
+    .expect("service resource budget");
     assert_eq!(scan.variant, Variant::E5Stream);
-    assert!(crate::container::e5_record_stream(&scan.data).is_some());
+    assert!(scan.e5_record_range.is_some());
 
     let result = decode(bytes);
     assert!(result.report().geometry_transferred());
-    assert!(result
-        .ir()
-        .model
-        .curves
-        .iter()
-        .any(|curve| { matches!(curve.geometry, CurveGeometry::Circle { .. }) }));
+    assert!(result.ir().model.curves.iter().any(|curve| {
+        matches!(
+            curve.geometry,
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))
+        )
+    }));
     assert!(result.report().notes.iter().any(|note| note.contains("E5")));
     assert_valid(&result);
 }
@@ -218,17 +259,20 @@ fn e5_pipeline_uses_the_coherent_record_stream_over_the_nested_spine() {
 #[test]
 fn float_packed_pipeline_recovers_the_external_a8_control_grid() {
     let bytes = a8_catpart();
-    let scan = crate::container::scan_bytes(bytes.clone());
+    let scan = crate::test_support::with_service_context(|ctx| {
+        crate::container::scan_bytes(ctx, bytes.clone())
+    })
+    .expect("service resource budget");
     assert_eq!(scan.variant, Variant::FloatPackedInnerNoFbb);
 
     let result = decode(bytes);
     assert!(result.report().geometry_transferred());
-    assert!(result
-        .ir()
-        .model
-        .surfaces
-        .iter()
-        .any(|surface| { matches!(surface.geometry, SurfaceGeometry::Nurbs { .. }) }));
+    assert!(result.ir().model.surfaces.iter().any(|surface| {
+        matches!(
+            surface.geometry,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs { .. })
+        )
+    }));
     assert_eq!(
         result.ir().model.surfaces[0]
             .source_object
@@ -249,15 +293,17 @@ fn container_only_pipeline_retains_each_variant_without_semantic_transfer() {
         a8_catpart(),
     ];
     for bytes in fixtures {
-        let result = CatiaCodec
-            .decode(
-                &mut Cursor::new(bytes),
-                &DecodeOptions {
-                    container_only: true,
-                    ..DecodeOptions::default()
-                },
-            )
-            .expect("container-only CATPart decode");
+        let result = EditableDecodeResult::from(
+            CatiaCodec
+                .decode(
+                    &mut Cursor::new(bytes),
+                    &DecodeOptions {
+                        container_only: true,
+                        ..DecodeOptions::default()
+                    },
+                )
+                .expect("container-only CATPart decode"),
+        );
         assert!(result.report().container_only());
         assert!(!result.report().geometry_transferred());
         assert!(result.ir().model.points.is_empty());
@@ -278,6 +324,110 @@ fn assert_entity_resource_limit(error: &cadmpeg_ir::DecodeFailure) {
         ),
         "{error:?}"
     );
+}
+
+#[test]
+fn container_only_raw_payload_refuses_entity_before_copy() {
+    let mut options = DecodeOptions {
+        container_only: true,
+        ..DecodeOptions::default()
+    };
+    options.policy.limits.max_entities = 0;
+    let error = CatiaCodec
+        .decode(&mut Cursor::new(standard_catpart()), &options)
+        .expect_err("one retained record exceeds zero entities");
+    assert!(matches!(error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+                && limit.operation == "admit CATIA retained source record"));
+}
+
+#[test]
+fn container_only_raw_payload_refuses_retained_bytes_before_copy() {
+    let bytes = standard_catpart();
+    let retained_len = crate::test_support::with_service_context(|ctx| {
+        crate::container::scan_bytes(ctx, bytes.clone())
+    })
+    .expect("service resource budget")
+    .brep
+    .expect("standard B-rep")
+    .len();
+    let mut cap = u64::try_from(retained_len - 1).expect("small fixture");
+    let mut reached = false;
+    for _ in 0..512 {
+        let mut options = DecodeOptions {
+            container_only: true,
+            ..DecodeOptions::default()
+        };
+        options.policy.limits.max_retained_bytes = cap;
+        match CatiaCodec.decode(&mut Cursor::new(bytes.clone()), &options) {
+            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                limit,
+            ))) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.operation == "retain CATIA raw payload" =>
+            {
+                reached = true;
+                break;
+            }
+            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                limit,
+            ))) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                cap = limit
+                    .used
+                    .checked_add(limit.additional)
+                    .expect("bounded fixture");
+            }
+            other => panic!("raw payload limit not reached: {other:?}"),
+        }
+    }
+    assert!(reached, "raw payload limit was not reached");
+}
+
+#[test]
+fn full_route_raw_payload_refuses_entity_before_copy() {
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_entities = 0;
+    let error = CatiaCodec
+        .decode(&mut Cursor::new(standard_catpart()), &options)
+        .expect_err("one retained record exceeds zero entities");
+    assert!(matches!(error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+                && limit.operation == "admit CATIA retained source record"));
+}
+
+#[test]
+fn full_route_raw_payload_refuses_retained_bytes_before_copy() {
+    let bytes = standard_catpart();
+    let retained_len = crate::test_support::with_service_context(|ctx| {
+        crate::container::scan_bytes(ctx, bytes.clone())
+    })
+    .expect("service resource budget")
+    .brep
+    .expect("standard B-rep")
+    .len();
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_retained_bytes =
+        u64::try_from(retained_len - 1).expect("small fixture");
+    for _ in 0..1024 {
+        let error = CatiaCodec
+            .decode(&mut Cursor::new(bytes.clone()), &options)
+            .expect_err("retained copy exceeds byte limit");
+        let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+            error
+        else {
+            panic!("expected a retained-byte resource refusal");
+        };
+        assert_eq!(
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes
+        );
+        if limit.operation == "retain CATIA raw payload" {
+            return;
+        }
+        options.policy.limits.max_retained_bytes = limit.used + limit.additional;
+    }
+    panic!("adaptive retained-byte cap did not reach the raw payload copy");
 }
 
 #[test]
@@ -312,21 +462,25 @@ fn every_decode_path_populates_v1_annotations() {
         inner_no_directory_a8_catpart(),
     ];
     for fixture in fixtures {
-        let decoded = CatiaCodec
-            .decode(&mut Cursor::new(fixture), &DecodeOptions::default())
-            .unwrap();
+        let decoded = EditableDecodeResult::from(
+            CatiaCodec
+                .decode(&mut Cursor::new(fixture), &DecodeOptions::default())
+                .unwrap(),
+        );
         assert_every_entity_has_v1_annotation(decoded.ir(), &decoded.source_fidelity().annotations);
     }
 
-    let container_only = CatiaCodec
-        .decode(
-            &mut Cursor::new(standard_catpart()),
-            &DecodeOptions {
-                container_only: true,
-                ..DecodeOptions::default()
-            },
-        )
-        .unwrap();
+    let container_only = EditableDecodeResult::from(
+        CatiaCodec
+            .decode(
+                &mut Cursor::new(standard_catpart()),
+                &DecodeOptions {
+                    container_only: true,
+                    ..DecodeOptions::default()
+                },
+            )
+            .unwrap(),
+    );
     assert_every_entity_has_v1_annotation(
         container_only.ir(),
         &container_only.source_fidelity().annotations,
@@ -336,7 +490,7 @@ fn every_decode_path_populates_v1_annotations() {
 #[test]
 fn fuzz_crash_container_bytes_do_not_panic() {
     let bytes: &[u8] = include_bytes!("test_support/fuzz_catia_container_crash.bin");
-    let _ = CatiaCodec.detect(bytes);
-    let _ = CatiaCodec.inspect(&mut Cursor::new(bytes), &InspectOptions::default());
-    let _ = CatiaCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default());
+    let _ = cadmpeg_test_support::detection::confidence(&CatiaCodec, bytes);
+    let _probe = CatiaCodec.inspect(&mut Cursor::new(bytes), &InspectOptions::default());
+    let _probe = CatiaCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default());
 }

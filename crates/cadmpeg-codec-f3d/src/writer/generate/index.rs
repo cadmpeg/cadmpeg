@@ -9,20 +9,20 @@ use cadmpeg_asm::brep::records::{
     TolerantVertexTail, TransformHints, VertexOwnership, WireTopology,
 };
 
-pub(crate) struct NativeGenerationIndex<'a> {
-    pub(crate) edge_continuities: HashMap<&'a str, &'a EdgeContinuity>,
-    pub(crate) edge_ownerships: &'a [EdgeOwnership],
-    pub(crate) face_sidedness: HashMap<&'a str, &'a FaceSidedness>,
-    pub(crate) tolerant_coedges: HashMap<&'a str, &'a TolerantCoedgeParameters>,
-    pub(crate) tolerant_edges: HashMap<&'a str, &'a TolerantEdgeTail>,
-    pub(crate) tolerant_vertices: HashMap<&'a str, &'a TolerantVertexTail>,
-    pub(crate) transform_hints: HashMap<&'a str, &'a TransformHints>,
-    pub(crate) vertex_ownerships: HashMap<&'a str, &'a VertexOwnership>,
-    pub(crate) wires_by_shell: HashMap<&'a str, Vec<&'a WireTopology>>,
+pub(super) struct NativeGenerationIndex<'a> {
+    pub(super) edge_continuities: HashMap<&'a str, &'a EdgeContinuity>,
+    pub(super) edge_ownerships: &'a [EdgeOwnership],
+    pub(super) face_sidedness: HashMap<&'a str, &'a FaceSidedness>,
+    pub(super) tolerant_coedges: HashMap<&'a str, &'a TolerantCoedgeParameters>,
+    pub(super) tolerant_edges: HashMap<&'a str, &'a TolerantEdgeTail>,
+    pub(super) tolerant_vertices: HashMap<&'a str, &'a TolerantVertexTail>,
+    pub(super) transform_hints: HashMap<&'a str, &'a TransformHints>,
+    pub(super) vertex_ownerships: HashMap<&'a str, &'a VertexOwnership>,
+    pub(super) wires_by_shell: HashMap<&'a str, Vec<&'a WireTopology>>,
 }
 
 impl<'a> NativeGenerationIndex<'a> {
-    pub(crate) fn new(native: &'a F3dNative) -> Self {
+    pub(super) fn new(native: &'a F3dNative) -> Self {
         macro_rules! first_by_id {
             ($items:expr, $field:ident) => {{
                 let mut map = HashMap::new();

@@ -11,8 +11,8 @@
 //!
 //! Document state machine: [`draft::ModelDraft`] commits into [`CadIr`];
 //! [`validate_neutral()`] then yields a
-//! [`ValidationReport`]. Decode produces [`DecodeResult`] without embedding
-//! validation. Start a hand-built document with [`CadIr::empty`], populate its
+//! [`report::check::ValidationReport`]. Decode produces [`DecodeResult`]
+//! without embedding validation. Start a hand-built document with [`CadIr::empty`], populate its
 //! arenas, call [`CadIr::finalize`] to establish canonical identity order, then
 //! call [`validate_neutral()`]. Use [`CadIr::to_canonical_json`] (sorted view)
 //! and [`CadIr::from_json`] for the versioned JSON form, and [`diff()`] for
@@ -23,7 +23,8 @@
 //! enumerates a container, and decoding returns a [`DecodeResult`].
 //! [`DecodeFailure`] separates backend [`cadmpeg_core::CodecError`] values from
 //! strict-policy refusals that retain the completed report. A successful decode
-//! reports partial transfer through [`DecodeReport`] and [`LossNote`].
+//! reports partial transfer through [`report::decode::DecodeReport`] and
+//! [`report::loss::LossNote`].
 //!
 //! [`Annotations`] records source locations and fidelity by globally unique
 //! entity ID. An omitted exactness entry means byte-exact; explicit entries
@@ -33,6 +34,9 @@
 //! Product components, occurrence instancing, and assembly joints have neutral arenas.
 //! Product prototypes and occurrence trees retain assembly identity and
 //! placement. Joint and mate constraints are reserved.
+
+#[macro_use]
+mod identity_rewrite;
 
 pub mod annotations;
 pub mod appearance;
@@ -66,6 +70,7 @@ pub mod products;
 mod provenance;
 pub mod references;
 pub mod report;
+pub mod scalar;
 pub mod schema;
 pub mod semantic_annotations;
 pub mod sketches;
@@ -89,14 +94,16 @@ pub use document::{ArenaName, CadIr, CensusKey, SourceMeta, IR_VERSION};
 pub use draft::ModelDraft;
 pub use features::{
     BodyMember, BodyMembers, BodyRetentionMode, BodySelection, BodyTrimSide, CoilConstruction,
-    CoilExtent, CoilPlacement, CoilResult, CoilSection, CoilSectionPlacement, ConfigurationBodies,
-    ConfigurationEvaluation, ConfigurationId, ConfigurationName, CurveProjectionDirection,
+    CoilExtent, CoilPlacement, CoilResult, CoilSection, CoilSectionPlacement,
+    ConfigurationEvaluation, ConfigurationId, CurveProjectionDirection,
     CurveProjectionDirectionState, DesignConfiguration, DesignParameter, FaceMotion, Feature,
-    FeatureDefinition, FeatureId, LoftGuidance, ParameterId, ParameterPmi, ParameterValue,
-    PmiDimensionSubtype, ScaleCenter, ScaleFactors,
+    FeatureDefinition, FeatureId, FeatureOperation, LoftGuidance, ParameterId, ParameterPmi,
+    ParameterValue, PmiDimensionSubtype, ScaleCenter, ScaleFactors,
 };
-pub use ids::{format_identity, is_valid_identity, IdentityError};
-pub use native::{LossCount, Native, NativeConvertError, NativeNamespace, NativeRecord};
+pub use ids::{is_valid_identity, IdentityError};
+pub use native::{
+    LossCount, Native, NativeConvertError, NativeField, NativeNamespace, NativeRecord,
+};
 pub use pmi::{
     DatumReference, DatumTargetForm, DimensionKind, DimensionTolerance, GeometricToleranceKind,
     PmiAnnotation, PmiDefinition, PmiQuantity, PmiTarget, PmiValue,
@@ -108,23 +115,17 @@ pub use presentation::{
 pub use presentation::{PresentationItem, PresentationLayer};
 pub use products::{
     AssemblyGraph, AssemblyGraphError, AssemblyJoint, CopyOnChange, CopyOnChangePolicy,
-    ExternalDocument, ExternalDocumentReference, JointConnector, JointId, JointLimits,
-    JointOperand, JointOperands, LinkState, NonEmptyString, Occurrence, OperandContainer,
-    PairedJointKind, ProductDefinition, ProductDefinitionKind, PrototypeReference,
+    ExternalDocument, JointConnector, JointId, JointLimits, JointOperand, JointOperands,
+    LinkMember, LinkState, Occurrence, OperandContainer, PairedJointKind, ProductDefinition,
+    ProductDefinitionKind, PrototypeReference,
 };
-/// Source location attached to a [`LossNote`].
+/// Source location attached to a [`report::loss::LossNote`].
 pub use provenance::{
-    AnnotationLocation, AnnotationProvenance, CodecFormat, Exactness, Provenance, SourceLocation,
-    SourceObjectAssociation, SourceProvenance,
+    AnnotationLocation, AnnotationProvenance, CodecFormat, EmptyStreamName, Exactness, Provenance,
+    SourceLocation, SourceObjectAssociation, SourceProvenance, StaticStreamName, StreamName,
 };
 pub use references::{ReferenceSelection, ReferenceTarget};
 
-pub use report::{
-    CensusBasis, Check, Coverage, CoverageKey, DecodeReport, DecodeTransfer, EntityCensus,
-    ExportReport, FidelityResolution, Finding, HexByteCoverageKey, IndexedCoverageKey,
-    LossCategory, LossKind, LossNote, LossTaxonomy, Severity, StrictConsequence, ValidationReport,
-    WritePath, SHARED_LOSS_NAMESPACE,
-};
 pub use sketches::{
     NativeOperandField, Sketch, SketchAxis, SketchConstraint, SketchConstraintDefinition,
     SketchConstraintId, SketchCoordinateAxis, SketchDistanceMeasurement, SketchDistancePair,
@@ -133,8 +134,8 @@ pub use sketches::{
     SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchId, SpatialSketchProfile,
 };
 pub use source_fidelity::{
-    decode_sidecar_path, DecodeSidecar, DecodeSidecarParseError, RetainedSourceRecord,
-    SourceFidelity,
+    decode_sidecar_path, DecodeSidecar, DecodeSidecarParseError, RetainedBytes,
+    RetainedSourceRecord, SourceFidelity,
 };
 pub use spreadsheets::{
     CellAddress, Spreadsheet, SpreadsheetCell, SpreadsheetDimension, SpreadsheetId,
@@ -151,9 +152,14 @@ pub use validate::admit::{
     CATIA_ADMISSION_CHECKS, DRAFT_CORE_CHECKS, RHINO_DRAFT_CHECKS, RHINO_INSTANCE_CHECKS,
     SLDPRT_EXPORT_PRECONDITION_CHECKS,
 };
-pub use validate::{entity_census, validate_neutral, validate_neutral_with_source_fidelity};
+pub use validate::{validate_neutral, validate_neutral_with_source_fidelity};
 
 pub mod unknown;
+
+/// Serde default for a flag whose absent form is `true`.
+const fn default_true() -> bool {
+    true
+}
 
 /// Generate the JSON Schema for the current [`CadIr`] representation.
 ///
@@ -173,3 +179,6 @@ pub fn decode_sidecar_json_schema() -> schemars::Schema {
 
 #[cfg(test)]
 mod integration_tests;
+
+#[cfg(test)]
+mod test_support;

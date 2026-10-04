@@ -1,34 +1,5 @@
 {
   "container_kind": "sldprt-blocks",
-  "dialects": {
-    "extra": [
-      {
-        "admission": "admitted",
-        "declared": {
-          "carrier": "block@8:Contents/Config-0-Partition+0",
-          "schema": "SCH_SW_33103_11000"
-        },
-        "dialect": "parasolid:sch-sw-33103",
-        "format": "parasolid",
-        "instance": "block@8:Contents/Config-0-Partition+0"
-      },
-      {
-        "admission": "admitted",
-        "declared": {
-          "carrier": "block@250:Contents/Config-1-Partition+0",
-          "schema": "SCH_SW_33103_11000"
-        },
-        "dialect": "parasolid:sch-sw-33103",
-        "format": "parasolid",
-        "instance": "block@250:Contents/Config-1-Partition+0"
-      }
-    ],
-    "primary": {
-      "admission": "residual",
-      "dialect": "sldprt:unknown",
-      "format": "sldprt"
-    }
-  },
   "entries": [
     {
       "attributes": {
@@ -39,11 +10,11 @@
         "sha256": "1aef5bfb85ee689fb43677c2a08cdc34b4ef129b71fd78d4ff31461d1f8ac4e4",
         "type_id": "0x00000020"
       },
-      "compressed_size": 189,
       "compression": "deflate",
+      "expanded": 544,
       "name": "Contents/Config-0-Partition",
       "role": "block",
-      "uncompressed_size": 544
+      "stored": 189
     },
     {
       "attributes": {
@@ -54,20 +25,50 @@
         "sha256": "f1a8fe52e8ff5bd90102d63c54f5422270ea709ca8a10098e858b60e9f9b279a",
         "type_id": "0x00000021"
       },
-      "compressed_size": 194,
       "compression": "deflate",
+      "expanded": 544,
       "name": "Contents/Config-1-Partition",
       "role": "block",
-      "uncompressed_size": 544
+      "stored": 194
     }
   ],
-  "format": "sldprt",
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [
+        {
+          "admission": "admitted",
+          "declared": {
+            "carrier": "block@8:Contents/Config-0-Partition+0",
+            "schema": "SCH_SW_33103_11000"
+          },
+          "dialect": "parasolid:sch-sw-33103",
+          "instance": "block@8:Contents/Config-0-Partition+0"
+        },
+        {
+          "admission": "admitted",
+          "declared": {
+            "carrier": "block@250:Contents/Config-1-Partition+0",
+            "schema": "SCH_SW_33103_11000"
+          },
+          "dialect": "parasolid:sch-sw-33103",
+          "instance": "block@250:Contents/Config-1-Partition+0"
+        }
+      ],
+      "primary": {
+        "admission": "residual",
+        "dialect": "sldprt:unknown"
+      }
+    }
+  },
   "losses": [
     {
       "code": {
         "code": "source.dialect-unverified",
         "kind": "source_dialect_unverified",
-        "namespace": "sldprt"
+        "namespace": "sldprt",
+        "scope": "namespaced",
+        "strict_floor": "warning"
       },
       "message": "the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on the `sldprt:unknown` residual path without substituting a declared dialect grammar: the feature-operation form-code padding filter is not applied, and an operation code binds only where the four- and eight-byte candidates agree. Agreement is consistency, not a declaration.",
       "severity": "warning"

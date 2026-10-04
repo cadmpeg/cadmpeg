@@ -4,32 +4,103 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use crate::ids::kind;
 use std::fmt::Write as _;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::eval::{model_curve_point_by_id, model_surface_point_by_id};
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+};
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::index::ModelIndex;
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
-use crate::export::is_rigid_transform;
+use crate::export::write_step;
 use crate::ids;
 use crate::loss::StepLossCode;
-use crate::test_support::decode_inline;
-use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
+use crate::test_support::exchange::decode_inline;
+use crate::{StepCodec, StepSchema, StepWriteOptions};
 
 #[test]
 fn rigid_transform_rejects_reflections() {
-    assert!(!is_rigid_transform(&[
+    assert!(!Transform::affine([
         [-1.0, 0.0, 0.0, 0.0],
         [0.0, 1.0, 0.0, 0.0],
         [0.0, 0.0, 1.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
-    ]));
+    ])
+    .unwrap()
+    .is_proper_rigid());
+}
+
+#[test]
+fn placement_axis_normalization_preserves_extreme_finite_directions() {
+    for vector in [
+        Vector3::new(f64::MAX, 0.0, 0.0),
+        Vector3::new(2.0_f64.powi(-800), 0.0, 0.0),
+        Vector3::new(f64::from_bits(1), 0.0, 0.0),
+    ] {
+        assert_eq!(
+            super::super::normalize(vector).map(|unit| *unit.as_raw()),
+            Some(Vector3::new(1.0, 0.0, 0.0))
+        );
+    }
+    assert!(super::super::normalize(Vector3::new(0.0, 0.0, 0.0)).is_none());
+    assert!(super::super::normalize(Vector3::new(f64::NAN, 1.0, 0.0)).is_none());
+}
+
+#[test]
+fn placement_projection_keeps_reciprocal_normalization_bits() {
+    let old_normalize = |vector: Vector3| {
+        let scale = vector.x.abs().max(vector.y.abs()).max(vector.z.abs());
+        let scaled = Vector3::new(vector.x / scale, vector.y / scale, vector.z / scale);
+        scaled.scale(1.0 / scaled.norm())
+    };
+    let axis = Vector3::new(3.0, 4.0, 5.0);
+    let reference = Vector3::new(4.0, 2.0, 1.0);
+    let admitted_axis = super::super::normalize(axis).expect("axis");
+    let admitted_reference = super::super::normalize(reference).expect("reference");
+    let old_axis = old_normalize(old_normalize(axis));
+    let old_reference = old_normalize(old_normalize(reference));
+    let expected = old_normalize(old_reference - old_axis.scale(old_reference.dot(old_axis)));
+    let actual =
+        super::super::project_axis(admitted_reference, admitted_axis).expect("projected reference");
+    assert_eq!(actual.as_raw().x.to_bits(), expected.x.to_bits());
+    assert_eq!(actual.as_raw().y.to_bits(), expected.y.to_bits());
+    assert_eq!(actual.as_raw().z.to_bits(), expected.z.to_bits());
+}
+
+#[test]
+fn placement_2d_axes_keep_hypot_normalization_bits() {
+    use cadmpeg_ir::units::HypotDirection2;
+    let old_normalize = |u: f64, v: f64| {
+        let length = u.hypot(v);
+        Point2::new(u / length, v / length)
+    };
+    let source_x = old_normalize(3.0, 4.0);
+    let source_y = old_normalize(2.0, 1.0);
+    let old_x = old_normalize(source_x.u, source_x.v);
+    let old_y = old_normalize(source_y.u, source_y.v);
+    let mut old_perpendicular = Point2::new(-old_x.v, old_x.u);
+    if old_y.u * old_perpendicular.u + old_y.v * old_perpendicular.v < 0.0 {
+        old_perpendicular = Point2::new(-old_perpendicular.u, -old_perpendicular.v);
+    }
+    let x_axis = HypotDirection2::normalized_with_length([3.0, 4.0])
+        .expect("x direction")
+        .0;
+    let y_axis = HypotDirection2::normalized_with_length([2.0, 1.0])
+        .expect("y direction")
+        .0;
+    let (actual_x, actual_y) = super::super::base_axis_2d(Some(x_axis), Some(y_axis));
+    let [actual_x_u, actual_x_v] = actual_x.get();
+    let [actual_y_u, actual_y_v] = actual_y.get();
+    assert_eq!(actual_x_u.to_bits(), old_x.u.to_bits());
+    assert_eq!(actual_x_v.to_bits(), old_x.v.to_bits());
+    assert_eq!(actual_y_u.to_bits(), old_perpendicular.u.to_bits());
+    assert_eq!(actual_y_v.to_bits(), old_perpendicular.v.to_bits());
 }
 
 #[test]
@@ -56,14 +127,11 @@ fn placement_reference_is_projected_and_angular_trims_use_context_units() {
         .iter()
         .find(|curve| curve.id.as_str() == "step:data:curve#14")
         .expect("circle");
-    let CurveGeometry::Circle {
-        axis,
-        ref_direction,
-        ..
-    } = circle.geometry
-    else {
+    let Some(SolvedCurveGeometry::Circle(circle_curve)) = circle.geometry.solved() else {
         panic!("decoded carrier is not a circle")
     };
+    let axis = *circle_curve.frame().axis().as_raw();
+    let ref_direction = *circle_curve.frame().reference().as_raw();
     let dot = axis.x * ref_direction.x + axis.y * ref_direction.y + axis.z * ref_direction.z;
     assert!(dot.abs() < 1.0e-12);
     assert!(result
@@ -71,13 +139,7 @@ fn placement_reference_is_projected_and_angular_trims_use_context_units() {
         .model
         .procedural_curves
         .iter()
-        .any(|curve| matches!(
-            curve.definition(),
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
-                parameter_range: [start, end],
-                ..
-            } if start.abs() < 1.0e-12 && (end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
-        )));
+        .any(|curve| match curve.definition() { cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) => matches!((&matched_payload.parameter_range().endpoints(),), ([start, end],) if start.abs() < 1.0e-12 && (end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12), _ => false }));
     assert!(result.report().losses.iter().all(|loss| {
         !loss
             .message
@@ -102,9 +164,10 @@ fn omitted_placement_reference_uses_the_first_projected_axis() {
         .iter()
         .find(|curve| curve.id.as_str() == "step:data:curve#4")
         .expect("circle");
-    let CurveGeometry::Circle { ref_direction, .. } = circle.geometry else {
+    let Some(SolvedCurveGeometry::Circle(circle_curve)) = circle.geometry.solved() else {
         panic!("decoded carrier is not a circle");
     };
+    let ref_direction = *circle_curve.frame().reference().as_raw();
     assert!((ref_direction.x - 0.8).abs() < 1.0e-12);
     assert!((ref_direction.y + 0.6).abs() < 1.0e-12);
     assert!(ref_direction.z.abs() < 1.0e-12);
@@ -130,18 +193,16 @@ fn near_parallel_omitted_reference_uses_a_stable_projected_axis() {
         .iter()
         .find(|curve| curve.id.as_str() == "step:data:curve#13")
         .expect("circle");
-    let CurveGeometry::Circle {
-        axis,
-        ref_direction,
-        ..
-    } = circle.geometry
-    else {
+    let Some(SolvedCurveGeometry::Circle(circle_curve)) = circle.geometry.solved() else {
         panic!("decoded carrier is not a circle");
     };
+    let axis = *circle_curve.frame().axis().as_raw();
+    let ref_direction = *circle_curve.frame().reference().as_raw();
     let dot = axis.x * ref_direction.x + axis.y * ref_direction.y + axis.z * ref_direction.z;
     assert!(ref_direction.y > 0.999_999_999);
     assert!(dot.abs() < 1.0e-12);
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -167,9 +228,10 @@ fn placement_reference_witness_covers_default_axes_and_invalid_parallel_input() 
             .iter()
             .find(|curve| curve.id.as_str() == format!("step:data:curve{source_id}"))
             .expect("witness circle");
-        let CurveGeometry::Circle { ref_direction, .. } = curve.geometry else {
+        let Some(SolvedCurveGeometry::Circle(circle_curve)) = curve.geometry.solved() else {
             panic!("witness carrier is not a circle");
         };
+        let ref_direction = *circle_curve.frame().reference().as_raw();
         assert!((ref_direction.x - x).abs() < 1.0e-12);
         assert!((ref_direction.y - y).abs() < 1.0e-12);
         assert!((ref_direction.z - z).abs() < 1.0e-12);
@@ -182,9 +244,10 @@ fn placement_reference_witness_covers_default_axes_and_invalid_parallel_input() 
         .iter()
         .find(|curve| curve.id.as_str() == "step:data:curve#15")
         .expect("near-axis witness circle");
-    let CurveGeometry::Circle { ref_direction, .. } = near_axis.geometry else {
+    let Some(SolvedCurveGeometry::Circle(circle_curve)) = near_axis.geometry.solved() else {
         panic!("near-axis witness carrier is not a circle");
     };
+    let ref_direction = *circle_curve.frame().reference().as_raw();
     assert!(ref_direction.y > 0.999_999_999);
 
     let parallel_reference = decoded
@@ -194,9 +257,11 @@ fn placement_reference_witness_covers_default_axes_and_invalid_parallel_input() 
         .iter()
         .find(|curve| curve.id.as_str() == "step:data:curve#18")
         .expect("parallel-reference witness circle");
-    let CurveGeometry::Circle { ref_direction, .. } = parallel_reference.geometry else {
+    let Some(SolvedCurveGeometry::Circle(circle_curve)) = parallel_reference.geometry.solved()
+    else {
         panic!("parallel-reference witness carrier is not a circle");
     };
+    let ref_direction = *circle_curve.frame().reference().as_raw();
     assert!((ref_direction.x - 1.0).abs() < 1.0e-12);
     assert!(ref_direction.y.abs() < 1.0e-12);
     assert!(ref_direction.z.abs() < 1.0e-12);
@@ -242,17 +307,11 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
 #14=SHAPE_REPRESENTATION('',(#13),$);",
     );
 
-    for (curve_id, expected) in [("#9", [2.0, 4.0]), ("#12", [2.0, 4.0])] {
-        let construction_id = ids::construction("trimmed_curve", curve_id.trim_start_matches('#'));
+    for (curve_id, expected) in [(9u64, [2.0, 4.0]), (12u64, [2.0, 4.0])] {
+        let construction_id = ids::construction(kind!("trimmed_curve"), curve_id);
         assert!(result.ir().model.procedural_curves.iter().any(|curve| {
-            curve.id.as_str() == construction_id
-                && matches!(
-                    curve.definition(),
-                    cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
-                        parameter_range,
-                        ..
-                    } if *parameter_range == expected
-                )
+            curve.id.as_str() == construction_id.as_str()
+                && match curve.definition() { cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) => matches!((&matched_payload.parameter_range().endpoints(),), (parameter_range,) if *parameter_range == expected), _ => false }
         }));
     }
 
@@ -265,22 +324,26 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
                     && source.as_str() == "step:data:curve#6"
         )
     }));
-    let index = ModelIndex::new(result.ir());
+    let index = ModelIndex::build(result.ir(), cadmpeg_ir::index::StandardIndex);
     assert_eq!(
         model_curve_point_by_id(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
             &index,
             &CurveId::mint("step:data:curve#9").expect("identity grammar"),
-            0.0,
-        ),
-        Some(Point3::new(6.0, 0.0, 0.0))
+            0.0
+        )
+        .map(cadmpeg_ir::features::FinitePoint3::get),
+        Ok(Point3::new(6.0, 0.0, 0.0))
     );
     assert_eq!(
         model_curve_point_by_id(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
             &index,
             &CurveId::mint("step:data:curve#9").expect("identity grammar"),
-            2.0,
-        ),
-        Some(Point3::new(12.0, 0.0, 0.0))
+            2.0
+        )
+        .map(cadmpeg_ir::features::FinitePoint3::get),
+        Ok(Point3::new(12.0, 0.0, 0.0))
     );
 
     let mut output = Vec::new();
@@ -308,37 +371,48 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
 
 #[test]
 fn transformed_curves_and_surfaces_round_trip_through_step_replicas() {
-    let transform = Transform::from_rows([
+    let transform = Transform::affine([
         [0.0, -2.0, 0.0, 10.0],
         [2.0, 0.0, 0.0, 20.0],
         [0.0, 0.0, 2.0, 30.0],
-        [0.0, 0.0, 0.0, 1.0],
     ])
     .expect("affine transform");
-    let curve_geometry = CurveGeometry::Transformed {
-        basis: Box::new(CurveGeometry::Line {
-            origin: Point3::new(1.0, 2.0, 3.0),
-            direction: Vector3::new(1.0, 0.0, 0.0),
-        }),
-        transform,
-    };
-    let surface_geometry = SurfaceGeometry::Transformed {
-        basis: Box::new(SurfaceGeometry::Plane {
-            origin: Point3::new(1.0, 2.0, 3.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        }),
-        transform,
-    };
+    let curve_geometry = SolvedCurveGeometry::Transformed(
+        cadmpeg_ir::geometry::PlacedCurve::try_new(
+            Box::new(SolvedCurveGeometry::Line(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                    Point3::new(1.0, 2.0, 3.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            )),
+            transform,
+        )
+        .expect("placed curve"),
+    );
+    let surface_geometry = SolvedSurfaceGeometry::Transformed(
+        cadmpeg_ir::geometry::PlacedSurface::try_new(
+            Box::new(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(1.0, 2.0, 3.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            )),
+            transform,
+        )
+        .expect("placed surface"),
+    );
     let mut source = CadIr::empty();
     source.model.curves.push(Curve {
         id: CurveId::mint("test:model:curve#transformed-curve").expect("identity grammar"),
-        geometry: curve_geometry.clone(),
+        geometry: CurveGeometry::Solved(curve_geometry.clone()),
         source_object: None,
     });
     source.model.surfaces.push(Surface {
         id: SurfaceId::mint("test:model:surface#transformed-surface").expect("identity grammar"),
-        geometry: surface_geometry.clone(),
+        geometry: SurfaceGeometry::Solved(surface_geometry.clone()),
         source_object: None,
     });
 
@@ -357,16 +431,18 @@ fn transformed_curves_and_surfaces_round_trip_through_step_replicas() {
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode replicas");
-    assert!(decoded.ir().model.curves.iter().any(|curve| curve
-        .geometry
-        .solved_cache()
-        .unwrap_or(&curve.geometry)
-        == &curve_geometry));
-    assert!(decoded.ir().model.surfaces.iter().any(|surface| surface
-        .geometry
-        .solved_cache()
-        .unwrap_or(&surface.geometry)
-        == &surface_geometry));
+    assert!(decoded
+        .ir()
+        .model
+        .curves
+        .iter()
+        .any(|curve| curve.geometry.solved() == Some(&curve_geometry)));
+    assert!(decoded
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .any(|surface| surface.geometry.solved() == Some(&surface_geometry)));
 }
 
 #[test]
@@ -390,8 +466,8 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
     assert!(decoded.ir().model.surfaces.iter().any(|surface| {
         surface.id.as_str() == "step:data:surface#10"
             && matches!(
-                *surface.geometry.solved_cache().unwrap_or(&surface.geometry),
-                SurfaceGeometry::Transformed { .. }
+                surface.geometry.solved(),
+                Some(SolvedSurfaceGeometry::Transformed(_))
             )
     }));
     assert!(decoded
@@ -406,15 +482,7 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
                 .procedural_surface_owner(&surface.id)
                 .map(SurfaceId::as_str)
                 == Some("step:data:surface#10")
-                && matches!(
-                    surface.definition(),
-                    cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset {
-                        support,
-                        parameter_ranges: [[0.0, 1.0], [0.0, 1.0]],
-                        u_sense: Some(true),
-                        v_sense: Some(true),
-                    } if support.as_str() == "step:data:surface#8"
-                )
+                && match surface.definition() { cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset(matched_payload) => matches!((matched_payload.support(), &matched_payload.parameter_ranges().map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints), matched_payload.u_sense(), matched_payload.v_sense(),), (support, [[0.0, 1.0], [0.0, 1.0]], Some(true), Some(true),) if support.as_str() == "step:data:surface#8"), _ => false }
         }));
     assert!(decoded.report().losses.iter().all(|loss| {
         !loss
@@ -436,24 +504,28 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
                         && source.as_str() == "step:data:surface#9"
             )
         }));
-    let index = ModelIndex::new(decoded.ir());
+    let index = ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex);
     assert_eq!(
         model_surface_point_by_id(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
             &index,
             &SurfaceId::mint("step:data:surface#10").expect("identity grammar"),
             0.0,
-            0.0,
-        ),
-        Some(Point3::new(0.0, 0.0, 0.0))
+            0.0
+        )
+        .map(cadmpeg_ir::features::FinitePoint3::get),
+        Ok(Point3::new(0.0, 0.0, 0.0))
     );
     assert_eq!(
         model_surface_point_by_id(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
             &index,
             &SurfaceId::mint("step:data:surface#10").expect("identity grammar"),
             1.0,
-            1.0,
-        ),
-        Some(Point3::new(4.0, 4.0, 0.0))
+            1.0
+        )
+        .map(cadmpeg_ir::features::FinitePoint3::get),
+        Ok(Point3::new(4.0, 4.0, 0.0))
     );
 
     let mut output = Vec::new();
@@ -502,42 +574,56 @@ fn forward_replica_dependencies_resolve_to_nested_transforms() {
 #13=SURFACE_REPLICA('',#14,#8);
 #14=SURFACE_REPLICA('',#12,#8);",
     );
-    let transform = Transform::from_rows([
+    let transform = Transform::affine([
         [2.0, 0.0, 0.0, 10.0],
         [0.0, 2.0, 0.0, 20.0],
         [0.0, 0.0, 2.0, 30.0],
-        [0.0, 0.0, 0.0, 1.0],
     ])
     .expect("affine transform");
-    let base_curve = CurveGeometry::Line {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        direction: Vector3::new(1.0, 0.0, 0.0),
-    };
-    let expected_curve = CurveGeometry::Transformed {
-        basis: Box::new(CurveGeometry::Transformed {
-            basis: Box::new(base_curve),
+    let base_curve = CurveGeometry::Solved(SolvedCurveGeometry::Line(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    ));
+    let expected_curve = CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
+        cadmpeg_ir::geometry::PlacedCurve::try_new(
+            Box::new(SolvedCurveGeometry::Transformed(
+                cadmpeg_ir::geometry::PlacedCurve::try_new(
+                    Box::new(base_curve.solved().expect("solved carrier").clone()),
+                    transform,
+                )
+                .expect("placed curve"),
+            )),
             transform,
-        }),
-        transform,
-    };
-    let expected_surface = SurfaceGeometry::Transformed {
-        basis: Box::new(SurfaceGeometry::Transformed {
-            basis: Box::new(SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            }),
+        )
+        .expect("placed curve"),
+    ));
+    let expected_surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(
+        cadmpeg_ir::geometry::PlacedSurface::try_new(
+            Box::new(SolvedSurfaceGeometry::Transformed(
+                cadmpeg_ir::geometry::PlacedSurface::try_new(
+                    Box::new(SolvedSurfaceGeometry::Plane(
+                        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                            Point3::new(0.0, 0.0, 0.0),
+                            Vector3::new(0.0, 0.0, 1.0),
+                            Vector3::new(1.0, 0.0, 0.0),
+                        )
+                        .unwrap(),
+                    )),
+                    transform,
+                )
+                .expect("placed surface"),
+            )),
             transform,
-        }),
-        transform,
-    };
-    assert!(decoded
-        .ir()
-        .model
-        .curves
-        .iter()
-        .any(|curve| curve.id.as_str() == "step:data:curve#9"
-            && curve.geometry.solved_cache().unwrap_or(&curve.geometry) == &expected_curve));
+        )
+        .expect("placed surface"),
+    ));
+    assert!(decoded.ir().model.curves.iter().any(|curve| {
+        curve.id.as_str() == "step:data:curve#9"
+            && curve.geometry.solved() == expected_curve.solved()
+    }));
     assert_eq!(
         decoded
             .ir()
@@ -555,7 +641,7 @@ fn forward_replica_dependencies_resolve_to_nested_transforms() {
         .surfaces
         .iter()
         .any(|surface| surface.id.as_str() == "step:data:surface#13"
-            && surface.geometry.solved_cache().unwrap_or(&surface.geometry) == &expected_surface));
+            && surface.geometry.solved() == expected_surface.solved()));
     assert_eq!(
         decoded
             .ir()
@@ -594,12 +680,10 @@ fn cartesian_transformation_operator_derives_optional_axes() {
             .curves
             .iter()
             .find(|curve| curve.id.as_str() == id)
-            .and_then(
-                |curve| match curve.geometry.solved_cache().unwrap_or(&curve.geometry) {
-                    CurveGeometry::Transformed { transform, .. } => Some(*transform),
-                    _ => None,
-                },
-            )
+            .and_then(|curve| match curve.geometry.solved() {
+                Some(SolvedCurveGeometry::Transformed(placed)) => Some(*placed.transform()),
+                _ => None,
+            })
             .unwrap_or_else(|| panic!("missing transformed curve {id}"))
     };
     let assert_rows = |actual: Transform, expected: [[f64; 4]; 4]| {
@@ -637,7 +721,7 @@ fn cartesian_transformation_operator_derives_optional_axes() {
 
 #[test]
 fn pcurve_replica_derives_orthogonal_two_dimensional_axes() {
-    use cadmpeg_ir::geometry::PcurveGeometry;
+    use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
 
     let source = String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")
@@ -663,9 +747,10 @@ fn pcurve_replica_derives_orthogonal_two_dimensional_axes() {
         .iter()
         .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#56")
         .expect("replica pcurve");
-    let PcurveGeometry::Transformed { transform, .. } = &pcurve.geometry else {
+    let PcurveGeometry::Transformed(placed) = &pcurve.geometry else {
         panic!("pcurve replica lost its transformation")
     };
+    let transform = placed.transform();
     let root_two = 2.0_f64.sqrt();
     assert!((transform.rows()[0][0] - 1.0 / root_two).abs() < 1.0e-12);
     assert!((transform.rows()[0][1] + 1.0 / root_two).abs() < 1.0e-12);
@@ -686,17 +771,19 @@ fn long_forward_curve_replica_chain_resolves_with_a_worklist() {
 #8=CARTESIAN_TRANSFORMATION_OPERATOR_3D('',#2,#3,#7,2.,#4);
 ",
     );
-    for id in 9..=264 {
+    // The head replica carries exactly MAX_GEOMETRY_NESTING placements over the
+    // line, the deepest chain the IR admits.
+    for id in 9..=263 {
         writeln!(records, "#{id}=CURVE_REPLICA('',#{},#8);", id + 1).expect("append curve replica");
     }
-    records.push_str("#265=CURVE_REPLICA('',#6,#8);");
+    records.push_str("#264=CURVE_REPLICA('',#6,#8);");
 
     let decoded = decode_inline(&records);
     assert!(decoded.ir().model.curves.iter().any(|curve| {
         curve.id.as_str() == "step:data:curve#9"
             && matches!(
-                *curve.geometry.solved_cache().unwrap_or(&curve.geometry),
-                CurveGeometry::Transformed { .. }
+                curve.geometry.solved(),
+                Some(SolvedCurveGeometry::Transformed(_))
             )
     }));
     assert!(!decoded.report().losses.iter().any(|loss| {
@@ -778,23 +865,27 @@ fn replicas_retain_bounded_parent_relations() {
                         && source.as_str() == "step:data:surface#12"
             )
         }));
-    let index = ModelIndex::new(decoded.ir());
+    let index = ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex);
     assert_eq!(
         model_curve_point_by_id(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
             &index,
             &CurveId::mint("step:data:curve#9").expect("identity grammar"),
-            0.0,
-        ),
-        Some(Point3::new(3.0, 0.0, 0.0))
+            0.0
+        )
+        .map(cadmpeg_ir::features::FinitePoint3::get),
+        Ok(Point3::new(3.0, 0.0, 0.0))
     );
     assert_eq!(
         model_surface_point_by_id(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
             &index,
             &SurfaceId::mint("step:data:surface#13").expect("identity grammar"),
             0.0,
-            0.0,
-        ),
-        Some(Point3::new(3.0, 9.0, 0.0))
+            0.0
+        )
+        .map(cadmpeg_ir::features::FinitePoint3::get),
+        Ok(Point3::new(3.0, 9.0, 0.0))
     );
 
     let mut output = Vec::new();
@@ -861,4 +952,86 @@ fn mapped_representation_dag_is_memoized() {
         result.ir().model.product_definitions[0].bodies[0].as_str(),
         "step:data:body#9000"
     );
+}
+
+#[test]
+fn a_curve_replica_chain_past_the_admitted_depth_is_refused_at_decode() {
+    let mut records = String::from(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=DIRECTION('',(1.,0.,0.));
+#3=DIRECTION('',(0.,1.,0.));
+#4=DIRECTION('',(0.,0.,1.));
+#5=VECTOR('',#2,1.);
+#6=LINE('',#1,#5);
+#7=CARTESIAN_POINT('',(10.,20.,30.));
+#8=CARTESIAN_TRANSFORMATION_OPERATOR_3D('',#2,#3,#7,2.,#4);
+",
+    );
+    // #9 carries one placement more than the IR admits; #10 carries exactly the
+    // admitted depth.
+    for id in 9..=264 {
+        writeln!(records, "#{id}=CURVE_REPLICA('',#{},#8);", id + 1).expect("append curve replica");
+    }
+    records.push_str("#265=CURVE_REPLICA('',#6,#8);");
+
+    let decoded = decode_inline(&records);
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.message
+            .contains("CURVE_REPLICA #9 nests past the admitted inline basis depth")
+    }));
+    assert!(decoded.ir().model.curves.iter().any(|curve| {
+        curve.id.as_str() == "step:data:curve#9"
+            && matches!(
+                curve.geometry.solved(),
+                Some(SolvedCurveGeometry::Unknown { .. })
+            )
+    }));
+    assert!(decoded.ir().model.curves.iter().any(|curve| {
+        curve.id.as_str() == "step:data:curve#10"
+            && matches!(
+                curve.geometry.solved(),
+                Some(SolvedCurveGeometry::Transformed(_))
+            )
+    }));
+}
+
+#[test]
+fn a_surface_replica_chain_past_the_admitted_depth_is_refused_at_decode() {
+    let mut records = String::from(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=DIRECTION('',(1.,0.,0.));
+#3=DIRECTION('',(0.,1.,0.));
+#4=DIRECTION('',(0.,0.,1.));
+#5=AXIS2_PLACEMENT_3D('',#1,#4,#2);
+#6=PLANE('',#5);
+#7=CARTESIAN_TRANSFORMATION_OPERATOR_3D('',#2,#3,#1,1.,#4);
+",
+    );
+    // #8 carries one placement more than the IR admits; #9 carries exactly the
+    // admitted depth.
+    for id in 8..=263 {
+        writeln!(records, "#{id}=SURFACE_REPLICA('',#{},#7);", id + 1)
+            .expect("append surface replica");
+    }
+    records.push_str("#264=SURFACE_REPLICA('',#6,#7);\n#265=GEOMETRIC_SET('',(#8));");
+
+    let decoded = decode_inline(&records);
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.message
+            .contains("SURFACE_REPLICA #8 nests past the admitted inline basis depth")
+    }));
+    assert!(decoded.ir().model.surfaces.iter().any(|surface| {
+        surface.id.as_str() == "step:data:surface#8"
+            && matches!(
+                surface.geometry.solved(),
+                Some(SolvedSurfaceGeometry::Unknown { .. })
+            )
+    }));
+    assert!(decoded.ir().model.surfaces.iter().any(|surface| {
+        surface.id.as_str() == "step:data:surface#9"
+            && matches!(
+                surface.geometry.solved(),
+                Some(SolvedSurfaceGeometry::Transformed(_))
+            )
+    }));
 }

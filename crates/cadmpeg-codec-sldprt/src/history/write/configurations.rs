@@ -2,6 +2,7 @@
 //! Configuration records for native write.
 
 use crate::records::{Configuration, FeatureHistory};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{DesignConfiguration, ParameterValue};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -15,10 +16,11 @@ use crate::history::hash::{
     configuration_feature_state_hash, configuration_hash, configuration_parameter_value_hash,
     native_configuration_hash,
 };
+use crate::history::parameters::eval::exact_integer_f64;
 use crate::history::parameters::{
-    exact_integer_f64, global_parameter_owners, parameters_with_incoherent_evaluated_values,
+    global_parameter_owners, parameters_with_incoherent_evaluated_values,
 };
-use crate::history::project::project_configurations;
+use crate::history::project::project_configurations_charged;
 use crate::resolved_features::relation_geometry::is_reference_relation_parameter;
 
 /// Resolve neutral/native configuration edit authority before writing.
@@ -26,12 +28,19 @@ use crate::resolved_features::relation_geometry::is_reference_relation_parameter
 /// Bitwise comparison against the machine-local document baseline; see
 /// [`cadmpeg_ir::hash::document_local_sha256`]. Absent baseline: sync lanes from
 /// the neutral side.
-pub fn prepare_configurations_for_write(
+pub(crate) fn prepare_configurations_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
     annotations: &cadmpeg_ir::Annotations,
 ) -> Result<(), CodecError> {
-    let feature_state_hash = configuration_feature_state_hash(&ir.model.configurations);
+    let hash_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (hash_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &hash_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+
+    let feature_state_hash = configuration_feature_state_hash(&hash_ctx, &ir.model.configurations)?;
     let baseline_feature_states = ir.source.as_ref().and_then(|source| {
         source
             .attributes
@@ -45,7 +54,8 @@ pub fn prepare_configurations_for_write(
                 .configurations
                 .iter()
                 .any(|configuration| !configuration.feature_states.is_empty());
-    let parameter_value_hash = configuration_parameter_value_hash(&ir.model.configurations);
+    let parameter_value_hash =
+        configuration_parameter_value_hash(&hash_ctx, &ir.model.configurations)?;
     let baseline_parameter_values = ir.source.as_ref().and_then(|source| {
         source
             .attributes
@@ -59,10 +69,11 @@ pub fn prepare_configurations_for_write(
                 .configurations
                 .iter()
                 .any(|configuration| !configuration.parameter_values.is_empty());
-    let neutral_hash = configuration_hash(&ir.model.configurations);
+    let neutral_hash = configuration_hash(&hash_ctx, &ir.model.configurations)?;
     let native_hash = native
         .as_ref()
-        .map(|value| native_configuration_hash(&value.feature_histories));
+        .map(|value| native_configuration_hash(&hash_ctx, &value.feature_histories))
+        .transpose()?;
     let baseline_neutral = ir.source.as_ref().and_then(|source| {
         source
             .attributes
@@ -86,9 +97,12 @@ pub fn prepare_configurations_for_write(
             (true, true) => {
                 let projected = native
                     .as_ref()
-                    .map(|value| project_configurations(&value.feature_histories))
+                    .map(|value| {
+                        project_configurations_charged(&hash_ctx, &value.feature_histories)
+                    })
+                    .transpose()?
                     .unwrap_or_default();
-                if configuration_hash(&projected) != neutral_hash {
+                if configuration_hash(&hash_ctx, &projected)? != neutral_hash {
                     return Err(CodecError::Malformed(
                         "conflicting neutral and native SLDPRT configuration edits".into(),
                     ));
@@ -105,11 +119,18 @@ pub fn prepare_configurations_for_write(
     Ok(())
 }
 
-pub(crate) fn sync_configuration_design_state(
+fn sync_configuration_design_state(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
     annotations: &cadmpeg_ir::Annotations,
 ) -> Result<(), CodecError> {
+    let hash_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (hash_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &hash_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+
     let form_padding = ir
         .source
         .as_ref()
@@ -128,12 +149,25 @@ pub(crate) fn sync_configuration_design_state(
         })
         .collect::<HashMap<_, _>>();
     let global_owners = global_parameter_owners(&ir.model.features);
+    let validation_bytes = native
+        .as_ref()
+        .into_iter()
+        .flat_map(|native| &native.feature_input_lanes)
+        .flat_map(|lane| lane.native_payload.iter().copied())
+        .collect::<Vec<_>>();
+    let validation_arena = DecodeArena::new();
+    let (validation_ctx, _) = DecodeContext::from_root_bytes(
+        &validation_bytes,
+        &validation_arena,
+        &DecodePolicy::service(),
+    )?;
     if parameters_with_incoherent_evaluated_values(
+        &validation_ctx,
         &ir.model.parameters,
         &feature_names,
         &global_owners,
         &ir.model.configurations,
-    ) > 0
+    )? > 0
     {
         return Err(CodecError::Malformed(
             "SLDPRT configuration parameter values are inconsistent with their expressions".into(),
@@ -145,28 +179,52 @@ pub(crate) fn sync_configuration_design_state(
         ));
     };
     let mut current_projection = ir.clone();
+    let design_bytes = native
+        .feature_input_lanes
+        .iter()
+        .flat_map(|lane| lane.native_payload.iter().copied())
+        .collect::<Vec<_>>();
+    let design_arena = DecodeArena::new();
+    let (design_ctx, _) =
+        DecodeContext::from_root_bytes(&design_bytes, &design_arena, &DecodePolicy::service())?;
     project_configuration_design_states(
+        &design_ctx,
         &mut current_projection,
         &native.feature_histories,
         &native.feature_input_lanes,
         &native.pmi_dimensions,
         form_padding,
-    );
-    align_configuration_parameter_kinds(&mut current_projection);
+    )?;
+    align_configuration_parameter_kinds(&design_ctx, &mut current_projection)?;
     let mut current_annotations = annotations.clone();
-    project_configuration_sketch_states(
+    let projection_bytes = native
+        .feature_input_lanes
+        .iter()
+        .flat_map(|lane| lane.native_payload.iter().copied())
+        .collect::<Vec<_>>();
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&projection_bytes, &arena, &DecodePolicy::service())?;
+    let projection_losses = project_configuration_sketch_states(
+        &ctx,
         &mut current_projection,
         &native.feature_histories,
         &native.feature_input_lanes,
         &mut current_annotations,
-    );
+    )?;
+    if !projection_losses.is_empty() {
+        return Err(CodecError::NotImplemented(
+            "SLDPRT configuration sketch profiles cannot be projected without loss".into(),
+        ));
+    }
     let current_parameter_hash =
-        configuration_parameter_value_hash(&current_projection.model.configurations);
+        configuration_parameter_value_hash(&hash_ctx, &current_projection.model.configurations)?;
     let current_feature_hash =
-        configuration_feature_state_hash(&current_projection.model.configurations);
+        configuration_feature_state_hash(&hash_ctx, &current_projection.model.configurations)?;
     let current_matches = current_parameter_hash
-        == configuration_parameter_value_hash(&ir.model.configurations)
-        && current_feature_hash == configuration_feature_state_hash(&ir.model.configurations);
+        == configuration_parameter_value_hash(&hash_ctx, &ir.model.configurations)?
+        && current_feature_hash
+            == configuration_feature_state_hash(&hash_ctx, &ir.model.configurations)?;
     if current_matches {
         return Ok(());
     }
@@ -217,25 +275,48 @@ pub(crate) fn sync_configuration_design_state(
     patch_configuration_parameter_scalars(ir, native)?;
 
     let mut projected = ir.clone();
+    let design_bytes = native
+        .feature_input_lanes
+        .iter()
+        .flat_map(|lane| lane.native_payload.iter().copied())
+        .collect::<Vec<_>>();
+    let design_arena = DecodeArena::new();
+    let (design_ctx, _) =
+        DecodeContext::from_root_bytes(&design_bytes, &design_arena, &DecodePolicy::service())?;
     project_configuration_design_states(
+        &design_ctx,
         &mut projected,
         &native.feature_histories,
         &native.feature_input_lanes,
         &native.pmi_dimensions,
         form_padding,
-    );
-    align_configuration_parameter_kinds(&mut projected);
+    )?;
+    align_configuration_parameter_kinds(&design_ctx, &mut projected)?;
     let mut projected_annotations = annotations.clone();
-    project_configuration_sketch_states(
+    let projection_bytes = native
+        .feature_input_lanes
+        .iter()
+        .flat_map(|lane| lane.native_payload.iter().copied())
+        .collect::<Vec<_>>();
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&projection_bytes, &arena, &DecodePolicy::service())?;
+    let projection_losses = project_configuration_sketch_states(
+        &ctx,
         &mut projected,
         &native.feature_histories,
         &native.feature_input_lanes,
         &mut projected_annotations,
-    );
-    if configuration_parameter_value_hash(&projected.model.configurations)
-        != configuration_parameter_value_hash(&ir.model.configurations)
-        || configuration_feature_state_hash(&projected.model.configurations)
-            != configuration_feature_state_hash(&ir.model.configurations)
+    )?;
+    if !projection_losses.is_empty() {
+        return Err(CodecError::NotImplemented(
+            "SLDPRT configuration sketch profiles cannot be projected without loss".into(),
+        ));
+    }
+    if configuration_parameter_value_hash(&hash_ctx, &projected.model.configurations)?
+        != configuration_parameter_value_hash(&hash_ctx, &ir.model.configurations)?
+        || configuration_feature_state_hash(&hash_ctx, &projected.model.configurations)?
+            != configuration_feature_state_hash(&hash_ctx, &ir.model.configurations)?
     {
         return Err(CodecError::NotImplemented(
             "SLDPRT configuration design-state edit has no complete native lane encoding".into(),
@@ -244,10 +325,17 @@ pub(crate) fn sync_configuration_design_state(
     Ok(())
 }
 
-pub(crate) fn patch_configuration_parameter_scalars(
+fn patch_configuration_parameter_scalars(
     ir: &cadmpeg_ir::CadIr,
     native: &mut crate::native::SldprtNative,
 ) -> Result<(), CodecError> {
+    let bytes = native
+        .feature_input_lanes
+        .iter()
+        .flat_map(|lane| lane.native_payload.iter().copied())
+        .collect::<Vec<_>>();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())?;
     let parameters = ir
         .model
         .parameters
@@ -261,7 +349,7 @@ pub(crate) fn patch_configuration_parameter_scalars(
         .map(|feature| (&feature.id, feature))
         .collect::<HashMap<_, _>>();
     for (configuration_index, lane_index) in
-        configuration_lane_assignments(&ir.model.configurations, &native.feature_input_lanes)
+        configuration_lane_assignments(&ctx, &ir.model.configurations, &native.feature_input_lanes)?
     {
         let configuration = &ir.model.configurations[configuration_index];
         let lane = &mut native.feature_input_lanes[lane_index];
@@ -304,14 +392,14 @@ pub(crate) fn patch_configuration_parameter_scalars(
             else {
                 continue;
             };
-            let end = starts
-                .get(position + 1)
-                .map_or(u64::MAX, |(offset, _)| *offset);
+            let end = starts.get(position + 1).map(|(offset, _)| *offset);
             let candidates = lane
                 .scalars
                 .iter()
                 .enumerate()
-                .filter(|(_, scalar)| scalar.offset > *start && scalar.offset < end)
+                .filter(|(_, scalar)| {
+                    scalar.offset > *start && end.is_none_or(|end| scalar.offset < end)
+                })
                 .filter(|(_, scalar)| {
                     names.get(scalar.name.as_str()) == Some(&parameter.name.as_str())
                 })
@@ -338,9 +426,9 @@ pub(crate) fn patch_configuration_parameter_scalars(
                 continue;
             };
             let encoded = match value {
-                ParameterValue::Length(value) => value.0 / 1000.0,
-                ParameterValue::Angle(value) => value.0,
-                ParameterValue::Real(value) => *value,
+                ParameterValue::Length(value) => value.get() / 1000.0,
+                ParameterValue::Angle(value) => value.get(),
+                ParameterValue::Real(value) => value.get(),
                 ParameterValue::Integer(value) => exact_integer_f64(*value).ok_or_else(|| {
                     CodecError::NotImplemented(format!(
                         "SLDPRT configuration parameter {} cannot be represented by a native scalar",
@@ -359,6 +447,9 @@ pub(crate) fn patch_configuration_parameter_scalars(
             let offset = usize::try_from(scalar.offset).map_err(|_| {
                 CodecError::Malformed("SLDPRT scalar offset exceeds address space".into())
             })?;
+            let checked = cadmpeg_ir::scalar::FiniteReal::new(encoded).ok_or_else(|| {
+                CodecError::malformed("SLDPRT configuration scalar update is non-finite")
+            })?;
             lane.native_payload
                 .get_mut(offset..offset + 8)
                 .ok_or_else(|| {
@@ -368,7 +459,7 @@ pub(crate) fn patch_configuration_parameter_scalars(
                     ))
                 })?
                 .copy_from_slice(&encoded.to_le_bytes());
-            scalar.value = encoded;
+            scalar.value = checked;
         }
     }
     Ok(())
@@ -379,17 +470,14 @@ pub(crate) fn patch_configuration_parameter_scalars(
 /// Bitwise comparison against the machine-local document baseline; see
 /// [`cadmpeg_ir::hash::document_local_sha256`]. Absent baseline: sync lanes from
 /// the neutral side.
-pub(crate) fn sync_neutral_configurations(
+pub(in crate::history) fn sync_neutral_configurations(
     configurations: &[DesignConfiguration],
     native: &mut Option<crate::native::SldprtNative>,
 ) {
     if configurations.is_empty() && native.is_none() {
         return;
     }
-    if native.is_none() {
-        *native = Some(crate::native::SldprtNative::default());
-    }
-    let native = native.as_mut().expect("initialized above");
+    let native = native.get_or_insert_with(crate::native::SldprtNative::default);
     if native.feature_histories.is_empty() {
         native.feature_histories.push(FeatureHistory {
             id: "sldprt:generated:feature-history#0".into(),
@@ -405,12 +493,10 @@ pub(crate) fn sync_neutral_configurations(
     let desired_ids = configurations
         .iter()
         .map(|configuration| {
-            configuration.native_ref.clone().unwrap_or_else(|| {
-                format!(
-                    "sldprt:generated:configuration#{}",
-                    configuration.id.as_str()
-                )
-            })
+            configuration
+                .native_ref
+                .clone()
+                .unwrap_or_else(|| generated_configuration_record_id(&configuration.id))
         })
         .collect::<std::collections::HashSet<_>>();
     let previous_slot_owners = native_configuration_slot_owners(&native.feature_histories);
@@ -441,7 +527,7 @@ pub(crate) fn sync_neutral_configurations(
     }
     let mut lane_configuration_remaps = HashMap::<String, String>::new();
     for configuration in configurations {
-        let Some(configuration_name) = configuration.name.resolved() else {
+        let Some(configuration_name) = configuration.name.as_deref() else {
             continue;
         };
         let existing = native
@@ -473,12 +559,10 @@ pub(crate) fn sync_neutral_configurations(
             native.feature_histories[0]
                 .configurations
                 .push(Configuration {
-                    id: configuration.native_ref.clone().unwrap_or_else(|| {
-                        format!(
-                            "sldprt:generated:configuration#{}",
-                            configuration.id.as_str()
-                        )
-                    }),
+                    id: configuration
+                        .native_ref
+                        .clone()
+                        .unwrap_or_else(|| generated_configuration_record_id(&configuration.id)),
                     parent,
                     ordinal: configuration.ordinal,
                     source_index: configuration.source_index,
@@ -504,16 +588,17 @@ pub(crate) fn sync_neutral_configurations(
     synchronize_history_content_order(native);
 }
 
-pub(crate) fn configuration_slot(properties: &BTreeMap<String, String>, ordinal: u32) -> u32 {
+fn configuration_slot(
+    properties: &BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+    ordinal: u32,
+) -> u32 {
     properties
         .get("id")
         .and_then(|value| value.parse::<u32>().ok())
         .unwrap_or(ordinal)
 }
 
-pub(crate) fn native_configuration_slot_owners(
-    histories: &[FeatureHistory],
-) -> BTreeMap<u32, Option<String>> {
+fn native_configuration_slot_owners(histories: &[FeatureHistory]) -> BTreeMap<u32, Option<String>> {
     let configurations = histories
         .iter()
         .flat_map(|history| &history.configurations)
@@ -549,4 +634,27 @@ pub(crate) fn native_configuration_slot_owners(
             .or_insert_with(|| Some(configuration.id.clone()));
     }
     owners
+}
+
+fn generated_configuration_record_id(id: &cadmpeg_ir::features::ConfigurationId) -> String {
+    format!(
+        "sldprt:generated:configuration#{}",
+        id.as_str().replace('%', "%25").replace('#', "%23")
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn generated_configuration_identity_escapes_embedded_separators() {
+        let id =
+            cadmpeg_ir::features::ConfigurationId::mint("test:model:configuration#original%23key")
+                .expect("fixture identity");
+        let record = super::generated_configuration_record_id(&id);
+        assert_eq!(
+            record,
+            "sldprt:generated:configuration#test:model:configuration%23original%2523key"
+        );
+        assert!(cadmpeg_ir::ids::is_valid_identity(&record));
+    }
 }

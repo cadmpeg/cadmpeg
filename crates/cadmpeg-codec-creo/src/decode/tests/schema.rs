@@ -6,12 +6,16 @@
 //! persistence-layout signals, and the `srf_array`/`crv_array` count headers.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::wire;
+
+use crate::test_support::build_prt;
+use crate::test_support::push_generated_plane_row;
+use crate::test_support::visibgeom_payload;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::container::{self};
-use crate::test_support::*;
 use crate::CreoCodec;
 
 const EPS_FULL_TURN_REVOLUTION: f64 = 1.0e-12;
@@ -43,47 +47,50 @@ fn decode_types_class_911_as_unresolved_hole() {
         .find(|feature| feature.id.as_str() == "creo:model:feature#4")
         .expect("hole feature");
     assert!(matches!(
-        feature.definition,
-        cadmpeg_ir::features::FeatureDefinition::Hole {
+        feature.evaluation.definition(), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Hole {
             face: None,
             placements: None,
-            construction: cadmpeg_ir::features::HoleConstruction::Form {
-                kind: cadmpeg_ir::features::HoleKind::Unresolved(None),
-                ..
-            },
-            diameter: None,
+            shape,
+
             extent: None,
             ..
-        }
-    ));
+        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
+                kind: cadmpeg_ir::features::holes::HoleKind::Unresolved(None),
+                ..
+            }, None,))));
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_FEATURE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_FEATURE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_TYPED_FEATURE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_TYPED_FEATURE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_NATIVE_FEATURE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_NATIVE_FEATURE_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_HOLE_FEATURE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_HOLE_FEATURE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_INCOMPLETE_HOLE_FEATURE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_INCOMPLETE_HOLE_FEATURE_COUNT.as_str()
+        ),
         1
     );
     for key in [
@@ -94,33 +101,40 @@ fn decode_types_class_911_as_unresolved_hole() {
         "transferred_incomplete_hole_termination_feature_count",
     ] {
         assert_eq!(
-            result.report().coverage().get(key).copied().unwrap_or(0),
+            wire::coverage(result.report())
+                .get(key)
+                .copied()
+                .unwrap_or(0),
             1,
             "{key}"
         );
     }
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_UNRESOLVED_HOLE_PROFILE_FEATURE_COUNT),
-        0
-    );
-    assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_NATIVE_HOLE_PROFILE_FEATURE_COUNT),
-        0
-    );
-    assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::TRANSFERRED_UNRESOLVED_HOLE_FACE_SELECTION_FEATURE_COUNT
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_UNRESOLVED_HOLE_PROFILE_FEATURE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_NATIVE_HOLE_FACE_SELECTION_FEATURE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_NATIVE_HOLE_PROFILE_FEATURE_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_UNRESOLVED_HOLE_FACE_SELECTION_FEATURE_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_NATIVE_HOLE_FACE_SELECTION_FEATURE_COUNT.as_str()
+        ),
         0
     );
 }
@@ -152,43 +166,48 @@ fn decode_types_class_914_as_unresolved_chamfer() {
         .find(|feature| feature.id.as_str() == "creo:model:feature#4")
         .expect("chamfer feature");
     assert!(matches!(
-        feature.definition,
-        cadmpeg_ir::features::FeatureDefinition::Chamfer {
+        feature.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Chamfer {
             ref groups,
             ..
-        } if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::ChamferGroup {
             edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
-            spec: cadmpeg_ir::features::ChamferSpec::Unresolved,
+            spec: cadmpeg_ir::features::edge_treatments::ChamferSpec::Unresolved { form: None },
         }])
     ));
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_CHAMFER_FEATURE_COUNT),
-        1
-    );
-    assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_INCOMPLETE_CHAMFER_FEATURE_COUNT),
-        1
-    );
-    assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::TRANSFERRED_UNRESOLVED_CHAMFER_EDGE_SELECTION_FEATURE_COUNT
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_CHAMFER_FEATURE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::TRANSFERRED_NATIVE_CHAMFER_EDGE_SELECTION_FEATURE_COUNT
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_INCOMPLETE_CHAMFER_FEATURE_COUNT.as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_UNRESOLVED_CHAMFER_EDGE_SELECTION_FEATURE_COUNT.as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_NATIVE_CHAMFER_EDGE_SELECTION_FEATURE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_UNRESOLVED_CHAMFER_SPEC_FEATURE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_UNRESOLVED_CHAMFER_SPEC_FEATURE_COUNT.as_str()
+        ),
         1
     );
 }
@@ -218,8 +237,10 @@ fn decode_uses_stored_family_when_row_schema_is_not_registered() {
         .expect("round feature");
 
     assert!(matches!(
-        feature.definition,
-        cadmpeg_ir::features::FeatureDefinition::Fillet { .. }
+        feature.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Fillet { .. }
+        )
     ));
     assert_eq!(feature.source_properties["featdefs_schema_class"], "1104");
 }
@@ -256,15 +277,17 @@ fn decode_uses_reference_name_family_when_operation_name_is_generic() {
     assert_eq!(feature.name.as_deref(), Some("Surface id 4"));
     assert!(
         matches!(
-            feature.definition,
-            cadmpeg_ir::features::FeatureDefinition::Extrude {
-                op: cadmpeg_ir::features::BooleanOp::NewBody,
-                solid: Some(false),
-                ..
-            }
+            feature.evaluation.definition(),
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Extrude {
+                    op: cadmpeg_ir::features::BooleanOp::NewBody,
+                    solid: Some(false),
+                    ..
+                }
+            )
         ),
         "{:#?}\n{:#?}",
-        feature.definition,
+        feature.evaluation.definition(),
         feature.source_properties
     );
 }
@@ -293,33 +316,40 @@ fn decode_types_default_part_coordinate_system() {
 
     assert_eq!(feature.name.as_deref(), Some("PRT_CSYS_DEF"));
     assert!(matches!(
-        feature.definition,
-        cadmpeg_ir::features::FeatureDefinition::Unresolved {
-            family: cadmpeg_ir::features::UnresolvedFamily::DatumCoordinateSystem
-        }
+        feature.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Unresolved {
+                family: cadmpeg_ir::features::UnresolvedFamily::DatumCoordinateSystem
+            }
+        )
     ));
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_EXPLICITLY_UNRESOLVED_FEATURE_COUNT),
-        1
-    );
-    assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::TRANSFERRED_UNRESOLVED_DATUM_COORDINATE_SYSTEM_FEATURE_COUNT
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_EXPLICITLY_UNRESOLVED_FEATURE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_UNRESOLVED_DATUM_PLANE_FEATURE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            (crate::coverage::TRANSFERRED_UNRESOLVED_DATUM_COORDINATE_SYSTEM_FEATURE_COUNT)
+                .as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_UNRESOLVED_DATUM_PLANE_FEATURE_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_UNRESOLVED_BOUNDARY_SURFACE_FEATURE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_UNRESOLVED_BOUNDARY_SURFACE_FEATURE_COUNT.as_str()
+        ),
         0
     );
     assert!(result.report().losses.iter().any(|loss| {
@@ -348,48 +378,56 @@ fn decode_types_class_946_as_unresolved_surface_merge() {
         .find(|feature| feature.id.as_str() == "creo:model:feature#4")
         .expect("surface merge feature");
     assert!(matches!(
-        feature.definition,
-        cadmpeg_ir::features::FeatureDefinition::KnitSurface {
-            faces: cadmpeg_ir::features::FaceSelection::Unresolved,
-            merge_entities: Some(true),
-            create_solid: Some(false),
-            gap_tolerance: None,
-        }
+        feature.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::KnitSurface {
+                faces: cadmpeg_ir::features::FaceSelection::Unresolved,
+                merge_entities: Some(true),
+                create_solid: Some(false),
+                gap_tolerance: None,
+            }
+        )
     ));
     assert_eq!(feature.name.as_deref(), Some("Surface Merge id 4"));
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_KNIT_SURFACE_FEATURE_COUNT),
-        1
-    );
-    assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_INCOMPLETE_KNIT_SURFACE_FEATURE_COUNT),
-        1
-    );
-    assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::TRANSFERRED_UNRESOLVED_KNIT_SURFACE_FACES_FEATURE_COUNT
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_KNIT_SURFACE_FEATURE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::TRANSFERRED_UNRESOLVED_KNIT_SURFACE_MERGE_FEATURE_COUNT
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_INCOMPLETE_KNIT_SURFACE_FEATURE_COUNT.as_str()
         ),
-        0
+        1
     );
     assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::TRANSFERRED_UNRESOLVED_KNIT_SURFACE_SOLID_FEATURE_COUNT
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_UNRESOLVED_KNIT_SURFACE_FACES_FEATURE_COUNT.as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_UNRESOLVED_KNIT_SURFACE_MERGE_FEATURE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::TRANSFERRED_INCOMPLETE_SURFACE_OPERATION_FEATURE_COUNT
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_UNRESOLVED_KNIT_SURFACE_SOLID_FEATURE_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_INCOMPLETE_SURFACE_OPERATION_FEATURE_COUNT.as_str()
         ),
         1
     );
@@ -419,27 +457,31 @@ fn decode_types_row_only_class_927_as_unresolved_draft() {
         .expect("draft feature");
     assert_eq!(feature.name.as_deref(), Some("Draft id 4"));
     assert!(matches!(
-        feature.definition,
-        cadmpeg_ir::features::FeatureDefinition::Draft {
-            faces: cadmpeg_ir::features::FaceSelection::Unresolved,
-            anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
-                plane: cadmpeg_ir::features::FaceSelection::Unresolved,
-                pull: None,
-            },
-            angle: None,
-            outward: None,
-        }
+        feature.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Draft {
+                faces: cadmpeg_ir::features::FaceSelection::Unresolved,
+                anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                    plane: cadmpeg_ir::features::FaceSelection::Unresolved,
+                    pull: None,
+                },
+                angle: None,
+                outward: None,
+            }
+        )
     ));
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_DRAFT_FEATURE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_DRAFT_FEATURE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_INCOMPLETE_DRAFT_FEATURE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_INCOMPLETE_DRAFT_FEATURE_COUNT.as_str()
+        ),
         1
     );
     for key in [
@@ -450,21 +492,26 @@ fn decode_types_row_only_class_927_as_unresolved_draft() {
         "transferred_unresolved_draft_outward_feature_count",
     ] {
         assert_eq!(
-            result.report().coverage().get(key).copied().unwrap_or(0),
+            wire::coverage(result.report())
+                .get(key)
+                .copied()
+                .unwrap_or(0),
             1,
             "{key}"
         );
     }
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_NATIVE_DRAFT_FACE_SELECTION_FEATURE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_NATIVE_DRAFT_FACE_SELECTION_FEATURE_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_NATIVE_DRAFT_NEUTRAL_PLANE_FEATURE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_NATIVE_DRAFT_NEUTRAL_PLANE_FEATURE_COUNT.as_str()
+        ),
         0
     );
 }
@@ -486,16 +533,18 @@ fn decode_types_named_draft_with_unresolved_operands() {
             .expect("draft feature");
 
         assert!(matches!(
-            &feature.definition,
-            cadmpeg_ir::features::FeatureDefinition::Draft {
-                faces: cadmpeg_ir::features::FaceSelection::Unresolved,
-                anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
-                    plane: cadmpeg_ir::features::FaceSelection::Unresolved,
-                    pull: None,
-                },
-                angle: None,
-                outward: None,
-            }
+            feature.evaluation.definition(),
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Draft {
+                    faces: cadmpeg_ir::features::FaceSelection::Unresolved,
+                    anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                        plane: cadmpeg_ir::features::FaceSelection::Unresolved,
+                        pull: None,
+                    },
+                    angle: None,
+                    outward: None,
+                }
+            )
         ));
     }
 }
@@ -515,33 +564,39 @@ fn decode_types_named_mirror_with_unresolved_operands() {
         .expect("mirror feature");
 
     assert_eq!(
-        feature.definition,
-        cadmpeg_ir::features::FeatureDefinition::Pattern {
-            seeds: Vec::new(),
-            pattern: cadmpeg_ir::features::PatternKind::UnresolvedMirror,
-        }
+        *feature.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Pattern {
+                seeds: Vec::new(),
+                pattern: cadmpeg_ir::features::patterns::PatternKind::UNRESOLVED_MIRROR,
+            }
+        )
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_PATTERN_FEATURE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_PATTERN_FEATURE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_INCOMPLETE_PATTERN_FEATURE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_INCOMPLETE_PATTERN_FEATURE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_UNRESOLVED_PATTERN_SEED_FEATURE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_UNRESOLVED_PATTERN_SEED_FEATURE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::TRANSFERRED_UNRESOLVED_PATTERN_TRANSFORM_FEATURE_COUNT
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_UNRESOLVED_PATTERN_TRANSFORM_FEATURE_COUNT.as_str()
         ),
         1
     );
@@ -569,14 +624,20 @@ fn decode_types_z_prefixed_round_with_unresolved_operands() {
         .expect("round feature");
 
     assert_eq!(
-        feature.definition,
-        cadmpeg_ir::features::FeatureDefinition::Fillet {
-            groups: vec![cadmpeg_ir::features::FilletGroup {
-                edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
-                radius: cadmpeg_ir::features::RadiusSpec::Unresolved,
-                tangency_weight: None,
-            }],
-        }
+        *feature.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Fillet {
+                groups: cadmpeg_ir::features::NonEmptyMembers::one(
+                    cadmpeg_ir::features::edge_treatments::FilletGroup {
+                        edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
+                        radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Unresolved {
+                            form: None
+                        },
+                        tangency_weight: None,
+                    }
+                ),
+            }
+        )
     );
     assert_eq!(
         feature
@@ -605,18 +666,22 @@ fn decode_recovers_schema_feature_that_owns_materialized_surfaces() {
     assert_eq!(feature.id.as_str(), "creo:model:feature#4");
     assert_eq!(feature.name.as_deref(), Some("Protrusion id 4"));
     assert!(matches!(
-        &feature.definition,
-        cadmpeg_ir::features::FeatureDefinition::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
-            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
-            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
-                side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::LinearTermination::Unresolved,
-                    ..
-                }
-            },
-            ..
-        }
+        feature.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Extrude {
+                profile: cadmpeg_ir::features::ProfileRef::Planar(
+                    cadmpeg_ir::features::PlanarProfileRef::Unresolved(_)
+                ),
+                direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
+                extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                    side: cadmpeg_ir::features::ExtrudeSide {
+                        termination: cadmpeg_ir::features::LinearTermination::Unresolved {},
+                        ..
+                    }
+                },
+                ..
+            }
+        )
     ));
     assert_eq!(
         feature
@@ -655,66 +720,79 @@ fn decode_types_row_only_class_916_as_subtractive_extrusion() {
 
     assert_eq!(feature.name.as_deref(), Some("Cut id 4"));
     assert!(matches!(
-        feature.definition,
-        cadmpeg_ir::features::FeatureDefinition::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
-            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
-            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
-                side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::LinearTermination::Unresolved,
-                    ..
-                }
-            },
-            op: cadmpeg_ir::features::BooleanOp::Cut,
-            ..
-        }
+        feature.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Extrude {
+                profile: cadmpeg_ir::features::ProfileRef::Planar(
+                    cadmpeg_ir::features::PlanarProfileRef::Unresolved(_)
+                ),
+                direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
+                extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                    side: cadmpeg_ir::features::ExtrudeSide {
+                        termination: cadmpeg_ir::features::LinearTermination::Unresolved {},
+                        ..
+                    }
+                },
+                op: cadmpeg_ir::features::BooleanOp::Cut,
+                ..
+            }
+        )
     ));
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_EXTRUDE_FEATURE_COUNT),
-        1
-    );
-    assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_UNRESOLVED_EXTRUDE_PROFILE_FEATURE_COUNT),
-        1
-    );
-    assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_NATIVE_EXTRUDE_PROFILE_FEATURE_COUNT),
-        0
-    );
-    assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_INCOMPLETE_EXTRUDE_START_FEATURE_COUNT),
-        0
-    );
-    assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::TRANSFERRED_INCOMPLETE_EXTRUDE_TERMINATION_FEATURE_COUNT
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_EXTRUDE_FEATURE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::TRANSFERRED_UNRESOLVED_EXTRUDE_BOOLEAN_OPERATION_FEATURE_COUNT
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_UNRESOLVED_EXTRUDE_PROFILE_FEATURE_COUNT.as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_NATIVE_EXTRUDE_PROFILE_FEATURE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_INCOMPLETE_EXTRUDE_FEATURE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_INCOMPLETE_EXTRUDE_START_FEATURE_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_INCOMPLETE_EXTRUDE_TERMINATION_FEATURE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_INCOMPLETE_SWEEP_FEATURE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            (crate::coverage::TRANSFERRED_UNRESOLVED_EXTRUDE_BOOLEAN_OPERATION_FEATURE_COUNT)
+                .as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_INCOMPLETE_EXTRUDE_FEATURE_COUNT.as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_INCOMPLETE_SWEEP_FEATURE_COUNT.as_str()
+        ),
         1
     );
     assert!(result
@@ -739,19 +817,23 @@ fn decode_types_named_base_protrusion_as_new_body() {
         .expect("protrusion feature");
 
     assert!(matches!(
-        &feature.definition,
-        cadmpeg_ir::features::FeatureDefinition::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
-            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
-            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
-                side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::LinearTermination::Unresolved,
-                    ..
-                }
-            },
-            op: cadmpeg_ir::features::BooleanOp::NewBody,
-            ..
-        }
+        feature.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Extrude {
+                profile: cadmpeg_ir::features::ProfileRef::Planar(
+                    cadmpeg_ir::features::PlanarProfileRef::Unresolved(_)
+                ),
+                direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
+                extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                    side: cadmpeg_ir::features::ExtrudeSide {
+                        termination: cadmpeg_ir::features::LinearTermination::Unresolved {},
+                        ..
+                    }
+                },
+                op: cadmpeg_ir::features::BooleanOp::NewBody,
+                ..
+            }
+        )
     ));
 }
 
@@ -778,84 +860,100 @@ fn decode_types_named_sweeps_without_recipe_or_operands() {
     };
 
     assert!(matches!(
-        feature("creo:model:feature#4").definition,
-        cadmpeg_ir::features::FeatureDefinition::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
-            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
-            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
-                side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::LinearTermination::Unresolved,
-                    ..
-                }
-            },
-            op: cadmpeg_ir::features::BooleanOp::Unresolved,
-            ..
-        }
+        feature("creo:model:feature#4").evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Extrude {
+                profile: cadmpeg_ir::features::ProfileRef::Planar(
+                    cadmpeg_ir::features::PlanarProfileRef::Unresolved(_)
+                ),
+                direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
+                extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                    side: cadmpeg_ir::features::ExtrudeSide {
+                        termination: cadmpeg_ir::features::LinearTermination::Unresolved {},
+                        ..
+                    }
+                },
+                op: cadmpeg_ir::features::BooleanOp::Unresolved,
+                ..
+            }
+        )
     ));
     assert!(matches!(
-        feature("creo:model:feature#5").definition,
-        cadmpeg_ir::features::FeatureDefinition::Revolve {
+        feature("creo:model:feature#5").evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Revolve {
             ref construction,
             op: cadmpeg_ir::features::BooleanOp::Unresolved,
-        } if construction.profile().is_none()
+        }) if construction.profile().is_none()
             && construction.axis().is_none()
             && construction.extent().is_none()
     ));
     assert!(matches!(
-        feature("creo:model:feature#6").definition,
-        cadmpeg_ir::features::FeatureDefinition::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
-            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
-            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
-                side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::LinearTermination::Unresolved,
-                    ..
-                }
-            },
-            op: cadmpeg_ir::features::BooleanOp::Cut,
-            ..
-        }
+        feature("creo:model:feature#6").evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Extrude {
+                profile: cadmpeg_ir::features::ProfileRef::Planar(
+                    cadmpeg_ir::features::PlanarProfileRef::Unresolved(_)
+                ),
+                direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
+                extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                    side: cadmpeg_ir::features::ExtrudeSide {
+                        termination: cadmpeg_ir::features::LinearTermination::Unresolved {},
+                        ..
+                    }
+                },
+                op: cadmpeg_ir::features::BooleanOp::Cut,
+                ..
+            }
+        )
     ));
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_REVOLVE_FEATURE_COUNT),
-        1
-    );
-    assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_UNRESOLVED_REVOLVE_PROFILE_FEATURE_COUNT),
-        1
-    );
-    assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_NATIVE_REVOLVE_PROFILE_FEATURE_COUNT),
-        0
-    );
-    assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_UNRESOLVED_REVOLVE_AXIS_FEATURE_COUNT),
-        1
-    );
-    assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_INCOMPLETE_REVOLVE_EXTENT_FEATURE_COUNT),
-        1
-    );
-    assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::TRANSFERRED_UNRESOLVED_REVOLVE_BOOLEAN_OPERATION_FEATURE_COUNT
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_REVOLVE_FEATURE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_INCOMPLETE_REVOLVE_FEATURE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_UNRESOLVED_REVOLVE_PROFILE_FEATURE_COUNT.as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_NATIVE_REVOLVE_PROFILE_FEATURE_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_UNRESOLVED_REVOLVE_AXIS_FEATURE_COUNT.as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_INCOMPLETE_REVOLVE_EXTENT_FEATURE_COUNT.as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        wire::coverage_count(
+            result.report(),
+            (crate::coverage::TRANSFERRED_UNRESOLVED_REVOLVE_BOOLEAN_OPERATION_FEATURE_COUNT)
+                .as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_INCOMPLETE_REVOLVE_FEATURE_COUNT.as_str()
+        ),
         1
     );
 }
@@ -881,11 +979,11 @@ fn decode_types_schema_datum_from_its_unique_plane_carrier() {
 
     assert_eq!(result.ir().model.features.len(), 1);
     assert!(matches!(
-        &result.ir().model.features[0].definition,
-        cadmpeg_ir::features::FeatureDefinition::DatumPlane { origin, normal, u_axis }
-            if *origin == cadmpeg_ir::math::Point3::new(0.0, 0.0, 1.0)
-                && *normal == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
-                && *u_axis == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+        result.ir().model.features[0].evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::DatumPlane { frame })
+            if frame.origin() == cadmpeg_ir::math::Point3::new(0.0, 0.0, 1.0)
+                && frame.normal() == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+                && frame.u_axis() == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
     ));
 }
 
@@ -909,61 +1007,68 @@ fn decode_types_class_913_without_an_edge_array() {
         .expect("decode");
 
     assert!(matches!(
-        result.ir().model.features[0].definition,
-        cadmpeg_ir::features::FeatureDefinition::Fillet {
+        result.ir().model.features[0].evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Fillet {
             ref groups,
-        } if matches!(groups.as_slice(), [group]
+        }) if matches!(groups.as_slice(), [group]
             if matches!(group.edges, cadmpeg_ir::features::EdgeSelection::Unresolved)
                 && group.radius.is_unresolved())
     ));
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_FILLET_FEATURE_COUNT),
-        1
-    );
-    assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_INCOMPLETE_FILLET_FEATURE_COUNT),
-        1
-    );
-    assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::TRANSFERRED_UNRESOLVED_FILLET_EDGE_SELECTION_FEATURE_COUNT
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_FILLET_FEATURE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::TRANSFERRED_NATIVE_FILLET_EDGE_SELECTION_FEATURE_COUNT
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_INCOMPLETE_FILLET_FEATURE_COUNT.as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_UNRESOLVED_FILLET_EDGE_SELECTION_FEATURE_COUNT.as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_NATIVE_FILLET_EDGE_SELECTION_FEATURE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_UNRESOLVED_FILLET_RADIUS_FEATURE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_UNRESOLVED_FILLET_RADIUS_FEATURE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        result.report().coverage_count(crate::coverage::TRANSFERRED_UNRESOLVED_FILLET_RADIUS_WITHOUT_GENERATED_SURFACE_FEATURE_COUNT),
+        wire::coverage_count(result.report(), crate::coverage::TRANSFERRED_UNRESOLVED_FILLET_RADIUS_WITHOUT_GENERATED_SURFACE_FEATURE_COUNT.as_str()),
         0
     );
     assert_eq!(
-        result.report().coverage_count(crate::coverage::TRANSFERRED_UNRESOLVED_FILLET_RADIUS_WITH_GENERATED_SURFACE_FEATURE_COUNT),
+        wire::coverage_count(result.report(), crate::coverage::TRANSFERRED_UNRESOLVED_FILLET_RADIUS_WITH_GENERATED_SURFACE_FEATURE_COUNT.as_str()),
         1
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::UNTRANSFERRED_VISIBLE_PLANE_SURFACE_ROW_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::UNTRANSFERRED_VISIBLE_PLANE_SURFACE_ROW_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::UNTRANSFERRED_VISIBLE_CYLINDER_SURFACE_ROW_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::UNTRANSFERRED_VISIBLE_CYLINDER_SURFACE_ROW_COUNT.as_str()
+        ),
         0
     );
     assert!(result.report().losses.iter().any(|loss| {
@@ -986,19 +1091,19 @@ fn decode_types_named_german_round_without_a_schema_row() {
         Some("Rundung id 4")
     );
     assert!(matches!(
-        result.ir().model.features[0].definition,
-        cadmpeg_ir::features::FeatureDefinition::Fillet {
+        result.ir().model.features[0].evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Fillet {
             ref groups,
-        } if matches!(groups.as_slice(), [group]
+        }) if matches!(groups.as_slice(), [group]
             if matches!(group.edges, cadmpeg_ir::features::EdgeSelection::Unresolved)
                 && group.radius.is_unresolved())
     ));
     assert_eq!(
-        result.report().coverage_count(crate::coverage::TRANSFERRED_UNRESOLVED_FILLET_RADIUS_WITHOUT_GENERATED_SURFACE_FEATURE_COUNT),
+        wire::coverage_count(result.report(), crate::coverage::TRANSFERRED_UNRESOLVED_FILLET_RADIUS_WITHOUT_GENERATED_SURFACE_FEATURE_COUNT.as_str()),
         1
     );
     assert_eq!(
-        result.report().coverage_count(crate::coverage::TRANSFERRED_UNRESOLVED_FILLET_RADIUS_WITH_GENERATED_SURFACE_FEATURE_COUNT),
+        wire::coverage_count(result.report(), crate::coverage::TRANSFERRED_UNRESOLVED_FILLET_RADIUS_WITH_GENERATED_SURFACE_FEATURE_COUNT.as_str()),
         0
     );
 }
@@ -1011,11 +1116,13 @@ fn decode_types_named_annotation_feature_as_a_tree_node() {
         .expect("decode");
 
     assert!(matches!(
-        result.ir().model.features[0].definition,
-        cadmpeg_ir::features::FeatureDefinition::TreeNode {
-            role: cadmpeg_ir::features::FeatureTreeNodeRole::Annotations,
-            ..
-        }
+        result.ir().model.features[0].evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::TreeNode {
+                role: cadmpeg_ir::features::FeatureTreeNodeRole::Annotations,
+                ..
+            }
+        )
     ));
 }
 
@@ -1034,11 +1141,13 @@ fn decode_types_localized_cross_section_nodes() {
 
     assert_eq!(result.ir().model.features.len(), 2);
     assert!(result.ir().model.features.iter().all(|feature| matches!(
-        feature.definition,
-        cadmpeg_ir::features::FeatureDefinition::TreeNode {
-            role: cadmpeg_ir::features::FeatureTreeNodeRole::CrossSections,
-            ..
-        }
+        feature.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::TreeNode {
+                role: cadmpeg_ir::features::FeatureTreeNodeRole::CrossSections,
+                ..
+            }
+        )
     )));
 }
 
@@ -1057,25 +1166,31 @@ fn decode_types_body_and_surface_tree_nodes() {
 
     assert_eq!(result.ir().model.features.len(), 3);
     assert!(matches!(
-        result.ir().model.features[0].definition,
-        cadmpeg_ir::features::FeatureDefinition::TreeNode {
-            role: cadmpeg_ir::features::FeatureTreeNodeRole::SolidBodies,
-            ..
-        }
+        result.ir().model.features[0].evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::TreeNode {
+                role: cadmpeg_ir::features::FeatureTreeNodeRole::SolidBodies,
+                ..
+            }
+        )
     ));
     assert!(matches!(
-        result.ir().model.features[1].definition,
-        cadmpeg_ir::features::FeatureDefinition::TreeNode {
-            role: cadmpeg_ir::features::FeatureTreeNodeRole::SolidBodies,
-            ..
-        }
+        result.ir().model.features[1].evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::TreeNode {
+                role: cadmpeg_ir::features::FeatureTreeNodeRole::SolidBodies,
+                ..
+            }
+        )
     ));
     assert!(matches!(
-        result.ir().model.features[2].definition,
-        cadmpeg_ir::features::FeatureDefinition::TreeNode {
-            role: cadmpeg_ir::features::FeatureTreeNodeRole::SurfaceBodies,
-            ..
-        }
+        result.ir().model.features[2].evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::TreeNode {
+                role: cadmpeg_ir::features::FeatureTreeNodeRole::SurfaceBodies,
+                ..
+            }
+        )
     ));
 }
 
@@ -1106,16 +1221,22 @@ fn decode_types_round_with_labeled_edge_selection() {
         .expect("round feature");
 
     assert_eq!(
-        feature.definition,
-        cadmpeg_ir::features::FeatureDefinition::Fillet {
-            groups: vec![cadmpeg_ir::features::FilletGroup {
-                edges: cadmpeg_ir::features::EdgeSelection::Native(
-                    "creo:allfeatur:edgs_affected#4:44,45".to_string()
+        *feature.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Fillet {
+                groups: cadmpeg_ir::features::NonEmptyMembers::one(
+                    cadmpeg_ir::features::edge_treatments::FilletGroup {
+                        edges: cadmpeg_ir::features::EdgeSelection::Native(
+                            "creo:allfeatur:edgs_affected#4:44,45".to_string()
+                        ),
+                        radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Unresolved {
+                            form: None
+                        },
+                        tangency_weight: None,
+                    }
                 ),
-                radius: cadmpeg_ir::features::RadiusSpec::Unresolved,
-                tangency_weight: None,
-            }],
-        }
+            }
+        )
     );
     assert_eq!(
         feature
@@ -1124,7 +1245,8 @@ fn decode_types_round_with_labeled_edge_selection() {
             .map(String::as_str),
         Some("44,45")
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -1145,7 +1267,7 @@ fn decode_types_full_turn_revolution_from_positional_angle_choice() {
             ("MdlStatus", mdlstatus),
         ],
     );
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.features.revolution_extents.len(), 1);
     assert_eq!(scan.features.revolution_extents[0].feature_id, 40);
@@ -1160,17 +1282,17 @@ fn decode_types_full_turn_revolution_from_positional_angle_choice() {
         .find(|feature| feature.id.as_str() == "creo:model:feature#40")
         .expect("revolution feature");
     assert!(matches!(
-        &feature.definition,
-        cadmpeg_ir::features::FeatureDefinition::Revolve {
+        feature.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Revolve {
             construction,
             op: cadmpeg_ir::features::BooleanOp::NewBody,
-        } if construction.profile().is_none()
+        }) if construction.profile().is_none()
             && construction.axis().is_none()
             && matches!(construction.extent(), Some(cadmpeg_ir::features::RevolveExtent::OneSided {
                     termination: cadmpeg_ir::features::AngularTermination::Angle {
-                        angle: cadmpeg_ir::features::Angle(angle)
+                        angle
                     }
-                }) if (*angle - std::f64::consts::TAU).abs() < EPS_FULL_TURN_REVOLUTION)
+                }) if (angle.get() - std::f64::consts::TAU).abs() < EPS_FULL_TURN_REVOLUTION)
     ));
     let records =
         &result.ir().native.namespace("creo").unwrap().arenas()["feature_revolution_extents"];
@@ -1209,8 +1331,10 @@ fn decode_types_schema_less_datum_plane_names() {
             Some(format!("{name} id 4").as_str())
         );
         assert!(matches!(
-            feature.definition,
-            cadmpeg_ir::features::FeatureDefinition::DatumPlane { .. }
+            feature.evaluation.definition(),
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::DatumPlane { .. }
+            )
         ));
     }
 }

@@ -3,17 +3,224 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+use cadmpeg_test_support::wire;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use cadmpeg_ir::geometry::{CurveGeometry, ProceduralCurveDefinition, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    ProceduralCurveDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+};
 
 use cadmpeg_ir::math::{Point3, Vector3};
 
-use crate::test_support::*;
+use crate::test_support::test_a5_bound::{a5_native_edge_run_stream, a5_nurbs_bound_edge_stream};
+use crate::test_support::test_a5a8::{
+    a5_freeform_curve_stream, a5_guide_curve_stream, a5_native_edge_identity_stream,
+    a5_pcurve_stream, a5_pcurve_stream_with_uv, a5_surface_stream,
+};
+use crate::test_support::test_b2::{
+    b2_cone_stream, b2_construction_use_stream_for, b2_cylinder_stream,
+    b2_edge_parameter_stream_for, b2_offset_support_stream_for,
+};
+use crate::test_support::test_bytes::{be32, be_f32, le_f64};
+use crate::test_support::test_container::{
+    fbb_only_catpart, main_stream, standard_catpart, standard_catpart_from_streams, surf_stream,
+    tetrahedron_topology_catpart,
+};
 use crate::variant::Variant;
 use crate::CatiaCodec;
+
+const EPS_TRANSFER_PLANE_FRAME: f64 = 1.0e-6;
+
+#[test]
+fn standard_population_scope_preserves_a_body_name_that_spells_its_identity() {
+    use super::super::StandardPopulationScope;
+    use cadmpeg_ir::document::EntityRewrite;
+    use cadmpeg_ir::ids::{BodyId, RegionId};
+    use cadmpeg_ir::topology::{Body, BodyKind};
+    let source_id = "catia:standard:body#source";
+    let body = Body {
+        id: BodyId::mint(source_id).unwrap(),
+        kind: BodyKind::Solid,
+        regions: vec![RegionId::mint("catia:standard:region#source").unwrap()],
+        transform: None,
+        name: Some(source_id.into()),
+        color: None,
+        visible: None,
+    };
+    let scoped = crate::test_support::with_service_context(|ctx| {
+        StandardPopulationScope {
+            scope: "population-1",
+            ctx,
+        }
+        .rewrite(body)
+    })
+    .unwrap();
+    assert_eq!(
+        scoped.id.as_str(),
+        "catia:standard:population-1/body#source"
+    );
+    assert_eq!(
+        scoped.regions[0].as_str(),
+        "catia:standard:population-1/region#source"
+    );
+    assert_eq!(scoped.name.as_deref(), Some(source_id));
+}
+
+#[test]
+fn standard_population_entity_rewrite_refuses_collection_limit() {
+    use super::super::StandardPopulationScope;
+    use cadmpeg_ir::document::EntityRewrite;
+    use cadmpeg_ir::ids::BodyId;
+    use cadmpeg_ir::topology::{Body, BodyKind};
+    let body = Body {
+        id: BodyId::mint("catia:standard:body#0").expect("identity"),
+        kind: BodyKind::Solid,
+        regions: Vec::new(),
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    };
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        StandardPopulationScope {
+            scope: "population-1",
+            ctx,
+        }
+        .rewrite(body.clone())
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_standard_population_rewrite")
+    );
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        StandardPopulationScope {
+            scope: "population-1",
+            ctx,
+        }
+        .rewrite(body)
+    })
+    .expect("service profile admits rewrite");
+    assert_eq!(admitted.id.as_str(), "catia:standard:population-1/body#0");
+}
+
+#[test]
+fn standard_population_identity_refuses_retained_limit() {
+    use super::super::StandardPopulationScope;
+    use cadmpeg_ir::document::EntityRewrite;
+    use cadmpeg_ir::ids::BodyId;
+    use cadmpeg_ir::topology::{Body, BodyKind};
+    let body = Body {
+        id: BodyId::mint("catia:standard:body#0").expect("identity"),
+        kind: BodyKind::Solid,
+        regions: Vec::new(),
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    };
+    let mut found = false;
+    for cap in 0..=4096 {
+        let result = crate::test_support::with_retained_limit(cap, |ctx| {
+            StandardPopulationScope {
+                scope: "population-1",
+                ctx,
+            }
+            .rewrite(body.clone())
+        });
+        match result {
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "catia_standard_population_identity" =>
+            {
+                found = true;
+                break;
+            }
+            Ok(_) => break,
+            _ => {}
+        }
+    }
+    assert!(found, "retained sweep must reach the rewritten identity");
+}
+
+#[test]
+fn standard_initial_carrier_identity_refuses_retained_limit() {
+    let file = standard_catpart();
+    let scan = crate::test_support::with_service_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.clone())
+    })
+    .expect("service scan");
+    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        super::super::try_decode_standard_population(
+            ctx,
+            &scan,
+            None,
+            &mut crate::nurbs::LaneRefusals::new(),
+            &[],
+            &std::collections::HashMap::new(),
+        )
+    };
+    assert!(crate::test_support::with_service_context(decode)
+        .expect("service budget")
+        .is_some());
+    let mut found = false;
+    for cap in 0..32_768 {
+        match crate::test_support::with_retained_limit(cap, decode) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "catia_standard_payload_id"
+                    || limit.operation == "catia_standard_surface_id" =>
+            {
+                found = true;
+                break;
+            }
+            Err(cadmpeg_core::CodecError::ResourceLimit(_)) => {}
+            _ => panic!("standard carrier passed without an identity refusal"),
+        }
+    }
+    assert!(
+        found,
+        "the retained sweep must reach initial carrier creation"
+    );
+}
+
+#[test]
+fn standard_revolution_procedure_copy_refuses_retained_limit() {
+    let directrix = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        None,
+        false,
+    )
+    .expect("fixture constructor admission")
+    .expect("valid directrix");
+    let procedure = super::super::StandardSurfaceProcedure::Revolution(Box::new(
+        crate::families::b5::transfer::ResolvedRevolutionSurface {
+            directrix,
+            axis_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                .expect("finite origin"),
+            axis_direction: cadmpeg_ir::units::UnitVector3::new(Vector3::new(0.0, 0.0, 1.0))
+                .expect("unit axis"),
+            angular_interval: [0.0, 1.0],
+            angular_parameter_interval: [0.0, 1.0],
+            parameter_interval: [0.0, 1.0],
+        },
+    ));
+    let limited = crate::test_support::with_retained_limit(0, |ctx| {
+        super::super::copy_standard_procedure(ctx, &procedure)
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_standard_revolution_plan_copy")
+    );
+    let service = crate::test_support::with_service_context(|ctx| {
+        super::super::copy_standard_procedure(ctx, &procedure)
+    })
+    .expect("service budget");
+    assert!(service == procedure);
+}
 
 #[test]
 fn standard_decode_retains_native_surface_carrier_tags() {
@@ -128,7 +335,7 @@ fn decode_standard_transfers_vertices_and_cylinder() {
         .model
         .points
         .iter()
-        .any(|p| (p.position.x - 10.0).abs() < 1.0e-6));
+        .any(|p| (p.position().get().x - 10.0).abs() < 1.0e-6));
 
     // Cylinder and tag-bridged plane carriers are decoded from their stored
     // parameters.
@@ -139,30 +346,36 @@ fn decode_standard_transfers_vertices_and_cylinder() {
     assert_eq!(unknowns[0].id.as_str(), "catia:payload:unknown#brep-stream");
     assert!(unknowns[0]
         .links
-        .contains(&"catia:standard:circle#0".to_string()));
+        .iter()
+        .any(|link| link.as_str() == "catia:standard:circle#0"));
     match &result.ir().model.surfaces[0].geometry {
-        SurfaceGeometry::Cylinder { radius, axis, .. } => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
+            let axis = cylinder_surface.frame().axis().as_raw();
+            let radius = cylinder_surface.radius().get();
             assert!((radius - 5.0).abs() < 1.0e-6);
             assert!((axis.z - 1.0).abs() < 1.0e-6);
         }
         other => panic!("expected cylinder, got {other:?}"),
     }
-    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
-        &surface.geometry,
-        SurfaceGeometry::Plane {
-            origin,
-            normal,
-            u_axis,
-        }
-            if (origin.x - 1.0).abs() < 1.0e-6
-                && (origin.y - 2.0).abs() < 1.0e-6
-                && (origin.z - 3.0).abs() < 1.0e-6
-                && normal.x.abs() < 1.0e-6
-                && normal.y.abs() < 1.0e-6
-                && (normal.z.abs() - 1.0).abs() < 1.0e-6
-                && (u_axis.x * u_axis.x + u_axis.y * u_axis.y + u_axis.z * u_axis.z - 1.0).abs() < 1.0e-6
-                && (u_axis.x * normal.x + u_axis.y * normal.y + u_axis.z * normal.z).abs() < 1.0e-6
-    )));
+    assert!(result.ir().model.surfaces.iter().any(
+        |surface| matches!(&surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))
+                if {
+                    let origin = plane_surface.origin();
+        let normal = plane_surface.frame().axis().as_raw();
+        let u_axis = plane_surface.frame().reference().as_raw();
+                    (origin.x - 1.0).abs() < EPS_TRANSFER_PLANE_FRAME
+                        && (origin.y - 2.0).abs() < EPS_TRANSFER_PLANE_FRAME
+                        && (origin.z - 3.0).abs() < EPS_TRANSFER_PLANE_FRAME
+                        && normal.x.abs() < EPS_TRANSFER_PLANE_FRAME
+                        && normal.y.abs() < EPS_TRANSFER_PLANE_FRAME
+                        && (normal.z.abs() - 1.0).abs() < EPS_TRANSFER_PLANE_FRAME
+                        && (u_axis.x * u_axis.x + u_axis.y * u_axis.y + u_axis.z * u_axis.z - 1.0)
+                            .abs()
+                            < EPS_TRANSFER_PLANE_FRAME
+                        && (u_axis.x * normal.x + u_axis.y * normal.y + u_axis.z * normal.z).abs()
+                            < EPS_TRANSFER_PLANE_FRAME
+                })
+    ));
 
     // Stored face/carrier rows do not establish a B-rep without a complete
     // trim and edge graph. Carriers remain free and vertices receive only the
@@ -173,29 +386,29 @@ fn decode_standard_transfers_vertices_and_cylinder() {
         result.ir().model.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Wire
     );
-    assert_eq!(result.ir().model.shells[0].free_vertices.len(), 3);
+    assert_eq!(result.ir().model.shells[0].free_vertices().len(), 3);
     assert!(result.ir().model.edges.is_empty());
     assert!(result
         .report()
         .losses
         .iter()
-        .any(|l| l.code.category() == cadmpeg_ir::report::LossCategory::Topology));
+        .any(|l| l.code.category() == cadmpeg_ir::report::loss::LossCategory::Topology));
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::ATTEMPTED_STANDARD_TOPOLOGY_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::ATTEMPTED_STANDARD_TOPOLOGY_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        result
-            .report()
-            .coverage()
+        wire::coverage(result.report())
             .iter()
             .filter(|(key, _)| key.starts_with("standard_topology_failure_"))
             .map(|(_, count)| count)
@@ -209,11 +422,20 @@ fn decode_standard_transfers_vertices_and_cylinder() {
             "standard_topology_mesh_ambiguity_distinct_topology_solutions_count",
         ]
         .into_iter()
-        .map(|key| result.report().coverage().get(key).copied().unwrap_or(0))
+        .map(|key| wire::coverage(result.report())
+            .get(key)
+            .copied()
+            .unwrap_or(0))
         .sum::<usize>(),
-        result
-            .report()
-            .coverage_count(crate::coverage::STANDARD_TOPOLOGY_FAILURE_AMBIGUOUS_SOLUTION_COUNT)
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::STANDARD_TOPOLOGY_FAILURE_AMBIGUOUS_SOLUTION_COUNT.as_str()
+        )
+    );
+    assert_eq!(
+        wire::coverage(result.report())
+            .get("standard_topology_mesh_exhaustion_quotient_preparation_count"),
+        Some(&0)
     );
     assert_eq!(
         [
@@ -222,30 +444,34 @@ fn decode_standard_transfers_vertices_and_cylinder() {
             "standard_topology_mesh_exhaustion_endpoint_resolution_count",
         ]
         .into_iter()
-        .map(|key| result.report().coverage().get(key).copied().unwrap_or(0))
+        .map(|key| wire::coverage(result.report())
+            .get(key)
+            .copied()
+            .unwrap_or(0))
         .sum::<usize>(),
-        result
-            .report()
-            .coverage_count(crate::coverage::STANDARD_TOPOLOGY_FAILURE_SEARCH_EXHAUSTED_COUNT)
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::STANDARD_TOPOLOGY_FAILURE_SEARCH_EXHAUSTED_COUNT.as_str()
+        )
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::STANDARD_TOPOLOGY_EMPTY_ENDPOINT_DOMAIN_COUNT)
-            + result
-                .report()
-                .coverage_count(crate::coverage::STANDARD_TOPOLOGY_SINGLETON_ENDPOINT_DOMAIN_COUNT)
-            + result
-                .report()
-                .coverage_count(crate::coverage::STANDARD_TOPOLOGY_MULTIPLE_ENDPOINT_DOMAIN_COUNT),
-        result
-            .report()
-            .coverage_count(crate::coverage::STANDARD_TOPOLOGY_CURVE_SUPPORT_COUNT)
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::STANDARD_TOPOLOGY_EMPTY_ENDPOINT_DOMAIN_COUNT.as_str()
+        ) + wire::coverage_count(
+            result.report(),
+            crate::coverage::STANDARD_TOPOLOGY_SINGLETON_ENDPOINT_DOMAIN_COUNT.as_str()
+        ) + wire::coverage_count(
+            result.report(),
+            crate::coverage::STANDARD_TOPOLOGY_MULTIPLE_ENDPOINT_DOMAIN_COUNT.as_str()
+        ),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::STANDARD_TOPOLOGY_CURVE_SUPPORT_COUNT.as_str()
+        )
     );
     assert!(
-        result
-            .report()
-            .coverage()
+        wire::coverage(result.report())
             .iter()
             .filter(|(key, _)| {
                 key.starts_with("standard_topology_mesh_rejection_")
@@ -258,21 +484,22 @@ fn decode_standard_transfers_vertices_and_cylinder() {
             <= 1
     );
     assert_eq!(
-        result.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_COUNT),
-        result.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT)
-            + result.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_BOUNDARY_RECONSTRUCTION_COUNT)
+        wire::coverage_count(result.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_COUNT.as_str()),
+        wire::coverage_count(result.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT.as_str())
+            + wire::coverage_count(result.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_BOUNDARY_RECONSTRUCTION_COUNT.as_str())
     );
     assert_eq!(
-        result.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT),
-        result.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_INPUT_SHAPE_COUNT)
-            + result.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_CHOICE_PRUNING_COUNT)
-            + result.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_FIXED_ASSIGNMENT_COUNT)
-            + result.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_DOMAIN_COUNT)
-            + result.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_COMPOSITION_COUNT)
+        wire::coverage_count(result.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT.as_str()),
+        wire::coverage_count(result.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_INPUT_SHAPE_COUNT.as_str())
+            + wire::coverage_count(result.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_CHOICE_PRUNING_COUNT.as_str())
+            + wire::coverage_count(result.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_FIXED_ASSIGNMENT_COUNT.as_str())
+            + wire::coverage_count(result.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_DOMAIN_COUNT.as_str())
+            + wire::coverage_count(result.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_COMPOSITION_COUNT.as_str())
     );
 
     // The produced IR validates (free carriers, no dangling references).
-    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }
 
@@ -296,12 +523,15 @@ fn decode_standard_retains_unresolved_roster_carrier_without_fabricating_a_face(
     assert!(decoded.ir().model.faces.is_empty());
     assert!(matches!(
         decoded.ir().model.surfaces[1].geometry,
-        SurfaceGeometry::Unknown { record: Some(_) }
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: Some(_) })
     ));
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::report::LossCategory::Geometry
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Geometry
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
             && loss.message.contains("1 unresolved surface carriers")
+            && loss
+                .message
+                .contains(decoded.ir().model.surfaces[1].id.as_str())
     }));
 }
 
@@ -335,7 +565,7 @@ fn decode_standard_builds_surface_bound_topology_graph() {
         .model
         .edges
         .iter()
-        .all(|edge| edge.curve.is_some()));
+        .all(|edge| edge.curve().is_some()));
     assert_eq!(
         decoded
             .ir()
@@ -357,25 +587,26 @@ fn decode_standard_builds_surface_bound_topology_graph() {
     assert!(!decoded.report().losses.iter().any(|loss| {
         matches!(
             loss.code.category(),
-            cadmpeg_ir::report::LossCategory::Geometry | cadmpeg_ir::report::LossCategory::Topology
+            cadmpeg_ir::report::loss::LossCategory::Geometry
+                | cadmpeg_ir::report::loss::LossCategory::Topology
         ) && loss.severity == cadmpeg_ir::report::Severity::Blocking
     }));
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::ATTEMPTED_STANDARD_TOPOLOGY_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::ATTEMPTED_STANDARD_TOPOLOGY_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage()
+        wire::coverage(decoded.report())
             .iter()
             .filter(|(key, _)| key.starts_with("standard_topology_failure_"))
             .map(|(_, count)| count)
@@ -389,11 +620,20 @@ fn decode_standard_builds_surface_bound_topology_graph() {
             "standard_topology_mesh_ambiguity_distinct_topology_solutions_count",
         ]
         .into_iter()
-        .map(|key| decoded.report().coverage().get(key).copied().unwrap_or(0))
+        .map(|key| wire::coverage(decoded.report())
+            .get(key)
+            .copied()
+            .unwrap_or(0))
         .sum::<usize>(),
-        decoded
-            .report()
-            .coverage_count(crate::coverage::STANDARD_TOPOLOGY_FAILURE_AMBIGUOUS_SOLUTION_COUNT)
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::STANDARD_TOPOLOGY_FAILURE_AMBIGUOUS_SOLUTION_COUNT.as_str()
+        )
+    );
+    assert_eq!(
+        wire::coverage(decoded.report())
+            .get("standard_topology_mesh_exhaustion_quotient_preparation_count"),
+        Some(&0)
     );
     assert_eq!(
         [
@@ -402,30 +642,34 @@ fn decode_standard_builds_surface_bound_topology_graph() {
             "standard_topology_mesh_exhaustion_endpoint_resolution_count",
         ]
         .into_iter()
-        .map(|key| decoded.report().coverage().get(key).copied().unwrap_or(0))
+        .map(|key| wire::coverage(decoded.report())
+            .get(key)
+            .copied()
+            .unwrap_or(0))
         .sum::<usize>(),
-        decoded
-            .report()
-            .coverage_count(crate::coverage::STANDARD_TOPOLOGY_FAILURE_SEARCH_EXHAUSTED_COUNT)
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::STANDARD_TOPOLOGY_FAILURE_SEARCH_EXHAUSTED_COUNT.as_str()
+        )
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::STANDARD_TOPOLOGY_EMPTY_ENDPOINT_DOMAIN_COUNT)
-            + decoded
-                .report()
-                .coverage_count(crate::coverage::STANDARD_TOPOLOGY_SINGLETON_ENDPOINT_DOMAIN_COUNT)
-            + decoded
-                .report()
-                .coverage_count(crate::coverage::STANDARD_TOPOLOGY_MULTIPLE_ENDPOINT_DOMAIN_COUNT),
-        decoded
-            .report()
-            .coverage_count(crate::coverage::STANDARD_TOPOLOGY_CURVE_SUPPORT_COUNT)
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::STANDARD_TOPOLOGY_EMPTY_ENDPOINT_DOMAIN_COUNT.as_str()
+        ) + wire::coverage_count(
+            decoded.report(),
+            crate::coverage::STANDARD_TOPOLOGY_SINGLETON_ENDPOINT_DOMAIN_COUNT.as_str()
+        ) + wire::coverage_count(
+            decoded.report(),
+            crate::coverage::STANDARD_TOPOLOGY_MULTIPLE_ENDPOINT_DOMAIN_COUNT.as_str()
+        ),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::STANDARD_TOPOLOGY_CURVE_SUPPORT_COUNT.as_str()
+        )
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage()
+        wire::coverage(decoded.report())
             .iter()
             .filter(|(key, _)| {
                 key.starts_with("standard_topology_mesh_rejection_")
@@ -438,24 +682,29 @@ fn decode_standard_builds_surface_bound_topology_graph() {
         0
     );
     assert_eq!(
-        decoded.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_COUNT),
-        decoded.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT)
-            + decoded.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_BOUNDARY_RECONSTRUCTION_COUNT)
+        wire::coverage_count(decoded.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_COUNT.as_str()),
+        wire::coverage_count(decoded.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT.as_str())
+            + wire::coverage_count(decoded.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_BOUNDARY_RECONSTRUCTION_COUNT.as_str())
     );
     assert_eq!(
-        decoded.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT),
-        decoded.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_INPUT_SHAPE_COUNT)
-            + decoded.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_CHOICE_PRUNING_COUNT)
-            + decoded.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_FIXED_ASSIGNMENT_COUNT)
-            + decoded.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_DOMAIN_COUNT)
-            + decoded.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_COMPOSITION_COUNT)
+        wire::coverage_count(decoded.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT.as_str()),
+        wire::coverage_count(decoded.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_INPUT_SHAPE_COUNT.as_str())
+            + wire::coverage_count(decoded.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_CHOICE_PRUNING_COUNT.as_str())
+            + wire::coverage_count(decoded.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_FIXED_ASSIGNMENT_COUNT.as_str())
+            + wire::coverage_count(decoded.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_DOMAIN_COUNT.as_str())
+            + wire::coverage_count(decoded.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_COMPOSITION_COUNT.as_str())
     );
 }
 
 #[test]
 fn decode_fbb_only_without_parseable_counted_table_transfers_only_carriers() {
     assert_eq!(
-        crate::container::scan_bytes(fbb_only_catpart()).variant,
+        crate::test_support::with_service_context(|ctx| crate::container::scan_bytes(
+            ctx,
+            fbb_only_catpart()
+        ))
+        .expect("service resource budget")
+        .variant,
         Variant::FbbOnly
     );
     let mut cur = Cursor::new(fbb_only_catpart());
@@ -483,9 +732,16 @@ fn decode_standard_does_not_promote_unbound_consolidated_pcurve() {
 fn standard_decode_refines_a_unique_quantized_analytic_carrier() {
     let exact_x = 1.000_000_01_f64;
     let mut surf = surf_stream();
-    for (index, value) in [exact_x as f32, 2.0_f32, 3.0_f32, 1.0_f32, 0.0_f32, 2.0_f32]
-        .into_iter()
-        .enumerate()
+    for (index, value) in [
+        cadmpeg_core::convert::f32_from_f64(exact_x).expect("fixture value fits f32"),
+        2.0_f32,
+        3.0_f32,
+        1.0_f32,
+        0.0_f32,
+        2.0_f32,
+    ]
+    .into_iter()
+    .enumerate()
     {
         surf[8 + 4 * index..12 + 4 * index].copy_from_slice(&be_f32(value));
     }
@@ -506,16 +762,19 @@ fn standard_decode_refines_a_unique_quantized_analytic_carrier() {
         .iter()
         .find(|surface| surface.id.as_str() == "catia:standard:surf#0")
         .expect("refined standard cylinder");
-    assert!(matches!(
-        surface.geometry,
-        cadmpeg_ir::geometry::SurfaceGeometry::Cylinder { origin, axis, .. }
-            if origin.x == exact_x
-                && axis == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
-    ));
+    assert!(
+        matches!(surface.geometry, cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
+                if {
+                    let origin = cylinder_surface.origin();
+        let axis = cylinder_surface.frame().axis().as_raw();
+                    origin.x == exact_x && *axis == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+                })
+    );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::REFINED_CONSOLIDATED_ANALYTIC_SURFACE_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::REFINED_CONSOLIDATED_ANALYTIC_SURFACE_COUNT.as_str()
+        ),
         1
     );
 }
@@ -556,10 +815,20 @@ fn standard_decode_transfers_resolved_consolidated_cylinder_surface_curve() {
     let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition() else {
         panic!("two resolved support sides form an intersection");
     };
-    assert!(context.sides.iter().all(|side| side.surface.is_some()));
-    let pcurve = context.sides[0].pcurve.as_ref().expect("cylinder pcurve");
-    let start = cadmpeg_ir::eval::pcurve_uv(&pcurve.geometry, 0.0).expect("pcurve start");
-    let end = cadmpeg_ir::eval::pcurve_uv(&pcurve.geometry, 1.0).expect("pcurve end");
+    assert!(context.sides().iter().all(|side| side.surface.is_some()));
+    let pcurve = context.sides()[0].pcurve.as_ref().expect("cylinder pcurve");
+    let start = cadmpeg_ir::eval::decode::pcurve_uv(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &pcurve.geometry,
+        0.0,
+    )
+    .expect("pcurve start");
+    let end = cadmpeg_ir::eval::decode::pcurve_uv(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &pcurve.geometry,
+        1.0,
+    )
+    .expect("pcurve end");
     assert_eq!([start.u, start.v], [0.0, 0.0]);
     assert_eq!([end.u, end.v], [0.5, 1.0]);
 }
@@ -582,7 +851,10 @@ fn standard_decode_transfers_resolved_consolidated_cone_surface_curve() {
         ];
         records.extend_from_slice(&[0x05, 0x08, 0x01]);
         for value in point {
-            records.extend_from_slice(&(value as f32).to_le_bytes());
+            records.extend_from_slice(
+                &(cadmpeg_core::convert::f32_from_f64(value).expect("fixture value fits f32"))
+                    .to_le_bytes(),
+            );
         }
     }
     let mut file = standard_catpart();
@@ -608,10 +880,20 @@ fn standard_decode_transfers_resolved_consolidated_cone_surface_curve() {
     let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition() else {
         panic!("two resolved support sides form an intersection");
     };
-    assert!(context.sides.iter().all(|side| side.surface.is_some()));
-    let pcurve = context.sides[0].pcurve.as_ref().expect("cone pcurve");
-    let start = cadmpeg_ir::eval::pcurve_uv(&pcurve.geometry, 0.0).expect("pcurve start");
-    let end = cadmpeg_ir::eval::pcurve_uv(&pcurve.geometry, 1.0).expect("pcurve end");
+    assert!(context.sides().iter().all(|side| side.surface.is_some()));
+    let pcurve = context.sides()[0].pcurve.as_ref().expect("cone pcurve");
+    let start = cadmpeg_ir::eval::decode::pcurve_uv(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &pcurve.geometry,
+        0.0,
+    )
+    .expect("pcurve start");
+    let end = cadmpeg_ir::eval::decode::pcurve_uv(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &pcurve.geometry,
+        1.0,
+    )
+    .expect("pcurve end");
     assert_eq!([start.u, start.v], [0.0, 0.0]);
     assert_eq!([end.u, end.v], [1.0 / 3.0, 0.25f64.cos()]);
 }
@@ -643,13 +925,23 @@ fn standard_decode_transfers_resolved_consolidated_nurbs_surface_curves() {
         else {
             panic!("two resolved support sides form an intersection");
         };
-        let surface_id = context.sides[1]
+        let surface_id = context.sides()[1]
             .surface
             .as_ref()
             .expect("resolved NURBS support");
-        let pcurve = context.sides[1].pcurve.as_ref().expect("NURBS pcurve");
-        let start = cadmpeg_ir::eval::pcurve_uv(&pcurve.geometry, 0.0).expect("pcurve start");
-        let end = cadmpeg_ir::eval::pcurve_uv(&pcurve.geometry, 1.0).expect("pcurve end");
+        let pcurve = context.sides()[1].pcurve.as_ref().expect("NURBS pcurve");
+        let start = cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &pcurve.geometry,
+            0.0,
+        )
+        .expect("pcurve start");
+        let end = cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &pcurve.geometry,
+            1.0,
+        )
+        .expect("pcurve end");
         assert_eq!([start.u, start.v], [0.0, 0.0]);
         assert_eq!([end.u, end.v], [1.0, 0.0]);
 
@@ -661,7 +953,10 @@ fn standard_decode_transfers_resolved_consolidated_nurbs_surface_curves() {
                 .iter()
                 .find(|surface| &surface.id == surface_id)
                 .expect("direct NURBS carrier");
-            assert!(matches!(surface.geometry, SurfaceGeometry::Nurbs(_)));
+            assert!(matches!(
+                surface.geometry,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
+            ));
         } else {
             let construction = decoded
                 .ir()
@@ -672,15 +967,20 @@ fn standard_decode_transfers_resolved_consolidated_nurbs_surface_curves() {
                     decoded.ir().model.procedural_surface_owner(&surface.id) == Some(surface_id)
                 })
                 .expect("offset NURBS construction");
-            let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset {
-                support, distance, ..
-            } = construction.definition()
+            let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset(definition_payload) =
+                construction.definition()
             else {
                 panic!("resolved normal offset is retained as an offset construction");
             };
-            assert!((*distance - offset).abs() < 1.0e-12);
+            let support = definition_payload.support();
+            let distance = definition_payload.distance();
+            assert!((distance.get() - offset).abs() < 1.0e-12);
             assert!(decoded.ir().model.surfaces.iter().any(|surface| {
-                surface.id == *support && matches!(surface.geometry, SurfaceGeometry::Nurbs(_))
+                surface.id == *support
+                    && matches!(
+                        surface.geometry,
+                        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
+                    )
             }));
         }
     }
@@ -689,7 +989,14 @@ fn standard_decode_transfers_resolved_consolidated_nurbs_surface_curves() {
 #[test]
 fn decode_standard_transfers_exact_offset_construction() {
     let surface_bytes = a5_surface_stream();
-    let carriers = crate::families::a5a8::records::a5_surfaces(&surface_bytes);
+    let carriers = crate::test_support::with_service_context(|ctx| {
+        crate::families::a5a8::records::a5_surfaces(
+            ctx,
+            &surface_bytes,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .expect("service decode")
+    });
     let surface = &carriers[0].geometry;
     let domain = [
         surface.u_knots()[0],
@@ -710,35 +1017,35 @@ fn decode_standard_transfers_exact_offset_construction() {
     let [procedural] = decoded.ir().model.procedural_surfaces.as_slice() else {
         panic!("one offset construction");
     };
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset {
-        support,
-        distance,
-        u_sense,
-        v_sense,
-        extension,
-        ..
-    } = procedural.definition()
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset(definition_payload) =
+        procedural.definition()
     else {
         panic!("offset construction");
     };
+    let support = definition_payload.support();
+    let distance = definition_payload.distance();
+    let u_sense = definition_payload.u_sense();
+    let v_sense = definition_payload.v_sense();
+    let extension = definition_payload.extension();
     assert!(decoded
         .ir()
         .model
         .surfaces
         .iter()
         .any(|surface| surface.id == *support));
-    assert_eq!(*distance, 2.5);
+    assert_eq!(distance.get(), 2.5);
     assert_eq!([*u_sense, *v_sense], [None, None]);
     assert_eq!(
         *extension,
-        cadmpeg_ir::geometry::OffsetExtension::Legacy(
-            cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
-        )
+        cadmpeg_ir::geometry::OffsetExtension::Legacy {
+            flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+            cache: None,
+        }
     );
-    let Some(bounds) = procedural.record_bounds else {
+    let Some(bounds) = procedural.record_bounds() else {
         panic!("offset parameter bounds");
     };
-    for (actual, expected) in bounds.into_iter().zip(domain) {
+    for (actual, expected) in bounds.get().into_iter().zip(domain) {
         let Some(actual) = actual else {
             panic!("offset parameter bound");
         };
@@ -749,7 +1056,14 @@ fn decode_standard_transfers_exact_offset_construction() {
 #[test]
 fn decode_standard_transfers_construction_use_offset() {
     let surface_bytes = a5_surface_stream();
-    let carriers = crate::families::a5a8::records::a5_surfaces(&surface_bytes);
+    let carriers = crate::test_support::with_service_context(|ctx| {
+        crate::families::a5a8::records::a5_surfaces(
+            ctx,
+            &surface_bytes,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .expect("service decode")
+    });
     let surface = &carriers[0].geometry;
     let domain = [
         surface.u_knots()[0],
@@ -770,16 +1084,17 @@ fn decode_standard_transfers_construction_use_offset() {
     let [procedural] = decoded.ir().model.procedural_surfaces.as_slice() else {
         panic!("one offset construction");
     };
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset { distance, .. } =
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset(definition_payload) =
         procedural.definition()
     else {
         panic!("offset construction");
     };
-    assert_eq!(*distance, -2.0);
-    let Some(bounds) = procedural.record_bounds else {
+    let distance = definition_payload.distance();
+    assert_eq!(distance.get(), -2.0);
+    let Some(bounds) = procedural.record_bounds() else {
         panic!("offset parameter bounds");
     };
-    for (actual, expected) in bounds.into_iter().zip(domain) {
+    for (actual, expected) in bounds.get().into_iter().zip(domain) {
         let Some(actual) = actual else {
             panic!("offset parameter bound");
         };
@@ -813,24 +1128,26 @@ fn decode_standard_transfers_exact_rolling_ball_jet() {
         &surface.geometry,
         SurfaceGeometry::Procedural { construction, .. } if construction == &procedural.id
     ));
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet { degree, stations } =
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(jet) =
         procedural.definition()
     else {
         panic!("rolling-ball jet");
     };
-    let knots: Vec<_> = stations.iter().map(|station| station.knot).collect();
+    let degree = jet.degree();
+    let stations = jet.stations();
+    let knots: Vec<_> = stations.iter().map(|station| station.knot.get()).collect();
     let multiplicities: Vec<_> = stations
         .iter()
         .map(|station| station.multiplicity)
         .collect();
     let sites: Vec<_> = stations.iter().map(|station| &station.site).collect();
-    assert_eq!(*degree, 5);
+    assert_eq!(degree, 5);
     assert_eq!(knots, &[0.0, 1.0]);
     assert_eq!(multiplicities, &[6, 6]);
     assert_eq!(sites.len(), 2);
     assert_eq!(sites[0].first_limit, Point3::new(1.0, 0.0, 0.0));
     assert_eq!(sites[1].second_limit, Point3::new(0.0, 2.0, 0.0));
-    assert_eq!(sites[0].angle, std::f64::consts::FRAC_PI_2);
+    assert_eq!(sites[0].angle.get(), std::f64::consts::FRAC_PI_2);
     assert_eq!(
         sites[0].first_derivative.center,
         Vector3::new(0.0, 0.0, 0.0)
@@ -853,7 +1170,7 @@ fn standard_decode_transfers_consolidated_guide_curve() {
         .iter()
         .find(|curve| curve.id.as_str().starts_with("catia:guide:curve#"))
         .expect("typed guide curve");
-    let CurveGeometry::Nurbs(nurbs) = &guide.geometry else {
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = guide.geometry.solved() else {
         panic!("guide curve must be NURBS");
     };
     assert_eq!(nurbs.degree(), 5);

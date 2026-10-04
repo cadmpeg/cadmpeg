@@ -25,16 +25,16 @@ impl SurfaceFeaturePayloadReferenceField {
         let leading_len = 17
             + self.tokens[..11]
                 .iter()
-                .map(|token| token.raw().len() as u64)
+                .map(|token| cadmpeg_core::decode::u64_from_index(token.raw().len()))
                 .sum::<u64>();
         let trailing_len = self.tokens[11..]
             .iter()
-            .map(|token| token.raw().len() as u64)
+            .map(|token| cadmpeg_core::decode::u64_from_index(token.raw().len()))
             .sum::<u64>()
-            + TRAILING_SUFFIX.len() as u64;
+            + cadmpeg_core::decode::u64_from_index(TRAILING_SUFFIX.len());
         origin.checked_add(leading_len)?;
         origin
-            .checked_add(self.trailing_start as u64)?
+            .checked_add(cadmpeg_core::decode::u64_from_index(self.trailing_start))?
             .checked_add(trailing_len)?;
         self.origin = origin;
         Some(self)
@@ -46,11 +46,11 @@ impl SurfaceFeaturePayloadReferenceField {
                 at += 12;
             }
             if slot == 11 {
-                at = self.origin + self.trailing_start as u64;
+                at = self.origin + cadmpeg_core::decode::u64_from_index(self.trailing_start);
             }
             let token = self.tokens[slot];
             let offset = at;
-            at += token.raw().len() as u64;
+            at += cadmpeg_core::decode::u64_from_index(token.raw().len());
             (token, offset)
         })
     }
@@ -58,10 +58,10 @@ impl SurfaceFeaturePayloadReferenceField {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ThruCurvePayloadReferenceField {
-    pub discriminator: NonZeroU8,
-    pub controls: ThruCurveControls,
-    pub trailing_control: NonZeroU8,
-    pub trailing_value: [u8; 2],
+    pub(crate) discriminator: NonZeroU8,
+    pub(crate) controls: ThruCurveControls,
+    pub(crate) trailing_control: NonZeroU8,
+    pub(crate) trailing_value: [u8; 2],
     origin: u64,
     tokens: [PayloadIndexToken; 9],
 }
@@ -70,7 +70,7 @@ impl ThruCurvePayloadReferenceField {
     pub(crate) fn origin(&self) -> u64 {
         self.origin
     }
-    pub(crate) fn byte_len(&self) -> usize {
+    pub(super) fn byte_len(&self) -> usize {
         23 + self
             .tokens
             .iter()
@@ -79,7 +79,7 @@ impl ThruCurvePayloadReferenceField {
     }
     pub(crate) fn relocate(mut self, base: u64) -> Option<Self> {
         let origin = base.checked_add(self.origin)?;
-        origin.checked_add(self.byte_len() as u64)?;
+        origin.checked_add(cadmpeg_core::decode::u64_from_index(self.byte_len()))?;
         self.origin = origin;
         Some(self)
     }
@@ -91,7 +91,7 @@ impl ThruCurvePayloadReferenceField {
             }
             let token = self.tokens[slot];
             let offset = at;
-            at += token.raw().len() as u64;
+            at += cadmpeg_core::decode::u64_from_index(token.raw().len());
             (token, offset)
         })
     }
@@ -141,7 +141,7 @@ pub(crate) fn surface_feature_payload_references(
         return None;
     }
     Some(SurfaceFeaturePayloadReferenceField {
-        origin: record.payload_offset() as u64,
+        origin: cadmpeg_core::decode::u64_from_index(record.payload_offset()),
         trailing_start,
         tokens,
     })
@@ -193,14 +193,18 @@ pub(crate) fn thru_curve_payload_references(
         controls,
         trailing_control,
         trailing_value,
-        origin: record.payload_offset() as u64,
+        origin: cadmpeg_core::decode::u64_from_index(record.payload_offset()),
         tokens,
     })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::operation_record::OperationPayload;
+    use super::{
+        surface_feature_payload_references, thru_curve_payload_references, TRAILING_PREFIX,
+        TRAILING_SUFFIX,
+    };
 
     #[test]
     fn surface_positions_keep_the_independent_trailing_group_and_both_span_bounds() {

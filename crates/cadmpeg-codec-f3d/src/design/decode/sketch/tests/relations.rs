@@ -1,12 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(
-    clippy::cloned_ref_to_slice_refs,
-    clippy::default_trait_access,
-    clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
-)]
-use super::prelude::*;
+use crate::design::decode::sketch::decode_pattern_definition;
+use crate::design::decode::sketch::next_indexed_record_offset;
+use crate::design::decode::sketch::next_indexed_record_offset_with_index;
+use crate::design::decode::sketch::parse_classed_sketch_relation;
+use crate::design::decode::sketch::parse_genesis_entity_header;
+use crate::design::decode::sketch::parse_settled_entity_header;
+use crate::design::decode::sketch::SketchRelationClass;
+use crate::design::test_support::push_genesis_block;
+use crate::design::test_support::push_reference;
+use crate::records::sketch_relations::SketchConstraintKind;
+
+fn tested_parse_classed_sketch_relation(
+    payload: &[u8],
+    class: SketchRelationClass,
+) -> Option<crate::design::decode::sketch::ParsedSketchRelation> {
+    crate::design::test_support::with_test_decode_context(|ctx| {
+        parse_classed_sketch_relation(ctx, payload, class).unwrap()
+    })
+}
 
 #[test]
 fn variable_width_relation_uses_counted_runs_and_next_record_boundary() {
@@ -40,7 +51,7 @@ fn variable_width_relation_uses_counted_runs_and_next_record_boundary() {
     bytes.extend_from_slice(&1240u32.to_le_bytes());
 
     assert_eq!(next_indexed_record_offset(&bytes, 11), Some(127));
-    let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::Plain).unwrap();
+    let parsed = tested_parse_classed_sketch_relation(&record, SketchRelationClass::Plain).unwrap();
     assert_eq!(
         parsed
             .members
@@ -57,13 +68,14 @@ fn variable_width_relation_uses_counted_runs_and_next_record_boundary() {
             .collect::<Vec<_>>(),
         [3, 1, 0]
     );
+    let empty_members: [u32; 0] = [];
     assert_eq!(
         parsed
             .auxiliary_references
             .iter()
             .map(|row| row.value)
             .collect::<Vec<_>>(),
-        [] as [u32; 0]
+        empty_members
     );
     assert_eq!(parsed.owner_reference, 1041);
     assert_eq!(parsed.state, 4);
@@ -115,7 +127,8 @@ fn genesis_relation_parses_u64_text_frame_mask_and_relation_ordinals() {
         0x100_0000_0000,
         &[2403, 2404],
     );
-    let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::TextFrame).unwrap();
+    let mut parsed =
+        tested_parse_classed_sketch_relation(&record, SketchRelationClass::TextFrame).unwrap();
     assert_eq!(
         parsed
             .members
@@ -152,14 +165,16 @@ fn genesis_relation_parses_u64_text_frame_mask_and_relation_ordinals() {
         [2403, 2404]
     );
     assert_eq!(
-        crate::records::constraint_kinds_from_state(parsed.state),
+        crate::records::sketch_relations::constraint_kinds_from_state(parsed.state),
         (vec![SketchConstraintKind::TextFrame], 0)
     );
     assert_eq!(
-        decode_pattern_definition(&record, &parsed),
-        Some(crate::records::SketchPatternDefinition::TextFrame {
-            text_reference: 2394
-        })
+        decode_pattern_definition(&record, &mut parsed),
+        Some(
+            crate::records::sketch_relations::SketchPatternDefinition::TextFrame {
+                text_reference: 2394
+            }
+        )
     );
 }
 
@@ -197,7 +212,7 @@ fn genesis_relation_parses_text_path_glyph_run() {
         0x200_0000_0000,
         &[237],
     );
-    let parsed = parse_classed_sketch_relation(
+    let mut parsed = tested_parse_classed_sketch_relation(
         &record,
         SketchRelationClass::TextPath { leading_flag: true },
     )
@@ -251,19 +266,25 @@ fn genesis_relation_parses_text_path_glyph_run() {
         Some(&glyphs[..])
     );
     assert_eq!(
-        crate::records::constraint_kinds_from_state(parsed.state),
+        crate::records::sketch_relations::constraint_kinds_from_state(parsed.state),
         (vec![SketchConstraintKind::TextPath], 0)
     );
     assert_eq!(
-        decode_pattern_definition(&record, &parsed),
-        Some(crate::records::SketchPatternDefinition::TextPath {
-            text_reference: 304,
-            glyph_transforms: glyphs
-                .into_iter()
-                .map(|rows| crate::records::SketchGlyphTransform::try_from(rows)
-                    .expect("finite native glyph"))
-                .collect(),
-        })
+        decode_pattern_definition(&record, &mut parsed),
+        Some(
+            crate::records::sketch_relations::SketchPatternDefinition::TextPath {
+                text_reference: 304,
+                glyph_transforms: glyphs
+                    .into_iter()
+                    .map(
+                        |rows| crate::records::sketch_relations::SketchGlyphTransform::try_from(
+                            rows
+                        )
+                        .expect("finite native glyph")
+                    )
+                    .collect(),
+            }
+        )
     );
 }
 
@@ -285,8 +306,9 @@ fn genesis_relation_parses_circular_pattern_auxiliary_run() {
         0x1000_0000,
         &[291, 327, 330, 280],
     );
-    let parsed =
-        parse_classed_sketch_relation(&record, SketchRelationClass::CircularPattern).unwrap();
+    let mut parsed =
+        tested_parse_classed_sketch_relation(&record, SketchRelationClass::CircularPattern)
+            .unwrap();
     assert_eq!(
         parsed
             .members
@@ -305,13 +327,17 @@ fn genesis_relation_parses_circular_pattern_auxiliary_run() {
     );
     assert_eq!(parsed.state, 0x1000_0000);
     assert_eq!(
-        decode_pattern_definition(&record, &parsed),
-        Some(crate::records::SketchPatternDefinition::Circular {
-            angle_parameter: 336,
-            count_parameter: 333,
-            evaluated_angle: std::f64::consts::TAU,
-            evaluated_count: 3,
-        })
+        decode_pattern_definition(&record, &mut parsed),
+        Some(
+            crate::records::sketch_relations::SketchPatternDefinition::Circular {
+                angle_parameter: 336,
+                count_parameter: 333,
+                evaluated_angle: cadmpeg_ir::scalar::FiniteReal::new(std::f64::consts::TAU)
+                    .unwrap(),
+                evaluated_count: crate::records::sketch_relations::SketchPatternCount::try_from(3)
+                    .unwrap(),
+            }
+        )
     );
 }
 
@@ -344,8 +370,9 @@ fn genesis_relation_parses_rectangular_pattern_auxiliary_run() {
         0x2000_0000,
         &[353, 352, 442, 445],
     );
-    let parsed =
-        parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern).unwrap();
+    let mut parsed =
+        tested_parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern)
+            .unwrap();
     assert_eq!(
         parsed
             .members
@@ -370,20 +397,20 @@ fn genesis_relation_parses_rectangular_pattern_auxiliary_run() {
         }
     ));
     assert_eq!(parsed.state, 0x2000_0000);
-    let Some(crate::records::SketchPatternDefinition::Rectangular { directions }) =
-        decode_pattern_definition(&record, &parsed)
+    let Some(crate::records::sketch_relations::SketchPatternDefinition::Rectangular { directions }) =
+        decode_pattern_definition(&record, &mut parsed)
     else {
         panic!("expected rectangular pattern definition");
     };
-    assert_eq!(directions[0].evaluated_count, 3);
+    assert_eq!(directions[0].evaluated_count.get(), 3);
     assert_eq!(directions[0].count_parameter, 464);
-    assert_eq!(directions[0].direction, [1.0, 0.0, 0.0]);
-    assert_eq!(directions[0].evaluated_distance, 3.0);
+    assert_eq!(directions[0].direction.get(), [1.0, 0.0, 0.0]);
+    assert_eq!(directions[0].evaluated_distance.get(), 3.0);
     assert_eq!(directions[0].distance_parameter, 470);
-    assert_eq!(directions[1].evaluated_count, 1);
+    assert_eq!(directions[1].evaluated_count.get(), 1);
     assert_eq!(directions[1].count_parameter, 467);
-    assert_eq!(directions[1].direction, [0.0, 1.0, 0.0]);
-    assert_eq!(directions[1].evaluated_distance, 0.5);
+    assert_eq!(directions[1].direction.get(), [0.0, 1.0, 0.0]);
+    assert_eq!(directions[1].evaluated_distance.get(), 0.5);
     assert_eq!(directions[1].distance_parameter, 473);
 }
 
@@ -396,15 +423,56 @@ fn genesis_entity_header_variant_resolves_suffix_and_id() {
     bytes.extend_from_slice(&[0u8; 10]);
     push_genesis_block(&mut bytes, 4);
     bytes.extend_from_slice(&5u32.to_le_bytes());
+    let payload_start = bytes.len();
     for unit in "0_201".encode_utf16() {
         bytes.extend_from_slice(&unit.to_le_bytes());
     }
-    let (entity_id, optional_slot_present, end) = parse_genesis_entity_header(&bytes, 0).unwrap();
+    let crate::design::decode::sketch::NamedEntityHeader {
+        entity_id,
+        entity_id_offset,
+        optional_slot_present,
+        end,
+    } = parse_genesis_entity_header(&cadmpeg_test_support::service_decode_context(), &bytes, 0)
+        .unwrap()
+        .unwrap();
+    assert_eq!(entity_id_offset, payload_start);
     assert_eq!(entity_id.suffix(), 201);
     assert_eq!(entity_id.as_str(), "0_201");
     assert!(!optional_slot_present);
     assert_eq!(end, bytes.len());
-    assert!(parse_settled_entity_header(&bytes, 0).is_none());
+    assert!(parse_settled_entity_header(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        0
+    )
+    .unwrap()
+    .is_none());
+}
+
+#[test]
+fn genesis_entity_header_id_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"281");
+    bytes.extend_from_slice(&201u32.to_le_bytes());
+    bytes.extend_from_slice(&[0u8; 10]);
+    push_genesis_block(&mut bytes, 4);
+    bytes.extend_from_slice(&5u32.to_le_bytes());
+    for unit in "0_201".encode_utf16() {
+        bytes.extend_from_slice(&unit.to_le_bytes());
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 4;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = parse_genesis_entity_header(&ctx, &bytes, 0).err().unwrap();
+    assert!(matches!(error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "f3d Design UTF-16 text"
+    ));
 }
 
 fn genesis_relation_record(
@@ -439,4 +507,24 @@ fn genesis_relation_record(
     }
     out.extend_from_slice(&[0u8; 4]);
     out
+}
+
+#[test]
+fn indexed_record_header_requires_a_complete_class_header() {
+    use crate::design::decode::sketch::indexed_record_header_at;
+
+    let index_at = |bytes: &[u8], at: usize| {
+        indexed_record_header_at(bytes, at).map(|header| header.record_index)
+    };
+    let header = [3, 0, 0, 0, b'2', b'5', b'7', 42, 0, 0, 0];
+    assert_eq!(index_at(&header, 0), Some(42));
+    for (offset, byte) in [(0, 2), (4, b'x'), (5, 0), (6, b' ')] {
+        let mut invalid = header;
+        invalid[offset] = byte;
+        assert_eq!(index_at(&invalid, 0), None);
+    }
+    for length in 0..header.len() {
+        assert_eq!(index_at(&header[..length], 0), None);
+    }
+    assert_eq!(index_at(&header, usize::MAX), None);
 }

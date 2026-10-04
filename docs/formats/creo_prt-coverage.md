@@ -583,11 +583,14 @@ fixtures, scores above L1 remain blocked.
 - A sense-two or sense-three incidence item establishes a solver-only entity's
   endpoint-bearing curve family independently of solver activity. A sense-four
   incidence item establishes its circular family independently of solver
-  activity. A sense-zero entity paired with a proven endpoint or center locus in
-  a type-zero coincidence retains the point family independently of solver
-  activity. A disabled type-three incidence can therefore transfer its selected
-  center onto a sense-zero curve. A disabled type-three incidence between two
-  emitted sense-zero point entities transfers as coincident loci.
+  activity. A sense-zero type-35 target with a point-locus operand establishes
+  the native line-or-arc family, which line evidence narrows to line and
+  circular evidence narrows to arc. A sense-zero entity paired with a proven
+  endpoint or center locus in a type-zero coincidence retains the point family
+  independently of solver activity. A disabled type-three incidence can
+  therefore transfer its selected center onto a sense-zero curve. A disabled
+  type-three incidence between two emitted sense-zero point entities transfers
+  as coincident loci.
 - Unary type-ten and type-eleven incidences on a uniquely established arc
   transfer as neutral 90-degree and 180-degree fixed arc-angle constraints.
   Solver activity controls constraint activity, not the stored arc role or

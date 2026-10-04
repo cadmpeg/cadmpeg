@@ -3,11 +3,13 @@
 
 #![allow(clippy::unwrap_used)]
 
-use crate::test_support::{
-    a8_surface_stream, append_b5_record, b5_analytic_line_pcurve_payload,
-    b5_closed_triangle_stream, b5_isoparametric_line_pcurve_payload, b5_linear_pcurve_payload,
-    b5_plane_payload, b5_transverse_isoparametric_line_pcurve_payload, le_f32, le_f64,
+use crate::test_support::test_a5a8::a8_surface_stream;
+use crate::test_support::test_b5::{
+    append_b5_record, b5_analytic_line_pcurve_payload, b5_closed_triangle_stream,
+    b5_isoparametric_line_pcurve_payload, b5_linear_pcurve_payload, b5_plane_payload,
+    b5_transverse_isoparametric_line_pcurve_payload,
 };
+use crate::test_support::test_bytes::{le_f32, le_f64};
 
 #[test]
 fn b5_frame_walk_ignores_markers_inside_payloads() {
@@ -18,11 +20,15 @@ fn b5_frame_walk_ignores_markers_inside_payloads() {
     }
     append_b5_record(&mut bytes, 0x06, 1, &payload);
     bytes.extend_from_slice(&b5_closed_triangle_stream());
-    let graph = crate::families::b5::graph::parse(&bytes).expect("length-closed B5 graph");
+    let graph = crate::test_support::with_service_context(|ctx| {
+        crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+    })
+    .expect("service resource budget")
+    .expect("length-closed B5 graph");
     assert_eq!(graph.faces.len(), 1);
     assert_eq!(graph.loops.len(), 1);
-    assert_eq!(graph.vertex_points.len(), 3);
-    assert_eq!(graph.edge_vertices.len(), 3);
+    assert_eq!(graph.vertices.raw_points().len(), 3);
+    assert_eq!(graph.vertices.edges().len(), 3);
 }
 
 #[test]
@@ -47,33 +53,55 @@ fn b5_analytic_line_pcurve_resolves_to_clamped_linear_form() {
         &b5_transverse_isoparametric_line_pcurve_payload(100, -4.0, [1.0, 7.0]),
     );
     append_b5_record(&mut bytes, 0x5e, 603, &[]);
-    let graph = crate::families::b5::graph::parse(&bytes).expect("length-closed B5 graph");
+    let graph = crate::test_support::with_service_context(|ctx| {
+        crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+    })
+    .expect("service resource budget")
+    .expect("length-closed B5 graph");
     let pcurve = graph.pcurves.get(&600).expect("analytic line pcurve");
     assert_eq!(pcurve.degree, 1);
-    assert_eq!(pcurve.distinct_knots, vec![-0.5, 1.5]);
+    assert_eq!(
+        pcurve.distinct_knots,
+        crate::test_support::test_b5::finite_lane(&[-0.5, 1.5])
+    );
     assert_eq!(pcurve.multiplicities, vec![2, 2]);
     assert_eq!(pcurve.control_points, vec![[0.0, 4.0], [8.0, 0.0]]);
     assert_eq!(
         pcurve.lifted_endpoints,
-        Some([[0.0, 4.0, 0.0], [8.0, 0.0, 0.0]])
+        Some(crate::test_support::test_b5::points([
+            [0.0, 4.0, 0.0],
+            [8.0, 0.0, 0.0]
+        ]))
     );
     let isoparametric = graph.pcurves.get(&601).expect("isoparametric line pcurve");
     assert_eq!(isoparametric.degree, 1);
-    assert_eq!(isoparametric.distinct_knots, vec![-3.0, 5.0]);
+    assert_eq!(
+        isoparametric.distinct_knots,
+        crate::test_support::test_b5::finite_lane(&[-3.0, 5.0])
+    );
     assert_eq!(isoparametric.multiplicities, vec![2, 2]);
     assert_eq!(isoparametric.control_points, vec![[2.0, -3.0], [2.0, 5.0]]);
     assert_eq!(
         isoparametric.lifted_endpoints,
-        Some([[2.0, -3.0, 0.0], [2.0, 5.0, 0.0]])
+        Some(crate::test_support::test_b5::points([
+            [2.0, -3.0, 0.0],
+            [2.0, 5.0, 0.0]
+        ]))
     );
     let transverse = graph.pcurves.get(&602).expect("transverse line pcurve");
     assert_eq!(transverse.degree, 1);
-    assert_eq!(transverse.distinct_knots, vec![1.0, 7.0]);
+    assert_eq!(
+        transverse.distinct_knots,
+        crate::test_support::test_b5::finite_lane(&[1.0, 7.0])
+    );
     assert_eq!(transverse.multiplicities, vec![2, 2]);
     assert_eq!(transverse.control_points, vec![[1.0, -4.0], [7.0, -4.0]]);
     assert_eq!(
         transverse.lifted_endpoints,
-        Some([[1.0, -4.0, 0.0], [7.0, -4.0, 0.0]])
+        Some(crate::test_support::test_b5::points([
+            [1.0, -4.0, 0.0],
+            [7.0, -4.0, 0.0]
+        ]))
     );
 }
 
@@ -89,7 +117,11 @@ fn b5_circle_pcurve_rejects_nonfinite_derived_poles() {
     }
     append_b5_record(&mut bytes, 0x19, 600, &payload);
 
-    let graph = crate::families::b5::graph::parse(&bytes).expect("length-closed B5 graph");
+    let graph = crate::test_support::with_service_context(|ctx| {
+        crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+    })
+    .expect("service resource budget")
+    .expect("length-closed B5 graph");
     assert!(!graph.pcurves.contains_key(&600));
 }
 
@@ -103,7 +135,11 @@ fn b5_line_pcurve_rejects_nonfinite_derived_poles() {
         &b5_analytic_line_pcurve_payload(0, [f64::MAX, 0.0], [f64::MAX, 0.0], [1.0, 2.0]),
     );
 
-    let graph = crate::families::b5::graph::parse(&bytes).expect("length-closed B5 graph");
+    let graph = crate::test_support::with_service_context(|ctx| {
+        crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+    })
+    .expect("service resource budget")
+    .expect("length-closed B5 graph");
     assert!(!graph.pcurves.contains_key(&600));
 }
 
@@ -120,7 +156,11 @@ fn b5_pcurve_lift_rejects_nonfinite_world_endpoints() {
         &b5_isoparametric_line_pcurve_payload(100, f64::MAX, [0.0, 1.0]),
     );
 
-    let graph = crate::families::b5::graph::parse(&bytes).expect("length-closed B5 graph");
+    let graph = crate::test_support::with_service_context(|ctx| {
+        crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+    })
+    .expect("service resource budget")
+    .expect("length-closed B5 graph");
     assert!(graph.pcurves[&600].lifted_endpoints.is_none());
 }
 
@@ -212,10 +252,19 @@ fn b5_object_graph_resolves_face_loop_pcurve_and_edge_members() {
         }
     }
 
-    let graph = crate::families::b5::graph::parse(&bytes).expect("B5 object topology");
+    let graph = crate::test_support::with_service_context(|ctx| {
+        crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+    })
+    .expect("service resource budget")
+    .expect("B5 object topology");
     assert_eq!(graph.faces[0].surface, 100);
     assert_eq!(graph.faces[0].loops, vec![400]);
-    assert_eq!(graph.faces[0].terminal_control, Some(0x05));
+    assert_eq!(
+        graph.faces[0]
+            .terminal_control
+            .map(crate::families::b5::graph::controls::B5FramingControl::as_byte),
+        Some(0x05)
+    );
     assert_eq!(
         graph.loops[&400]
             .members
@@ -239,18 +288,57 @@ fn b5_object_graph_resolves_face_loop_pcurve_and_edge_members() {
     );
     assert_eq!(
         graph.pcurves[&200].lifted_endpoints,
-        Some([[10.0, 0.0, 0.0], [11.0, 0.0, 0.0]])
+        Some(crate::test_support::test_b5::points([
+            [10.0, 0.0, 0.0],
+            [11.0, 0.0, 0.0]
+        ]))
     );
-    assert_eq!(graph.edge_vertices[&300], [0, 1]);
-    assert_eq!(graph.edge_vertices[&0x01_0100], [2, 3]);
+    assert_eq!(
+        graph.vertices.edges()[&300]
+            .map(|vertex| vertex.combined_index(graph.vertices.raw_points().len())),
+        [0, 1]
+    );
+    assert_eq!(
+        graph.vertices.edges()[&0x01_0100]
+            .map(|vertex| vertex.combined_index(graph.vertices.raw_points().len())),
+        [2, 3]
+    );
     let revolution_endpoints = graph.pcurves[&210]
         .lifted_endpoints
-        .expect("revolution lift");
+        .expect("revolution lift")
+        .map(crate::test_support::test_b5::coordinates);
     assert!((revolution_endpoints[0][0] - 1.0).abs() < 1.0e-12);
     assert!((revolution_endpoints[1][0] + 1.0).abs() < 1.0e-12);
     assert!((revolution_endpoints[1][2] - 1.0).abs() < 1.0e-12);
     assert_eq!(
         graph.pcurves[&211].lifted_endpoints,
-        Some([[0.0, 0.0, 0.0], [8.0, 2.0, 2.0]])
+        Some(crate::test_support::test_b5::points([
+            [0.0, 0.0, 0.0],
+            [8.0, 2.0, 2.0]
+        ]))
     );
+}
+
+pub(super) fn test_loop_metadata() -> crate::families::b5::graph::B5LoopMetadata {
+    crate::families::b5::graph::B5LoopMetadata {
+        framing_controls: [crate::families::b5::graph::controls::B5FramingControl::Control05; 2],
+        extension: None,
+    }
+}
+
+pub(super) fn test_loop_members(
+    pcurves: &[u32],
+    edges: &[u32],
+) -> Vec<crate::families::b5::graph::B5LoopMember> {
+    pcurves
+        .iter()
+        .zip(edges)
+        .map(
+            |(&pcurve, &edge)| crate::families::b5::graph::B5LoopMember {
+                pcurve,
+                edge,
+                controls: [1, 1, 1],
+            },
+        )
+        .collect()
 }

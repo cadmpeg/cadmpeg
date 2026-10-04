@@ -44,7 +44,7 @@ impl SingleForm {
         }
     }
 
-    pub(crate) fn header(self) -> (u8, u8) {
+    fn header(self) -> (u8, u8) {
         match self {
             Self::Tag1b => (2, 0x1b),
             Self::Tag23 => (2, 0x23),
@@ -95,7 +95,7 @@ impl DoubleForm {
         }
     }
 
-    pub(crate) fn count(self) -> u8 {
+    fn count(self) -> u8 {
         match self {
             Self::CountTwo => 2,
             Self::CountThree => 3,
@@ -107,11 +107,11 @@ impl DoubleForm {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct DatumPlanePayloadHeader {
     /// Payload control byte.
-    pub control: u8,
+    pub(crate) control: u8,
     /// Declared construction count.
-    pub declared_count: u8,
+    pub(crate) declared_count: u8,
     /// Tag selecting the following construction branch.
-    pub branch_tag: u8,
+    pub(crate) branch_tag: u8,
 }
 
 /// Exact construction references without redundant source positions.
@@ -151,7 +151,7 @@ impl<B> DatumPlaneBranch<B> {
                     + form.suffix().len()
             }
         };
-        10 + length as u64
+        10 + cadmpeg_core::decode::u64_from_index(length)
     }
 }
 
@@ -200,8 +200,8 @@ impl<B> DatumPlaneFrame<B> {
                     &object.1,
                     self.origin
                         + 10
-                        + descriptor.0.raw().len() as u64
-                        + form.separator().len() as u64,
+                        + cadmpeg_core::decode::u64_from_index(descriptor.0.raw().len())
+                        + cadmpeg_core::decode::u64_from_index(form.separator().len()),
                 )),
                 None,
             ],
@@ -213,7 +213,10 @@ impl<B> DatumPlaneFrame<B> {
                 Some((
                     &second.0,
                     &second.1,
-                    self.origin + 10 + first.0.raw().len() as u64 + form.separator().len() as u64,
+                    self.origin
+                        + 10
+                        + cadmpeg_core::decode::u64_from_index(first.0.raw().len())
+                        + cadmpeg_core::decode::u64_from_index(form.separator().len()),
                 )),
             ],
         };
@@ -226,35 +229,48 @@ impl<B> DatumPlaneFrame<B> {
 }
 
 impl DatumPlaneFrame<()> {
-    pub(crate) fn resolve<B>(
+    pub(crate) fn resolve<B, E>(
         &self,
-        mut block: impl FnMut(u32) -> Option<B>,
-    ) -> Option<DatumPlaneFrame<B>> {
+        mut block: impl FnMut(u32) -> Result<Option<B>, E>,
+    ) -> Result<Option<DatumPlaneFrame<B>>, E> {
         let branch = match &self.branch {
             DatumPlaneBranch::Single {
                 form,
                 descriptor,
                 object,
-            } => DatumPlaneBranch::Single {
-                form: *form,
-                descriptor: (descriptor.0, block(descriptor.0.value())?),
-                object: (object.0, block(object.0.value())?),
-            },
+            } => {
+                let Some(descriptor_block) = block(descriptor.0.value())? else {
+                    return Ok(None);
+                };
+                let Some(object_block) = block(object.0.value())? else {
+                    return Ok(None);
+                };
+                DatumPlaneBranch::Single {
+                    form: *form,
+                    descriptor: (descriptor.0, descriptor_block),
+                    object: (object.0, object_block),
+                }
+            }
             DatumPlaneBranch::Double {
                 form,
                 objects: [first, second],
-            } => DatumPlaneBranch::Double {
-                form: *form,
-                objects: [
-                    (first.0, block(first.0.value())?),
-                    (second.0, block(second.0.value())?),
-                ],
-            },
+            } => {
+                let Some(first_block) = block(first.0.value())? else {
+                    return Ok(None);
+                };
+                let Some(second_block) = block(second.0.value())? else {
+                    return Ok(None);
+                };
+                DatumPlaneBranch::Double {
+                    form: *form,
+                    objects: [(first.0, first_block), (second.0, second_block)],
+                }
+            }
         };
-        Some(DatumPlaneFrame {
+        Ok(Some(DatumPlaneFrame {
             origin: self.origin,
             branch,
-        })
+        }))
     }
 }
 
@@ -294,7 +310,7 @@ pub(crate) fn datum_plane_descriptor_reference_branch(
     at += object_index.raw().len();
     (record.payload().get(at..at + suffix.len()) == Some(suffix)).then_some(())?;
     DatumPlaneFrame::new(
-        record.payload_offset() as u64,
+        cadmpeg_core::decode::u64_from_index(record.payload_offset()),
         DatumPlaneBranch::Single {
             form,
             descriptor: (descriptor, ()),
@@ -320,7 +336,7 @@ pub(crate) fn datum_plane_double_reference_branch(
     let suffix = form.suffix();
     (record.payload().get(at..at + suffix.len()) == Some(suffix)).then_some(())?;
     DatumPlaneFrame::new(
-        record.payload_offset() as u64,
+        cadmpeg_core::decode::u64_from_index(record.payload_offset()),
         DatumPlaneBranch::Double {
             form,
             objects: [(first_index, ()), (second_index, ())],
@@ -405,9 +421,13 @@ mod tests {
                 [110, second_offset]
             );
             assert!(frame
-                .resolve(|index| (index == 0).then_some("block"))
+                .resolve(|index| Ok::<_, ()>((index == 0).then_some("block")))
+                .unwrap()
                 .is_none());
-            let resolved = frame.resolve(|index| Some(index.to_string())).unwrap();
+            let resolved = frame
+                .resolve(|index| Ok::<_, ()>(Some(index.to_string())))
+                .unwrap()
+                .unwrap();
             assert_eq!(
                 resolved
                     .objects()

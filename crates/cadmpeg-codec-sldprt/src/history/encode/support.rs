@@ -7,9 +7,8 @@ use crate::records::Feature;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     BodySelection, BooleanOp, EdgeSelection, FaceSelection, FeatureId, FeatureTreeNodeRole,
-    PathRef, ProfileRef, VertexSelection,
+    PathRef, PlanarProfileRef, ProfileRef, VertexSelection,
 };
-use cadmpeg_ir::math::Vector3;
 use std::collections::{BTreeMap, HashMap};
 
 pub(super) fn feature_tree_node_kind(role: FeatureTreeNodeRole) -> &'static str {
@@ -77,27 +76,26 @@ pub(super) fn is_helix(feature: &Feature) -> bool {
 }
 
 pub(super) fn write_native_selection(
-    properties: &mut BTreeMap<String, String>,
-    key: &str,
+    properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+    key: cadmpeg_core::text::NonBlankString,
     selection: &str,
     fallback: &str,
 ) {
-    if selection != fallback || properties.contains_key(key) {
-        properties.insert(key.into(), selection.into());
+    if selection != fallback || properties.contains_key(key.as_str()) {
+        properties.insert(key, selection.into());
     } else {
-        properties.remove(key);
+        properties.remove(key.as_str());
     }
 }
 
 pub(super) fn face_selection_value(selection: &FaceSelection) -> Option<String> {
     match selection {
-        FaceSelection::Native(native)
-        | FaceSelection::Resolved { native, .. }
-        | FaceSelection::Generated { native, .. }
+        FaceSelection::Native(native) | FaceSelection::Resolved { native, .. }
             if !native.trim().is_empty() =>
         {
             Some(native.clone())
         }
+        FaceSelection::Generated { native, .. } => Some(native.as_str().to_owned()),
         FaceSelection::Faces(faces) if !faces.is_empty() => Some(
             faces
                 .iter()
@@ -111,12 +109,11 @@ pub(super) fn face_selection_value(selection: &FaceSelection) -> Option<String> 
 
 pub(super) fn vertex_selection_value(selection: &VertexSelection) -> Option<String> {
     match selection {
-        VertexSelection::Native(native)
-        | VertexSelection::Generated { native, .. }
-        | VertexSelection::Historical { native, .. }
-            if !native.trim().is_empty() =>
-        {
-            Some(native.clone())
+        VertexSelection::Native(native) | VertexSelection::Generated { native, .. } => {
+            Some(native.as_str().to_owned())
+        }
+        VertexSelection::Historical { native, .. } if !native.as_str().trim().is_empty() => {
+            Some(native.as_str().to_owned())
         }
         _ => None,
     }
@@ -124,13 +121,12 @@ pub(super) fn vertex_selection_value(selection: &VertexSelection) -> Option<Stri
 
 pub(super) fn edge_selection_value(selection: &EdgeSelection) -> Option<String> {
     match selection {
-        EdgeSelection::Native(native)
-        | EdgeSelection::Resolved { native, .. }
-        | EdgeSelection::Generated { native, .. }
+        EdgeSelection::Native(native) | EdgeSelection::Resolved { native, .. }
             if !native.trim().is_empty() =>
         {
             Some(native.clone())
         }
+        EdgeSelection::Generated { native, .. } => Some(native.as_str().to_owned()),
         EdgeSelection::Edges(edges) if !edges.is_empty() => Some(
             edges
                 .iter()
@@ -144,13 +140,13 @@ pub(super) fn edge_selection_value(selection: &EdgeSelection) -> Option<String> 
 
 pub(super) fn body_selection_value(selection: &BodySelection) -> Option<String> {
     match selection {
-        BodySelection::Native(native)
-        | BodySelection::Resolved { native, .. }
-        | BodySelection::Generated { native, .. }
-        | BodySelection::Local { native, .. }
+        BodySelection::Native(native) | BodySelection::Resolved { native, .. }
             if !native.trim().is_empty() =>
         {
             Some(native.clone())
+        }
+        BodySelection::Generated { native, .. } | BodySelection::Local { native, .. } => {
+            Some(native.as_str().to_owned())
         }
         BodySelection::Bodies(bodies) if !bodies.is_empty() => Some(
             bodies
@@ -184,6 +180,34 @@ pub(super) fn resolved_boolean_op(
     })
 }
 
+pub(super) fn planar_profile_source(
+    profile: &PlanarProfileRef,
+    native: &HashMap<String, String>,
+    features: &HashMap<&FeatureId, &str>,
+    sketches: &HashMap<cadmpeg_ir::sketches::SketchId, String>,
+) -> Option<String> {
+    match profile {
+        PlanarProfileRef::Unresolved(_) => None,
+        PlanarProfileRef::Native(id) => Some(native.get(id).cloned().unwrap_or_else(|| id.clone())),
+        PlanarProfileRef::Sketch(id) => sketches.get(id).cloned(),
+        PlanarProfileRef::SketchProfiles { sketch, .. }
+        | PlanarProfileRef::SketchRegions { sketch, .. }
+        | PlanarProfileRef::SketchEntities { sketch, .. }
+        | PlanarProfileRef::SketchSelection { sketch, .. } => sketches.get(sketch).cloned(),
+        PlanarProfileRef::HistoricalFaces { .. } => None,
+        PlanarProfileRef::Feature(id) => features.get(id).map(|source| (*source).to_string()),
+        PlanarProfileRef::Generated { .. } => None,
+        PlanarProfileRef::Faces(faces) if !faces.is_empty() => Some(
+            faces
+                .iter()
+                .map(cadmpeg_ir::ids::FaceId::as_str)
+                .collect::<Vec<_>>()
+                .join(","),
+        ),
+        PlanarProfileRef::Faces(_) => None,
+    }
+}
+
 pub(super) fn profile_source(
     profile: &ProfileRef,
     native: &HashMap<String, String>,
@@ -191,26 +215,10 @@ pub(super) fn profile_source(
     sketches: &HashMap<cadmpeg_ir::sketches::SketchId, String>,
 ) -> Option<String> {
     match profile {
-        ProfileRef::Unresolved(_) => None,
-        ProfileRef::Native(id) => Some(native.get(id).cloned().unwrap_or_else(|| id.clone())),
-        ProfileRef::Sketch(id) => sketches.get(id).cloned(),
-        ProfileRef::SketchProfiles { sketch, .. }
-        | ProfileRef::SketchRegions { sketch, .. }
-        | ProfileRef::SketchEntities { sketch, .. }
-        | ProfileRef::SketchSelection { sketch, .. } => sketches.get(sketch).cloned(),
-        ProfileRef::SpatialSketchProfiles { .. }
-        | ProfileRef::SpatialSketchSelection { .. }
-        | ProfileRef::HistoricalFaces { .. } => None,
-        ProfileRef::Feature(id) => features.get(id).map(|source| (*source).to_string()),
-        ProfileRef::Generated { .. } => None,
-        ProfileRef::Faces(faces) if !faces.is_empty() => Some(
-            faces
-                .iter()
-                .map(cadmpeg_ir::ids::FaceId::as_str)
-                .collect::<Vec<_>>()
-                .join(","),
-        ),
-        ProfileRef::Faces(_) => None,
+        ProfileRef::SpatialSketchProfiles { .. } | ProfileRef::SpatialSketchSelection { .. } => {
+            None
+        }
+        ProfileRef::Planar(profile) => planar_profile_source(profile, native, features, sketches),
     }
 }
 
@@ -242,29 +250,5 @@ pub(super) fn path_source(
                 .join(","),
         ),
         PathRef::Edges(_) | PathRef::Curves(_) => None,
-    }
-}
-
-pub(super) fn require_direction(
-    direction: Vector3,
-    feature: &FeatureId,
-    role: &str,
-) -> Result<(), CodecError> {
-    if direction.norm().is_finite() && direction.norm() > 0.0 {
-        Ok(())
-    } else {
-        Err(CodecError::malformed(format_args!(
-            "SLDPRT feature {feature} has a degenerate {role}"
-        )))
-    }
-}
-
-pub(super) fn require_count(count: u32, feature: &FeatureId) -> Result<(), CodecError> {
-    if count > 0 {
-        Ok(())
-    } else {
-        Err(CodecError::malformed(format_args!(
-            "SLDPRT feature {feature} has a zero pattern count"
-        )))
     }
 }

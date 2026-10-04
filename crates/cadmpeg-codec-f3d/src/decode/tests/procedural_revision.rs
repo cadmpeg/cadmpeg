@@ -10,17 +10,46 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
-use cadmpeg_ir::codec::write::EncodeInput;
-use cadmpeg_ir::codec::write::TargetRequest;
+use cadmpeg_core::convert::f64_from_index;
+use cadmpeg_test_support::service_decode_context;
+
+use cadmpeg_test_support::edit;
+
 use std::io::{Cursor, Write};
 
 use cadmpeg_asm::asm_header;
-use cadmpeg_ir::codec::write::Encoder;
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry};
 use zip::CompressionMethod;
 
 use crate::loss::F3dLossCode;
-use crate::test_support::*;
+use crate::test_support::manifest_test::write_synthetic_manifests;
+use crate::test_support::native_test::TestEncode;
+use crate::test_support::procedural_test::{
+    generated_form_two_par_int_cur, push_optional_value_quartet, push_revision_cl_scale,
+};
+use crate::test_support::smbh_blends_test::{
+    append_generated_variable_blend_side, synthetic_rational_cyl_spl_sur_smbh,
+    synthetic_ref_cyl_spl_sur_smbh, synthetic_revision_ref_directrix_cyl_spl_sur_smbh,
+    synthetic_variable_blend_smbh_with_selector, synthetic_vertex_blend_smbh,
+};
+use crate::test_support::smbh_blocks_test::{
+    generated_curve_block, generated_pcurve_block, generated_surface_block,
+};
+use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
+use crate::test_support::smbh_revision_test::{
+    assert_parameterized_tail, push_parameterized_revision_surface_tail,
+    push_revision_surface_tail, synthetic_revision_surface_smbh,
+};
+use crate::test_support::smbh_surfaces_test::{
+    synthetic_cyl_spl_sur_smbh, synthetic_versioned_cyl_spl_sur_smbh,
+    synthetic_versioned_cyl_spl_sur_with_trailing_token_smbh,
+};
+use crate::test_support::tokens_test::{
+    push_tagged_i64, t_dbl, t_ident, t_long, t_pos, t_u16_string, t_vec,
+};
+use crate::test_support::zip_test::{assert_revision_surface_round_trip, f3d_with_smbh};
 use crate::F3dCodec;
 
 #[test]
@@ -31,29 +60,6 @@ fn generated_revision_exact_surface_round_trips() {
         push_tagged_i64(surface, 0x15, 0);
     });
     assert_revision_surface_round_trip(smbh, "exact");
-}
-
-/// The blend constructions' tail enum was serialized as `cache_selector`. A
-/// document written under that name deserializes into the same construction.
-#[test]
-fn blend_tail_enum_deserializes_under_its_former_name() {
-    for smbh in [
-        synthetic_full_rolling_ball_smbh("rb_blend_spl_sur"),
-        synthetic_variable_blend_smbh("var_blend_spl_sur"),
-    ] {
-        let decoded = F3dCodec
-            .decode(
-                &mut Cursor::new(f3d_with_smbh(&smbh)),
-                &DecodeOptions::default(),
-            )
-            .expect("blend decode");
-        let json = serde_json::to_string(decoded.ir()).expect("IR JSON");
-        assert_eq!(json.matches("\"tail_enum\"").count(), 1);
-        let renamed = json.replace("\"tail_enum\"", "\"cache_selector\"");
-        let restored: cadmpeg_ir::document::CadIr =
-            serde_json::from_str(&renamed).expect("IR under the former field name");
-        assert_eq!(&restored, decoded.ir());
-    }
 }
 
 #[test]
@@ -76,10 +82,12 @@ fn generated_revision_exact_surface_carries_two_unextended_intervals() {
         )
         .expect("revision exact decode");
     let procedural = result.ir().model.procedural_surfaces.first().unwrap();
-    let ProceduralSurfaceDefinition::Exact { spline } = procedural.definition() else {
+    let ProceduralSurfaceDefinition::Exact(definition_payload) = procedural.definition() else {
         panic!("expected exact definition");
     };
-    let ExactSpline::Revision { intervals, .. } = spline else {
+    let spline = definition_payload.spline().to_raw();
+
+    let ExactSpline::Revision { intervals, .. } = &spline else {
         panic!("expected revision exact-spline layout")
     };
     assert_eq!(
@@ -135,11 +143,13 @@ fn generated_revision_loft_surface_carries_one_nonempty_wrap_interval() {
         )
         .expect("revision loft decode");
     let procedural = result.ir().model.procedural_surfaces.first().unwrap();
-    let ProceduralSurfaceDefinition::Loft { parameters, .. } = procedural.definition() else {
+    let ProceduralSurfaceDefinition::Loft(definition_payload) = procedural.definition() else {
         panic!("expected loft definition");
     };
+    let parameters = definition_payload.parameters().to_raw();
+
     assert_eq!(
-        parameters,
+        &parameters,
         &SplineSurfaceParameters::RevisionRanges {
             intervals: [[Some(0.0), Some(1.0)], [Some(1.0), Some(0.0)]],
         }
@@ -182,7 +192,10 @@ fn generated_revision_rot_surface_round_trips() {
 fn generated_revision_t_spline_surface_round_trips() {
     let smbh = synthetic_revision_surface_smbh("t_spl_sur", |surface| {
         push_revision_surface_tail(surface);
-        push_optional_value_quartet(surface);
+        for value in [0.0, 1.0, 0.0, 1.0] {
+            surface.push(0x0a);
+            t_dbl(surface, value);
+        }
         push_tagged_i64(surface, 0x15, 0);
         surface.push(0x0f);
         t_ident(surface, "t_spl_subtrans_object");
@@ -266,7 +279,7 @@ fn generated_parameterized_revision_g2_blend_round_trips() {
     else {
         panic!("expected a revision g2 blend construction")
     };
-    assert_parameterized_tail(&construction.cache);
+    assert_parameterized_tail(&construction.cache().to_raw());
 }
 
 #[test]
@@ -347,19 +360,23 @@ fn generated_single_radius_variable_blend_decodes_explicit_circular_cross_sectio
             &DecodeOptions::default(),
         )
         .expect("single-radius selector-zero decode");
-    let ProceduralSurfaceDefinition::VariableBlend { construction } =
+    let ProceduralSurfaceDefinition::VariableBlend(definition_payload) =
         &decoded.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected variable blend")
     };
+    let construction = &definition_payload.construction().to_raw();
+
     assert!(matches!(
         &construction.cross_section,
-        Some(cadmpeg_ir::geometry::VariableBlendCrossSection::Circular)
+        Some(cadmpeg_ir::geometry::VariableBlendCrossSection::Circular {})
     ));
     let expected = construction.clone();
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -369,10 +386,7 @@ fn generated_single_radius_variable_blend_decodes_explicit_circular_cross_sectio
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("selector-zero round trip");
     assert!(matches!(
-        &round_trip.ir().model.procedural_surfaces[0].definition(),
-        ProceduralSurfaceDefinition::VariableBlend { construction }
-            if construction == &expected
-    ));
+        &round_trip.ir().model.procedural_surfaces[0].definition(), ProceduralSurfaceDefinition::VariableBlend(definition_payload) if matches!((definition_payload.construction(),), (construction,) if construction.to_raw() == expected)));
 }
 
 #[test]
@@ -404,11 +418,13 @@ fn generated_variable_blend_round_trips_parameterized_cross_sections() {
                 &DecodeOptions::default(),
             )
             .expect("parameterized cross-section decode");
-        let ProceduralSurfaceDefinition::VariableBlend { construction } =
+        let ProceduralSurfaceDefinition::VariableBlend(definition_payload) =
             &decoded.ir().model.procedural_surfaces[0].definition()
         else {
             panic!("expected variable blend")
         };
+        let construction = &definition_payload.construction().to_raw();
+
         assert_eq!(
             construction.cross_section.as_ref(),
             Some(&expected_cross_section)
@@ -417,7 +433,9 @@ fn generated_variable_blend_round_trips_parameterized_cross_sections() {
         let expected = construction.clone();
         let (mut source_less, _, _) = decoded.into_parts();
         source_less.source = None;
-        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        source_less
+            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .unwrap();
         let mut encoded = Vec::new();
         F3dCodec
             .encode(&source_less, &mut encoded)
@@ -426,10 +444,7 @@ fn generated_variable_blend_round_trips_parameterized_cross_sections() {
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("parameterized cross-section round trip");
         assert!(matches!(
-            &round_trip.ir().model.procedural_surfaces[0].definition(),
-            ProceduralSurfaceDefinition::VariableBlend { construction }
-                if construction == &expected
-        ));
+            &round_trip.ir().model.procedural_surfaces[0].definition(), ProceduralSurfaceDefinition::VariableBlend(definition_payload) if matches!((definition_payload.construction(),), (construction,) if construction.to_raw() == expected)));
     }
 }
 
@@ -456,11 +471,13 @@ fn generated_variable_blend_round_trips_unclassified_bare_cross_sections() {
                 &DecodeOptions::default(),
             )
             .expect("bare cross-section decode");
-        let ProceduralSurfaceDefinition::VariableBlend { construction } =
+        let ProceduralSurfaceDefinition::VariableBlend(definition_payload) =
             &decoded.ir().model.procedural_surfaces[0].definition()
         else {
             panic!("expected variable blend")
         };
+        let construction = &definition_payload.construction().to_raw();
+
         assert_eq!(
             construction.cross_section,
             Some(VariableBlendCrossSection::UnclassifiedBare { selector: expected })
@@ -469,7 +486,9 @@ fn generated_variable_blend_round_trips_unclassified_bare_cross_sections() {
         let expected_construction = construction.clone();
         let (mut source_less, _, _) = decoded.into_parts();
         source_less.source = None;
-        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        source_less
+            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .unwrap();
         let mut encoded = Vec::new();
         F3dCodec
             .encode(&source_less, &mut encoded)
@@ -478,10 +497,7 @@ fn generated_variable_blend_round_trips_unclassified_bare_cross_sections() {
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("bare cross-section round trip");
         assert!(matches!(
-            &round_trip.ir().model.procedural_surfaces[0].definition(),
-            ProceduralSurfaceDefinition::VariableBlend { construction }
-                if construction == &expected_construction
-        ));
+            &round_trip.ir().model.procedural_surfaces[0].definition(), ProceduralSurfaceDefinition::VariableBlend(definition_payload) if matches!((definition_payload.construction(),), (construction,) if construction.to_raw() == expected_construction)));
     }
 }
 
@@ -543,7 +559,7 @@ fn generated_parameterized_revision_compound_loft_round_trips() {
     else {
         panic!("expected a revision compound loft construction")
     };
-    assert_parameterized_tail(&construction.cache);
+    assert_parameterized_tail(&construction.cache().to_raw());
 }
 
 #[test]
@@ -642,15 +658,14 @@ fn generated_revision_compound_loft_rejects_present_parameters_without_a_curve()
         .into_parts()
         .0;
     let mut wire = serde_json::to_value(&legal.model.procedural_surfaces[0]).unwrap();
-    wire["definition"]["construction"]
+    assert_eq!(wire["definition"]["construction"]["tail"]["kind"], "curve");
+    wire["definition"]["construction"]["tail"]
         .as_object_mut()
         .unwrap()
-        .remove("trailing_curve");
+        .remove("curve");
     let error =
         serde_json::from_value::<cadmpeg_ir::geometry::ProceduralSurface>(wire).unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("pairs its trailing curve with both parameter values"));
+    assert!(error.to_string().contains("curve"), "{error}");
 }
 
 #[test]
@@ -706,11 +721,32 @@ fn record_level_surface_bounds_round_trip() {
         )
         .expect("exact revision decode");
     let (mut source_less, _, _) = decoded.into_parts();
-    assert_eq!(source_less.model.procedural_surfaces[0].record_bounds, None);
-    source_less.model.procedural_surfaces[0].record_bounds =
-        Some([Some(0.1), None, Some(0.2), None]);
+    assert_eq!(
+        source_less.model.procedural_surfaces[0]
+            .record_bounds()
+            .map(cadmpeg_ir::geometry::RecordBounds::get),
+        None
+    );
+    {
+        let replacement = Some([Some(0.1), None, Some(0.2), None]);
+        edit::replace(&mut source_less.model.procedural_surfaces[0], |previous| {
+            replacement
+                .map(cadmpeg_ir::geometry::RecordBounds::try_from)
+                .transpose()
+                .map(|bounds| {
+                    cadmpeg_ir::geometry::ProceduralSurface::new(
+                        previous.id.clone(),
+                        previous.definition().clone(),
+                        bounds,
+                    )
+                })
+        })
+    }
+    .expect("finite record bounds");
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -720,7 +756,9 @@ fn record_level_surface_bounds_round_trip() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("record-bounds round trip");
     assert_eq!(
-        round_trip.ir().model.procedural_surfaces[0].record_bounds,
+        round_trip.ir().model.procedural_surfaces[0]
+            .record_bounds()
+            .map(cadmpeg_ir::geometry::RecordBounds::get),
         Some([Some(0.1), None, Some(0.2), None])
     );
 }
@@ -738,11 +776,13 @@ fn generated_vertex_blends_decode_all_boundary_variants() {
                 &DecodeOptions::default(),
             )
             .expect("vertex-blend decode");
-        let ProceduralSurfaceDefinition::VertexBlend { construction } =
+        let ProceduralSurfaceDefinition::VertexBlend(definition_payload) =
             &result.ir().model.procedural_surfaces[0].definition()
         else {
             panic!("expected vertex blend")
         };
+        let construction = &definition_payload.construction().to_raw();
+
         let owner = result
             .ir()
             .model
@@ -767,7 +807,7 @@ fn generated_vertex_blends_decode_all_boundary_variants() {
         );
         assert_eq!(construction.boundaries.len(), 4);
         assert_eq!(construction.grid_size, 17);
-        assert_eq!(construction.fit_tolerance, 0.03);
+        assert_eq!(construction.fit_tolerance.get(), 0.03);
         let VertexBlendBoundaryGeometry::Circle {
             twists,
             parameters,
@@ -813,7 +853,9 @@ fn generated_vertex_blends_decode_all_boundary_variants() {
         let expected = construction.clone();
         let (mut source_less, _, _) = result.into_parts();
         source_less.source = None;
-        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        source_less
+            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .unwrap();
         for (ordinal, (curve, _)) in bounded_curves.iter().enumerate() {
             source_less
                 .model
@@ -821,10 +863,19 @@ fn generated_vertex_blends_decode_all_boundary_variants() {
                 .iter_mut()
                 .find(|candidate| candidate.id == *curve)
                 .expect("vertex-blend boundary curve")
-                .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
-                origin: cadmpeg_ir::math::Point3::new(ordinal as f64, 2.0, -3.0),
-                direction: cadmpeg_ir::math::Vector3::new(2.0, -1.0, 4.0),
-            };
+                .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                    cadmpeg_ir::math::Point3::new(
+                        f64_from_index(ordinal).expect("fixture index is exact in f64"),
+                        2.0,
+                        -3.0,
+                    ),
+                    cadmpeg_ir::math::Vector3::new(2.0, -1.0, 4.0)
+                        .unit()
+                        .unwrap(),
+                )
+                .unwrap(),
+            ));
         }
         let mut encoded = Vec::new();
         F3dCodec
@@ -834,13 +885,14 @@ fn generated_vertex_blends_decode_all_boundary_variants() {
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("source-less vertex-blend round trip");
-        let ProceduralSurfaceDefinition::VertexBlend {
-            construction: actual,
-        } = &round_trip.ir().model.procedural_surfaces[0].definition()
+        let ProceduralSurfaceDefinition::VertexBlend(definition_payload) =
+            &round_trip.ir().model.procedural_surfaces[0].definition()
         else {
             panic!("expected round-trip vertex blend")
         };
-        assert_eq!(actual.as_ref(), expected.as_ref());
+        let actual = &definition_payload.construction().to_raw();
+
+        assert_eq!(actual, &expected);
         for (curve, range) in bounded_curves {
             assert!(matches!(
                 round_trip
@@ -850,9 +902,9 @@ fn generated_vertex_blends_decode_all_boundary_variants() {
                     .iter()
                     .find(|candidate| candidate.id == curve)
                     .map(|curve| &curve.geometry),
-                Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+                Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
                     if curve.degree() == 1
-                        && curve.knots() == [range[0], range[0], range[1], range[1]]
+                        && curve.knots().as_slice() == [range[0], range[0], range[1], range[1]]
             ));
         }
     }
@@ -868,21 +920,29 @@ fn decode_retains_generated_translational_extrusion_and_fit_contract() {
         .unwrap();
 
     let procedural = result.ir().model.procedural_surfaces.first().unwrap();
-    assert_eq!(procedural.cache_fit_tolerance(), Some(0.02));
-    let ProceduralSurfaceDefinition::Extrusion {
-        direction,
-        directrix,
-        parameter_interval,
-        native_position,
-        revision_form: None,
-    } = procedural.definition()
-    else {
+    assert_eq!(
+        procedural
+            .cache_fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
+        Some(0.02)
+    );
+    let ProceduralSurfaceDefinition::Extrusion(definition_payload) = procedural.definition() else {
+        panic!("expected extrusion")
+    };
+    let direction = definition_payload.direction();
+    let directrix = definition_payload.directrix();
+    let parameter_interval = definition_payload.parameter_interval();
+    let native_position = definition_payload.native_position();
+    let None = definition_payload.revision_form() else {
         panic!("expected extrusion")
     };
     assert_eq!(*direction, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 20.0));
-    assert_eq!(*parameter_interval, Some([0.25, 0.75]));
     assert_eq!(
-        *native_position,
+        parameter_interval.map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.25, 0.75])
+    );
+    assert_eq!(
+        native_position.map(cadmpeg_ir::features::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(40.0, 50.0, 60.0))
     );
     let directrix = result
@@ -892,7 +952,7 @@ fn decode_retains_generated_translational_extrusion_and_fit_contract() {
         .iter()
         .find(|curve| curve.id == *directrix)
         .expect("extrusion directrix carrier");
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(directrix) = &directrix.geometry else {
+    let Some(SolvedCurveGeometry::Nurbs(directrix)) = directrix.geometry.solved() else {
         panic!("expected NURBS directrix")
     };
     assert_eq!(directrix.control_points().len(), 3);
@@ -909,20 +969,25 @@ fn decode_retains_versioned_nested_translational_extrusion() {
         )
         .expect("versioned extrusion decode");
     let procedural = result.ir().model.procedural_surfaces.first().unwrap();
-    assert_eq!(procedural.cache_fit_tolerance(), Some(0.02));
-    let ProceduralSurfaceDefinition::Extrusion {
-        direction,
-        parameter_interval,
-        native_position,
-        ..
-    } = procedural.definition()
-    else {
+    assert_eq!(
+        procedural
+            .cache_fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
+        Some(0.02)
+    );
+    let ProceduralSurfaceDefinition::Extrusion(definition_payload) = procedural.definition() else {
         panic!("expected versioned extrusion")
     };
-    assert_eq!(*parameter_interval, Some([0.25, 0.75]));
+    let direction = definition_payload.direction();
+    let parameter_interval = definition_payload.parameter_interval();
+    let native_position = definition_payload.native_position();
+    assert_eq!(
+        parameter_interval.map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.25, 0.75])
+    );
     assert_eq!(*direction, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 20.0));
     assert_eq!(
-        *native_position,
+        native_position.map(cadmpeg_ir::features::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(40.0, 50.0, 60.0))
     );
 }
@@ -961,18 +1026,41 @@ fn generated_f3d_rewrites_translational_extrusion_header() {
         .expect("generated extrusion decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
     edited.model.procedural_surfaces[0].edit_definition(|definition| {
-        let ProceduralSurfaceDefinition::Extrusion {
-            parameter_interval,
-            direction,
-            native_position,
-            ..
-        } = definition
-        else {
+        let ProceduralSurfaceDefinition::Extrusion(definition_payload) = definition else {
             panic!("expected extrusion")
         };
-        *parameter_interval = Some([-0.5, 1.25]);
-        *direction = cadmpeg_ir::math::Vector3::new(5.0, -10.0, 30.0);
-        *native_position = Some(cadmpeg_ir::math::Point3::new(-20.0, 70.0, 15.0));
+        let mut parameter_interval_value = definition_payload
+            .parameter_interval()
+            .map(cadmpeg_ir::units::FiniteVector::get);
+        let parameter_interval = &mut parameter_interval_value;
+        let mut direction_value = definition_payload.direction().get();
+        let direction = &mut direction_value;
+        let mut native_position_value = definition_payload
+            .native_position()
+            .map(cadmpeg_ir::features::FinitePoint3::get);
+        let native_position = &mut native_position_value;
+        {
+            *parameter_interval = Some([-0.5, 1.25]);
+            *direction = cadmpeg_ir::math::Vector3::new(5.0, -10.0, 30.0);
+            *native_position = Some(cadmpeg_ir::math::Point3::new(-20.0, 70.0, 15.0));
+        };
+        let restored_cache = definition_payload.legacy_cache();
+        *definition_payload =
+            cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
+                definition_payload.directrix().clone(),
+                parameter_interval_value,
+                direction_value,
+                native_position_value,
+                cadmpeg_ir::geometry::CacheContract::from_form(
+                    definition_payload
+                        .revision_form()
+                        .map(cadmpeg_ir::geometry::RevisionSurfaceForm::to_raw),
+                ),
+            )
+            .unwrap();
+        definition
+            .set_legacy_cache(restored_cache)
+            .expect("the rebuilt construction states the same legacy cache slot");
     });
 
     let mut regenerated = Vec::new();
@@ -981,19 +1069,21 @@ fn generated_f3d_rewrites_translational_extrusion_header() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated extrusion decode");
-    let ProceduralSurfaceDefinition::Extrusion {
-        parameter_interval,
-        direction,
-        native_position,
-        ..
-    } = &round_trip.ir().model.procedural_surfaces[0].definition()
+    let ProceduralSurfaceDefinition::Extrusion(definition_payload) =
+        &round_trip.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected round-trip extrusion")
     };
-    assert_eq!(*parameter_interval, Some([-0.5, 1.25]));
+    let parameter_interval = definition_payload.parameter_interval();
+    let direction = definition_payload.direction();
+    let native_position = definition_payload.native_position();
+    assert_eq!(
+        parameter_interval.map(cadmpeg_ir::units::FiniteVector::get),
+        Some([-0.5, 1.25])
+    );
     assert_eq!(*direction, cadmpeg_ir::math::Vector3::new(5.0, -10.0, 30.0));
     assert_eq!(
-        *native_position,
+        native_position.map(cadmpeg_ir::features::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(-20.0, 70.0, 15.0))
     );
 }
@@ -1016,7 +1106,9 @@ fn generated_f3d_rewrites_procedural_surface_fit_tolerance() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated procedural-surface decode");
     assert_eq!(
-        round_trip.ir().model.procedural_surfaces[0].cache_fit_tolerance(),
+        round_trip.ir().model.procedural_surfaces[0]
+            .cache_fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
         Some(0.075)
     );
 }
@@ -1035,7 +1127,7 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
         .find(|surface| {
             matches!(
                 surface.geometry.solved_cache(),
-                Some(cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(_))
+                Some(SolvedSurfaceGeometry::Nurbs(_))
             )
         })
         .expect("generated NURBS surface");
@@ -1045,27 +1137,99 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
     else {
         panic!("procedural carrier with a solved cache")
     };
-    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(mut nurbs) = cache.as_geometry().clone()
-    else {
+    let SolvedSurfaceGeometry::Nurbs(mut nurbs) = cache.clone() else {
         unreachable!()
     };
+    let target = nurbs.v_count();
     nurbs
-        .edit_control_points(|points| {
-            points[2].x = 17.5;
-            points[2].z = -3.25;
-        })
+        .try_map_control_points(
+            |index, pole| {
+                let mut pole = pole.get();
+                if index == target {
+                    pole.x = 17.5;
+                    pole.z = -3.25;
+                }
+                cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            },
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("pole edit admission")
         .unwrap();
-    nurbs
-        .edit_u_knots(|knots| knots.copy_from_slice(&[-1.0, -1.0, 2.0, 2.0]))
-        .unwrap();
-    nurbs
-        .edit_v_knots(|knots| knots.copy_from_slice(&[-0.5, -0.5, 1.5, 1.5]))
-        .unwrap();
-    nurbs.set_u_periodic(true);
-    *cache = cadmpeg_ir::geometry::SolvedSurfaceGeometry::new(
-        cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs.clone()),
-    )
+    edit::replace(&mut nurbs, |previous| {
+        let mut knots = previous.u_knots().to_vec();
+        {
+            let knots: &mut [f64] = &mut knots;
+            knots.copy_from_slice(&[-1.0, -1.0, 2.0, 2.0]);
+        };
+        cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+            &cadmpeg_test_support::service_decode_context(),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                previous.u_degree(),
+                knots,
+                previous.u_periodic(),
+            ),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                previous.v_degree(),
+                previous.v_knots().to_vec(),
+                previous.v_periodic(),
+            ),
+            previous.pole_grid().clone(),
+            previous.normal_reversed(),
+        )
+        .expect("fixture final NURBS admission")
+    })
     .unwrap();
+    edit::replace(&mut nurbs, |previous| {
+        let mut knots = previous.v_knots().to_vec();
+        {
+            let knots: &mut [f64] = &mut knots;
+            knots.copy_from_slice(&[-0.5, -0.5, 1.5, 1.5]);
+        };
+        cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+            &cadmpeg_test_support::service_decode_context(),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                previous.u_degree(),
+                previous.u_knots().to_vec(),
+                previous.u_periodic(),
+            ),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                previous.v_degree(),
+                knots,
+                previous.v_periodic(),
+            ),
+            previous.pole_grid().clone(),
+            previous.normal_reversed(),
+        )
+        .expect("fixture final NURBS admission")
+    })
+    .unwrap();
+    {
+        let replacement = true;
+        edit::replace(&mut nurbs, |previous| {
+            cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+                &cadmpeg_test_support::service_decode_context(),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    previous.u_degree(),
+                    previous.u_knots().to_vec(),
+                    replacement,
+                ),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    previous.v_degree(),
+                    previous.v_knots().to_vec(),
+                    previous.v_periodic(),
+                ),
+                previous.pole_grid().clone(),
+                previous.normal_reversed(),
+            )
+            .expect("fixture final NURBS admission")
+        })
+        .unwrap()
+    };
+    *cache = SolvedSurfaceGeometry::Nurbs(nurbs.clone());
     let expected = nurbs.clone();
     let surface_id = surface.id.clone();
 
@@ -1084,7 +1248,7 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
         .expect("round-trip NURBS surface");
     assert_eq!(
         *surface.geometry.solved_cache().expect("solved NURBS cache"),
-        cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(expected)
+        SolvedSurfaceGeometry::Nurbs(expected)
     );
 }
 
@@ -1102,7 +1266,7 @@ fn generated_f3d_rewrites_rational_nurbs_surface_weights() {
         .find(|surface| {
             matches!(
                 surface.geometry.solved_cache(),
-                Some(cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs))
+                Some(SolvedSurfaceGeometry::Nurbs(nurbs))
                     if nurbs.weights().is_some()
             )
         })
@@ -1113,15 +1277,42 @@ fn generated_f3d_rewrites_rational_nurbs_surface_weights() {
     else {
         panic!("procedural carrier with a solved cache")
     };
-    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(mut nurbs) = cache.as_geometry().clone()
-    else {
+    let SolvedSurfaceGeometry::Nurbs(mut nurbs) = cache.clone() else {
         unreachable!()
     };
-    nurbs.edit_weights(|weights| weights[1] = 0.65).unwrap();
-    *cache = cadmpeg_ir::geometry::SolvedSurfaceGeometry::new(
-        cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs.clone()),
+    let mut weight_rows = nurbs.pole_grid().weights();
+    if let Some(rows) = &mut weight_rows {
+        rows[0][1] = 0.65;
+    }
+    let poles = cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        nurbs.pole_grid().raw_points(),
+        weight_rows,
     )
+    .expect("fixture pole pairing admission");
+    {
+        let replacement = poles.unwrap();
+        edit::replace(&mut nurbs, |previous| {
+            cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+                &cadmpeg_test_support::service_decode_context(),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    previous.u_degree(),
+                    previous.u_knots().to_vec(),
+                    previous.u_periodic(),
+                ),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    previous.v_degree(),
+                    previous.v_knots().to_vec(),
+                    previous.v_periodic(),
+                ),
+                replacement,
+                previous.normal_reversed(),
+            )
+            .expect("fixture final NURBS admission")
+        })
+    }
     .unwrap();
+    *cache = SolvedSurfaceGeometry::Nurbs(nurbs.clone());
     let expected = nurbs.clone();
     let surface_id = surface.id.clone();
 
@@ -1140,7 +1331,7 @@ fn generated_f3d_rewrites_rational_nurbs_surface_weights() {
         .expect("round-trip rational surface");
     assert_eq!(
         *surface.geometry.solved_cache().expect("solved NURBS cache"),
-        cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(expected)
+        SolvedSurfaceGeometry::Nurbs(expected)
     );
 }
 
@@ -1153,11 +1344,12 @@ fn generated_f3d_rewrites_extrusion_directrix_control_points() {
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated extrusion decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
-    let ProceduralSurfaceDefinition::Extrusion { directrix, .. } =
+    let ProceduralSurfaceDefinition::Extrusion(definition_payload) =
         edited.model.procedural_surfaces[0].definition()
     else {
         panic!("expected extrusion")
     };
+    let directrix = definition_payload.directrix();
     let directrix_id = directrix.clone();
     let curve = edited
         .model
@@ -1165,19 +1357,23 @@ fn generated_f3d_rewrites_extrusion_directrix_control_points() {
         .iter_mut()
         .find(|curve| curve.id == directrix_id)
         .expect("extrusion directrix");
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &mut curve.geometry else {
+    let cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) =
+        &mut curve.geometry
+    else {
         panic!("expected NURBS directrix")
     };
-    let mut control_points = nurbs.control_points().to_vec();
+    let mut control_points = nurbs.pole_rows().raw_points();
     control_points[1].y = 12.5;
     control_points[1].z = -2.0;
-    *nurbs = cadmpeg_ir::geometry::NurbsCurve::new(
+    *nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![-2.0, -2.0, 3.0, 3.0, 3.0],
         control_points,
-        nurbs.weights().map(<[f64]>::to_vec),
+        nurbs.pole_rows().weights(),
         true,
     )
+    .expect("fixture constructor admission")
     .unwrap();
     let expected = nurbs.clone();
 
@@ -1196,7 +1392,7 @@ fn generated_f3d_rewrites_extrusion_directrix_control_points() {
         .expect("round-trip directrix");
     assert_eq!(
         curve.geometry,
-        cadmpeg_ir::geometry::CurveGeometry::Nurbs(expected)
+        cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(expected))
     );
 }
 
@@ -1209,7 +1405,9 @@ fn decode_resolves_generated_ref_translational_extrusion() {
 
     assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
     assert_eq!(
-        result.ir().model.procedural_surfaces[0].cache_fit_tolerance(),
+        result.ir().model.procedural_surfaces[0]
+            .cache_fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
         Some(0.02)
     );
 }
@@ -1226,368 +1424,13 @@ fn decode_resolves_revision_extrusion_implicit_directrix_reference() {
     assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
     assert!(matches!(
         result.ir().model.procedural_surfaces[0].definition(),
-        ProceduralSurfaceDefinition::Extrusion { .. }
+        ProceduralSurfaceDefinition::Extrusion(_)
     ));
     assert!(!result
         .report()
         .losses
         .iter()
         .any(|loss| { loss.code == F3dLossCode::SurfaceShapeNotDecoded.kind() }));
-}
-
-#[test]
-fn decode_retains_generated_rolling_ball_definition() {
-    use cadmpeg_ir::geometry::{BlendCrossSection, BlendRadiusLaw, ProceduralSurfaceDefinition};
-
-    let f3d = f3d_with_smbh(&synthetic_rb_blend_spl_sur_smbh());
-    let result = F3dCodec
-        .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
-        .unwrap();
-
-    let procedural = result.ir().model.procedural_surfaces.first().unwrap();
-    assert_eq!(procedural.cache_fit_tolerance(), Some(0.01));
-    let ProceduralSurfaceDefinition::Blend {
-        supports,
-        spine,
-        radius,
-        cross_section,
-        ..
-    } = procedural.definition()
-    else {
-        panic!("expected rolling-ball blend")
-    };
-    assert!(supports.iter().all(Option::is_some));
-    assert!(supports.iter().flatten().all(|support| result
-        .ir()
-        .model
-        .surfaces
-        .iter()
-        .any(|surface| surface.id == support.surface)));
-    let spine = result
-        .ir()
-        .model
-        .curves
-        .iter()
-        .find(|curve| Some(&curve.id) == spine.as_ref())
-        .expect("blend spine carrier");
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(spine) = &spine.geometry else {
-        panic!("expected NURBS blend spine")
-    };
-    assert_eq!(spine.control_points().len(), 3);
-    assert_eq!(cross_section, &BlendCrossSection::Circular);
-    assert_eq!(
-        radius,
-        &BlendRadiusLaw::Constant {
-            signed_radius: -3.0
-        }
-    );
-}
-
-#[test]
-fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
-    use cadmpeg_ir::geometry::{
-        BlendRadiusLaw, CurveGeometry, NurbsCurve, ProceduralSurfaceDefinition, SurfaceGeometry,
-    };
-    use cadmpeg_ir::math::{Point3, Vector3};
-
-    let decoded = F3dCodec
-        .decode(
-            &mut Cursor::new(f3d_with_smbh(&synthetic_rb_blend_spl_sur_smbh())),
-            &DecodeOptions::default(),
-        )
-        .expect("generated rolling-ball decode");
-    let (mut source_less, _, _) = decoded.into_parts();
-    source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
-    let (support_ids, spine_id) =
-        source_less.model.procedural_surfaces[0].edit_definition(|definition| {
-            let ProceduralSurfaceDefinition::Blend {
-                supports,
-                spine: Some(spine),
-                radius,
-                ..
-            } = definition
-            else {
-                panic!("expected rolling-ball definition")
-            };
-            let support_ids = [
-                supports[0].as_ref().expect("first support").surface.clone(),
-                supports[1]
-                    .as_ref()
-                    .expect("second support")
-                    .surface
-                    .clone(),
-            ];
-            let spine_id = spine.clone();
-            *radius = BlendRadiusLaw::Constant {
-                signed_radius: -2.0,
-            };
-            (support_ids, spine_id)
-        });
-    let support_geometry = [
-        SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(1.0, 0.0, 0.0),
-            u_axis: Vector3::new(0.0, 1.0, 0.0),
-        },
-        SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 1.0, 0.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-    ];
-    for (id, geometry) in support_ids.into_iter().zip(support_geometry) {
-        source_less
-            .model
-            .surfaces
-            .iter_mut()
-            .find(|surface| surface.id == id)
-            .expect("rolling-ball support")
-            .geometry = geometry;
-    }
-    source_less
-        .model
-        .curves
-        .iter_mut()
-        .find(|curve| curve.id == spine_id)
-        .expect("rolling-ball spine")
-        .geometry = CurveGeometry::Nurbs(
-        NurbsCurve::new(
-            2,
-            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            vec![
-                Point3::new(2.0, 2.0, -4.0),
-                Point3::new(2.0, 2.0, 0.0),
-                Point3::new(2.0, 2.0, 7.0),
-            ],
-            None,
-            false,
-        )
-        .unwrap(),
-    );
-
-    let mut encoded = Vec::new();
-    F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut encoded))
-        .expect("source-less rolling-ball encode");
-    let round_trip = F3dCodec
-        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
-        .expect("source-less rolling-ball round trip");
-    let carrier_id = round_trip
-        .ir()
-        .model
-        .procedural_surface_owner(&round_trip.ir().model.procedural_surfaces[0].id)
-        .expect("rolling-ball carrier");
-    assert!(matches!(
-        round_trip
-            .ir()
-            .model
-            .surfaces
-            .iter()
-            .find(|surface| &surface.id == carrier_id)
-            .expect("rolling-ball carrier")
-            .geometry.solved_cache().expect("solved rolling-ball cache"),
-        SurfaceGeometry::Cylinder {
-            origin,
-            axis,
-            radius,
-            ..
-        } if *origin == Point3::new(2.0, 2.0, -4.0)
-            && *axis == Vector3::new(0.0, 0.0, 1.0)
-            && *radius == 2.0
-    ));
-}
-
-#[test]
-fn generated_rolling_ball_surface_aliases_decode_and_write_canonically() {
-    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
-
-    for name in ["rbblnsur", "pipe_spl_sur", "pipesur"] {
-        let bytes =
-            with_legacy_subtype(synthetic_rb_blend_spl_sur_smbh(), "rb_blend_spl_sur", name);
-        let result = F3dCodec
-            .decode(
-                &mut Cursor::new(f3d_with_smbh(&bytes)),
-                &DecodeOptions::default(),
-            )
-            .expect("rolling-ball alias decode");
-        assert!(matches!(
-            result.ir().model.procedural_surfaces[0].definition(),
-            ProceduralSurfaceDefinition::Blend { .. }
-        ));
-        let (mut source_less, _, _) = result.into_parts();
-        source_less.source = None;
-        source_less.set_native_unknowns("f3d", &[]).unwrap();
-        let mut encoded = Vec::new();
-        F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-            .and_then(|plan| plan.write_to(&mut encoded))
-            .expect("canonical rolling-ball encode");
-        let round_trip = F3dCodec
-            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
-            .expect("canonical rolling-ball round trip");
-        assert!(matches!(
-            round_trip.ir().model.procedural_surfaces[0].definition(),
-            ProceduralSurfaceDefinition::Blend { .. }
-        ));
-    }
-}
-
-#[test]
-fn generated_f3d_rewrites_rolling_ball_radius_law() {
-    use cadmpeg_ir::geometry::{BlendRadiusLaw, ProceduralSurfaceDefinition};
-
-    let source = f3d_with_smbh(&synthetic_rb_blend_spl_sur_smbh());
-    let decoded = F3dCodec
-        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
-        .expect("generated rolling-ball decode");
-    let (mut edited, _, fidelity) = decoded.into_parts();
-    edited.model.procedural_surfaces[0].edit_definition(|definition| {
-        let ProceduralSurfaceDefinition::Blend { radius, .. } = definition else {
-            panic!("expected rolling-ball blend")
-        };
-        *radius = BlendRadiusLaw::Linear {
-            start: -2.0,
-            end: -4.0,
-        };
-    });
-
-    let mut regenerated = Vec::new();
-    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
-        .expect("rolling-ball radius regeneration");
-    let round_trip = F3dCodec
-        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
-        .expect("regenerated rolling-ball decode");
-    let ProceduralSurfaceDefinition::Blend { radius, .. } =
-        &round_trip.ir().model.procedural_surfaces[0].definition()
-    else {
-        panic!("expected round-trip rolling-ball blend")
-    };
-    assert_eq!(
-        radius,
-        &BlendRadiusLaw::Linear {
-            start: -2.0,
-            end: -4.0,
-        }
-    );
-}
-
-#[test]
-fn generated_f3d_rewrites_rolling_ball_spine_cache() {
-    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
-
-    let source = f3d_with_smbh(&synthetic_rb_blend_spl_sur_smbh());
-    let decoded = F3dCodec
-        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
-        .expect("generated rolling-ball decode");
-    let (mut edited, _, fidelity) = decoded.into_parts();
-    let ProceduralSurfaceDefinition::Blend {
-        spine: Some(spine), ..
-    } = edited.model.procedural_surfaces[0].definition()
-    else {
-        panic!("expected rolling-ball spine")
-    };
-    let spine_id = spine.clone();
-    let curve = edited
-        .model
-        .curves
-        .iter_mut()
-        .find(|curve| curve.id == spine_id)
-        .expect("blend spine curve");
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &mut curve.geometry else {
-        panic!("expected NURBS blend spine")
-    };
-    let mut control_points = nurbs.control_points().to_vec();
-    control_points[1].x = 8.0;
-    control_points[1].y = -6.0;
-    *nurbs = cadmpeg_ir::geometry::NurbsCurve::new(
-        1,
-        vec![-1.0, -1.0, 2.0, 2.0, 2.0],
-        control_points,
-        nurbs.weights().map(<[f64]>::to_vec),
-        nurbs.periodic(),
-    )
-    .unwrap();
-    let expected = curve.clone();
-
-    let mut regenerated = Vec::new();
-    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
-        .expect("blend-spine regeneration");
-    let round_trip = F3dCodec
-        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
-        .expect("regenerated rolling-ball decode");
-    assert!(round_trip
-        .ir()
-        .model
-        .curves
-        .iter()
-        .any(|curve| curve == &expected));
-}
-
-#[test]
-fn generated_f3d_rewrites_rolling_ball_support_cache() {
-    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
-
-    let source = f3d_with_smbh(&synthetic_rb_blend_spl_sur_smbh());
-    let decoded = F3dCodec
-        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
-        .expect("generated rolling-ball decode");
-    let (mut edited, _, fidelity) = decoded.into_parts();
-    let ProceduralSurfaceDefinition::Blend { supports, .. } =
-        edited.model.procedural_surfaces[0].definition()
-    else {
-        panic!("expected rolling-ball blend")
-    };
-    let support_id = supports[0]
-        .as_ref()
-        .expect("first blend support")
-        .surface
-        .clone();
-    let surface = edited
-        .model
-        .surfaces
-        .iter_mut()
-        .find(|surface| surface.id == support_id)
-        .expect("blend support surface");
-    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs) = &mut surface.geometry else {
-        panic!("expected NURBS blend support")
-    };
-    nurbs
-        .edit_control_points(|points| {
-            points[1].x = 6.0;
-            points[1].z = 4.0;
-        })
-        .unwrap();
-    nurbs
-        .edit_u_knots(|knots| knots.copy_from_slice(&[-1.0, -1.0, 2.0, 2.0]))
-        .unwrap();
-    let expected = surface.clone();
-
-    let mut regenerated = Vec::new();
-    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
-        .expect("blend-support regeneration");
-    let round_trip = F3dCodec
-        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
-        .expect("regenerated rolling-ball decode");
-    assert!(round_trip
-        .ir()
-        .model
-        .surfaces
-        .iter()
-        .any(|surface| surface == &expected));
-}
-
-#[test]
-fn decode_reports_generated_partial_rolling_ball_supports() {
-    let f3d = f3d_with_smbh(&synthetic_partial_rb_blend_spl_sur_smbh());
-    let result = F3dCodec
-        .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
-        .unwrap();
-
-    assert!(result.report().losses.iter().any(|loss| loss
-        .message
-        .contains("only one of two native supports resolved")));
 }
 
 #[test]
@@ -1607,13 +1450,25 @@ fn subtype_reference_resolves_surface_cache() {
 
     let mut active = target;
     active.extend_from_slice(&source);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     let decoded = cadmpeg_asm::nurbs::core::surface_cache_resolving_refs(
+        &ctx,
         &cadmpeg_asm::nurbs::toks::lex_test_span(
             &source,
             cadmpeg_asm::kernel_header::RefWidth::Eight,
-        ),
-        &cadmpeg_asm::nurbs::toks::test_table(&active, cadmpeg_asm::kernel_header::RefWidth::Eight),
+        )
+        .expect("valid single-record byte fixture"),
+        &cadmpeg_asm::nurbs::toks::test_table(&active, cadmpeg_asm::kernel_header::RefWidth::Eight)
+            .expect("valid single-record byte fixture"),
     )
+    .transpose()
+    .expect("resource allocation")
     .expect("subtype-table reference resolves to its surface cache");
     assert_eq!((decoded.u_count(), decoded.v_count()), (2, 2));
 }
@@ -1626,11 +1481,12 @@ fn a_form_two_par_int_cur_decodes_as_its_support_isoline() {
     // The support is the unit bilinear patch scaled to millimetres, so the
     // isoline at u = 1 is the patch's far edge.
     let scope = generated_form_two_par_int_cur([1.0, 0.0], [1.0, 1.0]);
-    let curve =
-        decode_par_int_cur_isoline(&scope, cadmpeg_asm::kernel_header::RefWidth::Eight, None)
-            .expect("form-2 isoline");
+    let curve = decode_par_int_cur_isoline(&scope, cadmpeg_asm::kernel_header::RefWidth::Eight)
+        .transpose()
+        .expect("resource allocation did not fail")
+        .expect("form-2 isoline");
     assert_eq!(curve.degree(), 1);
-    assert_eq!(curve.knots(), [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(curve.knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
     assert_eq!(
         curve.control_points(),
         [Point3::new(10.0, 0.0, 0.0), Point3::new(10.0, 10.0, 0.0)]
@@ -1639,21 +1495,16 @@ fn a_form_two_par_int_cur_decodes_as_its_support_isoline() {
     // A pcurve that crosses the support holds neither parameter fixed, so no
     // NURBS curve reproduces it and the form is refused.
     let diagonal = generated_form_two_par_int_cur([0.0, 0.0], [1.0, 1.0]);
-    assert!(decode_par_int_cur_isoline(
-        &diagonal,
-        cadmpeg_asm::kernel_header::RefWidth::Eight,
-        None
-    )
-    .is_none());
+    assert!(
+        decode_par_int_cur_isoline(&diagonal, cadmpeg_asm::kernel_header::RefWidth::Eight)
+            .is_none()
+    );
 
     // A pcurve running only part of the support's domain would need a trim.
     let partial = generated_form_two_par_int_cur([1.0, 0.0], [1.0, 0.5]);
-    assert!(decode_par_int_cur_isoline(
-        &partial,
-        cadmpeg_asm::kernel_header::RefWidth::Eight,
-        None
-    )
-    .is_none());
+    assert!(
+        decode_par_int_cur_isoline(&partial, cadmpeg_asm::kernel_header::RefWidth::Eight).is_none()
+    );
 }
 
 #[test]
@@ -1671,10 +1522,11 @@ fn a_nested_construction_cache_is_not_the_enclosing_scope_cache() {
     t_ident(&mut scope, "nullbs");
     scope.push(0x10);
 
+    let width = cadmpeg_asm::kernel_header::RefWidth::Eight;
+    let span = cadmpeg_asm::nurbs::subtypes::subtype_span(&scope, 0, width)
+        .expect("the fixture is a balanced subtype scope");
     assert!(decode_curve_cache(&scope).is_some());
-    assert!(
-        decode_owned_curve_cache_at(&scope, cadmpeg_asm::kernel_header::RefWidth::Eight).is_none()
-    );
+    assert!(decode_owned_curve_cache_at(span, width).is_none());
 }
 
 #[test]
@@ -1682,11 +1534,20 @@ fn a_nested_construction_does_not_claim_its_enclosing_record() {
     use cadmpeg_asm::nurbs::proc_surface::{
         procedural_surface_resolving_refs, DecodedProceduralSurfaceDefinition,
     };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
 
     let bytes = synthetic_cyl_spl_sur_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -1696,12 +1557,16 @@ fn a_nested_construction_does_not_claim_its_enclosing_record() {
     let record = &records[9];
     let owned = bytes[record.offset..record.offset + record.len].to_vec();
     let decoded = procedural_surface_resolving_refs(
+        &ctx,
         &record.tokens,
-        &cadmpeg_asm::nurbs::toks::SubtypeTable::from_records(std::slice::from_ref(record)),
+        &cadmpeg_asm::nurbs::toks::SubtypeTable::from_records(&ctx, std::slice::from_ref(record))
+            .unwrap(),
     )
+    .transpose()
+    .expect("resource allocation did not fail")
     .expect("the record owns its extrusion");
     assert!(matches!(
-        decoded.definition,
+        decoded.definition(),
         DecodedProceduralSurfaceDefinition::Extrusion { .. }
     ));
 
@@ -1716,7 +1581,7 @@ fn a_nested_construction_does_not_claim_its_enclosing_record() {
     nested.splice(at..at, *b"\x0f\x0d\x14srf_srf_v_bl_spl_sur");
     let terminator = nested.len() - 1;
     nested.insert(terminator, 0x10);
-    let nested_records = cadmpeg_asm::sab::frame(
+    let nested_records = cadmpeg_asm::test_support::sab::frame(
         &nested,
         0,
         nested.len(),
@@ -1724,191 +1589,13 @@ fn a_nested_construction_does_not_claim_its_enclosing_record() {
     )
     .unwrap();
     assert!(procedural_surface_resolving_refs(
+        &ctx,
         &nested_records[0].tokens,
-        &cadmpeg_asm::nurbs::toks::SubtypeTable::from_records(&nested_records),
+        &cadmpeg_asm::nurbs::toks::SubtypeTable::from_records(&ctx, &nested_records).unwrap(),
     )
+    .transpose()
+    .expect("resource allocation did not fail")
     .is_none());
 }
 
-#[test]
-fn subtype_table_walks_wide_strings_at_the_stream_ref_width() {
-    for ref_width in [
-        cadmpeg_asm::kernel_header::RefWidth::Four,
-        cadmpeg_asm::kernel_header::RefWidth::Eight,
-    ] {
-        // The last four payload bytes spell a definition opening. Only a walker
-        // that consumes the length prefix at `ref_width` steps past them.
-        let payload = [b'0', b'1', b'2', b'3', 0x0f, 0x0d, 0x01, b'x'];
-
-        let mut active = Vec::new();
-        t_ident(&mut active, "tspl");
-        active.push(0x09);
-        active.extend_from_slice(&payload.len().to_le_bytes()[..ref_width.bytes()]);
-        active.extend_from_slice(&payload);
-        let definition = active.len();
-        active.extend_from_slice(b"\x0f\x0d\x08real_def\x10");
-        active.push(0x11);
-
-        let tables = cadmpeg_asm::nurbs::subtypes::SubtypeTables::from_stream(&active);
-        assert_eq!(tables.for_width(ref_width), [definition]);
-    }
-}
-
-#[test]
-fn rgb_attribute_chain_decodes_body_color() {
-    use std::collections::HashMap;
-
-    let mut bytes = Vec::new();
-    t_ident(&mut bytes, "body");
-    t_ref(&mut bytes, 1); // attrib-chain head
-    t_end(&mut bytes);
-    t_subident(&mut bytes, "rgb_color");
-    t_subident(&mut bytes, "st");
-    t_ident(&mut bytes, "attrib");
-    t_ref(&mut bytes, -1); // next attrib
-    t_dbl(&mut bytes, 0.1);
-    t_dbl(&mut bytes, 0.2);
-    t_dbl(&mut bytes, 0.3);
-    t_end(&mut bytes);
-
-    let records = cadmpeg_asm::sab::frame(
-        &bytes,
-        0,
-        bytes.len(),
-        cadmpeg_asm::kernel_header::RefWidth::Eight,
-    )
-    .unwrap();
-    let by_index: HashMap<i64, _> = records.iter().map(|r| (r.index as i64, r)).collect();
-    let color =
-        cadmpeg_asm::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
-    assert_eq!((color.r, color.g, color.b, color.a), (0.1, 0.2, 0.3, 1.0));
-}
-
-#[test]
-fn truecolor_attribute_chain_decodes_by_color_as_opaque_rgb() {
-    use std::collections::HashMap;
-
-    let mut bytes = Vec::new();
-    t_ident(&mut bytes, "face");
-    t_ref(&mut bytes, 1);
-    t_end(&mut bytes);
-    t_subident(&mut bytes, "truecolor");
-    t_subident(&mut bytes, "adesk");
-    t_ident(&mut bytes, "attrib");
-    t_ref(&mut bytes, -1);
-    bytes.push(0x17);
-    bytes.extend_from_slice(&(0xc240_80c0i64).to_le_bytes());
-    t_end(&mut bytes);
-
-    let records = cadmpeg_asm::sab::frame(
-        &bytes,
-        0,
-        bytes.len(),
-        cadmpeg_asm::kernel_header::RefWidth::Eight,
-    )
-    .unwrap();
-    let by_index: HashMap<i64, _> = records.iter().map(|r| (r.index as i64, r)).collect();
-    let color =
-        cadmpeg_asm::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
-    assert_eq!(
-        (color.r, color.g, color.b, color.a),
-        (64.0 / 255.0, 128.0 / 255.0, 192.0 / 255.0, 1.0)
-    );
-}
-
-#[test]
-fn bt_text_color_attribute_chain_decodes_rgb() {
-    use std::collections::HashMap;
-
-    let mut bytes = Vec::new();
-    t_ident(&mut bytes, "face");
-    t_ref(&mut bytes, 1);
-    t_end(&mut bytes);
-    t_subident(&mut bytes, "entatt_color");
-    t_subident(&mut bytes, "bt");
-    t_ident(&mut bytes, "attrib");
-    t_ref(&mut bytes, -1);
-    push_u8_string(&mut bytes, "4227264"); // 0x4080c0
-    t_end(&mut bytes);
-
-    let records = cadmpeg_asm::sab::frame(
-        &bytes,
-        0,
-        bytes.len(),
-        cadmpeg_asm::kernel_header::RefWidth::Eight,
-    )
-    .unwrap();
-    let by_index: HashMap<i64, _> = records.iter().map(|r| (r.index as i64, r)).collect();
-    let color =
-        cadmpeg_asm::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
-    assert_eq!(
-        (color.r, color.g, color.b, color.a),
-        (64.0 / 255.0, 128.0 / 255.0, 192.0 / 255.0, 1.0)
-    );
-}
-
-#[test]
-fn bt_text_color_rejects_non_decimal_and_overwide_values() {
-    use std::collections::HashMap;
-
-    for value in ["", "+4227264", "0x4080c0", "16777216"] {
-        let mut bytes = Vec::new();
-        t_ident(&mut bytes, "face");
-        t_ref(&mut bytes, 1);
-        t_end(&mut bytes);
-        t_subident(&mut bytes, "entatt_color");
-        t_subident(&mut bytes, "bt");
-        t_ident(&mut bytes, "attrib");
-        t_ref(&mut bytes, -1);
-        push_u8_string(&mut bytes, value);
-        t_end(&mut bytes);
-
-        let records = cadmpeg_asm::sab::frame(
-            &bytes,
-            0,
-            bytes.len(),
-            cadmpeg_asm::kernel_header::RefWidth::Eight,
-        )
-        .unwrap();
-        let by_index: HashMap<i64, _> = records.iter().map(|r| (r.index as i64, r)).collect();
-        assert!(
-            cadmpeg_asm::brep::attributes::attribute_chain_color(&records[0], &by_index).is_none()
-        );
-    }
-}
-
-#[test]
-fn invalid_color_attribute_does_not_hide_later_chain_color() {
-    use std::collections::HashMap;
-
-    let mut bytes = Vec::new();
-    t_ident(&mut bytes, "face");
-    t_ref(&mut bytes, 1);
-    t_end(&mut bytes);
-    t_subident(&mut bytes, "entatt_color");
-    t_subident(&mut bytes, "bt");
-    t_ident(&mut bytes, "attrib");
-    t_ref(&mut bytes, 2);
-    push_u8_string(&mut bytes, "not-a-color");
-    t_end(&mut bytes);
-    t_subident(&mut bytes, "rgb_color");
-    t_subident(&mut bytes, "st");
-    t_ident(&mut bytes, "attrib");
-    t_ref(&mut bytes, -1);
-    t_dbl(&mut bytes, 0.1);
-    t_dbl(&mut bytes, 0.2);
-    t_dbl(&mut bytes, 0.3);
-    t_end(&mut bytes);
-
-    let records = cadmpeg_asm::sab::frame(
-        &bytes,
-        0,
-        bytes.len(),
-        cadmpeg_asm::kernel_header::RefWidth::Eight,
-    )
-    .unwrap();
-    let by_index: HashMap<i64, _> = records.iter().map(|r| (r.index as i64, r)).collect();
-    let color =
-        cadmpeg_asm::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
-    assert_eq!((color.r, color.g, color.b, color.a), (0.1, 0.2, 0.3, 1.0));
-}
+mod rolling_ball;

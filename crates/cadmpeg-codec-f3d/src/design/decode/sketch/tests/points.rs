@@ -1,20 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(
-    clippy::cloned_ref_to_slice_refs,
-    clippy::default_trait_access,
-    clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
-)]
 
-use super::{
+use crate::design::decode::sketch::{
     decode_sketch_point_companion, decode_sketch_point_record, SKETCH_CONTAINER_TYPE_GUID,
     SKETCH_POINT_COMPANION_TYPE, SKETCH_POINT_TYPE_GUID,
 };
-use crate::records::{
+use crate::records::sketch_geometry::{
     SketchPointClosure, SketchPointCompanion, SketchPointCompanionReferenceEncoding,
     SketchPointRecordForm,
 };
+use crate::test_support::lp_ascii;
 use std::collections::HashMap;
 
 const POINT: u32 = 41;
@@ -29,16 +23,11 @@ fn push_header(out: &mut Vec<u8>, class_tag: &str, record_index: u32) {
     out.extend_from_slice(&record_index.to_le_bytes());
 }
 
-fn push_ascii(out: &mut Vec<u8>, value: &str) {
-    out.extend_from_slice(&u32::try_from(value.len()).unwrap().to_le_bytes());
-    out.extend_from_slice(value.as_bytes());
-}
-
 fn push_reference(out: &mut Vec<u8>, target: u32, type_guid: Option<&str>) {
     out.push(1);
     out.extend_from_slice(&u64::from(target).to_le_bytes());
     if let Some(type_guid) = type_guid {
-        push_ascii(out, type_guid);
+        lp_ascii(out, type_guid);
     }
     out.extend_from_slice(&[0; 2]);
 }
@@ -55,8 +44,8 @@ fn tagged_point_payload(
     payload.extend_from_slice(&[0; 9]);
     payload.push(1);
     payload.extend_from_slice(&1u32.to_le_bytes());
-    push_ascii(&mut payload, "pt_tag");
-    push_ascii(&mut payload, "IntrinsicMetaTypeuint64");
+    lp_ascii(&mut payload, "pt_tag");
+    lp_ascii(&mut payload, "IntrinsicMetaTypeuint64");
     payload.extend_from_slice(&500u64.to_le_bytes());
     let paired_type = inline_typed.then_some(SKETCH_POINT_COMPANION_TYPE.0);
     push_reference(&mut payload, COMPANION, paired_type);
@@ -124,11 +113,11 @@ fn point_record_parser_closes_every_versioned_three_coordinate_form() {
             assert_eq!(
                 decoded.record_form,
                 SketchPointRecordForm::Version11 {
-                    companion: None,
                     depth: 0.25 * 10.0,
                     entity_genesis: None,
                     padded_paired_reference,
-                    persistent_id: 500,
+                    companion_prefix_present_zero: false,
+                    persistent_id: std::num::NonZeroU64::new(500).unwrap(),
                     flags: [false; 8],
                     closure: SketchPointClosure::from_pair(selector, state).unwrap(),
                 }
@@ -168,10 +157,7 @@ fn version_zero_point_retains_its_one_flag_and_source_local_identity() {
     let decoded = decode_sketch_point_record(&payload, 0).expect("version-0 point");
     assert_eq!(
         decoded.record_form,
-        SketchPointRecordForm::Version0 {
-            flag: true,
-            companion: None
-        }
+        SketchPointRecordForm::Version0 { flag: true }
     );
     assert_eq!(decoded.record_form.persistent_id(), None);
     assert_eq!(decoded.record_form.flags(), [1, 0, 0, 0, 0, 0, 0, 0]);
@@ -188,10 +174,19 @@ fn point_companion_retains_both_prefixes_and_reference_encodings() {
         (72, (ARC, 0, "Geometry")),
     ]);
     for prefix_present_zero in [false, true] {
-        for reference_encoding in [
-            SketchPointCompanionReferenceEncoding::SameSegment,
-            SketchPointCompanionReferenceEncoding::InlineTyped,
+        for record_form in [
+            SketchPointRecordForm::version11(500, SketchPointClosure::Selector0State0, None, 0.0),
+            SketchPointRecordForm::Version11InlineTyped {
+                depth: 0.0,
+                entity_genesis: None,
+                trailing_reference: OWNER,
+                companion_prefix_present_zero: false,
+                persistent_id: std::num::NonZeroU64::new(500).unwrap(),
+                flags: [false; 8],
+                closure: SketchPointClosure::Selector0State0,
+            },
         ] {
+            let reference_encoding = SketchPointCompanionReferenceEncoding::for_form(&record_form);
             if prefix_present_zero
                 && reference_encoding == SketchPointCompanionReferenceEncoding::InlineTyped
             {
@@ -217,12 +212,52 @@ fn point_companion_retains_both_prefixes_and_reference_encodings() {
                 inline_typed.then_some(SKETCH_POINT_TYPE_GUID),
             );
             assert_eq!(
-                decode_sketch_point_companion(&payload, POINT, reference_encoding, true, &types,),
-                Some(SketchPointCompanion {
-                    prefix_present_zero,
-                    incident_curves: vec![71, 72],
+                crate::design::test_support::with_test_decode_context(|ctx| {
+                    decode_sketch_point_companion(ctx, &payload, POINT, record_form.clone(), &types)
                 })
+                .expect("point companion admission"),
+                Some((
+                    record_form
+                        .clone()
+                        .with_companion_prefix_present_zero(prefix_present_zero)
+                        .expect("version-11 form carries the companion prefix"),
+                    SketchPointCompanion {
+                        incident_curves: vec![71, 72],
+                    }
+                ))
             );
         }
     }
+}
+
+#[test]
+fn sketch_point_incident_curves_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let types = HashMap::from([
+        (POINT, (SKETCH_POINT_TYPE_GUID, 11, "Geometry")),
+        (71, (LINE, 2, "Geometry")),
+        (72, (ARC, 0, "Geometry")),
+    ]);
+    let mut payload = Vec::new();
+    push_header(&mut payload, "258", COMPANION);
+    payload.extend_from_slice(&[0; 10]);
+    payload.extend_from_slice(&2u32.to_le_bytes());
+    push_reference(&mut payload, 71, None);
+    push_reference(&mut payload, 72, None);
+    payload.push(0);
+    push_reference(&mut payload, POINT, None);
+    let record_form =
+        SketchPointRecordForm::version11(500, SketchPointClosure::Selector0State0, None, 0.0);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = decode_sketch_point_companion(&ctx, &payload, POINT, record_form, &types)
+        .expect_err("collection limit must refuse incident curves");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+        if failure.dimension == ResourceDimension::CollectionItems
+            && failure.operation == "f3d sketch point incident curves")
+    );
 }

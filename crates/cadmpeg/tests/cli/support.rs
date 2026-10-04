@@ -6,13 +6,17 @@ use std::io::Write;
 
 use cadmpeg_ir::examples::unit_cube;
 
-pub fn fixture(dir: &std::path::Path, name: &str, ir: &cadmpeg_ir::CadIr) -> std::path::PathBuf {
+pub(crate) fn fixture(
+    dir: &std::path::Path,
+    name: &str,
+    ir: &cadmpeg_ir::CadIr,
+) -> std::path::PathBuf {
     let path = dir.join(name);
     fs::write(&path, ir.to_canonical_json().unwrap()).unwrap();
     path
 }
 
-pub fn minimal_fcstd(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
+pub(crate) fn minimal_fcstd(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
     let path = dir.join(name);
     let file = fs::File::create(&path).unwrap();
     let mut zip = zip::ZipWriter::new(file);
@@ -29,7 +33,7 @@ pub fn minimal_fcstd(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
     path
 }
 
-pub fn geometryless_creo(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
+pub(crate) fn geometryless_creo(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
     let path = dir.join(name);
     fs::write(
         &path,
@@ -39,7 +43,7 @@ pub fn geometryless_creo(dir: &std::path::Path, name: &str) -> std::path::PathBu
     path
 }
 
-pub fn rhino_header(version: &str) -> Vec<u8> {
+pub(crate) fn rhino_header(version: &str) -> Vec<u8> {
     let mut bytes = b"3D Geometry File Format ".to_vec();
     let mut version_field = [b' '; 8];
     let start = version_field.len() - version.len();
@@ -49,39 +53,51 @@ pub fn rhino_header(version: &str) -> Vec<u8> {
     bytes
 }
 
-pub fn rhino_long_chunk(version: u64, typecode: u32, body: &[u8]) -> Vec<u8> {
+fn rhino_long_chunk(version: u64, typecode: u32, body: &[u8]) -> Vec<u8> {
     let mut bytes = typecode.to_le_bytes().to_vec();
     if version >= 50 {
-        bytes.extend((body.len() as i64).to_le_bytes());
+        bytes.extend(
+            i64::try_from(body.len())
+                .expect("test chunk length fits i64")
+                .to_le_bytes(),
+        );
     } else {
-        bytes.extend((body.len() as i32).to_le_bytes());
+        bytes.extend(
+            i32::try_from(body.len())
+                .expect("test chunk length fits i32")
+                .to_le_bytes(),
+        );
     }
     bytes.extend(body);
     bytes
 }
 
-pub fn rhino_short_chunk(version: u64, typecode: u32, value: i64) -> Vec<u8> {
+fn rhino_short_chunk(version: u64, typecode: u32, value: i64) -> Vec<u8> {
     let mut bytes = typecode.to_le_bytes().to_vec();
     if version >= 50 {
         bytes.extend(value.to_le_bytes());
     } else {
-        bytes.extend((value as i32).to_le_bytes());
+        bytes.extend(
+            i32::try_from(value)
+                .expect("test short chunk value fits i32")
+                .to_le_bytes(),
+        );
     }
     bytes
 }
 
-pub fn rhino_crc_chunk(version: u64, typecode: u32, body: &[u8]) -> Vec<u8> {
+fn rhino_crc_chunk(version: u64, typecode: u32, body: &[u8]) -> Vec<u8> {
     let mut payload = body.to_vec();
     payload.extend(crc32fast::hash(body).to_le_bytes());
     rhino_long_chunk(version, typecode, &payload)
 }
 
-pub fn rhino_table(version: u64, typecode: u32) -> Vec<u8> {
+fn rhino_table(version: u64, typecode: u32) -> Vec<u8> {
     let end = rhino_short_chunk(version, 0xffff_ffff, 0);
     rhino_long_chunk(version, typecode, &end)
 }
 
-pub fn rhino_object_record(version: u64, class_uuid: [u8; 16], payload: &[u8]) -> Vec<u8> {
+fn rhino_object_record(version: u64, class_uuid: [u8; 16], payload: &[u8]) -> Vec<u8> {
     let object_type = rhino_short_chunk(version, 0x8200_0071, 1);
     let mut uuid_body = class_uuid.to_vec();
     uuid_body.extend(crc32fast::hash(&class_uuid).to_le_bytes());
@@ -101,7 +117,7 @@ pub fn rhino_object_record(version: u64, class_uuid: [u8; 16], payload: &[u8]) -
     )
 }
 
-pub fn synthetic_rhino_point(
+pub(crate) fn synthetic_rhino_point(
     dir: &std::path::Path,
     name: &str,
     point: [f64; 3],
@@ -138,7 +154,11 @@ pub fn synthetic_rhino_point(
     bytes.extend(object_table);
     let eof_offset = bytes.len();
     bytes.extend(rhino_long_chunk(version, 0x0000_7fff, &[0; 8]));
-    let eof = rhino_long_chunk(version, 0x0000_7fff, &(bytes.len() as u64).to_le_bytes());
+    let eof = rhino_long_chunk(
+        version,
+        0x0000_7fff,
+        &cadmpeg_core::decode::u64_from_index(bytes.len()).to_le_bytes(),
+    );
     bytes[eof_offset..].copy_from_slice(&eof);
 
     let path = dir.join(name);
@@ -146,7 +166,7 @@ pub fn synthetic_rhino_point(
     path
 }
 
-pub fn minimal_rhino_archive(
+pub(crate) fn minimal_rhino_archive(
     dir: &std::path::Path,
     name: &str,
     version_text: &str,
@@ -154,7 +174,7 @@ pub fn minimal_rhino_archive(
     minimal_rhino_archive_with_comment(dir, name, version_text, b"cadmpeg test")
 }
 
-pub fn minimal_rhino_archive_with_comment(
+fn minimal_rhino_archive_with_comment(
     dir: &std::path::Path,
     name: &str,
     version_text: &str,
@@ -172,9 +192,14 @@ pub fn minimal_rhino_archive_with_comment(
     bytes.extend(rhino_long_chunk(version, 0x0000_7fff, &vec![0; width]));
     let file_size = bytes.len();
     let eof_body = if version >= 50 {
-        (file_size as u64).to_le_bytes().to_vec()
+        cadmpeg_core::decode::u64_from_index(file_size)
+            .to_le_bytes()
+            .to_vec()
     } else {
-        (file_size as u32).to_le_bytes().to_vec()
+        u32::try_from(file_size)
+            .expect("test archive size fits u32")
+            .to_le_bytes()
+            .to_vec()
     };
     let eof = rhino_long_chunk(version, 0x0000_7fff, &eof_body);
     bytes[eof_offset..].copy_from_slice(&eof);
@@ -184,28 +209,31 @@ pub fn minimal_rhino_archive_with_comment(
     path
 }
 
-pub fn sldprt_cube() -> cadmpeg_ir::CadIr {
-    let mut ir = unit_cube();
+pub(crate) fn sldprt_cube() -> cadmpeg_ir::CadIr {
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.bodies[0].name = None;
     ir.model.faces.iter_mut().for_each(|face| face.name = None);
     ir.model
         .edges
         .iter_mut()
-        .for_each(|edge| edge.param_range = None);
+        .for_each(|edge| edge.set_param_range(None));
     ir
 }
 
 /// A cube carrying source metadata with the given attributes.
-pub fn cube_with_source(attributes: &[(&str, &str)]) -> cadmpeg_ir::CadIr {
-    let mut ir = unit_cube();
+pub(crate) fn cube_with_source(attributes: &[(&str, &str)]) -> cadmpeg_ir::CadIr {
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.source = Some(cadmpeg_ir::SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
-            cadmpeg_core::dialect::DialectId::pinned("synthetic:test"),
+            cadmpeg_core::dialect_id!("synthetic:test"),
         )),
-        attributes
-            .iter()
-            .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
-            .collect(),
+        cadmpeg_core::text::named_entries(
+            "the fixture document",
+            attributes
+                .iter()
+                .map(|(key, value)| ((*key).to_owned(), (*value).to_owned())),
+        )
+        .expect("the fixture states named attributes"),
     ));
     ir
 }

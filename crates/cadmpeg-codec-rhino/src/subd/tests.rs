@@ -1,10 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::disallowed_methods)]
+use cadmpeg_test_support::EditableDecodeResult;
 
-use super::*;
+use cadmpeg_ir::subd;
+use cadmpeg_test_support::wire;
+
+use super::{
+    decode as decode_with_ctx, decode_mesh_proxy as decode_mesh_proxy_with_ctx, read_symmetry,
+    DecodedSubd, MeshProxyFingerprint, SubdEnumDiagnostic, SubdError, ANONYMOUS,
+    EMPTY_CONTENT_SHA1, SUBD_MESH_PROXY_USERDATA,
+};
+use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
+use crate::loss::Diagnostics;
 use crate::objects::ClassUserdata;
-use crate::test_support::test_dump::*;
+use crate::settings::MillimeterScale;
+use crate::test_support::test_dump::{
+    minimal_document, object_record_with_payload, set_test_units, table,
+};
+use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::Severity;
+use std::ops::Range;
+use subd::{SubdEdgeTag, SubdVertexTag};
 
 #[derive(Clone, Copy)]
 #[expect(
@@ -17,6 +33,7 @@ struct Fixture {
     reversed_edge: bool,
     open_ring: bool,
     bad_pointer_type: bool,
+    mistyped_pointer: bool,
     null_endpoint: bool,
     omit_vertex_edge: bool,
     vertex_tag: u8,
@@ -38,6 +55,7 @@ impl Default for Fixture {
             reversed_edge: false,
             open_ring: false,
             bad_pointer_type: false,
+            mistyped_pointer: false,
             null_endpoint: false,
             omit_vertex_edge: false,
             vertex_tag: 1,
@@ -53,6 +71,153 @@ impl Default for Fixture {
     }
 }
 
+fn decode(
+    data: &[u8],
+    range: Range<usize>,
+    archive: ArchiveVersion,
+    scale: MillimeterScale,
+    id: cadmpeg_ir::ids::SubdId,
+) -> Result<Option<DecodedSubd>, SubdError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        data,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("service decode context");
+    decode_with_ctx(&ctx, data, range, archive, scale, id)
+}
+
+fn decode_mesh_proxy(
+    data: &[u8],
+    extra: &ClassUserdata,
+    archive: ArchiveVersion,
+    scale: MillimeterScale,
+    id: cadmpeg_ir::ids::SubdId,
+    fingerprint: MeshProxyFingerprint,
+) -> Result<Option<DecodedSubd>, SubdError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        data,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("service decode context");
+    decode_mesh_proxy_with_ctx(&ctx, data, extra, archive, scale, id, fingerprint)
+}
+
+fn decode_with_collection_limit(limit: u64) -> SubdError {
+    let fixture = Fixture::default();
+    let data = payload(fixture);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
+        .expect("valid input within service limits");
+    decode_with_ctx(
+        &ctx,
+        &data,
+        0..data.len(),
+        fixture.archive,
+        MillimeterScale::IDENTITY,
+        "rhino:test:subd#0".try_into().expect("valid identity"),
+    )
+    .expect_err("collection limit must refuse the SubD")
+}
+
+macro_rules! subd_collection_limit_test {
+    ($name:ident, $limit:expr, $operation:literal) => {
+        #[test]
+        fn $name() {
+            match decode_with_collection_limit($limit) {
+                SubdError::Resource(refusal) => {
+                    assert_eq!(refusal.operation, $operation);
+                }
+                other => panic!("expected resource refusal, got {other:?}"),
+            }
+        }
+    };
+}
+
+subd_collection_limit_test!(
+    level_vertices_refuse_collection_limit,
+    3,
+    "Rhino SubD level vertices"
+);
+subd_collection_limit_test!(
+    component_pointers_refuse_collection_limit,
+    5,
+    "Rhino SubD component pointers"
+);
+subd_collection_limit_test!(
+    level_edges_refuse_collection_limit,
+    19,
+    "Rhino SubD level edges"
+);
+subd_collection_limit_test!(
+    level_faces_refuse_collection_limit,
+    32,
+    "Rhino SubD level faces"
+);
+subd_collection_limit_test!(
+    child_ranges_refuse_collection_limit,
+    37,
+    "Rhino SubD child ranges"
+);
+subd_collection_limit_test!(
+    component_types_refuse_collection_limit,
+    46,
+    "Rhino SubD component types"
+);
+subd_collection_limit_test!(
+    vertex_edge_map_refuses_collection_limit,
+    50,
+    "Rhino SubD vertex-edge map"
+);
+subd_collection_limit_test!(
+    incidence_members_refuse_collection_limit,
+    51,
+    "Rhino SubD incidence members"
+);
+subd_collection_limit_test!(
+    face_edge_lookup_refuses_collection_limit,
+    62,
+    "Rhino SubD face edge lookup"
+);
+subd_collection_limit_test!(
+    vertex_face_map_refuses_collection_limit,
+    66,
+    "Rhino SubD vertex-face map"
+);
+subd_collection_limit_test!(
+    edge_face_map_refuses_collection_limit,
+    74,
+    "Rhino SubD edge-face map"
+);
+subd_collection_limit_test!(
+    serialized_incidence_refuses_collection_limit,
+    80,
+    "Rhino SubD serialized incidence"
+);
+subd_collection_limit_test!(
+    vertex_indices_refuse_collection_limit,
+    98,
+    "Rhino SubD vertex indices"
+);
+subd_collection_limit_test!(
+    edge_indices_refuse_collection_limit,
+    102,
+    "Rhino SubD edge indices"
+);
+subd_collection_limit_test!(vertices_refuse_collection_limit, 106, "Rhino SubD vertices");
+subd_collection_limit_test!(edges_refuse_collection_limit, 110, "Rhino SubD edges");
+subd_collection_limit_test!(faces_refuse_collection_limit, 111, "Rhino SubD faces");
+subd_collection_limit_test!(
+    face_edges_refuse_collection_limit,
+    115,
+    "Rhino SubD face edges"
+);
+
 fn anonymous(body: &[u8]) -> Vec<u8> {
     let mut bytes = ANONYMOUS.to_le_bytes().to_vec();
     bytes.extend_from_slice(
@@ -66,11 +231,17 @@ fn anonymous(body: &[u8]) -> Vec<u8> {
 }
 
 fn anonymous_mixed(body: &[u8], children: &[Range<usize>]) -> Vec<u8> {
-    let direct = crate::chunks::direct_checksum_ranges(&(0..body.len()), children)
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let ctx = cadmpeg_core::decode::DecodeContext::new(
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+        false,
+    );
+    let direct = crate::chunks::direct_checksum_ranges(&ctx, &(0..body.len()), children)
         .expect("valid SubD fixture children");
     let mut hasher = crc32fast::Hasher::new();
-    for range in direct {
-        hasher.update(&body[range]);
+    for range in &direct {
+        hasher.update(&body[range.expect("admitted fixture checksum traversal")]);
     }
     let mut bytes = ANONYMOUS.to_le_bytes().to_vec();
     bytes.extend_from_slice(
@@ -119,10 +290,11 @@ fn rotate_symmetry_accepts_nan_padding_and_prototype_omission() {
         let mut reader =
             BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded symmetry reader");
         read_symmetry(
+            &cadmpeg_test_support::service_decode_context(),
             &mut reader,
             ArchiveVersion::V5,
             &mut Vec::new(),
-            &mut Vec::new(),
+            &mut Diagnostics::new(),
         )
         .expect("rotate symmetry");
         assert_eq!(reader.remaining(), 0);
@@ -135,10 +307,11 @@ fn unknown_symmetry_enums_map_to_unset_without_dropping_the_chunk() {
     let bytes = rotate_symmetry(6, false);
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded symmetry reader");
     read_symmetry(
+        &cadmpeg_test_support::service_decode_context(),
         &mut reader,
         ArchiveVersion::V5,
         &mut diagnostics,
-        &mut Vec::new(),
+        &mut Diagnostics::new(),
     )
     .expect("unknown symmetry type is recoverable");
     assert_eq!(reader.remaining(), 0);
@@ -148,16 +321,61 @@ fn unknown_symmetry_enums_map_to_unset_without_dropping_the_chunk() {
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded symmetry reader");
     diagnostics.clear();
     read_symmetry(
+        &cadmpeg_test_support::service_decode_context(),
         &mut reader,
         ArchiveVersion::V5,
         &mut diagnostics,
-        &mut Vec::new(),
+        &mut Diagnostics::new(),
     )
     .expect("unknown symmetry coordinate system is recoverable");
     assert_eq!(reader.remaining(), 0);
     assert_eq!(
         diagnostics,
         vec![SubdEnumDiagnostic::SymmetryCoordinateSystem(7)]
+    );
+}
+
+#[test]
+fn unknown_symmetry_enum_refuses_collection_limit() {
+    let bytes = rotate_symmetry(6, false);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("root bytes admitted");
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+    let refused = read_symmetry(
+        &ctx,
+        &mut reader,
+        ArchiveVersion::V5,
+        &mut Vec::new(),
+        &mut Diagnostics::new(),
+    )
+    .expect_err("enum diagnostic exceeds zero collection items");
+    assert!(
+        matches!(refused, SubdError::Resource(limit) if limit.operation == "Rhino SubD enum diagnostics")
+    );
+}
+
+#[test]
+fn subd_crc_diagnostic_refuses_collection_limit() {
+    let mut bytes = anonymous(&[0]);
+    let crc = bytes.len() - 1;
+    bytes[crc] ^= 1;
+    let chunk = crate::chunks::chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V5, false)
+        .expect("chunk framing");
+    let mut parent = BoundedReader::new(&bytes, 0, bytes.len()).expect("parent");
+    let child = BoundedReader::new(&bytes, chunk.body().start, chunk.body().end).expect("child");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("root bytes admitted");
+    let refused =
+        super::finish_direct_chunk(&ctx, &mut parent, &chunk, child, &mut Diagnostics::new())
+            .expect_err("CRC diagnostic exceeds zero collection items");
+    assert!(
+        matches!(refused, SubdError::Resource(limit) if limit.operation == "Rhino diagnostics")
     );
 }
 
@@ -245,6 +463,8 @@ fn edge(bytes: &mut Vec<u8>, fixture: Fixture, archive_id: u32, endpoints: [u32;
     bytes.extend_from_slice(&2_u16.to_le_bytes());
     let first = if fixture.null_endpoint && archive_id == 5 {
         0
+    } else if fixture.mistyped_pointer && archive_id == 5 {
+        9
     } else {
         endpoints[0]
     };
@@ -401,7 +621,10 @@ pub(crate) fn quad_payload(archive: ArchiveVersion) -> Vec<u8> {
     })
 }
 
-fn decode_fixture(fixture: Fixture, scale: f64) -> Result<Option<DecodedSubd>, SubdError> {
+fn decode_fixture(
+    fixture: Fixture,
+    scale: crate::settings::MillimeterScale,
+) -> Result<Option<DecodedSubd>, SubdError> {
     let bytes = payload(fixture);
     decode(
         &bytes,
@@ -486,7 +709,7 @@ fn mesh_proxy_requires_identity_and_parent_fingerprint() {
         &bytes,
         &descriptor,
         ArchiveVersion::V5,
-        1.0,
+        MillimeterScale::IDENTITY,
         "rhino:test:proxy-subd#0"
             .try_into()
             .expect("valid identity"),
@@ -502,7 +725,7 @@ fn mesh_proxy_requires_identity_and_parent_fingerprint() {
         &bytes,
         &descriptor,
         ArchiveVersion::V5,
-        1.0,
+        MillimeterScale::IDENTITY,
         "rhino:test:proxy-subd#0"
             .try_into()
             .expect("valid identity"),
@@ -522,7 +745,7 @@ fn mesh_proxy_requires_identity_and_parent_fingerprint() {
         &bytes,
         &descriptor,
         ArchiveVersion::V5,
-        1.0,
+        MillimeterScale::IDENTITY,
         "rhino:test:proxy-subd#0"
             .try_into()
             .expect("valid identity"),
@@ -536,7 +759,7 @@ fn mesh_proxy_requires_identity_and_parent_fingerprint() {
         &bytes,
         &descriptor,
         ArchiveVersion::V5,
-        1.0,
+        MillimeterScale::IDENTITY,
         "rhino:test:proxy-subd#0"
             .try_into()
             .expect("valid identity"),
@@ -552,7 +775,7 @@ fn decodes_empty_outer_subd_without_carrier() {
         &[0],
         0..1,
         ArchiveVersion::V5,
-        1.0,
+        MillimeterScale::IDENTITY,
         "rhino:test:subd#0".try_into().expect("valid identity")
     )
     .expect("required invariant")
@@ -561,7 +784,7 @@ fn decodes_empty_outer_subd_without_carrier() {
         &[2],
         0..1,
         ArchiveVersion::V5,
-        1.0,
+        MillimeterScale::IDENTITY,
         "rhino:test:subd#0".try_into().expect("valid identity")
     )
     .is_err());
@@ -577,7 +800,7 @@ fn nested_crc_mismatch_warns_without_discarding_subd() {
         &bytes,
         0..bytes.len(),
         fixture.archive,
-        1.0,
+        MillimeterScale::IDENTITY,
         "rhino:test:subd#0".try_into().expect("valid identity"),
     )
     .expect("recoverable checksum mismatch");
@@ -603,7 +826,7 @@ fn decodes_minor_suffix_gates_across_archive_bands() {
                 minor,
                 ..Fixture::default()
             },
-            1.0,
+            crate::settings::MillimeterScale::IDENTITY,
         )
         .expect("required invariant");
         assert!(matches!(decoded, Some(DecodedSubd { .. })));
@@ -623,7 +846,7 @@ fn decodes_valid_old_and_new_component_bases() {
                 archive,
                 ..Fixture::default()
             },
-            1.0
+            crate::settings::MillimeterScale::IDENTITY
         )
         .is_ok());
     }
@@ -636,13 +859,25 @@ fn preserves_directed_reversed_face_edge_use() {
             reversed_edge: true,
             ..Fixture::default()
         },
-        1.0,
+        crate::settings::MillimeterScale::IDENTITY,
     )
     .expect("required invariant") else {
         panic!("expected surface");
     };
-    assert!(surface.faces[0].edges[1].reversed);
-    assert_eq!(surface.edges[1].vertices, [2, 1]);
+    assert!(
+        wire::field::<Vec<subd::SubdEdgeUse>>(
+            &(wire::field::<Vec<subd::SubdFace>>(&(surface.cage), "faces")[0]),
+            "edges"
+        )[1]
+        .reversed
+    );
+    assert_eq!(
+        wire::field::<[u32; 2]>(
+            &(wire::field::<Vec<subd::SubdEdge>>(&(surface.cage), "edges")[1]),
+            "vertices"
+        ),
+        [2, 1]
+    );
 }
 
 #[test]
@@ -652,7 +887,7 @@ fn rejects_open_or_repeated_face_rings() {
             open_ring: true,
             ..Fixture::default()
         },
-        1.0
+        crate::settings::MillimeterScale::IDENTITY
     )
     .is_err());
 }
@@ -673,7 +908,7 @@ fn rejects_pointer_type_null_and_reciprocity_errors() {
             ..Fixture::default()
         },
     ] {
-        assert!(decode_fixture(fixture, 1.0).is_err());
+        assert!(decode_fixture(fixture, crate::settings::MillimeterScale::IDENTITY).is_err());
     }
 }
 
@@ -685,36 +920,62 @@ fn preserves_vertex_edge_tags_and_sector_coefficients() {
             edge_tag: 4,
             ..Fixture::default()
         },
-        1.0,
+        crate::settings::MillimeterScale::IDENTITY,
     )
     .expect("required invariant") else {
         panic!("expected surface");
     };
-    assert_eq!(surface.vertices[0].tag, SubdVertexTag::Dart);
-    assert_eq!(surface.edges[0].tag, SubdEdgeTag::SmoothX);
-    assert_eq!(surface.edges[0].sector_coefficients, [0.125, 0.875]);
+    assert_eq!(
+        wire::field::<Vec<subd::SubdVertex>>(&(surface.cage), "vertices")[0].tag,
+        SubdVertexTag::Dart
+    );
+    assert_eq!(
+        wire::field::<Vec<subd::SubdEdge>>(&(surface.cage), "edges")[0].tag,
+        SubdEdgeTag::SmoothX
+    );
+    assert_eq!(
+        wire::field::<[f64; 2]>(
+            &(wire::field::<Vec<subd::SubdEdge>>(&(surface.cage), "edges")[0]),
+            "sector_coefficients"
+        ),
+        [0.125, 0.875]
+    );
 }
 
 #[test]
 fn maps_scalar_and_preserves_v8_two_ended_sharpness() {
-    let Some(DecodedSubd { surface, .. }) =
-        decode_fixture(Fixture::default(), 1.0).expect("required invariant")
-    else {
+    let Some(DecodedSubd { surface, .. }) = decode_fixture(
+        Fixture::default(),
+        crate::settings::MillimeterScale::IDENTITY,
+    )
+    .expect("required invariant") else {
         panic!("expected old surface");
     };
-    assert_eq!(surface.edges[0].sharpness, [0.25, 0.25]);
+    assert_eq!(
+        wire::field::<[f64; 2]>(
+            &(wire::field::<Vec<subd::SubdEdge>>(&(surface.cage), "edges")[0]),
+            "sharpness"
+        ),
+        [0.25, 0.25]
+    );
     let Some(DecodedSubd { surface, .. }) = decode_fixture(
         Fixture {
             archive: ArchiveVersion::V8,
             end_sharpness: 0.75,
             ..Fixture::default()
         },
-        1.0,
+        crate::settings::MillimeterScale::IDENTITY,
     )
     .expect("required invariant") else {
         panic!("expected V8 surface");
     };
-    assert_eq!(surface.edges[0].sharpness, [0.25, 0.75]);
+    assert_eq!(
+        wire::field::<[f64; 2]>(
+            &(wire::field::<Vec<subd::SubdEdge>>(&(surface.cage), "edges")[0]),
+            "sharpness"
+        ),
+        [0.25, 0.75]
+    );
 }
 
 #[test]
@@ -726,7 +987,7 @@ fn consumes_saved_limit_points_and_future_additions() {
             future_additions: true,
             ..Fixture::default()
         },
-        1.0
+        crate::settings::MillimeterScale::IDENTITY
     )
     .is_ok());
 }
@@ -740,7 +1001,7 @@ fn validates_higher_levels_and_render_mesh_chunks() {
             render_mesh: true,
             ..Fixture::default()
         },
-        1.0,
+        crate::settings::MillimeterScale::IDENTITY,
     )
     .expect("required invariant");
     let Some(DecodedSubd {
@@ -754,14 +1015,31 @@ fn validates_higher_levels_and_render_mesh_chunks() {
 
 #[test]
 fn scales_control_points_once_without_scaling_edge_metadata() {
-    let Some(DecodedSubd { surface, .. }) =
-        decode_fixture(Fixture::default(), 25.4).expect("required invariant")
-    else {
+    let Some(DecodedSubd { surface, .. }) = decode_fixture(
+        Fixture::default(),
+        crate::test_support::millimeter_scale(25.4),
+    )
+    .expect("required invariant") else {
         panic!("expected surface");
     };
-    assert_eq!(surface.vertices[2].point, Point3::new(25.4, 25.4, 0.0));
-    assert_eq!(surface.edges[0].sharpness, [0.25, 0.25]);
-    assert_eq!(surface.edges[0].sector_coefficients, [0.125, 0.875]);
+    assert_eq!(
+        wire::field::<Vec<subd::SubdVertex>>(&(surface.cage), "vertices")[2].point(),
+        Point3::new(25.4, 25.4, 0.0)
+    );
+    assert_eq!(
+        wire::field::<[f64; 2]>(
+            &(wire::field::<Vec<subd::SubdEdge>>(&(surface.cage), "edges")[0]),
+            "sharpness"
+        ),
+        [0.25, 0.25]
+    );
+    assert_eq!(
+        wire::field::<[f64; 2]>(
+            &(wire::field::<Vec<subd::SubdEdge>>(&(surface.cage), "edges")[0]),
+            "sector_coefficients"
+        ),
+        [0.125, 0.875]
+    );
 }
 
 #[test]
@@ -777,7 +1055,7 @@ fn rejects_noncontiguous_partitions_and_future_versions() {
         &bytes,
         0..bytes.len(),
         ArchiveVersion::V5,
-        1.0,
+        MillimeterScale::IDENTITY,
         "rhino:test:subd#0".try_into().expect("valid identity")
     )
     .is_err());
@@ -789,7 +1067,7 @@ fn rejects_noncontiguous_partitions_and_future_versions() {
             &future,
             0..future.len(),
             ArchiveVersion::V5,
-            1.0,
+            MillimeterScale::IDENTITY,
             "rhino:test:subd#0".try_into().expect("valid identity")
         ),
         Err(SubdError::UnsupportedVersion { .. })
@@ -819,11 +1097,16 @@ fn subd_decode_commits_association_link_exactness_status_and_report() {
     );
     let mut scan = crate::container::scan_owned(bytes).expect("required invariant");
     set_test_units(&mut scan, 25.4);
-    let result = crate::decode::decode_for_test(&scan);
+    let result = EditableDecodeResult::from(crate::decode::decode_for_test(&scan));
     assert_eq!(result.ir().model.subds.len(), 1);
     let subd = &result.ir().model.subds[0];
     assert!(subd.source_object.is_some());
-    assert_eq!(subd.vertices[2].point.x, 25.4);
+    assert_eq!(
+        wire::field::<Vec<subd::SubdVertex>>(&(subd.cage), "vertices")[2]
+            .point()
+            .x,
+        25.4
+    );
     assert_eq!(
         result
             .source_fidelity()
@@ -838,14 +1121,21 @@ fn subd_decode_commits_association_link_exactness_status_and_report() {
             .ir()
             .native_unknowns("rhino")
             .expect("required invariant")[0]
-            .links,
+            .links
+            .iter()
+            .map(cadmpeg_ir::ids::Identity::as_str)
+            .collect::<Vec<_>>(),
         vec![subd.id.to_string()]
     );
     assert!(result.report().geometry_transferred());
     assert!(result.report().losses.iter().any(|loss| loss.code
         == crate::loss::RhinoLossCode::ObjectRecordCensus.kind()
         && loss.message.contains("decoded 1/1 Rhino object records")));
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
+    assert!(
+        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -871,7 +1161,7 @@ fn unknown_subd_symmetry_type_preserves_surface_and_native_source_bytes() {
     );
     let mut scan = crate::container::scan_owned(bytes).expect("required invariant");
     set_test_units(&mut scan, 1.0);
-    let result = crate::decode::decode_for_test(&scan);
+    let result = EditableDecodeResult::from(crate::decode::decode_for_test(&scan));
     assert_eq!(result.ir().model.subds.len(), 1);
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == crate::loss::RhinoLossCode::EnumerationValueDegraded.kind()
@@ -879,9 +1169,10 @@ fn unknown_subd_symmetry_type_preserves_surface_and_native_source_bytes() {
     }));
     let retained = result
         .source_fidelity()
-        .retained_records
+        .retained_records()
         .iter()
-        .find(|record| record.id().starts_with("rhino:object:record#"))
+        .find(|(id, _)| id.as_str().starts_with("rhino:object:record#"))
+        .map(|(_, record)| record)
         .expect("SubD source record is retained");
     assert!(retained
         .data()
@@ -925,5 +1216,63 @@ fn malformed_subd_is_atomic_and_later_object_recovers() {
     assert!(result.report().losses.iter().any(|loss| loss.code
         == crate::loss::RhinoLossCode::ObjectRecordCensus.kind()
         && loss.message.contains("decoded 1/2 Rhino object records")));
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
+    assert!(
+        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
+}
+
+#[test]
+fn an_offset_free_framing_refusal_names_no_byte() {
+    for framing in [
+        FramingError::InvalidHeader,
+        FramingError::MissingEof,
+        FramingError::unpositioned("derived value is invalid"),
+    ] {
+        let expected = framing.to_string();
+        let error = SubdError::from(framing);
+        assert!(
+            matches!(error, SubdError::Unpositioned { ref message } if *message == expected),
+            "{error}"
+        );
+        assert_eq!(error.to_string(), expected);
+        assert!(!error.to_string().contains("at byte"));
+    }
+}
+
+#[test]
+fn an_unresolved_component_pointer_names_no_byte() {
+    let error = decode_fixture(
+        Fixture {
+            mistyped_pointer: true,
+            ..Fixture::default()
+        },
+        crate::settings::MillimeterScale::IDENTITY,
+    )
+    .expect_err("a pointer outside its partition is refused");
+    assert!(
+        matches!(error, SubdError::Unpositioned { ref message }
+            if message == "SubD component pointer does not resolve within its partition"),
+        "{error}"
+    );
+    assert!(!error.to_string().contains("at byte"));
+}
+
+#[test]
+fn a_non_reciprocal_incidence_refusal_names_no_byte() {
+    let error = decode_fixture(
+        Fixture {
+            omit_vertex_edge: true,
+            ..Fixture::default()
+        },
+        crate::settings::MillimeterScale::IDENTITY,
+    )
+    .expect_err("a non-reciprocal incidence list is refused");
+    assert!(
+        matches!(error, SubdError::Unpositioned { ref message }
+            if message.contains("incidence is not reciprocal")),
+        "{error}"
+    );
+    assert!(!error.to_string().contains("at byte"));
 }

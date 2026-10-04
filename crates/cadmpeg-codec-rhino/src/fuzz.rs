@@ -5,6 +5,7 @@
 //! result. The contract is that no input may panic.
 #![doc(hidden)]
 
+use crate::loss::Diagnostics;
 use std::mem::size_of;
 
 use crate::chunks::{self, ArchiveVersion};
@@ -39,11 +40,25 @@ fn uuid(mut canonical: [u8; uuid_wire::LEN]) -> Uuid {
 
 /// Exercises header, table, record, and EOF framing.
 pub fn container(data: &[u8]) {
-    let _ = crate::container::scan(data);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    if let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        data,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    ) {
+        let _probe = crate::container::scan(&ctx, data);
+    }
 }
 
 /// Exercises chunk framing at sequential and arbitrary bounded offsets.
 pub fn chunks(data: &[u8]) {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let Ok((ctx, _root)) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+    else {
+        return;
+    };
     if data.is_empty() {
         return;
     }
@@ -57,11 +72,11 @@ pub fn chunks(data: &[u8]) {
     for archive in ARCHIVES {
         for offset in [0, selected_offset] {
             if let Ok(chunk) = chunks::chunk_at(data, offset, data.len(), archive, false) {
-                let _ = chunks::verify_checksum(data, &chunk);
+                let _probe = chunks::verify_checksum(&ctx, data, &chunk);
             }
         }
     }
-    let Ok(header) = chunks::parse_header(data) else {
+    let Ok(header) = chunks::parse_header(&ctx, data) else {
         return;
     };
     let mut offset = header.start_offset + file_header::LEN;
@@ -70,7 +85,7 @@ pub fn chunks(data: &[u8]) {
         else {
             break;
         };
-        let _ = chunks::verify_checksum(data, &chunk);
+        let _probe = chunks::verify_checksum(&ctx, data, &chunk);
         offset = chunk.next_offset();
     }
 }
@@ -81,8 +96,16 @@ pub fn object_record(data: &[u8]) {
         return;
     }
     let record = Record::long(0x2000_8070, 1..data.len(), 1..data.len());
-    let mut warnings = Vec::new();
-    let _ = crate::objects::parse_object_record(
+    let mut warnings = Diagnostics::new();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let Ok((ctx, _root)) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+    else {
+        return;
+    };
+    let _probe = crate::objects::parse_object_record(
+        &ctx,
         data,
         &record,
         selected_archive(data[0]),
@@ -110,7 +133,21 @@ pub fn nurbs(data: &[u8]) {
             0x22, 0xf0,
         ]),
     };
-    let _ = crate::curves::decode(data, class, 2..data.len(), 1.0, selected_archive(data[1]));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    if let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        data,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    ) {
+        let _probe = crate::curves::decode(
+            &ctx,
+            data,
+            class,
+            2..data.len(),
+            crate::settings::MillimeterScale::IDENTITY,
+            selected_archive(data[1]),
+        );
+    }
 }
 
 /// Exercises compressed-buffer inflation and checksum handling.
@@ -123,7 +160,21 @@ pub fn brep(data: &[u8]) {
     if data.len() < 2 {
         return;
     }
-    let _ = crate::brep::parse(data, 1..data.len(), selected_archive(data[0]), None, &[]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    if let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        data,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    ) {
+        let _probe = crate::brep::parse(
+            &ctx,
+            data,
+            1..data.len(),
+            selected_archive(data[0]),
+            None,
+            &[],
+        );
+    }
 }
 
 /// Exercises `SubD` framing, archive ID maps, and directed rings.
@@ -131,8 +182,25 @@ pub fn subd(data: &[u8]) {
     if data.len() < 2 {
         return;
     }
-    let id = "rhino:fuzz:subd#0".try_into().expect("valid identity");
-    let _ = crate::subd::decode(data, 1..data.len(), selected_archive(data[0]), 1.0, id);
+    let id = cadmpeg_ir::ids::SubdId::compose(
+        &cadmpeg_ir::identity_namespace!("rhino", "fuzz", "subd"),
+        0_usize,
+    );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    if let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        data,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    ) {
+        let _probe = crate::subd::decode(
+            &ctx,
+            data,
+            1..data.len(),
+            selected_archive(data[0]),
+            crate::settings::MillimeterScale::IDENTITY,
+            id,
+        );
+    }
 }
 
 /// Desktop salvage ceilings for fuzz wrappers.
@@ -161,7 +229,12 @@ pub fn cage(data: &[u8]) {
     }
     let archive = selected_archive(data[0]);
     with_expand(data, |expand| {
-        let _ = crate::cage::decode(expand, 1..data.len(), 1.0, archive);
+        let _probe = crate::cage::decode(
+            expand,
+            1..data.len(),
+            crate::settings::MillimeterScale::IDENTITY,
+            archive,
+        );
     });
 }
 
@@ -172,7 +245,12 @@ pub fn hatch(data: &[u8]) {
     }
     let archive = selected_archive(data[0]);
     with_expand(data, |expand| {
-        let _ = crate::hatch::decode(expand, 1..data.len(), 1.0, archive);
+        let _probe = crate::hatch::decode(
+            expand,
+            1..data.len(),
+            crate::settings::MillimeterScale::IDENTITY,
+            archive,
+        );
     });
 }
 
@@ -183,6 +261,6 @@ pub fn polyedge(data: &[u8]) {
     }
     let archive = selected_archive(data[0]);
     with_expand(data, |expand| {
-        let _ = crate::polyedge::decode(expand, 1..data.len(), archive);
+        let _probe = crate::polyedge::decode(expand, 1..data.len(), archive);
     });
 }

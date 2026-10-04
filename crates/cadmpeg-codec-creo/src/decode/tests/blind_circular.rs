@@ -1,67 +1,93 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Tests: blind circular.
 
-use crate::container::SectionRole;
-use crate::feature::schema::SchemaClass;
-
 use super::parameter_slot;
 use crate::decode::analytic::equations::PlaneEquation;
-use crate::decode::feature_history::{
+use crate::decode::feature_history::draft::schema_feature_definition;
+use crate::decode::feature_history::link::section_entity_is_generated_profile;
+use crate::decode::feature_history::round::{
     coordinate_pair_proves_torus_radii, differing_positive_lengths,
     five_coordinate_envelope_proves_torus_radii, outline_has_unique_radius_delta,
     paired_five_coordinate_sphere_center, parallel_support_radius, round_constant_radius,
-    round_observed_radii, round_placed_cylinder_radii, round_support_radius,
-    schema_feature_definition, section_entity_is_generated_profile, slot_fillet_cylinder,
+    round_observed_radii, round_placed_cylinder_radii, round_support_radius, slot_fillet_cylinder,
     unique_positive_length,
 };
-use crate::decode::holes::{
+
+use crate::decode::holes::sweep::{
     compact_simple_hole_cylinder_id, extrusion_extent_and_direction,
-    single_cap_circular_sweep_geometry, two_cap_circular_sweep_geometry, ExtrusionSpan,
+    single_cap_circular_sweep_geometry, two_cap_circular_sweep_geometry,
 };
-use crate::decode::surfaces::{
+use crate::decode::surfaces::cylinders::{
     reference_cap_bound_round_frame, reference_circle_pair_cylinder_frame,
 };
-use crate::decode::sweep::{
-    agreed_generated_cylinder_extent, blind_extrusion_from_carriers, bounded_cylinder_span,
-    directed_blind_extrusion_span, generated_bounded_cylinder_extent, generated_cap_plane_extent,
-    generated_rectilinear_plane_extent, ordered_parallel_cap_extent,
-    resolved_feature_extrusion_span, unique_available_positional_cylinder_frame_records,
-    ExtrusionCarrierSpan,
-};
+
+use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{
-    ExtrudeExtent, ExtrudeSide, FeatureDefinition as IrFeatureDefinition, Length,
-    LinearTermination, RadiusSpec,
-};
-use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
+use cadmpeg_ir::features::edge_treatments::RadiusSpec;
+use cadmpeg_ir::features::FeatureDefinition as IrFeatureDefinition;
+use cadmpeg_ir::features::FeatureOperation as IrFeatureOperation;
+use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
-use std::collections::BTreeSet;
+use cadmpeg_ir::scalar::PositiveLength;
+
+fn service_round_support_radius(
+    scan: &crate::container::ContainerScan<'_>,
+    ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
+    feature_id: u32,
+) -> Option<f64> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        round_support_radius(ctx, scan, ir, source_carriers, feature_id)
+    })
+    .expect("service round support admitted")
+}
+
+fn service_single_cap_circular_sweep_geometry<'a>(
+    scan: &'a crate::container::ContainerScan<'_>,
+    feature_id: u32,
+) -> Option<crate::decode::holes::sweep::CircularSweepGeometry<'a>> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        single_cap_circular_sweep_geometry(ctx, scan, feature_id)
+    })
+    .expect("service resources")
+}
+
+fn service_two_cap_circular_sweep_geometry<'a>(
+    scan: &'a crate::container::ContainerScan<'_>,
+    feature_id: u32,
+) -> Option<crate::decode::holes::sweep::CircularSweepGeometry<'a>> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        two_cap_circular_sweep_geometry(ctx, scan, feature_id)
+    })
+    .expect("service resources")
+}
 
 #[test]
 fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
-    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
-        payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+    let entry =
+        |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
+            payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
 
-        entity_id,
-        class_id,
-        prefixed: false,
-        offset: 0,
-        end_offset: 0,
-        is_surface: false,
-    };
+            entity_id,
+            prefixed: false,
+            offset: 0,
+            end_offset: 0,
+        };
     let entries = vec![
         entry(43, 204, None),
         entry(46, 203, None),
         entry(49, 200, Some(4)),
         entry(51, 200, None),
     ];
-    let table = crate::feature::FeatureEntityTable {
-        feature_id: 40,
-        table_class_id: 29,
+    let table = crate::feature::entity::FeatureEntityTable::new(
+        40,
+        29,
         entries,
-        offset: 0,
-    }
+        &std::collections::BTreeSet::new(),
+        0,
+    )
     .with_surface_ids([46, 51]);
     let row = |feature_id, id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
         id,
@@ -70,9 +96,9 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
         reversed: false,
         boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
-        offset: id as usize,
+        offset: usize::try_from(id).expect("fixture index fits usize"),
     };
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.entity_tables.push(table);
     scan.surfaces.rows.extend([
         row(40, 46, crate::surface::SurfaceKind::Plane),
@@ -81,8 +107,8 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
     scan.planes.outlines.push(crate::surface::OutlinePlane {
         surface_id: 46,
         origin: [0.0, 16.0, 0.0],
-        normal: [0.0, 1.0, 0.0],
-        u_axis: [1.0, 0.0, 0.0],
+        normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+        u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
         offset: 46,
     });
     scan.planes
@@ -102,19 +128,19 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
             row_offset: 0,
             offset: 0,
         });
-    scan.features
-        .section_transforms
-        .push(crate::placement::FeatureSectionTransform {
-            definition_id: 40,
-            feature_id: Some(40),
-            origin: [0.0, 0.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
-            v_axis: [0.0, 0.0, 1.0],
-            normal: [0.0, 1.0, 0.0],
-            offset: 0,
-        });
+    scan.features.section_transforms.push(
+        crate::placement::FeatureSectionTransform::new(
+            40,
+            Some(40),
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, -1.0],
+            0,
+        )
+        .expect("valid section frame"),
+    );
 
-    assert!(single_cap_circular_sweep_geometry(&scan, 40).is_some());
+    assert!(service_single_cap_circular_sweep_geometry(&scan, 40).is_some());
 
     let reversed_entries = vec![
         entry(143, 204, None),
@@ -123,12 +149,13 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
         entry(151, 200, None),
     ];
     scan.features.entity_tables.push(
-        crate::feature::FeatureEntityTable {
-            feature_id: 41,
-            table_class_id: 29,
-            entries: reversed_entries,
-            offset: 0,
-        }
+        crate::feature::entity::FeatureEntityTable::new(
+            41,
+            29,
+            reversed_entries,
+            &std::collections::BTreeSet::new(),
+            0,
+        )
         .with_surface_ids([143, 151]),
     );
     scan.surfaces.rows.extend([
@@ -138,8 +165,8 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
     scan.planes.outlines.push(crate::surface::OutlinePlane {
         surface_id: 143,
         origin: [0.0, 16.0, 0.0],
-        normal: [0.0, 1.0, 0.0],
-        u_axis: [1.0, 0.0, 0.0],
+        normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+        u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
         offset: 143,
     });
     scan.planes
@@ -159,18 +186,18 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
             row_offset: 0,
             offset: 0,
         });
-    scan.features
-        .section_transforms
-        .push(crate::placement::FeatureSectionTransform {
-            definition_id: 41,
-            feature_id: Some(41),
-            origin: [0.0, 0.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
-            v_axis: [0.0, 0.0, 1.0],
-            normal: [0.0, 1.0, 0.0],
-            offset: 0,
-        });
-    assert!(single_cap_circular_sweep_geometry(&scan, 41).is_some());
+    scan.features.section_transforms.push(
+        crate::placement::FeatureSectionTransform::new(
+            41,
+            Some(41),
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, -1.0],
+            0,
+        )
+        .expect("valid section frame"),
+    );
+    assert!(service_single_cap_circular_sweep_geometry(&scan, 41).is_some());
 
     assert!(section_entity_is_generated_profile(
         true,
@@ -181,12 +208,8 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
         &scan.surfaces.rows,
     ));
 
-    for entry in &mut scan.features.entity_tables[0].entries {
-        if entry.entity_id == 51 {
-            entry.is_surface = false;
-        }
-    }
-    assert!(single_cap_circular_sweep_geometry(&scan, 40).is_none());
+    scan.features.entity_tables[0].unmark_surface_id(51);
+    assert!(service_single_cap_circular_sweep_geometry(&scan, 40).is_none());
     assert!(!section_entity_is_generated_profile(
         true,
         Some(40),
@@ -199,7 +222,7 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
 
 #[test]
 fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
         id,
         kind,
@@ -207,7 +230,7 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
         reversed: false,
         boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
-        offset: id as usize,
+        offset: usize::try_from(id).expect("fixture index fits usize"),
     };
     scan.surfaces.rows.extend([
         row(828, crate::surface::SurfaceKind::Plane),
@@ -219,15 +242,15 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
         .push(crate::surface::OutlinePlane {
             surface_id: 828,
             origin: [0.0, 4.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 828,
         });
     scan.planes.outlines.push(crate::surface::OutlinePlane {
         surface_id: 831,
         origin: [0.0, -4.0, 0.0],
-        normal: [0.0, 1.0, 0.0],
-        u_axis: [1.0, 0.0, 0.0],
+        normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+        u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
         offset: 831,
     });
     scan.planes
@@ -247,16 +270,15 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
             row_offset: 0,
             offset: 0,
         });
-    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
-        payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+    let entry =
+        |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
+            payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
 
-        entity_id,
-        class_id,
-        prefixed: false,
-        offset: 0,
-        end_offset: 0,
-        is_surface: false,
-    };
+            entity_id,
+            prefixed: false,
+            offset: 0,
+            end_offset: 0,
+        };
     let entries = vec![
         entry(828, 204, None),
         entry(831, 203, None),
@@ -264,68 +286,72 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
         entry(836, 200, None),
     ];
     scan.features.entity_tables.push(
-        crate::feature::FeatureEntityTable {
-            feature_id: 825,
-            table_class_id: 29,
+        crate::feature::entity::FeatureEntityTable::new(
+            825,
+            29,
             entries,
-            offset: 0,
-        }
+            &std::collections::BTreeSet::new(),
+            0,
+        )
         .with_surface_ids([828, 831, 836]),
     );
 
-    let sweep = two_cap_circular_sweep_geometry(&scan, 825).expect("two-cap sweep");
-    assert_eq!(sweep.cylinder_ids, vec![836]);
+    let sweep = service_two_cap_circular_sweep_geometry(&scan, 825).expect("two-cap sweep");
+    assert_eq!(
+        sweep
+            .cylinder_rows
+            .iter()
+            .map(|row| row.id)
+            .collect::<Vec<_>>(),
+        vec![836]
+    );
     assert_eq!(sweep.direction, [0.0, -1.0, 0.0]);
     assert_eq!(
         sweep.extent,
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: Length(8.0),
+                    length: cadmpeg_ir::scalar::NonZeroLength::new(8.0)
+                        .expect("nonzero length fixture"),
                 },
                 draft: None,
             },
         }
     );
-    assert!(matches!(
-        sweep.geometry,
-        SurfaceGeometry::Cylinder { origin, axis, radius, .. }
-            if origin == Point3::new(-12.5, -4.0, 0.0)
-                && axis == Vector3::new(0.0, -1.0, 0.0)
-                && radius == 0.75
-    ));
+    let cylinder_surface = sweep.geometry;
+    assert!(
+        *cylinder_surface.origin() == Point3::new(-12.5, -4.0, 0.0)
+            && *cylinder_surface.frame().axis().as_raw() == Vector3::new(0.0, -1.0, 0.0)
+            && cylinder_surface.radius().get() == 0.75
+    );
 
-    for entry in &mut scan.features.entity_tables[0].entries {
-        if entry.entity_id == 831 {
-            entry.is_surface = false;
-        }
-    }
-    assert!(two_cap_circular_sweep_geometry(&scan, 825).is_none());
+    scan.features.entity_tables[0].unmark_surface_id(831);
+    assert!(service_two_cap_circular_sweep_geometry(&scan, 825).is_none());
 }
 
 #[test]
 fn compact_hole_materialized_core_establishes_the_simple_form() {
-    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
-        payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+    let entry =
+        |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
+            payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
 
-        entity_id,
-        class_id,
-        prefixed: false,
-        offset: 0,
-        end_offset: 0,
-        is_surface: false,
-    };
-    let mut table = crate::feature::FeatureEntityTable {
-        feature_id: 107,
-        table_class_id: 29,
-        entries: vec![
+            entity_id,
+            prefixed: false,
+            offset: 0,
+            end_offset: 0,
+        };
+    let mut table = crate::feature::entity::FeatureEntityTable::new(
+        107,
+        29,
+        vec![
             entry(109, 204, None),
             entry(112, 203, None),
             entry(115, 200, Some(0)),
             entry(117, 200, None),
         ],
-        offset: 0,
-    }
+        &std::collections::BTreeSet::new(),
+        0,
+    )
     .with_surface_ids([117]);
     let row = crate::surface::SurfaceRow {
         id: 117,
@@ -364,14 +390,14 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
         ),
         Some(117)
     );
-    table.entries[2].payload = crate::feature::EntryPayload::Source { entity: None };
+    table.entries[2].payload = crate::feature::entity::EntryPayload::Source { entity: None };
     assert!(compact_simple_hole_cylinder_id(
         107,
         std::slice::from_ref(&table),
         std::slice::from_ref(&row),
     )
     .is_none());
-    table.entries[2].payload = crate::feature::EntryPayload::Source { entity: Some(0) };
+    table.entries[2].payload = crate::feature::entity::EntryPayload::Source { entity: Some(0) };
     table.table_class_id = 28;
     assert!(compact_simple_hole_cylinder_id(
         107,
@@ -380,14 +406,16 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
     )
     .is_none());
     table.table_class_id = 29;
-    table.entries[3].class_id = 201;
+    table.entries[3].payload = crate::feature::entity::EntryPayload::Plain {
+        class: crate::feature::entity::PlainClass::new(201).expect("201 is not the source class"),
+    };
     assert!(compact_simple_hole_cylinder_id(
         107,
         std::slice::from_ref(&table),
         std::slice::from_ref(&row),
     )
     .is_none());
-    table.entries[3].class_id = 200;
+    table.entries[3].payload = crate::feature::entity::EntryPayload::Source { entity: None };
     table.mark_surface_ids([109, 117]);
     assert!(compact_simple_hole_cylinder_id(
         107,
@@ -396,10 +424,10 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
     )
     .is_none());
 
-    let mut extended = crate::feature::FeatureEntityTable {
-        feature_id: 107,
-        table_class_id: 29,
-        entries: vec![
+    let mut extended = crate::feature::entity::FeatureEntityTable::new(
+        107,
+        29,
+        vec![
             entry(109, 204, None),
             entry(112, 203, None),
             entry(120, 204, None),
@@ -407,8 +435,9 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
             entry(115, 200, Some(0)),
             entry(117, 200, None),
         ],
-        offset: 0,
-    }
+        &std::collections::BTreeSet::new(),
+        0,
+    )
     .with_surface_ids([109, 117]);
     for (index, entry) in extended.entries.iter_mut().enumerate() {
         entry.offset = index;
@@ -509,105 +538,117 @@ fn torus_outline_identifies_exactly_one_prototype_radius_delta() {
 
 #[test]
 fn unique_parallel_round_supports_define_constant_radius() {
-    assert_eq!(unique_positive_length(&[0.5, 0.5 + 1.0e-12]), Some(0.5));
+    let plane = |origin, normal| PlaneEquation { origin, normal };
+    assert_eq!(
+        unique_positive_length(&[0.5, 0.5 + 1.0e-12]).map(cadmpeg_ir::scalar::PositiveLength::get),
+        Some(0.5)
+    );
     assert_eq!(unique_positive_length(&[0.5, 0.6]), None);
     assert_eq!(unique_positive_length(&[0.0]), None);
     assert!(!differing_positive_lengths(&[15.0, 15.0 + 1.0e-12]));
     assert!(differing_positive_lengths(&[15.0, 7.0, 15.0]));
     assert!(!differing_positive_lengths(&[0.0, 1.0]));
     assert_eq!(
-        parallel_support_radius([
-            ([-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
-            ([0.0, 0.0, -6.1], [0.0, 0.0, 1.0]),
-            ([-9.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+        parallel_support_radius(&[
+            plane([-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+            plane([0.0, 0.0, -6.1], [0.0, 0.0, 1.0]),
+            plane([-9.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
         ]),
         Some(0.5)
     );
     assert_eq!(
-        parallel_support_radius([
-            ([-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
-            ([-9.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
-            ([0.0, 0.0, -6.0], [0.0, 0.0, 1.0]),
-            ([0.0, 0.0, -8.0], [0.0, 0.0, 1.0]),
+        parallel_support_radius(&[
+            plane([-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+            plane([-9.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+            plane([0.0, 0.0, -6.0], [0.0, 0.0, 1.0]),
+            plane([0.0, 0.0, -8.0], [0.0, 0.0, 1.0]),
         ]),
         None
     );
     assert_eq!(
-        parallel_support_radius([
-            ([-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
-            ([-9.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
-            ([0.0, 0.0, -6.0], [0.0, 0.0, 1.0]),
-            ([0.0, 0.0, -7.0], [0.0, 0.0, 1.0]),
+        parallel_support_radius(&[
+            plane([-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+            plane([-9.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+            plane([0.0, 0.0, -6.0], [0.0, 0.0, 1.0]),
+            plane([0.0, 0.0, -7.0], [0.0, 0.0, 1.0]),
         ]),
         Some(0.5)
     );
-    let cylinder = slot_fillet_cylinder(
-        [
-            PlaneEquation {
-                origin: [0.0, -2.0, 0.0],
-                normal: [0.0, 1.0, 0.0],
-            },
-            PlaneEquation {
-                origin: [0.0, 3.0, 0.0],
-                normal: [0.0, 1.0, 0.0],
-            },
-        ],
-        &[
-            PlaneEquation {
-                origin: [-9.0, 0.0, 0.0],
-                normal: [1.0, 0.0, 0.0],
-            },
-            PlaneEquation {
-                origin: [-8.0, 0.0, 0.0],
-                normal: [1.0, 0.0, 0.0],
-            },
-            PlaneEquation {
-                origin: [0.0, 0.0, -7.0],
-                normal: [0.0, 0.0, 1.0],
-            },
-            PlaneEquation {
-                origin: [0.0, 0.0, -6.0],
-                normal: [0.0, 0.0, 1.0],
-            },
-        ],
-    )
+    let cylinder = crate::decode::with_test_decode_ctx(|ctx| {
+        slot_fillet_cylinder(
+            ctx,
+            [
+                PlaneEquation {
+                    origin: [0.0, -2.0, 0.0],
+                    normal: [0.0, 1.0, 0.0],
+                },
+                PlaneEquation {
+                    origin: [0.0, 3.0, 0.0],
+                    normal: [0.0, 1.0, 0.0],
+                },
+            ],
+            &[
+                PlaneEquation {
+                    origin: [-9.0, 0.0, 0.0],
+                    normal: [1.0, 0.0, 0.0],
+                },
+                PlaneEquation {
+                    origin: [-8.0, 0.0, 0.0],
+                    normal: [1.0, 0.0, 0.0],
+                },
+                PlaneEquation {
+                    origin: [0.0, 0.0, -7.0],
+                    normal: [0.0, 0.0, 1.0],
+                },
+                PlaneEquation {
+                    origin: [0.0, 0.0, -6.0],
+                    normal: [0.0, 0.0, 1.0],
+                },
+            ],
+        )
+    })
+    .expect("service profile admits slot midplanes")
     .expect("fully constrained slot fillet");
     assert_eq!(cylinder.origin, [-8.5, -2.0, -6.5]);
     assert_eq!(cylinder.axis, [0.0, 1.0, 0.0]);
     assert_eq!(cylinder.radius, 0.5);
-    assert!(slot_fillet_cylinder(
-        [
-            PlaneEquation {
-                origin: [0.0, -2.0, 0.0],
-                normal: [0.0, 1.0, 0.0],
-            },
-            PlaneEquation {
-                origin: [0.0, 3.0, 0.0],
-                normal: [0.0, 1.0, 0.0],
-            },
-        ],
-        &[
-            PlaneEquation {
-                origin: [-9.0, 0.0, 0.0],
-                normal: [1.0, 0.0, 0.0],
-            },
-            PlaneEquation {
-                origin: [-8.0, 0.0, 0.0],
-                normal: [1.0, 0.0, 0.0],
-            },
-        ],
-    )
-    .is_none());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| slot_fillet_cylinder(
+            ctx,
+            [
+                PlaneEquation {
+                    origin: [0.0, -2.0, 0.0],
+                    normal: [0.0, 1.0, 0.0],
+                },
+                PlaneEquation {
+                    origin: [0.0, 3.0, 0.0],
+                    normal: [0.0, 1.0, 0.0],
+                },
+            ],
+            &[
+                PlaneEquation {
+                    origin: [-9.0, 0.0, 0.0],
+                    normal: [1.0, 0.0, 0.0],
+                },
+                PlaneEquation {
+                    origin: [-8.0, 0.0, 0.0],
+                    normal: [1.0, 0.0, 0.0],
+                },
+            ],
+        ))
+        .expect("service profile admits slot midplanes")
+        .is_none()
+    );
 }
 
 #[test]
 fn round_support_planes_define_radius_without_generated_surface_rows() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features
         .affected_ids
-        .push(crate::feature::FeatureAffectedIds {
+        .push(crate::feature::rows::FeatureAffectedIds {
             feature_id: 913,
-            kind: crate::feature::AffectedIdKind::Geometry,
+            kind: crate::feature::rows::AffectedIdKind::Geometry,
             ids: vec![1, 2, 3, 4],
             offset: 0,
         });
@@ -620,30 +661,40 @@ fn round_support_planes_define_radius_without_generated_surface_rows() {
     ] {
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(origin[0], origin[1], origin[2]),
-                normal: Vector3::new(normal[0], normal[1], normal[2]),
-                u_axis: Vector3::new(0.0, 0.0, 1.0),
-            },
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::from(origin),
+                    Vector3::from(normal),
+                    Vector3::new(0.0, 0.0, 1.0),
+                )
+                .expect("valid PlaneSurface fixture"),
+            )),
             source_object: None,
         });
     }
 
-    assert_eq!(round_constant_radius(&scan, &ir, 913), Some(0.5));
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| round_constant_radius(
+            ctx,
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            913
+        ))
+        .expect("round constant radius"),
+        Some(0.5)
+    );
 }
 
 #[test]
 fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.framing.layout = crate::container::Layout::Nd;
-    scan.framing.sections.push(crate::container::Section {
-        name: "VisibGeom".to_string(),
-        raw_name: "VisibGeom".to_string(),
-        offset: 0,
-        length: 1_000,
-        expanded_length: None,
-        role: SectionRole::PsbGeometry,
-    });
+    scan.framing.sections.push(
+        crate::container::Section::scan("VisibGeom".to_string(), 0, 1_000, None, &[0u8; 1_000])
+            .expect("section extent")
+            .section,
+    );
     scan.surfaces.rows.extend([
         crate::surface::SurfaceRow {
             id: 11,
@@ -676,7 +727,6 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
             scalar_tokens: replay_frame.slots.clone(),
             opaque_spans: Vec::new(),
             scalar_frames: vec![replay_frame.clone()],
-            terminal_scalar_frame: Some(replay_frame),
             carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
                 crate::surface::SurfaceKind::TorusOrSphere,
             ),
@@ -704,49 +754,86 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: SurfaceId::mint("creo:visibgeom:surface#11".to_string()).expect("identity grammar"),
-        geometry: SurfaceGeometry::Cylinder {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 0.5,
-        },
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                0.5,
+            )
+            .expect("valid CylinderSurface fixture"),
+        )),
         source_object: None,
     });
     scan.features
         .affected_ids
-        .push(crate::feature::FeatureAffectedIds {
+        .push(crate::feature::rows::FeatureAffectedIds {
             feature_id: 913,
-            kind: crate::feature::AffectedIdKind::Geometry,
+            kind: crate::feature::rows::AffectedIdKind::Geometry,
             ids: vec![1, 2, 3, 4],
             offset: 0,
         });
     for (id, x) in [(3, -9.0), (4, -8.0)] {
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(x, 0.0, 0.0),
-                normal: Vector3::new(1.0, 0.0, 0.0),
-                u_axis: Vector3::new(0.0, 1.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(x, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    Vector3::new(0.0, 1.0, 0.0),
+                )
+                .expect("valid PlaneSurface fixture"),
+            )),
             source_object: None,
         });
     }
 
-    assert_eq!(round_constant_radius(&scan, &ir, 913), Some(0.5));
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| round_constant_radius(
+            ctx,
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            913
+        ))
+        .expect("round constant radius"),
+        Some(0.5)
+    );
 
     if let Some(Surface {
-        geometry: SurfaceGeometry::Cylinder { radius, .. },
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
         ..
     }) = ir.model.surfaces.first_mut()
     {
-        *radius = 0.75;
+        let origin = cylinder_surface.origin();
+        let axis = cylinder_surface.frame().axis().as_raw();
+        let ref_direction = cylinder_surface.frame().reference().as_raw();
+
+        let radius = 0.75;
+        *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+            *origin,
+            *axis,
+            *ref_direction,
+            radius,
+        )
+        .expect("valid CylinderSurface fixture");
     }
-    assert_eq!(round_constant_radius(&scan, &ir, 913), None);
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| round_constant_radius(
+            ctx,
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            913
+        ))
+        .expect("round constant radius"),
+        None
+    );
 }
 
 #[test]
 fn placed_cylinder_samples_identify_variable_radius_with_unresolved_siblings() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     for (id, kind) in [
         (11, crate::surface::SurfaceKind::Cylinder),
         (12, crate::surface::SurfaceKind::TorusOrSphere),
@@ -759,31 +846,34 @@ fn placed_cylinder_samples_identify_variable_radius_with_unresolved_siblings() {
             reversed: false,
             boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
-            offset: id as usize,
+            offset: usize::try_from(id).expect("fixture index fits usize"),
         });
     }
     let mut ir = CadIr::empty();
     for (id, radius) in [(11, 15.0), (13, 1.0)] {
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-            geometry: SurfaceGeometry::Cylinder {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius,
-            },
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    radius,
+                )
+                .expect("valid CylinderSurface fixture"),
+            )),
             source_object: None,
         });
     }
 
     assert!(matches!(
-        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::Round), "Round"),
-        IrFeatureDefinition::Fillet {
+        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(ctx, &scan, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(), 5, Some(SchemaClass::Round), "Round")).expect("valid test fixture"),
+        IrFeatureDefinition::Operation(IrFeatureOperation::Fillet {
             ref groups,
-        } if matches!(
+        }) if matches!(
             groups.as_slice(),
-            [cadmpeg_ir::features::FilletGroup {
-                radius: RadiusSpec::UnresolvedVariable,
+            [cadmpeg_ir::features::edge_treatments::FilletGroup {
+                radius: RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable) },
                 ..
             }]
         )
@@ -792,7 +882,7 @@ fn placed_cylinder_samples_identify_variable_radius_with_unresolved_siblings() {
 
 #[test]
 fn unequal_round_samples_are_not_hidden_by_support_radius() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     for (id, parameter) in [(11, Some(15.0)), (12, Some(1.0)), (13, None)] {
         scan.surfaces.rows.push(crate::surface::SurfaceRow {
             id,
@@ -801,7 +891,7 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
             reversed: false,
             boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
-            offset: id as usize,
+            offset: usize::try_from(id).expect("fixture index fits usize"),
         });
         if let Some(radius) = parameter {
             let first = crate::surface::SurfaceParameterScalar {
@@ -863,21 +953,20 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
                             slots: std::iter::once(second).chain(extent).collect(),
                         },
                     ],
-                    terminal_scalar_frame: None,
                     carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
                         crate::surface::SurfaceKind::Cylinder,
                     ),
                     boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
-                    offset: id as usize,
-                    body_offset: id as usize + 1,
+                    offset: usize::try_from(id).expect("fixture index fits usize"),
+                    body_offset: usize::try_from(id).expect("fixture index fits usize") + 1,
                 });
         }
     }
     scan.features
         .affected_ids
-        .push(crate::feature::FeatureAffectedIds {
+        .push(crate::feature::rows::FeatureAffectedIds {
             feature_id: 5,
-            kind: crate::feature::AffectedIdKind::Geometry,
+            kind: crate::feature::rows::AffectedIdKind::Geometry,
             ids: vec![1, 2, 3, 4],
             offset: 0,
         });
@@ -891,26 +980,51 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
     ] {
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(origin[0], origin[1], origin[2]),
-                normal: Vector3::new(normal[0], normal[1], normal[2]),
-                u_axis: Vector3::new(0.0, 0.0, 1.0),
-            },
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::from(origin),
+                    Vector3::from(normal),
+                    Vector3::new(0.0, 0.0, 1.0),
+                )
+                .expect("valid PlaneSurface fixture"),
+            )),
             source_object: None,
         });
     }
 
-    assert_eq!(round_observed_radii(&scan, 5), [15.0, 1.0]);
-    assert_eq!(round_support_radius(&scan, &ir, 5), Some(0.5));
-    assert_eq!(round_constant_radius(&scan, &ir, 5), None);
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| round_observed_radii(ctx, &scan, 5))
+            .expect("service profile admits observed radii"),
+        [15.0, 1.0]
+    );
+    assert_eq!(
+        service_round_support_radius(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            5
+        ),
+        Some(0.5)
+    );
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| round_constant_radius(
+            ctx,
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            5
+        ))
+        .expect("round constant radius"),
+        None
+    );
     assert!(matches!(
-        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::Round), "Round"),
-        IrFeatureDefinition::Fillet {
+        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(ctx, &scan, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(), 5, Some(SchemaClass::Round), "Round")).expect("valid test fixture"),
+        IrFeatureDefinition::Operation(IrFeatureOperation::Fillet {
             groups,
-        } if matches!(
+        }) if matches!(
             groups.as_slice(),
-            [cadmpeg_ir::features::FilletGroup {
-                radius: RadiusSpec::UnresolvedVariable,
+            [cadmpeg_ir::features::edge_treatments::FilletGroup {
+                radius: RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable) },
                 ..
             }]
         )
@@ -919,7 +1033,7 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
 
 #[test]
 fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     for id in [11, 12] {
         scan.surfaces.rows.push(crate::surface::SurfaceRow {
             id,
@@ -928,14 +1042,14 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
             reversed: false,
             boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
-            offset: id as usize,
+            offset: usize::try_from(id).expect("fixture index fits usize"),
         });
     }
     scan.features
         .affected_ids
-        .push(crate::feature::FeatureAffectedIds {
+        .push(crate::feature::rows::FeatureAffectedIds {
             feature_id: 5,
-            kind: crate::feature::AffectedIdKind::Geometry,
+            kind: crate::feature::rows::AffectedIdKind::Geometry,
             ids: vec![1, 2, 3, 4],
             offset: 0,
         });
@@ -944,12 +1058,15 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
     for (id, radius) in [(11, 15.0), (12, 1.0)] {
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-            geometry: SurfaceGeometry::Cylinder {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius,
-            },
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    radius,
+                )
+                .expect("valid CylinderSurface fixture"),
+            )),
             source_object: None,
         });
     }
@@ -961,26 +1078,57 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
     ] {
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(origin[0], origin[1], origin[2]),
-                normal: Vector3::new(normal[0], normal[1], normal[2]),
-                u_axis: Vector3::new(0.0, 0.0, 1.0),
-            },
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::from(origin),
+                    Vector3::from(normal),
+                    Vector3::new(0.0, 0.0, 1.0),
+                )
+                .expect("valid PlaneSurface fixture"),
+            )),
             source_object: None,
         });
     }
 
-    assert_eq!(round_placed_cylinder_radii(&scan, &ir, 5), [15.0, 1.0]);
-    assert_eq!(round_support_radius(&scan, &ir, 5), Some(0.5));
-    assert_eq!(round_constant_radius(&scan, &ir, 5), None);
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| round_placed_cylinder_radii(
+            ctx,
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            5
+        ))
+        .expect("service profile admits placed radii"),
+        [15.0, 1.0]
+    );
+    assert_eq!(
+        service_round_support_radius(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            5
+        ),
+        Some(0.5)
+    );
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| round_constant_radius(
+            ctx,
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            5
+        ))
+        .expect("round constant radius"),
+        None
+    );
     assert!(matches!(
-        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::Round), "Round"),
-        IrFeatureDefinition::Fillet {
+        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(ctx, &scan, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(), 5, Some(SchemaClass::Round), "Round")).expect("valid test fixture"),
+        IrFeatureDefinition::Operation(IrFeatureOperation::Fillet {
             groups,
-        } if matches!(
+        }) if matches!(
             groups.as_slice(),
-            [cadmpeg_ir::features::FilletGroup {
-                radius: RadiusSpec::UnresolvedVariable,
+            [cadmpeg_ir::features::edge_treatments::FilletGroup {
+                radius: RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable) },
                 ..
             }]
         )
@@ -989,7 +1137,7 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
 
 #[test]
 fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     for (id, kind) in [
         (11, crate::surface::SurfaceKind::Cylinder),
         (12, crate::surface::SurfaceKind::TorusOrSphere),
@@ -1002,14 +1150,14 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
             reversed: false,
             boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
-            offset: id as usize,
+            offset: usize::try_from(id).expect("fixture index fits usize"),
         });
     }
     scan.features
         .affected_ids
-        .push(crate::feature::FeatureAffectedIds {
+        .push(crate::feature::rows::FeatureAffectedIds {
             feature_id: 5,
-            kind: crate::feature::AffectedIdKind::Geometry,
+            kind: crate::feature::rows::AffectedIdKind::Geometry,
             ids: vec![1, 2, 3, 4],
             offset: 0,
         });
@@ -1018,12 +1166,15 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
     for (id, radius) in [(11, 15.0), (13, 1.0)] {
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-            geometry: SurfaceGeometry::Cylinder {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius,
-            },
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    radius,
+                )
+                .expect("valid CylinderSurface fixture"),
+            )),
             source_object: None,
         });
     }
@@ -1035,26 +1186,57 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
     ] {
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(origin[0], origin[1], origin[2]),
-                normal: Vector3::new(normal[0], normal[1], normal[2]),
-                u_axis: Vector3::new(0.0, 0.0, 1.0),
-            },
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::from(origin),
+                    Vector3::from(normal),
+                    Vector3::new(0.0, 0.0, 1.0),
+                )
+                .expect("valid PlaneSurface fixture"),
+            )),
             source_object: None,
         });
     }
 
-    assert_eq!(round_placed_cylinder_radii(&scan, &ir, 5), [15.0, 1.0]);
-    assert_eq!(round_support_radius(&scan, &ir, 5), Some(0.5));
-    assert_eq!(round_constant_radius(&scan, &ir, 5), None);
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| round_placed_cylinder_radii(
+            ctx,
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            5
+        ))
+        .expect("service profile admits placed radii"),
+        [15.0, 1.0]
+    );
+    assert_eq!(
+        service_round_support_radius(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            5
+        ),
+        Some(0.5)
+    );
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| round_constant_radius(
+            ctx,
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            5
+        ))
+        .expect("round constant radius"),
+        None
+    );
     assert!(matches!(
-        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::Round), "Round"),
-        IrFeatureDefinition::Fillet {
+        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(ctx, &scan, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(), 5, Some(SchemaClass::Round), "Round")).expect("valid test fixture"),
+        IrFeatureDefinition::Operation(IrFeatureOperation::Fillet {
             groups,
-        } if matches!(
+        }) if matches!(
             groups.as_slice(),
-            [cadmpeg_ir::features::FilletGroup {
-                radius: RadiusSpec::UnresolvedVariable,
+            [cadmpeg_ir::features::edge_treatments::FilletGroup {
+                radius: RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable) },
                 ..
             }]
         )
@@ -1063,15 +1245,28 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
 
 #[test]
 fn opposite_reference_caps_select_one_round_envelope_axis() {
-    let circle = |entity_id, axis, start, end| crate::reference::ReferenceCircle {
-        entity_id,
-        center: [0.0; 3],
-        center_stored: true,
-        radius: 2.0,
-        axis,
-        start,
-        end,
-        offset: 0,
+    let circle = |entity_id, axis, start: [f64; 3], end: [f64; 3]| {
+        let mut center = start;
+        let radial_lane = (0..3)
+            .find(|lane| start[*lane] != end[*lane])
+            .expect("distinct cap endpoints");
+        center[radial_lane] = end[radial_lane];
+        crate::reference::ReferenceCircle::try_new(
+            entity_id,
+            crate::reference::ReferenceCircleCenter::Stored(
+                cadmpeg_ir::features::FinitePoint3::new(center.into())
+                    .expect("finite circle center"),
+            ),
+            cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"),
+            cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::from(axis))
+                .expect("unit axis"),
+            [
+                cadmpeg_ir::features::FinitePoint3::new(start.into()).expect("finite start"),
+                cadmpeg_ir::features::FinitePoint3::new(end.into()).expect("finite end"),
+            ],
+            0,
+        )
+        .expect("checked reference geometry")
     };
     let envelope = crate::surface::Type24RoundEnvelope {
         diameter: 2.0,
@@ -1081,11 +1276,11 @@ fn opposite_reference_caps_select_one_round_envelope_axis() {
     let second = circle(368, [0.0, 0.0, -1.0], [5.5, 10.0, -4.0], [3.5, 8.0, -4.0]);
     let frame =
         reference_cap_bound_round_frame(envelope, &[&first, &second]).expect("opposite Z caps");
-    assert_eq!(frame.origin, [4.5, 9.0, -6.0]);
-    assert_eq!(frame.axis, [0.0, 0.0, 1.0]);
-    assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
-    assert_eq!(frame.radius, 1.0);
-    assert_eq!(frame.length, Some(2.0));
+    assert_eq!(frame.frame().origin(), [4.5, 9.0, -6.0]);
+    assert_eq!(frame.frame().axis(), [0.0, 0.0, 1.0]);
+    assert_eq!(frame.frame().ref_direction(), [1.0, 0.0, 0.0]);
+    assert_eq!(frame.radius().get(), 1.0);
+    assert_eq!(frame.length().map(PositiveLength::get), Some(2.0));
     assert!(reference_cap_bound_round_frame(envelope, &[&first]).is_none());
 
     let x_first = circle(371, [1.0, 0.0, 0.0], [3.5, 8.0, -6.0], [3.5, 10.0, -4.0]);
@@ -1106,40 +1301,70 @@ fn opposite_reference_caps_select_one_round_envelope_axis() {
 
 #[test]
 fn coaxial_reference_circles_define_a_cylinder_frame() {
-    let circle = |entity_id, center, axis, start| crate::reference::ReferenceCircle {
-        entity_id,
-        center,
-        center_stored: true,
-        radius: 2.0,
-        axis,
-        start,
-        end: [0.0, 0.0, 0.0],
-        offset: 0,
+    let circle = |entity_id, center: [f64; 3], axis, start: [f64; 3]| {
+        crate::reference::ReferenceCircle::try_new(
+            entity_id,
+            crate::reference::ReferenceCircleCenter::Stored(
+                cadmpeg_ir::features::FinitePoint3::new(center.into()).expect("finite center"),
+            ),
+            cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"),
+            cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::from(axis))
+                .expect("unit axis"),
+            [
+                cadmpeg_ir::features::FinitePoint3::new(start.into()).expect("finite start"),
+                cadmpeg_ir::features::FinitePoint3::new(
+                    std::array::from_fn::<_, 3, _>(|lane| 2.0 * center[lane] - start[lane]).into(),
+                )
+                .expect("on-circle end"),
+            ],
+            0,
+        )
+        .expect("checked reference geometry")
     };
     let first = circle(41, [3.0, 5.0, -2.0], [0.0, 0.0, 1.0], [3.0, 7.0, -2.0]);
     let second = circle(42, [3.0, 5.0, 4.0], [0.0, 0.0, -1.0], [1.0, 5.0, 4.0]);
 
     assert_eq!(
         reference_circle_pair_cylinder_frame(&[&first, &second]),
-        Some(crate::surface::PositionalCylinderFrame {
-            origin: first.center,
-            axis: [0.0, 0.0, 1.0],
-            ref_direction: [0.0, 1.0, 0.0],
-            radius: 2.0,
-            length: Some(6.0),
-        })
+        Some(
+            crate::surface::PositionalCylinderFrame::new(
+                first.center().get().into(),
+                [0.0, 0.0, 1.0],
+                [0.0, 1.0, 0.0],
+                2.0,
+                Some(6.0)
+            )
+            .expect("valid positional cylinder frame")
+        )
     );
     assert!(reference_circle_pair_cylinder_frame(&[&first]).is_none());
 
-    let mut unequal_radius = second.clone();
-    unequal_radius.radius = 1.0;
+    let unequal_radius = crate::reference::ReferenceCircle::try_new(
+        second.entity_id,
+        crate::reference::ReferenceCircleCenter::Stored(second.center()),
+        cadmpeg_ir::scalar::PositiveLength::new(1.0).expect("positive radius"),
+        second.axis(),
+        [
+            cadmpeg_ir::features::FinitePoint3::new([2.0, 5.0, 4.0].into()).expect("start"),
+            cadmpeg_ir::features::FinitePoint3::new([4.0, 5.0, 4.0].into()).expect("end"),
+        ],
+        second.offset,
+    )
+    .expect("valid unequal-radius circle");
     assert!(reference_circle_pair_cylinder_frame(&[&first, &unequal_radius]).is_none());
 
     let displaced = circle(43, [3.5, 5.0, 4.0], [0.0, 0.0, 1.0], [3.5, 7.0, 4.0]);
     assert!(reference_circle_pair_cylinder_frame(&[&first, &displaced]).is_none());
 
-    let mut derived_center = second;
-    derived_center.center_stored = false;
+    let derived_center = crate::reference::ReferenceCircle::try_new(
+        second.entity_id,
+        crate::reference::ReferenceCircleCenter::Diameter,
+        second.radius(),
+        cadmpeg_ir::units::UnitVector3::Z_AXIS,
+        [second.start(), second.end()],
+        second.offset,
+    )
+    .expect("valid diameter-derived center");
     assert!(reference_circle_pair_cylinder_frame(&[&first, &derived_center]).is_none());
 }
 
@@ -1158,13 +1383,15 @@ fn asymmetric_cap_planes_define_two_sided_extent() {
             ExtrudeExtent::TwoSided {
                 first: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(3.0),
+                        length: cadmpeg_ir::scalar::NonZeroLength::new(3.0)
+                            .expect("nonzero length fixture"),
                     },
                     draft: None,
                 },
                 second: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(2.0),
+                        length: cadmpeg_ir::scalar::NonZeroLength::new(2.0)
+                            .expect("nonzero length fixture"),
                     },
                     draft: None,
                 },
@@ -1186,7 +1413,8 @@ fn one_negative_cap_offset_reverses_blind_direction() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(48.0),
+                        length: cadmpeg_ir::scalar::NonZeroLength::new(48.0)
+                            .expect("nonzero length fixture"),
                     },
                     draft: None,
                 },
@@ -1211,7 +1439,8 @@ fn zero_offset_support_plane_does_not_obscure_blind_cap() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(48.0),
+                        length: cadmpeg_ir::scalar::NonZeroLength::new(48.0)
+                            .expect("nonzero length fixture"),
                     },
                     draft: None,
                 },
@@ -1237,7 +1466,8 @@ fn interior_axis_normal_planes_do_not_shorten_blind_extent() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(38.0),
+                        length: cadmpeg_ir::scalar::NonZeroLength::new(38.0)
+                            .expect("nonzero length fixture"),
                     },
                     draft: None,
                 },
@@ -1247,693 +1477,4 @@ fn interior_axis_normal_planes_do_not_shorten_blind_extent() {
     );
 }
 
-#[test]
-fn agreeing_generated_cylinders_define_blind_extrusion_extent() {
-    let transform = crate::placement::FeatureSectionTransform {
-        definition_id: 917,
-        feature_id: Some(40),
-        origin: [0.0, 4.0, 0.0],
-        u_axis: [1.0, 0.0, 0.0],
-        v_axis: [0.0, 0.0, -1.0],
-        normal: [0.0, 1.0, 0.0],
-        offset: 100,
-    };
-    let frame = |origin| crate::surface::PositionalCylinderFrame {
-        origin,
-        axis: [0.0, 1.0, 0.0],
-        ref_direction: [1.0, 0.0, 0.0],
-        radius: 0.75,
-        length: Some(34.0),
-    };
-    let frames = [frame([-12.5, 4.0, 0.0]), frame([12.5, 4.0, 0.0])];
-    assert_eq!(
-        agreed_generated_cylinder_extent(&transform, &frames),
-        Some((
-            ExtrudeExtent::OneSided {
-                side: ExtrudeSide {
-                    termination: LinearTermination::Blind {
-                        length: Length(34.0)
-                    },
-                    draft: None,
-                }
-            },
-            [0.0, 1.0, 0.0]
-        ))
-    );
-    assert_eq!(
-        directed_blind_extrusion_span(transform.normal, [0.0, 1.0, 0.0], 34.0),
-        Some(ExtrusionSpan {
-            lower: 0.0,
-            upper: 34.0,
-        })
-    );
-    assert_eq!(
-        directed_blind_extrusion_span(transform.normal, [0.0, -1.0, 0.0], 34.0),
-        Some(ExtrusionSpan {
-            lower: -34.0,
-            upper: 0.0,
-        })
-    );
-    assert!(directed_blind_extrusion_span(transform.normal, [1.0, 0.0, 0.0], 34.0).is_none());
-
-    let mut inconsistent = frames;
-    inconsistent[1].length = Some(33.0);
-    assert!(agreed_generated_cylinder_extent(&transform, &inconsistent).is_none());
-    inconsistent = frames;
-    inconsistent[1].origin[1] = 5.0;
-    assert!(agreed_generated_cylinder_extent(&transform, &inconsistent).is_none());
-
-    let diagonal = 0.5_f64.sqrt();
-    let diagonal_transform = crate::placement::FeatureSectionTransform {
-        normal: [diagonal, diagonal, 0.0],
-        ..transform
-    };
-    let perpendicular = [crate::surface::PositionalCylinderFrame {
-        origin: diagonal_transform.origin,
-        axis: [diagonal, -diagonal, 0.0],
-        ..frames[0]
-    }];
-    assert!(agreed_generated_cylinder_extent(&diagonal_transform, &perpendicular).is_none());
-}
-
-#[test]
-fn generated_cylinder_extent_uses_unique_available_parameter_frames() {
-    let frame = crate::surface::PositionalCylinderFrame {
-        origin: [1.0, 2.0, 3.0],
-        axis: [0.0, 0.0, 1.0],
-        ref_direction: [1.0, 0.0, 0.0],
-        radius: 4.0,
-        length: Some(5.0),
-    };
-    let parameter =
-        |surface_id, positional_cylinder_frame: Option<crate::surface::PositionalCylinderFrame>| {
-            crate::surface::SurfaceParameterRecord {
-                surface_id,
-                body: Vec::new(),
-                scalar_tokens: Vec::new(),
-                opaque_spans: Vec::new(),
-                scalar_frames: Vec::new(),
-                terminal_scalar_frame: None,
-                carrier: positional_cylinder_frame.map_or(
-                    crate::surface::SurfaceParameterCarrier::Unresolved(
-                        crate::surface::SurfaceKind::Cylinder,
-                    ),
-                    |frame| {
-                        crate::surface::SurfaceParameterCarrier::Resolved(
-                            crate::surface::InlineSurfaceCarrier::Cylinder {
-                                frame,
-                                split_bounds: None,
-                            },
-                        )
-                    },
-                ),
-                boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
-                offset: 0,
-                body_offset: 0,
-            }
-        };
-    let surface_ids = BTreeSet::from([1, 2, 3]);
-    let parameters = [parameter(1, Some(frame)), parameter(2, None)];
-    assert_eq!(
-        unique_available_positional_cylinder_frame_records(&surface_ids, &parameters),
-        Some(vec![(1, frame)])
-    );
-
-    let duplicates = [parameter(1, Some(frame)), parameter(1, Some(frame))];
-    assert!(
-        unique_available_positional_cylinder_frame_records(&surface_ids, &duplicates).is_none()
-    );
-}
-
-#[test]
-fn bounded_generated_cylinders_define_a_blind_extrusion() {
-    let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
-        id,
-        kind,
-        feature_id: 7,
-        reversed: false,
-        boundary_type: crate::surface::BoundaryType::Code00,
-        next_surface: 0,
-        offset: id as usize,
-    };
-    let mut scan = crate::container::scan_bytes(Vec::new());
-    scan.surfaces.rows.extend([
-        row(31, crate::surface::SurfaceKind::Plane),
-        row(32, crate::surface::SurfaceKind::Plane),
-        row(33, crate::surface::SurfaceKind::Cylinder),
-    ]);
-    let parameter = crate::surface::SurfaceParameterRecord {
-        surface_id: 33,
-        body: Vec::new(),
-        scalar_tokens: Vec::new(),
-        opaque_spans: Vec::new(),
-        scalar_frames: Vec::new(),
-        terminal_scalar_frame: None,
-        carrier: crate::surface::SurfaceParameterCarrier::Resolved(
-            crate::surface::InlineSurfaceCarrier::Cylinder {
-                frame: crate::surface::PositionalCylinderFrame {
-                    origin: [2.0, 4.0, 0.0],
-                    axis: [0.0, -1.0, 0.0],
-                    ref_direction: [1.0, 0.0, 0.0],
-                    radius: 1.0,
-                    length: Some(8.0),
-                },
-                split_bounds: None,
-            },
-        ),
-        boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
-        offset: 33,
-        body_offset: 34,
-    };
-    scan.surfaces.parameters.push(parameter);
-    let plane = |id, y, normal| Surface {
-        id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, y, 0.0),
-            normal,
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        source_object: None,
-    };
-    let mut ir = CadIr::empty();
-    ir.model.surfaces.extend([
-        plane(31, 4.0, Vector3::new(0.0, 1.0, 0.0)),
-        plane(32, -4.0, Vector3::new(0.0, -1.0, 0.0)),
-        Surface {
-            id: SurfaceId::mint("creo:visibgeom:surface#33".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Cylinder {
-                origin: Point3::new(2.0, 4.0, 0.0),
-                axis: Vector3::new(0.0, -1.0, 0.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius: 1.0,
-            },
-            source_object: None,
-        },
-    ]);
-
-    let expected = Some((
-        ExtrudeExtent::OneSided {
-            side: ExtrudeSide {
-                termination: LinearTermination::Blind {
-                    length: Length(8.0),
-                },
-                draft: None,
-            },
-        },
-        [0.0, -1.0, 0.0],
-    ));
-    assert_eq!(
-        generated_bounded_cylinder_extent(&scan, &ir, 7, None),
-        expected
-    );
-
-    scan.planes.outlines.push(crate::surface::OutlinePlane {
-        surface_id: 31,
-        origin: [0.0, 5.0, 0.0],
-        normal: [0.0, 1.0, 0.0],
-        u_axis: [1.0, 0.0, 0.0],
-        offset: 31,
-    });
-    let conflicting_extent = generated_bounded_cylinder_extent(&scan, &ir, 7, None);
-    assert!(conflicting_extent.is_none());
-    scan.planes.outlines[0].origin[1] = 4.0;
-    assert_eq!(
-        generated_bounded_cylinder_extent(&scan, &ir, 7, None),
-        expected
-    );
-
-    scan.surfaces
-        .rows
-        .push(row(34, crate::surface::SurfaceKind::Plane));
-    ir.model.surfaces.push(Surface {
-        id: SurfaceId::mint("creo:visibgeom:surface#34".to_string()).expect("identity grammar"),
-        geometry: SurfaceGeometry::Unknown { record: None },
-        source_object: None,
-    });
-    assert_eq!(
-        generated_bounded_cylinder_extent(&scan, &ir, 7, None),
-        expected
-    );
-
-    scan.surfaces
-        .rows
-        .push(row(35, crate::surface::SurfaceKind::Cylinder));
-    ir.model.surfaces.push(Surface {
-        id: SurfaceId::mint("creo:visibgeom:surface#35".to_string()).expect("identity grammar"),
-        geometry: SurfaceGeometry::Unknown { record: None },
-        source_object: None,
-    });
-    assert_eq!(
-        generated_bounded_cylinder_extent(&scan, &ir, 7, None),
-        expected
-    );
-    scan.surfaces.rows.truncate(3);
-    ir.model.surfaces.truncate(3);
-
-    let mut untransferred_caps = ir.clone();
-    untransferred_caps.model.surfaces.retain(|surface| {
-        surface.id
-            == SurfaceId::mint("creo:visibgeom:surface#33".to_string()).expect("identity grammar")
-    });
-    assert_eq!(
-        generated_bounded_cylinder_extent(&scan, &untransferred_caps, 7, None),
-        generated_bounded_cylinder_extent(&scan, &ir, 7, None)
-    );
-
-    let crate::surface::SurfaceParameterCarrier::Resolved(
-        crate::surface::InlineSurfaceCarrier::Cylinder { frame, .. },
-    ) = &mut scan.surfaces.parameters[0].carrier
-    else {
-        panic!("cylinder frame");
-    };
-    frame.length = None;
-    assert_eq!(
-        generated_bounded_cylinder_extent(&scan, &ir, 7, None),
-        Some((
-            ExtrudeExtent::OneSided {
-                side: ExtrudeSide {
-                    termination: LinearTermination::Blind {
-                        length: Length(8.0),
-                    },
-                    draft: None,
-                },
-            },
-            [0.0, -1.0, 0.0],
-        ))
-    );
-    assert!(generated_bounded_cylinder_extent(&scan, &untransferred_caps, 7, None).is_none());
-    let lengthless = scan.surfaces.parameters[0]
-        .positional_cylinder_frame()
-        .expect("cylinder frame");
-    assert!(bounded_cylinder_span(
-        lengthless,
-        &[
-            ([0.0, -4.0, 0.0], [0.0, 1.0, 0.0]),
-            ([0.0, -6.0, 0.0], [0.0, 1.0, 0.0]),
-        ],
-    )
-    .is_none());
-    let invalid_length = crate::surface::PositionalCylinderFrame {
-        length: Some(0.0),
-        ..lengthless
-    };
-    assert!(
-        bounded_cylinder_span(invalid_length, &[([0.0, -4.0, 0.0], [0.0, 1.0, 0.0])]).is_none()
-    );
-    let crate::surface::SurfaceParameterCarrier::Resolved(
-        crate::surface::InlineSurfaceCarrier::Cylinder { frame, .. },
-    ) = &mut scan.surfaces.parameters[0].carrier
-    else {
-        panic!("cylinder frame");
-    };
-    frame.length = Some(8.0);
-
-    let transform = crate::placement::FeatureSectionTransform {
-        definition_id: 7,
-        feature_id: Some(7),
-        origin: [0.0, 4.0, 0.0],
-        u_axis: [1.0, 0.0, 0.0],
-        v_axis: [0.0, 0.0, 1.0],
-        normal: [0.0, -1.0, 0.0],
-        offset: 0,
-    };
-    assert_eq!(
-        generated_bounded_cylinder_extent(&scan, &untransferred_caps, 7, Some(&transform)),
-        generated_bounded_cylinder_extent(&scan, &ir, 7, None)
-    );
-    let definition = crate::feature::FeatureDefinition {
-        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
-            schema_id: std::num::NonZeroU32::new(7),
-            owner_feature_id: Some(7),
-        },
-        body: Vec::new(),
-        parameter_frames: Vec::new(),
-        outlines: Vec::new(),
-        variables: None,
-        segments: None,
-        trim_entities: None,
-        trim_vertices: None,
-        order_table: None,
-        section_3d: None,
-        dimensions: None,
-        relations: None,
-        saved_section: None,
-        offset: 0,
-    };
-    let surface_rows = std::mem::take(&mut scan.surfaces.rows);
-    scan.surfaces.rows = surface_rows
-        .iter()
-        .filter(|row| row.id == 33)
-        .cloned()
-        .collect();
-    let model_surfaces = std::mem::take(&mut ir.model.surfaces);
-    ir.model.surfaces = model_surfaces
-        .iter()
-        .filter(|surface| {
-            surface.id == SurfaceId::mint("creo:visibgeom:surface#33").expect("valid identity")
-        })
-        .cloned()
-        .collect();
-    assert_eq!(
-        resolved_feature_extrusion_span(&scan, &ir, &definition, &transform),
-        Some(ExtrusionSpan {
-            lower: 0.0,
-            upper: 8.0,
-        })
-    );
-    scan.surfaces.rows = surface_rows;
-    ir.model.surfaces = model_surfaces;
-    let displaced = crate::placement::FeatureSectionTransform {
-        origin: [0.0, 3.0, 0.0],
-        ..transform.clone()
-    };
-    assert!(
-        generated_bounded_cylinder_extent(&scan, &untransferred_caps, 7, Some(&displaced))
-            .is_none()
-    );
-    let perpendicular = crate::placement::FeatureSectionTransform {
-        normal: [1.0, 0.0, 0.0],
-        ..transform
-    };
-    assert!(
-        generated_bounded_cylinder_extent(&scan, &untransferred_caps, 7, Some(&perpendicular))
-            .is_none()
-    );
-
-    let mut oblique = ir.clone();
-    let SurfaceGeometry::Plane { normal, .. } = &mut oblique.model.surfaces[0].geometry else {
-        panic!("plane");
-    };
-    *normal = Vector3::new(0.0, 1.0, 1.0);
-    assert!(generated_bounded_cylinder_extent(&scan, &oblique, 7, None).is_none());
-
-    let crate::surface::SurfaceParameterCarrier::Resolved(
-        crate::surface::InlineSurfaceCarrier::Cylinder { frame, .. },
-    ) = &mut scan.surfaces.parameters[0].carrier
-    else {
-        panic!("cylinder frame");
-    };
-    frame.length = Some(7.0);
-    assert!(generated_bounded_cylinder_extent(&scan, &ir, 7, None).is_none());
-    let crate::surface::SurfaceParameterCarrier::Resolved(
-        crate::surface::InlineSurfaceCarrier::Cylinder { frame, .. },
-    ) = &mut scan.surfaces.parameters[0].carrier
-    else {
-        panic!("cylinder frame");
-    };
-    frame.length = Some(8.0);
-
-    scan.surfaces.rows.push(scan.surfaces.rows[0].clone());
-    assert!(generated_bounded_cylinder_extent(&scan, &ir, 7, None).is_none());
-    scan.surfaces.rows.pop();
-
-    scan.surfaces
-        .parameters
-        .push(scan.surfaces.parameters[0].clone());
-    assert!(generated_bounded_cylinder_extent(&scan, &ir, 7, None).is_none());
-    scan.surfaces.parameters.pop();
-
-    let mut missing_transfer = ir.clone();
-    missing_transfer.model.surfaces.pop();
-    assert!(generated_bounded_cylinder_extent(&scan, &missing_transfer, 7, None).is_none());
-}
-
-#[test]
-fn terminal_plane_orients_oppositely_parameterized_extrusion_carriers() {
-    let carriers = [
-        ExtrusionCarrierSpan {
-            starts: vec![[0.0, 5.5, 0.0]],
-            vector: [0.0, 2.0, 0.0],
-        },
-        ExtrusionCarrierSpan {
-            starts: vec![[4.0, 7.5, 0.0]],
-            vector: [0.0, -2.0, 0.0],
-        },
-    ];
-    let terminal_plane = [([0.0, 7.5, 0.0], [0.0, 1.0, 0.0])];
-    assert_eq!(
-        blind_extrusion_from_carriers(&carriers, &terminal_plane, None),
-        Some((
-            ExtrudeExtent::OneSided {
-                side: ExtrudeSide {
-                    termination: LinearTermination::Blind {
-                        length: Length(2.0),
-                    },
-                    draft: None,
-                },
-            },
-            [0.0, 1.0, 0.0],
-        ))
-    );
-
-    let reversed = [
-        ExtrusionCarrierSpan {
-            starts: vec![[4.0, 7.5, 0.0]],
-            vector: [0.0, -2.0, 0.0],
-        },
-        ExtrusionCarrierSpan {
-            starts: vec![[0.0, 5.5, 0.0]],
-            vector: [0.0, 2.0, 0.0],
-        },
-    ];
-    assert_eq!(
-        blind_extrusion_from_carriers(&reversed, &terminal_plane, None),
-        blind_extrusion_from_carriers(&carriers, &terminal_plane, None)
-    );
-    assert!(blind_extrusion_from_carriers(&carriers, &[], None).is_none());
-}
-
-#[test]
-fn ordered_parallel_caps_define_blind_direction_and_depth() {
-    let start = PlaneEquation {
-        origin: [2.0, 7.0, 3.0],
-        normal: [0.0, 0.0, -2.0],
-    };
-    let end = PlaneEquation {
-        origin: [-4.0, 11.0, 13.0],
-        normal: [0.0, 0.0, 5.0],
-    };
-
-    assert_eq!(
-        ordered_parallel_cap_extent(start, end),
-        Some((
-            ExtrudeExtent::OneSided {
-                side: ExtrudeSide {
-                    termination: LinearTermination::Blind {
-                        length: Length(10.0),
-                    },
-                    draft: None,
-                },
-            },
-            [0.0, 0.0, 1.0],
-        ))
-    );
-    assert_eq!(
-        ordered_parallel_cap_extent(end, start),
-        Some((
-            ExtrudeExtent::OneSided {
-                side: ExtrudeSide {
-                    termination: LinearTermination::Blind {
-                        length: Length(10.0),
-                    },
-                    draft: None,
-                },
-            },
-            [0.0, 0.0, -1.0],
-        ))
-    );
-
-    let tilted = PlaneEquation {
-        origin: end.origin,
-        normal: [0.0, 1.0, 1.0],
-    };
-    assert!(ordered_parallel_cap_extent(start, tilted).is_none());
-    assert!(ordered_parallel_cap_extent(start, start).is_none());
-}
-
-#[test]
-fn generated_table_cap_classes_bind_the_ordered_cap_planes() {
-    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
-        payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
-
-        entity_id,
-        class_id,
-        prefixed: false,
-        offset: 0,
-        end_offset: 0,
-        is_surface: false,
-    };
-    let table = crate::feature::FeatureEntityTable {
-        feature_id: 7,
-        table_class_id: 29,
-        entries: vec![
-            entry(31, 204, None),
-            entry(32, 203, None),
-            entry(33, 200, Some(11)),
-        ],
-        offset: 0,
-    }
-    .with_surface_ids([31, 32, 33]);
-    let row = |id| crate::surface::SurfaceRow {
-        id,
-        kind: crate::surface::SurfaceKind::Plane,
-        feature_id: 7,
-        reversed: id == 31,
-        boundary_type: crate::surface::BoundaryType::Code00,
-        next_surface: 0,
-        offset: id as usize,
-    };
-    let plane = |id, z| Surface {
-        id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(4.0, -2.0, z),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        source_object: None,
-    };
-    let mut scan = crate::container::scan_bytes(Vec::new());
-    scan.features.entity_tables.push(table.clone());
-    scan.surfaces.rows.extend([row(31), row(32), row(33)]);
-    let mut ir = CadIr::empty();
-    ir.model.surfaces.extend([plane(31, 2.0), plane(32, 8.0)]);
-
-    assert_eq!(
-        generated_cap_plane_extent(&scan, &ir, 7),
-        Some((
-            ExtrudeExtent::OneSided {
-                side: ExtrudeSide {
-                    termination: LinearTermination::Blind {
-                        length: Length(6.0),
-                    },
-                    draft: None,
-                },
-            },
-            [0.0, 0.0, 1.0],
-        ))
-    );
-
-    scan.features.entity_tables[0].entries[2].payload =
-        crate::feature::EntryPayload::Source { entity: None };
-    assert!(generated_cap_plane_extent(&scan, &ir, 7).is_none());
-    scan.features.entity_tables[0] = table.clone();
-    scan.features.entity_tables.push(table);
-    assert!(generated_cap_plane_extent(&scan, &ir, 7).is_none());
-}
-
-#[test]
-fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
-    let row = |id, reversed| crate::surface::SurfaceRow {
-        id,
-        kind: crate::surface::SurfaceKind::Plane,
-        feature_id: 7,
-        reversed,
-        boundary_type: crate::surface::BoundaryType::Code00,
-        next_surface: 0,
-        offset: id as usize,
-    };
-    let mut scan = crate::container::scan_bytes(Vec::new());
-    scan.surfaces.rows.extend([
-        row(37, false),
-        row(31, false),
-        row(32, true),
-        row(33, true),
-        row(34, true),
-        row(36, false),
-        row(35, true),
-    ]);
-    let plane = |id, origin, normal| Surface {
-        id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane {
-            origin,
-            normal,
-            u_axis: Vector3::new(0.0, 0.0, 1.0),
-        },
-        source_object: None,
-    };
-    let mut ir = CadIr::empty();
-    ir.model.surfaces.extend([
-        Surface {
-            id: SurfaceId::mint("creo:visibgeom:surface#37".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Unknown { record: None },
-            source_object: None,
-        },
-        plane(31, Point3::new(0.0, 6.0, 0.0), Vector3::new(0.0, 1.0, 0.0)),
-        plane(32, Point3::new(0.0, 48.0, 0.0), Vector3::new(0.0, 1.0, 0.0)),
-        plane(33, Point3::new(4.0, 48.0, 0.0), Vector3::new(1.0, 0.0, 0.0)),
-        plane(
-            34,
-            Point3::new(-4.0, 48.0, 0.0),
-            Vector3::new(1.0, 0.0, 0.0),
-        ),
-        plane(36, Point3::new(0.0, 30.0, 0.0), Vector3::new(0.0, 1.0, 0.0)),
-        plane(35, Point3::new(0.0, 48.0, 0.0), Vector3::new(0.0, 1.0, 0.0)),
-    ]);
-    let mut section = crate::feature::FeatureSection3d {
-        sketch_plane_entity_id: Some(30),
-        sketch_plane_flip: Some(crate::feature::BinaryFlag::Clear),
-        reference_planes: crate::feature::definitions::ReferencePlanes::Named(vec![29]),
-        reference_plane_datum_geometry_id: None,
-        orientation: crate::feature::FeatureSectionOrientation {
-            section_flip: Some(crate::feature::BinaryFlag::Set),
-            ..Default::default()
-        },
-        dimension_ids: Vec::new(),
-        offset: 0,
-    };
-
-    assert_eq!(
-        generated_rectilinear_plane_extent(&scan, &ir, 7, Some(&section)),
-        Some((
-            ExtrudeExtent::OneSided {
-                side: ExtrudeSide {
-                    termination: LinearTermination::Blind {
-                        length: Length(42.0),
-                    },
-                    draft: None,
-                },
-            },
-            [0.0, -1.0, 0.0],
-        ))
-    );
-    section.sketch_plane_flip = Some(crate::feature::BinaryFlag::Set);
-    assert_eq!(
-        generated_rectilinear_plane_extent(&scan, &ir, 7, Some(&section)),
-        Some((
-            ExtrudeExtent::OneSided {
-                side: ExtrudeSide {
-                    termination: LinearTermination::Blind {
-                        length: Length(42.0),
-                    },
-                    draft: None,
-                },
-            },
-            [0.0, 1.0, 0.0],
-        ))
-    );
-    section.orientation.section_flip = Some(crate::feature::BinaryFlag::Clear);
-    assert_eq!(
-        generated_rectilinear_plane_extent(&scan, &ir, 7, Some(&section)),
-        Some((
-            ExtrudeExtent::OneSided {
-                side: ExtrudeSide {
-                    termination: LinearTermination::Blind {
-                        length: Length(42.0),
-                    },
-                    draft: None,
-                },
-            },
-            [0.0, -1.0, 0.0],
-        ))
-    );
-    assert!(generated_rectilinear_plane_extent(&scan, &ir, 7, None).is_none());
-    let mut incomplete_section = section.clone();
-    incomplete_section.sketch_plane_entity_id = None;
-    assert!(generated_rectilinear_plane_extent(&scan, &ir, 7, Some(&incomplete_section)).is_none());
-
-    scan.surfaces.rows[3].reversed = false;
-    assert!(generated_rectilinear_plane_extent(&scan, &ir, 7, Some(&section)).is_none());
-    scan.surfaces.rows[3].reversed = true;
-    ir.model.surfaces.pop();
-    assert!(generated_rectilinear_plane_extent(&scan, &ir, 7, Some(&section)).is_none());
-}
+mod generated_cylinders;

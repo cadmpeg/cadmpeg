@@ -1155,9 +1155,18 @@ they do not replace `Tolerances.linear`.
 Geometric-consistency checks use the selected document tolerance as their
 baseline. Entity and solved-carrier tolerances can widen that baseline.
 
-A conical surface accepts zero reference radius at its placement origin. Its
-finite half-angle converts from the representation's plane-angle unit to
-radians. A NURBS `closed` or `periodic` field uses the STEP LOGICAL domain.
+ISO 10303-42 defines `CONICAL_SURFACE` with a nonnegative `radius`, so zero
+reference radius at the placement origin is in the domain. Its `WR2` holds
+`semi_angle` in the open interval between zero and `pi/2`.
+
+CADIR decision: the reader admits any finite half-angle and converts it from
+the representation's plane-angle unit to radians. The half-angle keeps its
+value and sign: `abs(semi_angle)` names a different surface, because the
+cross-section radius at axial distance `v` is `radius + v tan(semi_angle)`,
+and `(abs(semi_angle), -axis)` holds the same locus under the parameter change
+`(u, v) -> (-u, -v)`, which moves the chart that pcurves are written against.
+
+A NURBS `closed` or `periodic` field uses the STEP LOGICAL domain.
 TRUE and FALSE encode the property state. UNKNOWN is a valid LOGICAL value.
 A `POLYLINE` with `n` points is the degree-one NURBS with those points as
 control points and a clamped piecewise-linear knot vector. `UNIFORM_CURVE`,

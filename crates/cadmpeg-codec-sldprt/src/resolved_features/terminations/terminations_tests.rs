@@ -2,7 +2,19 @@
 
 use super::super::selections::COMPACT_EDGE_VECTOR_MARKER;
 use super::super::selections::{compact_surface_selections, selection_vector_tail};
-use super::*;
+use super::{
+    compact_body_component_path_at, compact_body_path_at, compact_combine_operation_at,
+    compact_extrusion_blind_at, compact_extrusion_blind_through_all_second_at,
+    compact_extrusion_mid_plane_at, compact_extrusion_offset_from_face_at,
+    compact_extrusion_through_all_at, compact_extrusion_through_all_both_at,
+    compact_extrusion_through_next_at, compact_extrusion_to_face_at,
+    compact_extrusion_to_vertex_at, compact_single_face_reference_path_at,
+    compact_single_face_reference_record_at, enrich_history_combine_selections,
+    enrich_history_extrusion_terminations, legacy_single_face_reference_path_at,
+    CompactPointReferenceKind,
+};
+use crate::records::FeatureSource;
+use crate::records::ObjectId;
 use crate::records::{Feature, FeatureHistory, FeatureInputLane, FeatureInputName};
 use std::collections::BTreeMap;
 
@@ -42,6 +54,14 @@ fn compact_extrusion_through_all_requires_the_complete_end_spec() {
 
 #[test]
 fn compact_extrusion_to_face_requires_a_single_face_reference_child() {
+    let path_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &path_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("component path test context");
+
     let mut payload = vec![0; 200];
     payload[..2].copy_from_slice(&[0x0c, 0x8e]);
     payload[4] = 1;
@@ -56,10 +76,13 @@ fn compact_extrusion_to_face_requires_a_single_face_reference_child() {
     payload[122..134].fill(1);
     payload[134..138].copy_from_slice(&7u32.to_le_bytes());
     assert_eq!(
-        compact_extrusion_to_face_at(&payload, 0, payload.len()),
+        compact_extrusion_to_face_at(&path_ctx, &payload, 0, payload.len())
+            .expect("component path resource admission"),
         Some(100)
     );
-    let path = compact_single_face_reference_path_at(&payload, 100).expect("required invariant");
+    let path = compact_single_face_reference_path_at(&path_ctx, &payload, 100)
+        .expect("component path resource admission")
+        .expect("required invariant");
     assert_eq!(path.len(), 1);
     assert_eq!(path[0].instance, Some(0x8032));
     assert_eq!(path[0].type_signature, [1; 12]);
@@ -68,10 +91,12 @@ fn compact_extrusion_to_face_requires_a_single_face_reference_child() {
     for selector in [[4, 2, 0, 0], [6, 2, 0, 0]] {
         payload[92..96].copy_from_slice(&selector);
         assert_eq!(
-            compact_extrusion_to_face_at(&payload, 0, payload.len()),
+            compact_extrusion_to_face_at(&path_ctx, &payload, 0, payload.len())
+                .expect("component path resource admission"),
             Some(100)
         );
-        let path = compact_single_face_reference_path_at(&payload, 100)
+        let path = compact_single_face_reference_path_at(&path_ctx, &payload, 100)
+            .expect("component path resource admission")
             .expect("lane subtype must not change the component path");
         assert_eq!(path.len(), 1);
         assert_eq!(path[0].local_id, Some(7));
@@ -80,12 +105,14 @@ fn compact_extrusion_to_face_requires_a_single_face_reference_child() {
 
     payload[35..39].copy_from_slice(&[0xe4, 0x82, 0x07, 0x81]);
     assert_eq!(
-        compact_extrusion_to_face_at(&payload, 0, payload.len()),
+        compact_extrusion_to_face_at(&path_ctx, &payload, 0, payload.len())
+            .expect("component path resource admission"),
         Some(100)
     );
     payload[37..39].copy_from_slice(&[0xff, 0xff]);
     assert_eq!(
-        compact_extrusion_to_face_at(&payload, 0, payload.len()),
+        compact_extrusion_to_face_at(&path_ctx, &payload, 0, payload.len())
+            .expect("component path resource admission"),
         None
     );
     payload[37..39].copy_from_slice(&[0x07, 0x81]);
@@ -93,8 +120,10 @@ fn compact_extrusion_to_face_requires_a_single_face_reference_child() {
     payload[88..92].copy_from_slice(&2u32.to_le_bytes());
     payload[138..158].fill(0);
     payload[158..162].copy_from_slice(&101u32.to_le_bytes());
-    let (path, terminal_source) =
-        compact_single_face_reference_record_at(&payload, 100).expect("required invariant");
+    let crate::resolved_features::selections::ComponentPathReference(path, terminal_source) =
+        compact_single_face_reference_record_at(&path_ctx, &payload, 100)
+            .expect("component path resource admission")
+            .expect("required invariant");
     assert_eq!(path.len(), 1);
     assert_eq!(terminal_source, Some(101));
 
@@ -106,8 +135,10 @@ fn compact_extrusion_to_face_requires_a_single_face_reference_child() {
     payload[158..162].copy_from_slice(&9u32.to_le_bytes());
     payload[162..186].fill(0);
     payload[186..190].copy_from_slice(&101u32.to_le_bytes());
-    let (path, terminal_source) =
-        compact_single_face_reference_record_at(&payload, 100).expect("required invariant");
+    let crate::resolved_features::selections::ComponentPathReference(path, terminal_source) =
+        compact_single_face_reference_record_at(&path_ctx, &payload, 100)
+            .expect("component path resource admission")
+            .expect("required invariant");
     assert_eq!(path.len(), 2);
     assert_eq!(path[1].local_id, Some(9));
     assert_eq!(terminal_source, Some(101));
@@ -116,13 +147,15 @@ fn compact_extrusion_to_face_requires_a_single_face_reference_child() {
     payload[12] = 1;
     payload[22] = 1;
     assert_eq!(
-        compact_extrusion_to_face_at(&payload, 0, payload.len()),
+        compact_extrusion_to_face_at(&path_ctx, &payload, 0, payload.len())
+            .expect("component path resource admission"),
         Some(100)
     );
 
     payload[88..92].fill(0);
     assert_eq!(
-        compact_extrusion_to_face_at(&payload, 0, payload.len()),
+        compact_extrusion_to_face_at(&path_ctx, &payload, 0, payload.len())
+            .expect("component path resource admission"),
         None
     );
 }
@@ -148,17 +181,28 @@ fn compact_extrusion_to_face_accepts_root_adjusted_component_paths() {
         payload[offset + 16..offset + 20].copy_from_slice(&local_id.to_le_bytes());
     }
 
+    let path_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &path_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("component path test context");
+
     let mut slotted = payload(3, 3);
     entry(&mut slotted, 118, 0x8049, 1, 0);
     slotted[138..142].copy_from_slice(&34u32.to_le_bytes());
     entry(&mut slotted, 142, 0x8034, 2, 24);
     slotted[162..182].fill(0);
     slotted[182..186].copy_from_slice(&101u32.to_le_bytes());
-    let path = compact_single_face_reference_path_at(&slotted, 100).expect("required invariant");
+    let path = compact_single_face_reference_path_at(&path_ctx, &slotted, 100)
+        .expect("component path resource admission")
+        .expect("required invariant");
     assert_eq!(path.len(), 2);
     assert_eq!(path[1].instance, Some(0x8034));
     assert_eq!(
-        compact_extrusion_to_face_at(&slotted, 0, slotted.len()),
+        compact_extrusion_to_face_at(&path_ctx, &slotted, 0, slotted.len())
+            .expect("component path resource admission"),
         Some(100)
     );
 
@@ -168,17 +212,28 @@ fn compact_extrusion_to_face_accepts_root_adjusted_component_paths() {
     aligned[166..176].copy_from_slice(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0, 0, 0]);
     entry(&mut aligned, 176, 0x830d, 3, 1);
     aligned[196..204].copy_from_slice(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]);
-    let path = compact_single_face_reference_path_at(&aligned, 100).expect("required invariant");
+    let path = compact_single_face_reference_path_at(&path_ctx, &aligned, 100)
+        .expect("component path resource admission")
+        .expect("required invariant");
     assert_eq!(path.len(), 3);
     assert_eq!(path[2].type_signature, [3; 12]);
     assert_eq!(
-        compact_extrusion_to_face_at(&aligned, 0, aligned.len()),
+        compact_extrusion_to_face_at(&path_ctx, &aligned, 0, aligned.len())
+            .expect("component path resource admission"),
         Some(100)
     );
 }
 
 #[test]
 fn compact_extrusion_to_face_accepts_the_legacy_end_spec_token() {
+    let path_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &path_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("component path test context");
+
     let mut payload = vec![0; 200];
     payload[..2].copy_from_slice(&[3, 0]);
     payload[4] = 1;
@@ -194,18 +249,28 @@ fn compact_extrusion_to_face_accepts_the_legacy_end_spec_token() {
     payload[134..138].copy_from_slice(&7u32.to_le_bytes());
 
     assert_eq!(
-        compact_extrusion_to_face_at(&payload, 0, payload.len()),
+        compact_extrusion_to_face_at(&path_ctx, &payload, 0, payload.len())
+            .expect("component path resource admission"),
         Some(100)
     );
     payload[0] = 2;
     assert_eq!(
-        compact_extrusion_to_face_at(&payload, 0, payload.len()),
+        compact_extrusion_to_face_at(&path_ctx, &payload, 0, payload.len())
+            .expect("component path resource admission"),
         None
     );
 }
 
 #[test]
 fn compact_extrusion_to_face_accepts_a_declared_width_two_child() {
+    let path_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &path_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("component path test context");
+
     let mut payload = vec![0; 240];
     payload[..2].copy_from_slice(&[0x09, 0x81]);
     payload[4] = 1;
@@ -225,18 +290,28 @@ fn compact_extrusion_to_face_accepts_a_declared_width_two_child() {
     payload[marker + 34..marker + 38].copy_from_slice(&7u32.to_le_bytes());
 
     assert_eq!(
-        compact_extrusion_to_face_at(&payload, 0, payload.len()),
+        compact_extrusion_to_face_at(&path_ctx, &payload, 0, payload.len())
+            .expect("component path resource admission"),
         Some(marker)
     );
     payload[33] = 0;
     assert_eq!(
-        compact_extrusion_to_face_at(&payload, 0, payload.len()),
+        compact_extrusion_to_face_at(&path_ctx, &payload, 0, payload.len())
+            .expect("component path resource admission"),
         None
     );
 }
 
 #[test]
 fn compact_extrusion_to_face_preserves_an_unparsed_declared_face_child() {
+    let path_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &path_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("component path test context");
+
     let end_spec = b"\xff\xff\x01\x00\x0b\x00moEndSpec_c";
     let face_ref = b"\xff\xff\x01\x00\x11\x00moSingleFaceRef_w";
     let mut payload = vec![0; 180];
@@ -253,14 +328,16 @@ fn compact_extrusion_to_face_preserves_an_unparsed_declared_face_child() {
     ]);
 
     assert_eq!(
-        compact_extrusion_to_face_at(&payload, anchor, payload.len()),
+        compact_extrusion_to_face_at(&path_ctx, &payload, anchor, payload.len())
+            .expect("component path resource admission"),
         Some(body)
     );
 
     let mut lane_token = payload[anchor..].to_vec();
     lane_token[..2].copy_from_slice(&[0x0c, 0x8e]);
     assert_eq!(
-        compact_extrusion_to_face_at(&lane_token, 0, lane_token.len()),
+        compact_extrusion_to_face_at(&path_ctx, &lane_token, 0, lane_token.len())
+            .expect("component path resource admission"),
         Some(body - anchor)
     );
 
@@ -271,26 +348,37 @@ fn compact_extrusion_to_face_preserves_an_unparsed_declared_face_child() {
         0x86, 0x81, 2, 0, 0x88, 0x81, 0, 0, 0x8a, 0x81, 1, 0, 0, 0, 0x8c, 0x81,
     ]);
     assert_eq!(
-        compact_extrusion_to_face_at(&payload, anchor, payload.len()),
+        compact_extrusion_to_face_at(&path_ctx, &payload, anchor, payload.len())
+            .expect("component path resource admission"),
         Some(body)
     );
 
     payload[nested + 2] = 3;
     assert_eq!(
-        compact_extrusion_to_face_at(&payload, anchor, payload.len()),
+        compact_extrusion_to_face_at(&path_ctx, &payload, anchor, payload.len())
+            .expect("component path resource admission"),
         None
     );
     payload[nested + 2] = 2;
 
     payload[body + 4] = 3;
     assert_eq!(
-        compact_extrusion_to_face_at(&payload, anchor, payload.len()),
+        compact_extrusion_to_face_at(&path_ctx, &payload, anchor, payload.len())
+            .expect("component path resource admission"),
         None
     );
 }
 
 #[test]
 fn compact_extrusion_to_face_prefers_a_modern_marker_over_a_legacy_body_alias() {
+    let path_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &path_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("component path test context");
+
     let end_spec = b"\xff\xff\x01\x00\x0b\x00moEndSpec_c";
     let face_ref = b"\xff\xff\x01\x00\x11\x00moSingleFaceRef_w";
     let mut payload = vec![0; 360];
@@ -331,13 +419,21 @@ fn compact_extrusion_to_face_prefers_a_modern_marker_over_a_legacy_body_alias() 
     payload[marker + 34..marker + 38].copy_from_slice(&9u32.to_le_bytes());
 
     assert_eq!(
-        compact_extrusion_to_face_at(&payload, anchor, payload.len()),
+        compact_extrusion_to_face_at(&path_ctx, &payload, anchor, payload.len())
+            .expect("component path resource admission"),
         Some(marker)
     );
 }
 
 #[test]
 fn extrusion_termination_stops_before_the_following_profile_object() {
+    let identity_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (identity_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &identity_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let mut payload = vec![0; 520];
     let anchor = 100;
     payload[anchor..anchor + 2].copy_from_slice(&[0x20, 0x86]);
@@ -368,9 +464,9 @@ fn extrusion_termination_stops_before_the_following_profile_object() {
         }
         .into(),
         tree_parent: None,
-        source_id: Some(source_id.into()),
+        source_id: Some(FeatureSource::try_from(source_id).expect("test feature source id")),
         ordinal: source_id.parse().expect("required invariant"),
-        name: id.into(),
+        name: id.to_string(),
         kind: kind.into(),
         input_class: Some(input_class.into()),
         suppressed: false,
@@ -403,7 +499,7 @@ fn extrusion_termination_stops_before_the_following_profile_object() {
                 ordinal: 0,
                 offset: 10,
                 value: "extrusion".into(),
-                object_id: Some(10),
+                object_id: ObjectId::from_value(10),
             },
             FeatureInputName {
                 id: "profile-name".into(),
@@ -411,7 +507,7 @@ fn extrusion_termination_stops_before_the_following_profile_object() {
                 ordinal: 1,
                 offset: 300,
                 value: "profile".into(),
-                object_id: Some(11),
+                object_id: ObjectId::from_value(11),
             },
         ],
         scalars: Vec::new(),
@@ -425,7 +521,15 @@ fn extrusion_termination_stops_before_the_following_profile_object() {
         sketch_entities: Vec::new(),
     };
 
-    enrich_history_extrusion_terminations(&mut histories, std::slice::from_ref(&lane));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &lane.native_payload,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    enrich_history_extrusion_terminations(&ctx, &mut histories, std::slice::from_ref(&lane))
+        .unwrap();
 
     assert_eq!(
         histories[0].features[0].properties.get("EndCondition"),
@@ -435,7 +539,7 @@ fn extrusion_termination_stops_before_the_following_profile_object() {
         histories[0].features[0].properties.get("Face"),
         Some(&"sldprt:feature-input:single-face-ref:7:220".to_string())
     );
-    let selections = compact_surface_selections(&histories, &lane);
+    let selections = compact_surface_selections(&identity_ctx, &histories, &lane).unwrap();
     assert_eq!(selections.len(), 1);
     assert_eq!(selections[0].offset, 220);
 }
@@ -455,9 +559,9 @@ fn extrusion_termination_includes_cosmetic_children_before_the_end_spec() {
         parent: "history".into(),
         xml_tag: "Feature".into(),
         tree_parent: None,
-        source_id: Some(source_id.into()),
+        source_id: Some(FeatureSource::try_from(source_id).expect("test feature source id")),
         ordinal: source_id.parse().expect("required invariant"),
-        name: id.into(),
+        name: id.to_string(),
         kind: "Feature".into(),
         input_class: Some(input_class.into()),
         suppressed: false,
@@ -491,7 +595,7 @@ fn extrusion_termination_includes_cosmetic_children_before_the_end_spec() {
                 ordinal: 0,
                 offset: 10,
                 value: "extrusion".into(),
-                object_id: Some(10),
+                object_id: ObjectId::from_value(10),
             },
             FeatureInputName {
                 id: "cosmetic-name".into(),
@@ -499,7 +603,7 @@ fn extrusion_termination_includes_cosmetic_children_before_the_end_spec() {
                 ordinal: 1,
                 offset: 200,
                 value: "cosmetic".into(),
-                object_id: Some(11),
+                object_id: ObjectId::from_value(11),
             },
             FeatureInputName {
                 id: "next-name".into(),
@@ -507,7 +611,7 @@ fn extrusion_termination_includes_cosmetic_children_before_the_end_spec() {
                 ordinal: 2,
                 offset: 500,
                 value: "next".into(),
-                object_id: Some(12),
+                object_id: ObjectId::from_value(12),
             },
         ],
         scalars: Vec::new(),
@@ -521,7 +625,15 @@ fn extrusion_termination_includes_cosmetic_children_before_the_end_spec() {
         sketch_entities: Vec::new(),
     };
 
-    enrich_history_extrusion_terminations(&mut histories, std::slice::from_ref(&lane));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &lane.native_payload,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    enrich_history_extrusion_terminations(&ctx, &mut histories, std::slice::from_ref(&lane))
+        .unwrap();
 
     assert_eq!(
         histories[0].features[0].properties.get("EndCondition"),
@@ -559,13 +671,16 @@ fn extrusion_termination_admits_retained_dimension_with_an_existing_depth() {
                 parent: "history".into(),
                 xml_tag: "Feature".into(),
                 tree_parent: None,
-                source_id: Some("10".into()),
+                source_id: FeatureSource::from_value(10),
                 ordinal: 10,
                 name: "extrusion".into(),
                 kind: "Boss-Extrude".into(),
                 input_class: Some("moICE_c".into()),
                 suppressed: false,
-                parameters: BTreeMap::from([(String::from("D1"), String::from("5mm"))]),
+                parameters: BTreeMap::from([(
+                    cadmpeg_core::nonblank_literal!("D1"),
+                    String::from("5mm"),
+                )]),
                 dimension_properties: BTreeMap::new(),
                 properties: BTreeMap::new(),
                 text: None,
@@ -583,7 +698,7 @@ fn extrusion_termination_admits_retained_dimension_with_an_existing_depth() {
                 ordinal: 0,
                 offset: 10,
                 value: "extrusion".into(),
-                object_id: Some(10),
+                object_id: ObjectId::from_value(10),
             }],
             scalars: Vec::new(),
             relation_bindings: Vec::new(),
@@ -596,7 +711,15 @@ fn extrusion_termination_admits_retained_dimension_with_an_existing_depth() {
             sketch_entities: Vec::new(),
         };
 
-        enrich_history_extrusion_terminations(&mut histories, std::slice::from_ref(&lane));
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &lane.native_payload,
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
+        enrich_history_extrusion_terminations(&ctx, &mut histories, std::slice::from_ref(&lane))
+            .unwrap();
         (
             histories[0].features[0]
                 .properties
@@ -637,6 +760,14 @@ fn extrusion_termination_admits_retained_dimension_with_an_existing_depth() {
 
 #[test]
 fn compact_extrusion_to_face_preserves_an_unparsed_framed_face_path() {
+    let path_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &path_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("component path test context");
+
     let mut payload = vec![0; 240];
     payload[..2].copy_from_slice(&[0x95, 0x81]);
     payload[4] = 1;
@@ -649,36 +780,51 @@ fn compact_extrusion_to_face_preserves_an_unparsed_framed_face_path() {
     payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
 
     assert_eq!(
-        compact_extrusion_to_face_at(&payload, 0, payload.len()),
+        compact_extrusion_to_face_at(&path_ctx, &payload, 0, payload.len())
+            .expect("component path resource admission"),
         Some(marker)
     );
     payload[marker - 12..marker - 8].fill(0);
     assert_eq!(
-        compact_extrusion_to_face_at(&payload, 0, payload.len()),
+        compact_extrusion_to_face_at(&path_ctx, &payload, 0, payload.len())
+            .expect("component path resource admission"),
         None
     );
 }
 
 #[test]
 fn termination_consensus_uses_stable_reference_identity_across_lanes() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let vote = |reference: &str, identity: &str| super::TerminationVote::Face {
         condition: super::FaceCondition::ToFace,
-        reference: Some(reference.into()),
+        reference: super::FaceReference::Lane {
+            reference: reference.into(),
+            canonical: Some("components:1,2,3".into()),
+        },
         identity: identity.into(),
-        canonical: Some("components:1,2,3".into()),
     };
     let first = vote("lane-0:100", "components:1,2,3");
     let second = vote("lane-1:200", "components:1,2,3");
-    let consensus =
-        super::consensus_termination_vote(&[Some(first.clone()), Some(second)]).unwrap();
+    let consensus = super::consensus_termination_vote(&ctx, &[Some(first.clone()), Some(second)])
+        .unwrap()
+        .unwrap();
     assert_eq!(consensus.reference(), Some("components:1,2,3"));
 
-    let exact = super::consensus_termination_vote(&[Some(first.clone())]).unwrap();
+    let exact = super::consensus_termination_vote(&ctx, &[Some(first.clone())])
+        .unwrap()
+        .unwrap();
     assert_eq!(exact.reference(), first.reference());
-    assert!(super::consensus_termination_vote(&[
-        Some(first),
-        Some(vote("lane-1:200", "components:1,2,4")),
-    ])
+    assert!(super::consensus_termination_vote(
+        &ctx,
+        &[Some(first), Some(vote("lane-1:200", "components:1,2,4")),]
+    )
+    .unwrap()
     .is_none());
 
     let first_depth = super::TerminationVote::Blind {
@@ -687,11 +833,23 @@ fn termination_consensus_uses_stable_reference_identity_across_lanes() {
     let second_depth = super::TerminationVote::Blind {
         depth_m: Some(0.02),
     };
-    assert!(super::consensus_termination_vote(&[Some(first_depth), Some(second_depth),]).is_none());
+    assert!(
+        super::consensus_termination_vote(&ctx, &[Some(first_depth), Some(second_depth),])
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[test]
 fn compact_extrusion_to_face_accepts_the_long_declared_face_path() {
+    let path_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &path_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("component path test context");
+
     let end_spec = b"\xff\xff\x01\x00\x0b\x00moEndSpec_c";
     let face_ref = b"\xff\xff\x01\x00\x11\x00moSingleFaceRef_w";
     let mut payload = vec![0; 360];
@@ -709,31 +867,43 @@ fn compact_extrusion_to_face_accepts_the_long_declared_face_path() {
 
     let boundary = payload.len();
     assert_eq!(
-        compact_extrusion_to_face_at(&payload, anchor, boundary),
+        compact_extrusion_to_face_at(&path_ctx, &payload, anchor, boundary)
+            .expect("component path resource admission"),
         Some(marker)
     );
 
     let second = selection_vector_tail(&mut payload, &[3]);
     assert!(second > marker);
     assert_eq!(
-        compact_extrusion_to_face_at(&payload, anchor, boundary),
+        compact_extrusion_to_face_at(&path_ctx, &payload, anchor, boundary)
+            .expect("component path resource admission"),
         Some(marker)
     );
     assert_eq!(
-        compact_extrusion_to_face_at(&payload, anchor, payload.len()),
+        compact_extrusion_to_face_at(&path_ctx, &payload, anchor, payload.len())
+            .expect("component path resource admission"),
         None
     );
 
     payload[marker - 8] = 1;
     payload[second - 8] = 1;
     assert_eq!(
-        compact_extrusion_to_face_at(&payload, anchor, payload.len()),
+        compact_extrusion_to_face_at(&path_ctx, &payload, anchor, payload.len())
+            .expect("component path resource admission"),
         None
     );
 }
 
 #[test]
 fn compact_extrusion_to_face_accepts_extended_legacy_face_path_padding() {
+    let path_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &path_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("component path test context");
+
     let mut payload = vec![0; 300];
     payload[..2].copy_from_slice(&[0x34, 0x80]);
     payload[4] = 1;
@@ -765,17 +935,21 @@ fn compact_extrusion_to_face_accepts_extended_legacy_face_path_padding() {
     payload[terminal + 24..terminal + 28].copy_from_slice(&101u32.to_le_bytes());
 
     assert_eq!(
-        compact_extrusion_to_face_at(&payload, 0, payload.len()),
+        compact_extrusion_to_face_at(&path_ctx, &payload, 0, payload.len())
+            .expect("component path resource admission"),
         Some(body)
     );
-    let path = legacy_single_face_reference_path_at(&payload, body).expect("required invariant");
+    let path = legacy_single_face_reference_path_at(&path_ctx, &payload, body)
+        .expect("component path resource admission")
+        .expect("required invariant");
     assert_eq!(
         path.iter().map(|entry| entry.local_id).collect::<Vec<_>>(),
         [Some(3), Some(2), Some(4)]
     );
     payload[body + 47] = 0xfe;
     assert_eq!(
-        compact_extrusion_to_face_at(&payload, 0, payload.len()),
+        compact_extrusion_to_face_at(&path_ctx, &payload, 0, payload.len())
+            .expect("component path resource admission"),
         None
     );
 }
@@ -1017,6 +1191,14 @@ fn end_spec_headers_require_the_anchor_class_identity() {
 
 #[test]
 fn legacy_single_face_reference_requires_a_unique_counted_path() {
+    let path_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &path_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("component path test context");
+
     let mut payload = vec![0; 128];
     payload[0..4].copy_from_slice(&[0x53, 0x81, 0x80, 0x80]);
     payload[4..8].copy_from_slice(&2u32.to_le_bytes());
@@ -1037,21 +1219,39 @@ fn legacy_single_face_reference_requires_a_unique_counted_path() {
     payload[entry + 16..entry + 20].copy_from_slice(&7u32.to_le_bytes());
     payload[entry + 20..entry + 28].copy_from_slice(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]);
 
-    let path = legacy_single_face_reference_path_at(&payload, 0).expect("required invariant");
+    let path = legacy_single_face_reference_path_at(&path_ctx, &payload, 0)
+        .expect("component path resource admission")
+        .expect("required invariant");
     assert_eq!(path.len(), 1);
     assert_eq!(path[0].instance, Some(0x8032));
     assert_eq!(path[0].type_signature, [1; 12]);
     assert_eq!(path[0].local_id, Some(7));
 
     payload[entry + 1] = 0;
-    assert_eq!(legacy_single_face_reference_path_at(&payload, 0), None);
+    assert_eq!(
+        legacy_single_face_reference_path_at(&path_ctx, &payload, 0)
+            .expect("component path resource admission"),
+        None
+    );
     payload[entry + 1] = 0x80;
     payload[control + 30] = 2;
-    assert_eq!(legacy_single_face_reference_path_at(&payload, 0), None);
+    assert_eq!(
+        legacy_single_face_reference_path_at(&path_ctx, &payload, 0)
+            .expect("component path resource admission"),
+        None
+    );
 }
 
 #[test]
 fn compact_extrusion_to_vertex_accepts_both_point_reference_forms() {
+    let path_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &path_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("component path test context");
+
     // Variant A, repeated-token form.
     let mut payload = vec![0; 30];
     payload[..2].copy_from_slice(&[0x0c, 0x8e]);
@@ -1060,24 +1260,29 @@ fn compact_extrusion_to_vertex_accepts_both_point_reference_forms() {
     payload.extend_from_slice(&[0x82, 0x92, 0x2b, 0x80, 2, 0, 0, 0, 0, 0, 0]);
     payload.extend_from_slice(&[0; 12]);
     let marker = selection_vector_tail(&mut payload, &[4, 7]);
-    let (found, kind) =
-        compact_extrusion_to_vertex_at(&payload, 0, payload.len()).expect("required invariant");
+    let (found, kind) = compact_extrusion_to_vertex_at(&path_ctx, &payload, 0, payload.len())
+        .expect("component path resource admission")
+        .expect("required invariant");
     assert_eq!(found, marker);
     assert_eq!(kind, CompactPointReferenceKind::Point);
     assert_eq!(kind.endpoint_selector(), None);
-    let path = compact_single_face_reference_path_at(&payload, marker).expect("required invariant");
+    let path = compact_single_face_reference_path_at(&path_ctx, &payload, marker)
+        .expect("component path resource admission")
+        .expect("required invariant");
     assert_eq!(path.last().expect("required invariant").local_id, Some(7));
 
     // A to-face selector byte is not a point reference.
     payload[38] = 0x40;
     assert_eq!(
-        compact_extrusion_to_vertex_at(&payload, 0, payload.len()),
+        compact_extrusion_to_vertex_at(&path_ctx, &payload, 0, payload.len())
+            .expect("component path resource admission"),
         None
     );
     payload[38] = 0;
     payload[18] = 4;
     assert_eq!(
-        compact_extrusion_to_vertex_at(&payload, 0, payload.len()),
+        compact_extrusion_to_vertex_at(&path_ctx, &payload, 0, payload.len())
+            .expect("component path resource admission"),
         None
     );
     payload[18] = 3;
@@ -1092,8 +1297,9 @@ fn compact_extrusion_to_vertex_accepts_both_point_reference_forms() {
     payload.extend_from_slice(&[0xcb, 0x80, 2, 0, 0, 0, 0x40, 0, 0]);
     payload.extend_from_slice(&[0; 12]);
     let marker = selection_vector_tail(&mut payload, &[2]);
-    let (found, kind) =
-        compact_extrusion_to_vertex_at(&payload, 0, payload.len()).expect("required invariant");
+    let (found, kind) = compact_extrusion_to_vertex_at(&path_ctx, &payload, 0, payload.len())
+        .expect("component path resource admission")
+        .expect("required invariant");
     assert_eq!(found, marker);
     assert!(matches!(
         kind,
@@ -1103,13 +1309,22 @@ fn compact_extrusion_to_vertex_accepts_both_point_reference_forms() {
 
     let endpoint_selector_value: u32 = 0x0012_3456;
     payload[marker - 4..marker].copy_from_slice(&endpoint_selector_value.to_le_bytes());
-    let (_, kind) =
-        compact_extrusion_to_vertex_at(&payload, 0, payload.len()).expect("required invariant");
+    let (_, kind) = compact_extrusion_to_vertex_at(&path_ctx, &payload, 0, payload.len())
+        .expect("component path resource admission")
+        .expect("required invariant");
     assert_eq!(kind.endpoint_selector(), Some(endpoint_selector_value));
 }
 
 #[test]
 fn compact_extrusion_to_vertex_requires_one_reference_in_the_feature_interval() {
+    let path_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &path_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("component path test context");
+
     let mut payload = vec![0; 30];
     payload[..2].copy_from_slice(&[0x0c, 0x8e]);
     payload[4] = 1;
@@ -1120,7 +1335,9 @@ fn compact_extrusion_to_vertex_requires_one_reference_in_the_feature_interval() 
     let marker = selection_vector_tail(&mut payload, &[4, 7]);
     assert!(marker > 270);
     assert_eq!(
-        compact_extrusion_to_vertex_at(&payload, 0, payload.len()).map(|(found, _)| found),
+        compact_extrusion_to_vertex_at(&path_ctx, &payload, 0, payload.len())
+            .expect("component path resource admission")
+            .map(|(found, _)| found),
         Some(marker)
     );
 
@@ -1128,17 +1345,28 @@ fn compact_extrusion_to_vertex_requires_one_reference_in_the_feature_interval() 
     let second = selection_vector_tail(&mut payload, &[5, 8]);
     assert!(second > marker);
     assert_eq!(
-        compact_extrusion_to_vertex_at(&payload, 0, boundary).map(|(found, _)| found),
+        compact_extrusion_to_vertex_at(&path_ctx, &payload, 0, boundary)
+            .expect("component path resource admission")
+            .map(|(found, _)| found),
         Some(marker)
     );
     assert_eq!(
-        compact_extrusion_to_vertex_at(&payload, 0, payload.len()),
+        compact_extrusion_to_vertex_at(&path_ctx, &payload, 0, payload.len())
+            .expect("component path resource admission"),
         None
     );
 }
 
 #[test]
 fn compact_extrusion_offset_from_face_requires_the_late_face_reference() {
+    let path_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &path_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("component path test context");
+
     let mut payload = vec![0; 26];
     payload[..2].copy_from_slice(&[0x0c, 0x8e]);
     payload[4] = 1;
@@ -1158,7 +1386,8 @@ fn compact_extrusion_offset_from_face_requires_the_late_face_reference() {
     let marker = selection_vector_tail(&mut payload, &[9]);
     let end = payload.len();
     assert_eq!(
-        compact_extrusion_offset_from_face_at(&payload, 0, end),
+        compact_extrusion_offset_from_face_at(&path_ctx, &payload, 0, end)
+            .expect("component path resource admission"),
         Some(marker)
     );
 
@@ -1170,18 +1399,21 @@ fn compact_extrusion_offset_from_face_requires_the_late_face_reference() {
     assert!(second > marker);
     assert!(second > marker + 200);
     assert_eq!(
-        compact_extrusion_offset_from_face_at(&payload, 0, end),
+        compact_extrusion_offset_from_face_at(&path_ctx, &payload, 0, end)
+            .expect("component path resource admission"),
         Some(marker)
     );
     assert_eq!(
-        compact_extrusion_offset_from_face_at(&payload, 0, payload.len()),
+        compact_extrusion_offset_from_face_at(&path_ctx, &payload, 0, payload.len())
+            .expect("component path resource admission"),
         None
     );
 
     // Wrong code or a missing face-reference anchor yields no detection.
     payload[18] = 6;
     assert_eq!(
-        compact_extrusion_offset_from_face_at(&payload, 0, end),
+        compact_extrusion_offset_from_face_at(&path_ctx, &payload, 0, end)
+            .expect("component path resource admission"),
         None
     );
     payload[18] = 5;
@@ -1191,13 +1423,22 @@ fn compact_extrusion_offset_from_face_requires_the_late_face_reference() {
         .expect("required invariant");
     payload[anchor] = 0;
     assert_eq!(
-        compact_extrusion_offset_from_face_at(&payload, 0, end),
+        compact_extrusion_offset_from_face_at(&path_ctx, &payload, 0, end)
+            .expect("component path resource admission"),
         None
     );
 }
 
 #[test]
 fn compact_body_path_requires_type_three_vector() {
+    let path_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &path_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("component path test context");
+
     let marker = 12;
     let mut payload = vec![0; 100];
     payload[..4].copy_from_slice(&2u32.to_le_bytes());
@@ -1211,31 +1452,63 @@ fn compact_body_path_requires_type_three_vector() {
     payload[second..second + 4].copy_from_slice(&[0x3b, 0x80, 0, 0]);
     payload[second + 4..second + 16].copy_from_slice(&[2; 12]);
     payload[second + 16..second + 20].copy_from_slice(&7u32.to_le_bytes());
-    assert_eq!(compact_body_path_at(&payload, marker), Some(vec![6, 7]));
     assert_eq!(
-        compact_body_component_path_at(&payload, marker).map(|components| components.len()),
+        compact_body_path_at(&path_ctx, &payload, marker)
+            .expect("component path resource admission"),
+        Some(vec![6, 7])
+    );
+    assert_eq!(
+        compact_body_component_path_at(&path_ctx, &payload, marker)
+            .expect("component path resource admission")
+            .map(|components| components.len()),
         Some(2)
     );
 
     payload[..4].copy_from_slice(&3u32.to_le_bytes());
     payload[second + 20..second + 28].copy_from_slice(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]);
-    assert_eq!(compact_body_path_at(&payload, marker), Some(vec![6, 7]));
+    assert_eq!(
+        compact_body_path_at(&path_ctx, &payload, marker)
+            .expect("component path resource admission"),
+        Some(vec![6, 7])
+    );
 
     payload[second + 20..second + 30].copy_from_slice(&[0; 10]);
-    assert_eq!(compact_body_path_at(&payload, marker), Some(vec![6, 7]));
     assert_eq!(
-        compact_body_component_path_at(&payload, marker).map(|components| components.len()),
+        compact_body_path_at(&path_ctx, &payload, marker)
+            .expect("component path resource admission"),
+        Some(vec![6, 7])
+    );
+    assert_eq!(
+        compact_body_component_path_at(&path_ctx, &payload, marker)
+            .expect("component path resource admission")
+            .map(|components| components.len()),
         Some(2)
     );
     payload[second + 24] = 1;
-    assert_eq!(compact_body_path_at(&payload, marker), None);
+    assert_eq!(
+        compact_body_path_at(&path_ctx, &payload, marker)
+            .expect("component path resource admission"),
+        None
+    );
 
     payload[4] = 2;
-    assert_eq!(compact_body_path_at(&payload, marker), None);
+    assert_eq!(
+        compact_body_path_at(&path_ctx, &payload, marker)
+            .expect("component path resource admission"),
+        None
+    );
 }
 
 #[test]
 fn compact_body_path_accepts_anonymous_mixed_entries() {
+    let path_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &path_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("component path test context");
+
     let marker = 12;
     let mut payload = vec![0; marker + 18];
     payload[..4].copy_from_slice(&3u32.to_le_bytes());
@@ -1255,18 +1528,38 @@ fn compact_body_path_accepts_anonymous_mixed_entries() {
     payload.extend_from_slice(&[0x34, 0x80, 0x37, 0, 37, 0, 0, 0, 0x7a, 0x83, 0xd9, 0x4a]);
     payload.extend_from_slice(&3u32.to_le_bytes());
 
-    assert_eq!(compact_body_path_at(&payload, marker), Some(vec![2, 1, 3]));
+    assert_eq!(
+        compact_body_path_at(&path_ctx, &payload, marker)
+            .expect("component path resource admission"),
+        Some(vec![2, 1, 3])
+    );
 
     payload[..4].copy_from_slice(&4u32.to_le_bytes());
     payload.extend_from_slice(&[0; 10]);
-    assert_eq!(compact_body_path_at(&payload, marker), Some(vec![2, 1, 3]));
+    assert_eq!(
+        compact_body_path_at(&path_ctx, &payload, marker)
+            .expect("component path resource admission"),
+        Some(vec![2, 1, 3])
+    );
     let last = payload.len() - 1;
     payload[last] = 1;
-    assert_eq!(compact_body_path_at(&payload, marker), None);
+    assert_eq!(
+        compact_body_path_at(&path_ctx, &payload, marker)
+            .expect("component path resource admission"),
+        None
+    );
 }
 
 #[test]
 fn compact_body_component_path_accepts_counted_sentinel_separators() {
+    let path_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &path_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("component path test context");
+
     let marker = 12;
     let mut payload = vec![0; marker + 18];
     payload[..4].copy_from_slice(&10u32.to_le_bytes());
@@ -1308,7 +1601,8 @@ fn compact_body_component_path_accepts_counted_sentinel_separators() {
     entry(&mut payload, 0x8521, 213, 1);
     local(&mut payload, 8);
 
-    let components = compact_body_component_path_at(&payload, marker)
+    let components = compact_body_component_path_at(&path_ctx, &payload, marker)
+        .expect("component path resource admission")
         .expect("counted lineage path with sentinel separators");
     assert_eq!(components.len(), 10);
     assert_eq!(components[5].local_id, None);
@@ -1341,7 +1635,7 @@ fn enrich_combine_uses_outermost_body_paths() {
             parent: "history".into(),
             xml_tag: "Feature".into(),
             tree_parent: None,
-            source_id: Some("119".into()),
+            source_id: FeatureSource::from_value(119),
             ordinal: 0,
             name: "Combine".into(),
             kind: "Combine".into(),
@@ -1364,7 +1658,7 @@ fn enrich_combine_uses_outermost_body_paths() {
             parent: "lane#35".into(),
             ordinal: 0,
             offset: 0,
-            object_id: Some(119),
+            object_id: ObjectId::from_value(119),
             value: "Combine".into(),
         }],
         scalars: Vec::new(),
@@ -1378,7 +1672,14 @@ fn enrich_combine_uses_outermost_body_paths() {
         sketch_entities: Vec::new(),
     }];
 
-    enrich_history_combine_selections(&mut histories, &lanes);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &lanes[0].native_payload,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    enrich_history_combine_selections(&ctx, &mut histories, &lanes).unwrap();
 
     let properties = &histories[0].features[0].properties;
     assert_eq!(
@@ -1420,3 +1721,246 @@ fn compact_combine_operation_is_name_length_relative() {
     tokenized[operation + 9] = 0;
     assert_eq!(compact_combine_operation_at(&tokenized, offset), None);
 }
+
+fn sweep_path_error(policy: cadmpeg_core::decode::DecodePolicy) -> cadmpeg_core::CodecError {
+    let histories = [FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![Feature {
+            id: "sweep".into(),
+            parent: "history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: FeatureSource::from_value(119),
+            ordinal: 0,
+            name: "Sweep".into(),
+            kind: "Sweep".into(),
+            input_class: Some("moSweep_c".into()),
+            suppressed: false,
+            parameters: BTreeMap::new(),
+            dimension_properties: BTreeMap::new(),
+            properties: BTreeMap::new(),
+            text: None,
+            content: Vec::new(),
+        }],
+    }];
+    let mut payload = vec![0; 40];
+    payload.extend([0xff, 0xff, 1, 0]);
+    payload.extend(19u16.to_le_bytes());
+    payload.extend(b"moGeneralCurveRef_w");
+    let lanes = [FeatureInputLane {
+        id: "lane#35".into(),
+        configuration: None,
+        native_payload: payload,
+        classes: vec![crate::records::FeatureInputClass {
+            id: "general-curve".into(),
+            parent: "lane#35".into(),
+            ordinal: 0,
+            offset: 40,
+            name: "moGeneralCurveRef_w".into(),
+        }],
+        names: vec![FeatureInputName {
+            id: "sweep-name".into(),
+            parent: "lane#35".into(),
+            ordinal: 0,
+            offset: 0,
+            object_id: ObjectId::from_value(119),
+            value: "Sweep".into(),
+        }],
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    }];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (service, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &lanes[0].native_payload,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    let mut admitted = histories.clone();
+    super::enrich_history_sweep_paths(&service, &mut admitted, &lanes).unwrap();
+    assert_eq!(
+        admitted[0].features[0]
+            .properties
+            .get("Path")
+            .map(String::as_str),
+        Some("sldprt:feature-input:general-curve-ref:35:40")
+    );
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &lanes[0].native_payload,
+        &arena,
+        &policy,
+    )
+    .unwrap();
+    super::enrich_history_sweep_paths(&ctx, &mut histories.clone(), &lanes).unwrap_err()
+}
+
+#[test]
+fn sweep_path_enrichment_refuses_collection_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    assert!(
+        matches!(sweep_path_error(policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && limit.operation == "enrich SLDPRT sweep paths")
+    );
+}
+
+#[test]
+fn sweep_path_enrichment_refuses_retained_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    assert!(
+        matches!(sweep_path_error(policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && limit.operation == "enrich SLDPRT sweep paths")
+    );
+}
+
+#[test]
+fn sweep_path_enrichment_refuses_work_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    assert!(
+        matches!(sweep_path_error(policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && limit.operation == "enrich SLDPRT sweep paths")
+    );
+}
+
+fn combine_selection_error(policy: cadmpeg_core::decode::DecodePolicy) -> cadmpeg_core::CodecError {
+    let mut payload = vec![0; 420];
+    for (marker, local_id) in [(100usize, 1u32), (200, 2), (300, 3)] {
+        payload[marker - 12..marker - 8].copy_from_slice(&1u32.to_le_bytes());
+        payload[marker - 8..marker - 4].copy_from_slice(&[0, 3, 0, 0]);
+        payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+        payload[marker + 16..marker + 18].copy_from_slice(&[0, 0]);
+        payload[marker + 18..marker + 20].copy_from_slice(&0x8032u16.to_le_bytes());
+        payload[marker + 22..marker + 34].copy_from_slice(&[1; 12]);
+        payload[marker + 34..marker + 38].copy_from_slice(&local_id.to_le_bytes());
+    }
+    let mut histories = vec![FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![Feature {
+            id: "combine".into(),
+            parent: "history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: FeatureSource::from_value(119),
+            ordinal: 0,
+            name: "Combine".into(),
+            kind: "Combine".into(),
+            input_class: Some("moCombineBodies_c".into()),
+            suppressed: false,
+            parameters: BTreeMap::new(),
+            dimension_properties: BTreeMap::new(),
+            properties: BTreeMap::new(),
+            text: None,
+            content: Vec::new(),
+        }],
+    }];
+    let lanes = [FeatureInputLane {
+        id: "lane#35".into(),
+        configuration: None,
+        native_payload: payload,
+        classes: Vec::new(),
+        names: vec![FeatureInputName {
+            id: "combine-name".into(),
+            parent: "lane#35".into(),
+            ordinal: 0,
+            offset: 0,
+            object_id: ObjectId::from_value(119),
+            value: "Combine".into(),
+        }],
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    }];
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (service, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &lanes[0].native_payload,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    let mut admitted = histories.clone();
+    enrich_history_combine_selections(&service, &mut admitted, &lanes).unwrap();
+    assert_eq!(
+        admitted[0].features[0]
+            .properties
+            .get("Target")
+            .map(String::as_str),
+        Some("sldprt:feature-input:body-path:35:100")
+    );
+    assert_eq!(
+        admitted[0].features[0]
+            .properties
+            .get("Tools")
+            .map(String::as_str),
+        Some("sldprt:feature-input:body-path:35:300")
+    );
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &lanes[0].native_payload,
+        &arena,
+        &policy,
+    )
+    .unwrap();
+    enrich_history_combine_selections(&ctx, &mut histories, &lanes).unwrap_err()
+}
+
+#[test]
+fn combine_selection_enrichment_refuses_collection_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    assert!(
+        matches!(combine_selection_error(policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn combine_selection_enrichment_refuses_retained_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    assert!(
+        matches!(combine_selection_error(policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn combine_selection_enrichment_refuses_work_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    assert!(
+        matches!(combine_selection_error(policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
+}
+
+mod combine_projection_limits;
+mod route_limits;
+mod surface_sweep_limits;
+
+mod component_text;

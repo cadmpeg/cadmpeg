@@ -8,36 +8,13 @@ use crate::provenance::SourceProvenance;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-/// Severity of a loss note or validation finding.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-pub enum Severity {
-    /// Informational; no action needed.
-    Info,
-    /// Non-fatal approximation or normalization.
-    Warning,
-    /// A correctness problem in the produced IR or export.
-    Error,
-    /// A hard stop: the requested operation cannot be completed faithfully.
-    Blocking,
-}
-
-impl fmt::Display for Severity {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Info => "info",
-            Self::Warning => "warning",
-            Self::Error => "error",
-            Self::Blocking => "blocking",
-        })
-    }
-}
+use crate::report::Severity;
 
 /// What subsystem a loss pertains to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum LossCategory {
     /// Geometry (surfaces/curves/points) not transferred or approximated.
     Geometry,
@@ -47,8 +24,6 @@ pub enum LossCategory {
     Material,
     /// Document metadata not transferred.
     Metadata,
-    /// Units/tolerances issues.
-    Units,
     /// Attributes (names, colors, custom attribs) not transferred.
     Attribute,
     /// Features, sketches, parameters, configurations, or design history not transferred.
@@ -66,7 +41,6 @@ impl fmt::Display for LossCategory {
             Self::Topology => "topology",
             Self::Material => "material",
             Self::Metadata => "metadata",
-            Self::Units => "units",
             Self::Attribute => "attribute",
             Self::DesignIntent => "design_intent",
             Self::Product => "product",
@@ -79,6 +53,7 @@ impl fmt::Display for LossCategory {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum StrictConsequence {
     /// Strict mode must refuse the operation.
     Reject,
@@ -96,6 +71,7 @@ pub enum StrictConsequence {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
+#[serde(deny_unknown_fields)]
 pub enum LossTaxonomy {
     /// No geometry stream was located in the container, so no B-rep could be
     /// transferred.
@@ -334,202 +310,163 @@ impl fmt::Display for LossTaxonomy {
 /// Namespace for shared (non-codec-local) loss codes.
 pub const SHARED_LOSS_NAMESPACE: &str = "shared";
 
-/// Namespaced machine-readable loss code on the decode/export wire.
+/// Machine-readable loss code on the decode/export wire.
 ///
-/// Wire form:
-/// `{ "namespace": "rhino", "code": "brep.trim-pcurve-dropped", "kind": "pcurve_omitted" }`.
-/// The optional `strict_floor` field is omitted when it matches [`LossTaxonomy::strict_floor`].
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+/// A `scope` tag selects the variant. A shared loss is
+/// `{ "scope": "shared", "kind": "pcurve_omitted" }`; a codec-local one is
+/// `{ "scope": "namespaced", "namespace": "rhino", "code": "brep.trim-pcurve-dropped",
+/// "kind": "pcurve_omitted" }`, carrying `strict_floor` exactly when the code
+/// pins one.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "scope", rename_all = "snake_case", deny_unknown_fields)]
 pub enum LossKind {
     /// Shared loss whose wire code is determined by its taxonomy.
-    Shared(LossTaxonomy),
+    Shared {
+        /// Shared taxonomy, which is also the local code.
+        kind: LossTaxonomy,
+    },
     /// Codec-local loss with an independently pinned strict-mode floor.
     Namespaced(NamespacedLossKind),
+}
+
+/// A loss namespace other than the reserved shared namespace.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct LossNamespace<'a>(&'a str);
+
+/// The reserved shared namespace cannot identify a codec-local loss.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("LossKind.namespace cannot be shared for a namespaced loss")]
+pub struct LossNamespaceError;
+
+impl<'a> LossNamespace<'a> {
+    /// Checks a codec-local namespace.
+    pub const fn new(namespace: &'a str) -> Result<Self, LossNamespaceError> {
+        if matches!(namespace.as_bytes(), b"shared") {
+            Err(LossNamespaceError)
+        } else {
+            Ok(Self(namespace))
+        }
+    }
+
+    /// Returns the namespace text.
+    pub fn as_str(&self) -> &str {
+        self.0
+    }
+}
+
+/// Build a loss namespace from a literal checked during constant evaluation.
+///
+/// ```compile_fail
+/// let _ = cadmpeg_ir::loss_namespace!("shared");
+/// ```
+#[macro_export]
+macro_rules! loss_namespace {
+    ($value:literal $(,)?) => {{
+        const STATIC_LOSS_NAMESPACE: $crate::report::loss::LossNamespace<'static> =
+            match $crate::report::loss::LossNamespace::new($value) {
+                Ok(namespace) => namespace,
+                Err(_) => panic!("loss namespace literal is reserved"),
+            };
+        STATIC_LOSS_NAMESPACE
+    }};
+}
+
+/// An owned loss namespace other than the reserved shared namespace.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "String", into = "String")]
+struct LossNamespaceName(String);
+
+impl LossNamespaceName {
+    fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for LossNamespaceName {
+    type Error = LossNamespaceError;
+
+    fn try_from(namespace: String) -> Result<Self, Self::Error> {
+        LossNamespace::new(namespace.as_str())?;
+        Ok(Self(namespace))
+    }
+}
+
+impl From<LossNamespaceName> for String {
+    fn from(namespace: LossNamespaceName) -> Self {
+        namespace.0
+    }
 }
 
 /// Codec-local loss identity and classification.
 ///
 /// Fields are private so the reserved `shared` namespace can be constructed
 /// only as [`LossKind::Shared`].
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct NamespacedLossKind {
-    namespace: String,
+    namespace: LossNamespaceName,
     code: String,
+    #[serde(rename = "kind")]
     taxonomy: LossTaxonomy,
+    /// Strict-mode severity floor pinned by this code; absent when it has none.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_strict_floor"
+    )]
     strict_floor: Option<Severity>,
 }
 
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct LossKindWire {
-    namespace: String,
-    code: String,
-    kind: LossTaxonomy,
-    /// Present when the floor differs from [`LossTaxonomy::strict_floor`]; may be JSON null.
-    #[serde(default, deserialize_with = "deserialize_optional_strict_floor")]
-    #[cfg_attr(feature = "schema", schemars(with = "Option<Severity>"))]
-    strict_floor: StrictFloorWire,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-enum StrictFloorWire {
-    /// Field absent: use the taxonomy default.
-    #[default]
-    Absent,
-    /// Field present, including explicit JSON null.
-    Explicit(Option<Severity>),
-}
-
-impl Serialize for StrictFloorWire {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        match self {
-            Self::Absent => serializer.serialize_none(),
-            Self::Explicit(floor) => floor.serialize(serializer),
-        }
-    }
-}
-
-fn deserialize_optional_strict_floor<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<StrictFloorWire, D::Error> {
-    Ok(StrictFloorWire::Explicit(Option::<Severity>::deserialize(
-        deserializer,
-    )?))
-}
-
-#[allow(clippy::trivially_copy_pass_by_ref)] // serde skip_serializing_if requires &T
-fn strict_floor_wire_is_absent(value: &StrictFloorWire) -> bool {
-    matches!(value, StrictFloorWire::Absent)
-}
-
-#[derive(Serialize)]
-struct LossKindSerializeWire<'a> {
-    namespace: &'a str,
-    code: &'a str,
-    kind: LossTaxonomy,
-    #[serde(skip_serializing_if = "strict_floor_wire_is_absent")]
-    strict_floor: StrictFloorWire,
-}
-
-impl Serialize for LossKind {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let taxonomy = self.taxonomy();
-        let strict_floor = if self.strict_floor() == taxonomy.strict_floor() {
-            StrictFloorWire::Absent
-        } else {
-            StrictFloorWire::Explicit(self.strict_floor())
-        };
-        LossKindSerializeWire {
-            namespace: self.namespace(),
-            code: self.local_code(),
-            kind: taxonomy,
-            strict_floor,
-        }
-        .serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for LossKind {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let wire = LossKindWire::deserialize(deserializer)?;
-        let strict_floor = match wire.strict_floor {
-            StrictFloorWire::Absent => wire.kind.strict_floor(),
-            StrictFloorWire::Explicit(floor) => floor,
-        };
-        if wire.namespace == SHARED_LOSS_NAMESPACE {
-            if wire.code != wire.kind.as_str() {
-                return Err(serde::de::Error::custom(format!(
-                    "LossKind.code must be `{}` when LossKind.namespace is `{SHARED_LOSS_NAMESPACE}`",
-                    wire.kind.as_str()
-                )));
-            }
-            if strict_floor != wire.kind.strict_floor() {
-                return Err(serde::de::Error::custom(
-                    "LossKind.strict_floor cannot override a shared loss taxonomy",
-                ));
-            }
-            return Ok(Self::Shared(wire.kind));
-        }
-        Ok(Self::Namespaced(NamespacedLossKind {
-            namespace: wire.namespace,
-            code: wire.code,
-            taxonomy: wire.kind,
-            strict_floor,
-        }))
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for LossKind {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "LossKind".into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        LossKindWire::json_schema(generator)
-    }
-}
-
 impl LossKind {
+    /// Copy the retained namespace and code through the decode budget.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, operation)?;
+        match self {
+            Self::Shared { kind } => Ok(Self::Shared { kind: *kind }),
+            Self::Namespaced(kind) => Ok(Self::Namespaced(NamespacedLossKind {
+                namespace: LossNamespaceName(
+                    ctx.copy_retained_text(kind.namespace.as_str(), operation)?,
+                ),
+                code: ctx.copy_retained_text(&kind.code, operation)?,
+                taxonomy: kind.taxonomy,
+                strict_floor: kind.strict_floor,
+            })),
+        }
+    }
+
     /// Shared-namespace code whose local id equals the taxonomy `snake_case` name.
     pub fn shared(taxonomy: LossTaxonomy) -> Self {
-        Self::Shared(taxonomy)
+        Self::Shared { kind: taxonomy }
     }
 
-    /// Codec-local code under `namespace`, classified by `taxonomy` for category.
-    ///
-    /// Strict floor defaults to the taxonomy floor; override with
-    /// [`LossKind::with_strict_floor`] so a local→taxonomy remap cannot change
-    /// rejection without an explicit local-floor change.
+    /// Constructs a codec-local loss with its taxonomy floor.
     pub fn namespaced(
-        namespace: impl Into<String>,
+        namespace: LossNamespace<'_>,
         code: impl Into<String>,
         taxonomy: LossTaxonomy,
     ) -> Self {
-        let namespace = namespace.into();
-        let code = code.into();
-        if namespace == SHARED_LOSS_NAMESPACE {
-            assert_eq!(
-                code,
-                taxonomy.as_str(),
-                "shared LossKind code must equal its taxonomy"
-            );
-            return Self::Shared(taxonomy);
-        }
-        Self::Namespaced(NamespacedLossKind {
-            namespace,
-            code,
-            taxonomy,
-            strict_floor: taxonomy.strict_floor(),
-        })
-    }
-
-    /// Pins the strict-mode severity floor independently of taxonomy.
-    #[must_use]
-    pub fn with_strict_floor(mut self, floor: Option<Severity>) -> Self {
-        match &mut self {
-            Self::Shared(taxonomy) => assert_eq!(
-                floor,
-                taxonomy.strict_floor(),
-                "shared LossKind strict floor is determined by its taxonomy"
-            ),
-            Self::Namespaced(kind) => kind.strict_floor = floor,
-        }
-        self
+        NamespacedLossKind::new(namespace, code, taxonomy).into()
     }
 
     /// Codec or `shared` namespace.
     pub fn namespace(&self) -> &str {
         match self {
-            Self::Shared(_) => SHARED_LOSS_NAMESPACE,
-            Self::Namespaced(kind) => &kind.namespace,
+            Self::Shared { .. } => SHARED_LOSS_NAMESPACE,
+            Self::Namespaced(kind) => kind.namespace.as_str(),
         }
     }
 
     /// Local code within the namespace.
     pub fn local_code(&self) -> &str {
         match self {
-            Self::Shared(taxonomy) => taxonomy.as_str(),
+            Self::Shared { kind } => kind.as_str(),
             Self::Namespaced(kind) => &kind.code,
         }
     }
@@ -537,7 +474,7 @@ impl LossKind {
     /// Shared taxonomy used for category and default severity.
     pub const fn taxonomy(&self) -> LossTaxonomy {
         match self {
-            Self::Shared(taxonomy) => *taxonomy,
+            Self::Shared { kind } => *kind,
             Self::Namespaced(kind) => kind.taxonomy,
         }
     }
@@ -555,9 +492,54 @@ impl LossKind {
     /// Returns the pinned strict-mode severity floor.
     pub const fn strict_floor(&self) -> Option<Severity> {
         match self {
-            Self::Shared(taxonomy) => taxonomy.strict_floor(),
+            Self::Shared { kind } => kind.strict_floor(),
             Self::Namespaced(kind) => kind.strict_floor,
         }
+    }
+}
+
+impl NamespacedLossKind {
+    /// Constructs a codec-local loss with its taxonomy floor.
+    pub fn new(
+        namespace: LossNamespace<'_>,
+        code: impl Into<String>,
+        taxonomy: LossTaxonomy,
+    ) -> Self {
+        Self {
+            namespace: LossNamespaceName(namespace.as_str().to_owned()),
+            code: code.into(),
+            taxonomy,
+            strict_floor: taxonomy.strict_floor(),
+        }
+    }
+
+    /// Constructs a codec-local kind from strings admitted by the caller.
+    ///
+    /// A decoder can reserve and charge both strings before this move.
+    pub fn new_owned(
+        namespace: String,
+        code: String,
+        taxonomy: LossTaxonomy,
+    ) -> Result<Self, LossNamespaceError> {
+        Ok(Self {
+            namespace: LossNamespaceName::try_from(namespace)?,
+            code,
+            taxonomy,
+            strict_floor: taxonomy.strict_floor(),
+        })
+    }
+
+    /// Pins the strict-mode severity floor independently of taxonomy.
+    #[must_use]
+    pub fn with_strict_floor(mut self, floor: Option<Severity>) -> Self {
+        self.strict_floor = floor;
+        self
+    }
+}
+
+impl From<NamespacedLossKind> for LossKind {
+    fn from(kind: NamespacedLossKind) -> Self {
+        Self::Namespaced(kind)
     }
 }
 
@@ -576,6 +558,7 @@ impl fmt::Display for LossKind {
 /// One attributable instance of incomplete or approximate transfer.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct LossNote {
     /// Stable machine-readable loss kind.
     pub code: LossKind,
@@ -584,11 +567,35 @@ pub struct LossNote {
     /// Human-readable explanation.
     pub message: String,
     /// Where in the source the loss occurred, when attributable.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_provenance"
+    )]
     pub provenance: Option<SourceProvenance>,
 }
 
 impl LossNote {
+    /// Copies a report loss after admitting every owned string in the copy.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, operation)?;
+        let message = ctx.copy_retained_text(&self.message, operation)?;
+        Ok(Self {
+            code: self.code.try_clone_for_decode(ctx, operation)?,
+            severity: self.severity,
+            message,
+            provenance: self
+                .provenance
+                .as_ref()
+                .map(|value| value.try_clone_for_decode(ctx, operation))
+                .transpose()?,
+        })
+    }
+
     /// Creates a loss note with the kind's default severity and no provenance.
     pub fn new(code: impl Into<LossKind>, message: impl Into<String>) -> Self {
         let code = code.into();
@@ -622,3 +629,10 @@ impl LossNote {
         }
     }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_strict_floor, Severity, "strict_floor");
+cadmpeg_core::named_optional_field!(deserialize_provenance, SourceProvenance, "provenance");
+
+#[cfg(test)]
+mod tests;

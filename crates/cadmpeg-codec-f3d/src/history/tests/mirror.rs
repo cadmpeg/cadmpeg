@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Mirror-history unit tests.
 
-use super::super::*;
+use crate::history::{
+    discard_projection_caches, selection::historical_mirror_coedge_plane,
+    selection::historical_mirror_face_operand_plane, selection::historical_mirror_plane,
+    selection::historical_selection_identity_kind,
+};
+use crate::history_records::{AsmDeltaState, AsmHistory};
+use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 
 #[test]
 fn discard_projection_caches_retains_compact_mirror_plane_topology() {
@@ -30,7 +36,6 @@ fn discard_projection_caches_retains_compact_mirror_plane_topology() {
         byte_offset: 0,
         preamble: None,
         record_table_binding_budget_exceeded: false,
-        projection_finalized: false,
         states: vec![AsmDeltaState {
             id: "history:state#1".into(),
             parent: "history".into(),
@@ -54,7 +59,11 @@ fn discard_projection_caches_retains_compact_mirror_plane_topology() {
         }],
     }];
 
-    discard_projection_caches(&mut histories);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("decode context");
+    discard_projection_caches(&ctx, &mut histories).expect("projection cache budget");
 
     let retained = histories[0].states[0]
         .topology()
@@ -72,7 +81,10 @@ fn discard_projection_caches_retains_compact_mirror_plane_topology() {
         }]
     );
     assert_eq!(
-        historical_selection_identity_kind(&histories, 30),
+        crate::test_support::with_decode_context(|decode_ctx| historical_selection_identity_kind(
+            decode_ctx, &histories, 30
+        ))
+        .unwrap(),
         Some((AsmHistoricalEntityKind::Face, 10, vec![1]))
     );
 }
@@ -84,7 +96,7 @@ fn mirror_face_recipe_accepts_coincident_preceding_plane_faces() {
     };
     use cadmpeg_ir::math::{Point3, Vector3};
 
-    let operand: crate::records::topology::DesignFaceOperand =
+    let operand: crate::records::topology::face::DesignFaceOperand =
         serde_json::from_value(serde_json::json!({
             "id": "f3d:Design/BulkStream.dat:design-face-operand#40",
             "scope_record_index": 42,
@@ -94,12 +106,12 @@ fn mirror_face_recipe_accepts_coincident_preceding_plane_faces() {
             "record_index": 40,
             "byte_offset": 0,
             "class_tag": "276",
-            "paired_byte_offset": 0,
+            "paired_byte_offset": 16,
             "paired_class_tag": "262",
             "recipe_record_index": 43,
-            "recipe_record_byte_offset": 0,
+            "recipe_record_byte_offset": 32,
             "recipe_id": "f3d:Design/BulkStream.dat:construction-recipe#43",
-            "recipe_prefix_offset": 0,
+            "recipe_prefix_offset": 43,
             "recipe_prefix_bytes": "",
             "recipe_references": [],
             "recipe_kind": "face",
@@ -112,7 +124,7 @@ fn mirror_face_recipe_accepts_coincident_preceding_plane_faces() {
                 "f3d:brep:entity#11"
             ],
             "next_record_index": 44,
-            "next_byte_offset": 0
+            "next_byte_offset": 160
         }))
         .expect("face-recipe operand");
     let topology = AsmHistoricalTopology {
@@ -146,7 +158,6 @@ fn mirror_face_recipe_accepts_coincident_preceding_plane_faces() {
         byte_offset: 0,
         preamble: None,
         record_table_binding_budget_exceeded: false,
-        projection_finalized: false,
         states: vec![AsmDeltaState {
             id: "history:state#1".into(),
             parent: "history".into(),
@@ -250,8 +261,11 @@ fn mirror_coedge_plane_uses_unique_planar_face_in_radial_cycle() {
         ..Default::default()
     };
 
-    let plane = historical_mirror_coedge_plane(30, &topology)
-        .expect("radial coedge cycle has one exact planar face");
+    let plane = crate::test_support::with_decode_context(|decode_ctx| {
+        historical_mirror_coedge_plane(decode_ctx, 30, &topology)
+    })
+    .unwrap()
+    .expect("radial coedge cycle has one exact planar face");
     assert_eq!(plane.origin, Point3::new(1.0, 2.0, 3.0));
     assert_eq!(plane.normal, Vector3::new(0.0, 0.0, 1.0));
 
@@ -260,7 +274,6 @@ fn mirror_coedge_plane_uses_unique_planar_face_in_radial_cycle() {
         byte_offset: 0,
         preamble: None,
         record_table_binding_budget_exceeded: false,
-        projection_finalized: false,
         states: vec![AsmDeltaState {
             id: "history:state#1".into(),
             parent: "history".into(),
@@ -280,23 +293,35 @@ fn mirror_coedge_plane_uses_unique_planar_face_in_radial_cycle() {
             transition: None,
         }],
     };
-    let candidate = crate::records::topology::DesignEntitySelectionFaceCandidate {
-        history_id: "history".into(),
-        historical: crate::records::topology::HistoricalBinding {
-            kind: AsmHistoricalEntityKind::Coedge,
-            entity_ref: 30,
-            state_ids: vec![1],
-        },
-        face_slot: 10,
-    };
-    let dispatched = historical_mirror_plane(&candidate, 1, std::slice::from_ref(&history))
-        .expect("coedge dispatch uses radial plane resolver");
+    let candidate =
+        crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate {
+            history_id: "history".into(),
+            historical: crate::records::topology::fillet::HistoricalBinding {
+                kind: AsmHistoricalEntityKind::Coedge,
+                entity_ref: 30,
+                state_ids: vec![1],
+            },
+            face_slot: 10,
+        };
+    let dispatched = crate::test_support::with_decode_context(|decode_ctx| {
+        historical_mirror_plane(decode_ctx, &candidate, 1, std::slice::from_ref(&history))
+    })
+    .unwrap()
+    .expect("coedge dispatch uses radial plane resolver");
     assert_eq!(dispatched.origin, Point3::new(1.0, 2.0, 3.0));
     assert_eq!(dispatched.normal, Vector3::new(0.0, 0.0, 1.0));
 
     let mut open_cycle = topology.clone();
     open_cycle.coedge_topology[1].radial_next = 31;
-    assert!(historical_mirror_coedge_plane(30, &open_cycle).is_none());
+    assert!(
+        crate::test_support::with_decode_context(|decode_ctx| historical_mirror_coedge_plane(
+            decode_ctx,
+            30,
+            &open_cycle
+        ))
+        .unwrap()
+        .is_none()
+    );
 
     let mut ambiguous = topology;
     ambiguous.surface_planes.push(AsmHistoricalPlane {
@@ -304,5 +329,11 @@ fn mirror_coedge_plane_uses_unique_planar_face_in_radial_cycle() {
         origin: Point3::new(1.0, 2.0, 4.0),
         normal: Vector3::new(0.0, 0.0, 1.0),
     });
-    assert!(historical_mirror_coedge_plane(30, &ambiguous).is_none());
+    assert!(
+        crate::test_support::with_decode_context(|decode_ctx| historical_mirror_coedge_plane(
+            decode_ctx, 30, &ambiguous
+        ))
+        .unwrap()
+        .is_none()
+    );
 }

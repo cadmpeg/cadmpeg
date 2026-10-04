@@ -1,22 +1,124 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use crate::test_support::build_prt;
+use cadmpeg_ir::scalar::PositiveLength;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::container::{self};
-use crate::test_support::*;
 use crate::CreoCodec;
 
-use super::*;
-
-use crate::feature::{
-    FeatureEntityTableEntry, FeatureGeometryTableKind, FeatureParameterFrame, FeatureSection3d,
-    FeatureSectionOrientation, FeatureSectionPoint, FeatureSectionReferencePlane, FeatureSegment,
-    FeatureSegmentTable, FeatureVariableTable,
+use super::{
+    definition_local_plane_equation,
+    generated_cylinder_section_transform as parse_generated_cylinder_section_transform,
+    generated_planar_section_transform as parse_generated_planar_section_transform,
+    generated_planar_table_shape, plane_equation, resolve as parse_resolve,
+    FeatureSectionTransform, PlacementSources, SignedPlaneEquation, EPS_PLACEMENT_GEOMETRY,
 };
+use crate::datum::DatumPlaneRecord;
+use crate::feature::definitions::ReferencePlanes;
+use crate::feature::definitions::{
+    BinaryFlag, FeatureDefinition, FeatureParameterFrameKind, FeatureSegmentKind,
+};
+use crate::feature::entity::FeatureEntityTable;
+use crate::feature::rows::{AffectedIdKind, FeatureAffectedIds, FeatureGeometryTable};
+use crate::surface::{
+    OutlinePlane, PlaneEnvelope, PlaneEnvelopeRecord, PlaneLocalSystem, SurfaceKind, SurfaceRow,
+};
+use crate::vecmath::{cross, normalize};
+
+use crate::feature::definitions::FeatureVariableTable;
+use crate::feature::definitions::{
+    FeatureParameterFrame, FeatureSection3d, FeatureSectionOrientation, FeatureSectionPoint,
+    FeatureSectionReferencePlane, FeatureSegment, FeatureSegmentTable,
+};
+use crate::feature::entity::FeatureEntityTableEntry;
+use crate::feature::rows::FeatureGeometryTableKind;
 use crate::surface::{PositionalCylinderFrame, SurfaceBodyBoundary, SurfaceParameterRecord};
+
+fn generated_cylinder_section_transform(
+    definition: &FeatureDefinition,
+    sources: &PlacementSources<'_>,
+    tables: &[FeatureEntityTable],
+) -> Option<FeatureSectionTransform> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        parse_generated_cylinder_section_transform(ctx, definition, sources, tables)
+    })
+    .expect("test cylinder placement")
+}
+
+fn generated_planar_section_transform(
+    definition: &FeatureDefinition,
+    sources: &PlacementSources<'_>,
+    tables: &[FeatureEntityTable],
+) -> Option<FeatureSectionTransform> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        parse_generated_planar_section_transform(ctx, definition, sources, tables)
+    })
+    .expect("test planar placement")
+}
+
+#[test]
+fn generated_planar_table_entry_nodes_refuse_collection_limit() {
+    let entry = |entity_id, class_id, source_entity_id| FeatureEntityTableEntry {
+        payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
+        entity_id,
+        prefixed: false,
+        offset: usize::try_from(entity_id).expect("small fixture ID"),
+        end_offset: usize::try_from(entity_id).expect("small fixture ID") + 1,
+    };
+    let table = FeatureEntityTable::new(
+        10,
+        79,
+        vec![
+            entry(13, 204, None),
+            entry(18, 203, None),
+            entry(23, 200, Some(4)),
+        ],
+        &std::collections::BTreeSet::new(),
+        200,
+    );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    let error = generated_planar_table_shape(&ctx, &table)
+        .expect_err("first entry node exceeds collection limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo generated planar table entry nodes")
+    );
+    crate::decode::with_test_decode_ctx(|ctx| {
+        assert!(generated_planar_table_shape(ctx, &table)?);
+        let duplicate = FeatureEntityTable::new(
+            10,
+            79,
+            vec![
+                entry(13, 204, None),
+                entry(18, 203, None),
+                entry(13, 200, Some(4)),
+            ],
+            &std::collections::BTreeSet::new(),
+            200,
+        );
+        assert!(!generated_planar_table_shape(ctx, &duplicate)?);
+        Ok::<_, cadmpeg_core::CodecError>(())
+    })
+    .expect("service profile admits table shape");
+}
+
+fn resolve(
+    definitions: &[FeatureDefinition],
+    sources: &PlacementSources<'_>,
+    tables: &[FeatureEntityTable],
+) -> Vec<FeatureSectionTransform> {
+    crate::decode::with_test_decode_ctx(|ctx| parse_resolve(ctx, definitions, sources, tables))
+        .expect("test placement")
+}
 
 #[test]
 fn normalization_rejects_overflowed_feature_frame_vectors() {
@@ -27,15 +129,16 @@ fn normalization_rejects_overflowed_feature_frame_vectors() {
     assert!((normalized[2] - 0.8).abs() < 1.0e-12);
 }
 
-fn datum(id: u32, axis: crate::datum::Axis, offset: f64) -> DatumPlaneRecord {
-    DatumPlaneRecord {
+fn datum(id: u32, axis: crate::axis::Axis, offset: f64) -> DatumPlaneRecord {
+    DatumPlaneRecord::new(
         id,
-        feature_id: id.saturating_sub(1),
-        plane: crate::datum::DatumPlane { axis, offset },
-        opposite_offset: offset,
-        in_plane_corners: [[Some(0.0); 2]; 2],
-        offset_in_payload: usize::try_from(id).expect("fixture id fits usize"),
-    }
+        id.saturating_sub(1),
+        crate::datum::DatumPlane::new(axis, offset).expect("valid datum fixture"),
+        offset,
+        [[Some(0.0); 2]; 2],
+        usize::try_from(id).expect("fixture id fits usize"),
+    )
+    .expect("valid datum fixture")
 }
 
 fn blank_definition() -> FeatureDefinition {
@@ -61,12 +164,53 @@ fn blank_definition() -> FeatureDefinition {
 }
 
 #[test]
+fn placement_reference_ids_refuse_before_growth() {
+    let mut definition = blank_definition();
+    definition.section_3d = Some(FeatureSection3d {
+        sketch_plane_entity_id: Some(2),
+        sketch_plane_flip: None,
+        reference_planes: ReferencePlanes::Named(vec![3]),
+        reference_plane_datum_geometry_id: None,
+        orientation: FeatureSectionOrientation::default(),
+        dimension_ids: Vec::new(),
+        offset: 10,
+    });
+    let sources = PlacementSources {
+        datums: &[],
+        surface_rows: &[],
+        model_planes: &[],
+        outline_planes: &[],
+        plane_envelopes: &[],
+        surface_parameters: &[],
+        geometry_tables: &[],
+        affected_ids: &[],
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test input admitted");
+    assert!(
+        matches!(parse_resolve(&ctx, &[definition.clone()], &sources, &[]),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "creo placement reference IDs")
+    );
+    assert!(resolve(&[definition], &sources, &[]).is_empty());
+}
+
+fn finite_frame(values: [f64; 12]) -> cadmpeg_ir::units::FiniteVector<12> {
+    cadmpeg_ir::units::FiniteVector::new(values).expect("finite frame fixture")
+}
+
+#[test]
 fn unique_complete_local_system_supplies_section_plane_equation() {
     let mut definition = blank_definition();
     definition.parameter_frames = vec![FeatureParameterFrame {
         kind: FeatureParameterFrameKind::LocalSystem,
         body: Vec::new(),
-        decoded_values: Some([0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 3.0, 4.0, 5.0]),
+        decoded_values: Some(finite_frame([
+            0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 3.0, 4.0, 5.0,
+        ])),
         offset: 1,
     }];
 
@@ -95,36 +239,29 @@ fn unique_complete_local_system_supplies_section_plane_equation() {
     definition.parameter_frames.push(FeatureParameterFrame {
         kind: FeatureParameterFrameKind::LocalSystem,
         body: Vec::new(),
-        decoded_values: Some([0.0; 12]),
+        decoded_values: Some(finite_frame([0.0; 12])),
         offset: 3,
     });
     assert_eq!(definition_local_plane_equation(&definition), None);
 }
 
 #[test]
-fn unique_complete_local_system_rejects_nonfinite_values() {
-    let mut definition = blank_definition();
-    definition.parameter_frames = vec![FeatureParameterFrame {
-        kind: FeatureParameterFrameKind::LocalSystem,
-        body: Vec::new(),
-        decoded_values: Some([
-            1.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-            f64::NAN,
-            0.0,
-            0.0,
-        ]),
-        offset: 1,
-    }];
-
-    assert_eq!(unique_complete_local_system(&definition), None);
+fn checked_local_system_rejects_nonfinite_values() {
+    assert!(cadmpeg_ir::units::FiniteVector::new([
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        f64::NAN,
+        0.0,
+        0.0,
+    ])
+    .is_none());
 }
 
 #[test]
@@ -141,8 +278,8 @@ fn unresolved_local_system_does_not_hide_a_complete_outline_plane() {
     let outline = OutlinePlane {
         surface_id: 7,
         origin: [0.0, 0.0, 3.0],
-        u_axis: [1.0, 0.0, 0.0],
-        normal: [0.0, 0.0, 1.0],
+        u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
+        normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
         offset: 12,
     };
 
@@ -167,19 +304,19 @@ fn plane_namespace_collision_withholds_equation() {
         offset: 11,
     };
     assert_eq!(
-        plane_equation(7, &[datum(7, crate::datum::Axis::Y, 2.0)], &[model], &[]),
+        plane_equation(7, &[datum(7, crate::axis::Axis::Y, 2.0)], &[model], &[]),
         None
     );
 
     let outline = OutlinePlane {
         surface_id: 7,
         origin: [0.0, 2.0, 0.0],
-        u_axis: [1.0, 0.0, 0.0],
-        normal: [0.0, 1.0, 0.0],
+        u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
+        normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
         offset: 12,
     };
     assert_eq!(
-        plane_equation(7, &[datum(7, crate::datum::Axis::Y, 2.0)], &[], &[outline]),
+        plane_equation(7, &[datum(7, crate::axis::Axis::Y, 2.0)], &[], &[outline]),
         None
     );
 }
@@ -218,9 +355,9 @@ fn resolves_perpendicular_datum_frame() {
             &[definition],
             &PlacementSources {
                 datums: &[
-                    datum(2, crate::datum::Axis::X, 2.0),
-                    datum(3, crate::datum::Axis::X, 1.0),
-                    datum(4, crate::datum::Axis::Z, 3.0),
+                    datum(2, crate::axis::Axis::X, 2.0),
+                    datum(3, crate::axis::Axis::X, 1.0),
+                    datum(4, crate::axis::Axis::Z, 3.0),
                 ],
                 surface_rows: &[],
                 model_planes: &[],
@@ -232,15 +369,15 @@ fn resolves_perpendicular_datum_frame() {
             },
             &[],
         ),
-        vec![FeatureSectionTransform {
-            definition_id: 42,
-            feature_id: Some(42),
-            origin: [2.0, 0.0, 3.0],
-            u_axis: [0.0, 1.0, 0.0],
-            v_axis: [0.0, 0.0, 1.0],
-            normal: [1.0, 0.0, 0.0],
-            offset: 100,
-        }]
+        vec![FeatureSectionTransform::new(
+            42,
+            Some(42),
+            [2.0, 0.0, 3.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            100
+        )
+        .expect("valid section frame")]
     );
 }
 
@@ -278,9 +415,9 @@ fn resolves_reference_flip_from_selected_positional_row() {
         &[definition],
         &PlacementSources {
             datums: &[
-                datum(2, crate::datum::Axis::X, 2.0),
-                datum(3, crate::datum::Axis::X, 1.0),
-                datum(4, crate::datum::Axis::Z, 3.0),
+                datum(2, crate::axis::Axis::X, 2.0),
+                datum(3, crate::axis::Axis::X, 1.0),
+                datum(4, crate::axis::Axis::Z, 3.0),
             ],
             surface_rows: &[],
             model_planes: &[],
@@ -294,10 +431,10 @@ fn resolves_reference_flip_from_selected_positional_row() {
     );
 
     assert_eq!(transforms.len(), 1);
-    assert_eq!(transforms[0].origin, [2.0, 0.0, 3.0]);
-    assert_eq!(transforms[0].u_axis, [0.0, -1.0, 0.0]);
-    assert_eq!(transforms[0].v_axis, [0.0, 0.0, -1.0]);
-    assert_eq!(transforms[0].normal, [1.0, 0.0, 0.0]);
+    assert_eq!(transforms[0].origin(), [2.0, 0.0, 3.0]);
+    assert_eq!(transforms[0].u_axis(), [0.0, -1.0, 0.0]);
+    assert_eq!(transforms[0].v_axis(), [0.0, 0.0, -1.0]);
+    assert_eq!(transforms[0].normal(), [1.0, 0.0, 0.0]);
 }
 
 #[test]
@@ -334,9 +471,9 @@ fn rejects_duplicate_selected_positional_reference_rows() {
         &[definition],
         &PlacementSources {
             datums: &[
-                datum(2, crate::datum::Axis::X, 2.0),
-                datum(3, crate::datum::Axis::X, 1.0),
-                datum(4, crate::datum::Axis::Z, 3.0),
+                datum(2, crate::axis::Axis::X, 2.0),
+                datum(3, crate::axis::Axis::X, 1.0),
+                datum(4, crate::axis::Axis::Z, 3.0),
             ],
             surface_rows: &[],
             model_planes: &[],
@@ -357,7 +494,9 @@ fn resolves_section_from_complete_local_frame_when_references_are_unresolved() {
     definition.parameter_frames = vec![FeatureParameterFrame {
         kind: FeatureParameterFrameKind::LocalSystem,
         body: Vec::new(),
-        decoded_values: Some([0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -3.0, -4.0, 0.0]),
+        decoded_values: Some(finite_frame([
+            0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -3.0, -4.0, 0.0,
+        ])),
         offset: 1,
     }];
     definition.section_3d = Some(FeatureSection3d {
@@ -385,15 +524,15 @@ fn resolves_section_from_complete_local_frame_when_references_are_unresolved() {
             },
             &[],
         ),
-        vec![FeatureSectionTransform {
-            definition_id: 42,
-            feature_id: Some(42),
-            origin: [-3.0, -4.0, 0.0],
-            u_axis: [0.0, 0.0, 1.0],
-            v_axis: [0.0, -1.0, 0.0],
-            normal: [1.0, 0.0, 0.0],
-            offset: 100,
-        }]
+        vec![FeatureSectionTransform::new(
+            42,
+            Some(42),
+            [-3.0, -4.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [0.0, -1.0, 0.0],
+            100
+        )
+        .expect("valid section frame")]
     );
 }
 
@@ -439,15 +578,15 @@ fn resolves_generated_section_from_declared_cap_pair() {
         OutlinePlane {
             surface_id: 43,
             origin: [0.0, 0.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 43,
         },
         OutlinePlane {
             surface_id: 92,
             origin: [0.0, 38.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 92,
         },
     ];
@@ -459,39 +598,37 @@ fn resolves_generated_section_from_declared_cap_pair() {
         offset: 80,
     }];
     let entries = [(43, 204), (92, 203)].map(|(entity_id, class_id)| {
-        crate::feature::FeatureEntityTableEntry {
-            payload: crate::feature::entry_payload(class_id, None, None, None),
+        crate::feature::entity::FeatureEntityTableEntry {
+            payload: crate::feature::entity::entry_payload(class_id, None, None, None),
 
             entity_id,
-            class_id,
             prefixed: false,
             offset: usize::try_from(entity_id).expect("fixture id fits usize"),
             end_offset: usize::try_from(entity_id + 1).expect("fixture id fits usize"),
-            is_surface: false,
         }
     });
     let entity_tables = [
-        FeatureEntityTable {
-            feature_id: 40,
-            table_class_id: 80,
-            entries: vec![crate::feature::FeatureEntityTableEntry {
+        FeatureEntityTable::new(
+            40,
+            80,
+            vec![crate::feature::entity::FeatureEntityTableEntry {
                 entity_id: 700,
-                class_id: 7,
-                payload: crate::feature::entry_payload(7, None, None, None),
+                payload: crate::feature::entity::entry_payload(7, None, None, None),
                 prefixed: false,
                 offset: 60,
                 end_offset: 61,
-                is_surface: false,
             }],
-            offset: 50,
-        }
+            &std::collections::BTreeSet::new(),
+            50,
+        )
         .with_surface_ids([]),
-        FeatureEntityTable {
-            feature_id: 40,
-            table_class_id: 80,
-            entries: entries.to_vec(),
-            offset: 70,
-        }
+        FeatureEntityTable::new(
+            40,
+            80,
+            entries.to_vec(),
+            &std::collections::BTreeSet::new(),
+            70,
+        )
         .with_surface_ids([43, 92]),
     ];
 
@@ -500,8 +637,8 @@ fn resolves_generated_section_from_declared_cap_pair() {
             &[definition],
             &PlacementSources {
                 datums: &[
-                    datum(2, crate::datum::Axis::X, 0.0),
-                    datum(191, crate::datum::Axis::X, 8.0),
+                    datum(2, crate::axis::Axis::X, 0.0),
+                    datum(191, crate::axis::Axis::X, 8.0),
                 ],
                 surface_rows: &rows,
                 model_planes: &[],
@@ -513,15 +650,15 @@ fn resolves_generated_section_from_declared_cap_pair() {
             },
             &entity_tables,
         ),
-        vec![FeatureSectionTransform {
-            definition_id: 917,
-            feature_id: Some(40),
-            origin: [0.0, 0.0, 0.0],
-            u_axis: [0.0, 0.0, 1.0],
-            v_axis: [1.0, 0.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            offset: 100,
-        }]
+        vec![FeatureSectionTransform::new(
+            917,
+            Some(40),
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+            100
+        )
+        .expect("valid section frame")]
     );
 }
 
@@ -634,9 +771,9 @@ fn resolves_oblique_reference_from_an_earlier_extruded_line() {
         &[source.clone(), dependent.clone()],
         &PlacementSources {
             datums: &[
-                datum(2, crate::datum::Axis::X, 0.0),
-                datum(4, crate::datum::Axis::Z, 0.0),
-                datum(799, crate::datum::Axis::Y, 1.0),
+                datum(2, crate::axis::Axis::X, 0.0),
+                datum(4, crate::axis::Axis::Z, 0.0),
+                datum(799, crate::axis::Axis::Y, 1.0),
             ],
             surface_rows: std::slice::from_ref(&generated_plane),
             model_planes: &[],
@@ -652,10 +789,10 @@ fn resolves_oblique_reference_from_an_earlier_extruded_line() {
     assert_eq!(transforms.len(), 2);
     assert_eq!(transforms[1].definition_id, 579);
     assert_eq!(transforms[1].feature_id, Some(579));
-    assert_eq!(transforms[1].origin, [0.0, 1.0, 0.0]);
-    assert_eq!(transforms[1].u_axis, [1.0, 0.0, 0.0]);
-    assert_eq!(transforms[1].v_axis, [0.0, 0.0, -1.0]);
-    assert_eq!(transforms[1].normal, [0.0, 1.0, 0.0]);
+    assert_eq!(transforms[1].origin(), [0.0, 1.0, 0.0]);
+    assert_eq!(transforms[1].u_axis(), [1.0, 0.0, 0.0]);
+    assert_eq!(transforms[1].v_axis(), [0.0, 0.0, -1.0]);
+    assert_eq!(transforms[1].normal(), [0.0, 1.0, 0.0]);
 
     let duplicate_plane = SurfaceRow {
         offset: 51,
@@ -665,9 +802,9 @@ fn resolves_oblique_reference_from_an_earlier_extruded_line() {
         &[source, dependent],
         &PlacementSources {
             datums: &[
-                datum(2, crate::datum::Axis::X, 0.0),
-                datum(4, crate::datum::Axis::Z, 0.0),
-                datum(799, crate::datum::Axis::Y, 1.0),
+                datum(2, crate::axis::Axis::X, 0.0),
+                datum(4, crate::axis::Axis::Z, 0.0),
+                datum(799, crate::axis::Axis::Y, 1.0),
             ],
             surface_rows: &[generated_plane, duplicate_plane],
             model_planes: &[],
@@ -715,15 +852,15 @@ fn resolves_orientation_from_an_outline_plane_carrier() {
     let reference = OutlinePlane {
         surface_id: 4,
         origin: [0.0, 0.0, 3.0],
-        normal: [0.0, 0.0, 1.0],
-        u_axis: [1.0, 0.0, 0.0],
+        normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
+        u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
         offset: 70,
     };
 
     let transforms = resolve(
         &[definition],
         &PlacementSources {
-            datums: &[datum(2, crate::datum::Axis::X, 2.0)],
+            datums: &[datum(2, crate::axis::Axis::X, 2.0)],
             surface_rows: &[],
             model_planes: &[],
             outline_planes: &[reference],
@@ -735,9 +872,9 @@ fn resolves_orientation_from_an_outline_plane_carrier() {
         &[],
     );
     assert_eq!(transforms.len(), 1);
-    assert_eq!(transforms[0].origin, [2.0, 0.0, 3.0]);
-    assert_eq!(transforms[0].u_axis, [0.0, 1.0, 0.0]);
-    assert_eq!(transforms[0].v_axis, [0.0, 0.0, 1.0]);
+    assert_eq!(transforms[0].origin(), [2.0, 0.0, 3.0]);
+    assert_eq!(transforms[0].u_axis(), [0.0, 1.0, 0.0]);
+    assert_eq!(transforms[0].v_axis(), [0.0, 0.0, 1.0]);
 }
 
 #[test]
@@ -791,8 +928,8 @@ fn resolves_generated_sketch_datum_from_unique_parent_relation() {
         &[definition],
         &PlacementSources {
             datums: &[
-                datum(2, crate::datum::Axis::X, 0.0),
-                datum(4, crate::datum::Axis::Y, 0.0),
+                datum(2, crate::axis::Axis::X, 0.0),
+                datum(4, crate::axis::Axis::Y, 0.0),
             ],
             surface_rows: &[],
             model_planes: &[],
@@ -805,9 +942,9 @@ fn resolves_generated_sketch_datum_from_unique_parent_relation() {
         &[],
     );
     assert_eq!(transforms.len(), 1);
-    assert_eq!(transforms[0].normal, [0.0, -1.0, 0.0]);
-    assert_eq!(transforms[0].u_axis, [0.0, 0.0, -1.0]);
-    assert_eq!(transforms[0].v_axis, [1.0, 0.0, 0.0]);
+    assert_eq!(transforms[0].normal(), [0.0, -1.0, 0.0]);
+    assert_eq!(transforms[0].u_axis(), [0.0, 0.0, -1.0]);
+    assert_eq!(transforms[0].v_axis(), [1.0, 0.0, 0.0]);
 }
 
 #[test]
@@ -880,7 +1017,7 @@ fn resolves_generated_plane_from_contextually_unambiguous_envelope_axis() {
     let transforms = resolve(
         &[definition],
         &PlacementSources {
-            datums: &[datum(2, crate::datum::Axis::X, 0.0)],
+            datums: &[datum(2, crate::axis::Axis::X, 0.0)],
             surface_rows: &[row],
             model_planes: &[],
             outline_planes: &[],
@@ -892,8 +1029,8 @@ fn resolves_generated_plane_from_contextually_unambiguous_envelope_axis() {
         &[],
     );
     assert_eq!(transforms.len(), 1);
-    assert_eq!(transforms[0].origin, [0.0, 0.0, 3.0]);
-    assert_eq!(transforms[0].normal, [0.0, 0.0, 1.0]);
+    assert_eq!(transforms[0].origin(), [0.0, 0.0, 3.0]);
+    assert_eq!(transforms[0].normal(), [0.0, 0.0, 1.0]);
 }
 
 #[test]
@@ -908,7 +1045,7 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
         radius2_ref: None,
         external_id,
         body: Vec::new(),
-        offset: external_id as usize,
+        offset: usize::try_from(external_id).expect("fixture index fits usize"),
     };
     let definition = FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
@@ -983,16 +1120,16 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
         scalar_tokens: Vec::new(),
         opaque_spans: Vec::new(),
         scalar_frames: Vec::new(),
-        terminal_scalar_frame: None,
         carrier: crate::surface::SurfaceParameterCarrier::Resolved(
             crate::surface::InlineSurfaceCarrier::Cylinder {
-                frame: PositionalCylinderFrame {
+                frame: PositionalCylinderFrame::new(
                     origin,
-                    axis: [0.0, 1.0, 0.0],
-                    ref_direction: [1.0, 0.0, 0.0],
-                    radius: 0.75,
-                    length: Some(34.0),
-                },
+                    [0.0, 1.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    0.75,
+                    Some(34.0),
+                )
+                .expect("valid positional cylinder frame"),
                 split_bounds: None,
             },
         ),
@@ -1006,19 +1143,18 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
     ];
     let entry = |entity_id, source_entity_id, offset| FeatureEntityTableEntry {
         entity_id,
-        class_id: 200,
-        payload: crate::feature::entry_payload(200, Some(source_entity_id), None, None),
+        payload: crate::feature::entity::entry_payload(200, Some(source_entity_id), None, None),
         prefixed: false,
         offset,
         end_offset: offset + 1,
-        is_surface: false,
     };
-    let tables = [FeatureEntityTable {
-        feature_id: 40,
-        table_class_id: 2,
-        entries: vec![entry(819, 252, 300), entry(822, 255, 310)],
-        offset: 290,
-    }
+    let tables = [FeatureEntityTable::new(
+        40,
+        2,
+        vec![entry(819, 252, 300), entry(822, 255, 310)],
+        &std::collections::BTreeSet::new(),
+        290,
+    )
     .with_surface_ids([819, 822])];
     let sources = PlacementSources {
         datums: &[],
@@ -1033,15 +1169,17 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
 
     assert_eq!(
         generated_cylinder_section_transform(&definition, &sources, &tables),
-        Some(FeatureSectionTransform {
-            definition_id: 917,
-            feature_id: Some(40),
-            origin: [0.0, 4.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
-            v_axis: [0.0, 0.0, -1.0],
-            normal: [0.0, 1.0, 0.0],
-            offset: 200,
-        })
+        Some(
+            FeatureSectionTransform::new(
+                917,
+                Some(40),
+                [0.0, 4.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 0.0, -1.0],
+                200
+            )
+            .expect("valid section frame")
+        )
     );
 
     let mut far_divergent = parameters.clone();
@@ -1052,7 +1190,16 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
         else {
             panic!("cylinder frame");
         };
-        frame.origin[0] += 1.0e12;
+        let mut origin = frame.frame().origin();
+        origin[0] += 1.0e12;
+        *frame = PositionalCylinderFrame::new(
+            origin,
+            frame.frame().axis(),
+            frame.frame().ref_direction(),
+            frame.radius().get(),
+            frame.length().map(PositiveLength::get),
+        )
+        .expect("valid positional cylinder frame");
     }
     let crate::surface::SurfaceParameterCarrier::Resolved(
         crate::surface::InlineSurfaceCarrier::Cylinder { frame, .. },
@@ -1060,7 +1207,14 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
     else {
         panic!("second cylinder frame");
     };
-    frame.axis = [0.1, 0.99_f64.sqrt(), 0.0];
+    *frame = PositionalCylinderFrame::new(
+        frame.frame().origin(),
+        [0.1, 0.99_f64.sqrt(), 0.0],
+        [0.99_f64.sqrt(), -0.1, 0.0],
+        frame.radius().get(),
+        frame.length().map(PositiveLength::get),
+    )
+    .expect("valid positional cylinder frame");
     let divergent_sources = PlacementSources {
         surface_parameters: &far_divergent,
         ..sources
@@ -1069,16 +1223,19 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
         generated_cylinder_section_transform(&definition, &divergent_sources, &tables).is_none()
     );
     let mut wrong_class = tables.clone();
-    wrong_class[0].entries[0].class_id = 201;
+    wrong_class[0].entries[0].payload = crate::feature::entity::EntryPayload::Plain {
+        class: crate::feature::entity::PlainClass::new(201).expect("201 is not the source class"),
+    };
     assert!(generated_cylinder_section_transform(&definition, &sources, &wrong_class).is_none());
     let mut non_surface = tables;
-    if let Some(entry) = non_surface[0]
+    let last_surface_id = non_surface[0]
         .entries
-        .iter_mut()
+        .iter()
         .rev()
-        .find(|entry| entry.is_surface)
-    {
-        entry.is_surface = false;
+        .map(|entry| entry.entity_id)
+        .find(|id| non_surface[0].surface_ids().contains(id));
+    if let Some(id) = last_surface_id {
+        non_surface[0].unmark_surface_id(id);
     }
     assert!(generated_cylinder_section_transform(&definition, &sources, &non_surface).is_none());
 }
@@ -1095,7 +1252,7 @@ fn resolves_section_frame_from_complete_generated_planar_prism() {
         radius2_ref: None,
         external_id,
         body: Vec::new(),
-        offset: external_id as usize,
+        offset: usize::try_from(external_id).expect("fixture index fits usize"),
     };
     let definition = FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
@@ -1159,16 +1316,17 @@ fn resolves_section_frame_from_complete_generated_planar_prism() {
         saved_section: None,
         offset: 90,
     };
-    let outline = |surface_id, origin, normal| OutlinePlane {
+    let outline = |surface_id, origin, normal: [f64; 3]| OutlinePlane {
         surface_id,
         origin,
-        normal,
+        normal: cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::from(normal))
+            .expect("unit normal"),
         u_axis: if normal[0] == 1.0 {
-            [0.0, 1.0, 0.0]
+            cadmpeg_ir::units::UnitVector3::Y_AXIS
         } else {
-            [1.0, 0.0, 0.0]
+            cadmpeg_ir::units::UnitVector3::X_AXIS
         },
-        offset: surface_id as usize,
+        offset: usize::try_from(surface_id).expect("fixture index fits usize"),
     };
     let outlines = [
         outline(13, [0.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
@@ -1179,19 +1337,17 @@ fn resolves_section_frame_from_complete_generated_planar_prism() {
         outline(29, [-20.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
     ];
     let entry = |entity_id, class_id, source_entity_id| FeatureEntityTableEntry {
-        payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+        payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
 
         entity_id,
-        class_id,
         prefixed: false,
-        offset: entity_id as usize,
-        end_offset: entity_id as usize + 1,
-        is_surface: false,
+        offset: usize::try_from(entity_id).expect("fixture index fits usize"),
+        end_offset: usize::try_from(entity_id).expect("fixture index fits usize") + 1,
     };
-    let tables = [FeatureEntityTable {
-        feature_id: 10,
-        table_class_id: 79,
-        entries: vec![
+    let tables = [FeatureEntityTable::new(
+        10,
+        79,
+        vec![
             entry(13, 204, None),
             entry(18, 203, None),
             entry(23, 200, Some(4)),
@@ -1199,8 +1355,9 @@ fn resolves_section_frame_from_complete_generated_planar_prism() {
             entry(27, 200, Some(6)),
             entry(29, 200, Some(7)),
         ],
-        offset: 200,
-    }
+        &std::collections::BTreeSet::new(),
+        200,
+    )
     .with_surface_ids([13, 18, 23, 25, 27, 29])];
     let sources = PlacementSources {
         datums: &[],
@@ -1215,15 +1372,17 @@ fn resolves_section_frame_from_complete_generated_planar_prism() {
 
     assert_eq!(
         generated_planar_section_transform(&definition, &sources, &tables),
-        Some(FeatureSectionTransform {
-            definition_id: 917,
-            feature_id: Some(10),
-            origin: [0.0, 0.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
-            v_axis: [0.0, 0.0, -1.0],
-            normal: [-0.0, 1.0, 0.0],
-            offset: 200,
-        })
+        Some(
+            FeatureSectionTransform::new(
+                917,
+                Some(10),
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 0.0, -1.0],
+                200
+            )
+            .expect("valid section frame")
+        )
     );
 
     let mut oriented_definition = definition;
@@ -1242,15 +1401,15 @@ fn resolves_section_frame_from_complete_generated_planar_prism() {
     });
     assert_eq!(
         resolve(&[oriented_definition.clone()], &sources, &tables),
-        vec![FeatureSectionTransform {
-            definition_id: 917,
-            feature_id: Some(10),
-            origin: [0.0, 0.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
-            v_axis: [0.0, 0.0, 1.0],
-            normal: [0.0, -1.0, 0.0],
-            offset: 200,
-        }]
+        vec![FeatureSectionTransform::new(
+            917,
+            Some(10),
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            200
+        )
+        .expect("valid section frame")]
     );
 
     let mut row_flipped_definition = oriented_definition.clone();
@@ -1270,15 +1429,15 @@ fn resolves_section_frame_from_complete_generated_planar_prism() {
         }]);
     assert_eq!(
         resolve(&[row_flipped_definition], &sources, &tables),
-        vec![FeatureSectionTransform {
-            definition_id: 917,
-            feature_id: Some(10),
-            origin: [0.0, 0.0, 0.0],
-            u_axis: [-1.0, -0.0, -0.0],
-            v_axis: [0.0, 0.0, 1.0],
-            normal: [0.0, 1.0, 0.0],
-            offset: 200,
-        }]
+        vec![FeatureSectionTransform::new(
+            917,
+            Some(10),
+            [0.0, 0.0, 0.0],
+            [-1.0, -0.0, -0.0],
+            [0.0, 0.0, 1.0],
+            200
+        )
+        .expect("valid section frame")]
     );
 
     let mut doubly_flipped_definition = oriented_definition;
@@ -1289,15 +1448,15 @@ fn resolves_section_frame_from_complete_generated_planar_prism() {
         .sketch_plane_flip = Some(BinaryFlag::Set);
     assert_eq!(
         resolve(&[doubly_flipped_definition], &sources, &tables),
-        vec![FeatureSectionTransform {
-            definition_id: 917,
-            feature_id: Some(10),
-            origin: [0.0, 0.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
-            v_axis: [0.0, 0.0, -1.0],
-            normal: [-0.0, 1.0, 0.0],
-            offset: 200,
-        }]
+        vec![FeatureSectionTransform::new(
+            917,
+            Some(10),
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, -1.0],
+            200
+        )
+        .expect("valid section frame")]
     );
 }
 
@@ -1312,7 +1471,7 @@ fn scan_decodes_featdefs_gsec3d_placement_references() {
         dim_id_tab\0\xf3\xf8\x02\x07\x81\x01"
         .to_vec();
     let data = build_prt("c", &[("FeatDefs", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     let section = scan.features.definitions[0]
         .section_3d
@@ -1321,7 +1480,7 @@ fn scan_decodes_featdefs_gsec3d_placement_references() {
     assert_eq!(section.sketch_plane_entity_id, Some(769));
     assert_eq!(
         section.sketch_plane_flip,
-        Some(crate::feature::BinaryFlag::Set)
+        Some(crate::feature::definitions::BinaryFlag::Set)
     );
     assert_eq!(
         section.reference_planes.entity_ids().collect::<Vec<_>>(),
@@ -1330,13 +1489,13 @@ fn scan_decodes_featdefs_gsec3d_placement_references() {
     assert_eq!(section.reference_plane_datum_geometry_id, Some(9));
     assert_eq!(
         section.orientation.section_flip,
-        Some(crate::feature::BinaryFlag::Set)
+        Some(crate::feature::definitions::BinaryFlag::Set)
     );
     assert_eq!(section.orientation.reference_type, Some(2));
     assert_eq!(section.orientation.segment_id, Some(300));
     assert_eq!(
         section.orientation.reference_flip,
-        Some(crate::feature::BinaryFlag::Clear)
+        Some(crate::feature::definitions::BinaryFlag::Clear)
     );
     assert_eq!(section.dimension_ids, vec![7, 257]);
 
@@ -1365,7 +1524,7 @@ fn named_gsec3d_fields_stop_at_the_next_record() {
     let mut payload = b"feat_defs_40\0\xe0\x00gsec3d_ptr\0".to_vec();
     payload
         .extend_from_slice(b"\xe0\x00gsec3d_ptr\0plane_id\0\x83\x01\xe0\x00p_saved_result\0\xe3");
-    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("FeatDefs", payload)]));
 
     let section = scan.features.definitions[0]
         .section_3d
@@ -1381,7 +1540,7 @@ fn named_gsec3d_fields_extend_to_the_placement_close() {
     payload.resize(payload.len() + 300, 0);
     payload
         .extend_from_slice(b"\xe0\x01plane_id\0\x09plane_id\0\x83\x01\xe0\x00p_saved_result\0\xe3");
-    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("FeatDefs", payload)]));
 
     let section = scan.features.definitions[0]
         .section_3d
@@ -1393,4 +1552,77 @@ fn named_gsec3d_fields_extend_to_the_placement_close() {
         vec![5]
     );
     assert_eq!(section.reference_plane_datum_geometry_id, Some(9));
+}
+
+#[test]
+fn section_frame_admission_rejects_invalid_numeric_components() {
+    let origin = [0.0; 3];
+    let u_axis = [1.0, 0.0, 0.0];
+    let v_axis = [0.0, 1.0, 0.0];
+    for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        for component in 0..3 {
+            let mut invalid_origin = origin;
+            invalid_origin[component] = invalid;
+            assert!(
+                FeatureSectionTransform::new(1, None, invalid_origin, u_axis, v_axis, 0).is_none()
+            );
+            let mut invalid_u = u_axis;
+            invalid_u[component] = invalid;
+            assert!(FeatureSectionTransform::new(1, None, origin, invalid_u, v_axis, 0).is_none());
+            let mut invalid_v = v_axis;
+            invalid_v[component] = invalid;
+            assert!(FeatureSectionTransform::new(1, None, origin, u_axis, invalid_v, 0).is_none());
+        }
+    }
+    assert!(FeatureSectionTransform::new(1, None, origin, [0.0; 3], v_axis, 0).is_none());
+    assert!(FeatureSectionTransform::new(1, None, origin, u_axis, [0.0; 3], 0).is_none());
+    assert!(FeatureSectionTransform::new(1, None, origin, [2.0, 0.0, 0.0], v_axis, 0).is_none());
+    assert!(FeatureSectionTransform::new(1, None, origin, u_axis, [0.0, 2.0, 0.0], 0).is_none());
+    assert!(FeatureSectionTransform::new(1, None, origin, u_axis, u_axis, 0).is_none());
+}
+
+#[test]
+fn section_frame_derives_normal_from_rotated_axes() {
+    let diagonal = 0.5_f64.sqrt();
+    let u_axis = [diagonal, -diagonal, 0.0];
+    let v_axis = [0.0, 0.0, -1.0];
+    let frame = FeatureSectionTransform::new(1, None, [1.0, 2.0, 3.0], u_axis, v_axis, 0)
+        .expect("orthonormal frame");
+    assert_eq!(frame.normal(), cross(u_axis, v_axis));
+    assert_eq!(frame.normal(), [diagonal, diagonal, 0.0]);
+}
+
+#[test]
+fn section_frame_preserves_reconstructed_frame_tolerance() {
+    let u_axis = [(1.0 + EPS_PLACEMENT_GEOMETRY * 0.5).sqrt(), 0.0, 0.0];
+    assert!(FeatureSectionTransform::new(1, None, [0.0; 3], u_axis, [0.0, 1.0, 0.0], 0).is_some());
+    assert!(FeatureSectionTransform::new(
+        1,
+        None,
+        [0.0; 3],
+        [f64::MAX, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        0
+    )
+    .is_none());
+}
+
+#[test]
+fn section_frame_refuses_a_non_finite_origin_or_axis() {
+    let u_axis = [1.0, 0.0, 0.0];
+    let v_axis = [0.0, 1.0, 0.0];
+    for component in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert!(
+            FeatureSectionTransform::new(1, None, [0.0, component, 0.0], u_axis, v_axis, 0)
+                .is_none()
+        );
+        assert!(
+            FeatureSectionTransform::new(1, None, [0.0; 3], [component, 0.0, 0.0], v_axis, 0)
+                .is_none()
+        );
+        assert!(
+            FeatureSectionTransform::new(1, None, [0.0; 3], u_axis, [0.0, component, 0.0], 0)
+                .is_none()
+        );
+    }
 }

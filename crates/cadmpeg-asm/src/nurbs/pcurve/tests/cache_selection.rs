@@ -1,7 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
 use crate::kernel_header::RefWidth;
+use crate::nurbs::core::curve_cache;
+use crate::nurbs::core::decode_curve_cache;
+use crate::nurbs::core::decode_surface_cache;
+use crate::nurbs::core::final_curve_patch_layout;
+use crate::nurbs::core::final_surface_patch_layout;
+use crate::nurbs::core::first_curve_patch_layout;
+use crate::nurbs::core::surface_cache;
+use crate::nurbs::core::surface_patch_layout_at;
+use crate::nurbs::pcurve::tests::curve_block;
+use crate::nurbs::pcurve::tests::curve_block_with_endpoint;
+use crate::nurbs::pcurve::tests::pcurve_block;
+use crate::nurbs::pcurve::tests::push_f64;
+use crate::nurbs::pcurve::tests::push_ident;
+use crate::nurbs::pcurve::tests::push_int;
+use crate::nurbs::pcurve::tests::push_string;
+use crate::nurbs::pcurve::tests::push_vector;
+use crate::nurbs::pcurve::tests::surface_block;
+use crate::nurbs::pcurve::tests::surface_block_with_x_offset;
+use crate::nurbs::proc_curve::procedural_curve_resolving_refs;
+use crate::nurbs::toks::lex_test_span;
+use crate::nurbs::toks::test_table;
 
 #[test]
 fn curve_cache_decodes_in_both_integer_widths() {
@@ -12,7 +32,7 @@ fn curve_cache_decodes_in_both_integer_widths() {
         assert_eq!(curve.degree(), 1);
         assert_eq!(curve.control_points().len(), 2);
         assert_eq!(curve.control_points()[1].x, 10.0); // cm→mm ×10
-        assert_eq!(curve.knots(), [0.0, 0.0, 1.0, 1.0]);
+        assert_eq!(curve.knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
         assert!(first_curve_patch_layout(&block, int_width).is_some());
         assert!(final_curve_patch_layout(&block, int_width).is_some());
         let other_width = match int_width {
@@ -52,6 +72,13 @@ fn generic_curve_and_pcurve_caches_withhold_multiple_candidates() {
 
 #[test]
 fn wrapper_directrix_fields_reject_nested_curve_substitution() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &asm_decode_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut subset = vec![0x0f];
         push_ident(&mut subset, "subset_int_cur");
@@ -64,10 +91,16 @@ fn wrapper_directrix_fields_reject_nested_curve_substitution() {
         subset.extend_from_slice(&curve_block(int_width));
         push_f64(&mut subset, 0.001);
         subset.push(0x10);
-        let subset_tokens = lex_test_span(&subset, int_width);
-        let subset_decoded =
-            procedural_curve_resolving_refs(&subset_tokens, &test_table(&subset, int_width))
-                .unwrap_or_else(|| panic!("nested subset source at width {int_width}"));
+        let subset_tokens =
+            lex_test_span(&subset, int_width).expect("valid single-record byte fixture");
+        let subset_decoded = procedural_curve_resolving_refs(
+            &asm_decode_ctx,
+            &subset_tokens,
+            &test_table(&subset, int_width).expect("valid single-record byte fixture"),
+        )
+        .transpose()
+        .expect("resource allocation did not fail")
+        .unwrap_or_else(|| panic!("nested subset source at width {int_width}"));
         assert!(!matches!(
             subset_decoded.construction,
             crate::nurbs::proc_curve::ProceduralCurveConstruction::Subset(_)
@@ -90,10 +123,16 @@ fn wrapper_directrix_fields_reject_nested_curve_substitution() {
         offset.extend_from_slice(&curve_block(int_width));
         push_f64(&mut offset, 0.001);
         offset.push(0x10);
-        let offset_tokens = lex_test_span(&offset, int_width);
-        let offset_decoded =
-            procedural_curve_resolving_refs(&offset_tokens, &test_table(&offset, int_width))
-                .unwrap_or_else(|| panic!("nested vector-offset source at width {int_width}"));
+        let offset_tokens =
+            lex_test_span(&offset, int_width).expect("valid single-record byte fixture");
+        let offset_decoded = procedural_curve_resolving_refs(
+            &asm_decode_ctx,
+            &offset_tokens,
+            &test_table(&offset, int_width).expect("valid single-record byte fixture"),
+        )
+        .transpose()
+        .expect("resource allocation did not fail")
+        .unwrap_or_else(|| panic!("nested vector-offset source at width {int_width}"));
         assert!(!matches!(
             offset_decoded.construction,
             crate::nurbs::proc_curve::ProceduralCurveConstruction::VectorOffset(_)
@@ -103,6 +142,13 @@ fn wrapper_directrix_fields_reject_nested_curve_substitution() {
 
 #[test]
 fn pcurve_fit_tolerance_withholds_nested_only_cache() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "exp_par_cur");
@@ -113,8 +159,10 @@ fn pcurve_fit_tolerance_withholds_nested_only_cache() {
         bytes.push(0x10);
         bytes.push(0x10);
 
-        let tokens = lex_test_span(&bytes, int_width);
-        assert!(super::pcurve_fit_tolerance(&tokens).is_none());
+        let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
+        let scope = crate::nurbs::toks::subtype_span(&tokens, 0)
+            .expect("the fixture opens one balanced scope");
+        assert!(super::pcurve_fit_tolerance(&resource_ctx, scope).is_none());
     }
 }
 
@@ -215,6 +263,13 @@ fn surface_cache_decodes_in_both_integer_widths() {
 
 #[test]
 fn token_curve_cache_ignores_nested_support_scope() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "exact_int_cur");
@@ -225,8 +280,10 @@ fn token_curve_cache_ignores_nested_support_scope() {
         bytes.extend_from_slice(&curve_block_with_endpoint(int_width, [7.0, 0.0, 0.0]));
         bytes.push(0x10);
 
-        let tokens = lex_test_span(&bytes, int_width);
-        let curve = curve_cache(&tokens)
+        let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
+        let curve = curve_cache(&resource_ctx, &tokens)
+            .transpose()
+            .expect("resource allocation")
             .unwrap_or_else(|| panic!("owned curve cache at width {int_width}"));
 
         assert!((curve.control_points()[1].x - 70.0).abs() < f64::EPSILON);
@@ -235,6 +292,13 @@ fn token_curve_cache_ignores_nested_support_scope() {
 
 #[test]
 fn procedural_curve_cache_ignores_nested_support_scope() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &asm_decode_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "spring_int_cur");
@@ -245,9 +309,15 @@ fn procedural_curve_cache_ignores_nested_support_scope() {
         bytes.extend_from_slice(&curve_block_with_endpoint(int_width, [7.0, 0.0, 0.0]));
         bytes.push(0x10);
 
-        let tokens = lex_test_span(&bytes, int_width);
-        let decoded = procedural_curve_resolving_refs(&tokens, &test_table(&bytes, int_width))
-            .unwrap_or_else(|| panic!("procedural curve at width {int_width}"));
+        let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
+        let decoded = procedural_curve_resolving_refs(
+            &asm_decode_ctx,
+            &tokens,
+            &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
+        )
+        .transpose()
+        .expect("resource allocation did not fail")
+        .unwrap_or_else(|| panic!("procedural curve at width {int_width}"));
 
         assert!((decoded.curve.control_points()[1].x - 70.0).abs() < f64::EPSILON);
     }
@@ -255,6 +325,13 @@ fn procedural_curve_cache_ignores_nested_support_scope() {
 
 #[test]
 fn procedural_curve_with_only_nested_cache_is_withheld() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &asm_decode_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "spring_int_cur");
@@ -264,14 +341,28 @@ fn procedural_curve_with_only_nested_cache_is_withheld() {
         bytes.push(0x10);
         bytes.push(0x10);
 
-        let tokens = lex_test_span(&bytes, int_width);
+        let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
 
-        assert!(procedural_curve_resolving_refs(&tokens, &test_table(&bytes, int_width)).is_none());
+        assert!(procedural_curve_resolving_refs(
+            &asm_decode_ctx,
+            &tokens,
+            &test_table(&bytes, int_width).expect("valid single-record byte fixture")
+        )
+        .transpose()
+        .expect("resource allocation did not fail")
+        .is_none());
     }
 }
 
 #[test]
 fn token_surface_cache_ignores_later_nested_support_scope() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "off_spl_sur");
@@ -282,10 +373,293 @@ fn token_surface_cache_ignores_later_nested_support_scope() {
         bytes.push(0x10);
         bytes.push(0x10);
 
-        let tokens = lex_test_span(&bytes, int_width);
-        let surface = surface_cache(&tokens)
+        let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
+        let surface = surface_cache(&resource_ctx, &tokens)
+            .transpose()
+            .expect("resource allocation")
             .unwrap_or_else(|| panic!("owned surface cache at width {int_width}"));
 
-        assert!((surface.control_points()[0].x - 50.0).abs() < f64::EPSILON);
+        assert!((surface.poles()[0].x - 50.0).abs() < f64::EPSILON);
+    }
+}
+
+/// `docs/formats/asm.md` states construction-cache ownership: "the outer
+/// non-`ref` procedural subtype owns the record's solved curve or surface
+/// cache". Two cache-bearing owned scopes name no single owner, so the record
+/// states no cache and every route that reads one refuses. The record's own
+/// stream is not a second answer.
+#[test]
+fn two_cache_bearing_owned_scopes_state_no_record_cache() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &asm_decode_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
+        let mut bytes = vec![0x0f];
+        push_ident(&mut bytes, "exact_int_cur");
+        bytes.extend_from_slice(&curve_block_with_endpoint(int_width, [2.0, 0.0, 0.0]));
+        bytes.push(0x10);
+        bytes.push(0x0f);
+        push_ident(&mut bytes, "exact_int_cur");
+        bytes.extend_from_slice(&curve_block_with_endpoint(int_width, [7.0, 0.0, 0.0]));
+        bytes.push(0x10);
+
+        let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
+        assert!(crate::nurbs::toks::cache_scope(&resource_ctx, &tokens)
+            .transpose()
+            .unwrap()
+            .is_none());
+        assert!(curve_cache(&resource_ctx, &tokens).is_none());
+        assert!(procedural_curve_resolving_refs(
+            &asm_decode_ctx,
+            &tokens,
+            &test_table(&bytes, int_width).expect("valid single-record byte fixture")
+        )
+        .transpose()
+        .expect("resource allocation did not fail")
+        .is_none());
+
+        let mut surfaces = vec![0x0f];
+        push_ident(&mut surfaces, "off_spl_sur");
+        surfaces.extend_from_slice(&surface_block_with_x_offset(int_width, 5.0));
+        surfaces.push(0x10);
+        surfaces.push(0x0f);
+        push_ident(&mut surfaces, "off_spl_sur");
+        surfaces.extend_from_slice(&surface_block_with_x_offset(int_width, 9.0));
+        surfaces.push(0x10);
+
+        let surface_tokens =
+            lex_test_span(&surfaces, int_width).expect("valid single-record byte fixture");
+        assert!(
+            crate::nurbs::toks::cache_scope(&resource_ctx, &surface_tokens)
+                .transpose()
+                .unwrap()
+                .is_none()
+        );
+        assert!(surface_cache(&resource_ctx, &surface_tokens).is_none());
+    }
+}
+
+/// A record that owns a construction whose scopes bear no B-spline marker
+/// states no cache: the blocks that remain belong to nested support, source,
+/// guide or child fields, which the ownership sentence excludes.
+#[test]
+fn a_construction_with_no_cache_bearing_owned_scope_states_no_record_cache() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
+        let mut bytes = vec![0x0f];
+        push_ident(&mut bytes, "spring_int_cur");
+        bytes.push(0x0f);
+        push_ident(&mut bytes, "support");
+        bytes.extend_from_slice(&curve_block(int_width));
+        bytes.push(0x10);
+        bytes.push(0x10);
+
+        let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
+        assert!(crate::nurbs::toks::cache_scope(&resource_ctx, &tokens)
+            .transpose()
+            .unwrap()
+            .is_none());
+        assert!(curve_cache(&resource_ctx, &tokens).is_none());
+        assert!(surface_cache(&resource_ctx, &tokens).is_none());
+    }
+}
+
+/// A record that owns no non-`ref` subtype states no construction, so no
+/// construction's ownership rule applies to its blocks and its own stream is
+/// the cache span.
+#[test]
+fn a_record_with_no_construction_carries_its_cache_in_its_own_stream() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
+        let bytes = curve_block(int_width);
+        let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
+
+        assert_eq!(
+            crate::nurbs::toks::cache_scope(&resource_ctx, &tokens)
+                .transpose()
+                .unwrap(),
+            Some(&tokens[..])
+        );
+        let curve = curve_cache(&resource_ctx, &tokens)
+            .transpose()
+            .expect("resource allocation")
+            .unwrap_or_else(|| panic!("record-stream curve cache at width {int_width}"));
+        assert_eq!(curve.degree(), 1);
+    }
+}
+
+/// The token-space owned-cache decoder reads the scope, not a raw stream.
+/// `subtype_span` is its only source, so the balance the raw walk refuses is a
+/// state the argument cannot hold and the decoder states no refusal for it.
+#[test]
+fn a_token_scope_decodes_the_curve_cache_it_owns_through_the_scope_type() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
+        let mut bytes = vec![0x0f];
+        push_ident(&mut bytes, "exact_int_cur");
+        bytes.push(0x0f);
+        push_ident(&mut bytes, "support");
+        bytes.extend_from_slice(&curve_block_with_endpoint(int_width, [2.0, 0.0, 0.0]));
+        bytes.push(0x10);
+        bytes.extend_from_slice(&curve_block_with_endpoint(int_width, [7.0, 0.0, 0.0]));
+        bytes.push(0x10);
+
+        let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
+        let scope = crate::nurbs::toks::subtype_span(&tokens, 0).expect("balanced scope");
+        let curve = crate::nurbs::core::owned_curve_cache(&resource_ctx, scope)
+            .transpose()
+            .expect("resource allocation")
+            .unwrap_or_else(|| panic!("owned curve cache at width {int_width}"));
+
+        assert!((curve.control_points()[1].x - 70.0).abs() < f64::EPSILON);
+    }
+}
+
+/// The byte-space owned-cache decoder reads the scope, not a raw stream.
+#[test]
+fn a_byte_scope_decodes_the_curve_cache_it_owns_through_the_scope_type() {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
+        let mut bytes = vec![0x0f];
+        push_ident(&mut bytes, "exact_int_cur");
+        bytes.push(0x0f);
+        push_ident(&mut bytes, "support");
+        bytes.extend_from_slice(&curve_block_with_endpoint(int_width, [2.0, 0.0, 0.0]));
+        bytes.push(0x10);
+        bytes.extend_from_slice(&curve_block_with_endpoint(int_width, [7.0, 0.0, 0.0]));
+        bytes.push(0x10);
+
+        let scope =
+            crate::nurbs::subtypes::subtype_span(&bytes, 0, int_width).expect("balanced scope");
+        let curve = crate::nurbs::core::decode_owned_curve_cache_at(scope, int_width)
+            .unwrap_or_else(|| panic!("owned curve cache at width {int_width}"));
+
+        assert!((curve.control_points()[1].x - 70.0).abs() < f64::EPSILON);
+    }
+}
+
+/// The explicit-pcurve decoder reads an `exp_par_cur` scope, not a raw stream.
+/// `subtype_span` and `payload_subtype_toks` are its only sources, so the
+/// unbalanced stream the free walk refuses is a state the argument cannot hold.
+#[test]
+fn an_exp_par_cur_scope_decodes_its_own_bs2_field_through_the_scope_type() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
+        let mut bytes = vec![0x0f];
+        push_ident(&mut bytes, "exp_par_cur");
+        bytes.extend_from_slice(&pcurve_block(int_width));
+        bytes.push(0x10);
+
+        let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
+        let scope = crate::nurbs::toks::subtype_span(&tokens, 0).expect("balanced scope");
+        let pcurve = crate::nurbs::pcurve::explicit_pcurve_cache(&resource_ctx, scope)
+            .transpose()
+            .expect("resource allocation")
+            .unwrap_or_else(|| panic!("explicit pcurve cache at width {int_width}"));
+
+        assert_eq!(pcurve.degree(), 1);
+        assert_eq!(pcurve.knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
+    }
+}
+
+/// Each subtype definition contributes one table entry in stream order, so an
+/// index at or beyond the table's length names no definition the stream states
+/// (`docs/formats/asm.md`). The decoder's decision at such an index: the
+/// reference search refuses the stream there and does not go on to the
+/// resolvable reference behind it.
+#[test]
+fn an_unresolvable_subtype_reference_refuses_the_search_behind_it() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
+        let mut definition = vec![0x0f];
+        push_ident(&mut definition, "exact_int_cur");
+        definition.extend_from_slice(&curve_block(int_width));
+        definition.push(0x10);
+
+        let mut references = vec![0x0f];
+        push_ident(&mut references, "ref");
+        push_int(&mut references, 0x04, 99, int_width);
+        references.push(0x10);
+        references.push(0x0f);
+        push_ident(&mut references, "ref");
+        push_int(&mut references, 0x04, 0, int_width);
+        references.push(0x10);
+
+        let definition_tokens =
+            lex_test_span(&definition, int_width).expect("valid single-record byte fixture");
+        let reference_tokens =
+            lex_test_span(&references, int_width).expect("valid single-record byte fixture");
+        let records = [
+            crate::sab::Record {
+                index: 0,
+                name: String::new(),
+                tokens: definition_tokens,
+                offset: 0,
+                len: 0,
+            },
+            crate::sab::Record {
+                index: 1,
+                name: String::new(),
+                tokens: reference_tokens.clone(),
+                offset: 0,
+                len: 0,
+            },
+        ];
+        let table =
+            crate::nurbs::toks::SubtypeTable::from_records(&resource_ctx, &records).unwrap();
+
+        // Entry zero is the cache-bearing definition, and the record states
+        // `{ref 99}` before `{ref 0}`.
+        assert!(table.span(0).is_some());
+        assert!(table.span(99).is_none());
+        assert!(
+            crate::nurbs::core::curve_cache_resolving_refs(
+                &resource_ctx,
+                &reference_tokens,
+                &table
+            )
+            .is_none(),
+            "the unresolvable reference at width {int_width} must refuse the search"
+        );
     }
 }

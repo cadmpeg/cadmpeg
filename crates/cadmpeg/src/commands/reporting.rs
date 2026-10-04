@@ -5,16 +5,16 @@ use std::io::{self, Write};
 use std::path::Path;
 
 use anyhow::Result;
-use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
+use cadmpeg_ir::report::{check::ValidationReport, decode::DecodeReport, export::ExportReport};
 use cadmpeg_ir::SourceFidelity;
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 
-use crate::application::artifact_store::{self, SidecarPersistOutcome};
+use crate::application::artifact_store::{FileDestination, SidecarPersistOutcome};
 use crate::application::refusal::ConversionRefusal;
 use crate::application::transcoder::{EmittedArtifact, ExportEmission};
 
-pub(super) fn print_source_diff(source: &cadmpeg_ir::SourceDiff) {
+pub(super) fn print_source_diff(source: &cadmpeg_ir::SourceDiff) -> Result<()> {
     if let Some(change) = &source.format_change {
         let before = change.before().unwrap_or("");
         let after = change.after().unwrap_or("");
@@ -23,8 +23,8 @@ pub(super) fn print_source_diff(source: &cadmpeg_ir::SourceDiff) {
     if let Some(change) = &source.dialects_change {
         println!(
             "  source dialect layers: {} → {}",
-            render_dialect_layers(change.before()),
-            render_dialect_layers(change.after())
+            render_dialect_layers(change.before())?,
+            render_dialect_layers(change.after())?
         );
     }
     for change in &source.attributes {
@@ -36,7 +36,7 @@ pub(super) fn print_source_diff(source: &cadmpeg_ir::SourceDiff) {
         );
     }
     if source.local_digests.is_empty() {
-        return;
+        return Ok(());
     }
     println!("  machine-local digests (informational, not a difference):");
     for change in &source.local_digests {
@@ -47,13 +47,13 @@ pub(super) fn print_source_diff(source: &cadmpeg_ir::SourceDiff) {
             render_attribute(change.right.as_deref())
         );
     }
+    Ok(())
 }
 
-fn render_dialect_layers(layers: Option<&cadmpeg_core::dialect::DialectLayers>) -> String {
-    layers.map_or_else(
-        || "<absent>".to_owned(),
-        |layers| serde_json::to_string(layers).expect("dialect layers always serialize"),
-    )
+fn render_dialect_layers(
+    layers: Option<&cadmpeg_core::dialect::DialectLayers>,
+) -> Result<String, serde_json::Error> {
+    layers.map_or_else(|| Ok("<absent>".to_owned()), serde_json::to_string)
 }
 
 fn render_attribute(value: Option<&str>) -> String {
@@ -77,7 +77,7 @@ impl FidelityDiff {
     fn between(left: &SourceFidelity, right: &SourceFidelity) -> Self {
         Self {
             annotations_changed: left.annotations != right.annotations,
-            retained_records_changed: left.retained_records != right.retained_records,
+            retained_records_changed: left.retained_records() != right.retained_records(),
         }
     }
 
@@ -169,51 +169,62 @@ pub(super) enum CommandReportBody<'a> {
     Refused(&'a ConversionRefusal),
 }
 
-impl<'a> CommandReportBody<'a> {
-    fn command_report(self, command: &'static str) -> CommandReport<'a, Self> {
-        match self {
-            Self::Ok { .. } => CommandReport::ok(command, self),
-            Self::Refused(refusal) => CommandReport::refused(command, self, refusal),
-        }
-    }
+/// Reports completed by a command.
+#[derive(Serialize)]
+pub(super) struct Reports<'a> {
+    decode_report: Option<&'a DecodeReport>,
+    check_report: Option<&'a ValidationReport>,
+    export: Option<&'a ExportReport>,
 }
 
-impl Serialize for CommandReportBody<'_> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
-        let reports = match self {
+impl CommandReportBody<'_> {
+    fn command_report(&self, command: &'static str) -> CommandReport<'_, Reports<'_>> {
+        CommandReport::new(command, self.payload())
+    }
+
+    /// Returns the reports with their command status.
+    pub(super) fn payload(&self) -> Payload<'_, Reports<'_>> {
+        match self {
             Self::Ok {
                 decode_report,
                 check_report,
                 export,
-            } => (*decode_report, *check_report, *export),
+            } => Payload::Ok(Reports {
+                decode_report: *decode_report,
+                check_report: *check_report,
+                export: *export,
+            }),
             Self::Refused(refusal) => {
                 let reports = refusal.evidence().reports;
-                (reports.decode, reports.check, reports.export)
+                Payload::Refused(
+                    Reports {
+                        decode_report: reports.decode,
+                        check_report: reports.check,
+                        export: reports.export,
+                    },
+                    refusal,
+                )
             }
-        };
-        let mut state = serializer.serialize_struct("CommandReportBody", 3)?;
-        state.serialize_field("decode_report", &reports.0)?;
-        state.serialize_field("check_report", &reports.1)?;
-        state.serialize_field("export", &reports.2)?;
-        state.end()
+        }
     }
 }
 
 pub(super) fn write_command_report(
     input: &Path,
-    output: Option<&Path>,
-    force: bool,
+    output: Option<&FileDestination>,
     command: &'static str,
     body: CommandReportBody<'_>,
 ) -> Result<()> {
-    write_serialized_report(input, output, force, &body.command_report(command))
+    write_serialized_report(input, output, &body.command_report(command))
 }
 
 pub(super) fn command_body_json(
     command: &'static str,
     body: CommandReportBody<'_>,
 ) -> Result<String> {
-    Ok(serde_json::to_string_pretty(&body.command_report(command))?)
+    Ok(cadmpeg_ir::hash::finite_json::to_canonical_json_string(
+        &body.command_report(command),
+    )?)
 }
 
 fn generator() -> String {
@@ -276,119 +287,123 @@ enum CommandStatus {
     Refused,
 }
 
-enum Outcome<'a> {
-    Ok,
-    Refused(crate::application::refusal::RefusalReport<'a>),
+/// A body a command report may carry.
+///
+/// The trait is closed to the payload types below, so a report body cannot be
+/// another `Payload` and cannot flatten a second `status` key into the report.
+pub(crate) trait ReportBody: Serialize {}
+
+impl ReportBody for Reports<'_> {}
+impl ReportBody for super::InspectPayload<'_> {}
+impl ReportBody for super::DiffReportPayload<'_> {}
+impl ReportBody for serde_json::Value {}
+impl<T: ReportBody + ?Sized> ReportBody for &T {}
+
+/// Status-bearing serialized command payload.
+pub(super) enum Payload<'a, P: ReportBody> {
+    Ok(P),
+    Refused(P, &'a ConversionRefusal),
 }
 
-impl Serialize for Outcome<'_> {
+impl<P: ReportBody> Serialize for Payload<'_, P> {
     fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
-        let mut state = serializer.serialize_struct("CommandOutcome", 2)?;
-        match self {
-            Self::Ok => {
-                state.serialize_field("status", &CommandStatus::Ok)?;
-                state.serialize_field(
-                    "refusal",
-                    &Option::<&crate::application::refusal::RefusalReport<'_>>::None,
-                )?;
-            }
-            Self::Refused(refusal) => {
-                state.serialize_field("status", &CommandStatus::Refused)?;
-                state.serialize_field("refusal", refusal)?;
-            }
+        #[derive(Serialize)]
+        struct Fields<'a, P> {
+            status: CommandStatus,
+            refusal: Option<crate::application::refusal::RefusalReport<'a>>,
+            #[serde(flatten)]
+            payload: P,
         }
-        state.end()
+        let fields = match self {
+            Self::Ok(payload) => Fields {
+                status: CommandStatus::Ok,
+                refusal: None,
+                payload,
+            },
+            Self::Refused(payload, refusal) => Fields {
+                status: CommandStatus::Refused,
+                refusal: Some(refusal.report()),
+                payload,
+            },
+        };
+        fields.serialize(serializer)
     }
 }
 
 #[derive(Serialize)]
-struct CommandReport<'a, P> {
+struct CommandReport<'a, P: ReportBody> {
+    ir_version: cadmpeg_ir::document::IrVersion,
     command: &'static str,
     generator: String,
     #[serde(flatten)]
-    outcome: Outcome<'a>,
-    #[serde(flatten)]
-    payload: P,
+    payload: Payload<'a, P>,
 }
 
-impl<'a, P> CommandReport<'a, P> {
-    fn ok(command: &'static str, payload: P) -> Self {
+impl<'a, P: ReportBody> CommandReport<'a, P> {
+    fn new(command: &'static str, payload: Payload<'a, P>) -> Self {
         Self {
+            ir_version: cadmpeg_ir::document::IrVersion,
             command,
             generator: generator(),
-            outcome: Outcome::Ok,
-            payload,
-        }
-    }
-
-    fn refused(command: &'static str, payload: P, refusal: &'a ConversionRefusal) -> Self {
-        Self {
-            command,
-            generator: generator(),
-            outcome: Outcome::Refused(refusal.report()),
             payload,
         }
     }
 }
 
-pub(crate) fn command_report_json<P: Serialize>(
+pub(crate) fn command_report_json<P: ReportBody>(
     command: &'static str,
     payload: P,
 ) -> Result<String> {
-    Ok(serde_json::to_string_pretty(&CommandReport::ok(
-        command, payload,
-    ))?)
+    Ok(cadmpeg_ir::hash::finite_json::to_canonical_json_string(
+        &CommandReport::new(command, Payload::Ok(payload)),
+    )?)
 }
 
-pub(crate) fn refused_command_report_json<P: Serialize>(
+pub(super) fn refused_command_report_json<P: ReportBody>(
     command: &'static str,
     payload: P,
     refusal: &ConversionRefusal,
 ) -> Result<String> {
-    Ok(serde_json::to_string_pretty(&CommandReport::refused(
-        command, payload, refusal,
-    ))?)
+    Ok(cadmpeg_ir::hash::finite_json::to_canonical_json_string(
+        &CommandReport::new(command, Payload::Refused(payload, refusal)),
+    )?)
 }
 
-pub(super) fn write_json_report<P: Serialize>(
+pub(super) fn write_json_report<P: ReportBody>(
     input: &Path,
-    output: Option<&Path>,
-    force: bool,
+    output: Option<&FileDestination>,
     command: &'static str,
     payload: &P,
-) -> Result<()> {
-    write_serialized_report(input, output, force, &CommandReport::ok(command, payload))
-}
-
-pub(super) fn write_refused_json_report<P: Serialize>(
-    input: &Path,
-    output: Option<&Path>,
-    force: bool,
-    command: &'static str,
-    payload: &P,
-    refusal: &ConversionRefusal,
 ) -> Result<()> {
     write_serialized_report(
         input,
         output,
-        force,
-        &CommandReport::refused(command, payload, refusal),
+        &CommandReport::new(command, Payload::Ok(payload)),
     )
+}
+
+/// Writes a status-bearing command payload.
+pub(super) fn write_payload_report<P: ReportBody>(
+    input: &Path,
+    output: Option<&FileDestination>,
+    command: &'static str,
+    payload: Payload<'_, P>,
+) -> Result<()> {
+    write_serialized_report(input, output, &CommandReport::new(command, payload))
 }
 
 fn write_serialized_report(
     input: &Path,
-    output: Option<&Path>,
-    force: bool,
+    output: Option<&FileDestination>,
     report: &impl Serialize,
 ) -> Result<()> {
     let Some(output) = output else {
         return Ok(());
     };
-    let mut bytes = serde_json::to_vec_pretty(report)?;
+    let mut bytes = cadmpeg_ir::hash::finite_json::to_canonical_json_string(report)?.into_bytes();
     bytes.push(b'\n');
-    artifact_store::write_output(input, output, &bytes, force)?;
-    eprintln!("wrote report {}", output.display());
+    output.write(input, &bytes)?;
+    eprintln!("wrote report {}", output.path.display());
     Ok(())
 }
 
@@ -397,14 +412,14 @@ pub(super) fn print_id_delta(label: &str, ids: &[String]) {
     if ids.is_empty() {
         return;
     }
-    let more = ids.len().saturating_sub(MAX);
+    let more = ids.len().checked_sub(MAX);
     let shown = ids
         .iter()
         .take(MAX)
         .map(String::as_str)
         .collect::<Vec<_>>()
         .join(", ");
-    if more > 0 {
+    if let Some(more) = more.filter(|more| *more > 0) {
         println!("      {label}: {shown} (+{more} more)");
     } else {
         println!("      {label}: {shown}");
@@ -422,7 +437,7 @@ pub(super) fn print_decode_report(
         report.geometry_transferred(),
         report.container_only()
     )?;
-    for line in crate::registry_view::dialect_lines(report.dialects()) {
+    for line in crate::registry_view::dialect_lines(report.dialects()).map_err(io::Error::other)? {
         writeln!(writer, "{line}")?;
     }
     if !report.losses.is_empty() {

@@ -1,62 +1,96 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Edit validators that diff the target against the baseline and build edit sets.
 
-use cadmpeg_asm::brep::records::EndpointSlot;
+use cadmpeg_core::decode::index_from_u32;
+
+use cadmpeg_asm::brep::records::{EndpointSlot, EvaluatedToleranceSlot};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::history_records::{AsmBulletinBoard, AsmDeltaState, AsmEntityChange};
 use crate::records::{
-    ActEntity, ActGuid, ActRegistryChannel, ActRootComponent, DesignMaterialAssignment,
-    LostEdgeReference, SketchCurveGeometry,
+    act::{ActEntity, ActGuid, ActRegistryChannel, ActRootComponent},
+    references::{DesignMaterialAssignment, LostEdgeReference},
+    sketch_geometry::SketchCurveGeometry,
 };
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, Model};
 use cadmpeg_ir::geometry::{
-    knots_nondecreasing, BlendRadiusLaw, Curve, CurveGeometry, NurbsCurve, NurbsSurface,
-    PcurveGeometry, ProceduralCurve, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    nurbs::{NurbsCurve, NurbsSurface},
+    pcurve::{PcurveGeometry, PcurveNurbs},
+    BlendRadiusLaw, Curve, ProceduralCurve, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Body, Coedge, Color, Edge, Face, Sense};
 use cadmpeg_ir::transform::Transform;
 
-use super::geometry::{
-    orthonormal_pair, valid_edited_curve_structure, valid_edited_nurbs_direction,
+use super::{
+    geometry::{unchanged_unique_knot_count, writable_nurbs_degree},
+    records::native_stream,
 };
-use super::records::native_stream;
 use crate::native::F3dNative;
 use crate::writer::generate::native_geometry::{native_support_pcurve, pcurve_support_geometry};
-use crate::writer::primitives::{finite_point, finite_vector, normalized_face_sense_to_native};
+use crate::writer::primitives::normalized_face_sense_to_native;
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 
-const EPS_EDITED_DIRECTION_UNIT: f64 = 1.0e-9;
+/// The base-type GUID text and its location, when the entry stores the field.
+fn located_base_guid(guid: &crate::records::entity_header::BaseTypeGuid) -> Option<(&str, u64)> {
+    match guid {
+        crate::records::entity_header::BaseTypeGuid::Absent => None,
+        crate::records::entity_header::BaseTypeGuid::EmptyRoot { offset } => Some(("", *offset)),
+        crate::records::entity_header::BaseTypeGuid::Guid { value, offset } => {
+            Some((value.as_str(), *offset))
+        }
+    }
+}
+
+/// The before-value carried at the after-record's location, for comparing an
+/// edited record against the record it replaces.
+fn normalized_token<T: Clone>(
+    before: Option<&crate::records::identity::RecordedValue<T>>,
+    after: Option<&crate::records::identity::RecordedValue<T>>,
+) -> Option<crate::records::identity::RecordedValue<T>> {
+    match (before, after) {
+        (Some(before), Some(after)) => Some(crate::records::identity::RecordedValue {
+            value: before.value.clone(),
+            offset: after.offset,
+        }),
+        _ => after.cloned(),
+    }
+}
 
 #[derive(Clone, Copy)]
-pub(crate) struct PatchNatives<'a> {
-    pub(crate) baseline: Option<&'a F3dNative>,
-    pub(crate) target: Option<&'a F3dNative>,
+pub(in crate::writer) struct PatchNatives<'a> {
+    pub(in crate::writer) baseline: Option<&'a F3dNative>,
+    pub(in crate::writer) target: Option<&'a F3dNative>,
 }
 
-pub(crate) struct Edit<T> {
-    pub(crate) offset: u64,
-    pub(crate) value: T,
+pub(super) struct Edit<T> {
+    pub(super) offset: u64,
+    pub(super) value: T,
 }
 
-pub(crate) struct SketchPointEdit {
-    pub(crate) offset: u64,
-    pub(crate) coordinate_offset: u32,
-    pub(crate) coordinates: cadmpeg_ir::math::Point2,
+pub(super) struct ByteEdit {
+    pub(super) offset: u64,
+    pub(super) value: Vec<u8>,
 }
 
-pub(crate) struct PersistentReferenceEdit {
-    pub(crate) offset: u64,
-    pub(crate) identity_offset: u32,
-    pub(crate) identity: u64,
+pub(super) struct SketchPointEdit {
+    pub(super) offset: u64,
+    pub(super) coordinate_offset: u32,
+    pub(super) coordinates: cadmpeg_ir::math::Point2,
 }
 
-pub(crate) struct BodyMemberEdit {
-    pub(crate) offset: u64,
-    pub(crate) entity_suffix: u64,
-    pub(crate) flags: u16,
+pub(super) struct PersistentReferenceEdit {
+    pub(super) offset: u64,
+    pub(super) identity_offset: u32,
+    pub(super) identity: u64,
+}
+
+pub(super) struct BodyMemberEdit {
+    pub(super) offset: u64,
+    pub(super) entity_suffix: u64,
+    pub(super) flags: u16,
 }
 
 pub(crate) struct SketchCurveEdit {
@@ -65,16 +99,14 @@ pub(crate) struct SketchCurveEdit {
     pub(crate) geometry: SketchCurveGeometry,
 }
 
-pub(crate) fn validate_creation_timestamp_edits(
+pub(super) fn validate_creation_timestamp_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<usize, f64>, CodecError> {
-    let baseline_native = native.baseline;
-    let target_native = native.target;
-    let baseline = baseline_native
-        .as_ref()
+    let baseline = native
+        .baseline
         .map_or(&[][..], |native| native.creation_timestamps.as_slice());
-    let target = target_native
-        .as_ref()
+    let target = native
+        .target
         .map_or(&[][..], |native| native.creation_timestamps.as_slice());
     let by_id = baseline
         .iter()
@@ -90,8 +122,7 @@ pub(crate) fn validate_creation_timestamp_edits(
         ));
     }
     let mut edits = BTreeMap::new();
-    for timestamp in target {
-        let before = by_id[timestamp.id.as_str()];
+    for (before, timestamp) in by_id.into_values().zip(target) {
         let mut normalized = timestamp.clone();
         normalized.unix_microseconds = before.unix_microseconds;
         if &normalized != before {
@@ -103,24 +134,18 @@ pub(crate) fn validate_creation_timestamp_edits(
         if timestamp.unix_microseconds == before.unix_microseconds {
             continue;
         }
-        if !timestamp.unix_microseconds.is_finite() {
-            return Err(CodecError::malformed(format_args!(
-                "F3D creation timestamp {} is non-finite",
-                timestamp.id
-            )));
-        }
         let record_index = usize::try_from(timestamp.record_index).map_err(|_| {
             CodecError::malformed(format_args!(
                 "F3D timestamp record index exceeds usize: {}",
                 timestamp.id
             ))
         })?;
-        edits.insert(record_index, timestamp.unix_microseconds);
+        edits.insert(record_index, timestamp.unix_microseconds.get());
     }
     Ok(edits)
 }
 
-pub(crate) fn validate_edge_continuity_edits(
+pub(super) fn validate_edge_continuity_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<usize, (Sense, String)>, CodecError> {
     let baseline = native
@@ -163,14 +188,14 @@ pub(crate) fn validate_edge_continuity_edits(
             )));
         }
         edits.insert(
-            after.record_index as usize,
+            index_from_u32(after.record_index),
             (after.sense, after.continuity.clone()),
         );
     }
     Ok(edits)
 }
 
-pub(crate) fn validate_edge_ownership_edits(
+pub(super) fn validate_edge_ownership_edits(
     native: PatchNatives<'_>,
     target: &CadIr,
 ) -> Result<BTreeMap<usize, i64>, CodecError> {
@@ -234,12 +259,12 @@ pub(crate) fn validate_edge_ownership_edits(
         } else {
             -1
         };
-        edits.insert(after.record_index as usize, owner);
+        edits.insert(index_from_u32(after.record_index), owner);
     }
     Ok(edits)
 }
 
-pub(crate) fn validate_vertex_ownership_edits(
+pub(super) fn validate_vertex_ownership_edits(
     native: PatchNatives<'_>,
     target: &CadIr,
 ) -> Result<BTreeMap<usize, (i64, EndpointSlot)>, CodecError> {
@@ -309,14 +334,14 @@ pub(crate) fn validate_vertex_ownership_edits(
                 ))
             })?;
         edits.insert(
-            after.record_index as usize,
+            index_from_u32(after.record_index),
             (edge_record, after.endpoint_index),
         );
     }
     Ok(edits)
 }
 
-pub(crate) fn validate_face_sidedness_edits(
+pub(super) fn validate_face_sidedness_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<usize, cadmpeg_asm::brep::records::FaceContainment>, CodecError> {
     let baseline = native
@@ -353,7 +378,7 @@ pub(crate) fn validate_face_sidedness_edits(
         }
         match (before.containment, after.containment) {
             (Some(_), Some(containment)) => {
-                edits.insert(after.record_index as usize, containment);
+                edits.insert(index_from_u32(after.record_index), containment);
             }
             _ => {
                 return Err(CodecError::NotImplemented(format!(
@@ -365,7 +390,7 @@ pub(crate) fn validate_face_sidedness_edits(
     Ok(edits)
 }
 
-pub(crate) fn validate_tolerant_vertex_edits(
+pub(super) fn validate_tolerant_vertex_edits(
     native: PatchNatives<'_>,
     baseline: &CadIr,
     target: &CadIr,
@@ -443,33 +468,46 @@ pub(crate) fn validate_tolerant_vertex_edits(
                 "F3D tolerant-vertex tail edit changes structural fields: {id}"
             )));
         }
-        let tolerance = match target_vertices[after.vertex.as_str()].tolerance {
-            Some(tolerance) => tolerance,
-            None if after.evaluated_unset => -1.0,
-            None => {
+        if matches!(before.evaluated_slot, EvaluatedToleranceSlot::Absent {})
+            != matches!(after.evaluated_slot, EvaluatedToleranceSlot::Absent {})
+        {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D tolerant-vertex tail edit changes record width: {id}"
+            )));
+        }
+        let target_vertex = target_vertices.get(after.vertex.as_str()).ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "tolerant vertex {id} tail has no target vertex"
+            ))
+        })?;
+        let tolerance = match (target_vertex.tolerance, after.evaluated_slot) {
+            (Some(tolerance), EvaluatedToleranceSlot::Evaluated { .. }) => tolerance.get(),
+            (None, EvaluatedToleranceSlot::Unset { .. }) => -1.0,
+            // The record ends before the slot; there is nothing to patch.
+            (None, EvaluatedToleranceSlot::Absent {}) => continue,
+            (Some(_), EvaluatedToleranceSlot::Absent {} | EvaluatedToleranceSlot::Unset { .. })
+            | (None, EvaluatedToleranceSlot::Evaluated { .. }) => {
                 return Err(CodecError::malformed(format_args!(
-                    "tolerant vertex {id} has no tolerance"
+                    "tolerant vertex {id} tail disagrees with its vertex tolerance"
                 )))
             }
         };
-        if !tolerance.is_finite()
-            || after
-                .leading_tolerances
-                .iter()
-                .any(|value| !value.is_finite())
-        {
-            return Err(CodecError::malformed(format_args!(
-                "F3D tolerant vertex {id} has non-finite fields"
-            )));
-        }
+        let baseline_vertex = baseline_vertices
+            .get(after.vertex.as_str())
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "tolerant vertex {id} tail has no baseline vertex"
+                ))
+            })?;
         if tolerance
-            != baseline_vertices[after.vertex.as_str()]
-                .tolerance
-                .unwrap_or(if before.evaluated_unset {
+            != baseline_vertex.tolerance.map_or(
+                if matches!(before.evaluated_slot, EvaluatedToleranceSlot::Unset { .. }) {
                     -1.0
                 } else {
                     tolerance
-                })
+                },
+                cadmpeg_ir::scalar::PositiveReal::get,
+            )
             || after.leading_tolerances != before.leading_tolerances
         {
             // A negative tolerance is the unevaluated sentinel, stored
@@ -481,15 +519,20 @@ pub(crate) fn validate_tolerant_vertex_edits(
                 tolerance / LEN_TO_MM
             };
             edits.insert(
-                after.record_index as usize,
-                (stored, after.leading_tolerances),
+                index_from_u32(after.record_index),
+                (
+                    stored,
+                    after
+                        .leading_tolerances
+                        .map(cadmpeg_ir::scalar::FiniteReal::get),
+                ),
             );
         }
     }
     Ok(edits)
 }
 
-pub(crate) fn validate_tolerant_edge_edits(
+pub(super) fn validate_tolerant_edge_edits(
     native: PatchNatives<'_>,
     baseline: &CadIr,
     target: &CadIr,
@@ -551,19 +594,17 @@ pub(crate) fn validate_tolerant_edge_edits(
         let tolerance = target_edges[after.edge.as_str()].tolerance.ok_or_else(|| {
             CodecError::malformed(format_args!("tolerant edge {id} has no tolerance"))
         })?;
-        if !tolerance.is_finite() || tolerance < 0.0 {
-            return Err(CodecError::malformed(format_args!(
-                "F3D tolerant edge {id} has invalid fields"
-            )));
-        }
         if baseline_edges[after.edge.as_str()].tolerance != Some(tolerance) {
-            edits.insert(after.record_index as usize, tolerance / LEN_TO_MM);
+            edits.insert(
+                index_from_u32(after.record_index),
+                tolerance.get() / LEN_TO_MM,
+            );
         }
     }
     Ok(edits)
 }
 
-pub(crate) fn validate_tolerant_coedge_edits(
+pub(super) fn validate_tolerant_coedge_edits(
     native: PatchNatives<'_>,
     baseline: &CadIr,
     target: &CadIr,
@@ -622,19 +663,17 @@ pub(crate) fn validate_tolerant_coedge_edits(
                 "F3D tolerant-coedge edit changes structural fields: {id}"
             )));
         }
-        if after.parameter_range.iter().any(|value| !value.is_finite()) {
-            return Err(CodecError::malformed(format_args!(
-                "F3D tolerant coedge {id} has non-finite parameters"
-            )));
-        }
         if after.parameter_range != before.parameter_range {
-            edits.insert(after.record_index as usize, after.parameter_range);
+            edits.insert(
+                index_from_u32(after.record_index),
+                after.parameter_range.get(),
+            );
         }
     }
     Ok(edits)
 }
 
-pub(crate) fn validate_wire_topology_edits(
+pub(super) fn validate_wire_topology_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<usize, cadmpeg_asm::brep::records::WireSide>, CodecError> {
     let baseline_wires = native
@@ -667,13 +706,13 @@ pub(crate) fn validate_wire_topology_edits(
             )));
         }
         if after.side != before.side {
-            edits.insert(after.record_index as usize, after.side);
+            edits.insert(index_from_u32(after.record_index), after.side);
         }
     }
     Ok(edits)
 }
 
-pub(crate) enum ProceduralSurfaceEdit {
+pub(super) enum ProceduralSurfaceEdit {
     Extrusion {
         parameter_interval: [f64; 2],
         direction: Vector3,
@@ -682,19 +721,19 @@ pub(crate) enum ProceduralSurfaceEdit {
     BlendRadii([f64; 2]),
 }
 
-pub(crate) struct NurbsSurfaceEdit {
-    pub(crate) surface: NurbsSurface,
-    pub(crate) periodic: Option<[bool; 2]>,
+pub(super) struct NurbsSurfaceEdit {
+    pub(super) surface: NurbsSurface,
+    pub(super) periodic: Option<[bool; 2]>,
 }
 
-pub(crate) struct NurbsCurveEdit {
-    pub(crate) curve: NurbsCurve,
-    pub(crate) periodic: Option<bool>,
+pub(super) struct NurbsCurveEdit {
+    pub(super) curve: NurbsCurve,
+    pub(super) periodic: Option<bool>,
 }
 
-pub(crate) enum PcurveEdit {
+pub(super) enum PcurveEdit {
     Inline {
-        native_geometry: PcurveGeometry,
+        native_geometry: PcurveNurbs,
         periodic: Option<bool>,
         wrapper_reversed: Option<bool>,
         native_tail_flags: Option<[bool; 4]>,
@@ -702,19 +741,42 @@ pub(crate) enum PcurveEdit {
         fit_tolerance: Option<f64>,
     },
     Ref {
-        native_geometry: PcurveGeometry,
+        native_geometry: PcurveNurbs,
         periodic: Option<bool>,
         parameter_range: Option<[f64; 2]>,
     },
 }
 
 #[derive(Clone)]
-pub(crate) struct ProceduralCurveEdit {
-    pub(crate) definition: Option<cadmpeg_ir::geometry::ProceduralCurveDefinition>,
-    pub(crate) fit_tolerance: Option<f64>,
+pub(super) struct ProceduralCurveEdit {
+    definition: Option<cadmpeg_ir::geometry::ProceduralCurveDefinition>,
+    fit_tolerance: Option<f64>,
 }
 
-pub(crate) fn validate_material_assignment_appearances(
+impl ProceduralCurveEdit {
+    /// An edit that changes at least one of the definition and the fit tolerance.
+    fn new(
+        definition: Option<cadmpeg_ir::geometry::ProceduralCurveDefinition>,
+        fit_tolerance: Option<f64>,
+    ) -> Option<Self> {
+        (definition.is_some() || fit_tolerance.is_some()).then_some(Self {
+            definition,
+            fit_tolerance,
+        })
+    }
+
+    /// Replacement procedural definition, when the edit changes it.
+    pub(super) fn definition(&self) -> Option<&cadmpeg_ir::geometry::ProceduralCurveDefinition> {
+        self.definition.as_ref()
+    }
+
+    /// Replacement cache fit tolerance, when the edit changes it.
+    pub(super) fn fit_tolerance(&self) -> Option<f64> {
+        self.fit_tolerance
+    }
+}
+
+pub(super) fn validate_material_assignment_appearances(
     native: PatchNatives<'_>,
     baseline: &CadIr,
     target: &CadIr,
@@ -768,37 +830,30 @@ pub(crate) fn validate_material_assignment_appearances(
             let color = after.base_color.ok_or_else(|| {
                 CodecError::NotImplemented(format!("cannot remove F3D appearance color: {id}"))
             })?;
-            if before.base_color.is_none()
-                || ![color.r, color.g, color.b, color.a]
-                    .into_iter()
-                    .all(|component| component.is_finite() && (0.0..=1.0).contains(&component))
-                || color.a != 1.0
-            {
-                return Err(CodecError::malformed(format_args!(
+            if before.base_color.is_none() || color.a() != 1.0 {
+                return Err(CodecError::NotImplemented(format!(
                     "F3D Protein color {id} must replace an existing opaque finite RGBA color"
                 )));
             }
             edit.color = Some(color);
         }
         for (name, before_value) in &before.properties {
-            let after_value = after.properties[name];
-            if after_value == *before_value {
+            let after_value = after.properties[name].get();
+            if after_value == before_value.get() {
                 continue;
             }
-            let valid = after_value.is_finite()
-                && match name.as_str() {
-                    "reflectivity_at_0deg" | "surface_roughness" => {
-                        (0.0..=1.0).contains(&after_value)
-                    }
-                    "refraction_index" => (1.0..=4.0).contains(&after_value),
-                    _ => false,
-                };
+            let valid = match name.as_str() {
+                "reflectivity_at_0deg" | "surface_roughness" => (0.0..=1.0).contains(&after_value),
+                "refraction_index" => (1.0..=4.0).contains(&after_value),
+                _ => false,
+            };
             if !valid {
-                return Err(CodecError::malformed(format_args!(
+                return Err(CodecError::NotImplemented(format!(
                     "F3D Protein property {id}.{name} is outside its writable range"
                 )));
             }
-            edit.properties.insert(name.clone(), after_value);
+            edit.properties
+                .insert(name.as_str().to_owned(), after_value);
         }
         if edit.color.is_some() || !edit.properties.is_empty() {
             let guid = after.visual_guid.clone().ok_or_else(|| {
@@ -859,7 +914,7 @@ pub(crate) fn validate_material_assignment_appearances(
     Ok(appearance_edits)
 }
 
-pub(crate) fn validate_material_assignment_edits(
+pub(super) fn validate_material_assignment_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<DesignMaterialAssignment>>, CodecError> {
     let baseline_native = native.baseline;
@@ -895,22 +950,12 @@ pub(crate) fn validate_material_assignment_edits(
         }
         let mut normalized = after.clone();
         normalized.visual_guid.clone_from(&before.visual_guid);
-        normalized.physical_token =
-            before
-                .physical_token
-                .as_ref()
-                .map(|field| crate::records::RecordedValue {
-                    value: field.value.clone(),
-                    offset: after.physical_token.as_ref().and_then(|field| field.offset),
-                });
+        normalized.physical_token = normalized_token(
+            before.physical_token.as_ref(),
+            after.physical_token.as_ref(),
+        );
         normalized.visual_preset =
-            before
-                .visual_preset
-                .as_ref()
-                .map(|field| crate::records::RecordedValue {
-                    value: field.value.clone(),
-                    offset: after.visual_preset.as_ref().and_then(|field| field.offset),
-                });
+            normalized_token(before.visual_preset.as_ref(), after.visual_preset.as_ref());
         if &normalized != before {
             return Err(CodecError::NotImplemented(format!(
                 "F3D material-assignment edit changes fields outside writable strings: {id}"
@@ -973,7 +1018,7 @@ fn validate_optional_utf16_replacement(
     }
 }
 
-pub(crate) fn validate_lost_edge_edits(
+pub(super) fn validate_lost_edge_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<LostEdgeReference>>, CodecError> {
     let baseline_native = native.baseline;
@@ -1021,7 +1066,7 @@ pub(crate) fn validate_lost_edge_edits(
     Ok(edits)
 }
 
-pub(crate) fn validate_act_appearance_bindings(
+pub(super) fn validate_act_appearance_bindings(
     native: PatchNatives<'_>,
     baseline: &CadIr,
     target: &CadIr,
@@ -1055,13 +1100,13 @@ pub(crate) fn validate_act_appearance_bindings(
     let mut baseline_entities_by_source = HashMap::<_, Vec<_>>::new();
     for entity in baseline_entities {
         baseline_entities_by_source
-            .entry(entity.entity_id.as_str())
+            .entry(entity.entity_id())
             .or_default()
             .push(entity);
     }
     let target_entities_by_id = target_entities
         .iter()
-        .map(|entity| (entity.id.as_str(), entity))
+        .map(|entity| (entity.id().as_str(), entity))
         .collect::<HashMap<_, _>>();
     for before in &baseline.model.appearance_bindings {
         let after = target_bindings
@@ -1097,19 +1142,19 @@ pub(crate) fn validate_act_appearance_bindings(
                     before
                         .channels
                         .iter()
-                        .map(|(name, guid)| (name, guid.as_str()))
+                        .map(|(name, guid)| (name.as_str(), guid.as_str()))
                         .eq(act_channel_values(entity))
                 })
             });
         let after_entity = before_entity.and_then(|before_entity| {
             target_entities_by_id
-                .get(before_entity.id.as_str())
+                .get(before_entity.id().as_str())
                 .copied()
                 .filter(|entity| {
                     after
                         .channels
                         .iter()
-                        .map(|(name, guid)| (name, guid.as_str()))
+                        .map(|(name, guid)| (name.as_str(), guid.as_str()))
                         .eq(act_channel_values(entity))
                 })
         });
@@ -1153,20 +1198,20 @@ pub(crate) fn validate_act_appearance_bindings(
         .map(|assignment| assignment.entity_id.as_str())
         .collect::<std::collections::HashSet<_>>();
     for (before, after) in baseline_entities.iter().zip(target_entities) {
-        let matching_bindings = derived_bindings.get(&before.entity_id);
+        let matching_bindings = derived_bindings.get(before.entity_id());
         let derived_binding = matching_bindings.is_some_and(|bindings| {
             bindings.iter().any(|(channels, _)| {
                 channels
                     .iter()
-                    .map(|(name, guid)| (name, guid.as_str()))
+                    .map(|(name, guid)| (name.as_str(), guid.as_str()))
                     .eq(act_channel_values(before))
             })
         });
-        let assignment_synchronized = assignment_entities.contains(after.entity_id.as_str());
-        if before.entity_id != after.entity_id && derived_binding && !assignment_synchronized {
+        let assignment_synchronized = assignment_entities.contains(after.entity_id());
+        if before.entity_id() != after.entity_id() && derived_binding && !assignment_synchronized {
             return Err(CodecError::NotImplemented(format!(
                 "F3D ACT entity {} changed without its material-assignment carrier",
-                before.id
+                before.id()
             )));
         }
         let synchronized = matching_bindings.is_some_and(|bindings| {
@@ -1177,38 +1222,38 @@ pub(crate) fn validate_act_appearance_bindings(
                         before_binding.appearance.clone(),
                     ))
                     .is_some_and(|binding| {
-                        binding.source_entity_id.as_deref() == Some(after.entity_id.as_str())
+                        binding.source_entity_id.as_deref() == Some(after.entity_id())
                             && binding
                                 .channels
                                 .iter()
-                                .map(|(name, guid)| (name, guid.as_str()))
+                                .map(|(name, guid)| (name.as_str(), guid.as_str()))
                                 .eq(act_channel_values(after))
                     })
             })
         });
-        if (before.entity_id != after.entity_id
+        if (before.entity_id() != after.entity_id()
             || act_channel_values(before).ne(act_channel_values(after)))
             && derived_binding
             && !synchronized
         {
             return Err(CodecError::NotImplemented(format!(
                 "F3D ACT entity {} changed without a synchronized appearance binding",
-                before.id
+                before.id()
             )));
         }
     }
     Ok(())
 }
 
-fn act_channel_values(entity: &ActEntity) -> impl Iterator<Item = (&String, &str)> {
+fn act_channel_values(entity: &ActEntity) -> impl Iterator<Item = (&str, &str)> {
     entity
         .channel_group()
-        .into_iter()
-        .flat_map(|group| &group.channels)
-        .map(|(name, guid)| (name, guid.value.as_str()))
+        .channels()
+        .iter()
+        .map(|(name, guid)| (name.as_str(), guid.value.as_str()))
 }
 
-pub(crate) fn validate_act_entity_edits(
+pub(super) fn validate_act_entity_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<ActEntity>>, CodecError> {
     let baseline_native = native.baseline;
@@ -1223,11 +1268,11 @@ pub(crate) fn validate_act_entity_edits(
         .unwrap_or_default();
     let baseline_by_id = baseline
         .iter()
-        .map(|entity| (entity.id.as_str(), entity))
+        .map(|entity| (entity.id().as_str(), entity))
         .collect::<BTreeMap<_, _>>();
     let target_by_id = target
         .iter()
-        .map(|entity| (entity.id.as_str(), entity))
+        .map(|entity| (entity.id().as_str(), entity))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
         return Err(CodecError::NotImplemented(
@@ -1238,14 +1283,14 @@ pub(crate) fn validate_act_entity_edits(
     for (id, before) in baseline_by_id {
         let after = target_by_id[id];
         let mut normalized = after.clone();
-        normalized.entity_id.clone_from(&before.entity_id);
-        if let Some(group) = normalized.channel_group_mut() {
-            if let Some(before_group) = before.channel_group() {
-                for (name, guid) in &mut group.channels {
-                    if let Some(before_guid) = before_group.channels.get(name) {
-                        guid.value.clone_from(&before_guid.value);
-                    }
-                }
+        normalized
+            .try_set_entity_id(before.entity_id().to_owned())
+            .map_err(CodecError::malformed)?;
+        for (name, guid) in before.channel_group().channels() {
+            if normalized.channel_group().channels().contains_key(name) {
+                normalized
+                    .set_channel_guid(name, guid.value.clone())
+                    .map_err(CodecError::malformed)?;
             }
         }
         if &normalized != before {
@@ -1256,7 +1301,7 @@ pub(crate) fn validate_act_entity_edits(
         if after == before {
             continue;
         }
-        if after.entity_id.encode_utf16().count() != before.entity_id.encode_utf16().count() {
+        if after.entity_id().encode_utf16().count() != before.entity_id().encode_utf16().count() {
             return Err(CodecError::NotImplemented(format!(
                 "F3D ACT entity id {id} must retain its UTF-16 length"
             )));
@@ -1269,11 +1314,9 @@ pub(crate) fn validate_act_entity_edits(
     Ok(edits)
 }
 
-// The tuple carries one coupled result; a separate alias would add no invariant.
-#[allow(clippy::type_complexity)]
-pub(crate) fn validate_act_guid_edits(
+pub(super) fn validate_act_guid_edits(
     native: PatchNatives<'_>,
-) -> Result<BTreeMap<String, Vec<Edit<Vec<u8>>>>, CodecError> {
+) -> Result<BTreeMap<String, Vec<ByteEdit>>, CodecError> {
     let baseline_native = native.baseline;
     let target_native = native.target;
     let baseline = baseline_native
@@ -1286,18 +1329,18 @@ pub(crate) fn validate_act_guid_edits(
         .unwrap_or_default();
     let baseline_by_id = baseline
         .iter()
-        .map(|guid| (guid.id.as_str(), guid))
+        .map(|guid| (guid.id().as_str(), guid))
         .collect::<BTreeMap<_, _>>();
     let target_by_id = target
         .iter()
-        .map(|guid| (guid.id.as_str(), guid))
+        .map(|guid| (guid.id().as_str(), guid))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
         return Err(CodecError::NotImplemented(
             "F3D ACT GUID regeneration requires the unchanged GUID-id set".into(),
         ));
     }
-    let mut edits: BTreeMap<String, Vec<Edit<Vec<u8>>>> = BTreeMap::new();
+    let mut edits: BTreeMap<String, Vec<ByteEdit>> = BTreeMap::new();
     for (id, before) in baseline_by_id {
         let after = target_by_id[id];
         let mut normalized: ActGuid = after.clone();
@@ -1317,7 +1360,7 @@ pub(crate) fn validate_act_guid_edits(
             .flat_map(u16::to_le_bytes)
             .collect::<Vec<_>>();
         let stream = native_stream(id, ":act-guid#")?;
-        edits.entry(stream).or_default().push(Edit {
+        edits.entry(stream).or_default().push(ByteEdit {
             offset: after.guid_offset(),
             value: encoded,
         });
@@ -1325,11 +1368,9 @@ pub(crate) fn validate_act_guid_edits(
     Ok(edits)
 }
 
-// The tuple carries one coupled result; a separate alias would add no invariant.
-#[allow(clippy::type_complexity)]
-pub(crate) fn validate_act_registry_channel_edits(
+pub(super) fn validate_act_registry_channel_edits(
     native: PatchNatives<'_>,
-) -> Result<BTreeMap<String, Vec<Edit<Vec<u8>>>>, CodecError> {
+) -> Result<BTreeMap<String, Vec<ByteEdit>>, CodecError> {
     let baseline = native
         .baseline
         .map(|native| &native.act_registry_channels[..])
@@ -1340,18 +1381,18 @@ pub(crate) fn validate_act_registry_channel_edits(
         .unwrap_or_default();
     let baseline_by_id = baseline
         .iter()
-        .map(|channel| (channel.id.as_str(), channel))
+        .map(|channel| (channel.id().as_str(), channel))
         .collect::<BTreeMap<_, _>>();
     let target_by_id = target
         .iter()
-        .map(|channel| (channel.id.as_str(), channel))
+        .map(|channel| (channel.id().as_str(), channel))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
         return Err(CodecError::NotImplemented(
             "F3D ACT channel-registry regeneration requires the unchanged entry-id set".into(),
         ));
     }
-    let mut edits: BTreeMap<String, Vec<Edit<Vec<u8>>>> = BTreeMap::new();
+    let mut edits: BTreeMap<String, Vec<ByteEdit>> = BTreeMap::new();
     for (id, before) in baseline_by_id {
         let after = target_by_id[id];
         let mut normalized: ActRegistryChannel = after.clone();
@@ -1373,7 +1414,7 @@ pub(crate) fn validate_act_registry_channel_edits(
         edits
             .entry(native_stream(id, ":act-registry-channel#")?)
             .or_default()
-            .push(Edit {
+            .push(ByteEdit {
                 offset: after.guid_offset(),
                 value: encoded,
             });
@@ -1381,7 +1422,7 @@ pub(crate) fn validate_act_registry_channel_edits(
     Ok(edits)
 }
 
-pub(crate) fn validate_act_root_edits(
+pub(super) fn validate_act_root_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<ActRootComponent>>, CodecError> {
     let baseline_native = native.baseline;
@@ -1396,11 +1437,11 @@ pub(crate) fn validate_act_root_edits(
         .unwrap_or_default();
     let baseline_by_id = baseline
         .iter()
-        .map(|root| (root.id.as_str(), root))
+        .map(|root| (root.id().as_str(), root))
         .collect::<BTreeMap<_, _>>();
     let target_by_id = target
         .iter()
-        .map(|root| (root.id.as_str(), root))
+        .map(|root| (root.id().as_str(), root))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
         return Err(CodecError::NotImplemented(
@@ -1414,11 +1455,10 @@ pub(crate) fn validate_act_root_edits(
         normalized.instance_root_record = before.instance_root_record;
         normalized.components_root_record = before.components_root_record;
         normalized.registry_flag = before.registry_flag;
-        normalized.layout = normalized
-            .layout
-            .with_strings(
-                before.layout.entity_id().into(),
-                before.layout.display_name().into(),
+        normalized
+            .try_set_strings(
+                before.layout().entity_id().into(),
+                before.layout().display_name().into(),
             )
             .map_err(CodecError::NotImplemented)?;
         if &normalized != before {
@@ -1429,10 +1469,10 @@ pub(crate) fn validate_act_root_edits(
         if after == before {
             continue;
         }
-        if after.layout.entity_id().encode_utf16().count()
-            != before.layout.entity_id().encode_utf16().count()
-            || after.layout.display_name().encode_utf16().count()
-                != before.layout.display_name().encode_utf16().count()
+        if after.layout().entity_id().encode_utf16().count()
+            != before.layout().entity_id().encode_utf16().count()
+            || after.layout().display_name().encode_utf16().count()
+                != before.layout().display_name().encode_utf16().count()
         {
             return Err(CodecError::NotImplemented(format!(
                 "F3D ACT root strings must retain their UTF-16 lengths: {id}"
@@ -1446,12 +1486,12 @@ pub(crate) fn validate_act_root_edits(
     Ok(edits)
 }
 
-pub(crate) struct DesignTypeEdit {
-    pub(crate) integers: Vec<(u64, Vec<u8>)>,
-    pub(crate) strings: Vec<(u64, Vec<u8>)>,
+pub(super) struct DesignTypeEdit {
+    pub(super) integers: Vec<(u64, Vec<u8>)>,
+    pub(super) strings: Vec<(u64, Vec<u8>)>,
 }
 
-pub(crate) fn validate_design_type_edits(
+pub(super) fn validate_design_type_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<DesignTypeEdit>>, CodecError> {
     let baseline_native = native.baseline;
@@ -1466,11 +1506,11 @@ pub(crate) fn validate_design_type_edits(
         .unwrap_or_default();
     let baseline_by_id = baseline
         .iter()
-        .map(|design_type| (design_type.id.as_str(), design_type))
+        .map(|design_type| (design_type.id().as_str(), design_type))
         .collect::<BTreeMap<_, _>>();
     let target_by_id = target
         .iter()
-        .map(|design_type| (design_type.id.as_str(), design_type))
+        .map(|design_type| (design_type.id().as_str(), design_type))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
         return Err(CodecError::NotImplemented(
@@ -1480,26 +1520,18 @@ pub(crate) fn validate_design_type_edits(
     let mut edits: BTreeMap<String, Vec<DesignTypeEdit>> = BTreeMap::new();
     for (id, before) in baseline_by_id {
         let after = target_by_id[id];
-        let mut normalized = after.clone();
-        normalized.entities.clone_from(&before.entities);
-        normalized.type_guid.clone_from(&before.type_guid);
-        normalized.base_type_guid =
-            before
-                .base_type_guid
-                .as_ref()
-                .map(|field| crate::records::RecordedValue {
-                    value: field.value.clone(),
-                    offset: after.base_type_guid.as_ref().and_then(|field| field.offset),
-                });
-        normalized.version = before.version;
-        if &normalized != before {
+        if before.type_guid_offset != after.type_guid_offset
+            || before.version_offset != after.version_offset
+            || before.module != after.module
+            || before.base_type_guid.offset() != after.base_type_guid.offset()
+        {
             return Err(CodecError::NotImplemented(format!(
                 "F3D design-type edit changes fields outside its fixed type payload: {id}"
             )));
         }
         let (before_entities, after_entities): (
-            &[crate::records::Located<u64>],
-            &[crate::records::Located<u64>],
+            &[crate::records::identity::Located<u64>],
+            &[crate::records::identity::Located<u64>],
         ) = match (
             before.entities.located_rows(),
             after.entities.located_rows(),
@@ -1543,34 +1575,15 @@ pub(crate) fn validate_design_type_edits(
             ));
         }
         if after.base_type_guid != before.base_type_guid {
-            let before_base = before
-                .base_type_guid
-                .as_ref()
-                .map(|field| {
-                    field
-                        .value
-                        .as_ref()
-                        .map_or("", crate::records::DesignRelaxedGuidText::as_str)
-                })
-                .ok_or_else(|| {
-                    CodecError::NotImplemented(format!("cannot add F3D base type GUID: {id}"))
-                })?;
-            let after_field = after.base_type_guid.as_ref().ok_or_else(|| {
-                CodecError::NotImplemented(format!("cannot remove F3D base type GUID: {id}"))
+            let (before_base, _) = located_base_guid(&before.base_type_guid).ok_or_else(|| {
+                CodecError::NotImplemented(format!("cannot add F3D base type GUID: {id}"))
             })?;
-            let after_base = after_field
-                .value
-                .as_ref()
-                .map_or("", crate::records::DesignRelaxedGuidText::as_str);
+            let (after_base, after_offset) =
+                located_base_guid(&after.base_type_guid).ok_or_else(|| {
+                    CodecError::NotImplemented(format!("cannot remove F3D base type GUID: {id}"))
+                })?;
             validate_fixed_design_string(id, before_base, after_base)?;
-            strings.push((
-                after_field.offset.ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "F3D design type {id} has no base-type-GUID offset"
-                    ))
-                })?,
-                after_base.as_bytes().to_vec(),
-            ));
+            strings.push((after_offset, after_base.as_bytes().to_vec()));
         }
         if integers.is_empty() && strings.is_empty() {
             continue;
@@ -1601,7 +1614,7 @@ fn validate_fixed_design_string(id: &str, before: &str, after: &str) -> Result<(
     Ok(())
 }
 
-pub(crate) fn validate_configuration_edits(
+pub(super) fn validate_configuration_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<u8>>, CodecError> {
     let baseline = native
@@ -1612,11 +1625,11 @@ pub(crate) fn validate_configuration_edits(
         .map_or(&[][..], |native| native.design_configurations.as_slice());
     let baseline = baseline
         .iter()
-        .map(|configuration| (configuration.entry_name.as_str(), configuration))
+        .map(|configuration| (configuration.entry_name().as_str(), configuration))
         .collect::<BTreeMap<_, _>>();
     let target = target
         .iter()
-        .map(|configuration| (configuration.entry_name.as_str(), configuration))
+        .map(|configuration| (configuration.entry_name().as_str(), configuration))
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
         return Err(CodecError::NotImplemented(
@@ -1626,27 +1639,27 @@ pub(crate) fn validate_configuration_edits(
     let mut edits = BTreeMap::new();
     for (name, before) in baseline {
         let after = target[name];
-        if before.id != after.id || before.kind != after.kind {
+        if before.id() != after.id() || before.kind() != after.kind() {
             return Err(CodecError::NotImplemented(format!(
                 "retained F3D configuration edit changes entry identity: {name}"
             )));
         }
-        if before.payload != after.payload || before.variant_order != after.variant_order {
+        if before != after {
             edits.insert(
                 name.to_owned(),
-                crate::design::configurations::encode_configuration_payload(after)?,
+                crate::records::configuration::encode_configuration_payload(after)?,
             );
         }
     }
     Ok(edits)
 }
 
-pub(crate) struct EntityHeaderEdit {
-    pub(crate) record_reference: Option<Edit<u32>>,
-    pub(crate) references: Vec<Edit<u32>>,
+pub(super) struct EntityHeaderEdit {
+    pub(super) record_reference: Option<Edit<u32>>,
+    pub(super) references: Vec<Edit<u32>>,
 }
 
-pub(crate) fn validate_entity_header_edits(
+pub(super) fn validate_entity_header_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<EntityHeaderEdit>>, CodecError> {
     let baseline_native = native.baseline;
@@ -1735,7 +1748,7 @@ pub(crate) fn validate_entity_header_edits(
     Ok(edits)
 }
 
-pub(crate) fn validate_body_member_edits(
+pub(super) fn validate_body_member_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<BodyMemberEdit>>, CodecError> {
     let baseline_native = native.baseline;
@@ -1750,11 +1763,11 @@ pub(crate) fn validate_body_member_edits(
         .unwrap_or_default();
     let baseline_by_id = baseline
         .iter()
-        .map(|member| (member.id.as_str(), member))
+        .map(|member| (member.id().as_str(), member))
         .collect::<BTreeMap<_, _>>();
     let target_by_id = target
         .iter()
-        .map(|member| (member.id.as_str(), member))
+        .map(|member| (member.id().as_str(), member))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
         return Err(CodecError::NotImplemented(
@@ -1783,7 +1796,7 @@ pub(crate) fn validate_body_member_edits(
                 CodecError::malformed(format_args!("invalid design-body-member id {id}"))
             })?;
         edits.entry(stream).or_default().push(BodyMemberEdit {
-            offset: after.byte_offset,
+            offset: after.byte_offset(),
             entity_suffix: after.entity_suffix,
             flags: after.flags,
         });
@@ -1791,7 +1804,7 @@ pub(crate) fn validate_body_member_edits(
     Ok(edits)
 }
 
-pub(crate) fn validate_body_visibility_edits(
+pub(super) fn validate_body_visibility_edits(
     native: PatchNatives<'_>,
     baseline: &CadIr,
     target: &CadIr,
@@ -1838,14 +1851,14 @@ pub(crate) fn validate_body_visibility_edits(
             ))
         })?;
         edits
-            .entry(record.stream.clone())
+            .entry(record.stream().to_owned())
             .or_default()
             .push((record.byte_offset, visible));
     }
     Ok(edits)
 }
 
-pub(crate) fn validate_transform_hint_edits(
+pub(super) fn validate_transform_hint_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<usize, [bool; 3]>, CodecError> {
     let baseline = native
@@ -1881,13 +1894,13 @@ pub(crate) fn validate_transform_hint_edits(
         }
         let flags = [after.rotation, after.reflection, after.shear];
         if flags != [before.rotation, before.reflection, before.shear] {
-            edits.insert(after.record_index as usize, flags);
+            edits.insert(index_from_u32(after.record_index), flags);
         }
     }
     Ok(edits)
 }
 
-pub(crate) fn validate_body_native_key_edits(
+pub(in crate::writer) fn validate_body_native_key_edits(
     native: PatchNatives<'_>,
 ) -> Result<BodyNativeKeyEdits, CodecError> {
     let baseline_native = native.baseline;
@@ -1925,19 +1938,24 @@ pub(crate) fn validate_body_native_key_edits(
         if after.asm_body_key != before.asm_body_key {
             let key = after.asm_body_key.map_or(Ok(-1), |key| {
                 i64::try_from(key).map_err(|_| {
-                    CodecError::malformed(format_args!("F3D ASM body key exceeds i64::MAX: {key}"))
+                    CodecError::NotImplemented(format!("F3D ASM body key exceeds i64::MAX: {key}"))
                 })
             })?;
-            edits.asm.insert(after.record_index as usize, key);
+            edits.asm.insert(index_from_u32(after.record_index), key);
             let mut joined = Vec::new();
             joined.extend(
                 baseline_body_visibilities
                     .iter()
                     .filter(|visibility| {
                         visibility.body == before.body
-                            && before.asm_body_key == Some(visibility.asm_body_key)
+                            && before.asm_body_key == Some(visibility.asm_body_key())
                     })
-                    .map(|visibility| (visibility.stream.clone(), visibility.asm_body_key_offset)),
+                    .map(|visibility| {
+                        (
+                            visibility.stream().to_owned(),
+                            visibility.asm_body_key_offset,
+                        )
+                    }),
             );
             if let Some(old_key) = before.asm_body_key {
                 joined.extend(
@@ -1973,17 +1991,17 @@ pub(crate) fn validate_body_native_key_edits(
 }
 
 #[derive(Default)]
-pub(crate) struct BodyNativeKeyEdits {
-    pub(crate) asm: BTreeMap<usize, i64>,
-    pub(crate) design: BTreeMap<String, BTreeSet<(u64, u64)>>,
+pub(in crate::writer) struct BodyNativeKeyEdits {
+    pub(in crate::writer) asm: BTreeMap<usize, i64>,
+    pub(in crate::writer) design: BTreeMap<String, BTreeSet<(u64, u64)>>,
 }
 
-pub(crate) struct ConstructionRecipeEdit {
-    pub(crate) record_index: Option<Edit<i32>>,
-    pub(crate) design_id: Option<Edit<Vec<u8>>>,
+pub(super) struct ConstructionRecipeEdit {
+    pub(super) record_index: Option<Edit<i32>>,
+    pub(super) design_id: Option<ByteEdit>,
 }
 
-pub(crate) fn validate_construction_recipe_edits(
+pub(super) fn validate_construction_recipe_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<ConstructionRecipeEdit>>, CodecError> {
     let baseline_native = native.baseline;
@@ -2013,18 +2031,30 @@ pub(crate) fn validate_construction_recipe_edits(
     for (id, before) in baseline_by_id {
         let after = target_by_id[id];
         let mut normalized = after.clone();
-        normalized.record_index = before.record_index;
+        normalized.record_index =
+            before
+                .record_index
+                .zip(after.record_index)
+                .map(
+                    |(before_index, after_index)| crate::records::identity::RecordedValue {
+                        value: before_index.value,
+                        offset: after_index.offset,
+                    },
+                );
         normalized.design =
             before
                 .design
                 .as_ref()
-                .map(|design| crate::records::ConstructionRecipeDesign {
-                    id: crate::records::RecordedValue {
-                        value: design.id.value.clone(),
-                        offset: after.design.as_ref().and_then(|design| design.id.offset),
+                .zip(after.design.as_ref())
+                .map(
+                    |(design, after_design)| crate::records::recipes::ConstructionRecipeDesign {
+                        id: crate::records::identity::RecordedValue {
+                            value: design.id.value.clone(),
+                            offset: after_design.id.offset,
+                        },
+                        selector: design.selector,
                     },
-                    selector: design.selector,
-                });
+                );
         if &normalized != before
             || before.design.as_ref().and_then(|design| design.selector)
                 != after.design.as_ref().and_then(|design| design.selector)
@@ -2039,10 +2069,10 @@ pub(crate) fn validate_construction_recipe_edits(
         let record_index = (after.record_index != before.record_index)
             .then(|| {
                 after
-                    .record_index_offset
-                    .map(|offset| Edit {
-                        offset,
-                        value: after.record_index,
+                    .record_index
+                    .map(|record_index| Edit {
+                        offset: record_index.offset,
+                        value: record_index.value,
                     })
                     .ok_or_else(|| {
                         CodecError::NotImplemented(format!(
@@ -2066,11 +2096,7 @@ pub(crate) fn validate_construction_recipe_edits(
             })?;
             let after_field = &after_design.id;
             let after_value = after_field.value.as_str();
-            let offset = after_field.offset.ok_or_else(|| {
-                CodecError::NotImplemented(format!(
-                    "F3D construction recipe {id} has no writable design-id carrier"
-                ))
-            })?;
+            let offset = after_field.offset;
             if after_value.len() != before_value.len()
                 || !after_value.bytes().all(|byte| byte.is_ascii_alphanumeric())
             {
@@ -2079,7 +2105,7 @@ pub(crate) fn validate_construction_recipe_edits(
                 )));
             }
             let encoded = after_value.as_bytes().to_vec();
-            Some(Edit {
+            Some(ByteEdit {
                 offset,
                 value: encoded,
             })
@@ -2102,7 +2128,7 @@ pub(crate) fn validate_construction_recipe_edits(
     Ok(edits)
 }
 
-pub(crate) fn validate_persistent_reference_edits(
+pub(super) fn validate_persistent_reference_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<PersistentReferenceEdit>>, CodecError> {
     let baseline_native = native.baseline;
@@ -2163,21 +2189,21 @@ pub(crate) fn validate_persistent_reference_edits(
 /// The three history-preamble fields a patch writes back, carried as
 /// non-optional values. [`validate_history_state_edits`] only builds one after
 /// it has confirmed both `stream_size` and `history_entry_count` are present.
-pub(crate) struct PreambleEdit {
-    pub(crate) byte_offset: u64,
-    pub(crate) stream_size: i64,
-    pub(crate) history_entry_count: i64,
+pub(in crate::writer::patch) struct PreambleEdit {
+    pub(super) byte_offset: u64,
+    pub(super) stream_size: i64,
+    pub(super) history_entry_count: i64,
 }
 
 #[derive(Default)]
-pub(crate) struct HistoryEdits {
-    pub(crate) preamble: Option<PreambleEdit>,
-    pub(crate) states: Vec<AsmDeltaState>,
-    pub(crate) boards: Vec<AsmBulletinBoard>,
-    pub(crate) changes: Vec<AsmEntityChange>,
+pub(super) struct HistoryEdits {
+    pub(super) preamble: Option<PreambleEdit>,
+    pub(super) states: Vec<AsmDeltaState>,
+    pub(super) boards: Vec<AsmBulletinBoard>,
+    pub(super) changes: Vec<AsmEntityChange>,
 }
 
-pub(crate) fn validate_history_state_edits(
+pub(super) fn validate_history_state_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, HistoryEdits>, CodecError> {
     let baseline_native = native.baseline;
@@ -2329,7 +2355,7 @@ pub(crate) fn validate_history_state_edits(
     Ok(edits)
 }
 
-pub(crate) fn validate_sketch_point_edits(
+pub(super) fn validate_sketch_point_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<SketchPointEdit>>, CodecError> {
     let baseline_native = native.baseline;
@@ -2359,21 +2385,17 @@ pub(crate) fn validate_sketch_point_edits(
     for point in target {
         let before = by_id[point.id.as_str()];
         let mut normalized = point.clone();
-        normalized.coordinates = before.coordinates;
+        normalized
+            .try_set_coordinates(before.coordinates())
+            .map_err(CodecError::Malformed)?;
         if &normalized != before {
             return Err(CodecError::NotImplemented(format!(
                 "F3D sketch-point edit changes fields other than coordinates: {}",
                 point.id
             )));
         }
-        if point.coordinates == before.coordinates {
+        if point.coordinates() == before.coordinates() {
             continue;
-        }
-        if !point.coordinates.u.is_finite() || !point.coordinates.v.is_finite() {
-            return Err(CodecError::malformed(format_args!(
-                "F3D sketch point {} has non-finite coordinates",
-                point.id
-            )));
         }
         let stream = point
             .id
@@ -2386,13 +2408,13 @@ pub(crate) fn validate_sketch_point_edits(
         edits.entry(stream).or_default().push(SketchPointEdit {
             offset: point.byte_offset,
             coordinate_offset: point.coordinate_offset,
-            coordinates: point.coordinates,
+            coordinates: point.coordinates(),
         });
     }
     Ok(edits)
 }
 
-pub(crate) fn validate_sketch_curve_edits(
+pub(super) fn validate_sketch_curve_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<SketchCurveEdit>>, CodecError> {
     let baseline_native = native.baseline;
@@ -2435,9 +2457,7 @@ pub(crate) fn validate_sketch_curve_edits(
         let geometry = curve.geometry.clone().ok_or_else(|| {
             CodecError::NotImplemented(format!("cannot remove sketch-curve geometry: {}", curve.id))
         })?;
-        if !valid_sketch_geometry(&geometry)
-            || !same_sketch_layout(before.geometry.as_ref(), &geometry)
-        {
+        if !same_sketch_layout(before.geometry.as_ref(), &geometry) {
             return Err(CodecError::NotImplemented(format!(
                 "F3D sketch-curve edit requires valid geometry with the original native layout: {}",
                 curve.id
@@ -2469,82 +2489,30 @@ fn same_sketch_layout(before: Option<&SketchCurveGeometry>, after: &SketchCurveG
                 carrier_reference: old_carrier,
                 subtype_class_tag: old_tag,
                 subtype_record_index: old_index,
-                degree: old_degree,
-                scalar_width: old_width,
-                knots: old_knots,
-                poles: old_poles,
+                geometry: old_geometry,
                 ..
             }),
             SketchCurveGeometry::Nurbs {
                 carrier_reference,
                 subtype_class_tag,
                 subtype_record_index,
-                degree,
-                scalar_width,
-                knots,
-                poles,
+                geometry,
                 ..
             },
         ) => {
             old_carrier == carrier_reference
                 && old_tag == subtype_class_tag
                 && old_index == subtype_record_index
-                && old_degree == degree
-                && old_width == scalar_width
-                && old_knots.len() == knots.len()
-                && old_poles.weights().len() == poles.weights().len()
-                && old_poles.point_count() == poles.point_count()
+                && old_geometry.degree() == geometry.degree()
+                && old_geometry.knot_count() == geometry.knot_count()
+                && old_geometry.poles().weights().len() == geometry.poles().weights().len()
+                && old_geometry.poles().point_count() == geometry.poles().point_count()
         }
         _ => false,
     }
 }
 
-fn valid_sketch_geometry(geometry: &SketchCurveGeometry) -> bool {
-    match geometry {
-        SketchCurveGeometry::Line {
-            start,
-            end,
-            direction,
-            normal,
-        } => finite_point(*start) && finite_point(*end) && orthonormal_pair(*direction, *normal),
-        SketchCurveGeometry::Arc {
-            center,
-            normal,
-            reference_direction,
-            radius,
-            start_angle,
-            end_angle,
-        } => {
-            finite_point(*center)
-                && orthonormal_pair(*normal, *reference_direction)
-                && radius.is_finite()
-                && *radius > 0.0
-                && start_angle.is_finite()
-                && end_angle.is_finite()
-        }
-        SketchCurveGeometry::Nurbs {
-            degree,
-            fit_tolerance,
-            scalar_width,
-            knots,
-            poles,
-            ..
-        } => {
-            *scalar_width == 8
-                && fit_tolerance.is_finite()
-                && *fit_tolerance >= 0.0
-                && knots.len() == poles.point_count() + *degree as usize + 1
-                && knots.iter().all(|knot| knot.is_finite())
-                && knots_nondecreasing(knots)
-                && poles
-                    .weights()
-                    .all(|weight| weight.is_finite() && *weight > 0.0)
-                && poles.points().all(|point| finite_point(*point))
-        }
-    }
-}
-
-pub(crate) fn encode_sketch_relation_state(
+pub(super) fn encode_sketch_relation_state(
     relation_id: &str,
     raw_bytes: &[u8],
     state: u64,
@@ -2567,11 +2535,9 @@ pub(crate) fn encode_sketch_relation_state(
     }
 }
 
-// The tuple carries one coupled result; a separate alias would add no invariant.
-#[allow(clippy::type_complexity)]
-pub(crate) fn validate_sketch_relation_edits(
+pub(super) fn validate_sketch_relation_edits(
     native: PatchNatives<'_>,
-) -> Result<BTreeMap<String, Vec<Vec<Edit<Vec<u8>>>>>, CodecError> {
+) -> Result<BTreeMap<String, Vec<Vec<ByteEdit>>>, CodecError> {
     let baseline_native = native.baseline;
     let target_native = native.target;
     let baseline = baseline_native
@@ -2595,22 +2561,24 @@ pub(crate) fn validate_sketch_relation_edits(
             "F3D sketch-relation regeneration requires the unchanged relation-id set".into(),
         ));
     }
-    let mut edits: BTreeMap<String, Vec<Vec<Edit<Vec<u8>>>>> = BTreeMap::new();
+    let mut edits: BTreeMap<String, Vec<Vec<ByteEdit>>> = BTreeMap::new();
     for relation in target {
         let before = by_id[relation.id.as_str()];
         let mut normalized = relation.clone();
         normalized.owner_reference = before.owner_reference;
         normalized
-            .auxiliary_references
-            .clone_from(&before.auxiliary_references);
-        normalized.members.clone_from(&before.members);
-        normalized.definition.clone_from(&before.definition);
-        normalized.return_members.clone_from(&before.return_members);
+            .try_edit(|draft| {
+                draft.auxiliary_references = before.auxiliary_references().clone();
+                draft.members = before.members().clone();
+                draft.definition = before.definition.clone();
+                draft.return_members = before.return_members().clone();
+            })
+            .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
         if &normalized != before
             || relation
-                .auxiliary_references
+                .auxiliary_references()
                 .offsets()
-                .ne(before.auxiliary_references.offsets())
+                .ne(before.auxiliary_references().offsets())
         {
             return Err(CodecError::NotImplemented(format!(
                 "F3D sketch-relation edit changes fields outside its writable references and constraint mask: {}",
@@ -2619,9 +2587,9 @@ pub(crate) fn validate_sketch_relation_edits(
         }
         if relation.definition.state() == before.definition.state()
             && relation.owner_reference == before.owner_reference
-            && relation.auxiliary_references == before.auxiliary_references
-            && relation.members == before.members
-            && relation.return_members == before.return_members
+            && relation.auxiliary_references() == before.auxiliary_references()
+            && relation.members() == before.members()
+            && relation.return_members() == before.return_members()
         {
             continue;
         }
@@ -2637,24 +2605,24 @@ pub(crate) fn validate_sketch_relation_edits(
         collect_sketch_reference_edits(
             relation,
             before
-                .members
+                .members()
                 .iter()
                 .map(|row| row.reference.record_index()),
             relation
-                .members
+                .members()
                 .iter()
                 .map(|row| (row.reference.record_index(), row.offset)),
             &mut values,
         )?;
-        match relation.auxiliary_references.located_rows() {
-            Some(after) if before.auxiliary_references.len() == after.len() => {
+        match relation.auxiliary_references().located_rows() {
+            Some(after) if before.auxiliary_references().len() == after.len() => {
                 values.extend(
                     before
-                        .auxiliary_references
+                        .auxiliary_references()
                         .values()
                         .zip(after)
                         .filter(|(before, after)| **before != after.value)
-                        .map(|(_, after)| Edit {
+                        .map(|(_, after)| ByteEdit {
                             offset: relation.byte_offset + u64::from(after.offset),
                             value: after.value.to_le_bytes().to_vec(),
                         }),
@@ -2668,19 +2636,19 @@ pub(crate) fn validate_sketch_relation_edits(
             }
         }
         if relation.owner_reference != before.owner_reference {
-            values.push(Edit {
-                offset: relation.byte_offset + u64::from(relation.owner_reference_offset),
+            values.push(ByteEdit {
+                offset: relation.byte_offset + u64::from(relation.owner_reference_offset()),
                 value: relation.owner_reference.to_le_bytes().to_vec(),
             });
         }
         collect_sketch_reference_edits(
             relation,
             before
-                .return_members
+                .return_members()
                 .iter()
                 .map(|row| row.reference.record_index()),
             relation
-                .return_members
+                .return_members()
                 .iter()
                 .map(|row| (row.reference.record_index(), row.offset)),
             &mut values,
@@ -2688,10 +2656,10 @@ pub(crate) fn validate_sketch_relation_edits(
         if relation.definition.state() != before.definition.state() {
             let encoded = encode_sketch_relation_state(
                 &relation.id,
-                &before.raw_bytes,
+                before.raw_bytes(),
                 relation.definition.state(),
             )?;
-            values.push(Edit {
+            values.push(ByteEdit {
                 offset: relation.byte_offset + u64::from(relation.state_offset),
                 value: encoded,
             });
@@ -2702,10 +2670,10 @@ pub(crate) fn validate_sketch_relation_edits(
 }
 
 fn collect_sketch_reference_edits(
-    relation: &crate::records::SketchRelation,
+    relation: &crate::records::sketch_relations::SketchRelation,
     before: impl ExactSizeIterator<Item = u32>,
     after: impl ExactSizeIterator<Item = (u32, u32)>,
-    edits: &mut Vec<Edit<Vec<u8>>>,
+    edits: &mut Vec<ByteEdit>,
 ) -> Result<(), CodecError> {
     if before.len() != after.len() {
         return Err(CodecError::NotImplemented(format!(
@@ -2717,7 +2685,7 @@ fn collect_sketch_reference_edits(
         before
             .zip(after)
             .filter(|(before, (after, _))| before != after)
-            .map(|(_, (after, offset))| Edit {
+            .map(|(_, (after, offset))| ByteEdit {
                 offset: relation.byte_offset + u64::from(offset),
                 value: after.to_le_bytes().to_vec(),
             }),
@@ -2725,7 +2693,7 @@ fn collect_sketch_reference_edits(
     Ok(())
 }
 
-pub(crate) fn validate_body_transform_edits(
+pub(super) fn validate_body_transform_edits(
     baseline: &[Body],
     target: &[Body],
 ) -> Result<BTreeMap<String, Transform>, CodecError> {
@@ -2770,7 +2738,7 @@ pub(crate) fn validate_body_transform_edits(
     Ok(edits)
 }
 
-pub(crate) fn validate_body_color_edits(
+pub(super) fn validate_body_color_edits(
     baseline: &[Body],
     target: &[Body],
 ) -> Result<BTreeMap<String, Color>, CodecError> {
@@ -2805,12 +2773,7 @@ pub(crate) fn validate_body_color_edits(
         let color = after.color.ok_or_else(|| {
             CodecError::NotImplemented(format!("cannot remove F3D body color: {id}"))
         })?;
-        if before.color.is_none()
-            || ![color.r, color.g, color.b, color.a]
-                .into_iter()
-                .all(|component| component.is_finite() && (0.0..=1.0).contains(&component))
-            || color.a != 1.0
-        {
+        if before.color.is_none() || color.a() != 1.0 {
             return Err(CodecError::NotImplemented(format!(
                 "F3D body color {id} must replace an existing opaque finite RGB color"
             )));
@@ -2820,7 +2783,7 @@ pub(crate) fn validate_body_color_edits(
     Ok(edits)
 }
 
-pub(crate) fn validate_edge_range_edits(
+pub(super) fn validate_edge_range_edits(
     baseline: &[Edge],
     target: &[Edge],
 ) -> Result<BTreeMap<String, [f64; 2]>, CodecError> {
@@ -2841,34 +2804,36 @@ pub(crate) fn validate_edge_range_edits(
     for (id, before) in baseline {
         let after = target[id];
         let mut normalized = after.clone();
-        normalized.param_range = before.param_range;
+        normalized.carrier = cadmpeg_ir::topology::EdgeCarrier::new(
+            normalized.curve().cloned(),
+            before
+                .param_range()
+                .map(cadmpeg_ir::units::FiniteVector::get),
+        )
+        .map_err(CodecError::malformed)?;
         normalized.tolerance = before.tolerance;
         if &normalized != before {
             return Err(CodecError::NotImplemented(format!(
                 "F3D edge edit changes fields other than parameter range: {id}"
             )));
         }
-        if after.param_range == before.param_range {
+        if after.param_range() == before.param_range() {
             continue;
         }
-        let range = after.param_range.ok_or_else(|| {
+        let range = after.param_range().ok_or_else(|| {
             CodecError::NotImplemented(format!("cannot remove F3D edge range: {id}"))
         })?;
-        if before.param_range.is_none()
-            || !range[0].is_finite()
-            || !range[1].is_finite()
-            || range[0] == range[1]
-        {
+        if before.param_range().is_none() || range[0] == range[1] {
             return Err(CodecError::malformed(format_args!(
                 "edited F3D edge range {id} must replace an existing finite non-degenerate range"
             )));
         }
-        edits.insert(id.to_owned(), range);
+        edits.insert(id.to_owned(), range.get());
     }
     Ok(edits)
 }
 
-pub(crate) fn validate_face_sense_edits(
+pub(super) fn validate_face_sense_edits(
     native: PatchNatives<'_>,
     baseline_ir: &CadIr,
     target_ir: &CadIr,
@@ -2881,12 +2846,7 @@ pub(crate) fn validate_face_sense_edits(
             native
                 .face_sidedness
                 .iter()
-                .map(|metadata| {
-                    (
-                        metadata.face.clone(),
-                        (metadata.native_sense, metadata.normalized_sense),
-                    )
-                })
+                .map(|metadata| (metadata.face.clone(), metadata.carrier_flipped))
                 .collect::<BTreeMap<_, _>>()
         })
         .unwrap_or_default();
@@ -2915,19 +2875,15 @@ pub(crate) fn validate_face_sense_edits(
             )));
         }
         if after.sense != before.sense {
-            let (native_before, normalized_before) = native_senses
-                .get(&before.id)
-                .copied()
-                .unwrap_or((before.sense, before.sense));
-            let native_after =
-                normalized_face_sense_to_native(after.sense, native_before, normalized_before);
+            let carrier_flipped = native_senses.get(&before.id).copied().unwrap_or(false);
+            let native_after = normalized_face_sense_to_native(after.sense, carrier_flipped);
             edits.insert(id.to_owned(), native_after);
         }
     }
     Ok(edits)
 }
 
-pub(crate) fn validate_face_color_edits(
+pub(super) fn validate_face_color_edits(
     baseline: &[Face],
     target: &[Face],
 ) -> Result<BTreeMap<String, Color>, CodecError> {
@@ -2961,12 +2917,7 @@ pub(crate) fn validate_face_color_edits(
         let color = after.color.ok_or_else(|| {
             CodecError::NotImplemented(format!("cannot remove F3D face color: {id}"))
         })?;
-        if before.color.is_none()
-            || ![color.r, color.g, color.b, color.a]
-                .into_iter()
-                .all(|component| component.is_finite() && (0.0..=1.0).contains(&component))
-            || color.a != 1.0
-        {
+        if before.color.is_none() || color.a() != 1.0 {
             return Err(CodecError::NotImplemented(format!(
                 "F3D face color {id} must replace an existing opaque finite RGB color"
             )));
@@ -2976,7 +2927,7 @@ pub(crate) fn validate_face_color_edits(
     Ok(edits)
 }
 
-pub(crate) fn validate_coedge_sense_edits(
+pub(super) fn validate_coedge_sense_edits(
     baseline: &[Coedge],
     target: &[Coedge],
 ) -> Result<BTreeMap<String, Sense>, CodecError> {
@@ -3010,27 +2961,17 @@ pub(crate) fn validate_coedge_sense_edits(
     Ok(edits)
 }
 
-pub(crate) fn validate_curve_edits(
+pub(super) fn validate_curve_edits(
     baseline: &[Curve],
     target: &[Curve],
 ) -> Result<std::collections::BTreeSet<String>, CodecError> {
     let baseline = baseline
         .iter()
-        .map(|curve| {
-            (
-                curve.id.as_str(),
-                curve.geometry.solved_cache().unwrap_or(&curve.geometry),
-            )
-        })
+        .map(|curve| (curve.id.as_str(), curve.geometry.solved()))
         .collect::<BTreeMap<_, _>>();
     let target = target
         .iter()
-        .map(|curve| {
-            (
-                curve.id.as_str(),
-                curve.geometry.solved_cache().unwrap_or(&curve.geometry),
-            )
-        })
+        .map(|curve| (curve.id.as_str(), curve.geometry.solved()))
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
         return Err(CodecError::NotImplemented(
@@ -3044,81 +2985,81 @@ pub(crate) fn validate_curve_edits(
             continue;
         }
         edited.insert(id.to_owned());
-        let valid = match after {
-            CurveGeometry::Line { origin, direction }
-                if matches!(before, CurveGeometry::Line { .. }) =>
-            {
-                finite_point(*origin)
-                    && finite_vector(*direction)
-                    && (direction.norm() - 1.0).abs() <= EPS_EDITED_DIRECTION_UNIT
-            }
-            CurveGeometry::Circle {
-                center,
-                axis,
-                ref_direction,
-                radius,
-            } if matches!(before, CurveGeometry::Circle { .. }) => {
-                finite_point(*center)
-                    && orthonormal_pair(*axis, *ref_direction)
-                    && radius.is_finite()
-                    && *radius > 0.0
-            }
-            CurveGeometry::Ellipse {
-                center,
-                axis,
-                major_direction,
-                major_radius,
-                minor_radius,
-            } if matches!(before, CurveGeometry::Ellipse { .. }) => {
-                finite_point(*center)
-                    && orthonormal_pair(*axis, *major_direction)
-                    && major_radius.is_finite()
-                    && minor_radius.is_finite()
-                    && *major_radius > 0.0
-                    && *minor_radius > 0.0
-                    && *minor_radius <= *major_radius
-            }
-            CurveGeometry::Degenerate { point }
-                if matches!(before, CurveGeometry::Degenerate { .. }) =>
-            {
-                finite_point(*point)
-            }
-            CurveGeometry::Nurbs(after) => {
-                let CurveGeometry::Nurbs(before) = before else {
-                    return Err(CodecError::NotImplemented(format!(
-                        "F3D regeneration cannot change curve {id} into a NURBS carrier"
-                    )));
-                };
-                (id.starts_with("f3d:brep:entity#")
+        // A curve-kind change is refused here, once, so the arms below decide
+        // the edit on their own bodies and carry no policy in their order.
+        if before.map(std::mem::discriminant) != after.map(std::mem::discriminant) {
+            return Err(CodecError::NotImplemented(
+                if matches!(after, Some(SolvedCurveGeometry::Nurbs(_))) {
+                    format!("F3D regeneration cannot change curve {id} into a NURBS carrier")
+                } else {
+                    format!("F3D regeneration does not support edits to curve {id}")
+                },
+            ));
+        }
+        match (before, after) {
+            // A circle and an ellipse hold their two directions in one
+            // `OrthonormalFrame3`, which admits them, so a same-kind edit to
+            // either carries no condition this writer can still refuse.
+            (
+                _,
+                Some(
+                    SolvedCurveGeometry::Line(_)
+                    | SolvedCurveGeometry::Degenerate(_)
+                    | SolvedCurveGeometry::Circle(_)
+                    | SolvedCurveGeometry::Ellipse(_),
+                ),
+            ) => {}
+            (Some(SolvedCurveGeometry::Nurbs(before)), Some(SolvedCurveGeometry::Nurbs(after))) => {
+                // `NurbsCurve` admission states finite poles and finite
+                // nonzero weights, and the record states each weight as a
+                // plain little-endian f64 payload, so the weight sign carries
+                // no condition. A degree outside 1..=20 is malformed: no
+                // spline layout reader admits such a record, so no f3d
+                // document holds one. The rest are edits an f3d document can
+                // state and this writer does not write: a carrier it does not
+                // address, a changed distinct-knot count, and a changed
+                // rational form or pole count.
+                if !(id.starts_with("f3d:brep:entity#")
                     || id.starts_with("f3d:brep:tolerant-coedge-curve#")
                     || (id.starts_with("f3d:brep:procedural_surface#")
                         && (id.ends_with(":directrix") || id.ends_with(":spine"))))
-                    && valid_edited_curve_structure(before, after)
-                    && before.weights().is_some() == after.weights().is_some()
-                    && before.control_points().len() == after.control_points().len()
-                    && after.control_points().iter().copied().all(finite_point)
-                    && after.weights().is_none_or(|weights| {
-                        weights
-                            .iter()
-                            .all(|weight| weight.is_finite() && *weight > 0.0)
-                    })
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "edited F3D curve {id} is not a patchable NURBS carrier"
+                    )));
+                }
+                if !writable_nurbs_degree(after.degree()) {
+                    return Err(CodecError::malformed(format_args!(
+                        "edited F3D curve {id} has a NURBS degree outside [1, 20]"
+                    )));
+                }
+                if !unchanged_unique_knot_count(before.knots(), after.knots()) {
+                    return Err(CodecError::NotImplemented(format!(
+                        "edited F3D curve {id} changes the NURBS knot layout"
+                    )));
+                }
+                if before.weights().is_some() != after.weights().is_some() {
+                    return Err(CodecError::NotImplemented(format!(
+                        "edited F3D curve {id} changes the NURBS rational form"
+                    )));
+                }
+                if before.pole_count() != after.pole_count() {
+                    return Err(CodecError::NotImplemented(format!(
+                        "edited F3D curve {id} changes the NURBS control-point count"
+                    )));
+                }
             }
             _ => {
                 return Err(CodecError::NotImplemented(format!(
                     "F3D regeneration does not support edits to curve {id}"
                 )));
             }
-        };
-        if !valid {
-            return Err(CodecError::malformed(format_args!(
-                "edited F3D curve {id} has an invalid frame or radius"
-            )));
         }
     }
     Ok(edited)
 }
 
-pub(crate) fn validate_pcurve_edits(
+pub(super) fn validate_pcurve_edits(
     baseline_model: &Model,
     target_model: &Model,
 ) -> Result<BTreeMap<String, PcurveEdit>, CodecError> {
@@ -3162,24 +3103,16 @@ pub(crate) fn validate_pcurve_edits(
                 "F3D regeneration does not support this pcurve edit: {id}"
             )));
         };
+        // `PcurveNurbs::new` and `PcurveNurbs::edit_control_points` both
+        // require finite poles, so pole finiteness is not a condition this
+        // chain can refuse. The `WeightedPole2::weight` field is a
+        // `NonZeroReal`, and the patcher writes the weight as a plain
+        // little-endian `f64` payload, so the weight value is not one either.
         let valid = id.starts_with("f3d:brep:entity#")
-            && valid_edited_nurbs_direction(
-                before_nurbs.knots(),
-                after_nurbs.degree(),
-                after_nurbs.knots(),
-                after_nurbs.control_points().len(),
-            )
+            && writable_nurbs_degree(after_nurbs.degree())
+            && unchanged_unique_knot_count(before_nurbs.knots(), after_nurbs.knots())
             && before_nurbs.control_points().len() == after_nurbs.control_points().len()
-            && before_nurbs.weights().is_some() == after_nurbs.weights().is_some()
-            && after_nurbs.weights().is_none_or(|weights| {
-                weights
-                    .iter()
-                    .all(|weight| weight.is_finite() && *weight > 0.0)
-            })
-            && after_nurbs
-                .control_points()
-                .iter()
-                .all(|point| point.u.is_finite() && point.v.is_finite());
+            && before_nurbs.weights().is_some() == after_nurbs.weights().is_some();
         let contract_valid = before.wrapper_reversed().is_some()
             == after.wrapper_reversed().is_some()
             && before.native_tail_flags().is_some() == after.native_tail_flags().is_some()
@@ -3187,10 +3120,7 @@ pub(crate) fn validate_pcurve_edits(
             && before.fit_tolerance().is_some() == after.fit_tolerance().is_some()
             && after
                 .parameter_range()
-                .is_none_or(|range| range.into_iter().all(f64::is_finite) && range[0] <= range[1])
-            && after
-                .fit_tolerance()
-                .is_none_or(|tolerance| tolerance.is_finite() && tolerance >= 0.0);
+                .is_none_or(|range| range[0] <= range[1]);
         if !valid || !contract_valid {
             return Err(CodecError::NotImplemented(format!(
                 "F3D pcurve edit changes fixed cache structure: {id}"
@@ -3202,17 +3132,17 @@ pub(crate) fn validate_pcurve_edits(
             .then_some(after.parameter_range())
             .flatten();
         let edit = match &before.metadata {
-            cadmpeg_ir::geometry::PcurveMetadata::General(metadata)
-                if metadata.wrapper_reversed.is_none() && metadata.fit_tolerance.is_none() =>
+            cadmpeg_ir::geometry::pcurve::PcurveMetadata::General { form: metadata }
+                if metadata.wrapper_reversed.is_none() && metadata.fit_tolerance().is_none() =>
             {
                 PcurveEdit::Ref {
                     native_geometry: after_native,
                     periodic,
-                    parameter_range,
+                    parameter_range: parameter_range.map(cadmpeg_ir::units::FiniteVector::get),
                 }
             }
-            cadmpeg_ir::geometry::PcurveMetadata::AsmInline(_)
-            | cadmpeg_ir::geometry::PcurveMetadata::General(_) => PcurveEdit::Inline {
+            cadmpeg_ir::geometry::pcurve::PcurveMetadata::AsmInline { .. }
+            | cadmpeg_ir::geometry::pcurve::PcurveMetadata::General { .. } => PcurveEdit::Inline {
                 native_geometry: after_native,
                 periodic,
                 wrapper_reversed: (before.wrapper_reversed() != after.wrapper_reversed())
@@ -3221,10 +3151,11 @@ pub(crate) fn validate_pcurve_edits(
                 native_tail_flags: (before.native_tail_flags() != after.native_tail_flags())
                     .then_some(after.native_tail_flags())
                     .flatten(),
-                parameter_range,
+                parameter_range: parameter_range.map(cadmpeg_ir::units::FiniteVector::get),
                 fit_tolerance: (before.fit_tolerance() != after.fit_tolerance())
                     .then_some(after.fit_tolerance())
-                    .flatten(),
+                    .flatten()
+                    .map(cadmpeg_ir::geometry::FitTolerance::get),
             },
         };
         edits.insert(id.to_owned(), edit);
@@ -3232,27 +3163,17 @@ pub(crate) fn validate_pcurve_edits(
     Ok(edits)
 }
 
-pub(crate) fn validate_surface_edits(
+pub(super) fn validate_surface_edits(
     baseline: &[Surface],
     target: &[Surface],
 ) -> Result<std::collections::BTreeSet<String>, CodecError> {
     let baseline = baseline
         .iter()
-        .map(|surface| {
-            (
-                surface.id.as_str(),
-                surface.geometry.solved_cache().unwrap_or(&surface.geometry),
-            )
-        })
+        .map(|surface| (surface.id.as_str(), surface.geometry.solved()))
         .collect::<BTreeMap<_, _>>();
     let target = target
         .iter()
-        .map(|surface| {
-            (
-                surface.id.as_str(),
-                surface.geometry.solved_cache().unwrap_or(&surface.geometry),
-            )
-        })
+        .map(|surface| (surface.id.as_str(), surface.geometry.solved()))
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
         return Err(CodecError::NotImplemented(
@@ -3265,116 +3186,122 @@ pub(crate) fn validate_surface_edits(
         if before == after {
             continue;
         }
-        let valid = match after {
-            SurfaceGeometry::Plane {
-                origin,
-                normal,
-                u_axis,
-            } if matches!(before, SurfaceGeometry::Plane { .. }) => {
-                finite_point(*origin) && orthonormal_pair(*normal, *u_axis)
-            }
-            SurfaceGeometry::Sphere {
-                center,
-                axis,
-                ref_direction,
-                radius,
-            } if matches!(before, SurfaceGeometry::Sphere { .. }) => {
-                finite_point(*center)
-                    && orthonormal_pair(*axis, *ref_direction)
-                    && radius.is_finite()
-                    && *radius != 0.0
-            }
-            SurfaceGeometry::Torus {
-                center,
-                axis,
-                ref_direction,
-                major_radius,
-                minor_radius,
-            } if matches!(before, SurfaceGeometry::Torus { .. }) => {
-                finite_point(*center)
-                    && orthonormal_pair(*axis, *ref_direction)
-                    && major_radius.is_finite()
-                    && minor_radius.is_finite()
-                    && *major_radius != 0.0
-                    && *minor_radius != 0.0
-            }
-            SurfaceGeometry::Cylinder {
-                origin,
-                axis,
-                ref_direction,
-                radius,
-            } if matches!(before, SurfaceGeometry::Cylinder { .. }) => {
-                finite_point(*origin)
-                    && orthonormal_pair(*axis, *ref_direction)
-                    && radius.is_finite()
-                    && *radius != 0.0
-            }
-            SurfaceGeometry::Cone {
-                origin,
-                axis,
-                ref_direction,
-                radius,
-                ratio,
-                half_angle,
-            } if matches!(before, SurfaceGeometry::Cone { .. }) => {
-                finite_point(*origin)
-                    && orthonormal_pair(*axis, *ref_direction)
-                    && radius.is_finite()
-                    && *radius != 0.0
-                    && ratio.is_finite()
-                    && *ratio > 0.0
-                    && half_angle.is_finite()
-                    && *half_angle >= 0.0
-                    && *half_angle < std::f64::consts::FRAC_PI_2
-            }
-            SurfaceGeometry::Nurbs(after) => {
-                let SurfaceGeometry::Nurbs(before) = before else {
-                    return Err(CodecError::NotImplemented(format!(
-                        "F3D regeneration cannot change surface {id} into a NURBS carrier"
+        // A surface-kind change is refused here, once, so the arms below decide
+        // the edit on their own bodies and carry no policy in their order.
+        if before.map(std::mem::discriminant) != after.map(std::mem::discriminant) {
+            return Err(CodecError::NotImplemented(
+                if matches!(after, Some(SolvedSurfaceGeometry::Nurbs(_))) {
+                    format!("F3D regeneration cannot change surface {id} into a NURBS carrier")
+                } else {
+                    format!("F3D regeneration does not support edits to surface {id}")
+                },
+            ));
+        }
+        match (before, after) {
+            // A plane, sphere, torus and cylinder hold their two directions in
+            // one `OrthonormalFrame3`, which admits them, so a same-kind edit
+            // to any of them carries no condition this writer can still refuse.
+            (
+                _,
+                Some(
+                    SolvedSurfaceGeometry::Plane(_)
+                    | SolvedSurfaceGeometry::Sphere(_)
+                    | SolvedSurfaceGeometry::Torus(_)
+                    | SolvedSurfaceGeometry::Cylinder(_),
+                ),
+            ) => {}
+            (_, Some(SolvedSurfaceGeometry::Cone(cone_surface))) => {
+                // `NonNegativeLength` admits zero and `Angle` admits every
+                // finite angle, so the cone carrier states neither condition.
+                // The record holds the reference direction scaled by the
+                // radius, which a zero radius erases. The record states the
+                // half angle as a sine and a cosine whose signs carry the axis
+                // and normal senses, and the ASM surface reader rebuilds the
+                // angle as `sine.abs().atan2(cosine.abs())`, whose range is
+                // [0, pi/2]. The patcher writes the sine and the cosine of the
+                // half angle, and `atan2(1.0, cos(pi/2))` is exactly `pi/2`, so
+                // the closed endpoint survives the round trip. A negative half
+                // angle and one above pi/2 are shapes no f3d document holds.
+                if cone_surface.radius().get() == 0.0 {
+                    return Err(CodecError::malformed(format_args!(
+                        "edited F3D cone surface {id} has a zero cross-section radius"
                     )));
-                };
-                (id.starts_with("f3d:brep:entity#")
+                }
+                if !(0.0..=std::f64::consts::FRAC_PI_2).contains(&cone_surface.half_angle().get()) {
+                    return Err(CodecError::malformed(format_args!(
+                        "edited F3D cone surface {id} has a half angle outside [0, pi/2]"
+                    )));
+                }
+            }
+            (
+                Some(SolvedSurfaceGeometry::Nurbs(before)),
+                Some(SolvedSurfaceGeometry::Nurbs(after)),
+            ) => {
+                // `NurbsSurface` admission states finite poles and finite
+                // nonzero weights, and the record states each weight as a
+                // plain little-endian f64 payload, so the weight sign carries
+                // no condition. A u or v degree outside 1..=20 is malformed:
+                // no spline layout reader admits such a record, so no f3d
+                // document holds one. The rest are edits an f3d document can
+                // state and this writer does not write: a carrier it does not
+                // address, a changed distinct-knot count, and a changed
+                // rational form or pole count.
+                if !(id.starts_with("f3d:brep:entity#")
                     || (id.starts_with("f3d:brep:procedural_surface#")
                         && (id.ends_with(":support0") || id.ends_with(":support1"))))
-                    && valid_edited_nurbs_direction(
-                        before.u_knots(),
-                        after.u_degree(),
-                        after.u_knots(),
-                        usize::try_from(after.u_count()).unwrap_or(usize::MAX),
-                    )
-                    && valid_edited_nurbs_direction(
-                        before.v_knots(),
-                        after.v_degree(),
-                        after.v_knots(),
-                        usize::try_from(after.v_count()).unwrap_or(usize::MAX),
-                    )
-                    && before.u_count() == after.u_count()
-                    && before.v_count() == after.v_count()
-                    && before.weights().is_some() == after.weights().is_some()
-                    && after.control_points().iter().copied().all(finite_point)
-                    && after.weights().is_none_or(|weights| {
-                        weights
-                            .iter()
-                            .all(|weight| weight.is_finite() && *weight > 0.0)
-                    })
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "edited F3D surface {id} is not a patchable NURBS carrier"
+                    )));
+                }
+                if !writable_nurbs_degree(after.u_degree()) {
+                    return Err(CodecError::malformed(format_args!(
+                        "edited F3D surface {id} has a NURBS u degree outside [1, 20]"
+                    )));
+                }
+                if !unchanged_unique_knot_count(before.u_knots(), after.u_knots()) {
+                    return Err(CodecError::NotImplemented(format!(
+                        "edited F3D surface {id} changes the NURBS u knot layout"
+                    )));
+                }
+                if !writable_nurbs_degree(after.v_degree()) {
+                    return Err(CodecError::malformed(format_args!(
+                        "edited F3D surface {id} has a NURBS v degree outside [1, 20]"
+                    )));
+                }
+                if !unchanged_unique_knot_count(before.v_knots(), after.v_knots()) {
+                    return Err(CodecError::NotImplemented(format!(
+                        "edited F3D surface {id} changes the NURBS v knot layout"
+                    )));
+                }
+                if before.u_count() != after.u_count() {
+                    return Err(CodecError::NotImplemented(format!(
+                        "edited F3D surface {id} changes the NURBS u control-point count"
+                    )));
+                }
+                if before.v_count() != after.v_count() {
+                    return Err(CodecError::NotImplemented(format!(
+                        "edited F3D surface {id} changes the NURBS v control-point count"
+                    )));
+                }
+                if before.weights().is_some() != after.weights().is_some() {
+                    return Err(CodecError::NotImplemented(format!(
+                        "edited F3D surface {id} changes the NURBS rational form"
+                    )));
+                }
             }
             _ => {
                 return Err(CodecError::NotImplemented(format!(
                     "F3D regeneration does not support edits to surface {id}"
                 )));
             }
-        };
-        if !valid {
-            return Err(CodecError::malformed(format_args!(
-                "edited F3D surface {id} requires a finite orthonormal frame and valid radius"
-            )));
         }
         edited.insert(id.to_owned());
     }
     Ok(edited)
 }
 
-pub(crate) fn validate_procedural_surface_edits(
+pub(super) fn validate_procedural_surface_edits(
     baseline: &CadIr,
     target: &CadIr,
 ) -> Result<BTreeMap<String, ProceduralSurfaceEdit>, CodecError> {
@@ -3403,91 +3330,73 @@ pub(crate) fn validate_procedural_surface_edits(
         }
         let edit = match (before.definition(), after.definition()) {
             (
-                ProceduralSurfaceDefinition::Extrusion {
-                    directrix: before_directrix,
-                    parameter_interval: before_parameter_interval,
-                    direction: before_direction,
-                    native_position: before_native_position,
-                    revision_form: None,
-                },
-                ProceduralSurfaceDefinition::Extrusion {
-                    directrix: after_directrix,
-                    parameter_interval: after_parameter_interval,
-                    direction: after_direction,
-                    native_position: after_native_position,
-                    revision_form: None,
-                },
-            ) if before_directrix == after_directrix => {
-                let interval = after_parameter_interval.ok_or_else(|| {
-                    CodecError::malformed(format_args!("F3D extrusion interval is missing: {id}"))
-                })?;
-                let position = after_native_position.ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "F3D extrusion native position is missing: {id}"
-                    ))
-                })?;
-                if !interval.into_iter().all(f64::is_finite) || interval[0] >= interval[1] {
-                    return Err(CodecError::malformed(format_args!(
-                        "F3D extrusion interval must be finite and ordered: {id}"
-                    )));
-                }
-                if !finite_vector(*after_direction) || after_direction.norm() == 0.0 {
-                    return Err(CodecError::malformed(format_args!(
-                        "F3D extrusion direction must be finite and nonzero: {id}"
-                    )));
-                }
-                if ![position.x, position.y, position.z]
-                    .into_iter()
-                    .all(f64::is_finite)
+                ProceduralSurfaceDefinition::Extrusion(definition_payload_0),
+                ProceduralSurfaceDefinition::Extrusion(definition_payload_1),
+            ) if (definition_payload_0.directrix()) == (definition_payload_1.directrix())
+                && definition_payload_0.revision_form().is_none()
+                && definition_payload_1.revision_form().is_none() =>
+            {
+                let before_parameter_interval = definition_payload_0.parameter_interval();
+                let before_direction = definition_payload_0.direction();
+                let before_native_position = definition_payload_0.native_position();
+                let after_parameter_interval = definition_payload_1.parameter_interval();
+                let after_direction = definition_payload_1.direction();
+                let after_native_position = definition_payload_1.native_position();
                 {
-                    return Err(CodecError::malformed(format_args!(
-                        "F3D extrusion native position must be finite: {id}"
-                    )));
+                    let interval = after_parameter_interval.ok_or_else(|| {
+                        CodecError::malformed(format_args!(
+                            "F3D extrusion interval is missing: {id}"
+                        ))
+                    })?;
+                    let position = after_native_position.ok_or_else(|| {
+                        CodecError::malformed(format_args!(
+                            "F3D extrusion native position is missing: {id}"
+                        ))
+                    })?;
+                    if interval[0] >= interval[1] {
+                        return Err(CodecError::malformed(format_args!(
+                            "F3D extrusion interval must be strictly increasing: {id}"
+                        )));
+                    }
+                    if after_direction.norm() == 0.0 {
+                        return Err(CodecError::malformed(format_args!(
+                            "F3D extrusion direction must be nonzero: {id}"
+                        )));
+                    }
+                    (before_parameter_interval != after_parameter_interval
+                        || before_direction != after_direction
+                        || before_native_position != after_native_position)
+                        .then_some(ProceduralSurfaceEdit::Extrusion {
+                            parameter_interval: interval.get(),
+                            direction: after_direction.get(),
+                            native_position: position.get(),
+                        })
                 }
-                (before_parameter_interval != after_parameter_interval
-                    || before_direction != after_direction
-                    || before_native_position != after_native_position)
-                    .then_some(ProceduralSurfaceEdit::Extrusion {
-                        parameter_interval: interval,
-                        direction: *after_direction,
-                        native_position: position,
-                    })
             }
             (
-                ProceduralSurfaceDefinition::Blend {
-                    supports: before_supports,
-                    spine: before_spine,
-                    radius: before_radius,
-                    cross_section: before_cross_section,
-                    native: before_native,
-                },
-                ProceduralSurfaceDefinition::Blend {
-                    supports: after_supports,
-                    spine: after_spine,
-                    radius: after_radius,
-                    cross_section: after_cross_section,
-                    native: after_native,
-                },
-            ) if before_supports == after_supports
-                && before_spine == after_spine
-                && before_cross_section == after_cross_section
-                && before_native == after_native =>
+                ProceduralSurfaceDefinition::Blend(before_payload),
+                ProceduralSurfaceDefinition::Blend(after_payload),
+            ) if before_payload.supports() == after_payload.supports()
+                && before_payload.spine() == after_payload.spine()
+                && before_payload.cross_section() == after_payload.cross_section()
+                && before_payload.native() == after_payload.native() =>
             {
-                let values = match after_radius {
-                    BlendRadiusLaw::Constant { signed_radius } => [*signed_radius; 2],
-                    BlendRadiusLaw::Linear { start, end } => [*start, *end],
+                let values = match after_payload.radius() {
+                    BlendRadiusLaw::Constant { signed_radius } => [signed_radius.get(); 2],
+                    BlendRadiusLaw::Linear { start, end } => [start.get(), end.get()],
                     BlendRadiusLaw::Law { .. } => {
                         return Err(CodecError::NotImplemented(format!(
                             "F3D explicit blend-law regeneration is unsupported: {id}"
                         )));
                     }
                 };
-                if !values.into_iter().all(f64::is_finite) || values.contains(&0.0) {
+                if values.contains(&0.0) {
                     return Err(CodecError::malformed(format_args!(
-                        "F3D rolling-ball radii must be finite and nonzero: {id}"
+                        "F3D rolling-ball radii must be nonzero: {id}"
                     )));
                 }
-                (before_radius != after_radius).then_some(ProceduralSurfaceEdit::BlendRadii(values))
+                (before_payload.radius() != after_payload.radius())
+                    .then_some(ProceduralSurfaceEdit::BlendRadii(values))
             }
             _ => {
                 return Err(CodecError::NotImplemented(format!(
@@ -3502,7 +3411,7 @@ pub(crate) fn validate_procedural_surface_edits(
     Ok(edits)
 }
 
-pub(crate) fn validate_procedural_surface_fit_edits(
+pub(super) fn validate_procedural_surface_fit_edits(
     baseline: &CadIr,
     target: &CadIr,
 ) -> Result<BTreeMap<String, f64>, CodecError> {
@@ -3529,17 +3438,17 @@ pub(crate) fn validate_procedural_surface_fit_edits(
                 "cannot remove F3D procedural-surface fit tolerance: {id}"
             ))
         })?;
-        if before.cache_fit_tolerance().is_none() || !tolerance.is_finite() || tolerance < 0.0 {
+        if before.cache_fit_tolerance().is_none() {
             return Err(CodecError::malformed(format_args!(
                 "F3D procedural-surface fit tolerance must replace a finite nonnegative value: {id}"
             )));
         }
-        edits.insert(id.to_owned(), tolerance);
+        edits.insert(id.to_owned(), tolerance.get());
     }
     Ok(edits)
 }
 
-pub(crate) fn validate_procedural_curve_edits(
+pub(super) fn validate_procedural_curve_edits(
     baseline: &[ProceduralCurve],
     target: &[ProceduralCurve],
 ) -> Result<BTreeMap<String, ProceduralCurveEdit>, CodecError> {
@@ -3559,117 +3468,101 @@ pub(crate) fn validate_procedural_curve_edits(
     let mut edits = BTreeMap::new();
     for (id, before) in baseline {
         let after = target[id];
-        let definition = match (before.definition(), after.definition()) {
+        // The solved-cache contract travels inside the definition, and the
+        // fit tolerance is written through its own edit, so the definition
+        // comparison normalises that contract out of both sides.
+        let before_definition = definition_without_legacy_cache(before.definition());
+        let after_definition = definition_without_legacy_cache(after.definition());
+        let definition = match (&before_definition, &after_definition) {
             (
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix { .. },
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix { .. },
-            ) if before.definition() != after.definition() => Some(after.definition().clone()),
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(_),
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(_),
+            ) if before_definition != after_definition => Some(after_definition.clone()),
             (
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset {
-                    source: before_source,
-                    roles: before_roles,
-                    ..
-                },
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset {
-                    source: after_source,
-                    roles: after_roles,
-                    ..
-                },
-            ) if before_source == after_source
-                && before_roles == after_roles
-                && before.definition() != after.definition() =>
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset(definition_payload_0),
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset(definition_payload_1),
+            ) if (definition_payload_0.source()) == (definition_payload_1.source())
+                && (definition_payload_0.roles()) == (definition_payload_1.roles())
+                && before_definition != after_definition =>
             {
-                Some(after.definition().clone())
+                Some(after_definition.clone())
             }
             (
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
-                    source: before_source,
-                    ..
-                },
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
-                    source: after_source,
-                    ..
-                },
-            ) if before_source == after_source && before.definition() != after.definition() => {
-                Some(after.definition().clone())
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(definition_payload_0),
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(definition_payload_1),
+            ) if (definition_payload_0.source()) == (definition_payload_1.source())
+                && before_definition != after_definition =>
+            {
+                Some(after_definition.clone())
             }
             (
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset {
-                    context: before_context,
-                    ..
-                },
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset {
-                    context: after_context,
-                    ..
-                },
-            ) if before_context.sides == after_context.sides
-                && before_context
-                    .discontinuities
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset(
+                    definition_payload_0,
+                ),
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset(
+                    definition_payload_1,
+                ),
+            ) if (definition_payload_0.context()).sides()
+                == (definition_payload_1.context()).sides()
+                && (definition_payload_0.context())
+                    .discontinuities()
                     .iter()
                     .map(Vec::len)
-                    .eq(after_context.discontinuities.iter().map(Vec::len))
-                && before.definition() != after.definition() =>
+                    .eq((definition_payload_1.context())
+                        .discontinuities()
+                        .iter()
+                        .map(Vec::len))
+                && before_definition != after_definition =>
             {
-                Some(after.definition().clone())
+                Some(after_definition.clone())
             }
             (
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset {
-                    context: before_context,
-                    base: before_base,
-                    ..
-                },
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset {
-                    context: after_context,
-                    base: after_base,
-                    ..
-                },
-            ) if before_context.sides == after_context.sides
-                && before_context
-                    .discontinuities
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset(
+                    definition_payload_0,
+                ),
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset(
+                    definition_payload_1,
+                ),
+            ) if (definition_payload_0.context()).sides()
+                == (definition_payload_1.context()).sides()
+                && (definition_payload_0.context())
+                    .discontinuities()
                     .iter()
                     .map(Vec::len)
-                    .eq(after_context.discontinuities.iter().map(Vec::len))
-                && before_base == after_base
-                && before.definition() != after.definition() =>
+                    .eq((definition_payload_1.context())
+                        .discontinuities()
+                        .iter()
+                        .map(Vec::len))
+                && (definition_payload_0.base()) == (definition_payload_1.base())
+                && before_definition != after_definition =>
             {
-                Some(after.definition().clone())
+                Some(after_definition.clone())
             }
             (
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring {
-                    layout: before_layout,
-                    ..
-                },
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring {
-                    layout: after_layout,
-                    ..
-                },
-            ) if spring_patch_shape_agrees(before_layout, after_layout)
-                && before.definition() != after.definition() =>
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring(before_payload),
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring(after_payload),
+            ) if spring_patch_shape_agrees(before_payload.layout(), after_payload.layout())
+                && before_definition != after_definition =>
             {
-                Some(after.definition().clone())
+                Some(after_definition.clone())
             }
             (
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection {
-                    context: before_context,
-                    source: before_source,
-                    tail: before_tail,
-                    ..
-                },
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection {
-                    context: after_context,
-                    source: after_source,
-                    tail: after_tail,
-                    ..
-                },
-            ) if before_context.sides == after_context.sides
-                && before_context
-                    .discontinuities
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection(before_payload),
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection(after_payload),
+            ) if before_payload.context().sides() == after_payload.context().sides()
+                && before_payload
+                    .context()
+                    .discontinuities()
                     .iter()
                     .map(Vec::len)
-                    .eq(after_context.discontinuities.iter().map(Vec::len))
-                && before_source == after_source
+                    .eq(after_payload
+                        .context()
+                        .discontinuities()
+                        .iter()
+                        .map(Vec::len))
+                && before_payload.source() == after_payload.source()
                 && matches!(
-                    (before_tail, after_tail),
+                    (before_payload.tail(), after_payload.tail()),
                     (
                         cadmpeg_ir::geometry::ProjectionTail::EarlyClose { .. },
                         cadmpeg_ir::geometry::ProjectionTail::EarlyClose { .. },
@@ -3678,9 +3571,9 @@ pub(crate) fn validate_procedural_curve_edits(
                         cadmpeg_ir::geometry::ProjectionTail::Ranged { .. },
                     )
                 )
-                && before.definition() != after.definition() =>
+                && before_definition != after_definition =>
             {
-                Some(after.definition().clone())
+                Some(after_definition.clone())
             }
             (
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection {
@@ -3691,37 +3584,38 @@ pub(crate) fn validate_procedural_curve_edits(
                     context: after_context,
                     ..
                 },
-            ) if before_context.sides == after_context.sides
+            ) if before_context.sides() == after_context.sides()
                 && before_context
-                    .discontinuities
+                    .discontinuities()
                     .iter()
                     .map(Vec::len)
-                    .eq(after_context.discontinuities.iter().map(Vec::len))
-                && before.definition() != after.definition() =>
+                    .eq(after_context.discontinuities().iter().map(Vec::len))
+                && before_definition != after_definition =>
             {
-                Some(after.definition().clone())
+                Some(after_definition.clone())
             }
             (
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection {
-                    context: before_context,
-                    third: before_third,
-                    ..
-                },
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection {
-                    context: after_context,
-                    third: after_third,
-                    ..
-                },
-            ) if before_context.sides == after_context.sides
-                && before_context
-                    .discontinuities
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection(
+                    before_payload,
+                ),
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection(
+                    after_payload,
+                ),
+            ) if before_payload.context().sides() == after_payload.context().sides()
+                && before_payload
+                    .context()
+                    .discontinuities()
                     .iter()
                     .map(Vec::len)
-                    .eq(after_context.discontinuities.iter().map(Vec::len))
-                && before_third == after_third
-                && before.definition() != after.definition() =>
+                    .eq(after_payload
+                        .context()
+                        .discontinuities()
+                        .iter()
+                        .map(Vec::len))
+                && before_payload.third() == after_payload.third()
+                && before_definition != after_definition =>
             {
-                Some(after.definition().clone())
+                Some(after_definition.clone())
             }
             (
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
@@ -3731,54 +3625,46 @@ pub(crate) fn validate_procedural_curve_edits(
                     family: after_family,
                 },
             ) if before_family.has_same_form(after_family)
-                && before_family.context().sides == after_family.context().sides
+                && before_family.context().sides() == after_family.context().sides()
                 && before_family
                     .context()
-                    .discontinuities
+                    .discontinuities()
                     .iter()
                     .map(Vec::len)
-                    .eq(after_family.context().discontinuities.iter().map(Vec::len))
-                && before.definition() != after.definition() =>
+                    .eq(after_family
+                        .context()
+                        .discontinuities()
+                        .iter()
+                        .map(Vec::len))
+                && before_definition != after_definition =>
             {
-                Some(after.definition().clone())
+                Some(after_definition.clone())
             }
             (
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette {
-                    context: before_context,
-                    silhouette: before_silhouette,
-                    cast_surface: before_cast,
-                    ..
-                },
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette {
-                    context: after_context,
-                    silhouette: after_silhouette,
-                    cast_surface: after_cast,
-                    ..
-                },
-            ) if before_context == after_context
-                && std::mem::discriminant(before_silhouette)
-                    == std::mem::discriminant(after_silhouette)
-                && before_cast == after_cast
-                && before.definition() != after.definition() =>
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette(before_payload),
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette(after_payload),
+            ) if before_payload.context() == after_payload.context()
+                && std::mem::discriminant(before_payload.silhouette())
+                    == std::mem::discriminant(after_payload.silhouette())
+                && before_payload.cast_surface() == after_payload.cast_surface()
+                && before_definition != after_definition =>
             {
-                Some(after.definition().clone())
+                Some(after_definition.clone())
             }
             (
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound {
-                    components: before_components,
-                    ..
-                },
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound {
-                    components: after_components,
-                    ..
-                },
-            ) if before_components
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(before_compound),
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(after_compound),
+            ) if before_compound
+                .components()
                 .iter()
                 .map(|item| &item.component)
-                .eq(after_components.iter().map(|item| &item.component))
-                && before.definition() != after.definition() =>
+                .eq(after_compound
+                    .components()
+                    .iter()
+                    .map(|item| &item.component))
+                && before_definition != after_definition =>
             {
-                Some(after.definition().clone())
+                Some(after_definition.clone())
             }
             (before, after) if before == after => None,
             _ => {
@@ -3795,29 +3681,42 @@ pub(crate) fn validate_procedural_curve_edits(
                     "cannot remove F3D procedural-curve fit tolerance: {id}"
                 ))
             })?;
-            if before.cache_fit_tolerance().is_none() || !tolerance.is_finite() || tolerance < 0.0 {
+            if before.cache_fit_tolerance().is_none() {
                 return Err(CodecError::malformed(format_args!(
                     "F3D procedural-curve fit tolerance must replace a finite nonnegative value: {id}"
                 )));
             }
             Some(tolerance)
         };
-        if definition.is_some() || fit_tolerance.is_some() {
-            edits.insert(
-                id.to_owned(),
-                ProceduralCurveEdit {
-                    definition,
-                    fit_tolerance,
-                },
-            );
+        if let Some(edit) = ProceduralCurveEdit::new(
+            definition,
+            fit_tolerance.map(cadmpeg_ir::geometry::FitTolerance::get),
+        ) {
+            edits.insert(id.to_owned(), edit);
         }
     }
     Ok(edits)
 }
 
+/// The definition with the solved-cache contract it states cleared, so two
+/// definitions compare on their construction fields alone.
+fn definition_without_legacy_cache(
+    definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
+) -> cadmpeg_ir::geometry::ProceduralCurveDefinition {
+    let mut cleared = definition.clone();
+    cleared.clear_legacy_cache();
+    cleared
+}
+
 fn spring_patch_shape_agrees(
-    before: &cadmpeg_ir::geometry::SpringLayout,
-    after: &cadmpeg_ir::geometry::SpringLayout,
+    before: &cadmpeg_ir::geometry::SpringLayout<
+        cadmpeg_ir::scalar::FiniteReal,
+        cadmpeg_ir::topology::ParameterInterval,
+    >,
+    after: &cadmpeg_ir::geometry::SpringLayout<
+        cadmpeg_ir::scalar::FiniteReal,
+        cadmpeg_ir::topology::ParameterInterval,
+    >,
 ) -> bool {
     match (before, after) {
         (
@@ -3854,13 +3753,708 @@ fn spring_patch_shape_agrees(
                 ..
             },
         ) => {
-            before_context.sides == after_context.sides
+            before_context.sides() == after_context.sides()
                 && before_context
-                    .discontinuities
+                    .discontinuities()
                     .iter()
                     .map(Vec::len)
-                    .eq(after_context.discontinuities.iter().map(Vec::len))
+                    .eq(after_context.discontinuities().iter().map(Vec::len))
         }
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    mod timestamps;
+
+    use super::{
+        validate_curve_edits, validate_material_assignment_edits, validate_surface_edits,
+        PatchNatives,
+    };
+    use crate::native::F3dNative;
+    use crate::records::references::DesignMaterialAssignment;
+    use cadmpeg_ir::geometry::analytic::{CircleCurve, ConeSurface, LineCurve};
+    use cadmpeg_ir::geometry::nurbs::{
+        NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes,
+    };
+    use cadmpeg_ir::geometry::{
+        Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    };
+    use cadmpeg_ir::ids::{CurveId, SurfaceId};
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    fn curve(id: &str, geometry: SolvedCurveGeometry) -> Vec<Curve> {
+        vec![Curve {
+            id: CurveId::mint(id).expect("identity grammar"),
+            geometry: CurveGeometry::Solved(geometry),
+            source_object: None,
+        }]
+    }
+
+    fn surface(id: &str, geometry: SolvedSurfaceGeometry) -> Vec<Surface> {
+        vec![Surface {
+            id: SurfaceId::mint(id).expect("identity grammar"),
+            geometry: SurfaceGeometry::Solved(geometry),
+            source_object: None,
+        }]
+    }
+
+    fn cone_surface(radius: f64, half_angle: f64) -> Vec<Surface> {
+        surface(
+            "f3d:brep:entity#9",
+            SolvedSurfaceGeometry::Cone(
+                ConeSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    radius,
+                    1.0,
+                    half_angle,
+                )
+                .expect("orthonormal frame, nonnegative radius and finite half angle"),
+            ),
+        )
+    }
+
+    /// The first `count` poles of a fixed degree-1 control polygon.
+    fn poles(count: usize) -> Vec<Point3> {
+        [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+        ]
+        .get(..count)
+        .expect("at most three poles")
+        .to_vec()
+    }
+
+    fn nurbs_curve(
+        knots: Vec<f64>,
+        pole_count: usize,
+        weights: Option<Vec<f64>>,
+    ) -> SolvedCurveGeometry {
+        SolvedCurveGeometry::Nurbs(
+            NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                1,
+                knots,
+                poles(pole_count),
+                weights,
+                false,
+            )
+            .expect("fixture constructor admission")
+            .expect("degree, knots and control points agree"),
+        )
+    }
+
+    fn nurbs_surface(
+        u_knots: Vec<f64>,
+        v_knots: Vec<f64>,
+        u_count: usize,
+        v_count: usize,
+        weights: Option<Vec<Vec<f64>>>,
+    ) -> SolvedSurfaceGeometry {
+        SolvedSurfaceGeometry::Nurbs(
+            NurbsSurface::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                NurbsSurfaceAxis::new(1, u_knots, false),
+                NurbsSurfaceAxis::new(1, v_knots, false),
+                NurbsSurfaceLanes::new((0..u_count).map(|_| poles(v_count)).collect(), weights),
+                false,
+            )
+            .expect("fixture constructor admission")
+            .expect("degrees, knots and control grid agree"),
+        )
+    }
+
+    /// An all-ones weight grid whose last row's first pole carries `last`.
+    fn weight_grid(u_count: usize, v_count: usize, last: f64) -> Vec<Vec<f64>> {
+        let mut rows = (0..u_count)
+            .map(|_| (0..v_count).map(|_| 1.0).collect::<Vec<f64>>())
+            .collect::<Vec<_>>();
+        if let Some(row) = rows.last_mut() {
+            if let Some(weight) = row.first_mut() {
+                *weight = last;
+            }
+        }
+        rows
+    }
+
+    #[test]
+    fn a_curve_kind_change_is_refused_with_the_message_of_the_kind_it_becomes() {
+        let baseline = curve(
+            "f3d:brep:entity#7",
+            SolvedCurveGeometry::Circle(
+                CircleCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    2.0,
+                )
+                .expect("orthonormal frame and positive radius"),
+            ),
+        );
+        let line = curve(
+            "f3d:brep:entity#7",
+            SolvedCurveGeometry::Line(
+                LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0))
+                    .expect("finite origin and nonzero direction"),
+            ),
+        );
+        let error = validate_curve_edits(&baseline, &line)
+            .expect_err("a circle carrier cannot become a line");
+        assert!(
+            error
+                .to_string()
+                .contains("does not support edits to curve f3d:brep:entity#7"),
+            "{error}"
+        );
+
+        let nurbs = curve(
+            "f3d:brep:entity#7",
+            nurbs_curve(vec![0.0, 0.0, 1.0, 1.0], 2, None),
+        );
+        let error = validate_curve_edits(&baseline, &nurbs)
+            .expect_err("a circle carrier cannot become a NURBS carrier");
+        assert!(
+            error
+                .to_string()
+                .contains("cannot change curve f3d:brep:entity#7 into a NURBS carrier"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_same_kind_nurbs_curve_edit_that_changes_the_knot_multiplicity_is_not_implemented() {
+        let nurbs = |knots: Vec<f64>| curve("f3d:brep:entity#7", nurbs_curve(knots, 2, None));
+        let error = validate_curve_edits(
+            &nurbs(vec![0.0, 0.0, 1.0, 1.0]),
+            &nurbs(vec![0.0, 0.5, 1.0, 1.0]),
+        )
+        .expect_err("a NURBS carrier keeps its knot multiplicities");
+        assert!(
+            error
+                .to_string()
+                .contains("edited F3D curve f3d:brep:entity#7 changes the NURBS knot layout"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_same_kind_nurbs_curve_edit_that_leaves_the_writable_degree_range_is_malformed() {
+        let degree_zero = SolvedCurveGeometry::Nurbs(
+            NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                0,
+                vec![0.0, 0.0, 1.0],
+                poles(2),
+                None,
+                false,
+            )
+            .expect("fixture constructor admission")
+            .expect("degree, knots and control points agree"),
+        );
+        let error = validate_curve_edits(
+            &curve(
+                "f3d:brep:entity#7",
+                nurbs_curve(vec![0.0, 0.0, 1.0, 1.0], 2, None),
+            ),
+            &curve("f3d:brep:entity#7", degree_zero),
+        )
+        .expect_err("a spline record states a degree in 1..=20");
+        assert!(
+            error
+                .to_string()
+                .contains("edited F3D curve f3d:brep:entity#7 has a NURBS degree outside [1, 20]"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_nurbs_curve_edit_on_a_carrier_the_patcher_does_not_address_is_not_implemented() {
+        let id = "f3d:brep:procedural_surface#7:profile";
+        let error = validate_curve_edits(
+            &curve(id, nurbs_curve(vec![0.0, 0.0, 1.0, 1.0], 2, None)),
+            &curve(id, nurbs_curve(vec![0.0, 0.0, 2.0, 2.0], 2, None)),
+        )
+        .expect_err("only the addressed NURBS carriers are patchable");
+        assert!(
+            error
+                .to_string()
+                .contains("edited F3D curve f3d:brep:procedural_surface#7:profile is not a patchable NURBS carrier"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_same_kind_nurbs_curve_edit_that_changes_the_rational_form_is_not_implemented() {
+        let error = validate_curve_edits(
+            &curve(
+                "f3d:brep:entity#7",
+                nurbs_curve(vec![0.0, 0.0, 1.0, 1.0], 2, None),
+            ),
+            &curve(
+                "f3d:brep:entity#7",
+                nurbs_curve(vec![0.0, 0.0, 1.0, 1.0], 2, Some(vec![1.0, 1.0])),
+            ),
+        )
+        .expect_err("a polynomial carrier cannot gain a weight lane");
+        assert!(
+            error
+                .to_string()
+                .contains("edited F3D curve f3d:brep:entity#7 changes the NURBS rational form"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_same_kind_nurbs_curve_edit_that_changes_the_pole_count_is_not_implemented() {
+        let error = validate_curve_edits(
+            &curve(
+                "f3d:brep:entity#7",
+                nurbs_curve(vec![0.0, 0.0, 1.0, 1.0], 2, None),
+            ),
+            &curve(
+                "f3d:brep:entity#7",
+                nurbs_curve(vec![0.0, 0.0, 1.0, 1.0, 1.0], 3, None),
+            ),
+        )
+        .expect_err("a NURBS carrier keeps its control-point count");
+        assert!(
+            error.to_string().contains(
+                "edited F3D curve f3d:brep:entity#7 changes the NURBS control-point count"
+            ),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_pole_edit_on_a_nurbs_curve_carrier_with_a_negative_baseline_weight_is_admitted() {
+        let weights = Some(vec![1.0, -1.0]);
+        let baseline = curve(
+            "f3d:brep:entity#7",
+            nurbs_curve(vec![0.0, 0.0, 1.0, 1.0], 2, weights.clone()),
+        );
+        let target = curve(
+            "f3d:brep:entity#7",
+            SolvedCurveGeometry::Nurbs(
+                NurbsCurve::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 5.0, 0.0)],
+                    weights,
+                    false,
+                )
+                .expect("fixture constructor admission")
+                .expect("degree, knots and control points agree"),
+            ),
+        );
+        let edited = validate_curve_edits(&baseline, &target)
+            .expect("a negative baseline weight refuses no pole edit");
+        assert_eq!(
+            edited,
+            std::collections::BTreeSet::from(["f3d:brep:entity#7".to_owned()])
+        );
+    }
+
+    #[test]
+    fn a_same_kind_cone_edit_that_removes_the_radius_is_malformed() {
+        let error = validate_surface_edits(
+            &cone_surface(2.0, std::f64::consts::FRAC_PI_4),
+            &cone_surface(0.0, std::f64::consts::FRAC_PI_4),
+        )
+        .expect_err("a cone carrier keeps a nonzero radius");
+        assert!(
+            error.to_string().contains(
+                "edited F3D cone surface f3d:brep:entity#9 has a zero cross-section radius"
+            ),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_same_kind_cone_edit_that_opens_the_half_angle_past_a_right_angle_is_malformed() {
+        let error = validate_surface_edits(
+            &cone_surface(2.0, std::f64::consts::FRAC_PI_4),
+            &cone_surface(2.0, std::f64::consts::PI),
+        )
+        .expect_err("a cone carrier keeps a half angle no wider than a right angle");
+        assert!(
+            error.to_string().contains(
+                "edited F3D cone surface f3d:brep:entity#9 has a half angle outside [0, pi/2]"
+            ),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_radius_edit_on_a_cone_carrier_with_a_right_baseline_half_angle_is_admitted() {
+        let edited = validate_surface_edits(
+            &cone_surface(2.0, std::f64::consts::FRAC_PI_2),
+            &cone_surface(3.0, std::f64::consts::FRAC_PI_2),
+        )
+        .expect("a right baseline half angle refuses no radius edit");
+        assert_eq!(
+            edited,
+            std::collections::BTreeSet::from(["f3d:brep:entity#9".to_owned()])
+        );
+    }
+
+    #[test]
+    fn a_nurbs_surface_edit_on_a_carrier_the_patcher_does_not_address_is_not_implemented() {
+        let id = "f3d:brep:procedural_surface#9:profile";
+        let error = validate_surface_edits(
+            &surface(
+                id,
+                nurbs_surface(
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    2,
+                    2,
+                    None,
+                ),
+            ),
+            &surface(
+                id,
+                nurbs_surface(
+                    vec![0.0, 0.0, 2.0, 2.0],
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    2,
+                    2,
+                    None,
+                ),
+            ),
+        )
+        .expect_err("only the addressed NURBS carriers are patchable");
+        assert!(
+            error.to_string().contains(
+                "edited F3D surface f3d:brep:procedural_surface#9:profile is not a patchable NURBS carrier"
+            ),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_same_kind_nurbs_surface_edit_that_changes_the_u_knot_multiplicity_is_not_implemented() {
+        let error = validate_surface_edits(
+            &surface(
+                "f3d:brep:entity#9",
+                nurbs_surface(
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    2,
+                    2,
+                    None,
+                ),
+            ),
+            &surface(
+                "f3d:brep:entity#9",
+                nurbs_surface(
+                    vec![0.0, 0.5, 1.0, 1.0],
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    2,
+                    2,
+                    None,
+                ),
+            ),
+        )
+        .expect_err("a NURBS carrier keeps its u knot multiplicities");
+        assert!(
+            error
+                .to_string()
+                .contains("edited F3D surface f3d:brep:entity#9 changes the NURBS u knot layout"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_same_kind_nurbs_surface_edit_that_changes_the_v_knot_multiplicity_is_not_implemented() {
+        let error = validate_surface_edits(
+            &surface(
+                "f3d:brep:entity#9",
+                nurbs_surface(
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    2,
+                    2,
+                    None,
+                ),
+            ),
+            &surface(
+                "f3d:brep:entity#9",
+                nurbs_surface(
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![0.0, 0.5, 1.0, 1.0],
+                    2,
+                    2,
+                    None,
+                ),
+            ),
+        )
+        .expect_err("a NURBS carrier keeps its v knot multiplicities");
+        assert!(
+            error
+                .to_string()
+                .contains("edited F3D surface f3d:brep:entity#9 changes the NURBS v knot layout"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_same_kind_nurbs_surface_edit_that_leaves_the_writable_u_degree_range_is_malformed() {
+        let u_degree_zero = SolvedSurfaceGeometry::Nurbs(
+            NurbsSurface::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                NurbsSurfaceAxis::new(0, vec![0.0, 0.0, 1.0], false),
+                NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                NurbsSurfaceLanes::new((0..2).map(|_| poles(2)).collect(), None),
+                false,
+            )
+            .expect("fixture constructor admission")
+            .expect("degrees, knots and control grid agree"),
+        );
+        let error = validate_surface_edits(
+            &surface(
+                "f3d:brep:entity#9",
+                nurbs_surface(
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    2,
+                    2,
+                    None,
+                ),
+            ),
+            &surface("f3d:brep:entity#9", u_degree_zero),
+        )
+        .expect_err("a spline record states a u degree in 1..=20");
+        assert!(
+            error.to_string().contains(
+                "edited F3D surface f3d:brep:entity#9 has a NURBS u degree outside [1, 20]"
+            ),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_same_kind_nurbs_surface_edit_that_leaves_the_writable_v_degree_range_is_malformed() {
+        let v_degree_zero = SolvedSurfaceGeometry::Nurbs(
+            NurbsSurface::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                NurbsSurfaceAxis::new(0, vec![0.0, 0.0, 1.0], false),
+                NurbsSurfaceLanes::new((0..2).map(|_| poles(2)).collect(), None),
+                false,
+            )
+            .expect("fixture constructor admission")
+            .expect("degrees, knots and control grid agree"),
+        );
+        let error = validate_surface_edits(
+            &surface(
+                "f3d:brep:entity#9",
+                nurbs_surface(
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    2,
+                    2,
+                    None,
+                ),
+            ),
+            &surface("f3d:brep:entity#9", v_degree_zero),
+        )
+        .expect_err("a spline record states a v degree in 1..=20");
+        assert!(
+            error.to_string().contains(
+                "edited F3D surface f3d:brep:entity#9 has a NURBS v degree outside [1, 20]"
+            ),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_same_kind_nurbs_surface_edit_that_changes_the_u_pole_count_is_not_implemented() {
+        let error = validate_surface_edits(
+            &surface(
+                "f3d:brep:entity#9",
+                nurbs_surface(
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    2,
+                    2,
+                    None,
+                ),
+            ),
+            &surface(
+                "f3d:brep:entity#9",
+                nurbs_surface(
+                    vec![0.0, 0.0, 1.0, 1.0, 1.0],
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    3,
+                    2,
+                    None,
+                ),
+            ),
+        )
+        .expect_err("a NURBS carrier keeps its u control-point count");
+        assert!(
+            error.to_string().contains(
+                "edited F3D surface f3d:brep:entity#9 changes the NURBS u control-point count"
+            ),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_same_kind_nurbs_surface_edit_that_changes_the_v_pole_count_is_not_implemented() {
+        let error = validate_surface_edits(
+            &surface(
+                "f3d:brep:entity#9",
+                nurbs_surface(
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    2,
+                    2,
+                    None,
+                ),
+            ),
+            &surface(
+                "f3d:brep:entity#9",
+                nurbs_surface(
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![0.0, 0.0, 1.0, 1.0, 1.0],
+                    2,
+                    3,
+                    None,
+                ),
+            ),
+        )
+        .expect_err("a NURBS carrier keeps its v control-point count");
+        assert!(
+            error.to_string().contains(
+                "edited F3D surface f3d:brep:entity#9 changes the NURBS v control-point count"
+            ),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_same_kind_nurbs_surface_edit_that_changes_the_rational_form_is_not_implemented() {
+        let error = validate_surface_edits(
+            &surface(
+                "f3d:brep:entity#9",
+                nurbs_surface(
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    2,
+                    2,
+                    None,
+                ),
+            ),
+            &surface(
+                "f3d:brep:entity#9",
+                nurbs_surface(
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    2,
+                    2,
+                    Some(weight_grid(2, 2, 1.0)),
+                ),
+            ),
+        )
+        .expect_err("a polynomial carrier cannot gain a weight grid");
+        assert!(
+            error
+                .to_string()
+                .contains("edited F3D surface f3d:brep:entity#9 changes the NURBS rational form"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_pole_edit_on_a_nurbs_surface_carrier_with_a_negative_baseline_weight_is_admitted() {
+        let baseline = surface(
+            "f3d:brep:entity#9",
+            nurbs_surface(
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![0.0, 0.0, 1.0, 1.0],
+                2,
+                2,
+                Some(weight_grid(2, 2, -1.0)),
+            ),
+        );
+        let moved = vec![
+            poles(2),
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 5.0)],
+        ];
+        let target = surface(
+            "f3d:brep:entity#9",
+            SolvedSurfaceGeometry::Nurbs(
+                NurbsSurface::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
+                    NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                    NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                    NurbsSurfaceLanes::new(moved, Some(weight_grid(2, 2, -1.0))),
+                    false,
+                )
+                .expect("fixture constructor admission")
+                .expect("degrees, knots and control grid agree"),
+            ),
+        );
+        let edited = validate_surface_edits(&baseline, &target)
+            .expect("a negative baseline weight refuses no pole edit");
+        assert_eq!(
+            edited,
+            std::collections::BTreeSet::from(["f3d:brep:entity#9".to_owned()])
+        );
+    }
+
+    fn assignment(physical_token: bool) -> DesignMaterialAssignment {
+        let mut document = serde_json::json!({
+            "id": "material#0",
+            "asm_body_key": 42,
+            "asm_body_key_offset": 200,
+            "entity_suffix_offset": 0,
+            "entity_id": "0_985",
+            "entity_id_offset": 8,
+            "visual_guid": "11111111-2222-3333-4444-555555555555",
+            "visual_guid_offset": 18
+        });
+        if physical_token {
+            document["physical_token"] = "Prism-002".into();
+            document["physical_token_offset"] = 90.into();
+        }
+        serde_json::from_value(document).expect("material assignment")
+    }
+
+    fn native(assignments: Vec<DesignMaterialAssignment>) -> F3dNative {
+        F3dNative {
+            design_material_assignments: assignments,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_material_token_cannot_be_added_where_the_baseline_record_has_no_carrier() {
+        let baseline = native(vec![assignment(false)]);
+        let target = native(vec![assignment(true)]);
+        let error = validate_material_assignment_edits(PatchNatives {
+            baseline: Some(&baseline),
+            target: Some(&target),
+        })
+        .expect_err("an added token has no carrier to write it into");
+        assert!(
+            error
+                .to_string()
+                .contains("changes fields outside writable strings"),
+            "{error}"
+        );
+
+        let edits = validate_material_assignment_edits(PatchNatives {
+            baseline: Some(&baseline),
+            target: Some(&baseline),
+        })
+        .expect("an unchanged assignment set is editable");
+        assert!(edits.is_empty());
     }
 }

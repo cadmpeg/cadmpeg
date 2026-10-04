@@ -30,9 +30,9 @@ fn mutate_bytes(data: &[u8], seed: u8) -> Vec<u8> {
         return mutated;
     }
 
-    let num_mutations = (seed % 10) as usize + 1;
+    let num_mutations = usize::from(seed % 10) + 1;
     for i in 0..num_mutations {
-        let pos = ((seed as usize).wrapping_mul(i + 1)) % mutated.len();
+        let pos = (usize::from(seed).wrapping_mul(i + 1)) % mutated.len();
         match seed % 5 {
             0 => mutated[pos] = mutated[pos].wrapping_add(1),
             1 => mutated[pos] = mutated[pos].wrapping_sub(1),
@@ -43,8 +43,8 @@ fn mutate_bytes(data: &[u8], seed: u8) -> Vec<u8> {
         }
     }
 
-    if seed % 3 == 0 && mutated.len() > 10 {
-        let truncate_at = (seed as usize % (mutated.len() - 10)) + 10;
+    if seed.is_multiple_of(3) && mutated.len() > 10 {
+        let truncate_at = (usize::from(seed) % (mutated.len() - 10)) + 10;
         mutated.truncate(truncate_at);
     }
 
@@ -75,7 +75,15 @@ fuzz_target!(|data: &[u8]| {
     ];
 
     for codec in codecs {
-        let _ = codec.detect(&mutated);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        if let Ok((ctx, root)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &mutated,
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        ) {
+            let _ = codec.detect(&ctx, root);
+            let _ = ctx.finish_session();
+        }
 
         let mut inspect_cur = Cursor::new(&mutated);
         let _ = codec.inspect(&mut inspect_cur, &InspectOptions::default());

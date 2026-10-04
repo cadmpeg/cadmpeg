@@ -1,55 +1,61 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse typed Design body-presentation and browser-node records.
 
+use crate::bytes::lp_utf16_bounded_charged;
+use cadmpeg_core::decode::u64_from_index;
+
 use std::collections::HashMap;
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
-use crate::bytes::{is_guid_prefix, lp_utf16_bounded, lp_utf16_bytes, take_reference};
+use crate::bytes::{is_guid_prefix, lp_utf16_bytes, take_reference};
 use crate::design::decode::meta::typed_primary_frames;
-use crate::design::decode::sketch::{parse_genesis_entity_header, parse_settled_entity_header};
-use crate::design::presentation::{
-    is_physical_material_token, visual_token, APPEARANCE_LIBRARY_ID,
-    BODY_PRESENTATION_BASE_TYPE_GUID, BODY_PRESENTATION_MATERIAL_ENVELOPE_ID,
-    BODY_PRESENTATION_TYPE_GUID, BODY_PRESENTATION_TYPE_VERSION, BODY_SCENE_NODE_TYPE_GUID,
-    BODY_SCENE_NODE_TYPE_VERSION, BREP_CONTAINER_TYPE_GUID, BREP_CONTAINER_TYPE_VERSION,
-    BROWSER_NODE_BASE_TYPE_GUID, BROWSER_NODE_TYPE_GUID, BROWSER_NODE_TYPE_VERSION, GUID_LEN,
-    MODERN_APPEARANCE_LIBRARY_IDS, PHYSICAL_MATERIAL_LIBRARY_ID,
+use crate::design::decode::sketch::{
+    parse_genesis_entity_header, parse_settled_entity_header, NamedEntityHeader,
 };
-use crate::records::{DESIGN_MODULE_BODY, DESIGN_MODULE_FUSION};
+
+use crate::design::presentation::{
+    is_physical_material_token, APPEARANCE_LIBRARY_ID, BODY_PRESENTATION_BASE_TYPE_GUID,
+    BODY_PRESENTATION_MATERIAL_ENVELOPE_ID, BODY_PRESENTATION_TYPE_GUID,
+    BODY_PRESENTATION_TYPE_VERSION, BODY_SCENE_NODE_TYPE_GUID, BODY_SCENE_NODE_TYPE_VERSION,
+    BREP_CONTAINER_TYPE_GUID, BREP_CONTAINER_TYPE_VERSION, BROWSER_NODE_BASE_TYPE_GUID,
+    BROWSER_NODE_TYPE_GUID, BROWSER_NODE_TYPE_VERSION, GUID_LEN, MODERN_APPEARANCE_LIBRARY_IDS,
+    PHYSICAL_MATERIAL_LIBRARY_ID,
+};
+use crate::records::entity_header::{DESIGN_MODULE_BODY, DESIGN_MODULE_FUSION};
 
 const MAX_ENVELOPE_GAP: usize = 8;
 
 /// One typed browser-node record.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct BrowserNodeRecord {
-    pub record_index: u32,
-    pub guid: String,
-    pub entity_suffix: u64,
-    pub hidden_offset: u64,
-    pub hidden: bool,
+    pub(super) record_index: u32,
+    guid: String,
+    pub(super) entity_suffix: u64,
+    pub(super) hidden_offset: u64,
+    pub(super) hidden: bool,
 }
 
 /// Material members of one body-presentation envelope.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PresentationMaterial {
-    pub node_guid: String,
-    pub physical_token: String,
-    pub physical_token_offset: u64,
-    pub visual_guid: String,
-    pub visual_guid_offset: u64,
-    pub visual_preset: Option<crate::records::Located<String>>,
+    node_guid: String,
+    pub(crate) physical_token: String,
+    pub(crate) physical_token_offset: u64,
+    pub(crate) visual_guid: crate::records::references::DesignVisualToken,
+    pub(crate) visual_guid_offset: u64,
+    pub(crate) visual_preset: Option<crate::records::identity::Located<String>>,
 }
 
 /// One body record, its exact owner header, and its browser-node join.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct BodyPresentation {
-    pub byte_offset: u64,
-    pub entity_suffix: u64,
-    pub owner: BodyPresentationOwner,
-    pub browser_node: Option<BrowserNodeRecord>,
-    pub material: Option<PresentationMaterial>,
+    pub(crate) byte_offset: u64,
+    pub(crate) entity_suffix: u64,
+    pub(crate) owner: BodyPresentationOwner,
+    pub(crate) browser_node: Option<BrowserNodeRecord>,
+    pub(crate) material: Option<PresentationMaterial>,
 }
 
 /// Entity identity form stored by one body-presentation owner.
@@ -58,7 +64,7 @@ pub(crate) enum BodyPresentationOwner {
     /// The owner stores a component-qualified entity ID after its entity
     /// suffix.
     Named {
-        entity_id: crate::records::DesignEntityId,
+        entity_id: crate::records::identity::DesignEntityId,
         entity_id_offset: u64,
     },
     /// The owner stores only its u64 entity suffix in the indexed head.
@@ -68,12 +74,13 @@ pub(crate) enum BodyPresentationOwner {
 /// Decode every browser node whose dynamic class resolves to the registered
 /// browser-node type. The record body is ten zero bytes, an LP-UTF16 GUID, the
 /// hidden flag, `01 01`, and the owning Design entity suffix.
-pub(crate) fn browser_node_records(
+pub(super) fn browser_node_records(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BrowserNodeRecord>, CodecError> {
     let mut out = Vec::new();
-    for frame in typed_primary_frames(bytes, meta, BROWSER_NODE_TYPE_GUID, "browser-node")? {
+    for frame in typed_primary_frames(ctx, bytes, meta, BROWSER_NODE_TYPE_GUID, "browser-node")? {
         if frame.design_type.version != BROWSER_NODE_TYPE_VERSION {
             continue;
         }
@@ -81,61 +88,75 @@ pub(crate) fn browser_node_records(
             || !frame
                 .design_type
                 .base_type_guid
-                .as_ref()
-                .and_then(|field| {
-                    field
-                        .value
-                        .as_ref()
-                        .map(crate::records::DesignRelaxedGuidText::as_str)
-                })
+                .value()
+                .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
                 .is_some_and(|base| base.eq_ignore_ascii_case(BROWSER_NODE_BASE_TYPE_GUID))
         {
-            return Err(CodecError::malformed(format_args!(
-                "F3D Design browser-node entity {} has incompatible registration metadata",
-                frame.entity_id
-            )));
+            return Err(crate::design::text::malformed_design(
+                ctx,
+                format_args!(
+                    "F3D Design browser-node entity {} has incompatible registration metadata",
+                    frame.entity_id
+                ),
+            ));
         }
         let record = &bytes[frame.start..frame.end];
         let record_index = View::u32_le_at(record, 7).ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "F3D Design browser-node entity {} has a truncated record index",
-                frame.entity_id
-            ))
+            crate::design::text::malformed_design(
+                ctx,
+                format_args!(
+                    "F3D Design browser-node entity {} has a truncated record index",
+                    frame.entity_id
+                ),
+            )
         })?;
         if u64::from(record_index) != frame.entity_id || record.get(11..21) != Some(&[0; 10]) {
-            return Err(CodecError::malformed(format_args!(
-                "F3D Design browser-node entity {} has an invalid header",
-                frame.entity_id
-            )));
+            return Err(crate::design::text::malformed_design(
+                ctx,
+                format_args!(
+                    "F3D Design browser-node entity {} has an invalid header",
+                    frame.entity_id
+                ),
+            ));
         }
-        let Some((guid, after_guid)) =
-            lp_utf16_bounded(record, 21, GUID_LEN..=GUID_LEN).filter(|(guid, after)| {
-                is_guid_prefix(guid)
-                    && after
-                        .checked_add(11)
-                        .is_some_and(|record_end| record_end <= record.len())
-                    && record.get(*after + 1..*after + 3) == Some(&[0x01, 0x01])
-            })
-        else {
+        let Some((guid, after_guid)) = lp_utf16_bounded_charged(
+            ctx,
+            record,
+            21,
+            GUID_LEN..=GUID_LEN,
+            "f3d Design UTF-16 text",
+        )?
+        .filter(|(guid, after)| {
+            is_guid_prefix(guid)
+                && after
+                    .checked_add(11)
+                    .is_some_and(|record_end| record_end <= record.len())
+                && record.get(*after + 1..*after + 3) == Some(&[0x01, 0x01])
+        }) else {
             continue;
         };
         let hidden @ (0 | 1) = record.get(after_guid).copied().ok_or_else(|| {
             CodecError::Malformed("F3D Design browser-node flag is truncated".into())
         })?
         else {
-            return Err(CodecError::malformed(format_args!(
-                "F3D Design browser-node entity {} has an invalid hidden flag",
-                frame.entity_id
-            )));
+            return Err(crate::design::text::malformed_design(
+                ctx,
+                format_args!(
+                    "F3D Design browser-node entity {} has an invalid hidden flag",
+                    frame.entity_id
+                ),
+            ));
         };
         let entity_suffix = View::u64_le_at(record, after_guid + 3).ok_or_else(|| {
             CodecError::Malformed("F3D Design browser-node suffix is truncated".into())
         })?;
+
+        ctx.reserve_vec(&mut out, 1, "f3d browser node records")?;
         out.push(BrowserNodeRecord {
             record_index,
             guid,
             entity_suffix,
-            hidden_offset: (frame.start + after_guid) as u64,
+            hidden_offset: u64_from_index(frame.start + after_guid),
             hidden: hidden == 1,
         });
     }
@@ -144,14 +165,16 @@ pub(crate) fn browser_node_records(
 
 /// Decode every typed body presentation in one Design stream.
 pub(crate) fn body_presentations(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BodyPresentation>, CodecError> {
-    let nodes = browser_node_records(bytes, meta)?;
-    let entity_types = entity_types(meta)?;
+    let nodes = browser_node_records(ctx, bytes, meta)?;
+    let entity_types = entity_types(ctx, meta)?;
 
     let mut out = Vec::new();
     for frame in typed_primary_frames(
+        ctx,
         bytes,
         meta,
         BODY_PRESENTATION_TYPE_GUID,
@@ -164,92 +187,100 @@ pub(crate) fn body_presentations(
             || !frame
                 .design_type
                 .base_type_guid
-                .as_ref()
-                .and_then(|field| {
-                    field
-                        .value
-                        .as_ref()
-                        .map(crate::records::DesignRelaxedGuidText::as_str)
-                })
+                .value()
+                .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
                 .is_some_and(|base| base.eq_ignore_ascii_case(BODY_PRESENTATION_BASE_TYPE_GUID))
         {
-            return Err(CodecError::malformed(format_args!(
-                "F3D Design body-presentation entity {} has incompatible registration metadata",
-                frame.entity_id
-            )));
+            return Err(crate::design::text::malformed_design(
+                ctx,
+                format_args!(
+                    "F3D Design body-presentation entity {} has incompatible registration metadata",
+                    frame.entity_id
+                ),
+            ));
         }
         let framed_bytes = &bytes[..frame.end];
-        let named_header = parse_settled_entity_header(framed_bytes, frame.start)
-            .or_else(|| parse_genesis_entity_header(framed_bytes, frame.start));
-        let (entity_suffix, owner, material) = if let Some((entity_id, _, header_end)) =
-            named_header
+        let named_header = match parse_settled_entity_header(ctx, framed_bytes, frame.start)? {
+            Some(header) => Some(header),
+            None => parse_genesis_entity_header(ctx, framed_bytes, frame.start)?,
+        };
+        let (entity_suffix, owner, material) = if let Some(NamedEntityHeader {
+            entity_id,
+            entity_id_offset,
+            end: header_end,
+            ..
+        }) = named_header
         {
             let entity_suffix = entity_id.suffix();
             if entity_suffix != frame.entity_id {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::design::text::malformed_design(ctx, format_args!(
                     "F3D Design body-presentation entity {} disagrees with its named header entity {entity_suffix}",
                     frame.entity_id
                 )));
             }
-            let entity_id_offset = header_end
-                .checked_sub(entity_id.as_str().encode_utf16().count() * 2)
-                .expect("entity header end follows its UTF-16 payload");
             (
                 entity_suffix,
                 BodyPresentationOwner::Named {
                     entity_id,
-                    entity_id_offset: entity_id_offset as u64,
+                    entity_id_offset: u64_from_index(entity_id_offset),
                 },
                 presentation_material(
+                    ctx,
                     framed_bytes,
                     header_end,
                     frame.end,
                     entity_suffix,
                     &entity_types,
-                ),
+                )?,
             )
         } else {
             let entity_suffix =
                 View::u64_le_at(framed_bytes, frame.start + 7).ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "F3D Design bare body-presentation entity {} has a truncated head",
-                        frame.entity_id
-                    ))
+                    crate::design::text::malformed_design(
+                        ctx,
+                        format_args!(
+                            "F3D Design bare body-presentation entity {} has a truncated head",
+                            frame.entity_id
+                        ),
+                    )
                 })?;
             if entity_suffix == 0 || entity_suffix != frame.entity_id {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::design::text::malformed_design(
+                    ctx,
+                    format_args!(
                     "F3D Design bare body-presentation entity {} has head entity {entity_suffix}",
                     frame.entity_id
-                )));
+                ),
+                ));
             }
             let Some(material) = bare_presentation_material(
+                ctx,
                 framed_bytes,
                 frame.start + 15,
                 frame.end,
                 entity_suffix,
-            ) else {
+            )?
+            else {
                 continue;
             };
             (entity_suffix, BodyPresentationOwner::Bare, Some(material))
         };
-        let matching_nodes = material
-            .as_ref()
-            .map(|material| {
-                nodes
-                    .iter()
-                    .filter(|node| {
-                        node.entity_suffix == entity_suffix
-                            && node.guid.eq_ignore_ascii_case(&material.node_guid)
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        let browser_node = match matching_nodes.as_slice() {
-            [node] => Some((*node).clone()),
-            _ => None,
+        let browser_node = if let Some(material) = material.as_ref() {
+            let mut matching_nodes = nodes.iter().filter(|node| {
+                node.entity_suffix == entity_suffix
+                    && node.guid.eq_ignore_ascii_case(&material.node_guid)
+            });
+            match (matching_nodes.next(), matching_nodes.next()) {
+                (Some(node), None) => Some(copy_browser_node(ctx, node)?),
+                _ => None,
+            }
+        } else {
+            None
         };
+
+        ctx.reserve_vec(&mut out, 1, "f3d body presentation records")?;
         out.push(BodyPresentation {
-            byte_offset: frame.start as u64,
+            byte_offset: u64_from_index(frame.start),
             entity_suffix,
             owner,
             browser_node,
@@ -259,43 +290,67 @@ pub(crate) fn body_presentations(
     Ok(out)
 }
 
-fn entity_types(
-    meta: &crate::metastream::MetaStream,
-) -> Result<HashMap<u64, (&str, u32)>, CodecError> {
+fn copy_browser_node(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    node: &BrowserNodeRecord,
+) -> Result<BrowserNodeRecord, CodecError> {
+    let guid = String::from_utf8(ctx.copy_retained(
+        node.guid.as_bytes(),
+        "f3d body presentation browser node GUID",
+    )?)
+    .map_err(|_| CodecError::Malformed("F3D browser node GUID is invalid UTF-8".into()))?;
+    Ok(BrowserNodeRecord {
+        record_index: node.record_index,
+        guid,
+        entity_suffix: node.entity_suffix,
+        hidden_offset: node.hidden_offset,
+        hidden: node.hidden,
+    })
+}
+
+fn entity_types<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    meta: &'a crate::metastream::MetaStream,
+) -> Result<HashMap<u64, (&'a str, u32)>, CodecError> {
     let mut out = HashMap::new();
     for design_type in &meta.types {
         for &entity_id in design_type.entities.values() {
-            if out
-                .insert(
-                    entity_id,
-                    (design_type.type_guid.as_str(), design_type.version),
-                )
-                .is_some()
-            {
-                return Err(CodecError::malformed(format_args!(
-                    "F3D Design entity {entity_id} has multiple registered types"
-                )));
+            if out.contains_key(&entity_id) {
+                return Err(crate::design::text::malformed_design(
+                    ctx,
+                    format_args!("F3D Design entity {entity_id} has multiple registered types"),
+                ));
             }
+
+            ctx.reserve_map(&mut out, 1, "f3d presentation entity types")?;
+            out.insert(
+                entity_id,
+                (design_type.type_guid.as_str(), design_type.version),
+            );
         }
     }
     Ok(out)
 }
 
 fn presentation_material(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     end: usize,
     entity_suffix: u64,
     entity_types: &HashMap<u64, (&str, u32)>,
-) -> Option<PresentationMaterial> {
-    let bytes = bytes.get(..end)?;
-    let physical_marker = lp_utf16_bytes(PHYSICAL_MATERIAL_LIBRARY_ID);
-    let legacy_marker = lp_utf16_bytes(APPEARANCE_LIBRARY_ID);
-    let modern_marker = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[0]);
-    let modern_trailer = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[1]);
-    let mut candidates = Vec::new();
+) -> Result<Option<PresentationMaterial>, CodecError> {
+    let Some(bytes) = bytes.get(..end) else {
+        return Ok(None);
+    };
+    let physical_marker = lp_utf16_bytes(PHYSICAL_MATERIAL_LIBRARY_ID)?;
+    let legacy_marker = lp_utf16_bytes(APPEARANCE_LIBRARY_ID)?;
+    let modern_marker = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[0])?;
+    let modern_trailer = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[1])?;
+    let mut candidate = None;
     for physical_at in find_all(bytes, start, end, &physical_marker) {
-        let Some((physical_guid_at, physical_guid)) = preceding_lp_utf16(bytes, start, physical_at)
+        let Some((physical_guid_at, physical_guid)) =
+            preceding_lp_utf16(ctx, bytes, start, physical_at)?
         else {
             continue;
         };
@@ -305,7 +360,7 @@ fn presentation_material(
         if bytes.get(node_tail_at..node_tail_at + 11) != Some(&[1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]) {
             continue;
         }
-        let Some((_, node_guid)) = preceding_lp_utf16(bytes, start, node_tail_at) else {
+        let Some((_, node_guid)) = preceding_lp_utf16(ctx, bytes, start, node_tail_at)? else {
             continue;
         };
         if physical_guid.len() != GUID_LEN
@@ -318,7 +373,9 @@ fn presentation_material(
         let Some(token_at) = skip_zeros(bytes, physical_at + physical_marker.len(), end) else {
             continue;
         };
-        let Some((physical_token, after_token)) = lp_utf16_bounded(bytes, token_at, 1..=256) else {
+        let Some((physical_token, after_token)) =
+            lp_utf16_bounded_charged(ctx, bytes, token_at, 1..=256, "f3d Design UTF-16 text")?
+        else {
             continue;
         };
         if !is_physical_material_token(&physical_token) || after_token > end {
@@ -350,18 +407,23 @@ fn presentation_material(
         {
             continue;
         }
-        let Some((_, after_name)) = lp_utf16_bounded(bytes, reference_at, 0..=256) else {
+        let Some((_, after_name)) =
+            lp_utf16_bounded_charged(ctx, bytes, reference_at, 0..=256, "f3d Design UTF-16 text")?
+        else {
             continue;
         };
         let Some(visual_at) = record_tail_visual_offset(bytes, after_name, end) else {
             continue;
         };
-        let Some((visual_guid, after_visual)) = lp_utf16_bounded(bytes, visual_at, 1..=256) else {
+        let Some((visual_guid, after_visual)) =
+            lp_utf16_bounded_charged(ctx, bytes, visual_at, 1..=256, "f3d Design UTF-16 text")?
+        else {
             continue;
         };
-        if visual_token(&visual_guid).is_none() {
+        let Ok(visual_guid) = crate::records::references::DesignVisualToken::try_from(visual_guid)
+        else {
             continue;
-        }
+        };
         let Some(visual_marker_at) = skip_zeros(bytes, after_visual, end) else {
             continue;
         };
@@ -386,52 +448,60 @@ fn presentation_material(
         } else {
             continue;
         };
-        let visual_preset = legacy
-            .then(|| {
-                let at = skip_zeros(bytes, after_visual_marker, end)?;
-                let (value, _) = lp_utf16_bounded(bytes, at, 1..=256)?;
-                value.starts_with("Prism-").then_some((at, value))
-            })
-            .flatten();
-        candidates.push(PresentationMaterial {
+        let visual_preset = if legacy {
+            if let Some(at) = skip_zeros(bytes, after_visual_marker, end) {
+                lp_utf16_bounded_charged(ctx, bytes, at, 1..=256, "f3d Design UTF-16 text")?
+                    .and_then(|(value, _)| value.starts_with("Prism-").then_some((at, value)))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        if candidate.is_some() {
+            return Ok(None);
+        }
+        candidate = Some(PresentationMaterial {
             node_guid,
             physical_token,
-            physical_token_offset: (token_at + 4) as u64,
+            physical_token_offset: u64_from_index(token_at + 4),
             visual_guid,
-            visual_guid_offset: (visual_at + 4) as u64,
-            visual_preset: visual_preset.map(|(at, value)| crate::records::Located {
+            visual_guid_offset: u64_from_index(visual_at + 4),
+            visual_preset: visual_preset.map(|(at, value)| crate::records::identity::Located {
                 value,
-                offset: (at + 4) as u64,
+                offset: u64_from_index(at + 4),
             }),
         });
     }
-    match candidates.as_slice() {
-        [material] => Some(material.clone()),
-        _ => None,
-    }
+    Ok(candidate)
 }
 
 /// Parse the material envelope of a body-presentation owner whose indexed
 /// head stores no component-qualified entity ID.
 fn bare_presentation_material(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     end: usize,
     entity_suffix: u64,
-) -> Option<PresentationMaterial> {
-    let bytes = bytes.get(..end)?;
-    let marker = lp_utf16_bytes(BODY_PRESENTATION_MATERIAL_ENVELOPE_ID)
+) -> Result<Option<PresentationMaterial>, CodecError> {
+    let Some(bytes) = bytes.get(..end) else {
+        return Ok(None);
+    };
+    let marker = lp_utf16_bytes(BODY_PRESENTATION_MATERIAL_ENVELOPE_ID)?
         .into_iter()
-        .chain(lp_utf16_bytes(PHYSICAL_MATERIAL_LIBRARY_ID))
+        .chain(lp_utf16_bytes(PHYSICAL_MATERIAL_LIBRARY_ID)?)
         .collect::<Vec<_>>();
-    let modern_marker = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[0]);
-    let modern_trailer = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[1]);
-    let mut candidates = Vec::new();
+    let modern_marker = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[0])?;
+    let modern_trailer = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[1])?;
+    let mut candidate = None;
     for marker_at in find_all(bytes, start, end, &marker) {
         let Some(token_at) = skip_zeros(bytes, marker_at + marker.len(), end) else {
             continue;
         };
-        let Some((physical_token, after_token)) = lp_utf16_bounded(bytes, token_at, 1..=256) else {
+        let Some((physical_token, after_token)) =
+            lp_utf16_bounded_charged(ctx, bytes, token_at, 1..=256, "f3d Design UTF-16 text")?
+        else {
             continue;
         };
         if !is_physical_material_token(&physical_token) {
@@ -445,8 +515,13 @@ fn bare_presentation_material(
         let Some(node_guid_at) = skip_zeros(bytes, physical_reference_at, end) else {
             continue;
         };
-        let Some((node_guid, after_node_guid)) =
-            lp_utf16_bounded(bytes, node_guid_at, GUID_LEN..=GUID_LEN)
+        let Some((node_guid, after_node_guid)) = lp_utf16_bounded_charged(
+            ctx,
+            bytes,
+            node_guid_at,
+            GUID_LEN..=GUID_LEN,
+            "f3d Design UTF-16 text",
+        )?
         else {
             continue;
         };
@@ -461,27 +536,33 @@ fn bare_presentation_material(
             continue;
         }
 
-        let mut name_ends = vec![node_reference_at];
-        if let Some((_, after_name)) = skip_zeros(bytes, node_reference_at, end)
-            .and_then(|name_at| lp_utf16_bounded(bytes, name_at, 1..=256))
-        {
-            name_ends.push(after_name);
+        let mut after_name = None;
+        if let Some(name_at) = skip_zeros(bytes, node_reference_at, end) {
+            if let Some((_, end)) =
+                lp_utf16_bounded_charged(ctx, bytes, name_at, 1..=256, "f3d Design UTF-16 text")?
+            {
+                after_name = Some(end);
+            }
         }
-        let mut visual_offsets = name_ends
+        let mut visual_offsets = [Some(node_reference_at), after_name]
             .into_iter()
-            .filter_map(|name_end| record_tail_visual_offset(bytes, name_end, end))
-            .collect::<Vec<_>>();
-        visual_offsets.sort_unstable();
-        visual_offsets.dedup();
-        let [visual_at] = visual_offsets.as_slice() else {
+            .flatten()
+            .filter_map(|name_end| record_tail_visual_offset(bytes, name_end, end));
+        let Some(visual_at) = visual_offsets.next() else {
             continue;
         };
-        let Some((visual_guid, after_visual)) = lp_utf16_bounded(bytes, *visual_at, 1..=256) else {
-            continue;
-        };
-        if visual_token(&visual_guid).is_none() {
+        if visual_offsets.any(|offset| offset != visual_at) {
             continue;
         }
+        let Some((visual_guid, after_visual)) =
+            lp_utf16_bounded_charged(ctx, bytes, visual_at, 1..=256, "f3d Design UTF-16 text")?
+        else {
+            continue;
+        };
+        let Ok(visual_guid) = crate::records::references::DesignVisualToken::try_from(visual_guid)
+        else {
+            continue;
+        };
         let Some(marker_at) = skip_zeros(bytes, after_visual, end) else {
             continue;
         };
@@ -496,19 +577,19 @@ fn bare_presentation_material(
         {
             continue;
         }
-        candidates.push(PresentationMaterial {
+        if candidate.is_some() {
+            return Ok(None);
+        }
+        candidate = Some(PresentationMaterial {
             node_guid,
             physical_token,
-            physical_token_offset: (token_at + 4) as u64,
+            physical_token_offset: u64_from_index(token_at + 4),
             visual_guid,
-            visual_guid_offset: (*visual_at + 4) as u64,
+            visual_guid_offset: u64_from_index(visual_at + 4),
             visual_preset: None,
         });
     }
-    match candidates.as_slice() {
-        [material] => Some(material.clone()),
-        _ => None,
-    }
+    Ok(candidate)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -535,7 +616,7 @@ fn local_reference(bytes: &[u8], at: &mut usize) -> Option<u64> {
 
 fn record_tail_visual_offset(bytes: &[u8], name_end: usize, end: usize) -> Option<usize> {
     const OPACITY_ONE: [u8; 4] = 1.0f32.to_le_bytes();
-    for marker_at in name_end..name_end.saturating_add(40).min(end) {
+    for marker_at in (name_end..end).take(40) {
         if bytes.get(marker_at..marker_at + 2) != Some(&[0x01, 0x01]) {
             continue;
         }
@@ -575,8 +656,13 @@ fn skip_zeros_capped(bytes: &[u8], start: usize, end: usize, cap: usize) -> Opti
     (at <= end && (at == end || bytes.get(at) != Some(&0))).then_some(at)
 }
 
-fn preceding_lp_utf16(bytes: &[u8], start: usize, marker_at: usize) -> Option<(usize, String)> {
-    let mut candidates = Vec::new();
+fn preceding_lp_utf16(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    start: usize,
+    marker_at: usize,
+) -> Result<Option<(usize, String)>, CodecError> {
+    let mut candidate = None;
     for gap in 0..=MAX_ENVELOPE_GAP {
         let Some(end) = marker_at.checked_sub(gap) else {
             continue;
@@ -588,71 +674,185 @@ fn preceding_lp_utf16(bytes: &[u8], start: usize, marker_at: usize) -> Option<(u
         {
             continue;
         }
-        let scan_start = end.saturating_sub(4 + 256 * 2).max(start);
-        for at in scan_start..end {
-            let Some((value, after)) = lp_utf16_bounded(bytes, at, 1..=256) else {
+        for at in (start..end).rev().take(4 + 256 * 2).rev() {
+            let Some(count) =
+                View::u32_le_at(bytes, at).and_then(|count| usize::try_from(count).ok())
+            else {
                 continue;
             };
-            if after == end {
-                candidates.push((at, value));
+            if !(1..=256).contains(&count)
+                || at.checked_add(4).and_then(|start| {
+                    count
+                        .checked_mul(2)
+                        .and_then(|bytes| start.checked_add(bytes))
+                }) != Some(end)
+            {
+                continue;
             }
+            let Some((value, _)) =
+                lp_utf16_bounded_charged(ctx, bytes, at, 1..=256, "f3d Design UTF-16 text")?
+            else {
+                continue;
+            };
+            if candidate.is_some() {
+                return Ok(None);
+            }
+            candidate = Some((at, value));
         }
     }
-    candidates.sort_by_key(|(at, _)| *at);
-    candidates.dedup();
-    match candidates.as_slice() {
-        [candidate] => Some(candidate.clone()),
-        _ => None,
-    }
+    Ok(candidate)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use cadmpeg_core::decode::u64_from_index;
 
-    fn push_ascii(out: &mut Vec<u8>, value: &str) {
-        out.extend_from_slice(&(value.len() as u32).to_le_bytes());
-        out.extend_from_slice(value.as_bytes());
+    use super::{
+        bare_presentation_material as bare_presentation_material_with_context,
+        body_presentations as body_presentations_with_context,
+        browser_node_records as browser_node_records_with_context, BodyPresentationOwner,
+    };
+    use crate::bytes::lp_utf16_bytes;
+    use crate::design::presentation::{
+        APPEARANCE_LIBRARY_ID, BODY_PRESENTATION_BASE_TYPE_GUID,
+        BODY_PRESENTATION_MATERIAL_ENVELOPE_ID, BODY_PRESENTATION_TYPE_GUID,
+        BODY_PRESENTATION_TYPE_VERSION, BODY_SCENE_NODE_TYPE_GUID, BODY_SCENE_NODE_TYPE_VERSION,
+        BREP_CONTAINER_TYPE_GUID, BREP_CONTAINER_TYPE_VERSION, BROWSER_NODE_BASE_TYPE_GUID,
+        BROWSER_NODE_TYPE_GUID, BROWSER_NODE_TYPE_VERSION, MODERN_APPEARANCE_LIBRARY_IDS,
+        PHYSICAL_MATERIAL_LIBRARY_ID,
+    };
+    use crate::design::test_support::{design_type, primary_record};
+    use crate::records::entity_header::{DESIGN_MODULE_BODY, DESIGN_MODULE_FUSION};
+    use crate::test_support::{lp_ascii, lp_utf16, push_reference_u64};
+
+    fn bare_presentation_material(
+        bytes: &[u8],
+        start: usize,
+        end: usize,
+        entity_suffix: u64,
+    ) -> Option<super::PresentationMaterial> {
+        crate::design::test_support::with_test_decode_context(|ctx| {
+            bare_presentation_material_with_context(ctx, bytes, start, end, entity_suffix)
+        })
+        .unwrap()
     }
 
-    fn push_utf16(out: &mut Vec<u8>, value: &str) {
-        out.extend(lp_utf16_bytes(value));
+    fn body_presentations(
+        bytes: &[u8],
+        meta: &crate::metastream::MetaStream,
+    ) -> Result<Vec<super::BodyPresentation>, cadmpeg_core::CodecError> {
+        crate::design::test_support::with_test_decode_context(|ctx| {
+            body_presentations_with_context(ctx, bytes, meta)
+        })
     }
 
-    fn push_reference(out: &mut Vec<u8>, target: u64) {
-        out.push(1);
-        out.extend_from_slice(&target.to_le_bytes());
-        out.extend_from_slice(&[0, 0]);
+    fn browser_node_records(
+        bytes: &[u8],
+        meta: &crate::metastream::MetaStream,
+    ) -> Result<Vec<super::BrowserNodeRecord>, cadmpeg_core::CodecError> {
+        crate::design::test_support::with_test_decode_context(|ctx| {
+            browser_node_records_with_context(ctx, bytes, meta)
+        })
     }
 
-    fn design_type(
-        type_guid: &str,
-        base_type_guid: Option<&str>,
-        version: u32,
-        module: &str,
-        entity_ids: Vec<u64>,
-    ) -> crate::records::SegmentType {
-        crate::records::SegmentType {
-            id: String::new(),
-            byte_offset: 0,
-            type_guid: type_guid.to_owned().try_into().expect("type GUID"),
-            type_guid_offset: 0,
-            base_type_guid: base_type_guid.map(|value| crate::records::RecordedValue {
-                value: Some(value.to_owned().try_into().expect("base GUID")),
-                offset: Some(0),
-            }),
-            version,
-            version_offset: 0,
-            module: module.into(),
-            entities: crate::records::ReferenceRun::unlocated(entity_ids),
-        }
+    #[test]
+    fn presentation_utf16_text_refuses_exact_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let text = "A雪𐍈";
+        let mut bytes = Vec::new();
+        lp_utf16(&mut bytes, text);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = u64::try_from(text.len() - 1).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = crate::bytes::lp_utf16_bounded_charged(
+            &ctx,
+            &bytes,
+            0,
+            1..=256,
+            "f3d Design UTF-16 text",
+        )
+        .err()
+        .unwrap();
+        assert!(matches!(error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "f3d Design UTF-16 text"
+        ));
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let decoded = crate::bytes::lp_utf16_bounded_charged(
+            &ctx,
+            &bytes,
+            0,
+            1..=256,
+            "f3d Design UTF-16 text",
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(decoded.0, text);
+        assert_eq!(decoded.1, bytes.len());
+
+        let invalid = [1, 0, 0, 0, 0, 0xd8];
+        assert!(crate::bytes::lp_utf16_bounded_charged(
+            &ctx,
+            &invalid,
+            0,
+            1..=256,
+            "f3d Design UTF-16 text"
+        )
+        .unwrap()
+        .is_none());
     }
 
-    fn primary_record(entity_id: u64, bulk_offset: usize) -> crate::metastream::RecordIndexEntry {
-        crate::metastream::RecordIndexEntry {
-            entity_id,
-            bulk_offset: bulk_offset as u64,
-        }
+    #[test]
+    fn browser_records_and_entity_types_refuse_collection_limits() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let mut bytes = Vec::new();
+        lp_ascii(&mut bytes, "256");
+        bytes.extend_from_slice(&43_u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 10]);
+        lp_utf16(&mut bytes, "11111111-2222-8333-A444-555555555555");
+        bytes.extend_from_slice(&[0, 1, 1]);
+        bytes.extend_from_slice(&42_u64.to_le_bytes());
+        let meta = crate::metastream::MetaStream {
+            types: vec![design_type(
+                BROWSER_NODE_TYPE_GUID,
+                Some(BROWSER_NODE_BASE_TYPE_GUID),
+                BROWSER_NODE_TYPE_VERSION,
+                DESIGN_MODULE_FUSION,
+                vec![43],
+            )],
+            records: vec![primary_record(43, 0)],
+            secondary_records: Vec::new(),
+        };
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 7;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = browser_node_records_with_context(&ctx, &bytes, &meta)
+            .err()
+            .unwrap();
+        assert!(matches!(error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "f3d browser node records"
+        ));
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::entity_types(&ctx, &meta).err().unwrap();
+        assert!(matches!(error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "f3d presentation entity types"
+        ));
+        crate::design::test_support::with_test_decode_context(|ctx| {
+            let nodes = browser_node_records_with_context(ctx, &bytes, &meta).unwrap();
+            assert_eq!(nodes.len(), 1);
+            assert_eq!(nodes[0].entity_suffix, 42);
+        });
     }
 
     #[test]
@@ -663,30 +863,30 @@ mod tests {
         let node_guid = "11111111-2222-8333-A444-555555555555";
         let visual_guid = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE_Post2015";
         let mut bytes = Vec::new();
-        push_ascii(&mut bytes, &body_tag.to_string());
+        lp_ascii(&mut bytes, &body_tag.to_string());
         bytes.extend_from_slice(&entity.to_le_bytes());
         bytes.extend_from_slice(&[0; 6]);
-        push_utf16(&mut bytes, &format!("0_{entity}"));
-        push_utf16(&mut bytes, node_guid);
+        lp_utf16(&mut bytes, &format!("0_{entity}"));
+        lp_utf16(&mut bytes, node_guid);
         bytes.extend_from_slice(&[1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-        push_utf16(&mut bytes, "99999999-8888-8777-A666-555555555555");
-        push_utf16(&mut bytes, PHYSICAL_MATERIAL_LIBRARY_ID);
-        push_utf16(&mut bytes, "PrismMaterial-001");
-        push_reference(&mut bytes, 7);
+        lp_utf16(&mut bytes, "99999999-8888-8777-A666-555555555555");
+        lp_utf16(&mut bytes, PHYSICAL_MATERIAL_LIBRARY_ID);
+        lp_utf16(&mut bytes, "PrismMaterial-001");
+        push_reference_u64(&mut bytes, 7);
         bytes.push(0);
-        push_reference(&mut bytes, entity + 1);
-        push_utf16(&mut bytes, "Body");
+        push_reference_u64(&mut bytes, entity + 1);
+        lp_utf16(&mut bytes, "Body");
         bytes.extend_from_slice(&1.0f32.to_le_bytes());
         bytes.extend_from_slice(&[1, 1]);
-        push_utf16(&mut bytes, visual_guid);
+        lp_utf16(&mut bytes, visual_guid);
         for marker in MODERN_APPEARANCE_LIBRARY_IDS {
-            push_utf16(&mut bytes, marker);
+            lp_utf16(&mut bytes, marker);
         }
         let node_start = bytes.len();
-        push_ascii(&mut bytes, &node_tag.to_string());
+        lp_ascii(&mut bytes, &node_tag.to_string());
         bytes.extend_from_slice(&43u32.to_le_bytes());
         bytes.extend_from_slice(&[0; 10]);
-        push_utf16(&mut bytes, node_guid);
+        lp_utf16(&mut bytes, node_guid);
         bytes.extend_from_slice(&[0, 1, 1]);
         bytes.extend_from_slice(&entity.to_le_bytes());
 
@@ -731,7 +931,7 @@ mod tests {
         assert_eq!(
             presentation.owner,
             BodyPresentationOwner::Named {
-                entity_id: crate::records::DesignEntityId::from_parts("0", entity),
+                entity_id: crate::records::identity::DesignEntityId::from_parts("0", entity),
                 entity_id_offset: 25,
             }
         );
@@ -739,8 +939,109 @@ mod tests {
         let material = presentation.material.as_ref().unwrap();
         assert_eq!(material.node_guid, node_guid);
         assert_eq!(material.physical_token, "PrismMaterial-001");
-        assert_eq!(material.visual_guid, visual_guid);
+        assert_eq!(&*material.visual_guid, visual_guid);
         assert_eq!(material.visual_preset, None);
+    }
+
+    #[test]
+    fn linked_body_presentation_refuses_output_and_node_copy_limits() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let body_tag = 256u32;
+        let node_tag = 257u32;
+        let entity = (1u64 << 40) + 42;
+        let node_guid = "11111111-2222-8333-A444-555555555555";
+        let visual_guid = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE_Post2015";
+        let mut bytes = Vec::new();
+        lp_ascii(&mut bytes, &body_tag.to_string());
+        bytes.extend_from_slice(&entity.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        lp_utf16(&mut bytes, &format!("0_{entity}"));
+        lp_utf16(&mut bytes, node_guid);
+        bytes.extend_from_slice(&[1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        lp_utf16(&mut bytes, "99999999-8888-8777-A666-555555555555");
+        lp_utf16(&mut bytes, PHYSICAL_MATERIAL_LIBRARY_ID);
+        lp_utf16(&mut bytes, "PrismMaterial-001");
+        push_reference_u64(&mut bytes, 7);
+        bytes.push(0);
+        push_reference_u64(&mut bytes, entity + 1);
+        lp_utf16(&mut bytes, "Body");
+        bytes.extend_from_slice(&1.0f32.to_le_bytes());
+        bytes.extend_from_slice(&[1, 1]);
+        lp_utf16(&mut bytes, visual_guid);
+        for marker in MODERN_APPEARANCE_LIBRARY_IDS {
+            lp_utf16(&mut bytes, marker);
+        }
+        let node_start = bytes.len();
+        lp_ascii(&mut bytes, &node_tag.to_string());
+        bytes.extend_from_slice(&43u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 10]);
+        lp_utf16(&mut bytes, node_guid);
+        bytes.extend_from_slice(&[0, 1, 1]);
+        bytes.extend_from_slice(&entity.to_le_bytes());
+
+        let meta = crate::metastream::MetaStream {
+            types: vec![
+                design_type(
+                    BODY_PRESENTATION_TYPE_GUID,
+                    Some(BODY_PRESENTATION_BASE_TYPE_GUID),
+                    BODY_PRESENTATION_TYPE_VERSION,
+                    DESIGN_MODULE_BODY,
+                    vec![entity],
+                ),
+                design_type(
+                    BROWSER_NODE_TYPE_GUID,
+                    Some(BROWSER_NODE_BASE_TYPE_GUID),
+                    BROWSER_NODE_TYPE_VERSION,
+                    DESIGN_MODULE_FUSION,
+                    vec![43],
+                ),
+                design_type(
+                    BREP_CONTAINER_TYPE_GUID,
+                    None,
+                    BREP_CONTAINER_TYPE_VERSION,
+                    "",
+                    vec![7],
+                ),
+                design_type(
+                    BODY_SCENE_NODE_TYPE_GUID,
+                    None,
+                    BODY_SCENE_NODE_TYPE_VERSION,
+                    "",
+                    vec![entity + 1],
+                ),
+            ],
+            records: vec![primary_record(entity, 0), primary_record(43, node_start)],
+            secondary_records: Vec::new(),
+        };
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 31;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = body_presentations_with_context(&ctx, &bytes, &meta)
+            .err()
+            .unwrap();
+        assert!(matches!(error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "f3d body presentation records"
+        ));
+        policy.limits.max_collection_items = DecodePolicy::service().limits.max_collection_items;
+        policy.limits.max_retained_bytes = u64_from_index(node_guid.len() - 1);
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let nodes = browser_node_records(&bytes, &meta).unwrap();
+        let error = super::copy_browser_node(&ctx, &nodes[0]).err().unwrap();
+        assert!(matches!(error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "f3d body presentation browser node GUID"
+        ));
+        let presentations = body_presentations(&bytes, &meta).unwrap();
+        assert_eq!(presentations.len(), 1);
+        assert_eq!(
+            presentations[0].browser_node.as_ref().unwrap().guid,
+            node_guid
+        );
     }
 
     #[test]
@@ -749,25 +1050,25 @@ mod tests {
         let entity = 42u64;
         let node_guid = "11111111-2222-8333-A444-555555555555";
         let mut bytes = Vec::new();
-        push_ascii(&mut bytes, &body_tag.to_string());
+        lp_ascii(&mut bytes, &body_tag.to_string());
         bytes.extend_from_slice(&entity.to_le_bytes());
         bytes.extend_from_slice(&[0; 6]);
-        push_utf16(&mut bytes, "0_42");
-        push_utf16(&mut bytes, node_guid);
+        lp_utf16(&mut bytes, "0_42");
+        lp_utf16(&mut bytes, node_guid);
         bytes.extend_from_slice(&[1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-        push_utf16(&mut bytes, "99999999-8888-8777-A666-555555555555");
-        push_utf16(&mut bytes, PHYSICAL_MATERIAL_LIBRARY_ID);
-        push_utf16(&mut bytes, "PrismMaterial-001");
-        push_reference(&mut bytes, 7);
+        lp_utf16(&mut bytes, "99999999-8888-8777-A666-555555555555");
+        lp_utf16(&mut bytes, PHYSICAL_MATERIAL_LIBRARY_ID);
+        lp_utf16(&mut bytes, "PrismMaterial-001");
+        push_reference_u64(&mut bytes, 7);
         bytes.push(0);
-        push_reference(&mut bytes, entity + 1);
-        push_utf16(&mut bytes, "Body");
+        push_reference_u64(&mut bytes, entity + 1);
+        lp_utf16(&mut bytes, "Body");
         bytes.extend_from_slice(&1.0f32.to_le_bytes());
         bytes.extend_from_slice(&[1, 1]);
-        push_utf16(&mut bytes, "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE");
-        push_utf16(&mut bytes, APPEARANCE_LIBRARY_ID);
-        push_utf16(&mut bytes, "Prism-001");
-        push_utf16(&mut bytes, node_guid);
+        lp_utf16(&mut bytes, "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE");
+        lp_utf16(&mut bytes, APPEARANCE_LIBRARY_ID);
+        lp_utf16(&mut bytes, "Prism-001");
+        lp_utf16(&mut bytes, node_guid);
         bytes.extend_from_slice(&[0, 1, 1]);
         bytes.extend_from_slice(&entity.to_le_bytes());
 
@@ -818,28 +1119,28 @@ mod tests {
         let entity = 42u64;
         let node_guid = "11111111-2222-8333-A444-555555555555";
         let mut bytes = Vec::new();
-        push_ascii(&mut bytes, "256");
+        lp_ascii(&mut bytes, "256");
         bytes.extend_from_slice(&entity.to_le_bytes());
         bytes.extend_from_slice(&[0; 6]);
-        push_utf16(&mut bytes, "0_42");
+        lp_utf16(&mut bytes, "0_42");
 
         let next_start = bytes.len();
-        push_ascii(&mut bytes, "257");
+        lp_ascii(&mut bytes, "257");
         bytes.extend_from_slice(&99u32.to_le_bytes());
         bytes.extend_from_slice(&[0; 10]);
-        push_utf16(&mut bytes, node_guid);
+        lp_utf16(&mut bytes, node_guid);
         bytes.extend_from_slice(&[1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-        push_utf16(&mut bytes, "99999999-8888-8777-A666-555555555555");
-        push_utf16(&mut bytes, PHYSICAL_MATERIAL_LIBRARY_ID);
-        push_utf16(&mut bytes, "PrismMaterial-001");
-        push_reference(&mut bytes, 7);
+        lp_utf16(&mut bytes, "99999999-8888-8777-A666-555555555555");
+        lp_utf16(&mut bytes, PHYSICAL_MATERIAL_LIBRARY_ID);
+        lp_utf16(&mut bytes, "PrismMaterial-001");
+        push_reference_u64(&mut bytes, 7);
         bytes.push(0);
-        push_reference(&mut bytes, entity + 1);
-        push_utf16(&mut bytes, "Body");
+        push_reference_u64(&mut bytes, entity + 1);
+        lp_utf16(&mut bytes, "Body");
         bytes.extend_from_slice(&1.0f32.to_le_bytes());
         bytes.extend_from_slice(&[1, 1]);
-        push_utf16(&mut bytes, "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE");
-        push_utf16(&mut bytes, APPEARANCE_LIBRARY_ID);
+        lp_utf16(&mut bytes, "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE");
+        lp_utf16(&mut bytes, APPEARANCE_LIBRARY_ID);
 
         let meta = crate::metastream::MetaStream {
             types: vec![
@@ -887,10 +1188,10 @@ mod tests {
     fn browser_node_records_skip_other_typed_member_variants() {
         let record_index = 43u32;
         let mut bytes = Vec::new();
-        push_ascii(&mut bytes, "256");
+        lp_ascii(&mut bytes, "256");
         bytes.extend_from_slice(&record_index.to_le_bytes());
         bytes.extend_from_slice(&[0; 10]);
-        push_utf16(&mut bytes, "11111111-2222-8333-A444-555555555555");
+        lp_utf16(&mut bytes, "11111111-2222-8333-A444-555555555555");
         bytes.extend_from_slice(&[1, 0, 1]);
         bytes.extend_from_slice(&42u64.to_le_bytes());
         let meta = crate::metastream::MetaStream {
@@ -947,39 +1248,41 @@ mod tests {
         ]);
 
         let mut bytes = Vec::new();
-        push_ascii(&mut bytes, &body_tag.to_string());
+        lp_ascii(&mut bytes, &body_tag.to_string());
         bytes.extend_from_slice(&entity.to_le_bytes());
         bytes.extend_from_slice(&[0; 16]);
-        push_ascii(&mut bytes, "299");
+        lp_ascii(&mut bytes, "299");
         bytes.extend_from_slice(&999_999u64.to_le_bytes());
         bytes.extend_from_slice(&[0; 16]);
-        push_utf16(&mut bytes, BODY_PRESENTATION_MATERIAL_ENVELOPE_ID);
-        push_utf16(&mut bytes, PHYSICAL_MATERIAL_LIBRARY_ID);
+        lp_utf16(&mut bytes, BODY_PRESENTATION_MATERIAL_ENVELOPE_ID);
+        lp_utf16(&mut bytes, PHYSICAL_MATERIAL_LIBRARY_ID);
         bytes.extend_from_slice(&[0; 4]);
-        push_utf16(&mut bytes, "PrismMaterial-018");
-        push_reference(&mut bytes, 1_900);
+        lp_utf16(&mut bytes, "PrismMaterial-018");
+        push_reference_u64(&mut bytes, 1_900);
         bytes.push(0);
-        push_utf16(&mut bytes, node_guid);
-        push_reference(&mut bytes, entity + 1);
+        lp_utf16(&mut bytes, node_guid);
+        push_reference_u64(&mut bytes, entity + 1);
         bytes.extend_from_slice(&[0; 12]);
         bytes.extend_from_slice(&1.0f32.to_le_bytes());
         bytes.extend_from_slice(&[1, 1]);
         bytes.extend_from_slice(&[0; 10]);
-        push_utf16(&mut bytes, visual_guid);
+        lp_utf16(&mut bytes, visual_guid);
         for marker in MODERN_APPEARANCE_LIBRARY_IDS {
-            push_utf16(&mut bytes, marker);
+            lp_utf16(&mut bytes, marker);
         }
 
         let node_start = bytes.len();
         assert!(bare_presentation_material(&bytes, 15, node_start, entity).is_some());
-        let trailer_len = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[1]).len();
+        let trailer_len = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[1])
+            .expect("fixture UTF-16 code-unit count fits u32")
+            .len();
         assert!(
             bare_presentation_material(&bytes, 15, node_start - trailer_len, entity,).is_none()
         );
-        push_ascii(&mut bytes, &node_tag.to_string());
+        lp_ascii(&mut bytes, &node_tag.to_string());
         bytes.extend_from_slice(&node_record.to_le_bytes());
         bytes.extend_from_slice(&[0; 10]);
-        push_utf16(&mut bytes, node_guid);
+        lp_utf16(&mut bytes, node_guid);
         bytes.extend_from_slice(&[0, 1, 1]);
         bytes.extend_from_slice(&entity.to_le_bytes());
 
@@ -1006,6 +1309,6 @@ mod tests {
         );
         let material = presentation.material.as_ref().expect("material envelope");
         assert_eq!(material.physical_token, "PrismMaterial-018");
-        assert_eq!(material.visual_guid, visual_guid);
+        assert_eq!(&*material.visual_guid, visual_guid);
     }
 }

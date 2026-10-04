@@ -1,5 +1,26 @@
-use super::*;
+#[cfg(feature = "rhino")]
+use cadmpeg_test_support::wire;
+
+#[cfg(any(feature = "iges", feature = "step"))]
+use std::path::Path;
+use std::path::PathBuf;
+
+#[cfg(any(feature = "iges", feature = "rhino", feature = "step"))]
+use cadmpeg_ir::codec::write::target::TargetRequest;
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::CadIr;
+use cadmpeg_registry::Format;
+
+use crate::application::artifact_store::FileDestination;
+use crate::application::document::LoadedDocument;
+#[cfg(any(feature = "iges", feature = "step"))]
+use crate::application::refusal::ConversionRefusal;
+
+#[cfg(any(feature = "iges", feature = "rhino", feature = "step"))]
+use super::export_target;
+use super::{
+    DestinationPolicy, LossPolicy, PreparedConversion, ResolvedDestination, TargetSelection,
+};
 
 #[test]
 fn loss_policy_assigns_each_refusal_phase() {
@@ -36,24 +57,28 @@ fn loss_policy_assigns_each_refusal_phase() {
 }
 
 #[test]
-fn destination_policy_discards_flags_irrelevant_to_the_destination() {
-    let file = DestinationPolicy::new(Some(PathBuf::from("part.step")), true, true);
+fn convert_file_destination_discards_binary_stdout_at_clap_admission() {
+    use clap::Parser;
+    let command = crate::Cli::try_parse_from([
+        "cadmpeg",
+        "convert",
+        "input.step",
+        "-o",
+        "out.step",
+        "--binary-stdout",
+    ])
+    .unwrap()
+    .command;
+    let crate::Command::Convert { destinations, .. } = command else {
+        panic!("expected convert command");
+    };
     assert_eq!(
-        file,
-        DestinationPolicy::File {
-            path: PathBuf::from("part.step"),
-            overwrite: true,
-        }
+        destinations.destination,
+        DestinationPolicy::File(FileDestination {
+            path: PathBuf::from("out.step"),
+            overwrite: false,
+        })
     );
-    assert_eq!(file.path(), Some(Path::new("part.step")));
-    let stdout = DestinationPolicy::new(None, true, false);
-    assert_eq!(
-        stdout,
-        DestinationPolicy::Stdout {
-            allow_binary: false,
-        }
-    );
-    assert_eq!(stdout.path(), None);
 }
 
 fn prepared(
@@ -62,7 +87,8 @@ fn prepared(
     encoder: Box<dyn Encoder>,
     loss_policy: LossPolicy,
 ) -> PreparedConversion {
-    let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new());
+    let validation =
+        cadmpeg_ir::validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     PreparedConversion {
         document: LoadedDocument::neutral(ir),
         validation,
@@ -98,12 +124,14 @@ fn step_ir_with_unrepresentable_native_content() -> CadIr {
     let mut ir = CadIr::empty();
     ir.native.namespace_mut("f3d").arenas_mut().insert(
         "asm_histories".into(),
-        vec![
-            cadmpeg_ir::NativeRecord::new("f3d:test:asm-history#0", serde_json::Map::default())
-                .expect("valid native identity"),
-        ],
+        vec![cadmpeg_ir::NativeRecord::new(
+            cadmpeg_ir::ids::Identity::new("f3d:test:asm-history#0").expect("valid identity"),
+            serde_json::Map::default(),
+        )
+        .expect("valid native identity")],
     );
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
     ir
 }
 
@@ -174,8 +202,8 @@ struct NotImplementedEncoder;
 impl cadmpeg_ir::codec::write::EncoderBackend for NotImplementedEncoder {
     const FORMAT: cadmpeg_ir::codec::FormatId =
         cadmpeg_ir::codec::FormatId::new("not-implemented-test");
-    type Target = cadmpeg_ir::codec::write::DialectFree;
-    const TARGET: Self::Target = cadmpeg_ir::codec::write::DialectFree;
+    type Target = cadmpeg_ir::codec::write::target::DialectFree;
+    const TARGET: Self::Target = cadmpeg_ir::codec::write::target::DialectFree;
 
     fn plan_resolved(
         &self,
@@ -213,6 +241,7 @@ fn not_implemented_plan_failure_is_not_reclassified_as_export_loss() {
 /// The selection is an owned-string adapter and nothing else. The
 /// cross-format catalog default is owned by write resolution, so the command
 /// line does not decide it a second time.
+#[cfg(feature = "iges")]
 #[test]
 fn flag_absence_is_always_an_inherit_request() {
     assert_eq!(
@@ -257,27 +286,6 @@ fn target_selection_rejects_an_empty_qualified_dialect() {
     let error = TargetSelection::resolve(Some("cadir:"), None).unwrap_err();
     assert!(error.to_string().contains("nothing after the colon"));
     assert!(error.refusal().is_none());
-}
-
-#[test]
-fn an_unwritable_format_is_a_typed_plan_refusal() {
-    let error = TargetSelection::resolve(Some("catia:v5"), None).unwrap_err();
-    let refusal = error
-        .refusal()
-        .expect("unsupported output formats are semantic plan refusals");
-    assert!(matches!(
-        refusal,
-        ConversionRefusal::UnsupportedOutputFormat { .. }
-    ));
-    assert_eq!(
-        refusal.code(),
-        crate::application::refusal::RefusalCode::UnsupportedOutputFormat
-    );
-    assert_eq!(
-        serde_json::to_value(refusal.report()).unwrap()["stage"],
-        "plan"
-    );
-    assert_eq!(refusal.exit_code(), 1);
 }
 
 /// Export-loss rejection is not a target.
@@ -332,7 +340,12 @@ fn an_alias_and_an_id_reach_the_encoder_unresolved_and_both_resolve() {
             )
             .expect("the catalog carries the row under both spellings");
         assert_eq!(
-            plan.report().target().map(DialectId::as_str),
+            wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+                plan.report(),
+                "identity/target"
+            )
+            .as_ref()
+            .map(DialectId::as_str),
             Some("rhino:archive-60")
         );
     }
@@ -357,4 +370,29 @@ fn an_unknown_dialect_is_refused_by_plan_with_its_catalog() {
     let message = error.to_string();
     assert!(message.contains("ap242e3"), "{message}");
     assert!(message.contains("iges:5.3-fixed-ascii"), "{message}");
+}
+
+#[test]
+fn loss_policy_cli_preserves_omission_and_rejects_allow_spelling() {
+    use clap::Parser;
+    for (flag, expected) in [
+        (None, LossPolicy::Allow),
+        (Some("--reject-lossy"), LossPolicy::RejectAny),
+        (Some("--reject-lossy=decode"), LossPolicy::RejectDecode),
+        (Some("--reject-lossy=export"), LossPolicy::RejectExport),
+        (Some("--reject-lossy=any"), LossPolicy::RejectAny),
+    ] {
+        let mut args = vec!["cadmpeg", "convert", "input.step"];
+        args.extend(flag);
+        let crate::Command::Convert { reject_lossy, .. } =
+            crate::Cli::try_parse_from(args).unwrap().command
+        else {
+            panic!("expected convert command");
+        };
+        assert_eq!(reject_lossy.unwrap_or_default(), expected);
+    }
+    let error =
+        crate::Cli::try_parse_from(["cadmpeg", "convert", "input.step", "--reject-lossy=allow"])
+            .unwrap_err();
+    assert_eq!(error.kind(), clap::error::ErrorKind::InvalidValue);
 }

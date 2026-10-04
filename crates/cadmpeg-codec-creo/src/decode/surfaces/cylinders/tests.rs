@@ -1,20 +1,100 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+use cadmpeg_ir::scalar::PositiveLength;
 
 use super::{unique_support_tangent_cylinder_frame, unique_tangent_axial_interval_corner_frame};
 use crate::decode::analytic::equations::PlaneEquation;
 
 const EPS_TEST_GEOMETRY: f64 = 1.0e-12;
 
+#[test]
+fn circular_sweep_feature_id_nodes_refuse_collection_limit() {
+    let mut scan = crate::test_support::empty_container_scan();
+    scan.features.rows.push(crate::feature::rows::FeatureRow {
+        feature_id: 40,
+        root_schema_class: Some(crate::feature::schema::SchemaClass::Protrusion),
+        stream_offset: 0,
+        body: vec![0; 2].try_into().expect("row body"),
+        body_offset: 0,
+        offset: 0,
+    });
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let error = super::transfer_circular_sweep_cylinders(
+        &ctx,
+        &scan,
+        &mut cadmpeg_ir::document::CadIr::empty(),
+        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+    )
+    .expect_err("feature ID node exceeds limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo circular sweep feature ID nodes")
+    );
+}
+
+#[test]
+fn hole_cylinder_feature_id_nodes_refuse_collection_limit() {
+    let mut scan = crate::test_support::empty_container_scan();
+    let row = crate::feature::rows::FeatureRow {
+        feature_id: 40,
+        root_schema_class: Some(crate::feature::schema::SchemaClass::Hole),
+        stream_offset: 0,
+        body: vec![0; 2].try_into().expect("row body"),
+        body_offset: 0,
+        offset: 0,
+    };
+    scan.features.rows.extend([row.clone(), row]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let error = super::transfer_hole_cylinders(
+        &ctx,
+        &scan,
+        &mut cadmpeg_ir::document::CadIr::empty(),
+        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+    )
+    .expect_err("feature ID node exceeds limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo hole cylinder feature ID nodes")
+    );
+
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    assert_eq!(
+        super::transfer_hole_cylinders(
+            &ctx,
+            &scan,
+            &mut cadmpeg_ir::document::CadIr::empty(),
+            &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+        .expect("duplicate ID reuses its node"),
+        0
+    );
+}
+
 fn axial_interval_candidate(origin: [f64; 3]) -> crate::surface::PositionalCylinderFrame {
-    crate::surface::PositionalCylinderFrame {
+    crate::surface::PositionalCylinderFrame::new(
         origin,
-        axis: [1.0, 0.0, 0.0],
-        ref_direction: [0.0, 1.0, 0.0],
-        radius: 4.0,
-        length: Some(6.0),
-    }
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        4.0,
+        Some(6.0),
+    )
+    .expect("valid positional cylinder frame")
 }
 
 #[test]
@@ -47,13 +127,14 @@ fn axial_interval_corner_frame_requires_a_unique_tangent_maximum() {
 
 #[test]
 fn support_tangent_frame_selects_the_uniquely_witnessed_origin_sign() {
-    let stored = crate::surface::PositionalCylinderFrame {
-        origin: [-29.8, 5.25, 6.76],
-        axis: [1.0, 0.0, 0.0],
-        ref_direction: [0.0, -1.0, 0.0],
-        radius: 0.25,
-        length: None,
-    };
+    let stored = crate::surface::PositionalCylinderFrame::new(
+        [-29.8, 5.25, 6.76],
+        [1.0, 0.0, 0.0],
+        [0.0, -1.0, 0.0],
+        0.25,
+        None,
+    )
+    .expect("valid positional cylinder frame");
     let tangent = PlaneEquation {
         origin: [0.0, -5.5, 0.0],
         normal: [0.0, 1.0, 0.0],
@@ -63,9 +144,12 @@ fn support_tangent_frame_selects_the_uniquely_witnessed_origin_sign() {
         normal: [0.0, 1.0, 0.0],
     };
 
-    let selected = unique_support_tangent_cylinder_frame(stored, &[tangent, unrelated_parallel])
-        .expect("unique tangent origin");
-    assert_eq!(selected.origin, [-29.8, -5.25, 6.76]);
+    let selected = crate::decode::with_test_decode_ctx(|ctx| {
+        unique_support_tangent_cylinder_frame(ctx, stored, &[tangent, unrelated_parallel])
+    })
+    .expect("service tangent search admitted")
+    .expect("unique tangent origin");
+    assert_eq!(selected.frame().origin(), [-29.8, -5.25, 6.76]);
 }
 
 #[test]
@@ -80,25 +164,85 @@ fn support_tangent_frame_requires_a_matching_axis_aligned_support() {
         normal: [0.0, 1.0, 1.0],
     };
 
-    assert!(unique_support_tangent_cylinder_frame(stored, &[unmatched]).is_none());
-    assert!(unique_support_tangent_cylinder_frame(stored, &[oblique]).is_none());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        unique_support_tangent_cylinder_frame(ctx, stored, &[unmatched])
+    })
+    .expect("service unmatched search admitted")
+    .is_none());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        unique_support_tangent_cylinder_frame(ctx, stored, &[oblique])
+    })
+    .expect("service oblique search admitted")
+    .is_none());
+}
+
+fn support_tangent_limit_error(limit: u64) -> cadmpeg_core::CodecError {
+    let stored = crate::surface::PositionalCylinderFrame::new(
+        [-29.8, 5.25, 6.76],
+        [1.0, 0.0, 0.0],
+        [0.0, -1.0, 0.0],
+        0.25,
+        None,
+    )
+    .expect("valid positional cylinder frame");
+    let tangent = PlaneEquation {
+        origin: [0.0, -5.5, 0.0],
+        normal: [0.0, 1.0, 0.0],
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    unique_support_tangent_cylinder_frame(&ctx, stored, &[tangent])
+        .expect_err("tangent search exceeds collection limit")
+}
+
+#[test]
+fn support_tangent_initial_origin_refuses_collection_limit() {
+    let error = support_tangent_limit_error(0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo support tangent initial origins")
+    );
+}
+
+#[test]
+fn support_tangent_witness_plane_refuses_collection_limit() {
+    let error = support_tangent_limit_error(1);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo support tangent witness planes")
+    );
+}
+
+#[test]
+fn support_tangent_next_origin_refuses_collection_limit() {
+    let error = support_tangent_limit_error(2);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo support tangent next origins")
+    );
 }
 
 fn slot_fillet_scan() -> crate::container::ContainerScan<'static> {
-    let mut scan = crate::container::scan_bytes(Vec::new());
-    scan.features.rows.push(crate::feature::FeatureRow {
+    let mut scan = crate::test_support::empty_container_scan();
+    scan.features.rows.push(crate::feature::rows::FeatureRow {
         feature_id: 913,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
         stream_offset: 0,
-        body: Vec::new(),
+        body: vec![0; 2].try_into().expect("row body"),
         body_offset: 0,
         offset: 0,
     });
     scan.features
         .affected_ids
-        .push(crate::feature::FeatureAffectedIds {
+        .push(crate::feature::rows::FeatureAffectedIds {
             feature_id: 913,
-            kind: crate::feature::AffectedIdKind::Geometry,
+            kind: crate::feature::rows::AffectedIdKind::Geometry,
             ids: vec![1, 2, 3, 4, 5, 6],
             offset: 0,
         });
@@ -115,43 +259,43 @@ fn slot_fillet_scan() -> crate::container::ContainerScan<'static> {
         crate::surface::OutlinePlane {
             surface_id: 1,
             origin: [0.0, 0.0, 0.0],
-            normal: [1.0, 0.0, 0.0],
-            u_axis: [0.0, 1.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::X_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::Y_AXIS,
             offset: 1,
         },
         crate::surface::OutlinePlane {
             surface_id: 2,
             origin: [1.0, 0.0, 0.0],
-            normal: [1.0, 0.0, 0.0],
-            u_axis: [0.0, 1.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::X_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::Y_AXIS,
             offset: 2,
         },
         crate::surface::OutlinePlane {
             surface_id: 3,
             origin: [0.0, -1.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 3,
         },
         crate::surface::OutlinePlane {
             surface_id: 4,
             origin: [0.0, 1.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 4,
         },
         crate::surface::OutlinePlane {
             surface_id: 5,
             origin: [0.0, 0.0, -1.0],
-            normal: [0.0, 0.0, 1.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 5,
         },
         crate::surface::OutlinePlane {
             surface_id: 6,
             origin: [0.0, 0.0, 1.0],
-            normal: [0.0, 0.0, 1.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 6,
         },
     ]);
@@ -162,11 +306,18 @@ fn model_plane(id: u32, origin: [f64; 3], normal: [f64; 3]) -> cadmpeg_ir::geome
     cadmpeg_ir::geometry::Surface {
         id: cadmpeg_ir::ids::SurfaceId::mint(format!("creo:visibgeom:surface#{id}"))
             .expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane {
-            origin: origin.into(),
-            normal: normal.into(),
-            u_axis: [1.0, 0.0, 0.0].into(),
-        },
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                origin.into(),
+                normal.into(),
+                if normal[0].abs() > 0.5 {
+                    [0.0, 1.0, 0.0].into()
+                } else {
+                    [1.0, 0.0, 0.0].into()
+                },
+            )
+            .expect("valid PlaneSurface fixture"),
+        )),
         source_object: None,
     }
 }
@@ -175,18 +326,21 @@ fn model_cylinder(id: u32, radius: f64) -> cadmpeg_ir::geometry::Surface {
     cadmpeg_ir::geometry::Surface {
         id: cadmpeg_ir::ids::SurfaceId::mint(format!("creo:visibgeom:surface#{id}"))
             .expect("identity grammar"),
-        geometry: SurfaceGeometry::Cylinder {
-            origin: [0.0, 0.0, 0.0].into(),
-            axis: [0.0, 0.0, 1.0].into(),
-            ref_direction: [1.0, 0.0, 0.0].into(),
-            radius,
-        },
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                [0.0, 0.0, 0.0].into(),
+                [0.0, 0.0, 1.0].into(),
+                [1.0, 0.0, 0.0].into(),
+                radius,
+            )
+            .expect("valid CylinderSurface fixture"),
+        )),
         source_object: None,
     }
 }
 
 fn split_outline_scan() -> crate::container::ContainerScan<'static> {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.extend([
         crate::surface::SurfaceRow {
             id: 1,
@@ -242,13 +396,12 @@ fn split_outline_scan() -> crate::container::ContainerScan<'static> {
         scalar_tokens: Vec::new(),
         opaque_spans: Vec::new(),
         scalar_frames: Vec::new(),
-        terminal_scalar_frame: None,
         carrier: crate::surface::SurfaceParameterCarrier::Resolved(
             crate::surface::InlineSurfaceCarrier::CylinderBounds(bounds),
         ),
         boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
-        offset: surface_id as usize,
-        body_offset: surface_id as usize,
+        offset: usize::try_from(surface_id).expect("fixture index fits usize"),
+        body_offset: usize::try_from(surface_id).expect("fixture index fits usize"),
     };
     scan.surfaces.parameters.extend([
         parameter(2, [[-0.3125, 1.3125], [0.3125, 1.625]]),
@@ -259,39 +412,585 @@ fn split_outline_scan() -> crate::container::ContainerScan<'static> {
         .push(crate::surface::OutlinePlane {
             surface_id: 1,
             origin: [0.0, 0.0, -1.0],
-            normal: [0.0, 0.0, 1.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 1,
         });
     scan
+}
+
+fn split_outline_refusal_at_collection_limit(limit: u64) -> cadmpeg_core::CodecError {
+    let scan = split_outline_scan();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    super::transfer_split_outline_cylinders(
+        &ctx,
+        &scan,
+        &mut cadmpeg_ir::document::CadIr::empty(),
+        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+    )
+    .expect_err("split outline collection exceeds limit")
+}
+
+fn positional_map_refusal_at_collection_limit(limit: u64) -> cadmpeg_core::CodecError {
+    let scan = split_outline_scan();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    super::transfer_positional_cylinders(
+        &ctx,
+        &scan,
+        &mut cadmpeg_ir::document::CadIr::empty(),
+        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+    )
+    .expect_err("positional cylinder collection exceeds limit")
+}
+
+fn reference_bound_refusal_at_collection_limit(limit: u64) -> cadmpeg_core::CodecError {
+    let mut scan = split_outline_scan();
+    scan.features
+        .entity_tables
+        .push(crate::feature::entity::FeatureEntityTable::new(
+            10,
+            29,
+            vec![crate::feature::entity::dummy_table_entry(99)],
+            &std::collections::BTreeSet::new(),
+            0,
+        ));
+    scan.references.circles.push(
+        crate::reference::ReferenceCircle::try_new(
+            99,
+            crate::reference::ReferenceCircleCenter::Stored(
+                cadmpeg_ir::features::FinitePoint3::ZERO,
+            ),
+            cadmpeg_ir::scalar::PositiveLength::new(1.0).expect("positive radius"),
+            cadmpeg_ir::units::UnitVector3::Z_AXIS,
+            [
+                cadmpeg_ir::features::FinitePoint3::new([1.0, 0.0, 0.0].into())
+                    .expect("finite start"),
+                cadmpeg_ir::features::FinitePoint3::new([0.0, 1.0, 0.0].into())
+                    .expect("finite end"),
+            ],
+            0,
+        )
+        .expect("checked reference geometry"),
+    );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    super::transfer_positional_cylinders(
+        &ctx,
+        &scan,
+        &mut cadmpeg_ir::document::CadIr::empty(),
+        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+    )
+    .expect_err("reference cylinder collection exceeds limit")
+}
+
+#[test]
+fn reference_bound_entity_id_nodes_refuse_collection_limit() {
+    let error = reference_bound_refusal_at_collection_limit(24);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo reference cylinder entity ID nodes")
+    );
+}
+
+#[test]
+fn reference_bound_circles_refuse_collection_limit() {
+    let error = reference_bound_refusal_at_collection_limit(25);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo reference cylinder circles")
+    );
+}
+
+#[test]
+fn positional_surface_unique_row_count_refuses_collection_limit() {
+    let error = positional_map_refusal_at_collection_limit(3);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo unique-row count nodes")
+    );
+}
+
+#[test]
+fn positional_surface_unique_row_projection_refuses_collection_limit() {
+    let error = positional_map_refusal_at_collection_limit(6);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo unique-row projection")
+    );
+}
+
+#[test]
+fn positional_topology_unique_row_count_refuses_collection_limit() {
+    let error = positional_map_refusal_at_collection_limit(12);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo unique-row count nodes")
+    );
+}
+
+#[test]
+fn positional_topology_unique_row_projection_refuses_collection_limit() {
+    let error = positional_map_refusal_at_collection_limit(14);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo unique-row projection")
+    );
+}
+
+#[test]
+fn positional_cylinder_row_nodes_refuse_collection_limit() {
+    let error = positional_map_refusal_at_collection_limit(9);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo positional cylinder row nodes")
+    );
+}
+
+#[test]
+fn positional_adjacent_cylinder_nodes_refuse_collection_limit() {
+    let error = positional_map_refusal_at_collection_limit(16);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo positional adjacent cylinder nodes")
+    );
+}
+
+#[test]
+fn positional_adjacent_plane_id_nodes_refuse_collection_limit() {
+    let error = positional_map_refusal_at_collection_limit(17);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo positional adjacent plane ID nodes")
+    );
+}
+
+#[test]
+fn positional_support_plane_vector_refuses_collection_limit() {
+    let error = positional_map_refusal_at_collection_limit(20);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo positional support planes")
+    );
+}
+
+#[test]
+fn positional_support_plane_nodes_refuse_collection_limit() {
+    let error = positional_map_refusal_at_collection_limit(21);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo positional support plane nodes")
+    );
+}
+
+#[test]
+fn constant_round_radius_nodes_refuse_collection_limit() {
+    let mut scan = crate::test_support::empty_container_scan();
+    scan.features.rows.push(crate::feature::rows::FeatureRow {
+        feature_id: 913,
+        root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
+        stream_offset: 0,
+        body: vec![0; 2].try_into().expect("row body"),
+        body_offset: 0,
+        offset: 0,
+    });
+    scan.surfaces.rows.push(crate::surface::SurfaceRow {
+        id: 7,
+        kind: crate::surface::SurfaceKind::Cylinder,
+        feature_id: 913,
+        reversed: false,
+        boundary_type: crate::surface::BoundaryType::Code00,
+        next_surface: 0,
+        offset: 7,
+    });
+    scan.features
+        .legacy_rounds
+        .push(crate::legacy_feature::LegacyRoundFeature {
+            feature_id: 913,
+            radius: crate::legacy_feature::LegacyRoundRadius::Constant(
+                cadmpeg_ir::scalar::PositiveReal::new(2.0).expect("positive radius"),
+            ),
+            edge_ids: None,
+            offset: 0,
+        });
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let error = super::transfer_positional_cylinders(
+        &ctx,
+        &scan,
+        &mut cadmpeg_ir::document::CadIr::empty(),
+        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+    )
+    .expect_err("constant round radius node exceeds limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo constant round radius nodes")
+    );
+
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| {
+            super::transfer_positional_cylinders(
+                ctx,
+                &scan,
+                &mut cadmpeg_ir::document::CadIr::empty(),
+                &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
+        })
+        .expect("service round radius admitted")
+        .transferred,
+        0
+    );
+}
+
+#[test]
+fn split_outline_surface_row_count_nodes_refuse_collection_limit() {
+    let error = split_outline_refusal_at_collection_limit(0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo unique-row count nodes")
+    );
+}
+
+#[test]
+fn split_outline_surface_row_projection_refuses_collection_limit() {
+    let error = split_outline_refusal_at_collection_limit(3);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo unique-row projection")
+    );
+}
+
+#[test]
+fn split_outline_row_nodes_refuse_collection_limit() {
+    let error = split_outline_refusal_at_collection_limit(6);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo split cylinder row nodes")
+    );
+}
+
+#[test]
+fn split_outline_topology_row_count_nodes_refuse_collection_limit() {
+    let error = split_outline_refusal_at_collection_limit(12);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo unique-row count nodes")
+    );
+}
+
+#[test]
+fn split_outline_topology_row_projection_refuses_collection_limit() {
+    let error = split_outline_refusal_at_collection_limit(14);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo unique-row projection")
+    );
+}
+
+#[test]
+fn split_outline_plane_nodes_refuse_collection_limit() {
+    let error = split_outline_refusal_at_collection_limit(16);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo split cylinder plane nodes")
+    );
+}
+
+#[test]
+fn split_outline_cylinder_id_nodes_refuse_collection_limit() {
+    let error = split_outline_refusal_at_collection_limit(17);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo split cylinder ID nodes")
+    );
+}
+
+#[test]
+fn split_outline_identity_refuses_retained_limit() {
+    let scan = split_outline_scan();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo split cylinder identities"),
+        |cap| {
+            let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut trial_policy = policy;
+            trial_policy.limits.max_retained_bytes = cap;
+            let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[],
+                &trial_arena,
+                &trial_policy,
+            )
+            .expect("root");
+            super::transfer_split_outline_cylinders(
+                &trial_ctx,
+                &scan,
+                &mut cadmpeg_ir::document::CadIr::empty(),
+                &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
+        },
+    );
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let error = super::transfer_split_outline_cylinders(
+        &ctx,
+        &scan,
+        &mut cadmpeg_ir::document::CadIr::empty(),
+        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+    )
+    .expect_err("split outline ID exceeds retained limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && resource.operation == "creo split cylinder identities")
+    );
+}
+
+#[test]
+fn split_outline_source_object_id_refuses_retained_limit() {
+    let scan = split_outline_scan();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "creo split cylinder source object IDs",
+        |limit| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_retained_bytes = limit;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("root");
+            super::transfer_split_outline_cylinders(
+                &ctx,
+                &scan,
+                &mut cadmpeg_ir::document::CadIr::empty(),
+                &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && resource.operation == "creo split cylinder source object IDs")
+    );
 }
 
 #[test]
 fn constrained_slot_fillet_uses_native_plane_carriers_when_model_planes_are_absent() {
     let scan = slot_fillet_scan();
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    let transferred = super::transfer_constrained_slot_fillet_cylinders(
-        &scan,
-        &mut ir,
-        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-    );
+    let transferred = crate::decode::with_test_decode_ctx(|ctx| {
+        super::transfer_constrained_slot_fillet_cylinders(
+            ctx,
+            &scan,
+            &mut ir,
+            &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    })
+    .expect("valid source object identity");
 
     assert_eq!(transferred, 1);
     let [surface] = ir.model.surfaces.as_slice() else {
         panic!("one generated cylinder");
     };
-    let SurfaceGeometry::Cylinder {
-        origin,
-        axis,
-        radius,
-        ..
-    } = surface.geometry
-    else {
+    let Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface.geometry.solved() else {
         panic!("generated cylinder: {:?}", surface.geometry);
     };
+    let origin = cylinder_surface.origin().get();
+    let axis = *cylinder_surface.frame().axis().as_raw();
+    let radius = cylinder_surface.radius().get();
     assert_eq!(origin, [0.0, 0.0, 0.0].into());
     assert_eq!(axis, [1.0, 0.0, 0.0].into());
     assert_eq!(radius, 1.0);
+}
+
+#[test]
+fn constrained_slot_fillet_propagates_midplane_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let scan = slot_fillet_scan();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 25;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+    let error = super::transfer_constrained_slot_fillet_cylinders(
+        &ctx,
+        &scan,
+        &mut cadmpeg_ir::document::CadIr::empty(),
+        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+    )
+    .expect_err("slot midplane exceeds the collection limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo slot fillet midplanes"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn constrained_slot_fillet_plane_rows_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let scan = slot_fillet_scan();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 19;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+    let error = super::transfer_constrained_slot_fillet_cylinders(
+        &ctx,
+        &scan,
+        &mut cadmpeg_ir::document::CadIr::empty(),
+        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+    )
+    .expect_err("constrained slot plane row exceeds the collection limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo constrained slot plane rows")
+    );
+}
+
+#[test]
+fn active_datum_cylinder_source_id_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let mut scan = crate::test_support::empty_container_scan();
+    scan.planes
+        .datum_cylinders
+        .push(crate::datum::DatumCylinder {
+            id: 8,
+            feature_id: 1,
+            reversed: false,
+            frame: crate::surface::PositionalCylinderFrame::new(
+                [0.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0],
+                [1.0, 0.0, 0.0],
+                1.0,
+                Some(2.0),
+            )
+            .expect("valid datum cylinder frame"),
+            offset_in_payload: 0,
+        });
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "creo active datum cylinder source IDs",
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            super::transfer_active_datum_cylinders(
+                &ctx,
+                &scan,
+                &mut cadmpeg_ir::document::CadIr::empty(),
+                &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo active datum cylinder source IDs")
+    );
+}
+
+#[test]
+fn constrained_slot_cylinder_source_id_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let scan = slot_fillet_scan();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "creo constrained slot cylinder source IDs",
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            super::transfer_constrained_slot_fillet_cylinders(
+                &ctx,
+                &scan,
+                &mut cadmpeg_ir::document::CadIr::empty(),
+                &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo constrained slot cylinder source IDs")
+    );
+}
+
+#[test]
+fn constrained_slot_cylinder_radius_is_in_millimeters_at_ir_admission() {
+    let mut scan = slot_fillet_scan();
+    scan.framing.principal_unit = Some(crate::legacy::PrincipalUnitSystem::InchPoundMassSecond);
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let mut source_carriers = crate::decode::source_carriers::SourceUnitCarriers::new(
+        cadmpeg_ir::scalar::PositiveReal::new(25.4),
+    );
+    crate::decode::with_test_decode_ctx(|ctx| {
+        super::transfer_constrained_slot_fillet_cylinders(
+            ctx,
+            &scan,
+            &mut ir,
+            &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+            &mut source_carriers,
+        )
+        .expect("constrained slot cylinder transfer");
+    });
+    let surface = ir.model.surfaces.first().expect("transferred cylinder");
+    let Some(SolvedSurfaceGeometry::Cylinder(cylinder)) = surface.geometry.solved() else {
+        panic!("transferred surface changed family");
+    };
+    assert_eq!(cylinder.radius().get(), 25.4);
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(source_cylinder)) =
+        source_carriers.surface_geometry(surface)
+    else {
+        panic!("source carrier changed family");
+    };
+    assert_eq!(source_cylinder.radius().get(), 1.0);
 }
 
 #[test]
@@ -300,25 +999,26 @@ fn split_outline_uses_native_plane_carrier_when_model_plane_is_absent() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
 
     assert_eq!(
-        super::transfer_split_outline_cylinders(
+        crate::decode::with_test_decode_ctx(|ctx| super::transfer_split_outline_cylinders(
+            ctx,
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        ),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+        ))
+        .expect("valid source object identity"),
         2
     );
     assert!(ir.model.surfaces.iter().all(|surface| {
-        matches!(
-            surface.geometry,
-            SurfaceGeometry::Cylinder {
-                radius,
-                origin,
-                axis,
-                ..
-            } if radius == 0.3125
-                && origin == [0.0, 1.625, -1.0].into()
-                && axis == [0.0, 0.0, 1.0].into()
-        )
+        matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
+                if {
+                    let origin = cylinder_surface.origin();
+        let axis = cylinder_surface.frame().axis().as_raw();
+        let radius = cylinder_surface.radius().get();
+                    radius == 0.3125
+                        && *origin == [0.0, 1.625, -1.0].into()
+                        && *axis == [0.0, 0.0, 1.0].into()
+                })
     }));
 }
 
@@ -330,11 +1030,14 @@ fn split_outline_rejects_duplicate_surface_rows() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
 
     assert_eq!(
-        super::transfer_split_outline_cylinders(
+        crate::decode::with_test_decode_ctx(|ctx| super::transfer_split_outline_cylinders(
+            ctx,
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        ),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+        ))
+        .expect("valid source object identity"),
         0
     );
     assert!(ir.model.surfaces.is_empty());
@@ -342,12 +1045,12 @@ fn split_outline_rejects_duplicate_surface_rows() {
 
 #[test]
 fn section_feature_type24_frame_is_not_admitted_as_round_cylinder() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
-    scan.features.rows.push(crate::feature::FeatureRow {
+    let mut scan = crate::test_support::empty_container_scan();
+    scan.features.rows.push(crate::feature::rows::FeatureRow {
         feature_id: 916,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Cut),
         stream_offset: 0,
-        body: Vec::new(),
+        body: vec![0; 2].try_into().expect("row body"),
         body_offset: 0,
         offset: 0,
     });
@@ -368,16 +1071,16 @@ fn section_feature_type24_frame_is_not_admitted_as_round_cylinder() {
             scalar_tokens: Vec::new(),
             opaque_spans: Vec::new(),
             scalar_frames: Vec::new(),
-            terminal_scalar_frame: None,
             carrier: crate::surface::SurfaceParameterCarrier::Resolved(
                 crate::surface::InlineSurfaceCarrier::Cylinder {
-                    frame: crate::surface::PositionalCylinderFrame {
-                        origin: [0.0, 0.0, 0.0],
-                        axis: [0.0, 0.0, 1.0],
-                        ref_direction: [1.0, 0.0, 0.0],
-                        radius: 1.0,
-                        length: Some(2.0),
-                    },
+                    frame: crate::surface::PositionalCylinderFrame::new(
+                        [0.0, 0.0, 0.0],
+                        [0.0, 0.0, 1.0],
+                        [1.0, 0.0, 0.0],
+                        1.0,
+                        Some(2.0),
+                    )
+                    .expect("valid positional cylinder frame"),
                     split_bounds: None,
                 },
             ),
@@ -388,11 +1091,14 @@ fn section_feature_type24_frame_is_not_admitted_as_round_cylinder() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
 
     assert_eq!(
-        super::transfer_positional_cylinders(
+        crate::decode::with_test_decode_ctx(|ctx| super::transfer_positional_cylinders(
+            ctx,
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        )
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+        ))
+        .expect("valid source object identity")
         .transferred,
         0
     );
@@ -401,12 +1107,12 @@ fn section_feature_type24_frame_is_not_admitted_as_round_cylinder() {
 
 #[test]
 fn unresolved_round_type24_frame_is_not_admitted_as_constant_cylinder() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
-    scan.features.rows.push(crate::feature::FeatureRow {
+    let mut scan = crate::test_support::empty_container_scan();
+    scan.features.rows.push(crate::feature::rows::FeatureRow {
         feature_id: 913,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
         stream_offset: 0,
-        body: Vec::new(),
+        body: vec![0; 2].try_into().expect("row body"),
         body_offset: 0,
         offset: 0,
     });
@@ -436,22 +1142,22 @@ fn unresolved_round_type24_frame_is_not_admitted_as_constant_cylinder() {
         scalar_tokens: Vec::new(),
         opaque_spans: Vec::new(),
         scalar_frames: Vec::new(),
-        terminal_scalar_frame: None,
         carrier: crate::surface::SurfaceParameterCarrier::Resolved(
             crate::surface::InlineSurfaceCarrier::Cylinder {
-                frame: crate::surface::PositionalCylinderFrame {
-                    origin: [0.0, 0.0, 0.0],
-                    axis: [0.0, 0.0, 1.0],
-                    ref_direction: [1.0, 0.0, 0.0],
+                frame: crate::surface::PositionalCylinderFrame::new(
+                    [0.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0],
+                    [1.0, 0.0, 0.0],
                     radius,
-                    length: Some(2.0),
-                },
+                    Some(2.0),
+                )
+                .expect("valid positional cylinder frame"),
                 split_bounds: None,
             },
         ),
         boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
-        offset: surface_id as usize,
-        body_offset: surface_id as usize,
+        offset: usize::try_from(surface_id).expect("fixture index fits usize"),
+        body_offset: usize::try_from(surface_id).expect("fixture index fits usize"),
     };
     scan.surfaces
         .parameters
@@ -459,25 +1165,27 @@ fn unresolved_round_type24_frame_is_not_admitted_as_constant_cylinder() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
 
     assert_eq!(
-        super::transfer_positional_cylinders(
+        crate::decode::with_test_decode_ctx(|ctx| super::transfer_positional_cylinders(
+            ctx,
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        )
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+        ))
+        .expect("valid source object identity")
         .transferred,
         0
     );
     assert!(ir.model.surfaces.is_empty());
 }
 
-#[test]
-fn inline_type24_frame_is_admitted_in_a_round_feature() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
-    scan.features.rows.push(crate::feature::FeatureRow {
+fn inline_type24_scan() -> crate::container::ContainerScan<'static> {
+    let mut scan = crate::test_support::empty_container_scan();
+    scan.features.rows.push(crate::feature::rows::FeatureRow {
         feature_id: 913,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
         stream_offset: 0,
-        body: Vec::new(),
+        body: vec![0; 2].try_into().expect("row body"),
         body_offset: 0,
         offset: 0,
     });
@@ -498,16 +1206,16 @@ fn inline_type24_frame_is_admitted_in_a_round_feature() {
             scalar_tokens: Vec::new(),
             opaque_spans: Vec::new(),
             scalar_frames: Vec::new(),
-            terminal_scalar_frame: None,
             carrier: crate::surface::SurfaceParameterCarrier::Resolved(
                 crate::surface::InlineSurfaceCarrier::Cylinder {
-                    frame: crate::surface::PositionalCylinderFrame {
-                        origin: [0.0, 0.0, 0.0],
-                        axis: [0.0, 0.0, 1.0],
-                        ref_direction: [1.0, 0.0, 0.0],
-                        radius: 1.0,
-                        length: Some(2.0),
-                    },
+                    frame: crate::surface::PositionalCylinderFrame::new(
+                        [0.0, 0.0, 0.0],
+                        [0.0, 0.0, 1.0],
+                        [1.0, 0.0, 0.0],
+                        1.0,
+                        Some(2.0),
+                    )
+                    .expect("valid positional cylinder frame"),
                     split_bounds: None,
                 },
             ),
@@ -515,14 +1223,23 @@ fn inline_type24_frame_is_admitted_in_a_round_feature() {
             offset: 7,
             body_offset: 7,
         });
+    scan
+}
+
+#[test]
+fn inline_type24_frame_is_admitted_in_a_round_feature() {
+    let scan = inline_type24_scan();
     let mut ir = cadmpeg_ir::document::CadIr::empty();
 
     assert_eq!(
-        super::transfer_positional_cylinders(
+        crate::decode::with_test_decode_ctx(|ctx| super::transfer_positional_cylinders(
+            ctx,
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        )
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+        ))
+        .expect("valid source object identity")
         .transferred,
         1
     );
@@ -533,14 +1250,58 @@ fn inline_type24_frame_is_admitted_in_a_round_feature() {
         .any(|surface| { surface.id.as_str() == "creo:visibgeom:surface#7" }));
 }
 
+fn inline_type24_retained_refusal(limit: u64) -> cadmpeg_core::CodecError {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let scan = inline_type24_scan();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = limit;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+    super::transfer_positional_cylinders(
+        &ctx,
+        &scan,
+        &mut cadmpeg_ir::document::CadIr::empty(),
+        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+    )
+    .expect_err("positional cylinder identity exceeds retained limit")
+}
+
+#[test]
+fn positional_cylinder_identity_refuses_retained_limit() {
+    let error = inline_type24_retained_refusal(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo positional cylinder identity"),
+        |cap| Err::<(), _>(inline_type24_retained_refusal(cap)),
+    ));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo positional cylinder identity")
+    );
+}
+
+#[test]
+fn positional_cylinder_source_id_refuses_retained_limit() {
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "creo positional cylinder source IDs",
+        |limit| Err::<(), _>(inline_type24_retained_refusal(limit)),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo positional cylinder source IDs")
+    );
+}
+
 #[test]
 fn positional_frame_reconciles_an_existing_model_cylinder() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
-    scan.features.rows.push(crate::feature::FeatureRow {
+    let mut scan = crate::test_support::empty_container_scan();
+    scan.features.rows.push(crate::feature::rows::FeatureRow {
         feature_id: 917,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Protrusion),
         stream_offset: 0,
-        body: Vec::new(),
+        body: vec![0; 2].try_into().expect("row body"),
         body_offset: 0,
         offset: 0,
     });
@@ -561,16 +1322,16 @@ fn positional_frame_reconciles_an_existing_model_cylinder() {
             scalar_tokens: Vec::new(),
             opaque_spans: Vec::new(),
             scalar_frames: Vec::new(),
-            terminal_scalar_frame: None,
             carrier: crate::surface::SurfaceParameterCarrier::Resolved(
                 crate::surface::InlineSurfaceCarrier::Cylinder {
-                    frame: crate::surface::PositionalCylinderFrame {
-                        origin: [-12.5, 4.0, 0.0],
-                        axis: [0.0, 1.0, 0.0],
-                        ref_direction: [1.0, 0.0, 0.0],
-                        radius: 0.75,
-                        length: Some(34.0),
-                    },
+                    frame: crate::surface::PositionalCylinderFrame::new(
+                        [-12.5, 4.0, 0.0],
+                        [0.0, 1.0, 0.0],
+                        [1.0, 0.0, 0.0],
+                        0.75,
+                        Some(34.0),
+                    )
+                    .expect("valid positional cylinder frame"),
                     split_bounds: None,
                 },
             ),
@@ -582,26 +1343,27 @@ fn positional_frame_reconciles_an_existing_model_cylinder() {
     ir.model.surfaces.push(model_cylinder(7, 0.75));
 
     assert_eq!(
-        super::transfer_positional_cylinders(
+        crate::decode::with_test_decode_ctx(|ctx| super::transfer_positional_cylinders(
+            ctx,
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        )
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+        ))
+        .expect("valid source object identity")
         .transferred,
         0
     );
     let [surface] = ir.model.surfaces.as_slice() else {
         panic!("one reconciled cylinder");
     };
-    let SurfaceGeometry::Cylinder {
-        origin,
-        axis,
-        ref_direction,
-        radius,
-    } = surface.geometry
-    else {
+    let Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface.geometry.solved() else {
         panic!("reconciled cylinder: {:?}", surface.geometry);
     };
+    let origin = cylinder_surface.origin().get();
+    let axis = *cylinder_surface.frame().axis().as_raw();
+    let ref_direction = *cylinder_surface.frame().reference().as_raw();
+    let radius = cylinder_surface.radius().get();
     assert_eq!(origin, [-12.5, 4.0, 0.0].into());
     assert_eq!(axis, [0.0, 1.0, 0.0].into());
     assert_eq!(ref_direction, [1.0, 0.0, 0.0].into());
@@ -630,11 +1392,11 @@ fn round_edge_support_frame_selects_one_offset_line() {
     )
     .expect("one offset round-edge cylinder");
 
-    assert_eq!(frame.origin, [1.2, 0.2, 0.0]);
-    assert_eq!(frame.axis, [0.0, 0.0, 1.0]);
-    assert_eq!(frame.ref_direction, [-1.0, 0.0, 0.0]);
-    assert_eq!(frame.radius, 0.2);
-    assert_eq!(frame.length, Some(5.0));
+    assert_eq!(frame.frame().origin(), [1.2, 0.2, 0.0]);
+    assert_eq!(frame.frame().axis(), [0.0, 0.0, 1.0]);
+    assert_eq!(frame.frame().ref_direction(), [-1.0, 0.0, 0.0]);
+    assert_eq!(frame.radius().get(), 0.2);
+    assert_eq!(frame.length().map(PositiveLength::get), Some(5.0));
 }
 
 #[test]
@@ -659,13 +1421,14 @@ fn perpendicular_round_edge_supports_solve_their_radius() {
     .expect("one endpoint-solved perpendicular round cylinder");
 
     assert!(frame
-        .origin
+        .frame()
+        .origin()
         .into_iter()
         .zip([1.2, 0.2, 0.0])
         .all(|(actual, expected)| (actual - expected).abs() < EPS_TEST_GEOMETRY));
-    assert_eq!(frame.axis, [0.0, 0.0, 1.0]);
-    assert!((frame.radius - 0.2).abs() < EPS_TEST_GEOMETRY);
-    assert_eq!(frame.length, Some(5.0));
+    assert_eq!(frame.frame().axis(), [0.0, 0.0, 1.0]);
+    assert!((frame.radius().get() - 0.2).abs() < EPS_TEST_GEOMETRY);
+    assert_eq!(frame.length().map(PositiveLength::get), Some(5.0));
 }
 
 #[test]
@@ -692,18 +1455,18 @@ fn round_edge_support_frame_rejects_parallel_supports() {
 }
 
 fn counterbore_dimension_gate_scan(radius: f64) -> crate::container::ContainerScan<'static> {
-    let mut scan = crate::container::scan_bytes(Vec::new());
-    scan.features.rows.push(crate::feature::FeatureRow {
+    let mut scan = crate::test_support::empty_container_scan();
+    scan.features.rows.push(crate::feature::rows::FeatureRow {
         feature_id: 42,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Hole),
         stream_offset: 0,
-        body: Vec::new(),
+        body: vec![0; 2].try_into().expect("row body"),
         body_offset: 0,
         offset: 0,
     });
     scan.features
         .definitions
-        .push(crate::feature::FeatureDefinition {
+        .push(crate::feature::definitions::FeatureDefinition {
             identity: crate::feature::definitions::DefinitionIdentity::Parsed {
                 schema_id: std::num::NonZeroU32::new(911),
                 owner_feature_id: None,
@@ -717,13 +1480,13 @@ fn counterbore_dimension_gate_scan(radius: f64) -> crate::container::ContainerSc
             trim_vertices: None,
             order_table: None,
             section_3d: None,
-            dimensions: Some(crate::feature::FeatureDimensionTable {
+            dimensions: Some(crate::feature::definitions::FeatureDimensionTable {
                 declared_count: 4,
                 entity_ref: Some(88),
                 rows: vec![(2, 20.0, 0), (2, 1.0, 1), (1, 8.0, 2), (2, 60.0, 3)]
                     .into_iter()
-                    .map(
-                        |(dimension_type, value, external_id)| crate::feature::FeatureDimension {
+                    .map(|(dimension_type, value, external_id)| {
+                        crate::feature::definitions::FeatureDimension {
                             dimension_type,
                             value: crate::feature::definitions::DimensionValue::Resolved(value),
                             value_body: Vec::new(),
@@ -733,8 +1496,8 @@ fn counterbore_dimension_gate_scan(radius: f64) -> crate::container::ContainerSc
                             external_id,
                             references: None,
                             offset: 0,
-                        },
-                    )
+                        }
+                    })
                     .collect(),
                 offset: 0,
             }),
@@ -751,7 +1514,7 @@ fn counterbore_dimension_gate_scan(radius: f64) -> crate::container::ContainerSc
             reversed: false,
             boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
-            offset: id as usize,
+            offset: usize::try_from(id).expect("fixture index fits usize"),
         }));
     scan.surfaces
         .parameters
@@ -761,16 +1524,16 @@ fn counterbore_dimension_gate_scan(radius: f64) -> crate::container::ContainerSc
             scalar_tokens: Vec::new(),
             opaque_spans: Vec::new(),
             scalar_frames: Vec::new(),
-            terminal_scalar_frame: None,
             carrier: crate::surface::SurfaceParameterCarrier::Resolved(
                 crate::surface::InlineSurfaceCarrier::Cylinder {
-                    frame: crate::surface::PositionalCylinderFrame {
-                        origin: [0.0, 0.0, 0.0],
-                        axis: [0.0, 0.0, 1.0],
-                        ref_direction: [1.0, 0.0, 0.0],
+                    frame: crate::surface::PositionalCylinderFrame::new(
+                        [0.0, 0.0, 0.0],
+                        [0.0, 0.0, 1.0],
+                        [1.0, 0.0, 0.0],
                         radius,
-                        length: Some(2.0),
-                    },
+                        Some(2.0),
+                    )
+                    .expect("valid positional cylinder frame"),
                     split_bounds: None,
                 },
             ),
@@ -778,22 +1541,21 @@ fn counterbore_dimension_gate_scan(radius: f64) -> crate::container::ContainerSc
             offset: 3,
             body_offset: 3,
         });
-    let entry = |entity_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+    let entry = |entity_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
         entity_id,
-        class_id: 200,
-        payload: crate::feature::entry_payload(200, Some(source_entity_id), None, None),
+        payload: crate::feature::entity::entry_payload(200, Some(source_entity_id), None, None),
         prefixed: false,
-        offset: entity_id as usize,
-        end_offset: entity_id as usize + 1,
-        is_surface: false,
+        offset: usize::try_from(entity_id).expect("fixture index fits usize"),
+        end_offset: usize::try_from(entity_id).expect("fixture index fits usize") + 1,
     };
     scan.features.entity_tables.push(
-        crate::feature::FeatureEntityTable {
-            feature_id: 42,
-            table_class_id: 29,
-            entries: vec![entry(1, 100), entry(2, 100), entry(3, 101), entry(4, 101)],
-            offset: 0,
-        }
+        crate::feature::entity::FeatureEntityTable::new(
+            42,
+            29,
+            vec![entry(1, 100), entry(2, 100), entry(3, 101), entry(4, 101)],
+            &std::collections::BTreeSet::new(),
+            0,
+        )
         .with_surface_ids([1, 2, 3, 4]),
     );
     scan
@@ -806,11 +1568,14 @@ fn counterbore_positional_radius_gate_rejects_unrelated_frame() {
     ir.model.surfaces.push(model_cylinder(1, 60.0));
 
     assert_eq!(
-        super::transfer_positional_cylinders(
+        crate::decode::with_test_decode_ctx(|ctx| super::transfer_positional_cylinders(
+            ctx,
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        )
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+        ))
+        .expect("valid source object identity")
         .transferred,
         0
     );
@@ -828,11 +1593,14 @@ fn counterbore_positional_radius_gate_accepts_declared_source_radius() {
     ir.model.surfaces.push(model_cylinder(1, 60.0));
 
     assert_eq!(
-        super::transfer_positional_cylinders(
+        crate::decode::with_test_decode_ctx(|ctx| super::transfer_positional_cylinders(
+            ctx,
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        )
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+        ))
+        .expect("valid source object identity")
         .transferred,
         1
     );
@@ -858,11 +1626,16 @@ fn constrained_slot_fillet_uses_transferred_plane_carriers_when_native_planes_ar
     ]);
 
     assert_eq!(
-        super::transfer_constrained_slot_fillet_cylinders(
-            &scan,
-            &mut ir,
-            &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        ),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            super::transfer_constrained_slot_fillet_cylinders(
+                ctx,
+                &scan,
+                &mut ir,
+                &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
+        })
+        .expect("valid source object identity"),
         1
     );
 }
@@ -876,11 +1649,16 @@ fn constrained_slot_fillet_rejects_conflicting_model_plane_carriers() {
         .push(model_plane(3, [0.0, -0.5, 0.0], [0.0, 1.0, 0.0]));
 
     assert_eq!(
-        super::transfer_constrained_slot_fillet_cylinders(
-            &scan,
-            &mut ir,
-            &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        ),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            super::transfer_constrained_slot_fillet_cylinders(
+                ctx,
+                &scan,
+                &mut ir,
+                &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
+        })
+        .expect("valid source object identity"),
         0
     );
     assert!(ir
@@ -901,12 +1679,12 @@ fn rowless_round_cylinder_rejects_duplicate_sibling_model_surfaces() {
         next_surface: 0,
         offset: 0,
     };
-    let mut scan = crate::container::scan_bytes(Vec::new());
-    scan.features.rows.push(crate::feature::FeatureRow {
+    let mut scan = crate::test_support::empty_container_scan();
+    scan.features.rows.push(crate::feature::rows::FeatureRow {
         feature_id: 23,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
         stream_offset: 0,
-        body: Vec::new(),
+        body: vec![0; 2].try_into().expect("row body"),
         body_offset: 0,
         offset: 0,
     });
@@ -916,17 +1694,18 @@ fn rowless_round_cylinder_rejects_duplicate_sibling_model_surfaces() {
         row(13, crate::surface::SurfaceKind::Cylinder),
     ];
     scan.features.entity_tables.push(
-        crate::feature::FeatureEntityTable {
-            feature_id: 23,
-            table_class_id: 80,
-            entries: vec![
-                crate::feature::dummy_table_entry(10, true),
-                crate::feature::dummy_table_entry(11, true),
-                crate::feature::dummy_table_entry(12, false),
-                crate::feature::dummy_table_entry(13, true),
+        crate::feature::entity::FeatureEntityTable::new(
+            23,
+            80,
+            vec![
+                crate::feature::entity::dummy_table_entry(10),
+                crate::feature::entity::dummy_table_entry(11),
+                crate::feature::entity::dummy_table_entry(12),
+                crate::feature::entity::dummy_table_entry(13),
             ],
-            offset: 47,
-        }
+            &std::collections::BTreeSet::new(),
+            47,
+        )
         .with_surface_ids([10, 11, 13]),
     );
     let mut ir = cadmpeg_ir::document::CadIr::empty();
@@ -935,14 +1714,136 @@ fn rowless_round_cylinder_rejects_duplicate_sibling_model_surfaces() {
         .extend([model_cylinder(13, 2.0), model_cylinder(13, 3.0)]);
 
     assert_eq!(
-        super::transfer_rowless_round_cylinders(
+        crate::decode::with_test_decode_ctx(|ctx| super::transfer_rowless_round_cylinders(
+            ctx,
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        ),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+        ))
+        .expect("valid source object identity"),
         0
     );
     assert_eq!(ir.model.surfaces.len(), 2);
+}
+
+fn rowless_round_identity_input() -> (
+    crate::container::ContainerScan<'static>,
+    cadmpeg_ir::document::CadIr,
+) {
+    let mut scan = crate::test_support::empty_container_scan();
+    scan.features.rows.push(crate::feature::rows::FeatureRow {
+        feature_id: 23,
+        root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
+        stream_offset: 0,
+        body: vec![0; 2].try_into().expect("row body"),
+        body_offset: 0,
+        offset: 0,
+    });
+    scan.surfaces.rows = [
+        (10, crate::surface::SurfaceKind::Plane),
+        (11, crate::surface::SurfaceKind::Plane),
+        (13, crate::surface::SurfaceKind::Cylinder),
+    ]
+    .into_iter()
+    .map(|(id, kind)| crate::surface::SurfaceRow {
+        id,
+        kind,
+        feature_id: 23,
+        reversed: false,
+        boundary_type: crate::surface::BoundaryType::Code00,
+        next_surface: 0,
+        offset: 0,
+    })
+    .collect();
+    scan.features.entity_tables.push(
+        crate::feature::entity::FeatureEntityTable::new(
+            23,
+            80,
+            [10, 11, 12, 13]
+                .into_iter()
+                .map(crate::feature::entity::dummy_table_entry)
+                .collect(),
+            &std::collections::BTreeSet::new(),
+            47,
+        )
+        .with_surface_ids([10, 11, 13]),
+    );
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    ir.model.surfaces.push(model_cylinder(13, 2.0));
+    (scan, ir)
+}
+
+fn rowless_round_retained_refusal(limit: u64) -> cadmpeg_core::CodecError {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let (scan, mut ir) = rowless_round_identity_input();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = limit;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+    super::transfer_rowless_round_cylinders(
+        &ctx,
+        &scan,
+        &mut ir,
+        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+    )
+    .expect_err("rowless cylinder identity exceeds retained limit")
+}
+
+#[test]
+fn rowless_round_cylinder_identity_refuses_retained_limit() {
+    let error = rowless_round_retained_refusal(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo rowless round cylinder identity"),
+        |cap| Err::<(), _>(rowless_round_retained_refusal(cap)),
+    ));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo rowless round cylinder identity")
+    );
+}
+
+#[test]
+fn rowless_round_cylinder_source_id_refuses_retained_limit() {
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "creo rowless round cylinder source IDs",
+        |limit| Err::<(), _>(rowless_round_retained_refusal(limit)),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo rowless round cylinder source IDs")
+    );
+}
+
+#[test]
+fn rowless_round_cylinder_identity_preserves_service_geometry() {
+    let (scan, mut ir) = rowless_round_identity_input();
+    let count = crate::decode::with_test_decode_ctx(|ctx| {
+        super::transfer_rowless_round_cylinders(
+            ctx,
+            &scan,
+            &mut ir,
+            &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    })
+    .expect("rowless round cylinder admitted");
+    assert_eq!(count, 1);
+    assert_eq!(
+        ir.model.surfaces[1].id.as_str(),
+        "creo:visibgeom:surface#12"
+    );
+    assert_eq!(
+        ir.model.surfaces[1]
+            .source_object
+            .as_ref()
+            .expect("source object")
+            .object_id,
+        "AllFeatur:12"
+    );
 }
 
 #[test]
@@ -956,17 +1857,18 @@ fn rowless_round_cylinder_rejects_duplicate_materialized_source_rows() {
         next_surface: 0,
         offset: 0,
     };
-    let table = crate::feature::FeatureEntityTable {
-        feature_id: 23,
-        table_class_id: 80,
-        entries: vec![
-            crate::feature::dummy_table_entry(10, true),
-            crate::feature::dummy_table_entry(11, true),
-            crate::feature::dummy_table_entry(12, false),
-            crate::feature::dummy_table_entry(13, true),
+    let table = crate::feature::entity::FeatureEntityTable::new(
+        23,
+        80,
+        vec![
+            crate::feature::entity::dummy_table_entry(10),
+            crate::feature::entity::dummy_table_entry(11),
+            crate::feature::entity::dummy_table_entry(12),
+            crate::feature::entity::dummy_table_entry(13),
         ],
-        offset: 47,
-    }
+        &std::collections::BTreeSet::new(),
+        47,
+    )
     .with_surface_ids([10, 11, 13]);
     let rows = vec![
         row(10, crate::surface::SurfaceKind::Plane),
@@ -975,25 +1877,42 @@ fn rowless_round_cylinder_rejects_duplicate_materialized_source_rows() {
         row(13, crate::surface::SurfaceKind::Cylinder),
     ];
 
-    assert!(super::rowless_round_cylinder_pairs(
-        &std::collections::BTreeSet::from([23]),
-        &[table],
-        &rows,
-    )
-    .is_empty());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| super::rowless_round_cylinder_pairs(
+            ctx,
+            &std::collections::BTreeSet::from([23]),
+            &[table],
+            &rows,
+        ))
+        .expect("service duplicate-row pair admitted")
+        .is_empty()
+    );
 }
 
 #[test]
 fn round_envelope_rejects_an_extra_reference_circle() {
-    let circle = |entity_id, axis, start, end| crate::reference::ReferenceCircle {
-        entity_id,
-        center: [0.0; 3],
-        center_stored: true,
-        radius: 2.0,
-        axis,
-        start,
-        end,
-        offset: 0,
+    let circle = |entity_id, axis, start: [f64; 3], end: [f64; 3]| {
+        let mut center = start;
+        let radial_lane = (0..3)
+            .find(|lane| start[*lane] != end[*lane])
+            .expect("distinct cap endpoints");
+        center[radial_lane] = end[radial_lane];
+        crate::reference::ReferenceCircle::try_new(
+            entity_id,
+            crate::reference::ReferenceCircleCenter::Stored(
+                cadmpeg_ir::features::FinitePoint3::new(center.into())
+                    .expect("finite circle center"),
+            ),
+            cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"),
+            cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::from(axis))
+                .expect("unit axis"),
+            [
+                cadmpeg_ir::features::FinitePoint3::new(start.into()).expect("finite start"),
+                cadmpeg_ir::features::FinitePoint3::new(end.into()).expect("finite end"),
+            ],
+            0,
+        )
+        .expect("checked reference geometry")
     };
     let envelope = crate::surface::Type24RoundEnvelope {
         diameter: 2.0,
@@ -1018,11 +1937,15 @@ fn split_outline_rejects_conflicting_model_plane_carrier() {
         .push(model_plane(1, [0.0, 0.0, -0.5], [0.0, 0.0, 1.0]));
 
     assert_eq!(
-        super::transfer_split_outline_cylinders(
+        crate::decode::with_test_decode_ctx(|ctx| super::transfer_split_outline_cylinders(
+            ctx,
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        ),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+        ))
+        .expect("valid source object identity"),
         0
     );
 }
+mod identities;

@@ -13,69 +13,103 @@ use crate::design::body::{
 use crate::design::presentation::{
     BROWSER_NODE_BASE_TYPE_GUID, BROWSER_NODE_TYPE_GUID, BROWSER_NODE_TYPE_VERSION,
 };
-use crate::records::{SegmentType, DESIGN_MODULE_BODY, DESIGN_MODULE_FUSION};
+use crate::records::{
+    entity_header::{SegmentType, DESIGN_MODULE_BODY, DESIGN_MODULE_FUSION},
+    mesh::DesignGuidText,
+};
 
-use super::attributes::{source_less_body_key, AttributeIndex};
-use super::preconditions::DesignBindingsValidated;
+use super::{
+    attributes::{source_less_body_key, AttributeIndex},
+    preconditions::DesignBindingsValidated,
+};
 
 /// One type-table row after generated record types have been registered.
-pub(crate) struct GeneratedDesignType {
-    pub type_guid: String,
-    pub base_type_guid: Option<String>,
-    pub version: u32,
-    pub module: String,
-    pub entity_ids: Vec<u64>,
+pub(in crate::writer::generate) struct GeneratedDesignType {
+    pub(super) type_guid: DesignGuidText,
+    pub(super) base_type_guid: Option<DesignGuidText>,
+    pub(super) version: u32,
+    pub(super) module: String,
+    pub(super) entity_ids: Vec<u64>,
 }
 
-impl From<&SegmentType> for GeneratedDesignType {
-    fn from(value: &SegmentType) -> Self {
-        Self {
-            type_guid: value.type_guid.as_str().to_owned(),
+impl TryFrom<&SegmentType> for GeneratedDesignType {
+    type Error = CodecError;
+    fn try_from(value: &SegmentType) -> Result<Self, Self::Error> {
+        Ok(Self {
+            type_guid: value
+                .type_guid
+                .as_str()
+                .to_owned()
+                .try_into()
+                .map_err(CodecError::NotImplemented)?,
             base_type_guid: value
                 .base_type_guid
-                .as_ref()
-                .and_then(|field| field.value.as_ref().map(|guid| guid.as_str().to_owned())),
+                .value()
+                .map(|guid| DesignGuidText::try_from(guid.as_str().to_owned()))
+                .transpose()
+                .map_err(CodecError::NotImplemented)?,
             version: value.version,
             module: value.module.clone(),
             entity_ids: value.entities.values().copied().collect(),
-        }
+        })
     }
 }
 
 /// One generated browser node joined to a body-map entity suffix.
-pub(crate) struct GeneratedBrowserNode {
-    pub entity_suffix: u64,
-    pub node_guid: String,
-    pub record_index: u32,
-    pub visible: bool,
+pub(super) struct GeneratedBrowserNode {
+    pub(super) entity_suffix: u64,
+    pub(super) node_guid: String,
+    pub(super) record_index: u32,
+    pub(super) visible: bool,
+}
+
+/// A nonempty ordered map from ASM body keys to Design entity suffixes.
+pub(super) struct GeneratedBodyMapEntries(BTreeMap<u64, u64>);
+
+impl GeneratedBodyMapEntries {
+    fn new(entries: BTreeMap<u64, u64>) -> Option<Self> {
+        (!entries.is_empty()).then_some(Self(entries))
+    }
+
+    /// The ordered body-map entries.
+    pub(super) fn as_map(&self) -> &BTreeMap<u64, u64> {
+        &self.0
+    }
 }
 
 /// A generated body map and its registered identity.
-pub(crate) struct GeneratedBodyMap {
-    pub entries: BTreeMap<u64, u64>,
-    pub record_index: u32,
-    pub class_tag: crate::records::DesignClassTag,
+pub(in crate::writer::generate) struct GeneratedBodyMap {
+    pub(super) entries: GeneratedBodyMapEntries,
+    pub(super) record_index: u32,
+    pub(super) class_tag: crate::records::references::DesignClassTag,
 }
 
 /// Generated browser nodes and their registered class.
-pub(crate) struct GeneratedBrowserNodes {
-    pub nodes: Vec<GeneratedBrowserNode>,
-    pub class_tag: crate::records::DesignClassTag,
+pub(in crate::writer::generate) struct GeneratedBrowserNodes {
+    pub(super) nodes: Vec<GeneratedBrowserNode>,
+    pub(super) class_tag: crate::records::references::DesignClassTag,
 }
 
 /// The common registry consumed by both generated Design streams.
-pub(crate) struct GeneratedDesignRegistry {
-    pub types: Vec<GeneratedDesignType>,
-    pub body_map: Option<GeneratedBodyMap>,
-    pub browser_nodes: Option<GeneratedBrowserNodes>,
+pub(super) struct GeneratedDesignRegistry {
+    pub(super) types: Vec<GeneratedDesignType>,
+    pub(super) body_map: Option<GeneratedBodyMap>,
+    pub(super) browser_nodes: Option<GeneratedBrowserNodes>,
 }
 
 impl GeneratedDesignRegistry {
-    pub(crate) fn new(
+    pub(super) fn new(
         target: &CadIr,
         bindings: DesignBindingsValidated<'_>,
         attributes: &AttributeIndex<'_>,
     ) -> Result<Self, CodecError> {
+        let decode_arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &decode_arena,
+            &cadmpeg_core::decode::DecodePolicy::default(),
+        )?;
+
         let native = bindings.native();
         let visibility_by_body = native
             .body_visibilities
@@ -92,9 +126,9 @@ impl GeneratedDesignRegistry {
             };
             let metadata = visibility_by_body.get(body.id.as_str()).copied();
             let asm_body_key = match metadata {
-                Some(metadata) => metadata.asm_body_key,
+                Some(metadata) => metadata.asm_body_key(),
                 None => u64::try_from(source_less_body_key(attributes, body, ordinal)?).map_err(
-                    |_| CodecError::Malformed("source-less ASM body key is negative".into()),
+                    |_| CodecError::NotImplemented("source-less ASM body key is negative".into()),
                 )?,
             };
             let entity_suffix = metadata.map_or(asm_body_key, |metadata| metadata.entity_suffix);
@@ -143,15 +177,20 @@ impl GeneratedDesignRegistry {
                 .unwrap_or(0)
                 .checked_add(1)
                 .ok_or_else(|| {
-                    CodecError::Malformed("F3D Design record index space is full".into())
+                    CodecError::NotImplemented("F3D Design record index space is full".into())
                 })?
         };
 
-        let body_map_record_index = (!body_map.is_empty())
-            .then(|| allocate_record_index(&mut used_record_indices, &mut next_record_index))
+        let body_map = GeneratedBodyMapEntries::new(body_map)
+            .map(|entries| {
+                let record_index =
+                    allocate_record_index(&mut used_record_indices, &mut next_record_index)?;
+                Ok::<_, CodecError>((entries, record_index))
+            })
             .transpose()?;
         pending.sort_by_key(|(entity_suffix, _, _)| *entity_suffix);
-        let mut browser_nodes = Vec::with_capacity(pending.len());
+        let mut browser_nodes =
+            ctx.collection_vec(pending.len(), "collect F3D generated browser nodes")?;
         for (entity_suffix, body_id, visible) in pending {
             let record_index =
                 allocate_record_index(&mut used_record_indices, &mut next_record_index)?;
@@ -166,10 +205,10 @@ impl GeneratedDesignRegistry {
         let mut types = native
             .design_types
             .iter()
-            .map(GeneratedDesignType::from)
-            .collect::<Vec<_>>();
-        let body_map = body_map_record_index
-            .map(|record_index| {
+            .map(GeneratedDesignType::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
+        let body_map = body_map
+            .map(|(entries, record_index)| {
                 let type_index = register_generated_type(
                     &mut types,
                     BODY_MAP_CARRIER_TYPE_GUID,
@@ -179,7 +218,7 @@ impl GeneratedDesignRegistry {
                     vec![u64::from(record_index)],
                 )?;
                 Ok::<_, CodecError>(GeneratedBodyMap {
-                    entries: body_map,
+                    entries,
                     record_index,
                     class_tag: dynamic_class_tag(type_index)?,
                 })
@@ -215,15 +254,15 @@ impl GeneratedDesignRegistry {
 
 fn allocate_record_index(used: &mut BTreeSet<u32>, next: &mut u32) -> Result<u32, CodecError> {
     while used.contains(next) {
-        *next = next
-            .checked_add(1)
-            .ok_or_else(|| CodecError::Malformed("F3D Design record index space is full".into()))?;
+        *next = next.checked_add(1).ok_or_else(|| {
+            CodecError::NotImplemented("F3D Design record index space is full".into())
+        })?;
     }
     let allocated = *next;
     used.insert(allocated);
-    *next = next
-        .checked_add(1)
-        .ok_or_else(|| CodecError::Malformed("F3D Design record index space is full".into()))?;
+    *next = next.checked_add(1).ok_or_else(|| {
+        CodecError::NotImplemented("F3D Design record index space is full".into())
+    })?;
     Ok(allocated)
 }
 
@@ -238,14 +277,27 @@ fn register_generated_type(
     let matches = types
         .iter()
         .enumerate()
-        .filter(|(_, design_type)| design_type.type_guid.eq_ignore_ascii_case(type_guid))
+        .filter(|(_, design_type)| {
+            design_type
+                .type_guid
+                .as_str()
+                .eq_ignore_ascii_case(type_guid)
+        })
         .map(|(ordinal, _)| ordinal)
         .collect::<Vec<_>>();
     let ordinal = match matches.as_slice() {
         [] => {
             types.push(GeneratedDesignType {
-                type_guid: type_guid.to_owned(),
-                base_type_guid: Some(base_type_guid.to_owned()),
+                type_guid: type_guid
+                    .to_owned()
+                    .try_into()
+                    .map_err(CodecError::Malformed)?,
+                base_type_guid: Some(
+                    base_type_guid
+                        .to_owned()
+                        .try_into()
+                        .map_err(CodecError::Malformed)?,
+                ),
                 version,
                 module: module.to_owned(),
                 entity_ids: Vec::new(),
@@ -264,8 +316,8 @@ fn register_generated_type(
         || design_type.module != module
         || design_type
             .base_type_guid
-            .as_deref()
-            .is_none_or(|base| !base.eq_ignore_ascii_case(base_type_guid))
+            .as_ref()
+            .is_none_or(|base| !base.as_str().eq_ignore_ascii_case(base_type_guid))
     {
         return Err(CodecError::malformed(format_args!(
             "F3D Design type {type_guid} conflicts with its built-in registration"
@@ -277,9 +329,9 @@ fn register_generated_type(
     Ok(ordinal)
 }
 
-pub(crate) fn dynamic_class_tag(
+pub(super) fn dynamic_class_tag(
     type_ordinal: usize,
-) -> Result<crate::records::DesignClassTag, CodecError> {
+) -> Result<crate::records::references::DesignClassTag, CodecError> {
     let tag = u32::try_from(type_ordinal)
         .ok()
         .and_then(|ordinal| ordinal.checked_add(256))
@@ -289,7 +341,7 @@ pub(crate) fn dynamic_class_tag(
                 "source-less F3D Design type registry exceeds three-digit class tags".into(),
             )
         })?;
-    crate::records::DesignClassTag::try_from(tag.to_string())
+    crate::records::references::DesignClassTag::try_from(tag.to_string())
         .map_err(|error| CodecError::malformed(format_args!("generated Design type: {error}")))
 }
 
@@ -300,9 +352,9 @@ fn deterministic_guid(domain: &str, identity: &str) -> String {
     digest.update(domain.as_bytes());
     digest.update(b"\0");
     digest.update(identity.as_bytes());
-    let mut bytes: [u8; 16] = digest.finalize()[..16]
-        .try_into()
-        .expect("SHA-256 always contains sixteen prefix bytes");
+    let digest = digest.finalize();
+    let mut bytes = [0u8; 16];
+    bytes.copy_from_slice(&digest[..16]);
     bytes[6] = (bytes[6] & 0x0f) | 0x80;
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
     format!(
@@ -330,68 +382,91 @@ fn deterministic_guid(domain: &str, identity: &str) -> String {
 mod tests {
     use super::{deterministic_guid, GeneratedDesignRegistry};
 
-    fn body_map_type(entity_ids: Vec<u64>) -> crate::records::SegmentType {
-        crate::records::SegmentType {
-            id: "synthetic:design-type#body-map".into(),
-            byte_offset: 0,
-            type_guid: crate::design::body::BODY_MAP_CARRIER_TYPE_GUID
+    #[test]
+    fn generated_type_rejects_relaxed_noncanonical_guid() {
+        let mut source = body_map_type(vec![1]);
+        source.set_type_guid(
+            "____________________________________"
                 .to_owned()
                 .try_into()
-                .expect("type GUID"),
-            type_guid_offset: 0,
-            base_type_guid: Some(crate::records::RecordedValue {
-                value: Some(
-                    crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID
-                        .to_owned()
-                        .try_into()
-                        .expect("base GUID"),
-                ),
-                offset: Some(0),
-            }),
-            version: crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,
-            version_offset: 0,
-            module: crate::records::DESIGN_MODULE_BODY.into(),
-            entities: crate::records::ReferenceRun::located(
-                entity_ids
-                    .into_iter()
-                    .map(|value| crate::records::Located { value, offset: 0 })
-                    .collect(),
-            ),
-        }
+                .unwrap(),
+        );
+        assert!(super::GeneratedDesignType::try_from(&source).is_err());
+        source = body_map_type(vec![1]);
+        source.set_base_type_guid(crate::records::entity_header::BaseTypeGuid::Guid {
+            value: "____________________________________"
+                .to_owned()
+                .try_into()
+                .unwrap(),
+            offset: 0,
+        });
+        assert!(super::GeneratedDesignType::try_from(&source).is_err());
     }
 
-    fn browser_node_type(entity_ids: Vec<u64>) -> crate::records::SegmentType {
-        crate::records::SegmentType {
-            id: "synthetic:design-type#browser-node".into(),
-            byte_offset: 0,
-            type_guid: crate::design::presentation::BROWSER_NODE_TYPE_GUID
-                .to_owned()
-                .try_into()
-                .expect("type GUID"),
-            type_guid_offset: 0,
-            base_type_guid: Some(crate::records::RecordedValue {
-                value: Some(
-                    crate::design::presentation::BROWSER_NODE_BASE_TYPE_GUID
+    fn body_map_type(entity_ids: Vec<u64>) -> crate::records::entity_header::SegmentType {
+        crate::records::entity_header::SegmentType::try_new(
+            "f3d:generated/MetaStream.dat:design-type#0".into(),
+            crate::records::entity_header::SegmentTypeData {
+                byte_offset: 0,
+                type_guid: crate::design::body::BODY_MAP_CARRIER_TYPE_GUID
+                    .to_owned()
+                    .try_into()
+                    .expect("type GUID"),
+                type_guid_offset: 0,
+                base_type_guid: crate::records::entity_header::BaseTypeGuid::Guid {
+                    value: crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID
                         .to_owned()
                         .try_into()
                         .expect("base GUID"),
+                    offset: 0,
+                },
+                version: crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,
+                version_offset: 0,
+                module: crate::records::entity_header::DESIGN_MODULE_BODY.into(),
+                entities: crate::records::identity::ReferenceRun::located(
+                    entity_ids
+                        .into_iter()
+                        .map(|value| crate::records::identity::Located { value, offset: 0 })
+                        .collect(),
                 ),
-                offset: Some(0),
-            }),
-            version: crate::design::presentation::BROWSER_NODE_TYPE_VERSION,
-            version_offset: 0,
-            module: crate::records::DESIGN_MODULE_FUSION.into(),
-            entities: crate::records::ReferenceRun::located(
-                entity_ids
-                    .into_iter()
-                    .map(|value| crate::records::Located { value, offset: 0 })
-                    .collect(),
-            ),
-        }
+            },
+        )
+        .unwrap()
+    }
+
+    fn browser_node_type(entity_ids: Vec<u64>) -> crate::records::entity_header::SegmentType {
+        crate::records::entity_header::SegmentType::try_new(
+            "f3d:generated/MetaStream.dat:design-type#0".into(),
+            crate::records::entity_header::SegmentTypeData {
+                byte_offset: 0,
+                type_guid: crate::design::presentation::BROWSER_NODE_TYPE_GUID
+                    .to_owned()
+                    .try_into()
+                    .expect("type GUID"),
+                type_guid_offset: 0,
+                base_type_guid: crate::records::entity_header::BaseTypeGuid::Guid {
+                    value: crate::design::presentation::BROWSER_NODE_BASE_TYPE_GUID
+                        .to_owned()
+                        .try_into()
+                        .expect("base GUID"),
+                    offset: 0,
+                },
+                version: crate::design::presentation::BROWSER_NODE_TYPE_VERSION,
+                version_offset: 0,
+                module: crate::records::entity_header::DESIGN_MODULE_FUSION.into(),
+                entities: crate::records::identity::ReferenceRun::located(
+                    entity_ids
+                        .into_iter()
+                        .map(|value| crate::records::identity::Located { value, offset: 0 })
+                        .collect(),
+                ),
+            },
+        )
+        .unwrap()
     }
 
     fn node_guids_for_order(reverse: bool) -> std::collections::BTreeMap<u64, String> {
-        let mut target = cadmpeg_ir::examples::unit_cube();
+        let mut target = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
         let mut first = target.model.bodies[0].clone();
         first.id = cadmpeg_ir::ids::BodyId::mint("test:model:body#synthetic:stable-body:a")
             .expect("identity grammar");
@@ -411,7 +486,7 @@ mod tests {
                 cadmpeg_asm::brep::records::BodyNativeKey {
                     source_namespace:
                         cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
-                            cadmpeg_asm::ids::IdFormat("generated"),
+                            cadmpeg_asm::asm_format!("generated"),
                         ),
                     body: first.id.clone(),
                     record_index: 1,
@@ -422,7 +497,7 @@ mod tests {
                 cadmpeg_asm::brep::records::BodyNativeKey {
                     source_namespace:
                         cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
-                            cadmpeg_asm::ids::IdFormat("generated"),
+                            cadmpeg_asm::asm_format!("generated"),
                         ),
                     body: second.id.clone(),
                     record_index: 2,
@@ -432,26 +507,32 @@ mod tests {
                 },
             ],
             body_visibilities: vec![
-                crate::records::BodyVisibility {
-                    id: "generated:visibility#a".into(),
-                    body: first.id,
-                    stream: "generated/Design1/BulkStream.dat".into(),
-                    byte_offset: 0,
-                    asm_body_key_offset: 0,
-                    asm_body_key: 11,
-                    entity_suffix: 101,
-                    visible: false,
-                },
-                crate::records::BodyVisibility {
-                    id: "generated:visibility#b".into(),
-                    body: second.id,
-                    stream: "generated/Design1/BulkStream.dat".into(),
-                    byte_offset: 0,
-                    asm_body_key_offset: 0,
-                    asm_body_key: 22,
-                    entity_suffix: 202,
-                    visible: true,
-                },
+                crate::records::bodies::BodyVisibility::try_from(
+                    crate::records::bodies::BodyVisibilityWire {
+                        id: "f3d:generated:body-visibility#11".into(),
+                        body: first.id,
+                        stream: "generated/Design1/BulkStream.dat".into(),
+                        byte_offset: 0,
+                        asm_body_key_offset: 0,
+                        asm_body_key: 11,
+                        entity_suffix: 101,
+                        visible: false,
+                    },
+                )
+                .unwrap(),
+                crate::records::bodies::BodyVisibility::try_from(
+                    crate::records::bodies::BodyVisibilityWire {
+                        id: "f3d:generated:body-visibility#22".into(),
+                        body: second.id,
+                        stream: "generated/Design1/BulkStream.dat".into(),
+                        byte_offset: 0,
+                        asm_body_key_offset: 0,
+                        asm_body_key: 22,
+                        entity_suffix: 202,
+                        visible: true,
+                    },
+                )
+                .unwrap(),
             ],
             ..Default::default()
         };
@@ -489,7 +570,7 @@ mod tests {
 
     #[test]
     fn generated_presentation_records_do_not_alias_their_body_entity() {
-        let mut target = cadmpeg_ir::examples::unit_cube();
+        let mut target = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
         target.model.bodies[0].visible = Some(true);
         let native = crate::native::F3dNative::default();
         let attributes = super::AttributeIndex::new(&target, &native)
@@ -515,7 +596,7 @@ mod tests {
 
     #[test]
     fn generated_body_map_replaces_stale_type_membership() {
-        let mut target = cadmpeg_ir::examples::unit_cube();
+        let mut target = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
         target.model.bodies[0].visible = Some(true);
         let native = crate::native::F3dNative {
             design_types: vec![body_map_type(vec![17])],
@@ -537,6 +618,7 @@ mod tests {
             .find(|design_type| {
                 design_type
                     .type_guid
+                    .as_str()
                     .eq_ignore_ascii_case(crate::design::body::BODY_MAP_CARRIER_TYPE_GUID)
             })
             .expect("body-map type registration");
@@ -546,7 +628,7 @@ mod tests {
 
     #[test]
     fn generated_browser_nodes_replace_stale_type_membership() {
-        let mut target = cadmpeg_ir::examples::unit_cube();
+        let mut target = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
         target.model.bodies[0].visible = Some(true);
         let native = crate::native::F3dNative {
             design_types: vec![browser_node_type(vec![17])],
@@ -570,6 +652,7 @@ mod tests {
             .find(|design_type| {
                 design_type
                     .type_guid
+                    .as_str()
                     .eq_ignore_ascii_case(crate::design::presentation::BROWSER_NODE_TYPE_GUID)
             })
             .expect("browser-node type registration");
@@ -579,7 +662,7 @@ mod tests {
 
     #[test]
     fn full_record_index_space_is_irrelevant_without_generated_nodes() {
-        let target = cadmpeg_ir::examples::unit_cube();
+        let target = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
         let native = crate::native::F3dNative {
             design_types: vec![browser_node_type(vec![u64::from(u32::MAX)])],
             ..Default::default()

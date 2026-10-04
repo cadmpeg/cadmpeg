@@ -47,7 +47,7 @@ impl StateIndexToken {
         }
     }
 
-    pub(crate) fn byte_len(self) -> u8 {
+    pub(super) fn byte_len(self) -> u8 {
         match self.0 {
             IndexBytes::Direct(_) => 1,
             IndexBytes::Compact(_) => 2,
@@ -65,12 +65,12 @@ impl StateIndexToken {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct OperationStateIndex {
+pub(super) struct OperationStateIndex {
     token: Option<StateIndexToken>,
 }
 
 impl OperationStateIndex {
-    pub(crate) fn read_at(bytes: &[u8], at: usize, base_offset: usize) -> Option<Self> {
+    pub(super) fn read_at(bytes: &[u8], at: usize, base_offset: usize) -> Option<Self> {
         let token = if *bytes.get(at)? == 0xff {
             None
         } else {
@@ -80,11 +80,11 @@ impl OperationStateIndex {
         Some(Self { token })
     }
 
-    pub(crate) fn token(self) -> Option<StateIndexToken> {
+    pub(super) fn token(self) -> Option<StateIndexToken> {
         self.token
     }
 
-    pub(crate) fn raw(&self) -> &[u8] {
+    pub(super) fn raw(&self) -> &[u8] {
         self.token.as_ref().map_or(&[0xff], StateIndexToken::raw)
     }
 }
@@ -127,5 +127,29 @@ mod tests {
             assert!(StateIndexToken::read_at(raw, 0).is_none());
         }
         assert!(OperationStateIndex::read_at(&[0, 0], 1, usize::MAX).is_none());
+    }
+
+    #[test]
+    fn operation_state_indices_retain_each_admitted_form() {
+        let bytes = [
+            0x7f, 0x83, 0xf9, 0x90, 0x12, 0x34, 0xa3, 0x1f, 0x85, 0xf1, 0x04, 0x2d, 0xff,
+        ];
+        let expected = [
+            (Some(0x7f), 1),
+            (Some(0x3f9), 2),
+            (Some(0x1234), 3),
+            (Some(0x31f85), 3),
+            (Some(0x42d), 3),
+            (None, 1),
+        ];
+
+        let mut at = 0;
+        for (value, width) in expected {
+            let token = OperationStateIndex::read_at(&bytes, at, 0).expect("complete state index");
+            assert_eq!(token.token().map(StateIndexToken::value), value);
+            assert_eq!(token.raw(), &bytes[at..at + width]);
+            at += width;
+        }
+        assert_eq!(at, bytes.len());
     }
 }

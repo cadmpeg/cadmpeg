@@ -1,8 +1,9 @@
 //! Carrier admission tests for shape binders.
 
-use crate::test_support::*;
+use crate::design::tests::definition;
+use crate::test_support::test_archive::archive;
 use crate::FcstdCodec;
-use cadmpeg_ir::features::FeatureDefinition;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
@@ -123,29 +124,12 @@ fn distinguishes_absent_and_malformed_shape_binder_carriers() {
             .expect("shape binder carriers")
     }
 
-    fn definition<'a>(
-        result: &'a cadmpeg_ir::codec::DecodeResult,
-        name: &str,
-    ) -> &'a FeatureDefinition {
-        &result
-            .ir()
-            .model
-            .features
-            .iter()
-            .find(|feature| feature.name.as_deref() == Some(name))
-            .unwrap_or_else(|| panic!("missing {name}"))
-            .definition
-    }
-
     fn assert_native(result: &cadmpeg_ir::codec::DecodeResult, name: &str, kind: &str) {
-        let actual = match definition(result, name) {
-            FeatureDefinition::PostProcess { operation, .. } => operation.as_ref(),
-            other => other,
-        };
+        let actual = definition(result, name).operation();
         assert!(
             matches!(
                 actual,
-                FeatureDefinition::Native { kind: value, .. } if value.as_str() == kind
+                FeatureOperation::Native { kind: value, .. } if value.as_str() == kind
             ),
             "{name} expected native {kind}, got {actual:?}"
         );
@@ -153,19 +137,19 @@ fn distinguishes_absent_and_malformed_shape_binder_carriers() {
         assert!(result.report().losses.iter().all(|loss| {
             loss.code.namespace() == "fcstd"
                 && loss.code.local_code() == "feature.native-kind-retained"
-                && loss.severity == cadmpeg_ir::Severity::Blocking
+                && loss.severity == cadmpeg_ir::report::Severity::Blocking
         }));
     }
 
     let shape_absent = decode(&document(Some(("ShapeBind", "TraceSupport", ""))));
     assert!(matches!(
         definition(&shape_absent, "ShapeBind"),
-        FeatureDefinition::Binder {
+        FeatureDefinition::Operation(FeatureOperation::Binder {
             construction: cadmpeg_ir::features::BinderConstruction::Shape {
                 trace_support: false
             },
             ..
-        }
+        })
     ));
     assert!(shape_absent.report().losses.is_empty());
 
@@ -185,12 +169,8 @@ fn distinguishes_absent_and_malformed_shape_binder_carriers() {
         "Refine",
     ] {
         let result = decode(&document(Some(("SubBind", name, ""))));
-        let operation = match definition(&result, "SubBind") {
-            FeatureDefinition::PostProcess { operation, .. } => operation.as_ref(),
-            FeatureDefinition::Binder { .. } => definition(&result, "SubBind"),
-            _ => panic!("subshape binder definition"),
-        };
-        let FeatureDefinition::Binder { construction, .. } = operation else {
+        let operation = definition(&result, "SubBind").operation();
+        let FeatureOperation::Binder { construction, .. } = operation else {
             panic!("subshape binder")
         };
         let cadmpeg_ir::features::BinderConstruction::SubShape {
@@ -241,7 +221,7 @@ fn distinguishes_absent_and_malformed_shape_binder_carriers() {
             assert!(offset.is_none());
         } else {
             let offset = offset.as_ref().expect("selected offset");
-            assert!((offset.distance.0 + 2.5).abs() <= f64::EPSILON);
+            assert!((offset.distance.get() + 2.5).abs() <= f64::EPSILON);
             assert_eq!(
                 offset.join,
                 if name == "OffsetJoinType" {

@@ -1,27 +1,5 @@
 {
   "container_kind": "stream",
-  "dialects": {
-    "extra": [
-      {
-        "admission": "admitted",
-        "declared": {
-          "reference_width": "4",
-          "save_format_major": "218",
-          "save_format_minor": "0"
-        },
-        "dialect": "acis:save-format-218",
-        "format": "acis"
-      }
-    ],
-    "primary": {
-      "admission": "admitted",
-      "declared": {
-        "encoding": "binary"
-      },
-      "dialect": "sat:acis-binary",
-      "format": "sat"
-    }
-  },
   "entries": [
     {
       "attributes": {
@@ -33,13 +11,37 @@
         "product_version": "ASM 232.4.0.65535 OSX",
         "save_date": "Synthetic"
       },
-      "compressed_size": 440,
       "compression": "stored",
       "name": "stream",
       "role": "acis-binary",
-      "uncompressed_size": 440
+      "size": {
+        "form": "exact",
+        "size": 440
+      }
     }
   ],
-  "format": "sat",
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [
+        {
+          "admission": "admitted",
+          "declared": {
+            "reference_width": "4",
+            "save_format_major": "218",
+            "save_format_minor": "0"
+          },
+          "dialect": "acis:save-format-218"
+        }
+      ],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "encoding": "binary"
+        },
+        "dialect": "sat:acis-binary"
+      }
+    }
+  },
   "notes": []
 }

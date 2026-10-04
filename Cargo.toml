@@ -58,7 +58,12 @@ cadmpeg-codec-iges = { path = "crates/cadmpeg-codec-iges", version = "0.6.0" }
 cadmpeg-codec-step = { path = "crates/cadmpeg-codec-step", version = "0.6.0" }
 cadmpeg-codec-sat = { path = "crates/cadmpeg-codec-sat", version = "0.6.0" }
 
-serde = { version = "1", features = ["derive"] }
+# 1.0.229 is the floor, not a preference: serde_derive gained the
+# collected_deny_unknown_fields epilogue there, which is what makes
+# deny_unknown_fields refuse beside a flattened field. Seventeen wire
+# types in cadmpeg-ir and cadmpeg-core depend on that refusal, and an
+# older 1.x makes every one of them an inert deny with no compile error.
+serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip", "raw_value"] }
 serde-value = "0.7"
 schemars = "1.2"
@@ -80,6 +85,10 @@ regex = "1.13"
 assert_cmd = "2"
 predicates = "3"
 proptest = "1"
+# Parses the wire crates' own source in the hand-written-Deserialize census.
+syn = { version = "2", features = ["full", "parsing"] }
+# `span-locations` gives the optional-field census its `file:line` offenders.
+proc-macro2 = { version = "1", features = ["span-locations"] }
 tempfile = "3"
 toml = "1"
 encoding_rs = "0.8"
@@ -126,17 +135,25 @@ strip = "symbols"
 # already behaved that way; only the flag's location changes here.
 warnings = { level = "deny", priority = -100 }
 missing_docs = "warn"
+# `unreachable_pub` is allow-by-default, so the blanket `warnings` deny above does
+# not reach it. A `pub` item that no `pub mod`/`pub use` chain carries to the crate
+# root is not public API; it spells more reach than any reader needs.
+unreachable_pub = "deny"
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
 
-# The codecs are wall-to-wall u32/usize/f64 conversions over file offsets and
-# fixed-width records.
-cast_possible_truncation = "allow"
-cast_possible_wrap = "allow"
-cast_sign_loss = "allow"
-cast_precision_loss = "allow"
-cast_lossless = "allow"
+# A discarded `Result` is a dropped refusal. Propagate it; never `#[allow]`,
+# `drop(...)` or `.ok()` it away.
+let_underscore_must_use = "deny"
+
+# Numeric conversions use checked conversion functions, From or TryFrom.
+as_conversions = "deny"
+cast_possible_truncation = "deny"
+cast_possible_wrap = "deny"
+cast_sign_loss = "deny"
+cast_precision_loss = "deny"
+cast_lossless = "deny"
 
 # Roundtrip tests compare decoded floats for byte-exact equality.
 float_cmp = "allow"

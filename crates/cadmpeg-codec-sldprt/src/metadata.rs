@@ -2,7 +2,8 @@
 //! Typed SW Objects document metadata.
 
 use crate::container::{ContainerScan, Section};
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::ids::AttributeId;
@@ -10,43 +11,54 @@ use cadmpeg_ir::Exactness;
 
 use crate::layout::transformed_reference_plane_metadata as trans_plane;
 
-pub fn attributes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<SourceAttribute> {
+pub(crate) fn attributes(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+    annotations: &mut Annotations,
+) -> Result<Vec<SourceAttribute>, CodecError> {
     let mut out = Vec::new();
     for section in scan.sections() {
         scan_vectors(
+            ctx,
             section,
-            b"moBBoxCenterData_c",
-            "bounding_envelope",
-            4,
-            4,
-            true,
+            &VectorScan {
+                token: b"moBBoxCenterData_c",
+                name: &cadmpeg_ir::identity_component!("bounding_envelope"),
+                count: 4,
+                skip: 4,
+                all_lengths: true,
+            },
             &mut out,
             annotations,
-        );
+        )?;
         scan_vectors(
+            ctx,
             section,
-            b"moDefaultRefPlnData_c",
-            "default_reference_plane",
-            9,
-            0,
-            false,
+            &VectorScan {
+                token: b"moDefaultRefPlnData_c",
+                name: &cadmpeg_ir::identity_component!("default_reference_plane"),
+                count: 9,
+                skip: 0,
+                all_lengths: false,
+            },
             &mut out,
             annotations,
-        );
-        scan_part(section, &mut out, annotations);
-        scan_configuration_manager(section, &mut out, annotations);
-        scan_transformed_reference_plane(section, &mut out, annotations);
-        scan_units_xml(section, &mut out, annotations);
-        scan_length_user_units(section, &mut out, annotations);
+        )?;
+        scan_part(ctx, section, &mut out, annotations)?;
+        scan_configuration_manager(ctx, section, &mut out, annotations)?;
+        scan_transformed_reference_plane(ctx, section, &mut out, annotations)?;
+        scan_units_xml(ctx, section, &mut out, annotations)?;
+        scan_length_user_units(ctx, section, &mut out, annotations)?;
     }
-    out
+    Ok(out)
 }
 
 fn scan_transformed_reference_plane(
+    ctx: &DecodeContext<'_>,
     section: Section<'_>,
     out: &mut Vec<SourceAttribute>,
     annotations: &mut Annotations,
-) {
+) -> Result<(), CodecError> {
     const TOKEN: &[u8] = b"moTransRefPlaneData_c";
     const PREFIX: &[u8] = &trans_plane::PREFIX_VALUE;
     let payload = section.payload();
@@ -74,30 +86,41 @@ fn scan_transformed_reference_plane(
         {
             continue;
         }
+        let (Some(center), Some(extents), Some(auxiliary), Some(diagonal)) = (
+            millimetres(&values[..3]),
+            millimetres(&values[3..5]),
+            AttributeValue::vector(values[5..8].iter().copied()),
+            AttributeValue::float(values[8] * 1000.0),
+        ) else {
+            continue;
+        };
+        ctx.reserve_vec(out, 1, "collect SLDPRT document attributes")?;
         out.push(attribute(
+            ctx,
             section,
             offset,
-            "transformed_reference_plane",
+            &cadmpeg_ir::identity_component!("transformed_reference_plane"),
             TOKEN,
-            vec![
-                AttributeValue::Vector(values[..3].iter().map(|value| value * 1000.0).collect()),
-                AttributeValue::Vector(values[3..5].iter().map(|value| value * 1000.0).collect()),
-                AttributeValue::Vector(values[5..8].to_vec()),
-                AttributeValue::Float(values[8] * 1000.0),
-            ],
+            vec![center, extents, auxiliary, diagonal],
             annotations,
-        ));
+        )?);
     }
+    Ok(())
 }
 
 fn scan_length_user_units(
+    ctx: &DecodeContext<'_>,
     section: Section<'_>,
     out: &mut Vec<SourceAttribute>,
     annotations: &mut Annotations,
-) {
+) -> Result<(), CodecError> {
     const TOKEN: &[u8] = b"moLengthUserUnits_c";
     const STRING_MARKER: &[u8] = &[0xff, 0xfe, 0xff];
     let payload = section.payload();
+    ctx.charge_work(
+        u64_from_index(payload.len()),
+        "scan SLDPRT linear unit names",
+    )?;
     for offset in payload
         .windows(TOKEN.len())
         .enumerate()
@@ -115,43 +138,70 @@ fn scan_length_user_units(
             continue;
         };
         let start = marker + 4;
-        let Some(bytes) = payload.get(start..start.saturating_add(length)) else {
+        let Some(bytes) = start
+            .checked_add(length)
+            .and_then(|end| payload.get(start..end))
+        else {
             continue;
         };
         if bytes.is_empty() || bytes.len() % 2 != 0 {
             continue;
         }
-        let mut view = View::over_retained(bytes);
-        let mut units = Vec::new();
-        while let Some(unit) = view.u16_le() {
-            units.push(unit);
-        }
-        let value = String::from_utf16_lossy(&units);
-        if value.trim().is_empty() {
+        ctx.charge_work(
+            u64_from_index(bytes.len() / 2),
+            "validate SLDPRT linear unit name",
+        )?;
+        let scalars = || {
+            char::decode_utf16(
+                (0..bytes.len() / 2).filter_map(|index| View::u16_le_at(bytes, index * 2)),
+            )
+            .map(|unit| unit.unwrap_or(char::REPLACEMENT_CHARACTER))
+        };
+        if scalars().all(char::is_whitespace) {
             continue;
         }
+        let value = ctx.utf16le_lossy_text(
+            bytes,
+            bytes.len() / 2,
+            false,
+            "retain SLDPRT linear unit name",
+        )?;
+        ctx.reserve_vec(out, 1, "collect SLDPRT document attributes")?;
         out.push(attribute(
+            ctx,
             section,
             offset,
-            "source_linear_unit_name",
+            &cadmpeg_ir::identity_component!("source_linear_unit_name"),
             TOKEN,
             vec![AttributeValue::String(value)],
             annotations,
-        ));
+        )?);
     }
+    Ok(())
 }
 
 fn scan_units_xml(
+    ctx: &DecodeContext<'_>,
     section: Section<'_>,
     out: &mut Vec<SourceAttribute>,
     annotations: &mut Annotations,
-) {
-    let Some(text) = crate::container::xml_text(section.payload()) else {
-        return;
+) -> Result<(), CodecError> {
+    let Some(text) = crate::container::xml_text_charged(
+        ctx,
+        section.payload(),
+        "materialize SLDPRT document metadata XML",
+    )?
+    else {
+        return Ok(());
     };
-    let Ok(document) = roxmltree::Document::parse(&text) else {
-        return;
+    let admitted_document = match ctx.parse_xml(text.as_str(), "decode XML tree") {
+        Ok(tree) => tree,
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(_) => {
+            return Ok(());
+        }
     };
+    let document = admitted_document.document();
     for node in document.descendants().filter(roxmltree::Node::is_element) {
         let value = if node.tag_name().name() == "SW_UnitsLinear" {
             node.text()
@@ -163,28 +213,43 @@ fn scan_units_xml(
         let Some(code) = value.and_then(|value| value.trim().parse::<i64>().ok()) else {
             continue;
         };
+        ctx.reserve_vec(out, 1, "collect SLDPRT document attributes")?;
         out.push(attribute(
+            ctx,
             section,
             node.range().start,
-            "source_linear_unit_code",
+            &cadmpeg_ir::identity_component!("source_linear_unit_code"),
             b"SW_UnitsLinear",
             vec![AttributeValue::Integer(code)],
             annotations,
-        ));
+        )?);
     }
+    Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
-fn scan_vectors(
-    section: Section<'_>,
-    token: &[u8],
-    name: &str,
+/// One fixed-width float vector located by its record token.
+struct VectorScan<'a> {
+    token: &'a [u8],
+    name: &'a cadmpeg_ir::ids::IdentityComponent,
     count: usize,
     skip: usize,
     all_lengths: bool,
+}
+
+fn scan_vectors(
+    ctx: &DecodeContext<'_>,
+    section: Section<'_>,
+    scan: &VectorScan<'_>,
     out: &mut Vec<SourceAttribute>,
     annotations: &mut Annotations,
-) {
+) -> Result<(), CodecError> {
+    let VectorScan {
+        token,
+        name,
+        count,
+        skip,
+        all_lengths,
+    } = *scan;
     let payload = section.payload();
     for offset in payload
         .windows(token.len())
@@ -198,24 +263,38 @@ fn scan_vectors(
         else {
             continue;
         };
-        if !values.iter().all(|value| value.is_finite()) {
-            continue;
-        }
+        // A source number that is not finite, or a length that is not finite
+        // in millimetres, admits no attribute.
         let values = if all_lengths {
-            vec![AttributeValue::Vector(
-                values.into_iter().map(|value| value * 1000.0).collect(),
-            )]
+            millimetres(&values).map(|lengths| vec![lengths])
         } else {
-            vec![
-                AttributeValue::Vector(values[..3].iter().map(|value| value * 1000.0).collect()),
-                AttributeValue::Vector(values[3..].to_vec()),
-            ]
+            millimetres(&values[..3])
+                .zip(AttributeValue::vector(values[3..].iter().copied()))
+                .map(|(lengths, ratios)| vec![lengths, ratios])
         };
-        out.push(attribute(section, offset, name, token, values, annotations));
+        let Some(values) = values else {
+            continue;
+        };
+        ctx.reserve_vec(out, 1, "collect SLDPRT document attributes")?;
+        out.push(attribute(
+            ctx,
+            section,
+            offset,
+            name,
+            token,
+            values,
+            annotations,
+        )?);
     }
+    Ok(())
 }
 
-fn scan_part(section: Section<'_>, out: &mut Vec<SourceAttribute>, annotations: &mut Annotations) {
+fn scan_part(
+    ctx: &DecodeContext<'_>,
+    section: Section<'_>,
+    out: &mut Vec<SourceAttribute>,
+    annotations: &mut Annotations,
+) -> Result<(), CodecError> {
     const TOKEN: &[u8] = b"moPart_c";
     let payload = section.payload();
     for offset in payload
@@ -230,25 +309,29 @@ fn scan_part(section: Section<'_>, out: &mut Vec<SourceAttribute>, annotations: 
         ) else {
             continue;
         };
+        ctx.reserve_vec(out, 1, "collect SLDPRT document attributes")?;
         out.push(attribute(
+            ctx,
             section,
             offset,
-            "part_record",
+            &cadmpeg_ir::identity_component!("part_record"),
             TOKEN,
             vec![
-                AttributeValue::Integer(id as i64),
-                AttributeValue::Integer(version as i64),
+                AttributeValue::Integer(i64::from(id)),
+                AttributeValue::Integer(i64::from(version)),
             ],
             annotations,
-        ));
+        )?);
     }
+    Ok(())
 }
 
 fn scan_configuration_manager(
+    ctx: &DecodeContext<'_>,
     section: Section<'_>,
     out: &mut Vec<SourceAttribute>,
     annotations: &mut Annotations,
-) {
+) -> Result<(), CodecError> {
     const TOKEN: &[u8] = b"moConfigurationMgr_c";
     let payload = section.payload();
     for offset in payload
@@ -264,51 +347,65 @@ fn scan_configuration_manager(
         ) else {
             continue;
         };
-        if filetime > i64::MAX as u64 {
+        let Ok(filetime) = i64::try_from(filetime) else {
             continue;
-        }
+        };
+        ctx.reserve_vec(out, 1, "collect SLDPRT document attributes")?;
         out.push(attribute(
+            ctx,
             section,
             offset,
-            "configuration_manager",
+            &cadmpeg_ir::identity_component!("configuration_manager"),
             TOKEN,
             vec![
-                AttributeValue::Integer(minor as i64),
-                AttributeValue::Integer(*states as i64),
-                AttributeValue::Integer(filetime as i64),
+                AttributeValue::Integer(i64::from(minor)),
+                AttributeValue::Integer(i64::from(*states)),
+                AttributeValue::Integer(filetime),
             ],
             annotations,
-        ));
+        )?);
     }
+    Ok(())
+}
+
+/// Source lengths in metres as a millimetre vector, or `None` when a value
+/// is not finite in millimetres.
+fn millimetres(values: &[f64]) -> Option<AttributeValue> {
+    AttributeValue::vector(values.iter().map(|value| value * 1000.0))
 }
 
 fn attribute(
+    ctx: &DecodeContext<'_>,
     section: Section<'_>,
     offset: usize,
-    name: &str,
+    name: &cadmpeg_ir::ids::IdentityComponent,
     token: &[u8],
     values: Vec<AttributeValue>,
     annotations: &mut Annotations,
-) -> SourceAttribute {
-    let id = AttributeId::mint(format!(
-        "sldprt:metadata:{name}#{}:{offset}",
-        section.ordinal()
-    ))
-    .expect("identity grammar");
-    crate::annotations::note(
-        annotations,
-        id.as_str().to_owned(),
-        section.display_name(),
-        offset as u64,
-        std::str::from_utf8(token).unwrap_or(name),
-        Exactness::ByteExact,
+) -> Result<SourceAttribute, CodecError> {
+    let id = AttributeId::compose(
+        &cadmpeg_ir::ids::IdentityNamespace::from_components(
+            &cadmpeg_ir::identity_component!("sldprt"),
+            &cadmpeg_ir::identity_component!("metadata"),
+            name,
+        ),
+        cadmpeg_ir::ids::IdentityKey::from(section.ordinal()).colon(offset),
     );
-    SourceAttribute {
+    crate::annotations::note(
+        ctx,
+        annotations,
+        id.as_str(),
+        section.source_stream(),
+        u64_from_index(offset),
+        std::str::from_utf8(token).unwrap_or(name.as_str()),
+        Exactness::ByteExact,
+    )?;
+    Ok(SourceAttribute {
         id,
         target: AttributeTarget::Document,
-        name: name.into(),
+        name: name.as_str().into(),
         values,
-    }
+    })
 }
 
 #[cfg(test)]

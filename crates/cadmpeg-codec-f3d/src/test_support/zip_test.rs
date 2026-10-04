@@ -2,8 +2,8 @@
 //! Synthetic `.f3d` ZIP archive builders.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
-use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::{Cursor, Write};
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
@@ -12,7 +12,28 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use zip::CompressionMethod;
 
 use crate::container;
-use crate::test_support::*;
+use crate::test_support::manifest_test::{
+    write_synthetic_manifests, write_synthetic_manifests_with_version,
+};
+use crate::test_support::protein_test::{
+    generated_definition_catalog_for, generated_instance_properties_for,
+    generated_schema_from_paged,
+};
+use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
+use crate::test_support::smbh_header_test::synthetic_smbh;
+use crate::test_support::smbh_revision_test::scrubbed_definition;
+use crate::test_support::streams_test::{
+    generated_act_bulkstream, generated_act_metastream, generated_design_base_feature_bulkstream,
+    generated_design_base_feature_metastream, generated_design_base_flange_bulkstream,
+    generated_design_base_flange_metastream, generated_design_bulkstream,
+    generated_design_copy_paste_bodies_bulkstream, generated_design_copy_paste_bodies_metastream,
+    generated_design_copy_paste_bulkstream, generated_design_copy_paste_metastream,
+    generated_design_form_bulkstream, generated_design_form_metastream,
+    generated_design_metastream, generated_design_remove_body_bulkstream,
+    generated_design_remove_body_metastream, generated_design_sketch_dimension_bulkstream,
+    generated_design_sketch_dimension_metastream, generated_design_surface_stitch_bulkstream,
+    generated_design_surface_stitch_metastream,
+};
 use crate::F3dCodec;
 
 pub(crate) fn with_scan<T>(bytes: &[u8], f: impl FnOnce(&container::ContainerScan<'_>) -> T) -> T {
@@ -44,7 +65,9 @@ pub(crate) fn assert_revision_surface_round_trip(smbh: Vec<u8>, expected_kind: &
     assert_eq!(kind, expected_kind);
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -110,11 +133,11 @@ pub(crate) fn set_zip_entry_uncompressed_size(archive: &mut [u8], target: &[u8],
             if signature != b"PK\x01\x02" || offset + 46 > archive.len() {
                 return None;
             }
-            let name_length = u16::from_le_bytes(
+            let name_length = usize::from(u16::from_le_bytes(
                 archive[offset + 28..offset + 30]
                     .try_into()
                     .expect("central name-length field"),
-            ) as usize;
+            ));
             (archive.get(offset + 46..offset + 46 + name_length) == Some(target)).then_some(offset)
         })
         .expect("generated ZIP central-directory entry");

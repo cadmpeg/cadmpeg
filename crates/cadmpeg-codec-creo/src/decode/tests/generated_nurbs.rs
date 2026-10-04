@@ -2,15 +2,19 @@
 //! Tests: generated nurbs.
 
 use super::section_axis_line_carrier;
-use crate::decode::feature_history::{
-    agreed_feature_affected_ids, agreed_feature_geometry_ids, agreed_feature_replay_edge_ids,
-    agreed_feature_replay_geometry_ids,
+use crate::decode::feature_history::dependencies::{
+    agreed_feature_replay_edge_ids, agreed_feature_replay_geometry_ids,
 };
-use crate::decode::sketch::{
+use crate::decode::feature_history::selections::agreed_feature_geometry_ids;
+use crate::decode::sketch::coordinates::{resolved_section_coordinates, resolved_section_points};
+use crate::decode::sketch::equations_scalar::resolved_section_scalar_values;
+use crate::decode::sketch::geometry::{section_line_geometry, section_point_geometry};
+use crate::decode::sketch::intersect::{
     intersect_section_line_arc, intersect_section_lines, intersect_tangent_section_arcs,
-    resolved_section_coordinates, resolved_section_points, resolved_section_radii,
-    resolved_section_scalar_values, section_axis_reference_line_geometry, section_line_geometry,
-    section_point_geometry,
+};
+use crate::decode::sketch::radii::{
+    resolved_section_radii,
+    section_axis_reference_line_geometry as section_axis_reference_line_geometry_admitted,
 };
 use crate::decode::sketch_transfer::constraints::{
     reconcile_constraint_entity_references, reconcile_constraint_parameter_reference,
@@ -22,150 +26,199 @@ use crate::decode::sketch_transfer::recipe::{
     resolved_feature_schema_class_from_classes, row_feature_schema_classes,
     unique_feature_revolution_extent,
 };
-use crate::decode::sweep::{generated_nurbs_translation_extent, nurbs_translation_span};
+use crate::decode::sweep::extent::{generated_nurbs_translation_extent, nurbs_translation_span};
 use crate::decode::uniqueness::{
     unique_feature_section_transform, unique_owned_feature_definition,
 };
 use crate::feature::definitions::ScalarLane;
+use crate::feature::rows::agreed_feature_affected_ids;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{
-    Angle, ExtrudeExtent, ExtrudeSide, Length, LinearTermination, ParameterId,
-};
-use cadmpeg_ir::geometry::{NurbsSurface, Surface, SurfaceGeometry};
+
+fn section_axis_reference_line_geometry(
+    definition: &crate::feature::definitions::FeatureDefinition,
+    variable_points: &std::collections::BTreeMap<u32, [Option<f64>; 2]>,
+    segment: &crate::feature::definitions::FeatureSegment,
+) -> Option<cadmpeg_ir::sketches::SketchGeometry> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        section_axis_reference_line_geometry_admitted(ctx, definition, variable_points, segment)
+    })
+    .expect("test axis reference line")
+}
+use cadmpeg_ir::geometry::{nurbs::NurbsSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    SketchConstraintDefinition, SketchEntityId, SketchGeometry, SketchLocus,
+    SketchConstraintDefinitionInput, SketchEntityId, SketchGeometry, SketchGeometryDefinition,
+    SketchLocus,
+};
+use cadmpeg_ir::{
+    features::{ExtrudeExtent, ExtrudeSide, LinearTermination, ParameterId},
+    scalar::{Angle, Length},
 };
 use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
 fn generated_nurbs_translations_define_a_blind_extrusion() {
-    let translated_surface = |last_z| {
-        NurbsSurface::new(
-            2,
-            1,
-            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            vec![0.0, 0.0, 1.0, 1.0],
-            3,
-            2,
-            vec![
-                Point3::new(0.0, 0.0, 0.0),
-                Point3::new(0.0, 0.0, 2.0),
-                Point3::new(1.0, 1.0, 0.0),
-                Point3::new(1.0, 1.0, 2.0),
-                Point3::new(2.0, 0.0, 0.0),
-                Point3::new(2.0, 0.0, last_z),
-            ],
-            None,
-            false,
-            false,
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let translated_surface = |last_z| {
+            NurbsSurface::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    2,
+                    vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                    false,
+                ),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    false,
+                ),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
+                    vec![
+                        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 2.0)],
+                        vec![Point3::new(1.0, 1.0, 0.0), Point3::new(1.0, 1.0, 2.0)],
+                        vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 0.0, last_z)],
+                    ],
+                    None,
+                ),
+                false,
+            )
+            .expect("fixture constructor admission")
+            .expect("valid translated surface")
+        };
+        let span = nurbs_translation_span(ctx, &translated_surface(2.0))
+            .expect("admitted extent")
+            .expect("translation");
+        assert_eq!(span.vector, [0.0, 0.0, 2.0]);
+        assert_eq!(
+            span.starts,
+            vec![[0.0, 0.0, 0.0], [1.0, 1.0, 0.0], [2.0, 0.0, 0.0]]
+        );
+        assert!(nurbs_translation_span(ctx, &translated_surface(3.0))
+            .expect("admitted extent")
+            .is_none());
+
+        let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
+            id,
+            kind,
+            feature_id: 7,
+            reversed: false,
+            boundary_type: crate::surface::BoundaryType::Code00,
+            next_surface: 0,
+            offset: usize::try_from(id).expect("fixture index fits usize"),
+        };
+        let mut scan = crate::test_support::empty_container_scan();
+        scan.surfaces.rows.extend([
+            row(
+                31,
+                crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
+            ),
+            row(32, crate::surface::SurfaceKind::Plane),
+            row(33, crate::surface::SurfaceKind::Plane),
+            row(
+                34,
+                crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
+            ),
+            row(35, crate::surface::SurfaceKind::Plane),
+        ]);
+        let mut ir = CadIr::empty();
+        ir.model.surfaces.extend([
+            Surface {
+                id: SurfaceId::mint("creo:visibgeom:surface#31".to_string())
+                    .expect("identity grammar"),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+                    translated_surface(2.0),
+                )),
+                source_object: None,
+            },
+            Surface {
+                id: SurfaceId::mint("creo:visibgeom:surface#32".to_string())
+                    .expect("identity grammar"),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .expect("valid PlaneSurface fixture"),
+                )),
+                source_object: None,
+            },
+            Surface {
+                id: SurfaceId::mint("creo:visibgeom:surface#33".to_string())
+                    .expect("identity grammar"),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                        Point3::new(0.0, 0.0, 2.0),
+                        Vector3::new(0.0, 0.0, -1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .expect("valid PlaneSurface fixture"),
+                )),
+                source_object: None,
+            },
+            Surface {
+                id: SurfaceId::mint("creo:visibgeom:surface#34".to_string())
+                    .expect("identity grammar"),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+                source_object: None,
+            },
+            Surface {
+                id: SurfaceId::mint("creo:visibgeom:surface#35".to_string())
+                    .expect("identity grammar"),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+                source_object: None,
+            },
+        ]);
+        assert_eq!(
+            generated_nurbs_translation_extent(
+                ctx,
+                &scan,
+                &ir,
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+                7,
+                None
+            )
+            .expect("admitted extent"),
+            Some((
+                ExtrudeExtent::OneSided {
+                    side: ExtrudeSide {
+                        termination: LinearTermination::Blind {
+                            length: cadmpeg_ir::scalar::NonZeroLength::new(2.0)
+                                .expect("nonzero length fixture"),
+                        },
+                        draft: None,
+                    },
+                },
+                [0.0, 0.0, 1.0],
+            ))
+        );
+
+        let ambiguous = NurbsSurface::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                translated_surface(2.0).v_degree(),
+                translated_surface(2.0).v_knots().to_vec(),
+                false,
+            ),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
+                translated_surface(2.0).pole_grid().raw_points()[..2].to_vec(),
+                None,
+            ),
             false,
         )
-        .expect("valid translated surface")
-    };
-    let span = nurbs_translation_span(&translated_surface(2.0)).expect("translation");
-    assert_eq!(span.vector, [0.0, 0.0, 2.0]);
-    assert_eq!(
-        span.starts,
-        vec![[0.0, 0.0, 0.0], [1.0, 1.0, 0.0], [2.0, 0.0, 0.0]]
-    );
-    assert!(nurbs_translation_span(&translated_surface(3.0)).is_none());
-
-    let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
-        id,
-        kind,
-        feature_id: 7,
-        reversed: false,
-        boundary_type: crate::surface::BoundaryType::Code00,
-        next_surface: 0,
-        offset: id as usize,
-    };
-    let mut scan = crate::container::scan_bytes(Vec::new());
-    scan.surfaces.rows.extend([
-        row(
-            31,
-            crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
-        ),
-        row(32, crate::surface::SurfaceKind::Plane),
-        row(33, crate::surface::SurfaceKind::Plane),
-        row(
-            34,
-            crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
-        ),
-        row(35, crate::surface::SurfaceKind::Plane),
-    ]);
-    let mut ir = CadIr::empty();
-    ir.model.surfaces.extend([
-        Surface {
-            id: SurfaceId::mint("creo:visibgeom:surface#31".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Nurbs(translated_surface(2.0)),
-            source_object: None,
-        },
-        Surface {
-            id: SurfaceId::mint("creo:visibgeom:surface#32".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
-            source_object: None,
-        },
-        Surface {
-            id: SurfaceId::mint("creo:visibgeom:surface#33".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 2.0),
-                normal: Vector3::new(0.0, 0.0, -1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
-            source_object: None,
-        },
-        Surface {
-            id: SurfaceId::mint("creo:visibgeom:surface#34".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Unknown { record: None },
-            source_object: None,
-        },
-        Surface {
-            id: SurfaceId::mint("creo:visibgeom:surface#35".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Unknown { record: None },
-            source_object: None,
-        },
-    ]);
-    assert_eq!(
-        generated_nurbs_translation_extent(&scan, &ir, 7, None),
-        Some((
-            ExtrudeExtent::OneSided {
-                side: ExtrudeSide {
-                    termination: LinearTermination::Blind {
-                        length: Length(2.0),
-                    },
-                    draft: None,
-                },
-            },
-            [0.0, 0.0, 1.0],
-        ))
-    );
-
-    let ambiguous = NurbsSurface::new(
-        1,
-        translated_surface(2.0).v_degree(),
-        vec![0.0, 0.0, 1.0, 1.0],
-        translated_surface(2.0).v_knots().to_vec(),
-        2,
-        translated_surface(2.0).v_count(),
-        translated_surface(2.0).control_points()[..4].to_vec(),
-        None,
-        false,
-        false,
-        false,
-    )
-    .expect("valid ambiguous translation surface");
-    assert!(nurbs_translation_span(&ambiguous).is_none());
+        .expect("fixture constructor admission")
+        .expect("valid ambiguous translation surface");
+        assert!(nurbs_translation_span(ctx, &ambiguous)
+            .expect("admitted extent")
+            .is_none());
+    });
 }
 
 #[test]
 fn equation_function_two_joins_coordinate_rows_by_position() {
-    let definition = crate::feature::FeatureDefinition {
+    let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(40),
             owner_feature_id: None,
@@ -176,11 +229,11 @@ fn equation_function_two_joins_coordinate_rows_by_position() {
             .to_vec(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
-        variables: Some(crate::feature::FeatureVariableTable {
+        variables: Some(crate::feature::definitions::FeatureVariableTable {
             declared_count: 2,
             entity_ref: None,
             rows: vec![
-                crate::feature::FeatureVariableRow {
+                crate::feature::definitions::FeatureVariableRow {
                     variable_type: crate::feature::definitions::VariableType::U,
                     key: 7,
                     value: ScalarLane::Value(4.0),
@@ -192,7 +245,7 @@ fn equation_function_two_joins_coordinate_rows_by_position() {
                     uvar_id: Some(10),
                     offset: 0,
                 },
-                crate::feature::FeatureVariableRow {
+                crate::feature::definitions::FeatureVariableRow {
                     variable_type: crate::feature::definitions::VariableType::U,
                     key: 8,
                     value: ScalarLane::DimensionDriven,
@@ -219,14 +272,16 @@ fn equation_function_two_joins_coordinate_rows_by_position() {
     };
 
     assert_eq!(
-        resolved_section_coordinates(&definition).get(&8),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_coordinates(ctx, &definition))
+            .expect("test section solve")
+            .get(&8),
         Some(&[Some(4.0), None])
     );
 }
 
 #[test]
 fn equation_function_two_propagates_non_coordinate_scalar_components() {
-    let row = |key, value| crate::feature::FeatureVariableRow {
+    let row = |key, value| crate::feature::definitions::FeatureVariableRow {
         variable_type: crate::feature::definitions::VariableType::Result,
         key,
         value,
@@ -238,8 +293,8 @@ fn equation_function_two_propagates_non_coordinate_scalar_components() {
         uvar_id: None,
         offset: 0,
     };
-    let definition =
-        |middle_value: Option<f64>, last_value: Option<f64>| crate::feature::FeatureDefinition {
+    let definition = |middle_value: Option<f64>, last_value: Option<f64>| {
+        crate::feature::definitions::FeatureDefinition {
             identity: crate::feature::definitions::DefinitionIdentity::Parsed {
                 schema_id: std::num::NonZeroU32::new(40),
                 owner_feature_id: None,
@@ -251,7 +306,7 @@ fn equation_function_two_propagates_non_coordinate_scalar_components() {
                 .to_vec(),
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
-            variables: Some(crate::feature::FeatureVariableTable {
+            variables: Some(crate::feature::definitions::FeatureVariableTable {
                 declared_count: 3,
                 entity_ref: None,
                 rows: vec![
@@ -276,9 +331,13 @@ fn equation_function_two_propagates_non_coordinate_scalar_components() {
             relations: None,
             saved_section: None,
             offset: 0,
-        };
+        }
+    };
 
-    let resolved = resolved_section_scalar_values(&definition(None, Some(2.5)));
+    let resolved = crate::decode::with_test_decode_ctx(|ctx| {
+        resolved_section_scalar_values(ctx, &definition(None, Some(2.5)))
+    })
+    .expect("test section solve");
     assert_eq!(
         resolved.get(&(crate::feature::definitions::VariableType::Result, 10)),
         Some(&2.5)
@@ -292,14 +351,17 @@ fn equation_function_two_propagates_non_coordinate_scalar_components() {
         Some(&2.5)
     );
 
-    let conflicting = resolved_section_scalar_values(&definition(Some(2.5), Some(3.5)));
+    let conflicting = crate::decode::with_test_decode_ctx(|ctx| {
+        resolved_section_scalar_values(ctx, &definition(Some(2.5), Some(3.5)))
+    })
+    .expect("test section solve");
     assert!(!conflicting.contains_key(&(crate::feature::definitions::VariableType::Result, 10)));
     assert!(!conflicting.contains_key(&(crate::feature::definitions::VariableType::Result, 11)));
 }
 
 #[test]
 fn equation_function_five_propagates_direct_type_six_equality() {
-    let row = |variable_type, key, value| crate::feature::FeatureVariableRow {
+    let row = |variable_type, key, value| crate::feature::definitions::FeatureVariableRow {
         variable_type: crate::feature::definitions::VariableType::from(variable_type),
         key,
         value,
@@ -313,7 +375,7 @@ fn equation_function_five_propagates_direct_type_six_equality() {
     };
     let definition =
         |first_value: Option<f64>, second_value: Option<f64>, selector_value: Option<f64>| {
-            crate::feature::FeatureDefinition {
+            crate::feature::definitions::FeatureDefinition {
                 identity: crate::feature::definitions::DefinitionIdentity::Parsed {
                     schema_id: std::num::NonZeroU32::new(40),
                     owner_feature_id: None,
@@ -324,7 +386,7 @@ fn equation_function_five_propagates_direct_type_six_equality() {
                     .to_vec(),
                 parameter_frames: Vec::new(),
                 outlines: Vec::new(),
-                variables: Some(crate::feature::FeatureVariableTable {
+                variables: Some(crate::feature::definitions::FeatureVariableTable {
                     declared_count: 3,
                     entity_ref: None,
                     rows: vec![
@@ -358,7 +420,10 @@ fn equation_function_five_propagates_direct_type_six_equality() {
             }
         };
 
-    let resolved = resolved_section_scalar_values(&definition(None, Some(2.5), Some(0.0)));
+    let resolved = crate::decode::with_test_decode_ctx(|ctx| {
+        resolved_section_scalar_values(ctx, &definition(None, Some(2.5), Some(0.0)))
+    })
+    .expect("test section solve");
     assert_eq!(
         resolved.get(&(crate::feature::definitions::VariableType::Result, 10)),
         Some(&2.5)
@@ -368,22 +433,33 @@ fn equation_function_five_propagates_direct_type_six_equality() {
         Some(&2.5)
     );
 
-    let conflicting = resolved_section_scalar_values(&definition(Some(2.5), Some(3.5), Some(0.0)));
+    let conflicting = crate::decode::with_test_decode_ctx(|ctx| {
+        resolved_section_scalar_values(ctx, &definition(Some(2.5), Some(3.5), Some(0.0)))
+    })
+    .expect("test section solve");
     assert!(!conflicting.contains_key(&(crate::feature::definitions::VariableType::Result, 10)));
     assert!(!conflicting.contains_key(&(crate::feature::definitions::VariableType::Result, 11)));
     assert!(
-        !resolved_section_scalar_values(&definition(None, Some(2.5), None))
-            .contains_key(&(crate::feature::definitions::VariableType::Result, 10))
+        !crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(
+            ctx,
+            &definition(None, Some(2.5), None)
+        ))
+        .expect("test section solve")
+        .contains_key(&(crate::feature::definitions::VariableType::Result, 10))
     );
     assert!(
-        !resolved_section_scalar_values(&definition(None, Some(2.5), Some(1.0)))
-            .contains_key(&(crate::feature::definitions::VariableType::Result, 10))
+        !crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(
+            ctx,
+            &definition(None, Some(2.5), Some(1.0))
+        ))
+        .expect("test section solve")
+        .contains_key(&(crate::feature::definitions::VariableType::Result, 10))
     );
 }
 
 #[test]
 fn equation_function_two_propagates_radius_components() {
-    let row = |key, value: Option<f64>| crate::feature::FeatureVariableRow {
+    let row = |key, value: Option<f64>| crate::feature::definitions::FeatureVariableRow {
         variable_type: crate::feature::definitions::VariableType::Radius,
         key,
         value: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
@@ -395,7 +471,7 @@ fn equation_function_two_propagates_radius_components() {
         uvar_id: None,
         offset: 0,
     };
-    let definition = |first_value, second_value| crate::feature::FeatureDefinition {
+    let definition = |first_value, second_value| crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(40),
             owner_feature_id: None,
@@ -406,7 +482,7 @@ fn equation_function_two_propagates_radius_components() {
             .to_vec(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
-        variables: Some(crate::feature::FeatureVariableTable {
+        variables: Some(crate::feature::definitions::FeatureVariableTable {
             declared_count: 2,
             entity_ref: None,
             rows: vec![row(42, first_value), row(43, second_value)],
@@ -424,16 +500,34 @@ fn equation_function_two_propagates_radius_components() {
     };
 
     assert_eq!(
-        resolved_section_radii(&definition(None, Some(2.5))),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(
+            ctx,
+            &definition(None, Some(2.5))
+        ))
+        .expect("test section solve"),
         BTreeMap::from([(42, 2.5), (43, 2.5)])
     );
-    assert!(resolved_section_radii(&definition(Some(2.5), Some(3.5))).is_empty());
-    assert!(resolved_section_radii(&definition(Some(0.0), Some(2.5))).is_empty());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(
+            ctx,
+            &definition(Some(2.5), Some(3.5))
+        ))
+        .expect("test section solve")
+        .is_empty()
+    );
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(
+            ctx,
+            &definition(Some(0.0), Some(2.5))
+        ))
+        .expect("test section solve")
+        .is_empty()
+    );
 }
 
 #[test]
 fn equation_function_two_binds_radius_row_to_dimension_row() {
-    let definition = crate::feature::FeatureDefinition {
+    let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(40),
             owner_feature_id: None,
@@ -444,11 +538,11 @@ fn equation_function_two_binds_radius_row_to_dimension_row() {
             .to_vec(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
-        variables: Some(crate::feature::FeatureVariableTable {
+        variables: Some(crate::feature::definitions::FeatureVariableTable {
             declared_count: 2,
             entity_ref: None,
             rows: vec![
-                crate::feature::FeatureVariableRow {
+                crate::feature::definitions::FeatureVariableRow {
                     variable_type: crate::feature::definitions::VariableType::Radius,
                     key: 42,
                     value: ScalarLane::DimensionDriven,
@@ -460,7 +554,7 @@ fn equation_function_two_binds_radius_row_to_dimension_row() {
                     uvar_id: Some(7),
                     offset: 0,
                 },
-                crate::feature::FeatureVariableRow {
+                crate::feature::definitions::FeatureVariableRow {
                     variable_type: crate::feature::definitions::VariableType::Dimension,
                     key: 0,
                     value: ScalarLane::Value(5.0),
@@ -480,10 +574,10 @@ fn equation_function_two_binds_radius_row_to_dimension_row() {
         trim_vertices: None,
         order_table: None,
         section_3d: None,
-        dimensions: Some(crate::feature::FeatureDimensionTable {
+        dimensions: Some(crate::feature::definitions::FeatureDimensionTable {
             declared_count: 1,
             entity_ref: None,
-            rows: vec![crate::feature::FeatureDimension {
+            rows: vec![crate::feature::definitions::FeatureDimension {
                 dimension_type: 3,
                 value: crate::feature::definitions::DimensionValue::Resolved(5.0),
                 value_body: Vec::new(),
@@ -502,7 +596,8 @@ fn equation_function_two_binds_radius_row_to_dimension_row() {
     };
 
     assert_eq!(
-        resolved_section_radii(&definition),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &definition))
+            .expect("test section solve"),
         BTreeMap::from([(42, 5.0)])
     );
 
@@ -511,12 +606,17 @@ fn equation_function_two_binds_radius_row_to_dimension_row() {
     dimension_scalar.value = ScalarLane::DimensionDriven;
     dimension_scalar.guess = ScalarLane::DimensionDriven;
     assert_eq!(
-        resolved_section_radii(&dimension_driven),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &dimension_driven))
+            .expect("test section solve"),
         BTreeMap::from([(42, 5.0)])
     );
     assert_eq!(
-        resolved_section_scalar_values(&dimension_driven)
-            .get(&(crate::feature::definitions::VariableType::Dimension, 0)),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(
+            ctx,
+            &dimension_driven
+        ))
+        .expect("test section solve")
+        .get(&(crate::feature::definitions::VariableType::Dimension, 0)),
         Some(&5.0)
     );
 
@@ -524,7 +624,11 @@ fn equation_function_two_binds_radius_row_to_dimension_row() {
     let missing_scalar = &mut missing_inline.variables.as_mut().expect("variables").rows[1];
     missing_scalar.value = ScalarLane::Undefined;
     missing_scalar.guess = ScalarLane::Undefined;
-    assert!(resolved_section_radii(&missing_inline).is_empty());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &missing_inline))
+            .expect("test section solve")
+            .is_empty()
+    );
 
     let mut mismatched = definition;
     mismatched
@@ -533,24 +637,29 @@ fn equation_function_two_binds_radius_row_to_dimension_row() {
         .expect("dimension table")
         .rows[0]
         .value = crate::feature::definitions::DimensionValue::Resolved(6.0);
-    assert!(resolved_section_radii(&mismatched).is_empty());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &mismatched))
+            .expect("test section solve")
+            .is_empty()
+    );
 }
 
 #[test]
 fn equation_function_forty_two_transfers_midpoint_coordinates_and_scalar() {
-    let row = |variable_type, key, value: Option<f64>| crate::feature::FeatureVariableRow {
-        variable_type: crate::feature::definitions::VariableType::from(variable_type),
-        key,
-        value: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
-        value_body: Vec::new(),
-        guess: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
-        guess_body: Vec::new(),
-        known: Some(0),
-        homogeneity: Some(1),
-        uvar_id: None,
-        offset: 0,
-    };
-    let definition = |first, second, midpoint| crate::feature::FeatureDefinition {
+    let row =
+        |variable_type, key, value: Option<f64>| crate::feature::definitions::FeatureVariableRow {
+            variable_type: crate::feature::definitions::VariableType::from(variable_type),
+            key,
+            value: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
+            value_body: Vec::new(),
+            guess: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
+            guess_body: Vec::new(),
+            known: Some(0),
+            homogeneity: Some(1),
+            uvar_id: None,
+            offset: 0,
+        };
+    let definition = |first, second, midpoint| crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(40),
             owner_feature_id: None,
@@ -561,7 +670,7 @@ fn equation_function_forty_two_transfers_midpoint_coordinates_and_scalar() {
             .to_vec(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
-        variables: Some(crate::feature::FeatureVariableTable {
+        variables: Some(crate::feature::definitions::FeatureVariableTable {
             declared_count: 3,
             entity_ref: None,
             rows: vec![row(1, 10, first), row(1, 11, second), row(6, 20, midpoint)],
@@ -579,35 +688,51 @@ fn equation_function_forty_two_transfers_midpoint_coordinates_and_scalar() {
     };
 
     assert_eq!(
-        resolved_section_coordinates(&definition(Some(2.0), None, Some(5.0))).get(&11),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_coordinates(
+            ctx,
+            &definition(Some(2.0), None, Some(5.0))
+        ))
+        .expect("test section solve")
+        .get(&11),
         Some(&[Some(8.0), None])
     );
     assert_eq!(
-        resolved_section_scalar_values(&definition(Some(2.0), Some(8.0), None))
-            .get(&(crate::feature::definitions::VariableType::Result, 20)),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(
+            ctx,
+            &definition(Some(2.0), Some(8.0), None)
+        ))
+        .expect("test section solve")
+        .get(&(crate::feature::definitions::VariableType::Result, 20)),
         Some(&5.0)
     );
 
     let conflicting = definition(Some(2.0), Some(9.0), Some(5.0));
-    assert!(!resolved_section_scalar_values(&conflicting)
-        .contains_key(&(crate::feature::definitions::VariableType::Result, 20)));
+    assert!(
+        !crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(
+            ctx,
+            &conflicting
+        ))
+        .expect("test section solve")
+        .contains_key(&(crate::feature::definitions::VariableType::Result, 20))
+    );
 }
 
 #[test]
 fn equation_function_thirty_one_transfers_point_coordinates_and_scalars() {
-    let row = |variable_type, key, value: Option<f64>| crate::feature::FeatureVariableRow {
-        variable_type: crate::feature::definitions::VariableType::from(variable_type),
-        key,
-        value: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
-        value_body: Vec::new(),
-        guess: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
-        guess_body: Vec::new(),
-        known: Some(0),
-        homogeneity: Some(1),
-        uvar_id: None,
-        offset: 0,
-    };
-    let definition = |u, v, first, second| crate::feature::FeatureDefinition {
+    let row =
+        |variable_type, key, value: Option<f64>| crate::feature::definitions::FeatureVariableRow {
+            variable_type: crate::feature::definitions::VariableType::from(variable_type),
+            key,
+            value: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
+            value_body: Vec::new(),
+            guess: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
+            guess_body: Vec::new(),
+            known: Some(0),
+            homogeneity: Some(1),
+            uvar_id: None,
+            offset: 0,
+        };
+    let definition = |u, v, first, second| crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(40),
             owner_feature_id: None,
@@ -618,7 +743,7 @@ fn equation_function_thirty_one_transfers_point_coordinates_and_scalars() {
             .to_vec(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
-        variables: Some(crate::feature::FeatureVariableTable {
+        variables: Some(crate::feature::definitions::FeatureVariableTable {
             declared_count: 4,
             entity_ref: None,
             rows: vec![
@@ -641,20 +766,31 @@ fn equation_function_thirty_one_transfers_point_coordinates_and_scalars() {
     };
 
     assert_eq!(
-        resolved_section_coordinates(&definition(None, None, Some(3.0), Some(4.0))).get(&10),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_coordinates(
+            ctx,
+            &definition(None, None, Some(3.0), Some(4.0))
+        ))
+        .expect("test section solve")
+        .get(&10),
         Some(&[Some(3.0), Some(4.0)])
     );
     let partial = definition(None, Some(4.0), Some(3.0), None);
     assert_eq!(
-        resolved_section_coordinates(&partial).get(&10),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_coordinates(ctx, &partial))
+            .expect("test section solve")
+            .get(&10),
         Some(&[Some(3.0), Some(4.0)])
     );
     assert_eq!(
-        resolved_section_scalar_values(&partial)
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(ctx, &partial))
+            .expect("test section solve")
             .get(&(crate::feature::definitions::VariableType::Result, 21)),
         Some(&4.0)
     );
-    let resolved = resolved_section_scalar_values(&definition(Some(3.0), Some(4.0), None, None));
+    let resolved = crate::decode::with_test_decode_ctx(|ctx| {
+        resolved_section_scalar_values(ctx, &definition(Some(3.0), Some(4.0), None, None))
+    })
+    .expect("test section solve");
     assert_eq!(
         resolved.get(&(crate::feature::definitions::VariableType::Result, 20)),
         Some(&3.0)
@@ -667,98 +803,122 @@ fn equation_function_thirty_one_transfers_point_coordinates_and_scalars() {
 
 #[test]
 fn equation_function_sixteen_derives_direct_angle_difference() {
-    let row = |variable_type, key, value: Option<f64>| crate::feature::FeatureVariableRow {
-        variable_type: crate::feature::definitions::VariableType::from(variable_type),
-        key,
-        value: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
-        value_body: Vec::new(),
-        guess: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
-        guess_body: Vec::new(),
-        known: Some(0),
-        homogeneity: Some(1),
-        uvar_id: None,
-        offset: 0,
-    };
-    let definition = |first, second, difference, selector| crate::feature::FeatureDefinition {
-        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
-            schema_id: std::num::NonZeroU32::new(40),
-            owner_feature_id: None,
-        },
-        body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
+    let row =
+        |variable_type, key, value: Option<f64>| crate::feature::definitions::FeatureVariableRow {
+            variable_type: crate::feature::definitions::VariableType::from(variable_type),
+            key,
+            value: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
+            value_body: Vec::new(),
+            guess: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
+            guess_body: Vec::new(),
+            known: Some(0),
+            homogeneity: Some(1),
+            uvar_id: None,
+            offset: 0,
+        };
+    let definition =
+        |first, second, difference, selector| crate::feature::definitions::FeatureDefinition {
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(40),
+                owner_feature_id: None,
+            },
+            body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
                 \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
                 \x01\x10\xf8\x04\x00\x01\x02\x03\xf6\xe2"
-            .to_vec(),
-        parameter_frames: Vec::new(),
-        outlines: Vec::new(),
-        variables: Some(crate::feature::FeatureVariableTable {
-            declared_count: 4,
-            entity_ref: None,
-            rows: vec![
-                row(4, 10, first),
-                row(4, 11, second),
-                row(0, 20, difference),
-                row(5, 0, selector),
-            ],
+                .to_vec(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: Some(crate::feature::definitions::FeatureVariableTable {
+                declared_count: 4,
+                entity_ref: None,
+                rows: vec![
+                    row(4, 10, first),
+                    row(4, 11, second),
+                    row(0, 20, difference),
+                    row(5, 0, selector),
+                ],
+                offset: 0,
+            }),
+            segments: None,
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: None,
             offset: 0,
-        }),
-        segments: None,
-        trim_entities: None,
-        trim_vertices: None,
-        order_table: None,
-        section_3d: None,
-        dimensions: None,
-        relations: None,
-        saved_section: None,
-        offset: 0,
-    };
+        };
 
     assert_eq!(
-        resolved_section_scalar_values(&definition(Some(2.5), Some(1.0), None, Some(0.0)))
-            .get(&(crate::feature::definitions::VariableType::Dimension, 20)),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(
+            ctx,
+            &definition(Some(2.5), Some(1.0), None, Some(0.0))
+        ))
+        .expect("test section solve")
+        .get(&(crate::feature::definitions::VariableType::Dimension, 20)),
         Some(&1.5)
     );
     assert_eq!(
-        resolved_section_scalar_values(&definition(Some(2.5), Some(1.0), Some(1.5), Some(0.0),))
-            .get(&(crate::feature::definitions::VariableType::Dimension, 20)),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(
+            ctx,
+            &definition(Some(2.5), Some(1.0), Some(1.5), Some(0.0),)
+        ))
+        .expect("test section solve")
+        .get(&(crate::feature::definitions::VariableType::Dimension, 20)),
         Some(&1.5)
     );
-    assert!(!resolved_section_scalar_values(&definition(
-        Some(2.5),
-        Some(1.0),
-        Some(1.0),
-        Some(0.0),
-    ))
-    .contains_key(&(crate::feature::definitions::VariableType::Dimension, 20)));
     assert!(
-        !resolved_section_scalar_values(&definition(Some(2.5), Some(1.0), None, Some(1.0)))
-            .contains_key(&(crate::feature::definitions::VariableType::Dimension, 20))
+        !crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(
+            ctx,
+            &definition(Some(2.5), Some(1.0), Some(1.0), Some(0.0),)
+        ))
+        .expect("test section solve")
+        .contains_key(&(crate::feature::definitions::VariableType::Dimension, 20))
     );
     assert!(
-        !resolved_section_scalar_values(&definition(Some(1.0), Some(2.5), None, Some(0.0)))
-            .contains_key(&(crate::feature::definitions::VariableType::Dimension, 20))
+        !crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(
+            ctx,
+            &definition(Some(2.5), Some(1.0), None, Some(1.0))
+        ))
+        .expect("test section solve")
+        .contains_key(&(crate::feature::definitions::VariableType::Dimension, 20))
     );
     assert!(
-        !resolved_section_scalar_values(&definition(Some(4.0), Some(0.0), None, Some(0.0)))
-            .contains_key(&(crate::feature::definitions::VariableType::Dimension, 20))
+        !crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(
+            ctx,
+            &definition(Some(1.0), Some(2.5), None, Some(0.0))
+        ))
+        .expect("test section solve")
+        .contains_key(&(crate::feature::definitions::VariableType::Dimension, 20))
+    );
+    assert!(
+        !crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(
+            ctx,
+            &definition(Some(4.0), Some(0.0), None, Some(0.0))
+        ))
+        .expect("test section solve")
+        .contains_key(&(crate::feature::definitions::VariableType::Dimension, 20))
     );
 }
 
 #[test]
 fn equation_function_zero_solves_radial_endpoint_and_opaque_scalars() {
-    let variable = |variable_type, key, value: Option<f64>| crate::feature::FeatureVariableRow {
-        variable_type: crate::feature::definitions::VariableType::from(variable_type),
-        key,
-        value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
-        value_body: Vec::new(),
-        guess: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
-        guess_body: Vec::new(),
-        known: Some(0),
-        homogeneity: Some(1),
-        uvar_id: None,
-        offset: 0,
-    };
+    let variable =
+        |variable_type, key, value: Option<f64>| crate::feature::definitions::FeatureVariableRow {
+            variable_type: crate::feature::definitions::VariableType::from(variable_type),
+            key,
+            value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
+            value_body: Vec::new(),
+            guess: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
+            guess_body: Vec::new(),
+            known: Some(0),
+            homogeneity: Some(1),
+            uvar_id: None,
+            offset: 0,
+        };
     let definition = |second: [Option<f64>; 2], radius: Option<f64>, angle: Option<f64>| {
-        crate::feature::FeatureDefinition {
+        crate::feature::definitions::FeatureDefinition {
             identity: crate::feature::definitions::DefinitionIdentity::Parsed {
                 schema_id: std::num::NonZeroU32::new(40),
                 owner_feature_id: None,
@@ -769,7 +929,7 @@ fn equation_function_zero_solves_radial_endpoint_and_opaque_scalars() {
                 .to_vec(),
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
-            variables: Some(crate::feature::FeatureVariableTable {
+            variables: Some(crate::feature::definitions::FeatureVariableTable {
                 declared_count: 6,
                 entity_ref: None,
                 rows: vec![
@@ -795,27 +955,35 @@ fn equation_function_zero_solves_radial_endpoint_and_opaque_scalars() {
     };
 
     let solved = definition([None, None], Some(2.0), Some(std::f64::consts::FRAC_PI_2));
-    let solved_point = resolved_section_points(&solved)
-        .get(&2)
-        .copied()
-        .expect("point");
+    let solved_point =
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &solved))
+            .expect("test section solve")
+            .get(&2)
+            .copied()
+            .expect("point");
     assert!(solved_point[0].abs() <= 1.0e-12);
     assert!((solved_point[1] - 2.0).abs() <= 1.0e-12);
     assert_eq!(
-        resolved_section_scalar_values(&solved)
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(ctx, &solved))
+            .expect("test section solve")
             .get(&(crate::feature::definitions::VariableType::Radius, 9)),
         Some(&2.0)
     );
     assert_eq!(
-        resolved_section_scalar_values(&solved)
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(ctx, &solved))
+            .expect("test section solve")
             .get(&(crate::feature::definitions::VariableType::Result, 10)),
         Some(&std::f64::consts::FRAC_PI_2)
     );
 
     let derived_angle = definition([Some(0.0), Some(2.0)], Some(2.0), None);
     assert_eq!(
-        resolved_section_scalar_values(&derived_angle)
-            .get(&(crate::feature::definitions::VariableType::Result, 10)),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(
+            ctx,
+            &derived_angle
+        ))
+        .expect("test section solve")
+        .get(&(crate::feature::definitions::VariableType::Result, 10)),
         Some(&std::f64::consts::FRAC_PI_2)
     );
 
@@ -824,25 +992,31 @@ fn equation_function_zero_solves_radial_endpoint_and_opaque_scalars() {
         None,
         Some(std::f64::consts::FRAC_PI_2),
     );
-    assert_eq!(resolved_section_radii(&derived_radius).get(&9), Some(&2.0));
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &derived_radius))
+            .expect("test section solve")
+            .get(&9),
+        Some(&2.0)
+    );
 }
 
 #[test]
 fn equation_function_thirteen_transfers_zero_auxiliary_same_coordinate() {
-    let row = |variable_type, key, value: Option<f64>| crate::feature::FeatureVariableRow {
-        variable_type: crate::feature::definitions::VariableType::from(variable_type),
-        key,
-        value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
-        value_body: Vec::new(),
-        guess: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
-        guess_body: Vec::new(),
-        known: Some(0),
-        homogeneity: Some(1),
-        uvar_id: None,
-        offset: 0,
-    };
-    let line = |external_id, point_ids| crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line(point_ids),
+    let row =
+        |variable_type, key, value: Option<f64>| crate::feature::definitions::FeatureVariableRow {
+            variable_type: crate::feature::definitions::VariableType::from(variable_type),
+            key,
+            value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
+            value_body: Vec::new(),
+            guess: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
+            guess_body: Vec::new(),
+            known: Some(0),
+            homogeneity: Some(1),
+            uvar_id: None,
+            offset: 0,
+        };
+    let line = |external_id, point_ids| crate::feature::definitions::FeatureSegment {
+        kind: crate::feature::definitions::FeatureSegmentKind::Line(point_ids),
         directions: [None; 3],
         center_id: None,
         arc_orientation: None,
@@ -853,7 +1027,7 @@ fn equation_function_thirteen_transfers_zero_auxiliary_same_coordinate() {
         body: Vec::new(),
         offset: 0,
     };
-    let definition = crate::feature::FeatureDefinition {
+    let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(40),
             owner_feature_id: None,
@@ -864,13 +1038,13 @@ fn equation_function_thirteen_transfers_zero_auxiliary_same_coordinate() {
             .to_vec(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
-        variables: Some(crate::feature::FeatureVariableTable {
+        variables: Some(crate::feature::definitions::FeatureVariableTable {
             declared_count: 3,
             entity_ref: None,
             rows: vec![row(2, 1, Some(4.5)), row(2, 2, None), row(7, 3, Some(0.0))],
             offset: 0,
         }),
-        segments: Some(crate::feature::FeatureSegmentTable {
+        segments: Some(crate::feature::definitions::FeatureSegmentTable {
             declared_count: 1,
             has_elided_prototype: false,
             entity_ref: None,
@@ -891,19 +1065,34 @@ fn equation_function_thirteen_transfers_zero_auxiliary_same_coordinate() {
     };
 
     assert_eq!(
-        resolved_section_coordinates(&definition).get(&2),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_coordinates(ctx, &definition))
+            .expect("test section solve")
+            .get(&2),
         Some(&[None, Some(4.5)])
     );
-    let sketch = cadmpeg_ir::sketches::SketchId("creo:model:sketch#40".into());
-    let constraints = section_equation_same_coordinate_constraints(&definition, &sketch);
+    let sketch =
+        cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("valid test fixture");
+    let constraints = crate::decode::with_test_decode_ctx(|ctx| {
+        section_equation_same_coordinate_constraints(ctx, &definition, &sketch)
+    })
+    .expect("section_equation_same_coordinate_constraints admitted");
     assert_eq!(constraints.len(), 1);
     assert_eq!(constraints[0].0.active, Some(true));
     assert_eq!(
-        constraints[0].0.definition,
-        SketchConstraintDefinition::SameCoordinate {
-            first: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:10".into(),)),
-            second: SketchLocus::End(SketchEntityId("creo:featdefs:sketch_entity#40:10".into(),)),
-            axis: cadmpeg_ir::sketches::SketchCoordinateAxis::V,
+        *(constraints[0].0.definition).kind(),
+        SketchConstraintDefinitionInput::SameCoordinate {
+            relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                SketchLocus::Start(
+                    SketchEntityId::mint("creo:featdefs:sketch_entity#40:10",)
+                        .expect("valid test fixture")
+                ),
+                SketchLocus::End(
+                    SketchEntityId::mint("creo:featdefs:sketch_entity#40:10",)
+                        .expect("valid test fixture")
+                ),
+                cadmpeg_ir::sketches::SketchCoordinateAxis::V
+            )
+            .expect("valid test fixture")
         }
     );
 
@@ -925,15 +1114,26 @@ fn equation_function_thirteen_transfers_zero_auxiliary_same_coordinate() {
         .as_mut()
         .expect("variables")
         .declared_count = 5;
-    let function_two_constraints =
-        section_equation_same_coordinate_constraints(&function_two, &sketch);
+    let function_two_constraints = crate::decode::with_test_decode_ctx(|ctx| {
+        section_equation_same_coordinate_constraints(ctx, &function_two, &sketch)
+    })
+    .expect("section_equation_same_coordinate_constraints admitted");
     assert_eq!(function_two_constraints.len(), 2);
     assert_eq!(
-        function_two_constraints[0].0.definition,
-        SketchConstraintDefinition::SameCoordinate {
-            first: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:10".into(),)),
-            second: SketchLocus::End(SketchEntityId("creo:featdefs:sketch_entity#40:10".into(),)),
-            axis: cadmpeg_ir::sketches::SketchCoordinateAxis::U,
+        *(function_two_constraints[0].0.definition).kind(),
+        SketchConstraintDefinitionInput::SameCoordinate {
+            relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                SketchLocus::Start(
+                    SketchEntityId::mint("creo:featdefs:sketch_entity#40:10",)
+                        .expect("valid test fixture")
+                ),
+                SketchLocus::End(
+                    SketchEntityId::mint("creo:featdefs:sketch_entity#40:10",)
+                        .expect("valid test fixture")
+                ),
+                cadmpeg_ir::sketches::SketchCoordinateAxis::U
+            )
+            .expect("valid test fixture")
         }
     );
 
@@ -945,26 +1145,32 @@ fn equation_function_thirteen_transfers_zero_auxiliary_same_coordinate() {
         .rows[2]
         .value = crate::feature::definitions::ScalarLane::Value(1.0);
     assert_eq!(
-        resolved_section_coordinates(&nonzero_auxiliary).get(&2),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_coordinates(
+            ctx,
+            &nonzero_auxiliary
+        ))
+        .expect("test section solve")
+        .get(&2),
         None
     );
 }
 
 #[test]
 fn equation_function_thirty_five_solves_point_on_reference_line() {
-    let row = |variable_type, key, value: Option<f64>| crate::feature::FeatureVariableRow {
-        variable_type: crate::feature::definitions::VariableType::from(variable_type),
-        key,
-        value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
-        value_body: Vec::new(),
-        guess: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
-        guess_body: Vec::new(),
-        known: Some(0),
-        homogeneity: Some(1),
-        uvar_id: None,
-        offset: 0,
-    };
-    let definition = crate::feature::FeatureDefinition {
+    let row =
+        |variable_type, key, value: Option<f64>| crate::feature::definitions::FeatureVariableRow {
+            variable_type: crate::feature::definitions::VariableType::from(variable_type),
+            key,
+            value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
+            value_body: Vec::new(),
+            guess: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
+            guess_body: Vec::new(),
+            known: Some(0),
+            homogeneity: Some(1),
+            uvar_id: None,
+            offset: 0,
+        };
+    let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(40),
             owner_feature_id: None,
@@ -975,7 +1181,7 @@ fn equation_function_thirty_five_solves_point_on_reference_line() {
             .to_vec(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
-        variables: Some(crate::feature::FeatureVariableTable {
+        variables: Some(crate::feature::definitions::FeatureVariableTable {
             declared_count: 9,
             entity_ref: None,
             rows: vec![
@@ -1003,15 +1209,17 @@ fn equation_function_thirty_five_solves_point_on_reference_line() {
     };
 
     assert_eq!(
-        resolved_section_coordinates(&definition).get(&20),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_coordinates(ctx, &definition))
+            .expect("test section solve")
+            .get(&20),
         Some(&[Some(0.0), Some(165.0)])
     );
 }
 
 #[test]
 fn section_line_requires_two_solved_points() {
-    let segment = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line([7, 9]),
+    let segment = crate::feature::definitions::FeatureSegment {
+        kind: crate::feature::definitions::FeatureSegmentKind::Line([7, 9]),
         directions: [None; 3],
         center_id: None,
         arc_orientation: None,
@@ -1027,10 +1235,13 @@ fn section_line_requires_two_solved_points() {
     points.insert(9, [5.0, 8.0]);
     assert_eq!(
         section_line_geometry(&points, &segment),
-        Some(SketchGeometry::Line {
-            start: cadmpeg_ir::math::Point2::new(2.0, 3.0),
-            end: cadmpeg_ir::math::Point2::new(5.0, 8.0),
-        })
+        Some(
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: cadmpeg_ir::math::Point2::new(2.0, 3.0),
+                end: cadmpeg_ir::math::Point2::new(5.0, 8.0),
+            })
+            .expect("valid test fixture")
+        )
     );
     points.insert(9, [2.0, 3.0]);
     assert!(section_line_geometry(&points, &segment).is_none());
@@ -1042,18 +1253,20 @@ fn section_line_requires_two_solved_points() {
 
 #[test]
 fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
-    let first = SketchEntityId("first".to_string());
-    let second = SketchEntityId("second".to_string());
+    let first =
+        SketchEntityId::mint("synthetic:test:id#first".to_string()).expect("valid test fixture");
+    let second =
+        SketchEntityId::mint("synthetic:test:id#second".to_string()).expect("valid test fixture");
     let emitted = BTreeSet::from([first.clone()]);
 
-    let mut horizontal = SketchConstraintDefinition::Horizontal {
+    let mut horizontal = SketchConstraintDefinitionInput::Horizontal {
         entity: first.clone(),
     };
     assert!(reconcile_constraint_entity_references(
         &mut horizontal,
         &emitted
     ));
-    let mut parallel = SketchConstraintDefinition::Parallel {
+    let mut parallel = SketchConstraintDefinitionInput::Parallel {
         first: first.clone(),
         second: second.clone(),
     };
@@ -1061,17 +1274,19 @@ fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
         &mut parallel,
         &emitted
     ));
-    let mut distance = SketchConstraintDefinition::DistanceLoci {
+    let mut distance = SketchConstraintDefinitionInput::DistanceLoci {
         first: SketchLocus::Start(first.clone()),
         second: SketchLocus::Center(second.clone()),
-        parameter: ParameterId::mint("distance".to_string()).expect("identity grammar"),
+        parameter: ParameterId::mint("synthetic:test:id#distance".to_string())
+            .expect("identity grammar"),
     };
     assert!(!reconcile_constraint_entity_references(
         &mut distance,
         &emitted
     ));
-    let mut native = SketchConstraintDefinition::Native {
-        native_kind: "creo:test".to_string(),
+    let mut native = SketchConstraintDefinitionInput::Native {
+        native_kind: cadmpeg_core::text::NonBlankString::new("creo:test")
+            .expect("nonempty native kind"),
         entities: vec![first.clone(), second],
         parameter: None,
         operands: Vec::new(),
@@ -1085,32 +1300,38 @@ fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
     ));
     assert!(matches!(
         native,
-        SketchConstraintDefinition::Native { entities, .. }
+        SketchConstraintDefinitionInput::Native { entities, .. }
             if entities == vec![first]
     ));
 
-    let parameter = ParameterId::mint("distance".to_string()).expect("identity grammar");
+    let parameter =
+        ParameterId::mint("synthetic:test:id#distance".to_string()).expect("identity grammar");
     let parameters = BTreeSet::from([parameter.clone()]);
-    let mut radius = SketchConstraintDefinition::Radius {
-        entity: SketchEntityId("first".to_string()),
+    let mut radius = SketchConstraintDefinitionInput::Radius {
+        entity: SketchEntityId::mint("synthetic:test:id#first".to_string())
+            .expect("valid test fixture"),
         parameter: parameter.clone(),
     };
     assert!(reconcile_constraint_parameter_reference(
         &mut radius,
         &parameters
     ));
-    let mut missing_distance = SketchConstraintDefinition::Distance {
+    let mut missing_distance = SketchConstraintDefinitionInput::Distance {
         entities: Vec::new(),
-        parameter: ParameterId::mint("missing".to_string()).expect("identity grammar"),
+        parameter: ParameterId::mint("synthetic:test:id#missing".to_string())
+            .expect("identity grammar"),
     };
     assert!(!reconcile_constraint_parameter_reference(
         &mut missing_distance,
         &parameters
     ));
-    let mut native_parameter = SketchConstraintDefinition::Native {
-        native_kind: "creo:test".to_string(),
+    let mut native_parameter = SketchConstraintDefinitionInput::Native {
+        native_kind: cadmpeg_core::text::NonBlankString::new("creo:test")
+            .expect("nonempty native kind"),
         entities: Vec::new(),
-        parameter: Some(ParameterId::mint("missing".to_string()).expect("identity grammar")),
+        parameter: Some(
+            ParameterId::mint("synthetic:test:id#missing".to_string()).expect("identity grammar"),
+        ),
         operands: Vec::new(),
         native_state: None,
         native_flags: None,
@@ -1122,7 +1343,7 @@ fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
     ));
     assert!(matches!(
         native_parameter,
-        SketchConstraintDefinition::Native {
+        SketchConstraintDefinitionInput::Native {
             parameter: None,
             ..
         }
@@ -1131,8 +1352,8 @@ fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
 
 #[test]
 fn section_point_uses_its_single_solved_position() {
-    let segment = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Point(7),
+    let segment = crate::feature::definitions::FeatureSegment {
+        kind: crate::feature::definitions::FeatureSegmentKind::Point(7),
         directions: [None; 3],
         center_id: None,
         arc_orientation: None,
@@ -1147,338 +1368,387 @@ fn section_point_uses_its_single_solved_position() {
 
     assert_eq!(
         section_point_geometry(&points, &segment),
-        Some(SketchGeometry::Point {
-            position: cadmpeg_ir::math::Point2::new(2.0, 3.0),
-        })
+        Some(
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
+                position: cadmpeg_ir::math::Point2::new(2.0, 3.0),
+            })
+            .expect("valid test fixture")
+        )
     );
 }
 
 #[test]
 fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
-    let segment = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line([7, 9]),
-        directions: [Some(0), None, Some(0)],
-        center_id: None,
-        arc_orientation: None,
-        vertical_horizontal: None,
-        radius_ref: None,
-        radius2_ref: None,
-        external_id: 12,
-        body: Vec::new(),
-        offset: 40,
-    };
-    let definition = crate::feature::FeatureDefinition {
-        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
-            schema_id: std::num::NonZeroU32::new(5),
-            owner_feature_id: Some(6),
-        },
-        body: Vec::new(),
-        parameter_frames: Vec::new(),
-        outlines: Vec::new(),
-        variables: Some(crate::feature::definitions::test_support::with_points(
-            crate::feature::FeatureVariableTable {
-                declared_count: 0,
-                entity_ref: None,
-                rows: Vec::new(),
-                offset: 0,
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let segment = crate::feature::definitions::FeatureSegment {
+            kind: crate::feature::definitions::FeatureSegmentKind::Line([7, 9]),
+            directions: [Some(0), None, Some(0)],
+            center_id: None,
+            arc_orientation: None,
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id: 12,
+            body: Vec::new(),
+            offset: 40,
+        };
+        let definition = crate::feature::definitions::FeatureDefinition {
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(5),
+                owner_feature_id: Some(6),
             },
-            vec![
-                crate::feature::FeatureSectionPoint {
-                    point_id: 7,
-                    u: Some(2.0),
-                    v: None,
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: Some(crate::feature::definitions::test_support::with_points(
+                crate::feature::definitions::FeatureVariableTable {
+                    declared_count: 0,
+                    entity_ref: None,
+                    rows: Vec::new(),
+                    offset: 0,
                 },
-                crate::feature::FeatureSectionPoint {
-                    point_id: 9,
-                    u: Some(2.0),
-                    v: Some(8.0),
-                },
-            ],
-        )),
-        segments: None,
-        trim_entities: None,
-        trim_vertices: None,
-        order_table: None,
-        section_3d: None,
-        dimensions: None,
-        relations: None,
-        saved_section: None,
-        offset: 0,
-    };
-    assert_eq!(
-        section_axis_line_carrier(&definition, &segment),
-        Some(SketchGeometry::ReferenceLine {
-            origin: cadmpeg_ir::math::Point2::new(2.0, 0.0),
-            direction: cadmpeg_ir::math::Point2::new(0.0, 1.0),
-        })
-    );
-    assert_eq!(
-        section_axis_reference_line_geometry(
-            &definition,
-            &resolved_section_coordinates(&definition),
-            &segment,
-        ),
-        Some(SketchGeometry::ReferenceLine {
-            origin: cadmpeg_ir::math::Point2::new(2.0, 0.0),
-            direction: cadmpeg_ir::math::Point2::new(0.0, 1.0),
-        })
-    );
-    assert_eq!(
-        section_axis_reference_line_geometry(
-            &definition,
-            &BTreeMap::from([(7, [Some(2.0), None]), (9, [None, Some(8.0)]),]),
-            &segment,
-        ),
-        None
-    );
-    let mut selector_segment = segment.clone();
-    selector_segment.directions = [None; 3];
-    selector_segment.vertical_horizontal = Some(0);
-    let mut selector_definition = definition.clone();
-    selector_definition.segments = Some(crate::feature::FeatureSegmentTable {
-        declared_count: 1,
-        has_elided_prototype: false,
-        entity_ref: None,
-        rows: (vec![selector_segment.clone()])
-            .into_iter()
-            .map(crate::feature::segment_rows::SegmentRow::Ordinary)
-            .collect(),
-        offset: 0,
-    });
-    assert_eq!(
-        section_axis_reference_line_geometry(
-            &selector_definition,
-            &BTreeMap::from([(7, [Some(2.0), None]), (9, [Some(2.0), Some(8.0)])]),
-            &selector_segment,
-        ),
-        Some(SketchGeometry::ReferenceLine {
-            origin: cadmpeg_ir::math::Point2::new(2.0, 0.0),
-            direction: cadmpeg_ir::math::Point2::new(0.0, 1.0),
-        })
-    );
-    assert_eq!(
-        unique_owned_feature_definition(std::slice::from_ref(&definition), 6)
-            .map(|matched| matched.identity.id()),
-        Some(5)
-    );
-    assert!(
-        unique_owned_feature_definition(&[definition.clone(), definition.clone()], 6).is_none()
-    );
-    let operation = crate::feature::FeatureOperation {
-        feature_id: 6,
-        kind: crate::feature::OperationKind::Extrude,
-        name: crate::feature::operations::OperationName::Stored {
-            bytes: b"Extrude id 6".to_vec(),
-            keyword: crate::feature::operations::IdKeyword::Id,
-            prefix: None,
-        },
-        recipe: crate::feature::RecipeResolution::Resolved(
-            crate::feature::FeatureRecipe::ProtrudeExtrude,
-        ),
-        display_state_conflict: false,
-        depdb: Some(crate::feature::operations::DepdbPrefix {
-            schema: crate::feature::schema::SchemaClass::Protrusion,
-            parent: 0,
-        }),
-        offset: 10,
-        state_offset: 10,
-    };
-    assert_eq!(
-        current_feature_operation(std::slice::from_ref(&operation), 6)
-            .and_then(crate::feature::FeatureOperation::root_schema_class),
-        Some(crate::feature::schema::SchemaClass::Protrusion)
-    );
-    assert!(current_feature_operation(&[operation.clone(), operation.clone()], 6).is_none());
-    assert_eq!(
-        current_feature_recipe(std::slice::from_ref(&operation), 6),
-        Some(crate::feature::FeatureRecipe::ProtrudeExtrude)
-    );
-    let mut conflicting_recipe = operation.clone();
-    conflicting_recipe.recipe =
-        crate::feature::RecipeResolution::Resolved(crate::feature::FeatureRecipe::ProtrudeRevolve);
-    assert_eq!(
-        current_feature_recipe(&[operation.clone(), conflicting_recipe], 6),
-        None
-    );
-    let mut parented_operation = operation.clone();
-    parented_operation.depdb = Some(crate::feature::operations::DepdbPrefix {
-        schema: crate::feature::schema::SchemaClass::Protrusion,
-        parent: 5,
-    });
-    assert_eq!(
-        current_feature_recipe_parent(std::slice::from_ref(&parented_operation), 6),
-        Some(5)
-    );
-    let mut conflicting_parent = parented_operation.clone();
-    conflicting_parent.depdb = Some(crate::feature::operations::DepdbPrefix {
-        schema: crate::feature::schema::SchemaClass::Protrusion,
-        parent: 4,
-    });
-    assert_eq!(
-        current_feature_recipe_parent(&[parented_operation, conflicting_parent], 6),
-        None
-    );
-    let row = |schema_class, offset| crate::feature::FeatureRow {
-        feature_id: 6,
-        root_schema_class: Some(crate::feature::schema::SchemaClass::from(schema_class)),
-        stream_offset: 0,
-        body: Vec::new(),
-        body_offset: offset + 1,
-        offset,
-    };
-    assert_eq!(
-        resolved_feature_schema_class_from_classes(
-            &[],
-            row_feature_schema_classes(&[row(917, 20), row(917, 30)], 6),
-            6,
-        ),
-        Some(crate::feature::schema::SchemaClass::Protrusion)
-    );
-    assert_eq!(
-        resolved_feature_schema_class_from_classes(
-            &[],
-            row_feature_schema_classes(&[row(913, 20), row(914, 30)], 6),
-            6,
-        ),
-        None
-    );
-    assert_eq!(
-        resolved_feature_schema_class_from_classes(
-            std::slice::from_ref(&operation),
-            row_feature_schema_classes(&[row(913, 20), row(914, 30)], 6),
-            6,
-        ),
-        Some(crate::feature::schema::SchemaClass::Protrusion)
-    );
-    assert_eq!(
-        resolved_feature_schema_class_from_classes(
-            std::slice::from_ref(&operation),
-            row_feature_schema_classes(&[row(913, 20), row(913, 30)], 6),
-            6,
-        ),
-        Some(crate::feature::schema::SchemaClass::Protrusion)
-    );
-    assert_eq!(
-        row_feature_schema_classes(&[row(913, 20), row(914, 30)], 6),
-        BTreeSet::from([
-            crate::feature::schema::SchemaClass::Round,
-            crate::feature::schema::SchemaClass::Chamfer
-        ])
-    );
-    let extent =
-        |feature_id, offset| crate::feature::FeatureRevolutionExtent { feature_id, offset };
-    assert_eq!(
-        unique_feature_revolution_extent(&[extent(6, 40), extent(6, 50)], 6).map(|e| e.feature_id),
-        Some(6)
-    );
-    assert_eq!(
-        unique_feature_revolution_extent(&[extent(7, 40)], 6).map(|e| e.feature_id),
-        None
-    );
-    let transform = crate::placement::FeatureSectionTransform {
-        definition_id: 5,
-        feature_id: Some(6),
-        origin: [0.0; 3],
-        u_axis: [1.0, 0.0, 0.0],
-        v_axis: [0.0, 1.0, 0.0],
-        normal: [0.0, 0.0, 1.0],
-        offset: 40,
-    };
-    assert_eq!(
-        unique_feature_section_transform(std::slice::from_ref(&transform), 5, 40)
-            .map(|placed| placed.offset),
-        Some(40)
-    );
-    assert!(
-        unique_feature_section_transform(&[transform.clone(), transform.clone()], 5, 40).is_none()
-    );
-    let repeated_schema = crate::placement::FeatureSectionTransform {
-        feature_id: Some(7),
-        offset: 50,
-        ..transform.clone()
-    };
-    assert_eq!(
-        unique_feature_section_transform(&[transform.clone(), repeated_schema], 5, 40)
-            .map(|placed| placed.offset),
-        Some(40)
-    );
-    let competing_definition = crate::placement::FeatureSectionTransform {
-        definition_id: 7,
-        offset: 50,
-        ..transform.clone()
-    };
-    assert!(unique_feature_section_transform(&[transform, competing_definition], 5, 40).is_none());
-    let affected = |ids: &[u32], offset| crate::feature::FeatureAffectedIds {
-        feature_id: 6,
-        kind: crate::feature::AffectedIdKind::Edges,
-        ids: ids.to_vec(),
-        offset,
-    };
-    assert_eq!(
-        agreed_feature_affected_ids(
-            &[affected(&[7, 8], 60), affected(&[7, 8], 70)],
-            6,
-            crate::feature::AffectedIdKind::Edges,
-        ),
-        Some(&[7, 8][..])
-    );
-    assert_eq!(
-        agreed_feature_affected_ids(
-            &[affected(&[7, 8], 60), affected(&[8, 7], 70)],
-            6,
-            crate::feature::AffectedIdKind::Edges,
-        ),
-        None
-    );
-    let replay =
-        |geometry_ids: &[u32], edge_ids: &[u32], offset| crate::feature::FeatureReplayAffectedIds {
+                vec![
+                    crate::feature::definitions::FeatureSectionPoint {
+                        point_id: 7,
+                        u: Some(2.0),
+                        v: None,
+                    },
+                    crate::feature::definitions::FeatureSectionPoint {
+                        point_id: 9,
+                        u: Some(2.0),
+                        v: Some(8.0),
+                    },
+                ],
+            )),
+            segments: None,
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 0,
+        };
+        assert_eq!(
+            section_axis_line_carrier(&definition, &segment),
+            Some(
+                SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
+                    origin: cadmpeg_ir::math::Point2::new(2.0, 0.0),
+                    direction: cadmpeg_ir::math::Point2::new(0.0, 1.0),
+                })
+                .expect("valid test fixture")
+            )
+        );
+        assert_eq!(
+            section_axis_reference_line_geometry(
+                &definition,
+                &crate::decode::with_test_decode_ctx(|ctx| resolved_section_coordinates(
+                    ctx,
+                    &definition
+                ))
+                .expect("test section solve"),
+                &segment,
+            ),
+            Some(
+                SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
+                    origin: cadmpeg_ir::math::Point2::new(2.0, 0.0),
+                    direction: cadmpeg_ir::math::Point2::new(0.0, 1.0),
+                })
+                .expect("valid test fixture")
+            )
+        );
+        assert_eq!(
+            section_axis_reference_line_geometry(
+                &definition,
+                &BTreeMap::from([(7, [Some(2.0), None]), (9, [None, Some(8.0)]),]),
+                &segment,
+            ),
+            None
+        );
+        let mut selector_segment = segment.clone();
+        selector_segment.directions = [None; 3];
+        selector_segment.vertical_horizontal = Some(0);
+        let mut selector_definition = definition.clone();
+        selector_definition.segments = Some(crate::feature::definitions::FeatureSegmentTable {
+            declared_count: 1,
+            has_elided_prototype: false,
+            entity_ref: None,
+            rows: (vec![selector_segment.clone()])
+                .into_iter()
+                .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+                .collect(),
+            offset: 0,
+        });
+        assert_eq!(
+            section_axis_reference_line_geometry(
+                &selector_definition,
+                &BTreeMap::from([(7, [Some(2.0), None]), (9, [Some(2.0), Some(8.0)])]),
+                &selector_segment,
+            ),
+            Some(
+                SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
+                    origin: cadmpeg_ir::math::Point2::new(2.0, 0.0),
+                    direction: cadmpeg_ir::math::Point2::new(0.0, 1.0),
+                })
+                .expect("valid test fixture")
+            )
+        );
+        assert_eq!(
+            unique_owned_feature_definition(ctx, std::slice::from_ref(&definition), 6)
+                .expect("admitted unique lookup")
+                .map(|matched| matched.identity.id()),
+            Some(5)
+        );
+        assert!(
+            unique_owned_feature_definition(ctx, &[definition.clone(), definition.clone()], 6)
+                .expect("admitted unique lookup")
+                .is_none()
+        );
+        let operation = crate::feature::operations::FeatureOperation {
             feature_id: 6,
-            geometry_ids: geometry_ids.to_vec(),
-            edge_ids: edge_ids.to_vec(),
-            geometry_extent: crate::feature::ReplayExtentSource::Explicit,
-            edge_extent: crate::feature::ReplayExtentSource::Inherited,
+            kind: crate::feature::operations::OperationKind::Extrude,
+            name: crate::feature::operations::OperationName::Stored {
+                bytes: b"Extrude id 6".to_vec(),
+                keyword: crate::feature::operations::IdKeyword::Id,
+                prefix: None,
+            },
+            recipe: crate::feature::operations::RecipeResolution::Resolved(
+                crate::feature::operations::FeatureRecipe::ProtrudeExtrude,
+            ),
+            display_state_conflict: false,
+            depdb: Some(crate::feature::operations::DepdbPrefix {
+                schema: crate::feature::schema::SchemaClass::Protrusion,
+                parent: 0,
+            }),
+            offset: 10,
+            state_offset: 10,
+        };
+        assert_eq!(
+            current_feature_operation(std::slice::from_ref(&operation), 6)
+                .and_then(crate::feature::operations::FeatureOperation::root_schema_class),
+            Some(crate::feature::schema::SchemaClass::Protrusion)
+        );
+        assert!(current_feature_operation(&[operation.clone(), operation.clone()], 6).is_none());
+        assert_eq!(
+            current_feature_recipe(std::slice::from_ref(&operation), 6),
+            Some(crate::feature::operations::FeatureRecipe::ProtrudeExtrude)
+        );
+        let mut conflicting_recipe = operation.clone();
+        conflicting_recipe.recipe = crate::feature::operations::RecipeResolution::Resolved(
+            crate::feature::operations::FeatureRecipe::ProtrudeRevolve,
+        );
+        assert_eq!(
+            current_feature_recipe(&[operation.clone(), conflicting_recipe], 6),
+            None
+        );
+        let mut parented_operation = operation.clone();
+        parented_operation.depdb = Some(crate::feature::operations::DepdbPrefix {
+            schema: crate::feature::schema::SchemaClass::Protrusion,
+            parent: 5,
+        });
+        assert_eq!(
+            current_feature_recipe_parent(std::slice::from_ref(&parented_operation), 6),
+            Some(5)
+        );
+        let mut conflicting_parent = parented_operation.clone();
+        conflicting_parent.depdb = Some(crate::feature::operations::DepdbPrefix {
+            schema: crate::feature::schema::SchemaClass::Protrusion,
+            parent: 4,
+        });
+        assert_eq!(
+            current_feature_recipe_parent(&[parented_operation, conflicting_parent], 6),
+            None
+        );
+        let row = |schema_class, offset| crate::feature::rows::FeatureRow {
+            feature_id: 6,
+            root_schema_class: Some(crate::feature::schema::SchemaClass::from(schema_class)),
+            stream_offset: 0,
+            body: vec![0; 2].try_into().expect("row body"),
+            body_offset: offset + 1,
             offset,
         };
-    let geometry = |ids: &[u32], offset| crate::feature::FeatureAffectedIds {
-        feature_id: 6,
-        kind: crate::feature::AffectedIdKind::Geometry,
-        ids: ids.to_vec(),
-        offset,
-    };
-    let replay_geometry = replay(&[9], &[7], 80);
-    assert_eq!(
-        agreed_feature_geometry_ids(&[], std::slice::from_ref(&replay_geometry), 6),
-        Some(&[9][..])
-    );
-    let named_empty = geometry(&[], 60);
-    assert_eq!(
-        agreed_feature_geometry_ids(
-            std::slice::from_ref(&named_empty),
-            std::slice::from_ref(&replay_geometry),
-            6,
-        ),
-        Some(&[][..])
-    );
-    let conflicting_named = [geometry(&[7], 60), geometry(&[8], 70)];
-    assert_eq!(
-        agreed_feature_geometry_ids(
-            &conflicting_named,
-            std::slice::from_ref(&replay_geometry),
-            6,
-        ),
-        None
-    );
-    assert_eq!(
-        agreed_feature_replay_geometry_ids(
-            &[replay(&[1, 2], &[7], 80), replay(&[1, 2], &[7], 90)],
-            6,
-        ),
-        Some(&[1, 2][..])
-    );
-    assert_eq!(
-        agreed_feature_replay_edge_ids(&[replay(&[1], &[7], 80), replay(&[1], &[], 90)], 6,),
-        None
-    );
+        let checked_classes = |rows: &[crate::feature::rows::FeatureRow]| {
+            crate::decode::with_test_decode_ctx(|ctx| row_feature_schema_classes(ctx, rows, 6))
+                .expect("schema classes fit service limits")
+        };
+        assert_eq!(
+            resolved_feature_schema_class_from_classes(
+                &[],
+                checked_classes(&[row(917, 20), row(917, 30)]),
+                6,
+            ),
+            Some(crate::feature::schema::SchemaClass::Protrusion)
+        );
+        assert_eq!(
+            resolved_feature_schema_class_from_classes(
+                &[],
+                checked_classes(&[row(913, 20), row(914, 30)]),
+                6,
+            ),
+            None
+        );
+        assert_eq!(
+            resolved_feature_schema_class_from_classes(
+                std::slice::from_ref(&operation),
+                checked_classes(&[row(913, 20), row(914, 30)]),
+                6,
+            ),
+            Some(crate::feature::schema::SchemaClass::Protrusion)
+        );
+        assert_eq!(
+            resolved_feature_schema_class_from_classes(
+                std::slice::from_ref(&operation),
+                checked_classes(&[row(913, 20), row(913, 30)]),
+                6,
+            ),
+            Some(crate::feature::schema::SchemaClass::Protrusion)
+        );
+        assert_eq!(
+            checked_classes(&[row(913, 20), row(914, 30)]),
+            BTreeSet::from([
+                crate::feature::schema::SchemaClass::Round,
+                crate::feature::schema::SchemaClass::Chamfer
+            ])
+        );
+        let extent = |feature_id, offset| crate::feature::rows::FeatureRevolutionExtent {
+            feature_id,
+            offset,
+        };
+        assert_eq!(
+            unique_feature_revolution_extent(&[extent(6, 40), extent(6, 50)], 6)
+                .map(|e| e.feature_id),
+            Some(6)
+        );
+        assert_eq!(
+            unique_feature_revolution_extent(&[extent(7, 40)], 6).map(|e| e.feature_id),
+            None
+        );
+        let transform = crate::placement::FeatureSectionTransform::new(
+            5,
+            Some(6),
+            [0.0; 3],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            40,
+        )
+        .expect("valid section frame");
+        assert_eq!(
+            unique_feature_section_transform(ctx, std::slice::from_ref(&transform), 5, 40)
+                .expect("admitted unique lookup")
+                .map(|placed| placed.offset),
+            Some(40)
+        );
+        assert!(unique_feature_section_transform(
+            ctx,
+            &[transform.clone(), transform.clone()],
+            5,
+            40
+        )
+        .expect("admitted unique lookup")
+        .is_none());
+        let repeated_schema = crate::placement::FeatureSectionTransform::new(
+            transform.definition_id,
+            Some(7),
+            transform.origin(),
+            transform.u_axis(),
+            transform.v_axis(),
+            50,
+        )
+        .expect("valid section frame");
+        assert_eq!(
+            unique_feature_section_transform(ctx, &[transform.clone(), repeated_schema], 5, 40)
+                .expect("admitted unique lookup")
+                .map(|placed| placed.offset),
+            Some(40)
+        );
+        let competing_definition = crate::placement::FeatureSectionTransform::new(
+            7,
+            transform.feature_id,
+            transform.origin(),
+            transform.u_axis(),
+            transform.v_axis(),
+            50,
+        )
+        .expect("valid section frame");
+        assert!(
+            unique_feature_section_transform(ctx, &[transform, competing_definition], 5, 40)
+                .expect("admitted unique lookup")
+                .is_none()
+        );
+        let affected = |ids: &[u32], offset| crate::feature::rows::FeatureAffectedIds {
+            feature_id: 6,
+            kind: crate::feature::rows::AffectedIdKind::Edges,
+            ids: ids.to_vec(),
+            offset,
+        };
+        assert_eq!(
+            agreed_feature_affected_ids(
+                &[affected(&[7, 8], 60), affected(&[7, 8], 70)],
+                6,
+                crate::feature::rows::AffectedIdKind::Edges,
+            ),
+            Some(&[7, 8][..])
+        );
+        assert_eq!(
+            agreed_feature_affected_ids(
+                &[affected(&[7, 8], 60), affected(&[8, 7], 70)],
+                6,
+                crate::feature::rows::AffectedIdKind::Edges,
+            ),
+            None
+        );
+        let replay = |geometry_ids: &[u32], edge_ids: &[u32], offset| {
+            crate::feature::rows::FeatureReplayAffectedIds {
+                feature_id: 6,
+                geometry_ids: geometry_ids.to_vec(),
+                edge_ids: edge_ids.to_vec(),
+                geometry_extent: crate::feature::rows::ReplayExtentSource::Explicit,
+                edge_extent: crate::feature::rows::ReplayExtentSource::Inherited,
+                offset,
+            }
+        };
+        let geometry = |ids: &[u32], offset| crate::feature::rows::FeatureAffectedIds {
+            feature_id: 6,
+            kind: crate::feature::rows::AffectedIdKind::Geometry,
+            ids: ids.to_vec(),
+            offset,
+        };
+        let replay_geometry = replay(&[9], &[7], 80);
+        assert_eq!(
+            agreed_feature_geometry_ids(&[], std::slice::from_ref(&replay_geometry), 6),
+            Some(&[9][..])
+        );
+        let named_empty = geometry(&[], 60);
+        assert_eq!(
+            agreed_feature_geometry_ids(
+                std::slice::from_ref(&named_empty),
+                std::slice::from_ref(&replay_geometry),
+                6,
+            ),
+            Some(&[][..])
+        );
+        let conflicting_named = [geometry(&[7], 60), geometry(&[8], 70)];
+        assert_eq!(
+            agreed_feature_geometry_ids(
+                &conflicting_named,
+                std::slice::from_ref(&replay_geometry),
+                6,
+            ),
+            None
+        );
+        assert_eq!(
+            agreed_feature_replay_geometry_ids(
+                &[replay(&[1, 2], &[7], 80), replay(&[1, 2], &[7], 90)],
+                6,
+            ),
+            Some(&[1, 2][..])
+        );
+        assert_eq!(
+            agreed_feature_replay_edge_ids(&[replay(&[1], &[7], 80), replay(&[1], &[], 90)], 6,),
+            None
+        );
+    });
 }
 
 #[test]
@@ -1507,21 +1777,22 @@ fn material_base_body_uses_bounded_definition_order() {
 
 #[test]
 fn unresolved_material_join_does_not_hide_exact_base_body_candidate() {
-    let operation =
-        |feature_id, root_schema_class: Option<u32>, recipe| crate::feature::FeatureOperation {
+    let operation = |feature_id, root_schema_class: Option<u32>, recipe| {
+        crate::feature::operations::FeatureOperation {
             feature_id,
-            kind: crate::feature::OperationKind::Stored("Sweep".to_string()),
+            kind: crate::feature::operations::OperationKind::Stored("Sweep".to_string()),
             name: crate::feature::operations::OperationName::Derived,
-            recipe: crate::feature::RecipeResolution::from(recipe),
+            recipe: crate::feature::operations::RecipeResolution::from(recipe),
             display_state_conflict: false,
             depdb: root_schema_class.map(|schema: u32| crate::feature::operations::DepdbPrefix {
                 schema: crate::feature::schema::SchemaClass::from(schema),
                 parent: 0,
             }),
-            offset: feature_id as usize,
-            state_offset: feature_id as usize,
-        };
-    let definition = |id, section_offset, offset| crate::feature::FeatureDefinition {
+            offset: usize::try_from(feature_id).expect("fixture index fits usize"),
+            state_offset: usize::try_from(feature_id).expect("fixture index fits usize"),
+        }
+    };
+    let definition = |id, section_offset, offset| crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(id),
             owner_feature_id: Some(id),
@@ -1534,12 +1805,12 @@ fn unresolved_material_join_does_not_hide_exact_base_body_candidate() {
         trim_entities: None,
         trim_vertices: None,
         order_table: None,
-        section_3d: Some(crate::feature::FeatureSection3d {
+        section_3d: Some(crate::feature::definitions::FeatureSection3d {
             sketch_plane_entity_id: None,
             sketch_plane_flip: None,
             reference_planes: crate::feature::definitions::ReferencePlanes::Named(Vec::new()),
             reference_plane_datum_geometry_id: None,
-            orientation: crate::feature::FeatureSectionOrientation::default(),
+            orientation: crate::feature::definitions::FeatureSectionOrientation::default(),
             dimension_ids: Vec::new(),
             offset: section_offset,
         }),
@@ -1548,22 +1819,24 @@ fn unresolved_material_join_does_not_hide_exact_base_body_candidate() {
         saved_section: None,
         offset,
     };
-    let transform = |definition_id, feature_id, offset| crate::placement::FeatureSectionTransform {
-        definition_id,
-        feature_id: Some(feature_id),
-        origin: [0.0; 3],
-        u_axis: [1.0, 0.0, 0.0],
-        v_axis: [0.0, 1.0, 0.0],
-        normal: [0.0, 0.0, 1.0],
-        offset,
+    let transform = |definition_id, feature_id, offset| {
+        crate::placement::FeatureSectionTransform::new(
+            definition_id,
+            Some(feature_id),
+            [0.0; 3],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            offset,
+        )
+        .expect("valid section frame")
     };
 
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.operations.extend([
         operation(
             10,
             Some(917),
-            Some(crate::feature::FeatureRecipe::ProtrudeExtrude),
+            Some(crate::feature::operations::FeatureRecipe::ProtrudeExtrude),
         ),
         operation(20, Some(917), None),
         operation(30, Some(917), None),
@@ -1573,75 +1846,101 @@ fn unresolved_material_join_does_not_hide_exact_base_body_candidate() {
         .section_transforms
         .extend([transform(10, 10, 101), transform(30, 30, 302)]);
 
-    assert!(feature_is_first_material_operation(&scan, 10));
-    assert!(!feature_is_first_material_operation(&scan, 20));
-    assert!(!feature_is_first_material_operation(&scan, 30));
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| feature_is_first_material_operation(
+            ctx, &scan, 10
+        ))
+        .expect("admitted material lookup")
+    );
+    assert!(
+        !crate::decode::with_test_decode_ctx(|ctx| feature_is_first_material_operation(
+            ctx, &scan, 20
+        ))
+        .expect("admitted material lookup")
+    );
+    assert!(
+        !crate::decode::with_test_decode_ctx(|ctx| feature_is_first_material_operation(
+            ctx, &scan, 30
+        ))
+        .expect("admitted material lookup")
+    );
 }
 
 #[test]
 fn intersects_evaluated_section_carriers() {
-    let horizontal = SketchGeometry::Line {
+    let horizontal = SketchGeometry::try_from(SketchGeometryDefinition::Line {
         start: cadmpeg_ir::math::Point2::new(-2.0, 1.0),
         end: cadmpeg_ir::math::Point2::new(2.0, 1.0),
-    };
-    let vertical = SketchGeometry::Line {
+    })
+    .expect("valid test fixture");
+    let vertical = SketchGeometry::try_from(SketchGeometryDefinition::Line {
         start: cadmpeg_ir::math::Point2::new(0.5, -3.0),
         end: cadmpeg_ir::math::Point2::new(0.5, 3.0),
-    };
+    })
+    .expect("valid test fixture");
     assert_eq!(
         intersect_section_lines(&horizontal, &vertical),
         Some([0.5, 1.0])
     );
-    let vertical_reference = SketchGeometry::ReferenceLine {
+    let vertical_reference = SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
         origin: cadmpeg_ir::math::Point2::new(0.5, 0.0),
         direction: cadmpeg_ir::math::Point2::new(0.0, 1.0),
-    };
+    })
+    .expect("valid test fixture");
     assert_eq!(
         intersect_section_lines(&horizontal, &vertical_reference),
         Some([0.5, 1.0])
     );
 
-    let circle_half = SketchGeometry::Arc {
+    let circle_half = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
-        radius: Length(2.0),
-        start_angle: Angle(0.0),
-        end_angle: Angle(std::f64::consts::PI),
-    };
-    let endpoint_line = SketchGeometry::Line {
+        radius: Length::new(2.0).expect("finite length fixture"),
+        start_angle: Angle::new(0.0).expect("finite angle fixture"),
+        end_angle: Angle::new(std::f64::consts::PI).expect("finite angle fixture"),
+    })
+    .expect("valid test fixture");
+    let endpoint_line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
         start: cadmpeg_ir::math::Point2::new(2.0, 0.0),
         end: cadmpeg_ir::math::Point2::new(3.0, 1.0),
-    };
+    })
+    .expect("valid test fixture");
     let intersection = intersect_section_line_arc(&endpoint_line, &circle_half)
         .expect("line has one endpoint on the arc");
     assert!((intersection[0] - 2.0).abs() <= 1.0e-12);
     assert!(intersection[1].abs() <= 1.0e-12);
-    let one_crossing = SketchGeometry::Line {
+    let one_crossing = SketchGeometry::try_from(SketchGeometryDefinition::Line {
         start: cadmpeg_ir::math::Point2::new(0.0, 0.0),
         end: cadmpeg_ir::math::Point2::new(3.0, 0.0),
-    };
+    })
+    .expect("valid test fixture");
     assert_eq!(
         intersect_section_line_arc(&one_crossing, &circle_half),
         Some([2.0, 0.0])
     );
-    let two_crossings = SketchGeometry::Line {
+    let two_crossings = SketchGeometry::try_from(SketchGeometryDefinition::Line {
         start: cadmpeg_ir::math::Point2::new(-3.0, 0.0),
         end: cadmpeg_ir::math::Point2::new(3.0, 0.0),
-    };
+    })
+    .expect("valid test fixture");
     assert_eq!(
         intersect_section_line_arc(&two_crossings, &circle_half),
         None
     );
-    let no_crossing = SketchGeometry::Line {
+    let no_crossing = SketchGeometry::try_from(SketchGeometryDefinition::Line {
         start: cadmpeg_ir::math::Point2::new(3.0, 0.0),
         end: cadmpeg_ir::math::Point2::new(4.0, 0.0),
-    };
+    })
+    .expect("valid test fixture");
     assert_eq!(intersect_section_line_arc(&no_crossing, &circle_half), None);
 
-    let circle = |center, radius| SketchGeometry::Arc {
-        center: cadmpeg_ir::math::Point2::new(center, 0.0),
-        radius: Length(radius),
-        start_angle: Angle(0.0),
-        end_angle: Angle(std::f64::consts::TAU),
+    let circle = |center, radius| {
+        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+            center: cadmpeg_ir::math::Point2::new(center, 0.0),
+            radius: Length::new(radius).expect("finite length fixture"),
+            start_angle: Angle::new(0.0).expect("finite angle fixture"),
+            end_angle: Angle::new(std::f64::consts::TAU).expect("finite angle fixture"),
+        })
+        .expect("valid test fixture")
     };
     assert_eq!(
         intersect_tangent_section_arcs(&circle(0.0, 2.0), &circle(3.0, 1.0)),

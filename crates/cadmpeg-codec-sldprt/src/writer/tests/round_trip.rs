@@ -2,34 +2,36 @@
 //! Spatial-sketch write-back and semantic-write round-trip pins.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
-use cadmpeg_ir::codec::write::TargetRequest;
 use std::{collections::BTreeMap, io::Cursor};
 
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::compare::floats_agree;
-use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::sketches::{
     SpatialSketch, SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry,
-    SpatialSketchId,
+    SpatialSketchGeometryDefinition, SpatialSketchId,
 };
 use cadmpeg_ir::transform::Transform;
 
-use crate::test_support::{sldprt_with_body, triangle_body};
+use crate::test_support::container::sldprt_with_body;
+use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
 
 fn source_less_spatial_line(start: Point3, end: Point3) -> cadmpeg_ir::CadIr {
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.model.bodies[0].name = None;
     ir.model.faces.iter_mut().for_each(|face| face.name = None);
     ir.model
         .edges
         .iter_mut()
-        .for_each(|edge| edge.param_range = None);
-    let sketch_id = SpatialSketchId("synthetic:test:spatial-sketch#path".into());
-    let entity_id = SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#line".into());
+        .for_each(|edge| edge.set_param_range(None));
+    let sketch_id = SpatialSketchId::mint("synthetic:test:spatial-sketch#path").unwrap();
+    let entity_id =
+        SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#line").unwrap();
     ir.model.spatial_sketches.push(SpatialSketch {
         id: sketch_id.clone(),
         name: Some("Spatial path".into()),
@@ -43,22 +45,25 @@ fn source_less_spatial_line(start: Point3, end: Point3) -> cadmpeg_ir::CadIr {
         .push(SpatialSketchEntity::new(
             entity_id,
             sketch_id.clone(),
-            SpatialSketchGeometry::Line { start, end },
+            SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line { start, end })
+                .unwrap(),
         ));
     ir.model.features.push(Feature {
         id: FeatureId::mint("synthetic:test:feature#spatial-path").expect("identity grammar"),
         ordinal: 0,
         name: Some("Spatial path".into()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::default(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::SpatialSketch {
-            sketch: Some(sketch_id),
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
+                sketch: Some(sketch_id),
+            }),
+        ),
         native_ref: None,
     });
     ir
@@ -84,10 +89,12 @@ fn retained_spatial_line_endpoint_edits_round_trip() {
         .0;
     let replacement_start = Point3::new(-7.5, 8.25, 9.0);
     let replacement_end = Point3::new(10.0, -11.5, 12.75);
-    decoded.model.spatial_sketch_entities[0].geometry = SpatialSketchGeometry::Line {
-        start: replacement_start,
-        end: replacement_end,
-    };
+    decoded.model.spatial_sketch_entities[0].geometry =
+        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
+            start: replacement_start,
+            end: replacement_end,
+        })
+        .unwrap();
 
     let mut second_encoding = Vec::new();
     SldprtCodec
@@ -100,11 +107,12 @@ fn retained_spatial_line_endpoint_edits_round_trip() {
         .into_parts()
         .0;
 
-    assert!(matches!(
-        regenerated.model.spatial_sketch_entities[0].geometry,
-        SpatialSketchGeometry::Line { start, end }
-            if start == replacement_start && end == replacement_end
-    ));
+    assert!(
+        matches!(*regenerated.model.spatial_sketch_entities[0].geometry.definition(),
+            SpatialSketchGeometryDefinition::Line { start, end }
+                if start == replacement_start && end == replacement_end
+        )
+    );
 }
 
 #[test]
@@ -116,8 +124,16 @@ fn mutated_semantic_write_round_trips() {
         )
         .expect("triangle fixture should decode");
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    decoded.ir_mut().model.points[0].position.z += 1.0;
-    let expected_z = decoded.ir().model.points[0].position.z;
+    let moved = decoded.ir_mut().model.points[0].position().get();
+    decoded.ir_mut().model.points[0].set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            moved.x,
+            moved.y,
+            moved.z + 1.0,
+        ))
+        .expect("a finite position is a point"),
+    );
+    let expected_z = decoded.ir().model.points[0].position().get().z;
     let expected_bodies = decoded.ir().model.bodies.len();
     let expected_faces = decoded.ir().model.faces.len();
 
@@ -131,14 +147,18 @@ fn mutated_semantic_write_round_trips() {
     let round_trip = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("written triangle should decode");
-    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     assert_eq!(round_trip.ir().model.bodies.len(), expected_bodies);
     assert_eq!(round_trip.ir().model.faces.len(), expected_faces);
     assert!(
-        floats_agree(round_trip.ir().model.points[0].position.z, expected_z),
+        floats_agree(
+            round_trip.ir().model.points[0].position().get().z,
+            expected_z
+        ),
         "mutated z drifted: got {} expected {}",
-        round_trip.ir().model.points[0].position.z,
+        round_trip.ir().model.points[0].position().get().z,
         expected_z
     );
 }
@@ -152,13 +172,12 @@ fn bake_transform_is_applied_and_output_stays_valid() {
         )
         .expect("triangle fixture should decode");
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    let original_x = decoded.ir().model.points[0].position.x;
+    let original_x = decoded.ir().model.points[0].position().get().x;
     decoded.ir_mut().model.bodies[0].transform = Some(
-        Transform::from_rows([
+        Transform::affine([
             [1.0, 0.0, 0.0, 10.0],
             [0.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
         ])
         .expect("affine transform"),
     );
@@ -173,15 +192,16 @@ fn bake_transform_is_applied_and_output_stays_valid() {
     let round_trip = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("written translated triangle should decode");
-    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     assert!(
         floats_agree(
-            round_trip.ir().model.points[0].position.x,
+            round_trip.ir().model.points[0].position().get().x,
             original_x + 10.0
         ),
         "baked translation drifted: got {} expected {}",
-        round_trip.ir().model.points[0].position.x,
+        round_trip.ir().model.points[0].position().get().x,
         original_x + 10.0
     );
 }

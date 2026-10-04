@@ -8,7 +8,9 @@
 //! Partial paths preserve the reconstructed B-rep stream or complete file as an
 //! [`UnknownRecord`]. Their report identifies unresolved model layers.
 
-use std::collections::{HashMap, HashSet};
+use cadmpeg_core::decode::u64_from_index;
+
+use std::collections::HashSet;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::dialect::DialectMatch;
@@ -26,10 +28,10 @@ use crate::entity_table;
 use crate::families;
 use crate::formula;
 use crate::loss::CatiaLossCode;
-use crate::native::entity_record::CatiaEntityRecord;
 use crate::native::schema_configuration_chain::CatiaSchemaConfigurationRowChain;
 use crate::native::{CatiaNative, CatiaObjectGraph};
 use crate::pmi;
+use crate::resource;
 use crate::sketch;
 
 fn schema_configuration_row_chain_coverage(native: &CatiaNative) -> (usize, usize) {
@@ -52,56 +54,113 @@ fn schema_configuration_row_chain_coverage(native: &CatiaNative) -> (usize, usiz
 /// predicate accepts the scanned variant is tried in table order; the first to
 /// return a model wins, a `None` falls through to the next applicable route, and
 /// exhausting the table yields the metadata-only fallback.
-pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
-    let scan = container::scan_bytes(root.window());
-    let matched = crate::dialect::classify(&scan);
+pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
+    // The sink outlives every route exit: a route that answers `None` after a
+    // refusal has already stated the refusal here, and `finish_decode` drains
+    // the sink into the report before its first fallible step and again after
+    // the native decode, so no `?` sits between a push and its drain. The
+    // fall-through to the next route and to the metadata fallback is stated in
+    // the report by name.
+    let mut refusal = crate::nurbs::LaneRefusals::new();
+    decode_over_routes(ctx, root, families::ROUTES, &mut refusal)
+}
+
+/// Decodes `root` over `routes`, the ordered fall-back table.
+///
+/// `routes` is a parameter so a test can drive the router with a table whose
+/// behaviour it states: the production call passes [`families::ROUTES`].
+fn decode_over_routes(
+    ctx: &DecodeContext<'_>,
+    root: View<'_>,
+    routes: &[families::Route],
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Result<Decoded, CodecError> {
+    let scan = container::scan_bytes(ctx, root.window())?;
+    let matched = crate::dialect::classify(ctx, &scan)?;
 
     if ctx.container_only() {
-        let (ir, annotations, unknowns) = build_metadata_fallback(&scan);
-        let report = build_container_report(&scan);
-        return decode_result(&scan, &matched, ir, report, annotations, unknowns);
+        let (ir, annotations, unknowns) = build_metadata_fallback(ctx, &scan)?;
+        let report = build_container_report(ctx, &scan)?;
+        return decode_result(ctx, &scan, &matched, ir, report, annotations, unknowns);
     }
 
-    for route in families::ROUTES {
-        if (route.applicable)(scan.variant) {
-            if let Some(out) = (route.decode)(ctx, &scan) {
-                return finish_decode(
-                    ctx,
-                    &scan,
-                    &matched,
-                    out.ir,
-                    out.report,
-                    out.annotations,
-                    out.unknowns,
-                    route.standard_face_population,
-                );
-            }
+    let applicable = ctx.collect_vec(
+        routes
+            .iter()
+            .filter(|route| (route.applicable)(scan.variant)),
+        "catia_applicable_routes",
+    )?;
+    let mut fell_through = Vec::new();
+    for (index, route) in applicable.iter().enumerate() {
+        let stated = refusal.note_count();
+        let output = (route.decode)(ctx, &scan, refusal)?;
+        if let Some(out) = output {
+            return finish_decode(
+                ctx,
+                crate::decode::FinishDecodeInputs {
+                    scan: &scan,
+                    matched: &matched,
+                    ir: out.ir,
+                    report: out.report,
+                    annotations: out.annotations,
+                    unknowns: out.unknowns,
+                    admitted_model_entities: out.admitted_model_entities,
+                    standard_face_population: route.standard_face_population,
+                    fell_through: &fell_through,
+                    refusal,
+                },
+            );
+        }
+        let refused = refusal.note_count() - stated;
+        if refused > 0 {
+            let next = applicable
+                .get(index + 1)
+                .map_or("the metadata fallback", |next| next.name);
+            let note = ctx.format_retained(
+                format_args!(
+                    "{} refused {refused} CATIA record(s) and then transferred no model; \
+                     the decode continued to {next}",
+                    route.name
+                ),
+                "catia_route_fallthrough_note",
+            )?;
+            ctx.push_vec(&mut fell_through, note, "catia_route_fallthroughs")?;
         }
     }
 
-    let (ir, annotations, unknowns) = build_metadata_fallback(&scan);
-    let report = build_container_report(&scan);
+    let (ir, annotations, unknowns) = build_metadata_fallback(ctx, &scan)?;
+    let report = build_container_report(ctx, &scan)?;
     finish_decode(
         ctx,
-        &scan,
-        &matched,
-        ir,
-        report,
-        annotations,
-        unknowns,
-        false,
+        crate::decode::FinishDecodeInputs {
+            scan: &scan,
+            matched: &matched,
+            ir,
+            report,
+            annotations,
+            unknowns,
+            admitted_model_entities: 0,
+            standard_face_population: false,
+            fell_through: &fell_through,
+            refusal,
+        },
     )
 }
 
 #[derive(Default)]
 struct IncomingEntityIncidenceCounts {
-    total: usize,
     payload: usize,
     storage: usize,
     classified: usize,
     zero: usize,
     one: usize,
     multiple: usize,
+}
+
+impl IncomingEntityIncidenceCounts {
+    fn total(&self) -> usize {
+        self.payload + self.storage
+    }
 }
 
 fn incoming_entity_incidence_counts<'a>(
@@ -117,7 +176,6 @@ fn incoming_entity_incidence_counts<'a>(
         let payload_count = payload_references.len();
         let storage_count = storage_references.len();
         let total = payload_count + storage_count;
-        counts.total += total;
         counts.payload += payload_count;
         counts.storage += storage_count;
         counts.classified += payload_references
@@ -138,106 +196,156 @@ fn incoming_entity_incidence_counts<'a>(
 }
 
 // Keep the single classified match explicit beside the independently built decode artifacts.
-#[allow(clippy::too_many_arguments)]
+struct FinishDecodeInputs<'input0, 'input1, 'input2, 'input3> {
+    scan: &'input0 ContainerScan<'input0>,
+    matched: &'input1 DialectMatch,
+    ir: CadIr,
+    report: DecodeBody,
+    annotations: Annotations,
+    unknowns: Vec<UnknownRecord>,
+    admitted_model_entities: u64,
+    standard_face_population: bool,
+    fell_through: &'input2 [String],
+    refusal: &'input3 mut crate::nurbs::LaneRefusals,
+}
+
 fn finish_decode(
     ctx: &DecodeContext<'_>,
-    scan: &ContainerScan,
-    matched: &DialectMatch,
-    mut ir: CadIr,
-    mut report: DecodeBody,
-    mut annotations: Annotations,
-    unknowns: Vec<UnknownRecord>,
-    standard_face_population: bool,
+    inputs: FinishDecodeInputs<'_, '_, '_, '_>,
 ) -> Result<Decoded, CodecError> {
-    // Retained unknown records are source entities even when a route transfers
-    // no neutral model entity (for example, an unrecognized storage variant).
-    ctx.charge_entities(unknowns.len() as u64, "admit CATIA retained source records")?;
-    // Charge route-built entities before native decode and transfer work so
-    // max_entities refuses that work rather than only reporting afterward.
-    let mut admitted_entities = 0_u64;
+    let FinishDecodeInputs {
+        scan,
+        matched,
+        mut ir,
+        mut report,
+        mut annotations,
+        unknowns,
+        mut admitted_model_entities,
+        standard_face_population,
+        fell_through,
+        refusal,
+    } = inputs;
+
+    // Drain before the first fallible step: every refusal a route stated is in
+    // the `report` value. The `Ok` route returns that value, so the notes reach
+    // the caller. The `Err` route below drops the value and returns the bare
+    // `CodecError`: a refusal note is subordinate to a hard failure by design.
+    // The fall-through statements say which route refused and where the decode
+    // went next.
+    for statement in fell_through {
+        let message = ctx.copy_retained_text(statement, "catia_route_fallthrough_loss")?;
+        ctx.push_vec(
+            &mut report.losses,
+            CatiaLossCode::SourceRouteFellThrough.note_charged(
+                ctx,
+                message,
+                "catia_route_fallthrough_loss",
+            )?,
+            "catia_route_fallthrough_loss",
+        )?;
+    }
+    for note in refusal.take_notes() {
+        ctx.push_vec(&mut report.losses, note, "catia_lane_refusal_loss")?;
+    }
     ctx.admit_entities(
-        ir.model.entity_count() as u64,
-        &mut admitted_entities,
+        u64_from_index(ir.model.entity_count()),
+        &mut admitted_model_entities,
         "admit CATIA route entities",
     )?;
-    let consolidated_record_sources = container::consolidated_record_sources(scan);
-    let native = CatiaNative::decode_with_record_sources(&scan.data, &consolidated_record_sources);
+    let consolidated_record_sources = container::consolidated_record_sources(ctx, scan)?;
+    let native = CatiaNative::decode_with_record_sources(
+        ctx,
+        &scan.data,
+        &consolidated_record_sources,
+        refusal,
+    )?;
+    // Drain lane refusals from a successful native decode before transfers run.
+    for note in refusal.take_notes() {
+        ctx.push_vec(&mut report.losses, note, "catia_lane_refusal_loss")?;
+    }
     let modeling_graph_scope = modeling_graph_scope(
+        ctx,
         !scan.outer_container_declarations.is_empty(),
         &native.object_graphs,
-    );
-    let modeling_object_records = native
-        .object_graphs
-        .iter()
-        .filter(|graph| {
-            modeling_graph_scope
-                .as_ref()
-                .is_none_or(|scope| scope.contains(graph.id.as_str()))
-        })
-        .flat_map(|graph| graph.records.iter().map(|record| record.id.clone()))
-        .collect::<HashSet<_>>();
+    )?;
+    let modeling_object_records = ctx.collect_string_set(
+        native
+            .object_graphs
+            .iter()
+            .filter(|graph| modeling_graph_scope.contains(graph.id.as_str()))
+            .flat_map(|graph| graph.records.iter().map(|record| record.id.as_str())),
+        "catia_modeling_object_records",
+    )?;
     let design_feature_transfer =
-        design_feature::transfer_design_features(&mut ir, &native, modeling_graph_scope.as_ref());
+        design_feature::transfer_design_features(ctx, &mut ir, &native, &modeling_graph_scope)?;
     let transferred_native_sketch_entity_records = sketch::transfer_native_sketch_entities(
+        ctx,
         &mut ir,
         &native,
         &design_feature_transfer,
-        modeling_graph_scope.as_ref(),
-    );
+        &modeling_graph_scope,
+    )?;
     let transferred_native_sketch_constraint_records = sketch::transfer_native_sketch_constraints(
+        ctx,
         &mut ir,
         &native,
         &design_feature_transfer,
-        modeling_graph_scope.as_ref(),
-    );
+        &modeling_graph_scope,
+    )?;
     let transferred_constraint_range_records = sketch::transfer_constraint_ranges(
+        ctx,
         &mut ir,
         &native,
         &design_feature_transfer,
-        modeling_graph_scope.as_ref(),
-    );
+        &modeling_graph_scope,
+    )?;
     let transferred_pmi_dimension_count = pmi::transfer_dimensions(
+        ctx,
         &mut ir,
         &native,
-        modeling_graph_scope.as_ref(),
+        &modeling_graph_scope,
         &transferred_constraint_range_records,
-    );
+    )?;
     let formula_transfer = formula::transfer_parameters(
+        ctx,
         &mut ir,
         &native,
         &mut annotations,
-        modeling_graph_scope.as_ref(),
-    );
-    design_feature_transfer.assign_parameter_owners(&mut ir, &native);
+        &modeling_graph_scope,
+    )?;
+    design_feature_transfer.assign_parameter_owners(ctx, &mut ir, &native)?;
     let appearance_transfer = crate::appearance::transfer(
+        ctx,
         &mut ir,
         &native,
-        modeling_graph_scope.as_ref(),
+        &modeling_graph_scope,
         standard_face_population
             .then_some(scan.main_data_stream.as_deref().or(scan.brep.as_deref()))
             .flatten(),
-    );
+    )?;
     let object_record_count: usize = native
         .object_graphs
         .iter()
         .map(|graph| graph.records.len())
         .sum();
-    let modeling_scope_is_unresolved = modeling_graph_scope.as_ref().is_some_and(HashSet::is_empty);
-    let retained_unscoped_object_graph_count = modeling_graph_scope.as_ref().map_or(0, |scope| {
+    let modeling_scope_is_unresolved =
+        matches!(modeling_graph_scope, ModelingGraphScope::Unresolved);
+    let unscoped_object_graphs = || {
         native
             .object_graphs
             .iter()
-            .filter(|graph| !scope.contains(graph.id.as_str()))
-            .count()
-    });
-    let retained_unscoped_object_record_count = modeling_graph_scope.as_ref().map_or(0, |scope| {
-        native
-            .object_graphs
-            .iter()
-            .filter(|graph| !scope.contains(graph.id.as_str()))
+            .filter(|graph| !modeling_graph_scope.contains(graph.id.as_str()))
+    };
+    let retained_unscoped_object_graph_count = match modeling_graph_scope {
+        ModelingGraphScope::Unscoped => 0,
+        _ => unscoped_object_graphs().count(),
+    };
+    let retained_unscoped_object_record_count = match modeling_graph_scope {
+        ModelingGraphScope::Unscoped => 0,
+        _ => unscoped_object_graphs()
             .map(|graph| graph.records.len())
-            .sum()
-    });
+            .sum(),
+    };
     let resolved_storage_record_count = native
         .object_graphs
         .iter()
@@ -282,7 +390,7 @@ fn finish_decode(
         .object_graphs
         .iter()
         .flat_map(|graph| &graph.records)
-        .filter(|record| record.repeated_reference_suffix().is_some())
+        .filter(|record| crate::object_graph::has_repeated_reference_suffix(&record.payload))
         .count();
     let repeated_reference_schema_selection_count = native
         .object_graphs
@@ -487,11 +595,18 @@ fn finish_decode(
         .fold(
             (0, 0, 0, 0),
             |(lead_81, lead_82, lead_e5, lead_fd), identity| match identity.lead {
-                0x81 => (lead_81 + 1, lead_82, lead_e5, lead_fd),
-                0x82 => (lead_81, lead_82 + 1, lead_e5, lead_fd),
-                0xe5 => (lead_81, lead_82, lead_e5 + 1, lead_fd),
-                0xfd => (lead_81, lead_82, lead_e5, lead_fd + 1),
-                _ => unreachable!("validated legacy identity lead"),
+                crate::legacy_entity::CatiaLegacyIdentityLead::Lead81 => {
+                    (lead_81 + 1, lead_82, lead_e5, lead_fd)
+                }
+                crate::legacy_entity::CatiaLegacyIdentityLead::Lead82 => {
+                    (lead_81, lead_82 + 1, lead_e5, lead_fd)
+                }
+                crate::legacy_entity::CatiaLegacyIdentityLead::LeadE5 => {
+                    (lead_81, lead_82, lead_e5 + 1, lead_fd)
+                }
+                crate::legacy_entity::CatiaLegacyIdentityLead::LeadFd => {
+                    (lead_81, lead_82, lead_e5, lead_fd + 1)
+                }
             },
         );
     let legacy_text_field_count = native
@@ -516,7 +631,12 @@ fn finish_decode(
         .legacy_entity_runs
         .iter()
         .flat_map(|run| &run.role_selectors)
-        .filter(|role| matches!(&role.name, crate::native::CatiaLegacyRoleName::Selector(_)))
+        .filter(|role| {
+            matches!(
+                &role.name,
+                crate::legacy_entity::LegacyRoleName::Selector(_)
+            )
+        })
         .count();
     let legacy_role_field_binding_count = native
         .legacy_entity_runs
@@ -613,11 +733,7 @@ fn finish_decode(
         .iter()
         .map(|record| record.definition_schema_selections.len())
         .sum();
-    let entity_value_field_count = native
-        .entity_records
-        .iter()
-        .map(|record| record.value_fields().len())
-        .sum();
+    let mut entity_value_field_count = 0usize;
     let entity_value_schema_selection_count = native
         .entity_records
         .iter()
@@ -627,21 +743,27 @@ fn finish_decode(
     let mut numeric_entity_value_packet_count = 0;
     let mut layout_entity_value_packet_count = 0;
     let mut e9_scalar_entity_value_packet_count = 0;
-    for packet in native
-        .entity_records
-        .iter()
-        .flat_map(CatiaEntityRecord::value_packets)
-    {
-        match packet {
-            entity_table::EntityValuePacket::Compact { .. } => {
-                compact_entity_value_packet_count += 1;
-            }
-            entity_table::EntityValuePacket::Numeric { .. } => {
-                numeric_entity_value_packet_count += 1;
-            }
-            entity_table::EntityValuePacket::Layout { .. } => layout_entity_value_packet_count += 1,
-            entity_table::EntityValuePacket::E9Scalar { .. } => {
-                e9_scalar_entity_value_packet_count += 1;
+    for record in &native.entity_records {
+        let fields = record.value_fields_charged(ctx)?;
+        entity_value_field_count = entity_value_field_count
+            .checked_add(fields.len())
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("catia_entity_value_field_count", u64::MAX, u64::MAX)
+            })?;
+        for packet in record.value_packets(ctx, &fields)? {
+            match packet {
+                entity_table::EntityValuePacket::Compact { .. } => {
+                    compact_entity_value_packet_count += 1;
+                }
+                entity_table::EntityValuePacket::Numeric { .. } => {
+                    numeric_entity_value_packet_count += 1;
+                }
+                entity_table::EntityValuePacket::Layout { .. } => {
+                    layout_entity_value_packet_count += 1;
+                }
+                entity_table::EntityValuePacket::E9Scalar { .. } => {
+                    e9_scalar_entity_value_packet_count += 1;
+                }
             }
         }
     }
@@ -686,20 +808,9 @@ fn finish_decode(
         .iter()
         .filter_map(|record| record.reference_signature.as_ref())
         .fold((0_usize, 0_usize), |(instructions, tokens), signature| {
-            let program = signature.production.signature_program();
-            let qualifier_count = program
-                .iter()
-                .filter(|instruction| {
-                    matches!(
-                        instruction,
-                        crate::entity_table::ReferenceSignatureInstruction::Qualifier { .. }
-                    )
-                })
-                .count();
-            (
-                instructions + program.len(),
-                tokens + program.len() + qualifier_count,
-            )
+            let (instruction_count, token_count) =
+                signature.production.instruction_and_token_counts();
+            (instructions + instruction_count, tokens + token_count)
         });
     let (
         resolved_reference_signature_entity_count,
@@ -737,16 +848,10 @@ fn finish_decode(
         fully_resolved_consolidated_edge_run_count,
     ) = native.consolidated_edge_runs.iter().fold(
         (0_usize, 0_usize, 0_usize),
-        |(unresolved, partial, full), run| match run
-            .support_bindings
-            .iter()
-            .filter(|binding| binding.is_some())
-            .count()
-        {
-            0 => (unresolved + 1, partial, full),
-            1 => (unresolved, partial + 1, full),
-            2 => (unresolved, partial, full + 1),
-            _ => unreachable!("a consolidated edge run has exactly two support sides"),
+        |(unresolved, partial, full), run| match &run.support_bindings {
+            [None, None] => (unresolved + 1, partial, full),
+            [Some(_), None] | [None, Some(_)] => (unresolved, partial + 1, full),
+            [Some(_), Some(_)] => (unresolved, partial, full + 1),
         },
     );
     let consolidated_edge_run_shared_locus_count = native
@@ -770,7 +875,7 @@ fn finish_decode(
         .entity_records
         .iter()
         .filter_map(|record| record.relation_expression())
-        .fold(
+        .try_fold(
             (0_usize, 0_usize, 0_usize, 0_usize, 0_usize, 0_usize),
             |(total, placeholder, parser, boolean, opened, typed), expression| {
                 let (placeholder, parser, boolean, opened) = match expression.framing {
@@ -787,16 +892,16 @@ fn finish_decode(
                         ..
                     } => (placeholder, parser, boolean, opened + 1),
                 };
-                (
+                Ok::<_, CodecError>((
                     total + 1,
                     placeholder,
                     parser,
                     boolean,
                     opened,
-                    typed + usize::from(expression.signature().is_some()),
-                )
+                    typed + usize::from(expression.signature_charged(ctx)?.is_some()),
+                ))
             },
-        );
+        )?;
     let parameter_value_count = native
         .entity_records
         .iter()
@@ -889,15 +994,7 @@ fn finish_decode(
             }
         })
         .count();
-    let IncomingEntityIncidenceCounts {
-        total: constraint_range_incoming_reference_count,
-        payload: constraint_range_incoming_payload_reference_count,
-        storage: constraint_range_incoming_storage_reference_count,
-        classified: classified_constraint_range_source_entity_count,
-        zero: unreferenced_constraint_range_count,
-        one: uniquely_referenced_constraint_range_count,
-        multiple: multiply_referenced_constraint_range_count,
-    } = incoming_entity_incidence_counts(
+    let constraint_range_incidences = incoming_entity_incidence_counts(
         native
             .entity_records
             .iter()
@@ -909,15 +1006,16 @@ fn finish_decode(
                 )
             }),
     );
+    let constraint_range_incoming_reference_count = constraint_range_incidences.total();
     let IncomingEntityIncidenceCounts {
-        total: range_interval_incoming_reference_count,
-        payload: range_interval_incoming_payload_reference_count,
-        storage: range_interval_incoming_storage_reference_count,
-        classified: classified_range_interval_source_entity_count,
-        zero: unreferenced_range_interval_count,
-        one: uniquely_referenced_range_interval_count,
-        multiple: multiply_referenced_range_interval_count,
-    } = incoming_entity_incidence_counts(
+        payload: constraint_range_incoming_payload_reference_count,
+        storage: constraint_range_incoming_storage_reference_count,
+        classified: classified_constraint_range_source_entity_count,
+        zero: unreferenced_constraint_range_count,
+        one: uniquely_referenced_constraint_range_count,
+        multiple: multiply_referenced_constraint_range_count,
+    } = constraint_range_incidences;
+    let range_interval_incidences = incoming_entity_incidence_counts(
         native
             .entity_records
             .iter()
@@ -929,6 +1027,15 @@ fn finish_decode(
                 )
             }),
     );
+    let range_interval_incoming_reference_count = range_interval_incidences.total();
+    let IncomingEntityIncidenceCounts {
+        payload: range_interval_incoming_payload_reference_count,
+        storage: range_interval_incoming_storage_reference_count,
+        classified: classified_range_interval_source_entity_count,
+        zero: unreferenced_range_interval_count,
+        one: uniquely_referenced_range_interval_count,
+        multiple: multiply_referenced_range_interval_count,
+    } = range_interval_incidences;
     let definition_value_count = native
         .entity_records
         .iter()
@@ -939,9 +1046,21 @@ fn finish_decode(
         .iter()
         .map(|object| object.definition_values.len())
         .sum::<usize>();
-    let unowned_definition_value_count = definition_value_count
-        .checked_sub(owned_definition_value_count)
-        .expect("owned CATIA definition values are a subset of decoded values");
+    let owned_definition_value_ids = ctx.collect_hash_set(
+        native
+            .design_objects
+            .iter()
+            .flat_map(|object| object.definition_values.iter().map(String::as_str)),
+        "catia_owned_definition_value_ids",
+    )?;
+    let unowned_definition_value_count = native
+        .entity_records
+        .iter()
+        .filter(|record| {
+            record.definition_value().is_some()
+                && !owned_definition_value_ids.contains(record.id.as_str())
+        })
+        .count();
     let (
         definition_chain_value_count,
         definition_chain_evaluation_count,
@@ -1216,16 +1335,19 @@ fn finish_decode(
         .filter_map(|record| record.relation_program_instance())
         .filter(|instance| instance.relation_expression.is_some())
         .count();
-    let typed_relation_expression_entities = native
-        .entity_records
-        .iter()
-        .filter(|entity| {
-            entity
-                .relation_expression()
-                .is_some_and(|expression| expression.signature().is_some())
-        })
-        .map(|entity| entity.id.as_str())
-        .collect::<HashSet<_>>();
+    let mut typed_relation_expression_entities = std::collections::HashSet::new();
+    for entity in &native.entity_records {
+        let Some(expression) = entity.relation_expression() else {
+            continue;
+        };
+        if expression.signature_charged(ctx)?.is_some() {
+            ctx.insert_hash_set(
+                &mut typed_relation_expression_entities,
+                entity.id.as_str(),
+                "catia_typed_relation_expressions",
+            )?;
+        }
+    }
     let typed_relation_program_instance_count = native
         .entity_records
         .iter()
@@ -1248,21 +1370,27 @@ fn finish_decode(
         .filter_map(|instance| instance.inputs.as_ref())
         .map(Vec::len)
         .sum::<usize>();
-    let distinct_relation_program_input_entity_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.relation_program_instance())
-        .filter_map(|instance| instance.inputs.as_ref())
-        .flatten()
-        .filter_map(|input| input.entity.entity())
-        .collect::<HashSet<_>>()
+    let distinct_relation_program_input_entity_count = ctx
+        .collect_hash_set(
+            native
+                .entity_records
+                .iter()
+                .filter_map(|record| record.relation_program_instance())
+                .filter_map(|instance| instance.inputs.as_ref())
+                .flatten()
+                .filter_map(|input| input.entity.entity()),
+            "catia_distinct_program_inputs",
+        )?
         .len();
-    let instanced_relation_expression_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.relation_program_instance())
-        .filter_map(|instance| instance.relation_expression.as_deref())
-        .collect::<HashSet<_>>()
+    let instanced_relation_expression_count = ctx
+        .collect_hash_set(
+            native
+                .entity_records
+                .iter()
+                .filter_map(|record| record.relation_program_instance())
+                .filter_map(|instance| instance.relation_expression.as_deref()),
+            "catia_instanced_relation_expressions",
+        )?
         .len();
     let relation_program_parameter_dependency_count = native
         .entity_records
@@ -1386,12 +1514,14 @@ fn finish_decode(
                 .all(|link| link.intervening_entities.is_some())
         })
         .count();
-    let schema_configuration_entities = native
-        .entity_records
-        .iter()
-        .filter(|entity| entity.schema_configuration_record().is_some())
-        .map(|entity| entity.id.as_str())
-        .collect::<HashSet<_>>();
+    let schema_configuration_entities = ctx.collect_hash_set(
+        native
+            .entity_records
+            .iter()
+            .filter(|entity| entity.schema_configuration_record().is_some())
+            .map(|entity| entity.id.as_str()),
+        "catia_schema_configuration_entities",
+    )?;
     let schema_configuration_row_intervening_schema_configuration_count = native
         .schema_configuration_row_chains
         .iter()
@@ -1401,22 +1531,28 @@ fn finish_decode(
         .filter_map(|reference| reference.entity())
         .filter(|entity| schema_configuration_entities.contains(entity))
         .count();
-    let formula_referenced_relation_expressions = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.formula_relation())
-        .filter_map(|formula| formula.expression_entity.reference.entity())
-        .collect::<HashSet<_>>();
-    let program_referenced_relation_expressions = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.relation_program_instance())
-        .filter_map(|instance| instance.relation_expression.as_deref())
-        .collect::<HashSet<_>>();
-    let referenced_relation_expressions = formula_referenced_relation_expressions
-        .union(&program_referenced_relation_expressions)
-        .copied()
-        .collect::<HashSet<_>>();
+    let formula_referenced_relation_expressions = ctx.collect_hash_set(
+        native
+            .entity_records
+            .iter()
+            .filter_map(|record| record.formula_relation())
+            .filter_map(|formula| formula.expression_entity.reference.entity()),
+        "catia_formula_relation_expressions",
+    )?;
+    let program_referenced_relation_expressions = ctx.collect_hash_set(
+        native
+            .entity_records
+            .iter()
+            .filter_map(|record| record.relation_program_instance())
+            .filter_map(|instance| instance.relation_expression.as_deref()),
+        "catia_program_relation_expressions",
+    )?;
+    let referenced_relation_expressions = ctx.collect_hash_set(
+        formula_referenced_relation_expressions
+            .union(&program_referenced_relation_expressions)
+            .copied(),
+        "catia_referenced_relation_expressions",
+    )?;
     let formula_referenced_relation_expression_count =
         formula_referenced_relation_expressions.len();
     let program_referenced_relation_expression_count =
@@ -1636,31 +1772,48 @@ fn finish_decode(
         .iter()
         .filter(|object| object.owner_record.is_none())
         .count();
-    let object_records_by_id = native
-        .object_graphs
-        .iter()
-        .flat_map(|graph| &graph.records)
-        .map(|record| (record.id.as_str(), record))
-        .collect::<HashMap<_, _>>();
+    let object_records_by_id = ctx.collect_hash_map(
+        native
+            .object_graphs
+            .iter()
+            .flat_map(|graph| &graph.records)
+            .map(|record| (record.id.as_str(), record)),
+        "catia_object_records_by_id",
+    )?;
     let unassigned_owner_slot_count = object_records_by_id
         .values()
         .filter(|record| record.has_unassigned_owner())
         .count();
-    let structurally_owned_records = native
-        .design_objects
-        .iter()
-        .filter(|object| object.owner_record.is_some())
-        .flat_map(|object| object.fields.iter().cloned())
-        .collect::<HashSet<_>>();
+    let structurally_owned_records = ctx.collect_string_set(
+        native
+            .design_objects
+            .iter()
+            .filter(|object| object.owner_record.is_some())
+            .flat_map(|object| object.fields.iter().map(String::as_str)),
+        "catia_structurally_owned_records",
+    )?;
     let structurally_owned_definition_chain_value_count = native
         .design_objects
         .iter()
         .filter(|object| object.owner_record.is_some())
         .map(|object| object.definition_chain_values.len())
         .sum::<usize>();
-    let unowned_definition_chain_value_count = definition_chain_value_count
-        .checked_sub(structurally_owned_definition_chain_value_count)
-        .expect("owned CATIA definition-chain values are a subset of decoded values");
+    let structurally_owned_definition_chain_value_ids = ctx.collect_hash_set(
+        native
+            .design_objects
+            .iter()
+            .filter(|object| object.owner_record.is_some())
+            .flat_map(|object| object.definition_chain_values.iter().map(String::as_str)),
+        "catia_owned_definition_chain_values",
+    )?;
+    let unowned_definition_chain_value_count = native
+        .entity_records
+        .iter()
+        .filter(|record| {
+            record.definition_chain_value().is_some()
+                && !structurally_owned_definition_chain_value_ids.contains(record.id.as_str())
+        })
+        .count();
     let unassigned_definition_chain_value_count = native
         .entity_records
         .iter()
@@ -1683,9 +1836,18 @@ fn finish_decode(
             }) && structurally_owned_records.contains(&record.object_record)
         })
         .count();
-    let unowned_definition_chain_evaluation_count = definition_chain_evaluation_count
-        .checked_sub(structurally_owned_definition_chain_evaluation_count)
-        .expect("owned CATIA definition-chain evaluations are a subset of decoded values");
+    let unowned_definition_chain_evaluation_count = native
+        .entity_records
+        .iter()
+        .filter(|record| {
+            record.definition_chain_value().is_some_and(|value| {
+                matches!(
+                    &value.value,
+                    crate::native::CatiaEntitySuffixSchemaValue::Evaluation { .. }
+                )
+            }) && !structurally_owned_records.contains(&record.object_record)
+        })
+        .count();
     let unassigned_definition_chain_evaluation_count = native
         .entity_records
         .iter()
@@ -1700,41 +1862,48 @@ fn finish_decode(
                 .is_some_and(|record| record.has_unassigned_owner())
         })
         .count();
-    let transferred_formula_design_records = formula_transfer
-        .consumed_object_records
-        .intersection(&structurally_owned_records)
-        .cloned()
-        .collect::<HashSet<_>>();
-    let transferred_principal_plane_records = design_feature_transfer
-        .principal_plane_records
-        .intersection(&structurally_owned_records)
-        .cloned()
-        .collect::<HashSet<_>>();
-    let transferred_design_feature_records = design_feature_transfer
-        .consumed_records()
-        .intersection(&structurally_owned_records)
-        .cloned()
-        .collect::<HashSet<_>>();
-    let transferred_design_records = transferred_formula_design_records
-        .union(&transferred_design_feature_records)
-        .chain(transferred_native_sketch_entity_records.intersection(&structurally_owned_records))
-        .chain(
-            transferred_native_sketch_constraint_records.intersection(&structurally_owned_records),
-        )
-        .chain(transferred_constraint_range_records.intersection(&structurally_owned_records))
-        .cloned()
-        .collect::<HashSet<_>>();
+    let transferred_formula_design_records = ctx.collect_string_set(
+        formula_transfer
+            .consumed_object_records
+            .intersection(&structurally_owned_records)
+            .map(String::as_str),
+        "catia_transferred_formula_records",
+    )?;
+    let transferred_principal_plane_records = ctx.collect_string_set(
+        design_feature_transfer
+            .principal_plane_records
+            .intersection(&structurally_owned_records)
+            .map(String::as_str),
+        "catia_transferred_principal_planes",
+    )?;
+    let transferred_design_feature_records = ctx.collect_string_set(
+        design_feature_transfer
+            .consumed_records()
+            .filter(|record| structurally_owned_records.contains(*record))
+            .map(String::as_str),
+        "catia_transferred_design_features",
+    )?;
+    let transferred_design_records = ctx.collect_string_set(
+        transferred_formula_design_records
+            .union(&transferred_design_feature_records)
+            .chain(
+                transferred_native_sketch_entity_records.intersection(&structurally_owned_records),
+            )
+            .chain(
+                transferred_native_sketch_constraint_records
+                    .intersection(&structurally_owned_records),
+            )
+            .chain(transferred_constraint_range_records.intersection(&structurally_owned_records))
+            .map(String::as_str),
+        "catia_transferred_design_records",
+    )?;
     let unresolved_object_record_count = modeling_object_records
         .difference(&transferred_design_records)
         .count();
     let unresolved_design_object_count = native
         .design_objects
         .iter()
-        .filter(|object| {
-            modeling_graph_scope
-                .as_ref()
-                .is_none_or(|scope| scope.contains(object.parent.as_str()))
-        })
+        .filter(|object| modeling_graph_scope.contains(object.parent.as_str()))
         .filter(|object| {
             object
                 .fields
@@ -1742,11 +1911,12 @@ fn finish_decode(
                 .any(|field| !transferred_design_records.contains(field))
         })
         .count();
-    let value_field_count = native
-        .value_blocks
-        .iter()
-        .map(|block| block.fields().len())
-        .sum();
+    let mut value_field_count = 0usize;
+    for block in &native.value_blocks {
+        value_field_count = value_field_count
+            .checked_add(crate::value_block::tokenize_charged(ctx, &block.payload)?.len())
+            .ok_or_else(|| ctx.refuse_codec_limit("catia_value_field_count", u64::MAX, u64::MAX))?;
+    }
     let value_selection_count = native
         .value_blocks
         .iter()
@@ -1769,23 +1939,29 @@ fn finish_decode(
         .iter()
         .filter(|entity| {
             matches!(
-                &entity.geometry,
-                cadmpeg_ir::sketches::SketchGeometry::Native { .. }
+                entity.geometry.definition(),
+                cadmpeg_ir::sketches::SketchGeometryDefinition::Native { .. }
             )
         })
         .count();
-    let native_operation_feature_ids = ir
-        .model
-        .features
-        .iter()
-        .filter(|feature| {
-            feature
-                .source_tag
-                .as_deref()
-                .is_some_and(design_feature::is_admitted_native_operation_class)
-        })
-        .map(|feature| feature.id.clone())
-        .collect::<HashSet<_>>();
+    let mut native_operation_feature_ids = HashSet::new();
+    for feature in ir.model.features.iter().filter(|feature| {
+        feature
+            .source_tag
+            .as_deref()
+            .is_some_and(|name| design_feature::NativeOperationClass::try_from(name).is_ok())
+    }) {
+        if !native_operation_feature_ids.contains(&feature.id) {
+            let id = feature
+                .id
+                .try_clone_for_decode(ctx, "catia_native_operation_feature_id")?;
+            ctx.insert_hash_set(
+                &mut native_operation_feature_ids,
+                id,
+                "catia_native_operation_feature_ids",
+            )?;
+        }
+    }
     let transferred_native_operation_parameter_count = ir
         .model
         .parameters
@@ -1797,14 +1973,14 @@ fn finish_decode(
                 .is_some_and(|owner| native_operation_feature_ids.contains(owner))
         })
         .count();
-    report.coverage.extend([
+    for (key, count) in [
         (
             crate::coverage::DECODED_APPEARANCE_PACKET_COUNT,
-            appearance_transfer.decoded_packets,
+            appearance_transfer.decoded_packets(),
         ),
         (
             crate::coverage::UNRESOLVED_APPEARANCE_PACKET_COUNT,
-            appearance_transfer.unresolved_packets,
+            appearance_transfer.unresolved_packets(),
         ),
         (
             crate::coverage::TRANSFERRED_APPEARANCE_ASSET_COUNT,
@@ -2213,9 +2389,7 @@ fn finish_decode(
         (crate::coverage::DECODED_OBJECT_RECORD_COUNT, object_record_count),
         (
             crate::coverage::MODELING_OBJECT_GRAPH_COUNT,
-            modeling_graph_scope
-                .as_ref()
-                .map_or(native.object_graphs.len(), HashSet::len),
+            modeling_graph_scope.graph_count(native.object_graphs.len()),
         ),
         (
             crate::coverage::MODELING_OBJECT_RECORD_COUNT,
@@ -3200,7 +3374,9 @@ fn finish_decode(
         (crate::coverage::TRANSFERRED_FEATURE_COUNT, ir.model.features.len()),
         (
             crate::coverage::TRANSFERRED_FEATURE_PARENT_COUNT,
-            design_feature_transfer.feature_parent_count(&ir, &native),
+            design_feature_transfer.feature_ids.values().filter(|feature_id| {
+                ir.model.feature_regeneration_parent(feature_id).is_some()
+            }).count(),
         ),
         (
             crate::coverage::TRANSFERRED_PARAMETER_COUNT,
@@ -3275,24 +3451,32 @@ fn finish_decode(
             crate::coverage::TRANSFERRED_CONFIGURATION_COUNT,
             ir.model.configurations.len(),
         ),
-    ]);
+    ] {
+        report.coverage.record(ctx, key, count)?;
+    }
     if transferred_pmi_dimension_count != 0 {
         report.coverage.record(
+            ctx,
             crate::coverage::TRANSFERRED_PMI_DIMENSION_COUNT,
             transferred_pmi_dimension_count,
-        );
+        )?;
     }
     let untransferred_line_profile_count = native
         .consolidated_line_profiles
         .len()
-        .saturating_sub(transferred_line_profile_count);
+        .checked_sub(transferred_line_profile_count)
+        .map_or(0, |count| count);
     if untransferred_line_profile_count > 0 {
-        report.losses.push(
-            CatiaLossCode::GeometryLineProfileNotTransferred.note(format!(
+        resource::push_loss(
+            ctx,
+            &mut report.losses,
+            CatiaLossCode::GeometryLineProfileNotTransferred,
+            format_args!(
                 "{untransferred_line_profile_count} consolidated line-profile record(s) retain \
              exact line geometry but were not transferred by the active geometry route."
-            )),
-        );
+            ),
+            "catia_report_line_profile_loss",
+        )?;
     }
     if !native.zero_entity_support_runs.is_empty()
         || !native.zero_entity_edge_strides.is_empty()
@@ -3394,8 +3578,11 @@ fn finish_decode(
             .zero_entity_ownership_roots
             .first()
             .map_or(0, |root| root.face_slots.len());
-        report.losses.push(
-            CatiaLossCode::TopologyZeroEntitySupportsRetained.note(format!(
+        resource::push_loss(
+            ctx,
+            &mut report.losses,
+            CatiaLossCode::TopologyZeroEntitySupportsRetained,
+            format_args!(
                 "{} zero-entity surface-support run(s) retain {support_count} face-local \
                  occurrence(s), including {support_pcurve_count} complete parameter-space \
                  curve(s), {support_model_curve_count} with exact model-space carriers, \
@@ -3426,23 +3613,32 @@ fn finish_decode(
                 native.zero_entity_endpoint_pair_candidates.len(),
                 native.zero_entity_endpoint_locus_candidates.len(),
                 native.zero_entity_oriented_use_pairs.len(),
-            )),
-        );
+            ),
+            "catia_report_zero_entity_loss",
+        )?;
     }
     if modeling_scope_is_unresolved {
-        report
-            .losses
-            .push(CatiaLossCode::HistoryModelingScopeUnresolved.note(format!(
+        resource::push_loss(
+            ctx,
+            &mut report.losses,
+            CatiaLossCode::HistoryModelingScopeUnresolved,
+            format_args!(
                 "CATIA outer declarations do not unambiguously select one object graph physically \
              contained by the declared CATPrtCont stream; \
              {retained_unscoped_object_graph_count} retained object graph(s) with \
              {retained_unscoped_object_record_count} field record(s) remain outside the \
              modeling scope, and feature, formula, sketch, constraint, configuration, and \
              history authorship remains unresolved."
-            )));
+            ),
+            "catia_report_modeling_scope_loss",
+        )?;
     }
     if unresolved_object_record_count != 0 {
-        report.losses.push(CatiaLossCode::HistoryObjectRecordsUnresolved.note(format!(
+        resource::push_loss(
+            ctx,
+            &mut report.losses,
+            CatiaLossCode::HistoryObjectRecordsUnresolved,
+            format_args!(
             "CATIA native data retains {} design object(s), {design_field_count} grouped field(s), {object_record_count} object-graph field record(s), including {unassigned_owner_slot_count} with an explicit literal unassigned owner slot, {object_record_reference_count} payload reference(s), comprising {resolved_object_record_reference_count} resolved, {null_object_record_reference_count} terminal-null, and {unresolved_object_record_reference_count} unresolved identities, {entity_value_field_count} entity-value field(s), {entity_value_schema_selection_count} entity-value schema selection(s), {numeric_entity_value_pair_count} complete numeric entity-value pair(s), {reference_signature_count} complete reference-signature packet(s) containing {reference_signature_token_count} descriptor token(s) and selecting {resolved_reference_signature_entity_count} resolved, {null_reference_signature_entity_count} terminal-null, and {unresolved_reference_signature_entity_count} unresolved entity incidences, including {classified_reference_signature_entity_count} with a resolved class, {numeric_entity_value_packet_count} embedded numeric entity-value packet(s), {compact_entity_value_packet_count} compact value packet(s), {layout_entity_value_packet_count} layout-bearing value packet(s), {e9_scalar_entity_value_packet_count} E9 scalar packet(s), {escaped_word_entity_suffix_count} escaped-word entity suffix(es), {token_8149_entity_suffix_count} standalone 8149 suffix token(s), {fixed_fe_f6_entity_suffix_count} fixed FE-F6 suffix frame(s), {paged_atom_state_01_entity_suffix_count} paged-atom state-01 suffix(es), {scalar_entity_suffix_value_count} scalar entity-suffix value(s), {unset_entity_suffix_value_count} unset entity-suffix value(s), {atom_entity_suffix_value_count} atom entity-suffix value(s), {separator_entity_suffix_value_count} separator entity-suffix value(s), {schema_selected_atom_entity_suffix_value_count} schema-selected atom value(s), {schema_selected_evaluation_entity_suffix_value_count} schema-selected evaluation(s), {schema_selected_control_entity_suffix_value_count} schema-selected control value(s), {schema_selected_separator_entity_suffix_value_count} schema-selected separator(s), {schema_selected_schema_entity_suffix_value_count} schema-selected schema value(s), {schema_selected_entity_suffix_value_count} suffix value(s) with resolved schema selectors, {wide_prefix_entity_suffix_value_count} suffix value(s) with multi-byte prefix atoms, {control_entity_suffix_value_count} direct control entity-suffix value(s), comprising {control_e8_entity_suffix_value_count} E8 and {control_e9_entity_suffix_value_count} E9 state(s), {relation_expression_count} complete relation expression(s), {relation_program_instance_count} complete compound relation-program instance(s), comprising {lead12_relation_program_instance_count} lead-12 and {lead54_relation_program_instance_count} lead-54 frames, {resolved_relation_program_instance_count} resolved and {unresolved_relation_program_instance_count} unresolved program identities, with {resolved_relation_program_repeated_reference_count} resolved and {unresolved_relation_program_repeated_reference_count} unresolved repeated-reference identities, {resolved_lead12_relation_program_context_entity_count} resolved and {unresolved_lead12_relation_program_context_entity_count} unresolved lead-12 context identities, and {resolved_lead54_relation_program_trailing_entity_count} resolved and {unresolved_lead54_relation_program_trailing_entity_count} unresolved lead-54 trailing identities; {relation_expression_instance_count} select relation-expression programs, {other_relation_program_instance_count} select other resolved entities, and those relation-expression instances select {instanced_relation_expression_count} distinct expression entity or entities and retain {relation_program_parameter_dependency_count} parameter symbol occurrence(s), comprising {resolved_relation_program_parameter_dependency_count} uniquely resolved and {unresolved_relation_program_parameter_dependency_count} unresolved, including {ambiguous_relation_program_parameter_dependency_count} with multiple candidates; {typed_relation_program_instance_count} typed program instance(s) comprise {resolved_relation_program_input_instance_count} with complete ordered inputs and {unresolved_relation_program_input_instance_count} with incomplete input binding, retaining {resolved_relation_program_input_count} resolved input occurrence(s) selecting {distinct_relation_program_input_entity_count} distinct entity identity or identities; {schema_configuration_record_count} complete schema-configuration Configuration record(s) retain {resolved_schema_configuration_reference_count} resolved, {null_schema_configuration_reference_count} terminal-null, and {unresolved_schema_configuration_reference_count} unresolved reference identities; {schema_configuration_row_link_count} complete configrow link(s) retain {resolved_schema_configuration_row_class_count} resolved and {null_schema_configuration_row_class_count} terminal-null class identities plus {resolved_schema_configuration_row_successor_count} resolved and {null_schema_configuration_row_successor_count} terminal-null successor identities, with {ordered_schema_configuration_row_link_count} row link(s) in {complete_schema_configuration_row_chain_count} complete chain(s), comprising {resolved_schema_configuration_row_chain_terminal_count} resolved, {null_schema_configuration_row_chain_terminal_count} terminal-null, and {unresolved_schema_configuration_row_chain_terminal_count} unresolved terminals; {schema_configuration_row_source_interval_chain_count} source-ordered chain(s) retain {schema_configuration_row_intervening_entity_count} entity or entities from the open intervals between rows and successors, including {schema_configuration_row_intervening_schema_configuration_count} complete schema-configuration Configuration record(s), while {unordered_schema_configuration_row_link_count} row link(s) have unresolved order; {parameter_value_count} complete named parameter value(s), {range_interval_count} complete source-schema Range interval(s), comprising {range_interval_no_slot_count} no-slot production(s), {range_interval_nominal_count} finite nominal(s), {range_interval_finite_slot_count} finite deviation slot(s), and {range_interval_unset_slot_count} unset deviation slot(s), {constraint_range_count} complete constraint-range value(s), comprising {dimension_constraint_range_count} dimension and {complex_constraint_range_count} complex-constraint range(s), with {evaluated_constraint_range_count} finite evaluation(s) and {unset_constraint_range_count} unset evaluation(s), {definition_value_count} definition-bound suffix value(s), including {owned_definition_value_count} assigned to design objects and {unowned_definition_value_count} without a resolved owner, {definition_chain_evaluation_count} two-definition chain evaluation(s), comprising {evaluated_definition_chain_count} finite and {unset_definition_chain_count} unset value(s), with {structurally_owned_definition_chain_evaluation_count} structurally owned and {unowned_definition_chain_evaluation_count} without a resolved structural owner; {unassigned_definition_chain_value_count} chain value(s), including {unassigned_definition_chain_evaluation_count} evaluation(s), occupy explicit literal unassigned owner slots; {formula_relation_count} complete formula relation(s), comprising {resolved_formula_output_count} resolved, {null_formula_output_count} terminal-null, and {unresolved_formula_output_count} unresolved output identities, {formula_parameter_dependency_count} formula parameter symbol occurrence(s), comprising {resolved_formula_parameter_dependency_count} uniquely resolved and {unresolved_formula_parameter_dependency_count} unresolved, including {ambiguous_formula_parameter_dependency_count} with multiple candidates, {repeated_reference_suffix_count} repeated-reference suffix(es), {repeated_reference_schema_selection_count} repeated-reference schema selection(s), {definition_schema_selection_count} definition-schema selection(s), {design_object_owner_link_count} structural owner link(s), and {design_object_relation_count} exact outbound design-field relation occurrence(s), including {design_same_object_relation_count} within one design object, {design_reflexive_field_relation_count} reflexive field occurrence(s), and {design_unowned_field_relation_count} to fields without owner groups; {classified_design_object_count} design object(s) have class evidence and {unresolved_design_owner_count} owner identity or identities remain unresolved; {} typed parameter(s), including {} selected through complete relation-program inputs, {} exact formula, expression, or parameter field record(s), and {} exact principal-plane field record(s) transferred, while {unresolved_object_record_count} modeling-scope field record(s) across {unresolved_design_object_count} design object(s), neutral features with unresolved semantics, other parameters, sketch placement, geometry, profiles, constraints, configurations, and re-derivable history remain unresolved; {} sketch identity record(s) transfer.",
             native.design_objects.len(),
             formula_transfer.typed_parameter_count,
@@ -3450,49 +3646,99 @@ fn finish_decode(
             transferred_formula_design_records.len(),
             transferred_principal_plane_records.len(),
             ir.model.sketches.len(),
-        )));
+        ),
+            "catia_report_history_objects_loss",
+        )?;
     }
     if !native.legacy_entity_runs.is_empty() {
-        report.losses.push(CatiaLossCode::HistoryLegacyRunsUnresolved.note(format!(
+        resource::push_loss(
+            ctx,
+            &mut report.losses,
+            CatiaLossCode::HistoryLegacyRunsUnresolved,
+            format_args!(
             "CATIA native data retains {} legacy design run(s) with {legacy_schema_program_count} complete compact schema program(s), containing {legacy_schema_identifier_count} complete identifier packet(s), and {legacy_entity_identity_count} source-ordered entity identity marker(s), comprising {legacy_identity_lead_81_count} lead-81, {legacy_identity_lead_82_count} lead-82, {legacy_identity_lead_e5_count} lead-E5, and {legacy_identity_lead_fd_count} lead-FD record(s), {legacy_role_selector_count} complete schema role selector(s), including {legacy_selected_role_count} unresolved schema-selected role name(s) and {legacy_role_field_binding_count} immediate schema-field binding(s), {legacy_schema_field_count} complete role-bounded schema field(s), {legacy_text_field_count} complete schema text field(s), including {legacy_e3_role_tail_text_field_count} with E3 paged-role tails and {legacy_role_text_field_count} role-bound text field(s), {legacy_relation_count} typed expression/signature pair(s), including {legacy_parameter_relation_count} with exact parameter identities, {legacy_synchronous_state_count} relation update-state field(s), comprising {legacy_synchronous_relation_count} synchronous and {legacy_asynchronous_relation_count} asynchronous state(s), {legacy_type_descriptor_count} type descriptor(s), including {legacy_literal_type_descriptor_count} literal name(s), {legacy_scalar_value_count} typed scalar evaluation(s), including {legacy_named_scalar_value_count} named scalar(s), {legacy_string_value_count} string value(s), including {legacy_named_string_value_count} named string(s), and {legacy_integer_value_count} signed integer value(s), including {legacy_named_integer_value_count} named integer(s); {} uniquely named, literal-typed parameter(s), including {} resolved through descriptor selectors, and {} local-input legacy formula(s) transferred, while remaining selector semantics, unbound relation ownership and parameters, unresolved selector types, feature semantics, and feature history remain unresolved.",
             native.legacy_entity_runs.len(),
             formula_transfer.legacy_parameter_count,
             formula_transfer.legacy_selector_parameter_count,
             formula_transfer.legacy_formula_count,
-        )));
+        ),
+            "catia_report_legacy_loss",
+        )?;
     }
     if unresolved_dimension_quantity_count != 0 {
-        report.losses.push(
-            CatiaLossCode::AttributesDimensionQuantityUnresolved.note(format!(
+        resource::push_loss(
+            ctx,
+            &mut report.losses,
+            CatiaLossCode::AttributesDimensionQuantityUnresolved,
+            format_args!(
                 "{unresolved_dimension_quantity_count} finite `Range`/`CstAttr_Dimension` \
                  scalar production(s) remain native because the admitted selectors, suffix \
                  framing, interval, and owner incidences do not assign a physical quantity."
-            )),
-        );
+            ),
+            "catia_report_dimension_loss",
+        )?;
     }
     if !native.value_blocks.is_empty() {
-        report.losses.push(CatiaLossCode::AttributesVisualizationUnbound.note(format!(
-            "CATIA native data retains {} visualization value block(s), {value_field_count} encoded field(s), and {value_selection_count} schema-selected presentation value(s); {} display-color packet(s) remain without a proven typed face or body target ({} packet(s) transferred), while other visualization fields remain native.",
-            native.value_blocks.len(),
-            appearance_transfer.unresolved_packets,
-            appearance_transfer.transferred_packets,
-        )));
+        resource::push_loss(
+            ctx,
+            &mut report.losses,
+            CatiaLossCode::AttributesVisualizationUnbound,
+            format_args!(
+                "CATIA native data retains {} visualization value block(s), {value_field_count} encoded field(s), and {value_selection_count} schema-selected presentation value(s); {} display-color packet(s) remain without a proven typed face or body target ({} packet(s) transferred), while other visualization fields remain native.",
+                native.value_blocks.len(),
+                appearance_transfer.unresolved_packets(),
+                appearance_transfer.transferred_packets(),
+            ),
+            "catia_report_visualization_loss",
+        )?;
     }
-    native.store_owned(ir.native.namespace_mut("catia"))?;
-    ctx.admit_entities(
-        ir.model.entity_count() as u64,
-        &mut admitted_entities,
-        "admit CATIA entities",
-    )?;
-    decode_result(scan, matched, ir, report, annotations, unknowns)
+    native.store_owned(ctx, ir.native.namespace_mut("catia"))?;
+    decode_result(ctx, scan, matched, ir, report, annotations, unknowns)
+}
+
+/// Modeling scope of a part's decoded object graphs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ModelingGraphScope {
+    /// No outer container declarations: every object graph is in modeling scope.
+    Unscoped,
+    /// Outer declarations exist, but no single part graph is resolvable.
+    Unresolved,
+    /// The uniquely resolved part object graph.
+    Scoped(String),
+}
+
+impl ModelingGraphScope {
+    /// Reports whether an object graph identity is inside the modeling scope.
+    pub(crate) fn contains(&self, graph: &str) -> bool {
+        match self {
+            Self::Unscoped => true,
+            Self::Unresolved => false,
+            Self::Scoped(part) => part == graph,
+        }
+    }
+
+    /// Reports whether no outer container declaration bounds the modeling scope.
+    pub(crate) fn is_unscoped(&self) -> bool {
+        matches!(self, Self::Unscoped)
+    }
+
+    /// Returns the number of scoped graphs among `decoded` decoded graphs.
+    fn graph_count(&self, decoded: usize) -> usize {
+        match self {
+            Self::Unscoped => decoded,
+            Self::Unresolved => 0,
+            Self::Scoped(_) => 1,
+        }
+    }
 }
 
 fn modeling_graph_scope(
+    ctx: &DecodeContext<'_>,
     has_outer_declarations: bool,
     graphs: &[CatiaObjectGraph],
-) -> Option<HashSet<String>> {
+) -> Result<ModelingGraphScope, CodecError> {
     if !has_outer_declarations {
-        return None;
+        return Ok(ModelingGraphScope::Unscoped);
     }
     let mut part_graphs = graphs.iter().filter(|graph| {
         graph
@@ -3500,10 +3746,12 @@ fn modeling_graph_scope(
             .as_ref()
             .is_some_and(|container| container.class_name == "CATPrtCont")
     });
-    match (part_graphs.next(), part_graphs.next()) {
-        (Some(graph), None) => Some(HashSet::from([graph.id.clone()])),
-        _ => Some(HashSet::new()),
-    }
+    Ok(match (part_graphs.next(), part_graphs.next()) {
+        (Some(graph), None) => ModelingGraphScope::Scoped(
+            ctx.copy_retained_text(&graph.id, "catia_modeling_scope_graph")?,
+        ),
+        _ => ModelingGraphScope::Unresolved,
+    })
 }
 
 /// The single site that finishes a decode and charges dialect admission loss.
@@ -3512,6 +3760,7 @@ fn modeling_graph_scope(
 /// the sealed wrapper stamps it onto the report. This function merges the
 /// container-level notes and charges dialect loss from that same match.
 fn decode_result(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     matched: &DialectMatch,
     mut ir: CadIr,
@@ -3519,11 +3768,13 @@ fn decode_result(
     annotations: Annotations,
     unknowns: Vec<UnknownRecord>,
 ) -> Result<Decoded, CodecError> {
-    ir.source = Some(crate::assemble::source_meta(scan, matched));
-    body.notes = crate::container::notes(scan);
-    body.losses.extend(crate::dialect::dialect_loss(matched));
+    ir.source = Some(crate::assemble::source_meta(ctx, scan, matched)?);
+    body.notes = crate::container::notes(ctx, scan)?;
+    if let Some(loss) = crate::dialect::dialect_loss(ctx, matched)? {
+        ctx.push_vec(&mut body.losses, loss, "catia_decode_dialect_loss")?;
+    }
     let mut source_fidelity = SourceFidelity::with_annotations(annotations);
-    source_fidelity.attach_native_unknown_records(&mut ir, "catia", unknowns)?;
+    source_fidelity.attach_native_unknown_records(&mut ir, "catia", unknowns, ctx)?;
     Ok(Decoded {
         ir,
         body,

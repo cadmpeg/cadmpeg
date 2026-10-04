@@ -52,7 +52,7 @@
 //! coedge, edge, and vertex topology. Each inflated Parasolid stream is also
 //! retained as an unknown record.
 //!
-//! Read [`cadmpeg_ir::report::DecodeReport`] before using the model as a complete
+//! Read [`cadmpeg_ir::report::decode::DecodeReport`] before using the model as a complete
 //! representation. Deltas streams pair with the preceding equal-schema partition
 //! in validated `UG_PART` segment order and apply
 //! supported non-topology full records and exact-key tombstones using the last
@@ -74,29 +74,41 @@
 //! and attachment tier (record families, feature semantics, and IR writing) is
 //! crate-internal and reached only through the decode entry point.
 
+macro_rules! propagate_resource {
+    ($result:expr) => {
+        match $result {
+            Ok(value) => value,
+            Err(error) => return Some(Err(error)),
+        }
+    };
+}
+
 mod canonical_uuid;
-pub(crate) mod container;
-pub(crate) mod decode;
-pub(crate) mod deltas;
+mod container;
+mod decode;
+mod deltas;
 mod dialect;
-pub(crate) mod evaluation;
+mod evaluation;
 mod framing;
-pub(crate) mod geometry;
-pub(crate) mod intersection;
+mod geometry;
+mod immutable_text;
+mod inspect;
+mod intersection;
+mod iter_wire;
 mod jt;
 mod jt_topology;
 /// Byte-offset constants generated from `docs/layouts/nx.toml`.
-pub(crate) mod layout;
-#[allow(dead_code)] // Loss catalog is consumed by tests and the writer.
-pub(crate) mod loss;
-pub(crate) mod native;
-pub(crate) mod nurbs;
-pub(crate) mod om;
-pub(crate) mod om_tokens;
-pub(crate) mod parasolid;
+mod layout;
+mod loss;
+mod native;
+mod nurbs;
+mod om;
+mod om_tokens;
+mod parasolid;
 mod payload_text;
 mod printable_string;
-pub(crate) mod topology;
+mod scan_notes;
+mod topology;
 mod vec3_at;
 
 #[doc(hidden)]
@@ -107,13 +119,8 @@ pub use evaluation::{
     saved_body_census_evidence, BodyCensusEvaluation, FeatureBoundary, UnsupportedBodyCensusReason,
 };
 
-use crate::framing::node_kind::NodeKind;
-use cadmpeg_core::container::{ContainerRole, EntryCompression};
-
-use std::collections::BTreeMap;
-
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::{CodecError, ContainerEntry};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::ContainerSummary;
 
@@ -124,11 +131,55 @@ pub struct NxCodec;
 impl CodecBackend for NxCodec {
     const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
 
-    fn detect_impl(&self, prefix: &[u8]) -> Confidence {
-        if container::looks_like_nx(prefix) || container::looks_like_legacy_nx(prefix) {
-            Confidence::High
+    fn validate_native(
+        ctx: &DecodeContext<'_>,
+        ir: &cadmpeg_ir::CadIr,
+    ) -> Result<Vec<cadmpeg_ir::report::check::Finding>, CodecError> {
+        let Some(namespace) = ir.native.namespace("nx") else {
+            return Ok(Vec::new());
+        };
+        let admitted = ctx.with_scoped_storage("load NX validation records", || {
+            native::display_jt::admission::DisplayJtGraph::from_namespace_with_context(
+                ctx, namespace,
+            )
+            .and_then(|_| {
+                native::structure::occurrences::FastLoadOccurrences::from_namespace_with_context(
+                    ctx, namespace,
+                )
+            })
+        });
+        Ok(match admitted {
+            Ok(_) => Vec::new(),
+            Err(error) => {
+                let message = error.to_string();
+                let codec_error = CodecError::from(error);
+                if matches!(codec_error, CodecError::ResourceLimit(_)) {
+                    return Err(codec_error);
+                }
+                vec![cadmpeg_ir::report::check::Finding {
+                    check: cadmpeg_ir::report::check::Check::NativeLinks,
+                    severity: cadmpeg_ir::report::Severity::Error,
+                    message,
+                    entity: None,
+                }]
+            }
+        })
+    }
+
+    fn detect_impl(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        prefix: cadmpeg_core::decode::View<'_>,
+    ) -> Result<Confidence, cadmpeg_core::CodecError> {
+        let prefix = prefix.window();
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(prefix.len()),
+            "detect input",
+        )?;
+        if container::looks_like_nx(prefix) || container::looks_like_legacy_nx(ctx, prefix)? {
+            Ok(Confidence::High)
         } else {
-            Confidence::No
+            Ok(Confidence::No)
         }
     }
 
@@ -138,7 +189,7 @@ impl CodecBackend for NxCodec {
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let scan = decode::scan(ctx, root)?;
-        Ok(summarize(&scan))
+        inspect::summarize(ctx, &scan)
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
@@ -146,170 +197,9 @@ impl CodecBackend for NxCodec {
     }
 }
 
-/// Build the container summary: one entry per catalogued directory stream, plus
-/// one per embedded Parasolid stream, and the shared container notes.
-fn summarize(scan: &decode::Scan) -> ContainerSummary {
-    let mut entries = Vec::new();
-    let semantic_streams = native::topology_streams(scan);
-
-    for entry in &scan.container.entries {
-        let mut attributes = BTreeMap::new();
-        attributes.insert("region".to_string(), entry.region.label().to_string());
-        let (compressed, uncompressed) = match entry.file_span {
-            Some((off, size)) => {
-                attributes.insert("file_offset".to_string(), off.to_string());
-                (size, size)
-            }
-            None => {
-                attributes.insert("kind".to_string(), "directory".to_string());
-                (0, 0)
-            }
-        };
-        entries.push(ContainerEntry {
-            name: entry.name.clone(),
-            role: entry.content().role(),
-            compression: EntryCompression::None,
-            compressed_size: compressed,
-            uncompressed_size: uncompressed,
-            attributes,
-        });
-    }
-
-    for (si, stream) in scan.streams.iter().enumerate() {
-        let mut attributes = BTreeMap::new();
-        attributes.insert("file_offset".to_string(), stream.file_offset.to_string());
-        attributes.insert("kind".to_string(), stream.kind().label().to_string());
-        if let Some(schema) = stream.schema() {
-            attributes.insert("schema".to_string(), schema.to_owned());
-        }
-        if stream.kind().is_parasolid() {
-            let graph = topology::Graph::parse(&stream.inflated);
-            for (kind, name) in [
-                (NodeKind::Body, "body"),
-                (NodeKind::Shell, "shell"),
-                (NodeKind::Face, "face"),
-                (NodeKind::Loop, "loop"),
-                (NodeKind::Edge, "edge"),
-                (NodeKind::Fin, "fin"),
-                (NodeKind::Vertex, "vertex"),
-                (NodeKind::Region, "region"),
-            ] {
-                attributes.insert(
-                    format!("records.{name}"),
-                    graph.of_kind(kind).count().to_string(),
-                );
-            }
-            if stream.kind() == parasolid::StreamKind::Partition {
-                let graph = topology::Graph::parse(&semantic_streams[si]);
-                for (kind, name) in [
-                    (NodeKind::Body, "body"),
-                    (NodeKind::Shell, "shell"),
-                    (NodeKind::Face, "face"),
-                    (NodeKind::Loop, "loop"),
-                    (NodeKind::Edge, "edge"),
-                    (NodeKind::Fin, "fin"),
-                    (NodeKind::Vertex, "vertex"),
-                    (NodeKind::Region, "region"),
-                ] {
-                    attributes.insert(
-                        format!("records.live.{name}"),
-                        graph.of_kind(kind).count().to_string(),
-                    );
-                }
-            } else if stream.kind() == parasolid::StreamKind::Deltas {
-                let census = deltas::walk(&stream.inflated);
-                if census.transmit_header.is_some() {
-                    attributes.insert(
-                        "records.delta.transmit_headers".to_string(),
-                        "1".to_string(),
-                    );
-                }
-                if !census.body_revisions.is_empty() {
-                    attributes.insert(
-                        "records.delta.body_revisions".to_string(),
-                        census.body_revisions.len().to_string(),
-                    );
-                }
-                if !census.term_use_numeric_tails.is_empty() {
-                    attributes.insert(
-                        "records.delta.term_use_numeric_tails".to_string(),
-                        census.term_use_numeric_tails.len().to_string(),
-                    );
-                }
-                if !census.tagged_reference_lanes.is_empty() {
-                    attributes.insert(
-                        "records.delta.tagged_reference_lanes".to_string(),
-                        census.tagged_reference_lanes.len().to_string(),
-                    );
-                }
-                if !census.reference_type_maps.is_empty() {
-                    attributes.insert(
-                        "records.delta.reference_type_maps".to_string(),
-                        census.reference_type_maps.len().to_string(),
-                    );
-                }
-                if !census.reference_state_packets.is_empty() {
-                    attributes.insert(
-                        "records.delta.reference_state_packets".to_string(),
-                        census.reference_state_packets.len().to_string(),
-                    );
-                }
-                if !census.reference_marker_packets.is_empty() {
-                    attributes.insert(
-                        "records.delta.reference_marker_packets".to_string(),
-                        census.reference_marker_packets.len().to_string(),
-                    );
-                }
-                if !census.inline_schema_declarations.is_empty() {
-                    attributes.insert(
-                        "records.delta.inline_schema_declarations".to_string(),
-                        census.inline_schema_declarations.len().to_string(),
-                    );
-                }
-                for (family, count) in census.full_counts() {
-                    attributes.insert(
-                        format!("records.delta.full.{}", family.to_ascii_lowercase()),
-                        count.to_string(),
-                    );
-                }
-                for (family, count) in census.tombstone_counts() {
-                    attributes.insert(
-                        format!("records.delta.tombstone.{}", family.to_ascii_lowercase()),
-                        count.to_string(),
-                    );
-                }
-            }
-        }
-        let (compression, compressed_size) = match scan.container.layout {
-            container::ContainerLayout::Modern { .. } => (EntryCompression::Zlib, 0),
-            container::ContainerLayout::LegacyCfb { .. } => {
-                (EntryCompression::Stored, stream.consumed)
-            }
-        };
-        entries.push(ContainerEntry {
-            name: format!("parasolid#{si}"),
-            role: if stream.kind().is_parasolid() {
-                ContainerRole::ParasolidStream
-            } else {
-                ContainerRole::Preview
-            },
-            compression,
-            compressed_size,
-            uncompressed_size: stream.inflated.len() as u64,
-            attributes,
-        });
-    }
-
-    let (classification, notes) = decode::summarize(scan);
-    let container_kind = cadmpeg_ir::ContainerKind::parse(classification.container_kind())
-        .expect("nx container kind is a closed label");
-    let (dialects, dialect_losses) = classification.into_report_parts();
-    ContainerSummary::classified(dialects, container_kind, entries, dialect_losses, notes)
-}
-
 #[cfg(test)]
 mod golden_tests;
 #[cfg(test)]
 mod integration_tests;
 #[cfg(test)]
-pub(crate) mod test_support;
+mod test_support;

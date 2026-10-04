@@ -10,6 +10,7 @@ import json
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -84,6 +85,37 @@ assert not classify('#[cfg(all(any(test, feature = "x")))]')
             ["from_le_bytes", "from_be_bytes"],
         )
 
+    def test_strips_cfg_test_fn_whose_signature_holds_an_array_type(self) -> None:
+        text = (
+            "fn prod() { from_le_bytes(); }\n"
+            "#[cfg(test)]\n"
+            "fn helper(sizes: Option<[f64; 3]>) -> u8 {\n"
+            "    from_be_bytes();\n"
+            "    0\n"
+            "}\n"
+            "fn other() { from_le_bytes(); }\n"
+        )
+        stripped, _ = policy.production_source(text)
+        self.assertEqual(
+            policy.FROM_ENDIAN.findall(stripped),
+            ["from_le_bytes", "from_le_bytes"],
+        )
+
+    def test_same_line_item_boundaries_preserve_locations_and_line_counts(self) -> None:
+        text = '#[test] fn fixture() {} fn production() { from_le_bytes(); }\n'
+        code, count = policy.production_source(text)
+        self.assertEqual(len(code), len(text))
+        self.assertEqual(count, 1)
+        self.assertNotIn("fixture", code)
+        self.assertEqual(code.index("from_le_bytes"), text.index("from_le_bytes"))
+        self.assertEqual(policy.production_source('#[test] fn fixture() {}\n')[1], 0)
+
+    def test_incomplete_test_item_is_retained_conservatively(self) -> None:
+        text = '#[test] fn fixture() { from_le_bytes();\n'
+        code, count = policy.production_source(text)
+        self.assertIn("from_le_bytes", code)
+        self.assertEqual(count, 1)
+
     def test_keeps_non_test_cfg(self) -> None:
         text = "#[cfg(feature = \"x\")]\nfn f() { from_le_bytes(); }\n"
         stripped, _ = policy.production_source(text)
@@ -134,6 +166,37 @@ assert not classify('#[cfg(all(any(test, feature = "x")))]')
 
 
 class PatternFilters(unittest.TestCase):
+    def test_lifetimes_and_loop_labels_do_not_hide_code(self) -> None:
+        text = "'outer: loop { from_le_bytes(); break 'outer; }\n"
+        self.assertEqual(policy.mask_rust_non_code(text), text)
+
+    def test_nested_comments_are_one_non_code_span(self) -> None:
+        text = '/* outer /* inner */ from_le_bytes(); */ from_be_bytes();'
+        self.assertEqual(
+            policy.FROM_ENDIAN.findall(policy.mask_rust_non_code(text)),
+            ["from_be_bytes"],
+        )
+
+    def test_raw_string_backslash_does_not_escape_its_end(self) -> None:
+        text = 'let s = r"backslash\\"; from_le_bytes();'
+        self.assertEqual(
+            policy.FROM_ENDIAN.findall(policy.mask_rust_non_code(text)),
+            ["from_le_bytes"],
+        )
+
+    def test_literals_keep_positions_and_do_not_consume_following_code(self) -> None:
+        for literal in [
+            "'a'", "'é'", r"'\u{1f600}'", r"'\x41'", r"'\''", "b'a'",
+            '"from_le_bytes()\\\""', 'r##"from_le_bytes() \\"#"##',
+            'br"from_le_bytes()\\"', 'cr#"from_le_bytes()"#',
+        ]:
+            with self.subTest(literal=literal):
+                text = literal + ';\nfrom_be_bytes();'
+                masked = policy.mask_rust_non_code(text)
+                self.assertEqual(len(masked), len(text))
+                self.assertEqual(masked.count('\n'), text.count('\n'))
+                self.assertEqual(policy.FROM_ENDIAN.findall(masked), ["from_be_bytes"])
+
     def test_test_support_is_not_production_source(self) -> None:
         self.assertFalse(
             policy.is_production_rs(
@@ -159,6 +222,59 @@ class PatternFilters(unittest.TestCase):
     def test_malformed_format_multiline(self) -> None:
         text = 'CodecError::Malformed(format!(\n    "bad {}", x\n))\n'
         self.assertEqual(len(policy.MALFORMED_FORMAT.findall(text)), 1)
+
+    def test_integer_clamp_reports_every_form(self) -> None:
+        source = (
+            "fn production() {\n"
+            "    value.unwrap_or(u8::MAX);\n"
+            "    value.unwrap_or( i16::MIN );\n"
+            "    value.unwrap_or_else(|_| usize::MAX);\n"
+            "    value.unwrap_or_else( |_| u128::MIN );\n"
+            "    value.unwrap_or_else(|| u64::MAX);\n"
+            "}\n"
+        )
+        findings = policy.scan_patterns(policy.ROOT / "source.rs", source)
+        self.assertEqual(
+            [(finding.rule, finding.line) for finding in findings],
+            [("integer_clamp", line) for line in range(2, 7)],
+        )
+
+    def test_integer_clamp_ignores_tests_and_comments(self) -> None:
+        source = (
+            "#[cfg(test)]\n"
+            "mod tests {\n"
+            "    fn test() { value.unwrap_or(u64::MAX); }\n"
+            "}\n"
+            "// value.unwrap_or_else(|_| i64::MIN);\n"
+        )
+        findings = policy.scan_patterns(policy.ROOT / "source.rs", source)
+        self.assertEqual([finding for finding in findings if finding.rule == "integer_clamp"], [])
+
+    def test_loss_note_qualified_returns_are_types(self) -> None:
+        for name in ["LossNote", "cadmpeg_ir::LossNote", "::cadmpeg_ir::report::LossNote",
+                     "r#type::LossNote", "données::LossNote", "r#LossNote"]:
+            for gap in [" ", "\n    ", " /* return type */ "]:
+                with self.subTest(name=name, gap=gap):
+                    text = f"fn make() ->{gap}{name}\n{{ code.note(message) }}"
+                    self.assertEqual(policy.scan_patterns(policy.ROOT / "source.rs", text), [])
+
+    def test_loss_note_type_occurrence_does_not_hide_inline_literals(self) -> None:
+        for text, expected in [
+            ("fn make() -> LossNote { LossNote { message } }", [1]),
+            ("fn make() -> cadmpeg_ir::LossNote { cadmpeg_ir::LossNote { message } }", [1]),
+            ("struct LossNote {} fn make() { LossNote { message }; LossNote { message }; }", [1, 1]),
+            ("impl LossNote { fn make() -> Self { LossNote { message } } }", [1]),
+            ("impl Trait for cadmpeg_ir::LossNote { fn make() { LossNote { message }; } }", [1]),
+            ("struct r#LossNote {} impl r#LossNote {} impl Trait for r#LossNote {}", []),
+            ("fn make() ->\n LossNote {\n LossNote { message }\n}", [3]),
+        ]:
+            with self.subTest(text=text):
+                hits = policy.scan_patterns(policy.ROOT / "source.rs", text)
+                self.assertEqual([(hit.rule, hit.line) for hit in hits], [("loss_note_literal", line) for line in expected])
+
+    def test_loss_note_rule_matches_the_complete_type_name(self) -> None:
+        text = "fn make() { OtherLossNote { message }; LossNoteSuffix { message }; }"
+        self.assertEqual(policy.scan_patterns(policy.ROOT / "source.rs", text), [])
 
     def test_production_filter_rejects_test_paths(self) -> None:
         self.assertFalse(policy.is_production_rs(Path("crates/c/src/foo_test.rs")))
@@ -340,19 +456,25 @@ class PlacementRules(TempSourceCase):
         self.assertEqual(findings[0].message, "Inline test module tests has 2001 lines; limit is 2000.")
 
     def test_exact_boundaries_and_no_trailing_newline(self) -> None:
+        # The boundary is the limit the module states, so the test patches both
+        # limits down and states the same two facts over four lines: a file at
+        # the limit is clean, and a file one line past it is named whether or
+        # not it ends with a newline.
         self.write("crates/demo/src/lib.rs", "mod prod;\n")
-        self.write("crates/demo/src/prod.rs", _pad_lines(["fn prod() {}"], 10000))
-        self.write("crates/demo/src/test_support.rs",
-                   _pad_lines(["fn helper() {}"], 2000, trailing_newline=False))
-        self.assertEqual(policy.check_source(), [])
-        self.write("crates/demo/src/prod.rs",
-                   _pad_lines(["fn prod() {}"], 10001, trailing_newline=False))
-        self.write("crates/demo/src/test_support.rs",
-                   _pad_lines(["fn helper() {}"], 2001, trailing_newline=False))
-        self.assertEqual([(f.rule, f.path, f.line) for f in policy.check_source()], [
-            ("production_size", "crates/demo/src/prod.rs", 1),
-            ("test_size", "crates/demo/src/test_support.rs", 1),
-        ])
+        with patch.object(policy, "PRODUCTION_LINE_LIMIT", 4), \
+                patch.object(policy, "TEST_LINE_LIMIT", 3):
+            self.write("crates/demo/src/prod.rs", _pad_lines(["fn prod() {}"], 4))
+            self.write("crates/demo/src/test_support.rs",
+                       _pad_lines(["fn helper() {}"], 3, trailing_newline=False))
+            self.assertEqual(policy.check_source(), [])
+            self.write("crates/demo/src/prod.rs",
+                       _pad_lines(["fn prod() {}"], 5, trailing_newline=False))
+            self.write("crates/demo/src/test_support.rs",
+                       _pad_lines(["fn helper() {}"], 4, trailing_newline=False))
+            self.assertEqual([(f.rule, f.path, f.line) for f in policy.check_source()], [
+                ("production_size", "crates/demo/src/prod.rs", 1),
+                ("test_size", "crates/demo/src/test_support.rs", 1),
+            ])
 
     def test_split_files_are_still_checked(self) -> None:
         self.write("crates/demo/src/lib.rs", "#[cfg(test)]\nmod tests;\n")
@@ -372,6 +494,288 @@ class PlacementRules(TempSourceCase):
         self.write("crates/demo/src/lib.rs", "")
         self.write("crates/demo/tests/smoke.rs", _pad_lines(["fn smoke() {}"], 2001))
         self.assertEqual([f.path for f in self.findings("test_size")], ["crates/demo/tests/smoke.rs"])
+
+
+class ModuleVisibility(TempSourceCase):
+    def test_private_inner_module_cannot_grant_crate_reach(self) -> None:
+        self.write("crates/demo/src/lib.rs", "pub mod outer;\n")
+        self.write("crates/demo/src/outer.rs", "mod inner;\n")
+        self.write("crates/demo/src/outer/inner.rs", '\n'.join([
+            "pub(crate) fn wide() {}", "pub(crate) const WIDE: u8 = 1;",
+            "pub(crate) static ALSO: u8 = 1;", "pub(super) fn narrow() {}", "",
+        ]))
+        findings = self.findings("overwide_module_visibility")
+        self.assertEqual([(f.path, f.line) for f in findings], [
+            ("crates/demo/src/outer/inner.rs", 1),
+            ("crates/demo/src/outer/inner.rs", 2),
+            ("crates/demo/src/outer/inner.rs", 3),
+        ])
+        self.assertIn("outer::inner", findings[0].message)
+        self.assertIn("crate::outer", findings[0].message)
+
+    def test_reach_the_declaration_chain_grants_is_accepted(self) -> None:
+        # A private module of the crate root: the root's subtree is the whole crate.
+        self.write("crates/demo/src/lib.rs", "mod inner;\npub mod outer;\n")
+        self.write("crates/demo/src/inner.rs", "pub(crate) fn wide() {}\n")
+        # A `pub` chain keeps the parent's reach, and `pub(crate)` widens to it.
+        self.write("crates/demo/src/outer.rs", "pub mod shown;\npub(crate) mod lifted;\n")
+        self.write("crates/demo/src/outer/shown.rs", "pub(crate) fn wide() {}\n")
+        self.write("crates/demo/src/outer/lifted.rs", "pub(crate) fn wide() {}\n")
+        self.assertEqual(self.findings("overwide_module_visibility"), [])
+
+    def test_marker_wider_than_a_deeper_cap_is_reported(self) -> None:
+        self.write("crates/demo/src/lib.rs", "pub mod a;\n")
+        self.write("crates/demo/src/a.rs", "mod b;\n")
+        self.write("crates/demo/src/a/b.rs", "mod c;\n")
+        self.write("crates/demo/src/a/b/c.rs", '\n'.join([
+            "pub(in crate::a) fn wide() {}", "pub(in crate::a::b) fn exact() {}",
+            "pub(super) fn narrow() {}", "",
+        ]))
+        findings = self.findings("overwide_module_visibility")
+        self.assertEqual([(f.path, f.line) for f in findings], [
+            ("crates/demo/src/a/b/c.rs", 1),
+        ])
+
+    def test_forms_the_compiler_can_require_stay_outside_the_rule(self) -> None:
+        self.write("crates/demo/src/lib.rs", "pub mod outer;\n")
+        self.write("crates/demo/src/outer.rs", "mod inner;\n")
+        self.write("crates/demo/src/outer/inner.rs", '\n'.join([
+            "pub(crate) struct Held {", "    pub(crate) field: u8,", "}",
+            "pub(crate) enum Tag { One }", "pub(crate) type Alias = u8;",
+            "impl Held {", "    pub(crate) fn reached(&self) -> u8 {", "        self.field",
+            "    }", "}", "#[cfg(test)]", "pub(crate) fn gated() {}", "",
+        ]))
+        self.assertEqual(self.findings("overwide_module_visibility"), [])
+
+    def test_a_reexported_module_keeps_the_reach_the_reexport_grants(self) -> None:
+        self.write("crates/demo/src/lib.rs", "pub mod outer;\n")
+        self.write("crates/demo/src/outer.rs", "mod inner;\npub(crate) use inner::wide;\n")
+        self.write("crates/demo/src/outer/inner.rs", "pub(crate) fn wide() {}\n")
+        self.assertEqual(self.findings("overwide_module_visibility"), [])
+
+
+class WireMirrorDocs(TempSourceCase):
+    IR = "crates/cadmpeg-ir/src"
+
+    def test_documented_members_pass_over_multiline_attributes(self) -> None:
+        self.write(f"{self.IR}/holder.rs", '\n'.join([
+            '#[serde(try_from = "HolderWire")]', "pub struct Holder {",
+            "    value: u8,", "}", "",
+            "#[derive(Deserialize)]", "struct HolderWire {",
+            "    /// The value the wire states.", "    value: u8,",
+            "    /// The tag the wire states.", "    #[serde(",
+            "        default,", '        rename = "kind"', "    )]", "    tag: u8,",
+            "    #[doc = \"The count the wire states.\"]", "    count: u8,", "}", "",
+        ]))
+        self.assertEqual(self.findings("undocumented_wire_mirror"), [])
+
+    def test_undocumented_field_variant_and_variant_field_are_reported(self) -> None:
+        self.write(f"{self.IR}/tagged.rs", '\n'.join([
+            '#[serde(from = "TaggedWire")]', "pub enum Tagged { One }", "",
+            "#[derive(Deserialize)]", "enum TaggedWire {", "    /// The wide arm.",
+            "    One {", "        width: u8,", "    },", "    Two,", "}", "",
+        ]))
+        findings = self.findings("undocumented_wire_mirror")
+        self.assertEqual([(f.path, f.line) for f in findings], [
+            ("crates/cadmpeg-ir/src/tagged.rs", 8),
+            ("crates/cadmpeg-ir/src/tagged.rs", 10),
+        ])
+        self.assertIn("`width`", findings[0].message)
+        self.assertIn("`TaggedWire`", findings[0].message)
+
+    def test_same_line_named_member_is_reported(self) -> None:
+        self.write(f"{self.IR}/inline.rs", '\n'.join([
+            '#[serde(try_from = "InlineWire")]', "pub struct Inline { value: u8 }", "",
+            "struct InlineWire { undocumented: u8 }", "",
+        ]))
+        findings = self.findings("undocumented_wire_mirror")
+        self.assertEqual([(f.path, f.line) for f in findings], [
+            ("crates/cadmpeg-ir/src/inline.rs", 4),
+        ])
+        self.assertIn("`undocumented`", findings[0].message)
+
+    def test_same_line_struct_variant_field_is_reported(self) -> None:
+        self.write(f"{self.IR}/inline.rs", '\n'.join([
+            '#[serde(from = "InlineWire")]', "pub enum Inline { One }", "",
+            "enum InlineWire {", "    /// The one arm.",
+            "    One { undocumented: u8 },", "}", "",
+        ]))
+        findings = self.findings("undocumented_wire_mirror")
+        self.assertEqual([(f.path, f.line) for f in findings], [
+            ("crates/cadmpeg-ir/src/inline.rs", 6),
+        ])
+        self.assertIn("`undocumented`", findings[0].message)
+
+    def test_member_after_closing_brace_on_same_line_is_reported(self) -> None:
+        self.write(f"{self.IR}/inline.rs", '\n'.join([
+            '#[serde(from = "InlineWire")]', "pub enum Inline { One }", "",
+            "enum InlineWire {", "    /// The first arm.", "    First {",
+            "        /// The first value.", "        value: u8,",
+            "    }, undocumented,", "}", "",
+        ]))
+        findings = self.findings("undocumented_wire_mirror")
+        self.assertEqual([(f.path, f.line) for f in findings], [
+            ("crates/cadmpeg-ir/src/inline.rs", 9),
+        ])
+        self.assertIn("`undocumented`", findings[0].message)
+
+    def test_a_mirror_in_another_file_is_reached(self) -> None:
+        self.write(f"{self.IR}/names.rs", '#[serde(try_from = "RemoteWire")]\n'
+                                          "pub struct Named { value: u8 }\n")
+        self.write(f"{self.IR}/remote.rs", "struct RemoteWire {\n    value: u8,\n}\n")
+        self.assertEqual([(f.path, f.line) for f in self.findings(
+            "undocumented_wire_mirror")], [("crates/cadmpeg-ir/src/remote.rs", 2)])
+
+    def test_an_into_target_is_a_wire_mirror(self) -> None:
+        self.write(f"{self.IR}/value.rs", '#[serde(into = "ValueWire")]\n'
+                                           "pub struct Value { value: u8 }\n"
+                                           "struct ValueWire {\n"
+                                           "    value: u8,\n"
+                                           "}\n")
+        findings = self.findings("undocumented_wire_mirror")
+        self.assertEqual([(f.path, f.line) for f in findings], [
+            ("crates/cadmpeg-ir/src/value.rs", 4),
+        ])
+
+    def test_a_same_named_type_elsewhere_is_not_the_mirror(self) -> None:
+        self.write(f"{self.IR}/local.rs", '\n'.join([
+            '#[serde(try_from = "Wire")]', "pub struct Local { value: u8 }", "",
+            "struct Wire {", "    /// The value the wire states.", "    value: u8,",
+            "}", "",
+        ]))
+        self.write(f"{self.IR}/other.rs", "struct Wire {\n    value: u8,\n}\n")
+        self.assertEqual(self.findings("undocumented_wire_mirror"), [])
+
+    def test_a_module_qualified_target_selects_only_that_declaration(self) -> None:
+        self.write(f"{self.IR}/holder.rs", '#[serde(try_from = "left::Wire")]\n'
+                                             "pub struct Holder { value: u8 }\n")
+        self.write(f"{self.IR}/left.rs", "struct Wire {\n    /// The value.\n    value: u8,\n}\n")
+        self.write(f"{self.IR}/right.rs", "struct Wire {\n    value: u8,\n}\n")
+        self.assertEqual(self.findings("undocumented_wire_mirror"), [])
+
+    def test_an_external_qualified_target_does_not_select_an_in_crate_type(self) -> None:
+        self.write(f"{self.IR}/holder.rs", '#[serde(try_from = "outside::ExternalWire")]\n'
+                                             "pub struct Holder { value: u8 }\n")
+        self.write(f"{self.IR}/local.rs", "struct ExternalWire {\n    value: u8,\n}\n")
+        self.assertEqual(self.findings("undocumented_wire_mirror"), [])
+
+    def test_a_crate_qualified_target_selects_the_named_module(self) -> None:
+        self.write(f"{self.IR}/holder.rs", '#[serde(try_from = "crate::left::Wire")]\n'
+                                             "pub struct Holder { value: u8 }\n")
+        self.write(f"{self.IR}/left.rs", "struct Wire {\n    value: u8,\n}\n")
+        self.write(f"{self.IR}/right.rs", "struct Wire {\n    /// The value.\n    value: u8,\n}\n")
+        findings = self.findings("undocumented_wire_mirror")
+        self.assertEqual([(f.path, f.line) for f in findings], [
+            ("crates/cadmpeg-ir/src/left.rs", 2),
+        ])
+
+    def test_a_qualified_target_selects_an_inline_module_declaration(self) -> None:
+        self.write(f"{self.IR}/holder.rs", '#[serde(try_from = "left::nested::Wire")]\n'
+                                             "pub struct Holder { value: u8 }\n")
+        self.write(f"{self.IR}/left.rs", "mod nested {\n"
+                                           "    struct Wire {\n"
+                                           "        /// The nested value.\n"
+                                           "        value: u8,\n"
+                                           "    }\n"
+                                           "}\n"
+                                           "struct Wire {\n"
+                                           "    value: u8,\n"
+                                           "}\n")
+        self.assertEqual(self.findings("undocumented_wire_mirror"), [])
+
+    def test_a_super_qualified_target_selects_the_parent_module(self) -> None:
+        self.write(f"{self.IR}/outer/holder.rs", '#[serde(try_from = "super::Wire")]\n'
+                                                   "pub struct Holder { value: u8 }\n")
+        self.write(f"{self.IR}/outer.rs", "struct Wire {\n    value: u8,\n}\n")
+        self.write(f"{self.IR}/other.rs", "struct Wire {\n    /// The value.\n    value: u8,\n}\n")
+        findings = self.findings("undocumented_wire_mirror")
+        self.assertEqual([(f.path, f.line) for f in findings], [
+            ("crates/cadmpeg-ir/src/outer.rs", 2),
+        ])
+
+    def test_an_unqualified_import_selects_the_imported_declaration(self) -> None:
+        self.write(f"{self.IR}/holder.rs", "use crate::left::Wire;\n"
+                                             '#[serde(try_from = "Wire")]\n'
+                                             "pub struct Holder { value: u8 }\n")
+        self.write(f"{self.IR}/left.rs", "struct Wire {\n    /// The value.\n    value: u8,\n}\n")
+        self.write(f"{self.IR}/right.rs", "struct Wire {\n    value: u8,\n}\n")
+        self.assertEqual(self.findings("undocumented_wire_mirror"), [])
+
+    def test_an_ambiguous_unqualified_target_is_unresolved(self) -> None:
+        self.write(f"{self.IR}/holder.rs", '#[serde(try_from = "Wire")]\n'
+                                             "pub struct Holder { value: u8 }\n")
+        self.write(f"{self.IR}/left.rs", "struct Wire {\n    value: u8,\n}\n")
+        self.write(f"{self.IR}/right.rs", "struct Wire {\n    value: u8,\n}\n")
+        self.assertEqual(self.findings("undocumented_wire_mirror"), [])
+
+    def test_every_crate_in_scope_reports_an_undocumented_member(self) -> None:
+        for crate in ("cadmpeg-ir", "cadmpeg-core", "cadmpeg-asm"):
+            with self.subTest(crate=crate):
+                self.write(f"crates/{crate}/src/shared.rs", '\n'.join([
+                    '#[serde(try_from = "SharedWire")]', "pub struct Shared { value: u8 }",
+                    "", "struct SharedWire {", "    value: u8,", "}", "",
+                ]))
+                findings = self.findings("undocumented_wire_mirror")
+                self.assertEqual([(f.path, f.line) for f in findings], [
+                    (f"crates/{crate}/src/shared.rs", 5),
+                ])
+                (self.root / "crates" / crate / "src" / "shared.rs").unlink()
+
+    def test_a_crate_without_a_published_schema_is_outside_the_rule(self) -> None:
+        self.write("crates/cadmpeg-protein/src/property.rs", '\n'.join([
+            '#[serde(try_from = "PropertyWire")]',
+            "pub struct Property { value: u8 }", "",
+            "struct PropertyWire {", "    value: u8,", "}", "",
+        ]))
+        self.assertEqual(self.findings("undocumented_wire_mirror"), [])
+
+    def test_a_type_the_mirror_flattens_carries_the_rule(self) -> None:
+        self.write(f"{self.IR}/flat.rs", '\n'.join([
+            '#[serde(try_from = "FlatWire")]', "pub struct Flat { value: u8 }", "",
+            "struct FlatWire {", "    /// The identity the wire states.",
+            "    #[serde(flatten)]", "    identity: FlatIdentityWire,", "}", "",
+            "struct FlatIdentityWire {", "    name: String,", "}", "",
+        ]))
+        findings = self.findings("undocumented_wire_mirror")
+        self.assertEqual([(f.path, f.line) for f in findings], [
+            ("crates/cadmpeg-ir/src/flat.rs", 11),
+        ])
+        self.assertIn("`name`", findings[0].message)
+        self.assertIn("`FlatIdentityWire`", findings[0].message)
+
+    def test_a_documented_flattened_type_states_the_whole_shape(self) -> None:
+        self.write(f"{self.IR}/flat.rs", '\n'.join([
+            '#[serde(try_from = "FlatWire")]', "pub struct Flat { value: u8 }", "",
+            "struct FlatWire {", "    /// The identity the wire states.",
+            "    #[serde(flatten)]", "    identity: Option<FlatIdentityWire>,", "}", "",
+            "struct FlatIdentityWire {", "    /// The name the wire states.",
+            "    name: String,", "}", "",
+        ]))
+        self.assertEqual(self.findings("undocumented_wire_mirror"), [])
+
+    def test_a_tuple_mirror_and_a_crate_outside_the_rule_state_nothing(self) -> None:
+        self.write(f"{self.IR}/tuple.rs", '#[serde(try_from = "TupleWire")]\n'
+                                          "pub struct Tuple(u8);\n"
+                                          "struct TupleWire(u8);\n")
+        self.write("crates/cadmpeg-codec-demo/src/lib.rs",
+                   '#[serde(try_from = "DemoWire")]\n'
+                   "pub struct Demo { value: u8 }\n"
+                   "struct DemoWire {\n    value: u8,\n}\n")
+        self.assertEqual(self.findings("undocumented_wire_mirror"), [])
+
+
+class WireMirrorPolicyScope(unittest.TestCase):
+    def test_roots_equal_crates_that_publish_schemars_schema(self) -> None:
+        expected = set()
+        for manifest in sorted(SCRIPT.parent.parent.glob("crates/*/Cargo.toml")):
+            with manifest.open("rb") as source:
+                package = tomllib.load(source)
+            features = package.get("features", {})
+            dependencies = package.get("dependencies", {})
+            if "schema" in features and "schemars" in dependencies:
+                self.assertIn("dep:schemars", features["schema"], manifest)
+                expected.add(str(manifest.parent.relative_to(SCRIPT.parent.parent)))
+        self.assertEqual(set(policy.WIRE_MIRROR_DOC_ROOTS), expected)
 
 
 class EndianExceptions(TempSourceCase):
@@ -401,12 +805,435 @@ class EndianExceptions(TempSourceCase):
             self.assertEqual(len(self.findings("endian_exception")), 1)
 
 
+class DiscardedValues(TempSourceCase):
+    def test_an_unmarked_discard_is_named(self) -> None:
+        self.write("crates/demo/src/lib.rs", "fn f() {\n    let _ = g();\n}\n")
+        findings = self.findings("discarded_value")
+        self.assertEqual([(f.path, f.line) for f in findings],
+                         [("crates/demo/src/lib.rs", 2)])
+        self.assertIn("discarded-value", findings[0].message)
+
+    def test_a_typed_discard_is_named(self) -> None:
+        self.write("crates/demo/src/lib.rs", "fn f() {\n    let _: u32 = g();\n}\n")
+        self.assertEqual([f.line for f in self.findings("discarded_value")], [2])
+
+    def test_a_reason_admits_exactly_one_discard(self) -> None:
+        self.write("crates/demo/src/lib.rs", """fn f() {
+    // discarded-value: the call's refusal is the whole effect
+    let _ = g();
+    let _ = h();
+}
+""")
+        self.assertEqual([f.line for f in self.findings("discarded_value")], [4])
+
+    def test_a_stale_or_empty_reason_fails(self) -> None:
+        for reason, following in [("the answer has no reader", "0;"), ("", "let _ = g();")]:
+            self.write("crates/demo/src/lib.rs",
+                       f"fn f() {{\n// discarded-value: {reason}\n    {following}\n}}\n")
+            self.assertEqual(len(self.findings("discarded_value")), 1)
+
+    def test_a_literal_cannot_supply_a_reason(self) -> None:
+        self.write("crates/demo/src/lib.rs", '''fn f() {
+    let text = r#"
+// discarded-value: not a reason
+"#; let _ = g();
+}
+''')
+        self.assertEqual([f.line for f in self.findings("discarded_value")], [4])
+
+    def test_a_declared_fuzz_entry_point_is_outside_the_rule(self) -> None:
+        self.write("crates/demo/src/fuzz.rs", "pub fn run(data: &[u8]) {\n    let _ = g(data);\n}\n")
+        self.assertEqual([f.line for f in self.findings("discarded_value")], [2])
+        with patch.object(policy, "DISCARD_EXEMPT_FILES",
+                          {"crates/demo/src/fuzz.rs": "the fuzzer reads the crash, never the value"}):
+            self.assertEqual(self.findings("discarded_value"), [])
+
+    def test_a_cfg_test_discard_is_not_production(self) -> None:
+        self.write("crates/demo/src/lib.rs",
+                   "#[cfg(test)]\nmod tests {\n    fn t() {\n        let _ = g();\n    }\n}\n")
+        self.assertEqual(self.findings("discarded_value"), [])
+
+
+class HandChargedCollectionInserts(TempSourceCase):
+    RULE = "hand_charged_collection_insert"
+
+    def lines(self, body: str, path: str = "crates/demo/src/lib.rs") -> list[int]:
+        self.write(path, body)
+        return [f.line for f in self.findings(self.RULE)]
+
+    def test_charge_then_set_insert_is_rejected(self) -> None:
+        body = """fn f(ctx: &mut DecodeContext, set: &mut BTreeSet<u32>, x: u32) {
+    if !set.contains(&x) {
+        ctx.charge_collection_items(1, "op")?;
+        set.insert(x);
+    }
+}
+"""
+        self.assertEqual(self.lines(body), [3])
+        self.assertIn("insert_btree_set", self.findings(self.RULE)[0].message)
+        self.assertIn("admit_btree_entry", self.findings(self.RULE)[0].message)
+
+    def test_charge_then_map_insert_is_rejected(self) -> None:
+        body = """fn f(ctx: &mut DecodeContext, k: u32) {
+    let mut map: HashMap<u32, u32> = HashMap::new();
+    self.ctx.charge_collection_items(u64_from_index(1), "op")?;
+    map.insert(k, 1);
+}
+"""
+        self.assertEqual(self.lines(body), [3])
+
+    def test_charge_then_map_entry_is_rejected(self) -> None:
+        body = """fn f(budget: &mut Budget, map: &mut BTreeMap<u32, Vec<u32>>, k: u32) {
+    budget.charge_collection_items(1, "op")?;
+    map.entry(k).or_default().push(1);
+}
+"""
+        self.assertEqual(self.lines(body), [2])
+
+    def test_nx_charge_for_appended_vector_member_is_accepted(self) -> None:
+        body = """fn f(ctx: &DecodeContext, groups: &mut BTreeMap<String, Vec<&Record>>, key: String, record: &Record) {
+    if !groups.contains_key(&key) {
+        ctx.charge_collection_items(1, "groups")?;
+        reservation.grow(64)?;
+    }
+    ctx.charge_collection_items(1, "reference")?;
+    reservation.grow(8)?;
+    let references = groups.entry(key).or_default();
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(references, 1, "reference")?;
+    references.push(record);
+}
+"""
+        self.assertEqual(self.lines(body), [])
+
+    def test_step_charge_for_new_inner_set_member_is_accepted(self) -> None:
+        body = """fn f(ctx: &DecodeContext, groups: &mut BTreeMap<String, BTreeSet<String>>, id: String, member: String) {
+    ctx.admit_btree_entry(groups, &id, "groups")?;
+    ctx.charge_collection_items(1, "members")?;
+    groups.insert(id, BTreeSet::from([member]));
+}
+"""
+        self.assertEqual(self.lines(body), [])
+
+    def test_inner_set_without_outer_admission_is_rejected(self) -> None:
+        body = """fn f(ctx: &DecodeContext, groups: &mut BTreeMap<String, BTreeSet<String>>, id: String, member: String) {
+    ctx.charge_collection_items(1, "members")?;
+    groups.insert(id, BTreeSet::from([member]));
+}
+"""
+        self.assertEqual(self.lines(body), [2])
+
+    def test_other_dimensions_and_key_copies_may_intervene(self) -> None:
+        body = """fn f(ctx: &mut DecodeContext, set: &mut HashSet<u32>, x: u32) {
+    ctx.charge_collection_items(1, "op")?;
+    ctx.charge_retained(4, "op")?;
+    ctx.charge_work(1, "op")?;
+    let key = x;
+    set.insert(key);
+}
+"""
+        self.assertEqual(self.lines(body), [2])
+
+    def test_block_end_and_control_flow_stop_the_search(self) -> None:
+        for between in ("return Ok(());", "continue;", "break;"):
+            body = f"""fn f(ctx: &mut DecodeContext, set: &mut HashSet<u32>, x: u32) {{
+    ctx.charge_collection_items(1, "op")?;
+    {between}
+    set.insert(x);
+}}
+"""
+            self.assertEqual(self.lines(body), [], between)
+        body = """fn f(ctx: &mut DecodeContext, set: &mut HashSet<u32>, x: u32) {
+    if x > 0 {
+        ctx.charge_collection_items(1, "op")?;
+    }
+    set.insert(x);
+}
+"""
+        self.assertEqual(self.lines(body), [])
+
+    def test_vacant_entry_and_non_set_receivers_are_accepted(self) -> None:
+        body = """fn f(ctx: &mut DecodeContext, draft: &mut ModelDraft, m: &mut Other, x: u32) {
+    match map.entry(x) {
+        Entry::Vacant(slot) => {
+            ctx.charge_collection_items(1, "op")?;
+            slot.insert(x);
+        }
+    }
+    ctx.charge_collection_items(1, "op")?;
+    draft.insert(x)?;
+    ctx.charge_collection_items(1, "op")?;
+    m.members.insert(x);
+}
+"""
+        self.assertEqual(self.lines(body), [])
+
+    def test_core_operations_are_accepted(self) -> None:
+        body = """fn f(ctx: &mut DecodeContext, k: u32) {
+    ctx.insert_btree_set(&mut a, k, "op")?;
+    ctx.insert_btree_map(&mut b, k, 1, "op")?;
+    ctx.admit_btree_entry(&mut b, k, "op")?;
+    ctx.insert_hash_set(&mut c, k, "op")?;
+    ctx.insert_hash_map(&mut d, k, 1, "op")?;
+    ctx.admit_hash_map_entry(&mut d, k, "op")?;
+}
+"""
+        self.assertEqual(self.lines(body), [])
+
+    def test_vec_insert_after_a_charge_is_accepted(self) -> None:
+        body = """fn f(ctx: &mut DecodeContext, v: &mut Vec<u32>, i: usize, x: u32) {
+    ctx.charge_collection_items(1, "op")?;
+    v.insert(i, x);
+}
+fn g(ctx: &mut DecodeContext, x: u32) {
+    let mut v = Vec::new();
+    ctx.charge_collection_items(1, "op")?;
+    v.insert(0, x);
+}
+"""
+        self.assertEqual(self.lines(body), [])
+
+    def test_multi_item_charge_is_accepted(self) -> None:
+        body = """fn f(ctx: &mut DecodeContext, set: &mut HashSet<u32>, n: u64, x: u32) {
+    ctx.charge_collection_items(n, "op")?;
+    set.insert(x);
+    ctx.charge_collection_items(2, "op")?;
+    set.insert(x);
+}
+"""
+        self.assertEqual(self.lines(body), [])
+
+    def test_cfg_test_module_is_not_production(self) -> None:
+        body = """#[cfg(test)]
+mod tests {
+    fn t(ctx: &mut DecodeContext, set: &mut HashSet<u32>) {
+        ctx.charge_collection_items(1, "op").unwrap();
+        set.insert(1);
+    }
+}
+"""
+        self.assertEqual(self.lines(body), [])
+
+    def test_core_implementation_files_are_excluded(self) -> None:
+        body = """fn f(ctx: &mut DecodeContext, set: &mut HashSet<u32>, x: u32) {
+    ctx.charge_collection_items(1, "op")?;
+    set.insert(x);
+}
+"""
+        for name in ("collect.rs", "context.rs"):
+            self.assertEqual(self.lines(body, f"crates/cadmpeg-core/src/decode/{name}"), [])
+
+
+class ScriptTestCollection(TempSourceCase):
+    GUARD = 'if __name__ == "__main__":\n    unittest.main()\n'
+    CASE = (
+        "import unittest\n\n\n"
+        "class ZzScratchTests(unittest.TestCase):\n"
+        "    def test_one(self) -> None:\n"
+        "        pass\n\n\n"
+    )
+
+    def test_a_case_after_the_main_block_is_named(self) -> None:
+        self.write("scripts/test_zz_scratch.py", self.GUARD + self.CASE)
+        findings = self.findings("script_test_collection")
+        self.assertEqual(len(findings), 1, findings)
+        self.assertEqual(findings[0].path, "scripts/test_zz_scratch.py")
+        self.assertIn("class ZzScratchTests", findings[0].message)
+        self.assertIn("test_zz_scratch.py", findings[0].message)
+
+    def test_a_free_test_function_after_the_main_block_is_named(self) -> None:
+        self.write(
+            "scripts/test_zz_scratch.py",
+            self.GUARD + "def test_loose() -> None:\n    pass\n",
+        )
+        findings = self.findings("script_test_collection")
+        self.assertEqual(len(findings), 1, findings)
+        self.assertIn("function test_loose", findings[0].message)
+
+    def test_a_case_before_the_main_block_is_collected(self) -> None:
+        self.write("scripts/test_zz_scratch.py", self.CASE + self.GUARD)
+        self.assertEqual(self.findings("script_test_collection"), [])
+
+
+class AuthoringPaths(TempSourceCase):
+    PATH = "/home/author/side2/cadmpeg/target/debug/deps/libdemo.rlib"
+
+    def test_every_text_record_suffix_is_scanned(self) -> None:
+        for name in (
+            "docs/audits/run/evidence/probe.command",
+            "docs/audits/run/evidence/probe.log",
+            "docs/audits/run/evidence/probe.exit",
+            "docs/audits/run/notes.md",
+            "docs/audits/run/sources.json",
+            "crates/demo/src/lib.rs",
+        ):
+            with self.subTest(name=name):
+                path = self.write(name, f"rustc --extern demo={self.PATH}\n")
+                findings = self.findings("authoring_path")
+                self.assertEqual([(f.path, f.line) for f in findings], [(name, 1)])
+                self.assertIn("/home/author/", findings[0].message)
+                path.unlink()
+
+    def test_a_relative_path_and_a_url_segment_are_not_authoring_paths(self) -> None:
+        self.write(
+            "docs/audits/run/evidence/probe.command",
+            "rustc --extern demo=target/debug/deps/libdemo.rlib\n"
+            "# see https://example.invalid/home/user/page\n",
+        )
+        self.assertEqual(self.findings("authoring_path"), [])
+
+
+class DecodeSorts(TempSourceCase):
+    def test_each_slice_sort_with_context_parameter_is_rejected(self) -> None:
+        for method in sorted(policy.SLICE_SORT_METHODS):
+            with self.subTest(method=method):
+                self.write("crates/demo/src/lib.rs",
+                           f"fn read(budget: &DecodeContext<'_>) {{\n    values.{method}(compare);\n}}\n")
+                findings = self.findings("uncharged_decode_sort")
+                self.assertEqual([(item.path, item.line) for item in findings],
+                                 [("crates/demo/src/lib.rs", 2)])
+                self.assertIn("ctx.stable_sort_by", findings[0].message)
+                self.assertIn("ctx.sort_unstable_by", findings[0].message)
+
+    def test_context_local_and_self_field_are_rejected(self) -> None:
+        self.write("crates/demo/src/lib.rs", """
+struct Reader<'a> { ctx: &'a cadmpeg_core::decode::DecodeContext<'a> }
+impl Reader<'_> {
+    fn read(&self) { self.ctx.charge_work(1, "read")?; values.sort(); }
+}
+fn local() {
+    let allowance: &DecodeContext<'_> = context;
+    values.sort_unstable();
+}
+""")
+        self.assertEqual([item.line for item in self.findings("uncharged_decode_sort")], [4, 8])
+
+    def test_field_declared_in_another_module_is_rejected(self) -> None:
+        self.write("crates/demo/src/types.rs", "struct Reader<'a> { budget: &'a DecodeContext<'a> }")
+        self.write("crates/demo/src/read.rs", "impl Reader<'_> { fn read(&self) { self.budget; values.sort(); } }")
+        self.assertEqual(len(self.findings("uncharged_decode_sort")), 1)
+
+    def test_each_slice_sort_without_context_is_accepted(self) -> None:
+        self.write("crates/demo/src/lib.rs", "fn write() {\n" + "\n".join(
+            f"    values.{method}(compare);" for method in sorted(policy.SLICE_SORT_METHODS)
+        ) + "\n}\n")
+        self.assertEqual(self.findings("uncharged_decode_sort"), [])
+
+    def test_decode_crate_sort_without_context_is_rejected(self) -> None:
+        for crate in ("cadmpeg-codec-demo", "cadmpeg-container", "cadmpeg-asm", "cadmpeg-parasolid", "cadmpeg-protein"):
+            with self.subTest(crate=crate):
+                self.write(f"crates/{crate}/src/geometry.rs", "fn knots(values: &mut [f64]) {\n    values.sort_by(f64::total_cmp);\n}\n")
+                findings = [item for item in self.findings("uncharged_decode_sort") if item.path.startswith(f"crates/{crate}/")]
+                self.assertEqual([(item.path, item.line) for item in findings], [(f"crates/{crate}/src/geometry.rs", 2)])
+                self.assertIn("pass the decode context", findings[0].message)
+
+    def test_array_return_type_keeps_the_function_body(self) -> None:
+        self.write("crates/demo/src/lib.rs",
+                   "fn read(ctx: &DecodeContext<'_>) -> Result<Vec<[usize; 2]>, CodecError> {\n    values.sort();\n}\n")
+        self.assertEqual([item.line for item in self.findings("uncharged_decode_sort")], [2])
+
+    def test_decode_crate_encoders_without_context_are_accepted(self) -> None:
+        for path in ("src/writer.rs", "src/writer_patch.rs", "src/writer/generate/attributes.rs",
+                     "src/history/encode/solid.rs", "src/history/write/features.rs",
+                     "src/resolved_features/write_generate.rs", "src/zip_write.rs", "src/export.rs",
+                     "src/bin/profile.rs"):
+            self.write(f"crates/cadmpeg-codec-demo/{path}", "fn order() { values.sort(); }")
+        self.assertEqual(self.findings("uncharged_decode_sort"), [])
+
+    def test_ir_decode_paths_without_context_are_rejected(self) -> None:
+        for path in ("document.rs", "hash.rs", "eval.rs", "eval/sweep_law.rs", "codec.rs", "native/mod.rs",
+                     "math/planar.rs", "validate/topology.rs"):
+            with self.subTest(path=path):
+                self.write(f"crates/cadmpeg-ir/src/{path}", "fn order() { values.sort(); }")
+                findings = [item for item in self.findings("uncharged_decode_sort")
+                            if item.path == f"crates/cadmpeg-ir/src/{path}"]
+                self.assertEqual(len(findings), 1)
+        self.write("crates/cadmpeg-ir/src/report.rs", "fn order() { values.sort(); }")
+        self.assertFalse(any(item.path.endswith("/report.rs")
+                             for item in self.findings("uncharged_decode_sort")))
+
+    def test_known_context_field_on_any_receiver_is_accepted(self) -> None:
+        self.write("crates/demo/src/types.rs", """
+struct Borrowed<'a> { decode: &'a DecodeContext<'a> }
+struct Owned<'a> { decode: cadmpeg_core::decode::DecodeContext<'a> }
+struct Other { decode: Vec<u32> }
+""")
+        self.write("crates/demo/src/read.rs", """
+fn read(ctx: &Borrowed<'_>, owned: Owned<'_>, other: &Other) {
+    ctx.decode.sort_unstable_by(values, compare, key_bytes, "sort")?;
+    owned.decode.sort_unstable_by(values, compare, key_bytes, "sort")?;
+    other.decode.sort_unstable_by(compare);
+    values.sort();
+}
+""")
+        self.assertEqual([item.line for item in self.findings("uncharged_decode_sort")], [5, 6])
+
+    def test_decode_crate_encoder_with_context_is_rejected(self) -> None:
+        self.write("crates/cadmpeg-codec-demo/src/writer.rs",
+                   "fn reread(ctx: &DecodeContext<'_>) {\n    values.sort();\n}\n")
+        self.assertEqual([item.line for item in self.findings("uncharged_decode_sort")], [2])
+
+    def test_core_sort_implementations_are_accepted(self) -> None:
+        for path in sorted(policy.DECODE_SORT_EXEMPT_FILES):
+            self.write(path, "fn sort(ctx: &DecodeContext<'_>) { values.sort_unstable_by(compare); }")
+        self.assertEqual(self.findings("uncharged_decode_sort"), [])
+
+    def test_cfg_test_sorts_and_non_code_are_accepted(self) -> None:
+        self.write("crates/demo/src/lib.rs", """
+#[cfg(test)]
+mod tests { fn read(ctx: &DecodeContext<'_>) { values.sort(); } }
+#[cfg(test)]
+fn read(ctx: &DecodeContext<'_>) { values.sort_unstable(); }
+fn production(ctx: &DecodeContext<'_>) {
+    // values.sort();
+    let text = "values.sort_unstable();";
+    ctx.stable_sort_by(values, compare, key_bytes, "values")?;
+    ctx.sort_unstable_by(values, compare, key_bytes, "values")?;
+}
+""")
+        # The admitted unstable operation has the same method name as a slice call.
+        self.assertEqual(self.findings("uncharged_decode_sort"), [])
+
+    def test_function_boundaries_do_not_leak_context(self) -> None:
+        self.write("crates/demo/src/lib.rs", """
+fn read(ctx: &DecodeContext<'_>) {
+    fn write() { values.sort(); }
+    values.sort();
+}
+fn write() { values.sort_unstable(); }
+""")
+        self.assertEqual([item.line for item in self.findings("uncharged_decode_sort")], [4])
+
+    def test_closures_keep_context_and_generics_keep_function_scope(self) -> None:
+        self.write("crates/demo/src/lib.rs", """
+fn read<T: Copy>(ctx: &DecodeContext<'_>) {
+    records.map(|values| values.sort_unstable());
+}
+""")
+        self.assertEqual([item.line for item in self.findings("uncharged_decode_sort")], [3])
+
+
 class SourcePolicyCommand(TempSourceCase):
     def run_check(self, *args: str) -> tuple[int, str]:
         output = io.StringIO()
         with redirect_stdout(output):
             result = policy.main(list(args))
         return result, output.getvalue()
+
+    def test_crate_filter_keeps_only_selected_crate_findings(self) -> None:
+        self.write("crates/demo/src/lib.rs", "fn f() { let x = 1e-9; }\n")
+        self.write("crates/other/src/lib.rs", "fn f() { let x = 1e-8; }\n")
+        result, output = self.run_check("--json", "--crate", "demo")
+        self.assertEqual(result, 1)
+        self.assertEqual([item["path"] for item in json.loads(output)["findings"]],
+                         ["crates/demo/src/lib.rs"])
+        result, output = self.run_check("--json", "--crate", "demo", "--crate", "other")
+        self.assertEqual(result, 1)
+        self.assertEqual(len(json.loads(output)["findings"]), 2)
+
+    def test_unknown_crate_filter_is_rejected(self) -> None:
+        with patch("sys.stderr", new=io.StringIO()), self.assertRaises(SystemExit) as error:
+            self.run_check("--crate", "absent")
+        self.assertEqual(error.exception.code, 2)
 
     def test_clean_source_needs_no_git_or_ledger(self) -> None:
         self.write("crates/demo/src/lib.rs", "fn f() {}\n")
@@ -441,6 +1268,329 @@ class SourcePolicyCommand(TempSourceCase):
             with patch("sys.stderr", new=io.StringIO()), self.assertRaises(SystemExit) as error:
                 policy.main(args)
             self.assertEqual(error.exception.code, 2)
+
+
+class EvaluationRefusals(TempSourceCase):
+    def scan(self, body: str, *, declarations: str = "", imports: str = ""):
+        evaluator = self.write("crates/cadmpeg-ir/src/eval.rs", """
+pub fn curve_point(x: f64) -> Result<Point, EvaluationFailure<Point>> { todo!() }
+pub mod admitted {
+    pub fn surface_point(x: f64) -> Result<Result<Point, EvaluationFailure<Point>>, CodecError> { todo!() }
+}
+""")
+        consumer = self.write("crates/demo/src/lib.rs", imports + declarations + "\nfn route() {\n" + body + "\n}\n")
+        return policy.scan_evaluation_refusals({
+            evaluator: evaluator.read_text(), consumer: consumer.read_text(),
+        })
+
+    def test_evaluation_refusal_rejects_each_dropping_method(self) -> None:
+        for method in sorted(policy.EVALUATION_DROPS):
+            with self.subTest(method=method):
+                findings = self.scan(f"cadmpeg_ir::eval::curve_point(0.).{method}(fallback);")
+                self.assertEqual(len(findings), 1)
+                self.assertEqual(findings[0].rule, "evaluation_refusal")
+                self.assertIn("." + method, findings[0].message)
+
+    def test_evaluation_refusal_tracks_bound_and_mapped_results(self) -> None:
+        for body in [
+            "let value = cadmpeg_ir::eval::curve_point(0.); value.ok();",
+            "let value = cadmpeg_ir::eval::curve_point(0.).map(|point| point.x); value.is_err();",
+            "(cadmpeg_ir::eval::curve_point(0.)).ok()?;",
+            "cadmpeg_ir::eval::curve_point(0.).map_err(|_| malformed());",
+            "cadmpeg_ir::eval::curve_point(0.).map_err(|failure| malformed());",
+            "cadmpeg_ir::eval::curve_point(0.).map_err(|_failure| malformed());",
+            "cadmpeg_ir::eval::curve_point(0.).map_err(move |_| malformed());",
+            "cadmpeg_ir::eval::curve_point(0.).map_err(|failure: EvaluationFailure<Point>| EvaluationFailure::NoValue);",
+            "cadmpeg_ir::eval::admitted::surface_point(0.)?.ok();",
+            "match cadmpeg_ir::eval::admitted::surface_point(0.) { Ok(inner) => inner.ok(), Err(CodecError::ResourceLimit(limit)) => return Err(limit.into()), Err(_) => None }",
+        ]:
+            with self.subTest(body=body):
+                self.assertEqual(len(self.scan(body)), 1)
+
+    def test_evaluation_refusal_rejects_patterns_and_iterators(self) -> None:
+        for body in [
+            "if let Ok(point) = cadmpeg_ir::eval::curve_point(0.) { use_point(point); }",
+            "let Ok(point) = cadmpeg_ir::eval::curve_point(0.) else { return None; };",
+            "while let Ok(point) = cadmpeg_ir::eval::curve_point(0.) { use_point(point); }",
+            "if let Err(_) = cadmpeg_ir::eval::curve_point(0.) { return false; }",
+            "matches!(cadmpeg_ir::eval::curve_point(0.), Ok(_));",
+            "matches!(cadmpeg_ir::eval::curve_point(0.), Err(..));",
+            "match cadmpeg_ir::eval::curve_point(0.) { Ok(point) => Some(point), Err(_) => None }",
+            "match cadmpeg_ir::eval::curve_point(0.) { Ok(point) => Some(point), _ => None }",
+            "match cadmpeg_ir::eval::curve_point(0.) { Err(EvaluationFailure::ResourceLimit(limit)) => None, _ => None }",
+            "match cadmpeg_ir::eval::curve_point(0.) { Err(EvaluationFailure::ResourceLimit(limit)) => Err(CodecError::InvalidInput(limit.to_string())), _ => None }",
+            "match cadmpeg_ir::eval::curve_point(0.) { Ok(_) | Err(_) => None }",
+            "match cadmpeg_ir::eval::curve_point(0.) { _ if condition => None, _ => None }",
+            "match cadmpeg_ir::eval::curve_point(0.) { Err(_) => None, Err(EvaluationFailure::ResourceLimit(limit)) => return Err(limit) }",
+            "items.flat_map(|item| cadmpeg_ir::eval::curve_point(item));",
+            "items.flat_map(cadmpeg_ir::eval::curve_point);",
+            "items.map(cadmpeg_ir::eval::curve_point).flatten();",
+            "items.filter_map(|item| cadmpeg_ir::eval::curve_point(item).ok());",
+            "items.find_map(|item| cadmpeg_ir::eval::curve_point(item).ok());",
+            "items.map(|item| cadmpeg_ir::eval::curve_point(item)).flatten();",
+        ]:
+            with self.subTest(body=body):
+                self.assertEqual(len(self.scan(body)), 1)
+
+    def test_evaluation_refusal_accepts_propagation_and_finite_conversion(self) -> None:
+        for body in [
+            "cadmpeg_ir::eval::curve_point(0.)?;",
+            "cadmpeg_ir::eval::admitted::surface_point(0.)??;",
+            "finite_or_refusal(cadmpeg_ir::eval::curve_point(0.))?;",
+            "let value = finite_or_refusal(cadmpeg_ir::eval::curve_point(0.))?; if let Some(point) = value {}",
+            "match cadmpeg_ir::eval::curve_point(0.) { Ok(p) => Some(p), Err(EvaluationFailure::ResourceLimit(limit)) => return Err(limit.into()), Err(_) => None }",
+            "match cadmpeg_ir::eval::curve_point(0.) { Ok(p) => Some(p), Err(failure) => failure.non_finite()? }",
+            "cadmpeg_ir::eval::curve_point(0.).map_err(|failure| match failure { EvaluationFailure::ResourceLimit(limit) => CodecError::ResourceLimit(limit), _ => malformed() })?;",
+            "items.map(|item| cadmpeg_ir::eval::curve_point(item)).collect::<Result<Vec<_>, _>>()?;",
+        ]:
+            with self.subTest(body=body):
+                self.assertEqual(self.scan(body), [])
+
+    def test_evaluation_refusal_discovers_new_functions_and_methods(self) -> None:
+        declarations = """
+fn new_evaluator() -> Result<Point, EvaluationFailure<Point>> { todo!() }
+struct NewEvaluator;
+impl NewEvaluator {
+    fn new() -> Self { Self }
+    fn point(&self) -> Result<Point, EvaluationFailure<Point>> { todo!() }
+    fn reader(&self) { self.point().ok(); }
+}
+fn borrowed<'a>(evaluator: &'a mut NewEvaluator) { evaluator.point().ok(); }
+fn make_evaluator() -> Result<NewEvaluator, OtherError> { todo!() }
+"""
+        for body in [
+            "new_evaluator().ok();",
+            "let evaluator = NewEvaluator::new(); evaluator.point().ok();",
+            "let evaluator = make_evaluator()?; evaluator.point().ok();",
+            "let evaluator = NewEvaluator::new(); let value = evaluator.point(); value.ok();",
+            "let evaluator = NewEvaluator::new(); (evaluator.point()).ok();",
+            "NewEvaluator::new().point().ok();",
+            "new_evaluator::<Point>().map::<Point>(|point| point).ok();",
+            "NewEvaluator::point(&evaluator).ok();",
+            "items.flat_map(NewEvaluator::point);",
+        ]:
+            with self.subTest(body=body):
+                self.assertEqual(len(self.scan(body, declarations=declarations)), 3)
+
+    def test_evaluation_refusal_resolves_imports_without_same_name_false_positives(self) -> None:
+        for imports, call in [
+            ("use cadmpeg_ir::eval::curve_point;", "curve_point(0.)"),
+            ("use cadmpeg_ir::eval::{curve_point as sample};", "sample(0.)"),
+            ("use cadmpeg_ir::{eval as evaluator};", "evaluator::curve_point(0.)"),
+        ]:
+            with self.subTest(imports=imports):
+                self.assertEqual(len(self.scan(call + ".ok();", imports=imports)), 1)
+        self.assertEqual(self.scan("curve_point(0.).ok();", declarations="fn curve_point(x: f64) -> Result<Point, OtherError> { todo!() }"), [])
+        self.assertEqual(self.scan("other::curve_point(0.).ok();"), [])
+
+    def test_evaluation_refusal_accepts_retained_resource_carriers_and_returning_guards(self) -> None:
+        declarations = """
+struct Evaluation { resource: Option<ResourceLimit> }
+impl Evaluation {
+    fn resource(limit: ResourceLimit) -> Self { Self { resource: Some(limit) } }
+}
+fn resource(limit: ResourceLimit) -> Evaluation { Evaluation { resource: Some(limit) } }
+"""
+        for body in [
+            "match cadmpeg_ir::eval::curve_point(0.) { Err(EvaluationFailure::ResourceLimit(limit)) => Some(Evaluation::resource(limit)), _ => None }",
+            "match cadmpeg_ir::eval::curve_point(0.) { Err(EvaluationFailure::ResourceLimit(limit)) => Some(resource(limit)), _ => None }",
+            "let radial = cadmpeg_ir::eval::curve_point(0.); if let Err(EvaluationFailure::ResourceLimit(limit)) = &radial { return Some(Evaluation::resource(*limit)); } match radial { Ok(point) => Some(point), Err(_) => None }",
+        ]:
+            with self.subTest(body=body):
+                self.assertEqual(self.scan(body, declarations=declarations), [])
+        self.assertEqual(len(self.scan("let radial = cadmpeg_ir::eval::curve_point(0.); if let Err(EvaluationFailure::ResourceLimit(limit)) = &radial { let saved = Some(Evaluation::resource(*limit)); } match radial { Ok(point) => Some(point), Err(_) => None }", declarations=declarations)), 1)
+
+    def test_evaluation_refusal_respects_binding_scope_and_shadowing(self) -> None:
+        self.assertEqual(len(self.scan("let value = cadmpeg_ir::eval::curve_point(0.); { let value = other(); value.ok(); } value.ok();")), 1)
+        self.assertEqual(self.scan("{ let value = cadmpeg_ir::eval::curve_point(0.); } let value = other(); value.ok();"), [])
+
+    def test_evaluation_refusal_masks_tests_comments_and_strings(self) -> None:
+        body = '''
+// cadmpeg_ir::eval::curve_point(0.).ok();
+let text = "cadmpeg_ir::eval::curve_point(0.).ok()";
+#[cfg(test)] fn test_only() { cadmpeg_ir::eval::curve_point(0.).ok(); }
+'''
+        self.assertEqual(self.scan(body), [])
+
+
+class SaturatingArithmetic(TempSourceCase):
+    def test_saturating_calls_require_checked_branches(self) -> None:
+        self.write("crates/demo/src/lib.rs", """fn f() {
+    count.saturating_add(1);
+    usize::saturating_mul(count, 2);
+    NonZeroU32::MIN.saturating_add(1);
+    count.saturating_sub
+        (1);
+}
+""")
+        self.assertEqual([f.line for f in self.findings("saturating_arithmetic")], [2, 3, 4, 5])
+
+    def test_checked_arithmetic_and_test_code_are_exempt(self) -> None:
+        self.write("crates/demo/src/lib.rs", """fn f() {
+    count.checked_add(1).ok_or(error)?;
+    // count.saturating_add(1);
+    let text = "count.saturating_mul(2)";
+}
+#[cfg(test)] mod tests { fn f() { count.saturating_sub(1); } }
+""")
+        self.assertEqual(self.findings("saturating_arithmetic"), [])
+
+
+class WrappingArithmetic(TempSourceCase):
+    def test_marker_admits_only_one_next_line_call(self) -> None:
+        self.write("crates/demo/src/lib.rs", """fn f() {
+    // wrapping-exception: checksum is an eight-bit modular sum
+    sum = sum.wrapping_add(byte);
+    sum = sum.wrapping_add(byte);
+    // wrapping-exception: two calls are not one operation
+    sum = sum.wrapping_add(byte).wrapping_add(byte);
+}
+""")
+        self.assertEqual([f.line for f in self.findings("wrapping_arithmetic")], [4, 6, 6])
+        self.assertEqual([f.line for f in self.findings("wrapping_exception")], [5])
+
+    def test_empty_stale_inline_and_literal_reasons_grant_nothing(self) -> None:
+        for reason in ["// wrapping-exception: ", "// wrapping-exception: checksum\n\n",
+                       'let s = "// wrapping-exception: checksum";',
+                       "let n = 0; // wrapping-exception: checksum"]:
+            self.write("crates/demo/src/lib.rs", f"fn f() {{\n{reason}\nsum.wrapping_add(byte);\n}}\n")
+            self.assertEqual(len(self.findings("wrapping_arithmetic")), 1)
+        self.assertEqual(len(self.findings("wrapping_exception")), 0)
+
+    def test_test_only_markers_and_calls_are_exempt(self) -> None:
+        self.write("crates/demo/src/lib.rs", """#[cfg(test)] mod tests {
+    // wrapping-exception: stale marker in a test
+    fn f() { sum.wrapping_add(byte); }
+}
+fn f() { count.checked_sub(1); }
+""")
+        self.assertEqual(self.findings("wrapping_arithmetic"), [])
+        self.assertEqual(self.findings("wrapping_exception"), [])
+
+
+class IntegerLimitDefaults(TempSourceCase):
+    def test_combinators_qualified_types_and_closure_bindings(self) -> None:
+        expressions = [
+            "value.map_or(u64::MAX, identity)",
+            "value.map_or_else(|error| i16::MIN, identity)",
+            "value.unwrap_or_else(|error: Error| usize::MAX)",
+            "value.map_or_else(move || { core::primitive::u32::MAX }, identity)",
+            "value.unwrap_or_else(|error| -> u64 { return <u64>::MAX; })",
+            "value.map_or((::std::primitive::isize::MIN), identity)",
+            "value.map_or_else(|(_, error)| { std::u8::MAX }, identity)",
+            "value.unwrap_or::<u32>(u32::MAX)",
+            "value.unwrap_or_else(|error: Result<A, B>| u64::MAX)",
+            "value.map_or_else(|(A | B)| u32::MIN, identity)",
+        ]
+        for expression in expressions:
+            with self.subTest(expression=expression):
+                self.write("crates/demo/src/lib.rs", f"fn f() {{ {expression}; }}")
+                self.assertEqual(len(self.findings("integer_clamp")), 1)
+
+    def test_bounds_in_success_arm_and_nonbound_defaults_are_not_clamps(self) -> None:
+        self.write("crates/demo/src/lib.rs", """fn f() {
+    value.map_or(0, |_| u64::MAX);
+    value.unwrap_or_else(|error| refuse(error, u64::MAX));
+    value.map_or_else(|| limit, identity);
+    value.map_or(Some(NonZeroU32::MIN), identity);
+    value.map_or(native::MAX_RECORDS, identity);
+}
+""")
+        self.assertEqual(self.findings("integer_clamp"), [])
+
+    def test_multiline_closures_report_the_method_line(self) -> None:
+        self.write("crates/demo/src/lib.rs", """fn f() {
+    value.map_or_else(
+        |error| {
+            u64::MAX
+        },
+        identity,
+    );
+}
+""")
+        self.assertEqual([f.line for f in self.findings("integer_clamp")], [2])
+
+
+class LintSuppressions(TempSourceCase):
+    EXPECT = """#![expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    reason = "conversions check exactness and target range"
+)]
+"""
+
+    def test_outer_inner_and_conditional_suppressions_fail(self) -> None:
+        self.write("crates/demo/src/lib.rs", """#![allow(dead_code)]
+#[expect(clippy::too_many_arguments, reason = "many inputs")]
+fn f() {}
+#[cfg_attr(feature = "x", allow(unused))]
+fn g() {}
+""")
+        self.assertEqual([f.line for f in self.findings("lint_suppression")], [1, 2, 4])
+        for predicate in ['not(test)', 'any(test, feature = "x")']:
+            self.write("crates/demo/src/lib.rs",
+                       f"#[cfg_attr({predicate}, allow(unused))] fn f() {{}}")
+            self.assertEqual(len(self.findings("lint_suppression")), 1)
+
+    def test_only_one_exact_module_conversion_expectation_is_exempt(self) -> None:
+        path = "crates/cadmpeg-core/src/convert.rs"
+        self.write(path, self.EXPECT + "fn f() {}")
+        self.assertEqual(self.findings("lint_suppression"), [])
+        self.write(path, self.EXPECT + self.EXPECT + "fn f() {}")
+        self.assertEqual(len(self.findings("lint_suppression")), 1)
+        for source in [self.EXPECT.replace("#!", "#"),
+                       self.EXPECT.replace("clippy::cast_sign_loss,", "dead_code,"),
+                       self.EXPECT.replace("conversions check exactness and target range", ""),
+                       "mod inner {\n" + self.EXPECT + "fn f() {}\n}"]:
+            with self.subTest(source=source):
+                self.write(path, source)
+                self.assertEqual(len(self.findings("lint_suppression")), 1)
+        self.write(path, self.EXPECT + "fn f() {}")
+        self.write("crates/demo/src/lib.rs", self.EXPECT)
+        self.assertEqual(len(self.findings("lint_suppression")), 1)
+
+    def test_comments_literals_and_test_suppressions_are_exempt(self) -> None:
+        self.write("crates/demo/src/lib.rs", """// #[allow(unused)]
+fn f() { let s = "#[expect(unused)]"; }
+#![cfg_attr(test, allow(clippy::unwrap_used))]
+#[cfg_attr(all(feature = "x", test), expect(unused))]
+fn g() {}
+#[cfg_attr(feature = "x", cfg_attr(test, allow(unused)))]
+fn h() {}
+#[cfg(test)]
+#[allow(dead_code)]
+mod tests { #![allow(clippy::unwrap_used)] fn f() {} }
+""")
+        self.write("crates/demo/src/owner/tests.rs", "#![allow(dead_code)]")
+        self.assertEqual(self.findings("lint_suppression"), [])
+
+
+class OptionalDecodeContexts(TempSourceCase):
+    def test_function_method_trait_and_function_pointer_parameters_fail(self) -> None:
+        sources = [
+            "fn f(ctx: Option<&DecodeContext<'_>>) {}",
+            "fn f<'a, T>(ctx: std::option::Option<&'a cadmpeg_core::decode::DecodeContext<'a>>) {}",
+            "impl X { fn f(&self, ctx: Option<&mut DecodeContext<'_>>) {} }",
+            "trait X { fn f(ctx: core::option::Option<&DecodeContext<'_>>); }",
+            "fn f(callback: fn(Option<&DecodeContext<'_>>)) {}",
+            "fn r#context(ctx: Option<&::cadmpeg_core::decode::DecodeContext<'_>>) {}",
+        ]
+        for source in sources:
+            with self.subTest(source=source):
+                self.write("crates/demo/src/lib.rs", source)
+                self.assertEqual(len(self.findings("optional_decode_context")), 1)
+
+    def test_required_context_context_free_and_nonsignature_types_are_exempt(self) -> None:
+        self.write("crates/demo/src/lib.rs", """struct X { ctx: Option<&'static DecodeContext<'static>> }
+fn decode(ctx: &DecodeContext<'_>) {}
+fn reconstruct() {}
+fn context() -> Option<&'static DecodeContext<'static>> { None }
+fn f() { let ctx: Option<&DecodeContext<'_>> = None; }
+#[cfg(test)] mod tests { fn f(ctx: Option<&DecodeContext<'_>>) {} }
+""")
+        self.assertEqual(self.findings("optional_decode_context"), [])
 
 
 if __name__ == "__main__":

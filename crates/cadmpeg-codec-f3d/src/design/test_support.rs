@@ -1,14 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Shared helpers for design-owner unit tests.
 
-use crate::design::decode::parameters::design_parameter_discriminator;
+use cadmpeg_core::decode::u64_from_index;
 
-pub(crate) fn lp_utf16(out: &mut Vec<u8>, value: &str) {
-    let units = value.encode_utf16().collect::<Vec<_>>();
-    out.extend_from_slice(&(units.len() as u32).to_le_bytes());
-    for unit in units {
-        out.extend_from_slice(&unit.to_le_bytes());
-    }
+use crate::design::decode::parameters::design_parameter_discriminator;
+use crate::test_support::lp_utf16;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+/// Run a test with a decode context that has the default resource policy.
+pub(crate) fn with_test_decode_context<T>(f: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
+    f(&ctx)
+}
+
+/// Build a record index under the default test decode policy.
+pub(in crate::design) fn indexed_record_offsets_for_test(
+    bytes: &[u8],
+) -> crate::design::decode::sketch::IndexedRecordOffsets {
+    with_test_decode_context(|ctx| {
+        crate::design::decode::sketch::IndexedRecordOffsets::build(ctx, bytes).unwrap()
+    })
 }
 
 pub(crate) fn parameter_record(
@@ -77,12 +89,56 @@ pub(crate) fn parameter_owner_frame() -> Vec<u8> {
     frame
 }
 
-pub(crate) fn push_reference(out: &mut Vec<u8>, reference: u32) {
+pub(super) fn identity_matrix() -> [[f64; 4]; 4] {
+    [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ]
+}
+
+pub(super) fn design_type(
+    type_guid: &str,
+    base_type_guid: Option<&str>,
+    version: u32,
+    module: &str,
+    entity_ids: Vec<u64>,
+) -> crate::records::entity_header::SegmentTypeData {
+    crate::records::entity_header::SegmentTypeData {
+        byte_offset: 0,
+        type_guid: type_guid.to_owned().try_into().expect("type GUID"),
+        type_guid_offset: 0,
+        base_type_guid: base_type_guid.map_or(
+            crate::records::entity_header::BaseTypeGuid::Absent,
+            |value| crate::records::entity_header::BaseTypeGuid::Guid {
+                value: value.to_owned().try_into().expect("base GUID"),
+                offset: 0,
+            },
+        ),
+        version,
+        version_offset: 0,
+        module: module.into(),
+        entities: crate::records::identity::ReferenceRun::unlocated(entity_ids),
+    }
+}
+
+pub(super) fn primary_record(
+    entity_id: u64,
+    bulk_offset: usize,
+) -> crate::metastream::RecordIndexEntry {
+    crate::metastream::RecordIndexEntry {
+        entity_id,
+        bulk_offset: u64_from_index(bulk_offset),
+    }
+}
+
+pub(super) fn push_reference(out: &mut Vec<u8>, reference: u32) {
     out.push(1);
     out.extend_from_slice(&reference.to_le_bytes());
 }
 
-pub(crate) fn push_genesis_block(out: &mut Vec<u8>, genesis: u64) {
+pub(super) fn push_genesis_block(out: &mut Vec<u8>, genesis: u64) {
     out.push(1);
     out.extend_from_slice(&1u32.to_le_bytes());
     out.extend_from_slice(&13u32.to_le_bytes());
@@ -92,4 +148,82 @@ pub(crate) fn push_genesis_block(out: &mut Vec<u8>, genesis: u64) {
     out.extend_from_slice(&genesis.to_le_bytes());
 }
 
-pub(crate) mod dump;
+pub(super) fn assembly_operand_frame_fixture(scope_record_index: u32) -> Vec<u8> {
+    let mut bytes = vec![0_u8; 648];
+    bytes[0..4].copy_from_slice(&3_u32.to_le_bytes());
+    bytes[4..7].copy_from_slice(b"273");
+    bytes[7..11].copy_from_slice(&scope_record_index.to_le_bytes());
+    bytes[20] = 1;
+    bytes[25] = 1;
+    for (reference_at, transform_at, reference, translation) in [
+        (28, 40, 70_u32, [1.0_f64, 2.0, 3.0]),
+        (168, 180, 80_u32, [4.0, 5.0, 6.0]),
+    ] {
+        bytes[reference_at] = 1;
+        bytes[reference_at + 1..reference_at + 5].copy_from_slice(&reference.to_le_bytes());
+        for (ordinal, value) in [
+            1.0,
+            0.0,
+            0.0,
+            translation[0],
+            0.0,
+            1.0,
+            0.0,
+            translation[1],
+            0.0,
+            0.0,
+            1.0,
+            translation[2],
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            bytes[transform_at + ordinal * 8..transform_at + ordinal * 8 + 8]
+                .copy_from_slice(&value.to_le_bytes());
+        }
+    }
+    bytes[637..641].copy_from_slice(&3_u32.to_le_bytes());
+    bytes[641..644].copy_from_slice(b"259");
+    bytes[644..648].copy_from_slice(&scope_record_index.to_le_bytes());
+    bytes
+}
+
+/// Build exact timeline frames for fixture scopes in their supplied order.
+pub(crate) fn synthetic_feature_timelines(
+    scopes: &[crate::records::feature::scope::DesignParameterScope],
+) -> Vec<crate::records::entity_header::DesignFeatureTimeline> {
+    let mut streams = Vec::<(&str, Vec<crate::records::identity::Located<u64>>)>::new();
+    for scope in scopes {
+        let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
+        let item = crate::records::identity::Located {
+            value: u64::from(scope.record_index),
+            offset: 0,
+        };
+        if let Some((_, items)) = streams
+            .iter_mut()
+            .find(|(candidate, _)| *candidate == stream)
+        {
+            items.push(item);
+        } else {
+            streams.push((stream, vec![item]));
+        }
+    }
+    streams
+        .into_iter()
+        .map(|(stream, items)| {
+            crate::records::entity_header::DesignFeatureTimeline::try_new(
+                crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
+                crate::records::entity_header::DesignTimelineFrame::test_items(0, items),
+                crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
+                std::num::NonZeroU64::new(1).unwrap(),
+                0,
+                std::num::NonZeroU64::new(1).unwrap(),
+            )
+            .unwrap()
+        })
+        .collect::<Vec<_>>()
+}

@@ -3,10 +3,217 @@
 
 #![allow(clippy::doc_markdown)]
 
-use crate::test_support::*;
+use cadmpeg_test_support::wire;
+
+use crate::test_support::test_archive::{archive, archive_entries, assert_valid_document};
 use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
+
+#[test]
+fn drawing_diagnostic_refuses_at_matching_retained_limit() {
+    crate::test_support::assert_retained_refusal_at(&[], "fcstd drawing diagnostic", |ctx| {
+        Err::<(), _>(super::drawing_malformed(
+            ctx,
+            format_args!("drawing property {} has invalid XML", "Caption"),
+        ))
+    });
+}
+
+#[test]
+fn drawing_record_collection_refuses_at_caller_limit() {
+    let object = crate::native::ObjectRecord {
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Page".into(),
+            "Page".into(),
+        )
+        .expect("object identity"),
+        type_name: "TechDraw::DrawPage".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: std::collections::BTreeMap::default(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert!(matches!(super::transfer(&ctx, &[object], &[]),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "fcstd drawing records"));
+}
+
+fn resource_drawing_record() -> crate::native::DrawingRecord {
+    crate::native::DrawingRecord {
+        id: "fcstd:native:drawing#Page".into(),
+        object: "fcstd:native:object#Page".into(),
+        kind: crate::native::TechDrawKind::Page {
+            runtime: crate::native::TechDrawPageKind::Page,
+            views: Vec::new(),
+            template: None,
+        },
+        sources: Vec::new(),
+        relationships: std::collections::BTreeMap::default(),
+        parameters: std::collections::BTreeMap::default(),
+        side_entries: Vec::new(),
+    }
+}
+
+#[test]
+fn drawing_native_identity_refuses_at_retained_limit() {
+    let object = crate::native::ObjectRecord {
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Page".into(),
+            "Page".into(),
+        )
+        .expect("object identity"),
+        type_name: "TechDraw::DrawPage".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: std::collections::BTreeMap::default(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
+    };
+    crate::test_support::assert_retained_refusal_at(&[], "FreeCAD native identity", |ctx| {
+        super::transfer(ctx, std::slice::from_ref(&object), &[])
+    });
+}
+
+#[test]
+fn drawing_model_identity_refuses_at_retained_limit() {
+    let record = resource_drawing_record();
+    // Temporary identity lookup slots and text use the materialized budget.
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(
+        4 * std::mem::size_of::<(&str, cadmpeg_ir::drawings::DrawingId)>()
+            + 35
+            + crate::native::model_id("drawing", &record.object, "entity").len(),
+    ) - 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    assert!(
+        matches!(super::transfer_neutral(&ctx, &mut cadmpeg_ir::document::Model::default(), &[record], &[]),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "FreeCAD model identity" && limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+    );
+}
+
+#[test]
+fn drawing_asset_identity_refuses_at_retained_limit() {
+    let mut record = resource_drawing_record();
+    record.side_entries.push("page.svg".into());
+    crate::test_support::assert_retained_refusal_at(&[], "FreeCAD native identity", |ctx| {
+        super::transfer_neutral(
+            ctx,
+            &mut cadmpeg_ir::document::Model::default(),
+            std::slice::from_ref(&record),
+            &[],
+        )
+    });
+}
+
+#[test]
+fn drawing_neutral_identity_copy_refuses_at_retained_limit() {
+    let record = resource_drawing_record();
+    crate::test_support::assert_retained_refusal_at(&[], "fcstd drawing neutral identity", |ctx| {
+        super::transfer_neutral(
+            ctx,
+            &mut cadmpeg_ir::document::Model::default(),
+            std::slice::from_ref(&record),
+            &[],
+        )
+    });
+}
+
+#[test]
+fn drawing_template_identity_copy_refuses_at_retained_limit() {
+    let mut page = resource_drawing_record();
+    let mut template = resource_drawing_record();
+    template.object = "fcstd:native:object#Template".into();
+    template.id = "fcstd:native:drawing#Template".into();
+    let link = serde_json::from_value::<crate::native::LinkTarget>(serde_json::json!({
+        "document": null,
+        "document_attribute": null,
+        "object": template.object,
+        "subelements": [],
+    }))
+    .expect("local template link");
+    page.relationships
+        .insert("Template".into(), vec![Some(link)]);
+    let records = [page, template];
+    crate::test_support::assert_retained_refusal_at(
+        &[],
+        "fcstd drawing template identity",
+        |ctx| {
+            super::transfer_neutral(
+                ctx,
+                &mut cadmpeg_ir::document::Model::default(),
+                &records,
+                &[],
+            )
+        },
+    );
+}
+
+#[test]
+fn drawing_keyed_relationships_refuse_at_collection_limit() {
+    let mut record = resource_drawing_record();
+    record.relationships.insert("role".into(), Vec::new());
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 3;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert!(
+        matches!(super::transfer_neutral(&ctx, &mut cadmpeg_ir::document::Model::default(), &[record], &[]),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "named entry map nodes")
+    );
+}
+
+#[test]
+fn drawing_keyed_parameters_refuse_at_collection_limit() {
+    let mut record = resource_drawing_record();
+    record.parameters.insert("role".into(), "value".into());
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 3;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert!(
+        matches!(super::transfer_neutral(&ctx, &mut cadmpeg_ir::document::Model::default(), &[record], &[]),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "named entry map nodes")
+    );
+}
+
+#[test]
+fn drawing_direction_vector_refuses_nonfinite_components() {
+    let mut attributes = std::collections::BTreeMap::from([
+        ("valueX".into(), "0".into()),
+        ("valueY".into(), "1".into()),
+        ("valueZ".into(), "0".into()),
+    ]);
+    let value = |attributes| crate::native::ValueRecord {
+        tag: "PropertyVector".into(),
+        order: 0,
+        attributes,
+        text: None,
+        raw_xml: String::new(),
+    };
+    assert_eq!(
+        super::vector_value(&value(attributes.clone())),
+        Some(cadmpeg_ir::units::FiniteVector::new([0.0, 1.0, 0.0]).unwrap())
+    );
+    attributes.insert("valueY".into(), "inf".into());
+    assert_eq!(super::vector_value(&value(attributes)), None);
+}
 
 #[test]
 pub(crate) fn recovers_techdraw_page_template_and_view_graph() {
@@ -59,12 +266,13 @@ pub(crate) fn recovers_techdraw_page_template_and_view_graph() {
         .iter()
         .find(|drawing| drawing.object.ends_with("#View"))
         .expect("view");
-    let crate::native::DrawingRole::Page {
+    let crate::native::TechDrawKind::Page {
         views,
         template: page_template,
-    } = &page.role
+        ..
+    } = &page.kind
     else {
-        panic!("page record is not DrawingRole::Page");
+        panic!("page record is not TechDrawKind::Page");
     };
     assert_eq!(
         page_template.as_deref(),
@@ -72,7 +280,10 @@ pub(crate) fn recovers_techdraw_page_template_and_view_graph() {
     );
     assert_eq!(views.as_slice(), ["fcstd:native:object#View"]);
     assert_eq!(template.side_entries, ["page.svg"]);
-    assert_eq!(view.sources[0].object(), Some("fcstd:native:object#Model"));
+    assert_eq!(
+        view.sources[0].as_ref().expect("source").object(),
+        Some("fcstd:native:object#Model")
+    );
     assert!(view.parameters.contains_key("Direction"));
     assert_eq!(
         view.parameters["Scale"],
@@ -102,7 +313,10 @@ pub(crate) fn recovers_techdraw_page_template_and_view_graph() {
         .expect("neutral view");
     assert_eq!(neutral_page.kind, cadmpeg_ir::drawings::DrawingKind::Page);
     assert_eq!(
-        neutral_page.template.as_deref(),
+        neutral_page
+            .template
+            .as_ref()
+            .map(cadmpeg_ir::drawings::DrawingId::as_str),
         Some(neutral_template.id.as_str())
     );
     assert_eq!(
@@ -110,24 +324,26 @@ pub(crate) fn recovers_techdraw_page_template_and_view_graph() {
         Some(neutral_view.id.as_str())
     );
     assert_eq!(neutral_template.assets.len(), 1);
-    assert_eq!(neutral_view.position, Some([25.0, 40.0]));
-    assert_eq!(neutral_view.scale, Some(2.0));
-    assert_eq!(neutral_view.direction, Some([0.0, 0.0, 1.0]));
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert_eq!(
+        neutral_view
+            .position
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([25.0, 40.0])
+    );
+    assert_eq!(
+        neutral_view
+            .scale
+            .map(cadmpeg_ir::scalar::PositiveReal::get),
+        Some(2.0)
+    );
+    assert_eq!(
+        neutral_view
+            .direction
+            .map(|value| wire::value::<[f64; 3]>(&value)),
+        Some([0.0, 0.0, 1.0])
+    );
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
-
-    let mut corrupted = result.ir().clone();
-    corrupted
-        .model
-        .drawings
-        .iter_mut()
-        .find(|drawing| drawing.object.ends_with("#View"))
-        .expect("neutral view")
-        .scale = Some(0.0);
-    assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| finding.message == "invalid drawing reference, order, or numeric state"));
 }
 
 #[test]
@@ -168,7 +384,10 @@ fn preserves_null_and_non_drawing_page_links_in_typed_relationships() {
         .find(|drawing| drawing.object.ends_with("#PageNull"))
         .expect("null page");
     assert!(null_page.template.is_none());
-    assert!(null_page.relationships["Template"][0].is_null());
+    assert!(matches!(
+        null_page.relationships["Template"][0].target,
+        cadmpeg_ir::references::ReferenceTarget::Null
+    ));
     assert_eq!(
         null_page.relationships["Views"][0].local_target(),
         Some("fcstd:native:object#Model")
@@ -182,7 +401,7 @@ fn preserves_null_and_non_drawing_page_links_in_typed_relationships() {
         model_page.relationships["Template"][0].local_target(),
         Some("fcstd:native:object#Model")
     );
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 }
 
@@ -222,7 +441,10 @@ fn keeps_non_page_template_links_out_of_neutral_page_field() {
         .find(|drawing| drawing.object.ends_with("#View"))
         .expect("native view");
     assert_eq!(
-        native_view.relationships["Template"][0].object(),
+        native_view.relationships["Template"][0]
+            .as_ref()
+            .expect("relationship")
+            .object(),
         Some("fcstd:native:object#Template")
     );
 
@@ -248,7 +470,10 @@ fn keeps_non_page_template_links_out_of_neutral_page_field() {
         .find(|drawing| drawing.object.ends_with("#View"))
         .expect("neutral view");
     assert_eq!(
-        neutral_page.template.as_deref(),
+        neutral_page
+            .template
+            .as_ref()
+            .map(cadmpeg_ir::drawings::DrawingId::as_str),
         Some(neutral_template.id.as_str())
     );
     assert_eq!(
@@ -256,7 +481,7 @@ fn keeps_non_page_template_links_out_of_neutral_page_field() {
         Some(neutral_template.id.as_str())
     );
     assert!(neutral_view.template.is_none());
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 }
 
@@ -291,12 +516,28 @@ fn accepts_enumeration_metadata_and_registered_optional_carriers() {
         .expect("typed drawing carriers");
 
     let drawing = &result.ir().model.drawings[0];
-    assert_eq!(drawing.position, Some([25.0, 40.0]));
-    assert_eq!(drawing.scale, Some(2.0));
-    assert_eq!(drawing.direction, Some([0.0, 0.0, 1.0]));
-    assert_eq!(drawing.rotation_degrees, Some(15.0));
+    assert_eq!(
+        drawing.position.map(cadmpeg_ir::units::FiniteVector::get),
+        Some([25.0, 40.0])
+    );
+    assert_eq!(
+        drawing.scale.map(cadmpeg_ir::scalar::PositiveReal::get),
+        Some(2.0)
+    );
+    assert_eq!(
+        drawing
+            .direction
+            .map(|value| wire::value::<[f64; 3]>(&value)),
+        Some([0.0, 0.0, 1.0])
+    );
+    assert_eq!(
+        drawing
+            .rotation_degrees
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
+        Some(15.0)
+    );
     assert_eq!(drawing.parameters["ScaleType"], r#"<Integer value="1"/>"#);
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 }
 
@@ -498,7 +739,7 @@ fn retains_unknown_techdraw_runtime_types_only_in_native_records() {
     assert_eq!(drawings.len(), 1);
     assert!(drawings[0].object.ends_with("#Arch"));
     assert_eq!(result.ir().model.drawings.len(), 1);
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
 
 #[test]
@@ -558,4 +799,61 @@ fn rejects_invalid_drawing_numeric_admission() {
             ))
         ));
     }
+}
+
+#[test]
+fn decodes_python_page_kind_with_views_and_template() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3">
+<Object type="TechDraw::DrawPagePython" name="Page"/>
+<Object type="TechDraw::DrawView" name="View"/>
+<Object type="TechDraw::DrawTemplate" name="Template"/>
+</Objects>
+<ObjectData Count="3">
+<Object name="Page"><Properties Count="2">
+<Property name="Views" type="App::PropertyLinkList"><LinkList count="1"><Link value="View"/></LinkList></Property>
+<Property name="Template" type="App::PropertyLink"><Link value="Template"/></Property>
+</Properties></Object>
+<Object name="View"><Properties Count="0"/></Object>
+<Object name="Template"><Properties Count="0"/></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode Python page archive");
+    let drawings = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("native namespace")
+        .arena_as::<crate::native::DrawingRecord>("drawings")
+        .expect("drawing records");
+    let page = drawings
+        .iter()
+        .find(|record| record.object == "fcstd:native:object#Page")
+        .expect("Python page");
+    assert_eq!(
+        page.kind,
+        crate::native::TechDrawKind::Page {
+            runtime: crate::native::TechDrawPageKind::Python,
+            views: vec!["fcstd:native:object#View".to_owned()],
+            template: Some("fcstd:native:object#Template".to_owned()),
+        }
+    );
+}
+
+#[test]
+fn drawing_wire_rejects_non_page_views() {
+    let wire = serde_json::json!({
+        "id": "view", "object": "view", "kind": "TechDraw::DrawView",
+        "views": ["a"], "template": null, "sources": [],
+        "relationships": {}, "parameters": {}, "side_entries": []
+    });
+    let error = serde_json::from_value::<crate::native::DrawingRecord>(wire)
+        .expect_err("non-page payload must reject page views");
+    assert!(error
+        .to_string()
+        .contains("non-page drawing record cannot carry views or a template"));
 }

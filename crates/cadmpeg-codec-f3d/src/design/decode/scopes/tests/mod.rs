@@ -3,38 +3,28 @@
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
+    clippy::uninlined_format_args
 )]
-
-pub(super) use super::*;
 
 mod assembly;
 mod assembly_variable_reference;
-mod coil;
 mod combine;
-mod component_insert;
+mod component_pattern;
 mod copy_paste_bodies;
 mod derived_instance;
-mod existing;
-mod extrude_class_296;
-mod extrude_coil;
-mod extrude_extent;
 mod fixed_kind_operations;
 mod fixed_kind_tail;
 mod flange;
-mod hem;
 mod history_admission;
 mod legacy_class_397;
 mod legacy_frames;
 mod legacy_work_planes;
-mod mirror;
 mod named_empty_label;
 mod named_variable_tail;
-mod pattern;
-mod prelude;
 mod scale;
 mod surfaces;
 mod thicken;
 mod thread;
-mod work_point;
+
+mod fixed_kind_path_operations;
+mod fixed_kind_tail_operations;

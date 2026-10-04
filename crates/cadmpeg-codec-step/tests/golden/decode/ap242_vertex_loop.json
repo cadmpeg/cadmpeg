@@ -23,10 +23,13 @@
       "faces": [
         {
           "id": "step:data:face#16",
-          "loops": [
-            "step:data:loop#12-face-16",
-            "step:data:loop#13-face-16"
-          ],
+          "loops": {
+            "classification": "classified",
+            "inner": [
+              "step:data:loop#13-face-16"
+            ],
+            "outer": "step:data:loop#12-face-16"
+          },
           "sense": "forward",
           "shell": "step:data:shell#17",
           "surface": "step:data:surface#7"
@@ -35,24 +38,20 @@
       "features": [],
       "loops": [
         {
-          "boundary_role": "outer",
+          "boundary": {
+            "kind": "vertex",
+            "vertex": "step:data:vertex#10"
+          },
           "face": "step:data:face#16",
-          "id": "step:data:loop#12-face-16",
-          "vertex_uses": [
-            {
-              "vertex": "step:data:vertex#10"
-            }
-          ]
+          "id": "step:data:loop#12-face-16"
         },
         {
-          "boundary_role": "inner",
+          "boundary": {
+            "kind": "vertex",
+            "vertex": "step:data:vertex#11"
+          },
           "face": "step:data:face#16",
-          "id": "step:data:loop#13-face-16",
-          "vertex_uses": [
-            {
-              "vertex": "step:data:vertex#11"
-            }
-          ]
+          "id": "step:data:loop#13-face-16"
         }
       ],
       "occurrences": [],
@@ -94,10 +93,13 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [
-            "step:data:face#16"
-          ],
           "id": "step:data:shell#17",
+          "members": [
+            {
+              "id": "step:data:face#16",
+              "kind": "face"
+            }
+          ],
           "region": "step:data:region#18"
         }
       ],
@@ -145,11 +147,7 @@
       ],
       "view_presentations": []
     },
-    "native": {
-      "step": {
-        "unknowns": []
-      }
-    },
+    "native": {},
     "source": {
       "attributes": {
         "bytes_named_opaque": "0",
@@ -160,19 +158,20 @@
         "entity_instances": "19",
         "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
       },
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": "admitted",
-          "declared": {
-            "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
-            "implementation_level": "2;1"
-          },
-          "dialect": "step:ap242",
-          "format": "step"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
+              "implementation_level": "2;1"
+            },
+            "dialect": "step:ap242"
+          }
         }
-      },
-      "format": "step"
+      }
     },
     "tolerances": {
       "angular": 1e-10,
@@ -183,27 +182,28 @@
     }
   },
   "report": {
-    "container_only": false,
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "admitted",
-        "declared": {
-          "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
-          "implementation_level": "2;1"
-        },
-        "dialect": "step:ap242",
-        "format": "step"
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
+            "implementation_level": "2;1"
+          },
+          "dialect": "step:ap242"
+        }
       }
     },
-    "format": "step",
-    "geometry_transferred": true,
     "losses": [
       {
         "code": {
           "code": "geometry.document-angle-unit-unresolved",
           "kind": "geometry_not_transferred",
-          "namespace": "step"
+          "namespace": "step",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
         "severity": "error"
@@ -211,7 +211,11 @@
     ],
     "notes": [
       "byte accounting: 297 structural, 702 typed, 0 named opaque, 0 unclassified"
-    ]
+    ],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {}

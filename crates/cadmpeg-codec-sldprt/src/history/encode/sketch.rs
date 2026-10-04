@@ -1,25 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Sketch, spatial-sketch, sketch-block, and wrap write encoders.
 
-use super::super::{format_length_mm, sketch_block_placement};
-use super::support::{face_selection_value, profile_source, require_same_family};
+use super::super::literals::format_length_mm;
+use super::super::project::sketch::sketch_block_placement;
+use super::support::{face_selection_value, planar_profile_source, require_same_family};
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use crate::classification::NativeClassKind;
 use crate::history::classify::feature_input_class;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{FaceSelection, FeatureId, ProfileRef, WrapMode};
+use cadmpeg_ir::features::{FaceSelection, FeatureId, PlanarProfileRef, WrapMode};
 
-#[allow(
-    clippy::too_many_arguments,
-    clippy::trivially_copy_pass_by_ref,
-    clippy::ref_option,
-    clippy::ptr_arg,
-    reason = "Encoder arguments are borrowed from one FeatureDefinition match."
-)]
 impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_sketch_block_definition(
         &self,
-        sketch: &Option<cadmpeg_ir::sketches::SketchId>,
+        sketch: Option<&cadmpeg_ir::sketches::SketchId>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
@@ -49,8 +43,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_sketch_block_instance(
         &self,
-        block: &Option<FeatureId>,
-        placement: &Option<cadmpeg_ir::transform::Transform>,
+        block: Option<&FeatureId>,
+        placement: Option<&cadmpeg_ir::transform::Transform>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
@@ -59,12 +53,9 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let retained_source = existing
                 .and_then(|record| record.properties.get("BlockDefinition"))
                 .map(String::as_str);
-            let block_source = block
-                .as_ref()
-                .and_then(|block| feature_sources.get(block).copied());
+            let block_source = block.and_then(|block| feature_sources.get(block).copied());
             let retained_placement = existing.and_then(sketch_block_placement);
-            if retained_source != block_source || retained_placement.as_ref() != placement.as_ref()
-            {
+            if retained_source != block_source || retained_placement.as_ref() != placement {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes sketch-block instance semantics",
                     feature.id
@@ -88,7 +79,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_wrap(
         &self,
-        profile: &ProfileRef,
+        profile: &PlanarProfileRef,
         face: &FaceSelection,
         mode: &WrapMode,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
@@ -99,13 +90,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let sketch_sources = self.sketch_sources;
         Ok({
             require_same_family(existing, &feature.id, &["Wrap"])?;
-            let profile = profile_source(profile, record_sources, feature_sources, sketch_sources)
-                .ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "SLDPRT feature {} references a missing wrap profile",
-                        feature.id
-                    ))
-                })?;
+            let profile =
+                planar_profile_source(profile, record_sources, feature_sources, sketch_sources)
+                    .ok_or_else(|| {
+                        CodecError::malformed(format_args!(
+                            "SLDPRT feature {} references a missing wrap profile",
+                            feature.id
+                        ))
+                    })?;
             let face = face_selection_value(face).ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "SLDPRT feature {} has no wrap target face",
@@ -117,23 +109,20 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 .unwrap_or_default();
             match mode {
                 WrapMode::Emboss { depth } | WrapMode::Deboss { depth } => {
-                    if !depth.0.is_finite() || depth.0 <= 0.0 {
-                        return Err(CodecError::malformed(format_args!(
-                            "SLDPRT feature {} has invalid wrap depth",
-                            feature.id
-                        )));
-                    }
-                    parameters.insert("Depth".into(), format_length_mm(depth.0));
+                    parameters.insert(
+                        cadmpeg_core::nonblank_literal!("Depth"),
+                        format_length_mm((*depth).into()),
+                    );
                 }
                 WrapMode::Scribe => {
                     parameters.remove("Depth");
                 }
             }
             let mut properties = feature.source_properties.clone();
-            properties.insert("Profile".into(), profile);
-            properties.insert("Face".into(), face);
+            properties.insert(cadmpeg_core::nonblank_literal!("Profile"), profile);
+            properties.insert(cadmpeg_core::nonblank_literal!("Face"), face);
             properties.insert(
-                "Mode".into(),
+                cadmpeg_core::nonblank_literal!("Mode"),
                 match mode {
                     WrapMode::Emboss { .. } => "Emboss",
                     WrapMode::Deboss { .. } => "Deboss",

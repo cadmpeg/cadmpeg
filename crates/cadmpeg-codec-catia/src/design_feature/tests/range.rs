@@ -1,17 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Range source-property transfer tests.
 
-use super::*;
-
+use crate::design_feature::tests::entity_record;
+use crate::design_feature::tests::native_operation_object;
+use crate::design_feature::tests::object_record;
+use crate::design_feature::transfer_design_features;
 use crate::entity_table::{RangeInterval, RangeIntervalPrefix, RangeIntervalSlot};
+use crate::native::CatiaNative;
+use crate::native::CatiaObjectGraph;
 use crate::native::{
     CatiaEntitySchemaValue, CatiaRangeInterval, CatiaRangeNominal, CatiaRangeNominalFraming,
 };
+use cadmpeg_ir::document::CadIr;
+use std::collections::HashSet;
 
 #[test]
 fn transfers_exact_range_fields_as_unresolved_operation_properties() {
     let mut operation = native_operation_object(
-        "operation-object",
+        "synthetic:test:object#operation-object",
         None,
         1,
         "operation-record",
@@ -47,7 +53,7 @@ fn transfers_exact_range_fields_as_unresolved_operation_properties() {
     });
     let mut range_record = object_record(
         "range-record",
-        Some("operation-object"),
+        Some("synthetic:test:object#operation-object"),
         Some(2),
         Some(1),
         None,
@@ -83,7 +89,15 @@ fn transfers_exact_range_fields_as_unresolved_operation_properties() {
     };
     let mut ir = CadIr::empty();
 
-    let transfer = transfer_design_features(&mut ir, &native, None);
+    let transfer = crate::test_support::with_service_context(|ctx| {
+        transfer_design_features(
+            ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
+    .unwrap();
 
     let properties = &ir.model.features[0].source_properties;
     assert_eq!(properties["catia_range_0_entity"], "range-entity");
@@ -107,5 +121,7 @@ fn transfers_exact_range_fields_as_unresolved_operation_properties() {
         transfer.native_operation_range_records,
         HashSet::from(["range-record".to_string()])
     );
-    assert!(transfer.consumed_records().contains("range-record"));
+    assert!(transfer
+        .consumed_records()
+        .any(|record| record == "range-record"));
 }

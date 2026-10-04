@@ -12,43 +12,46 @@
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{Catalog, EncodeInput, EncoderBackend, ExportBody, ResolvedWrite};
+use cadmpeg_ir::codec::write::{
+    target::{Catalog, ResolvedWrite},
+    EncodeInput, EncoderBackend, ExportBody,
+};
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::ContainerSummary;
 
-pub(crate) mod annotations;
-pub(crate) mod brep;
-pub(crate) mod cage;
-pub(crate) mod chunks;
-pub(crate) mod container;
-pub(crate) mod coverage;
-pub(crate) mod curve_on_surface;
-pub(crate) mod curves;
-pub(crate) mod decode;
-pub(crate) mod detail;
-pub(crate) mod dialect;
-pub(crate) mod dimensions;
-pub(crate) mod document_data;
-pub(crate) mod extrusion;
-pub(crate) mod hatch;
-pub(crate) mod history;
-pub(crate) mod instances;
+mod annotations;
+mod brep;
+mod cage;
+mod chunks;
+mod container;
+mod coverage;
+mod curve_on_surface;
+mod curves;
+mod decode;
+mod detail;
+mod dialect;
+mod dimensions;
+mod document_data;
+mod extrusion;
+mod hatch;
+mod history;
+mod instances;
 /// Byte-offset constants generated from `docs/layouts/rhino.toml`.
-pub(crate) mod layout;
-pub(crate) mod legacy;
-pub(crate) mod loss;
-pub(crate) mod mesh;
-pub(crate) mod mesh_modifiers;
-pub(crate) mod morph;
-pub(crate) mod objects;
-pub(crate) mod polyedge;
-pub(crate) mod presentation;
-pub(crate) mod product;
-pub(crate) mod settings;
-pub(crate) mod subd;
-pub(crate) mod surfaces;
-pub(crate) mod views;
-pub(crate) mod wire;
+mod layout;
+mod legacy;
+mod loss;
+mod mesh;
+mod mesh_modifiers;
+mod morph;
+mod objects;
+mod polyedge;
+mod presentation;
+mod product;
+mod settings;
+mod subd;
+mod surfaces;
+mod views;
+mod wire;
 mod writer;
 
 #[doc(hidden)]
@@ -76,9 +79,9 @@ pub enum RhinoArchiveVersion {
 macro_rules! writer_vocabulary {
     ($(#[$all_meta:meta])* $count:literal; $($variant:ident),+ $(,)?) => {
         $(#[$all_meta])*
-        pub(crate) const ALL: [Self; $count] = [$(Self::$variant),+];
+        const ALL: [Self; $count] = [$(Self::$variant),+];
         /// The generic encoder view projected from [`Self::ALL`].
-        pub(crate) const TARGETS: &'static [TargetDescriptor] = &[
+        const TARGETS: &'static [TargetDescriptor] = &[
             $(Self::$variant.descriptor()),+
         ];
     };
@@ -138,20 +141,29 @@ impl RhinoArchiveVersion {
 impl CodecBackend for RhinoCodec {
     const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
 
-    fn detect_impl(&self, prefix: &[u8]) -> Confidence {
+    fn detect_impl(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        prefix: cadmpeg_core::decode::View<'_>,
+    ) -> Result<Confidence, cadmpeg_core::CodecError> {
+        let prefix = prefix.window();
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(prefix.len()),
+            "detect input",
+        )?;
         if prefix.windows(MAGIC.len()).any(|window| window == MAGIC) {
-            Confidence::High
+            Ok(Confidence::High)
         } else {
-            Confidence::No
+            Ok(Confidence::No)
         }
     }
 
     fn inspect_impl(
         &self,
-        _ctx: &DecodeContext<'_>,
+        ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        container::inspect(root)
+        container::inspect(ctx, root)
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
@@ -180,4 +192,4 @@ mod golden_tests;
 #[cfg(test)]
 mod integration_tests;
 #[cfg(test)]
-pub(crate) mod test_support;
+mod test_support;

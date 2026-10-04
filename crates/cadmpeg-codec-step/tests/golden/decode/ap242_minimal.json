@@ -65,20 +65,21 @@
         "entity_instances": "2",
         "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 3 1 4 }"
       },
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": "admitted",
-          "declared": {
-            "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 3 1 4 }",
-            "implementation_level": "2;1",
-            "long_form_arcs": " 1 0 10303 442 3 1 4 "
-          },
-          "dialect": "step:ap242-e2",
-          "format": "step"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 3 1 4 }",
+              "implementation_level": "2;1",
+              "long_form_arcs": " 1 0 10303 442 3 1 4 "
+            },
+            "dialect": "step:ap242-e2"
+          }
         }
-      },
-      "format": "step"
+      }
     },
     "tolerances": {
       "angular": 1e-10,
@@ -89,28 +90,29 @@
     }
   },
   "report": {
-    "container_only": false,
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "admitted",
-        "declared": {
-          "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 3 1 4 }",
-          "implementation_level": "2;1",
-          "long_form_arcs": " 1 0 10303 442 3 1 4 "
-        },
-        "dialect": "step:ap242-e2",
-        "format": "step"
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 3 1 4 }",
+            "implementation_level": "2;1",
+            "long_form_arcs": " 1 0 10303 442 3 1 4 "
+          },
+          "dialect": "step:ap242-e2"
+        }
       }
     },
-    "format": "step",
-    "geometry_transferred": false,
     "losses": [
       {
         "code": {
           "code": "geometry.document-length-unit-unresolved",
           "kind": "geometry_not_transferred",
-          "namespace": "step"
+          "namespace": "step",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "the document length unit did not resolve; coordinates are unscaled and reported as millimetres",
         "severity": "error"
@@ -119,7 +121,9 @@
         "code": {
           "code": "geometry.document-angle-unit-unresolved",
           "kind": "geometry_not_transferred",
-          "namespace": "step"
+          "namespace": "step",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
         "severity": "error"
@@ -128,7 +132,8 @@
         "code": {
           "code": "decode.opaque-record-preserved",
           "kind": "record_not_typed",
-          "namespace": "step"
+          "namespace": "step",
+          "scope": "namespaced"
         },
         "message": "preserved 1 EXAMPLE_RECORD instance(s) as named opaque STEP records",
         "severity": "warning"
@@ -137,7 +142,8 @@
         "code": {
           "code": "decode.opaque-record-preserved",
           "kind": "record_not_typed",
-          "namespace": "step"
+          "namespace": "step",
+          "scope": "namespaced"
         },
         "message": "preserved 1 OPAQUE_TARGET instance(s) as named opaque STEP records",
         "severity": "warning"
@@ -145,27 +151,31 @@
     ],
     "notes": [
       "byte accounting: 295 structural, 0 typed, 96 named opaque, 0 unclassified"
-    ]
+    ],
+    "transfer": {
+      "geometry_transferred": false,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {},
-    "retained_records": [
-      {
-        "byte_len": 69,
-        "data": "IzE9RVhBTVBMRV9SRUNPUkQoJ2xpbmUKY29udGludWVzJywjMiwxLiwwLkUrMDAwLDFELTMsLlRSVUUuLCQsKiwoKSk7",
-        "id": "step:data:example_record#1",
+    "retained_records": {
+      "step:data:example_record#1": {
+        "bytes": {
+          "data": "IzE9RVhBTVBMRV9SRUNPUkQoJ2xpbmUKY29udGludWVzJywjMiwxLiwwLkUrMDAwLDFELTMsLlRSVUUuLCQsKiwoKSk7",
+          "retention": "inline"
+        },
         "offset": 267,
-        "sha256": "d62cba64f3300f57a6a2ebd4701b5d9253130d1aef42dfd2b021910c25aa0c59",
-        "stream": "source"
+        "stream": ""
       },
-      {
-        "byte_len": 27,
-        "data": "IzI9T1BBUVVFX1RBUkdFVCgndGFyZ2V0Jyk7",
-        "id": "step:data:opaque_target#2",
+      "step:data:opaque_target#2": {
+        "bytes": {
+          "data": "IzI9T1BBUVVFX1RBUkdFVCgndGFyZ2V0Jyk7",
+          "retention": "inline"
+        },
         "offset": 337,
-        "sha256": "75760ab0a42cf9aa82d38698bd9745835655906b302565e2425937f2c2085315",
-        "stream": "source"
+        "stream": ""
       }
-    ]
+    }
   }
 }

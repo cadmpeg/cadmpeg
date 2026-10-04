@@ -23,23 +23,26 @@
           "definition": {
             "dimension": "size",
             "kind": "dimension",
-            "limits_and_fits": {
-              "form_variance": "H",
-              "grade": "7",
-              "source": "ISO 286",
-              "zone_variance": ""
-            },
-            "lower_deviation": {
-              "quantity": "length",
-              "value": -0.1
-            },
             "nominal": {
               "quantity": "length",
               "value": 12.0
             },
-            "upper_deviation": {
-              "quantity": "length",
-              "value": 0.2
+            "tolerance": {
+              "fit": {
+                "form_variance": "H",
+                "grade": "7",
+                "source": "ISO 286",
+                "zone_variance": ""
+              },
+              "form": "plus_minus_fit",
+              "lower": {
+                "quantity": "length",
+                "value": -0.1
+              },
+              "upper": {
+                "quantity": "length",
+                "value": 0.2
+              }
             }
           },
           "id": "step:presentation:pmi#10",
@@ -73,13 +76,16 @@
           "definition": {
             "dimension": "diameter",
             "kind": "dimension",
-            "lower_deviation": {
-              "quantity": "length",
-              "value": -0.1
-            },
-            "upper_deviation": {
-              "quantity": "length",
-              "value": 0.2
+            "tolerance": {
+              "form": "plus_minus",
+              "lower": {
+                "quantity": "length",
+                "value": -0.1
+              },
+              "upper": {
+                "quantity": "length",
+                "value": 0.2
+              }
             }
           },
           "id": "step:presentation:pmi#25",
@@ -143,11 +149,7 @@
       "vertices": [],
       "view_presentations": []
     },
-    "native": {
-      "step": {
-        "unknowns": []
-      }
-    },
+    "native": {},
     "source": {
       "attributes": {
         "bytes_named_opaque": "0",
@@ -158,19 +160,20 @@
         "entity_instances": "25",
         "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
       },
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": "admitted",
-          "declared": {
-            "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
-            "implementation_level": "2;1"
-          },
-          "dialect": "step:ap242",
-          "format": "step"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
+              "implementation_level": "2;1"
+            },
+            "dialect": "step:ap242"
+          }
         }
-      },
-      "format": "step"
+      }
     },
     "tolerances": {
       "angular": 1e-10,
@@ -181,27 +184,28 @@
     }
   },
   "report": {
-    "container_only": false,
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "admitted",
-        "declared": {
-          "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
-          "implementation_level": "2;1"
-        },
-        "dialect": "step:ap242",
-        "format": "step"
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
+            "implementation_level": "2;1"
+          },
+          "dialect": "step:ap242"
+        }
       }
     },
-    "format": "step",
-    "geometry_transferred": false,
     "losses": [
       {
         "code": {
           "code": "geometry.document-angle-unit-unresolved",
           "kind": "geometry_not_transferred",
-          "namespace": "step"
+          "namespace": "step",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
         "severity": "error"
@@ -209,7 +213,11 @@
     ],
     "notes": [
       "byte accounting: 295 structural, 1421 typed, 0 named opaque, 0 unclassified"
-    ]
+    ],
+    "transfer": {
+      "geometry_transferred": false,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {}

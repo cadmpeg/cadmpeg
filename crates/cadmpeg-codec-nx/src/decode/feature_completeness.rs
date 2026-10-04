@@ -2,41 +2,41 @@
 //! Feature-completeness predicates for NX decode.
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{
-    BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, CurveProjectionDirection,
-    CurveProjectionDirectionState, Feature, FeatureDefinition, Length, LoftSection, ParameterId,
-    TrimRegion,
+use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::units::UnitVector3;
+use cadmpeg_ir::{
+    features::{
+        BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, CurveProjectionDirection,
+        CurveProjectionDirectionState, Feature, FeatureDefinition, FeatureOperation, LoftSection,
+        ParameterId, TrimRegion,
+    },
+    scalar::Length,
 };
-use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) mod operands;
 use operands::{
-    body_selection_is_incomplete, body_selections_overlap, chamfer_spec_is_incomplete,
-    edge_selection_is_incomplete, extrude_extent_is_incomplete, extrude_start_is_incomplete,
-    face_selection_is_incomplete, face_selections_overlap, hole_auxiliary_semantics_are_incomplete,
-    hole_feature_is_incomplete, loft_section_is_incomplete, path_ref_is_incomplete,
-    profile_dependency_is_incomplete, profile_ref_is_incomplete, radius_spec_is_incomplete,
-    resolved_body_selection_len, revolve_feature_is_incomplete, rib_feature_is_incomplete,
-    sweep_mode_is_incomplete, sweep_orientation_is_incomplete,
-    termination_dependency_is_incomplete,
+    body_selection_is_incomplete, edge_selection_is_incomplete, extrude_extent_is_incomplete,
+    extrude_start_is_incomplete, face_selection_is_incomplete, hole_feature_is_incomplete,
+    loft_section_is_incomplete, path_ref_is_incomplete, planar_profile_dependency_is_incomplete,
+    planar_profile_ref_is_incomplete, profile_dependency_is_incomplete, profile_ref_is_incomplete,
+    revolve_feature_is_incomplete, rib_feature_is_incomplete, sweep_mode_is_incomplete,
+    sweep_orientation_is_incomplete, termination_dependency_is_incomplete,
 };
 
 /// Orthonormal-frame handedness acceptance for datum CS completeness.
 const EPS_ORTHONORMAL_FRAME: f64 = 1.0e-9;
-/// Unit-length acceptance for authored feature directions.
-const EPS_UNIT_DIRECTION: f64 = 1.0e-9;
 /// Perpendicularity acceptance scaled by direction magnitudes.
 const EPS_PERPENDICULAR: f64 = 1.0e-9;
 
 pub(crate) fn output_free_native_snapshot(feature: &cadmpeg_ir::features::Feature) -> bool {
-    feature.outputs.is_empty()
+    feature.evaluation.outputs().is_empty()
         && feature.name.as_deref() == Some("MASTER SNAPSHOT BODY")
         && matches!(
-            &feature.definition,
-            FeatureDefinition::BaseFeature {
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                 bodies: BodySelection::Unresolved
-            }
+            })
         )
         && feature
             .source_properties
@@ -50,7 +50,7 @@ pub(crate) fn output_free_native_snapshot(feature: &cadmpeg_ir::features::Featur
 /// feature-local identities. They do not create neutral current-body outputs;
 /// the saved segment image remains the only neutral body census.
 pub(crate) fn output_free_local_body_construction(feature: &cadmpeg_ir::features::Feature) -> bool {
-    feature.outputs.is_empty()
+    feature.evaluation.outputs().is_empty()
         && feature
             .source_properties
             .contains_key("primary_body_reference")
@@ -68,15 +68,11 @@ pub(crate) fn output_free_local_body_construction(feature: &cadmpeg_ir::features
 /// a primary writer. Keep that distinction explicit so an incomplete body
 /// binding cannot be mistaken for a construction-only record.
 pub(crate) fn output_free_pattern_construction(feature: &cadmpeg_ir::features::Feature) -> bool {
-    feature.outputs.is_empty()
-        && matches!(&feature.definition, FeatureDefinition::Pattern { .. })
-        && !feature.source_properties.keys().any(|key| {
-            key == "primary_body_reference"
-                || key == "primary_body_object_index"
-                || key == "primary_body_data_block"
-                || key.starts_with("body_reference.")
-                || key.starts_with("body_reference_occurrence.")
-        })
+    has_no_body_result_or_reference(feature)
+        && matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Pattern { .. })
+        )
 }
 
 /// Return whether a `TRIMMED_SH` record is a construction-only operation.
@@ -84,69 +80,114 @@ pub(crate) fn output_free_pattern_construction(feature: &cadmpeg_ir::features::F
 /// NX uses the typed trim-surface family for records that carry no body
 /// occurrence or primary-body field. Those records have no body result to
 /// bind; a body marker makes the output obligation explicit again.
-pub(crate) fn output_free_trim_surface_construction(
+pub(super) fn output_free_trim_surface_construction(
     feature: &cadmpeg_ir::features::Feature,
 ) -> bool {
-    feature.outputs.is_empty()
-        && matches!(&feature.definition, FeatureDefinition::TrimSurface { .. })
-        && !feature.source_properties.keys().any(|key| {
-            key == "primary_body_reference"
-                || key == "primary_body_object_index"
-                || key == "primary_body_data_block"
-                || key.starts_with("body_reference.")
-                || key.starts_with("body_reference_occurrence.")
-        })
+    has_no_body_result_or_reference(feature)
+        && matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::TrimSurface { .. })
+        )
 }
 
 pub(crate) fn active_configuration_state_is_incomplete(
     ir: &CadIr,
     configuration: &cadmpeg_ir::features::DesignConfiguration,
 ) -> bool {
-    let suppressed_features = configuration.suppressed_features().collect::<BTreeSet<_>>();
-    if ir.model.features.iter().any(|feature| {
-        feature
-            .suppressed
-            .is_none_or(|suppressed| suppressed_features.contains(&feature.id) != suppressed)
-    }) {
+    if configuration_suppression_differs(ir, configuration) {
         return true;
     }
-    let Some(bodies) = configuration.bodies.resolved() else {
+    let Some(bodies) = configuration.bodies.as_deref() else {
         return true;
     };
-    let mut required_features = if ir.model.features.is_empty() {
-        BTreeSet::new()
+    let required_features = if ir.model.features.is_empty() {
+        BTreeMap::new()
     } else {
         let Ok(active_features) = crate::native::history::active_feature_closure(ir, bodies) else {
             return true;
         };
         active_features
     };
-    required_features.extend(
-        ir.model
-            .features
-            .iter()
-            .filter(|feature| feature.suppressed == Some(true))
-            .map(|feature| feature.id.clone()),
-    );
-    if configuration.feature_states.len() != required_features.len() {
+    configuration_state_differs(ir, configuration, &required_features)
+}
+
+/// Decode-time form of [`active_configuration_state_is_incomplete`]: the
+/// active-feature closure is charged to the decode budget.
+pub(crate) fn active_configuration_state_is_incomplete_for_decode(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ir: &CadIr,
+    configuration: &cadmpeg_ir::features::DesignConfiguration,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    if configuration_suppression_differs(ir, configuration) {
+        return Ok(true);
+    }
+    let Some(bodies) = configuration.bodies.as_deref() else {
+        return Ok(true);
+    };
+    let required_features = if ir.model.features.is_empty() {
+        BTreeMap::new()
+    } else {
+        let Ok(active_features) =
+            crate::native::history::active_feature_closure_for_decode(ctx, ir, bodies)?
+        else {
+            return Ok(true);
+        };
+        active_features
+    };
+    Ok(configuration_state_differs(
+        ir,
+        configuration,
+        &required_features,
+    ))
+}
+
+/// Whether a feature's suppression differs from the configuration's
+/// suppression state, or the feature has no suppression state.
+fn configuration_suppression_differs(
+    ir: &CadIr,
+    configuration: &cadmpeg_ir::features::DesignConfiguration,
+) -> bool {
+    ir.model.features.iter().any(|feature| {
+        feature.suppressed.is_none_or(|suppressed| {
+            configuration
+                .feature_states
+                .get(&feature.id)
+                .is_some_and(|state| state.evaluation.is_suppressed())
+                != suppressed
+        })
+    })
+}
+
+/// Whether the configuration's feature states and parameter values differ
+/// from the model for the active features and every suppressed feature.
+fn configuration_state_differs(
+    ir: &CadIr,
+    configuration: &cadmpeg_ir::features::DesignConfiguration,
+    required_features: &BTreeMap<cadmpeg_ir::features::FeatureId, usize>,
+) -> bool {
+    let mut suppressed_only = ir.model.features.iter().enumerate().filter(|(_, feature)| {
+        feature.suppressed == Some(true) && !required_features.contains_key(&feature.id)
+    });
+    if configuration.feature_states.len()
+        != required_features.len() + suppressed_only.clone().count()
+    {
         return true;
     }
-    let features = ir
-        .model
-        .features
-        .iter()
-        .map(|feature| (&feature.id, feature))
-        .collect::<BTreeMap<_, _>>();
-    if required_features.iter().any(|id| {
-        let (Some(feature), Some(state)) = (features.get(id), configuration.feature_states.get(id))
-        else {
+    let state_is_incomplete = |id: &cadmpeg_ir::features::FeatureId, index: usize| {
+        let feature = &ir.model.features[index];
+        let Some(state) = configuration.feature_states.get(id) else {
             return true;
         };
         Some(state.evaluation.is_suppressed()) != feature.suppressed
             || state.dependencies != feature.dependencies
-            || state.evaluation.outputs() != feature.outputs.as_slice()
-            || state.definition != feature.definition
-    }) {
+            || state.evaluation.outputs() != feature.evaluation.outputs().as_slice()
+            || &state.definition != feature.evaluation.definition()
+    };
+    if required_features
+        .iter()
+        .any(|(id, &index)| state_is_incomplete(id, index))
+        || suppressed_only.any(|(index, feature)| state_is_incomplete(&feature.id, index))
+    {
         return true;
     }
 
@@ -158,114 +199,138 @@ pub(crate) fn active_configuration_state_is_incomplete(
         })
 }
 
-pub(crate) fn datum_plane_is_incomplete(origin: Point3, normal: Vector3, u_axis: Vector3) -> bool {
-    !finite_feature_point(origin)
-        || !valid_feature_direction(normal)
-        || !valid_feature_direction(u_axis)
-        || !directions_are_perpendicular(normal, u_axis)
-}
-
-pub(crate) fn datum_coordinate_system_is_incomplete(
-    origin: Point3,
-    x_axis: Vector3,
-    y_axis: Vector3,
-    z_axis: Vector3,
+/// Whether an admitted frame misses the NX datum contract: perpendicular
+/// axes within a bound scaled by their lengths, and a handedness within the
+/// frame tolerance of one on both sides. The axes are unit directions, so
+/// every length and product below is finite.
+pub(super) fn datum_coordinate_system_is_incomplete(
+    x_axis: UnitVector3,
+    y_axis: UnitVector3,
+    z_axis: UnitVector3,
 ) -> bool {
-    if !finite_feature_point(origin)
-        || !unit_feature_direction(x_axis)
-        || !unit_feature_direction(y_axis)
-        || !unit_feature_direction(z_axis)
-        || !directions_are_perpendicular(x_axis, y_axis)
+    let [x_axis, y_axis, z_axis] = [x_axis, y_axis, z_axis].map(Vector3::from);
+    if !directions_are_perpendicular(x_axis, y_axis)
         || !directions_are_perpendicular(y_axis, z_axis)
         || !directions_are_perpendicular(z_axis, x_axis)
     {
         return true;
     }
     let handedness = x_axis.cross(y_axis).dot(z_axis);
-    !handedness.is_finite() || (handedness - 1.0).abs() > EPS_ORTHONORMAL_FRAME
+    (handedness - 1.0).abs() > EPS_ORTHONORMAL_FRAME
 }
 
-pub(crate) fn projected_curve_direction_is_incomplete(direction: CurveProjectionDirection) -> bool {
+pub(super) fn projected_curve_direction_is_incomplete(direction: CurveProjectionDirection) -> bool {
     match direction {
-        CurveProjectionDirection::Vector(direction) => !valid_feature_direction(direction),
+        CurveProjectionDirection::Vector(_) => false,
         CurveProjectionDirection::State(CurveProjectionDirectionState::Unresolved) => true,
         CurveProjectionDirection::State(CurveProjectionDirectionState::TargetNormal) => false,
     }
 }
 
-pub(crate) fn unit_feature_direction(direction: Vector3) -> bool {
-    valid_feature_direction(direction) && (direction.norm() - 1.0).abs() <= EPS_UNIT_DIRECTION
+fn directions_are_perpendicular(first: Vector3, second: Vector3) -> bool {
+    first.dot(second).abs() <= EPS_PERPENDICULAR * (first.norm() * second.norm())
 }
 
-pub(crate) fn directions_are_perpendicular(first: Vector3, second: Vector3) -> bool {
-    let scale = first.norm() * second.norm();
-    scale.is_finite() && first.dot(second).abs() <= EPS_PERPENDICULAR * scale
-}
-
-pub(crate) fn incomplete_expression_parameters(ir: &CadIr) -> BTreeSet<ParameterId> {
-    let parameter_owners = ir
-        .model
-        .parameters
-        .iter()
-        .map(|parameter| parameter.owner.clone())
-        .collect::<BTreeSet<_>>();
+pub(crate) fn incomplete_expression_parameters(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<BTreeSet<ParameterId>, cadmpeg_core::CodecError> {
+    let mut owners_storage = ctx.reserve_scoped(0, "nx expression parameter owners")?;
+    let mut parameter_owners = BTreeSet::new();
+    for parameter in &ir.model.parameters {
+        owners_storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut parameter_owners,
+                &parameter.owner,
+                "nx expression parameter owners",
+            )
+        })?;
+    }
     let mut incomplete = BTreeSet::new();
     for owner in parameter_owners {
-        let parameters = ir
+        let mut workspace = ctx.reserve_scoped(0, "nx expression completeness workspace")?;
+        let mut parameters = Vec::new();
+        for parameter in ir
             .model
             .parameters
             .iter()
-            .filter(|parameter| parameter.owner == owner)
-            .collect::<Vec<_>>();
+            .filter(|parameter| &parameter.owner == owner)
+        {
+            workspace.with_storage(|| {
+                ctx.reserve_vec(&mut parameters, 1, "nx owned expression parameters")
+            })?;
+            parameters.push(parameter);
+        }
         let mut ids_by_name = BTreeMap::<(&str, Option<&str>), Vec<&ParameterId>>::new();
         for parameter in &parameters {
-            ids_by_name
-                .entry((
-                    parameter.name.as_str(),
-                    parameter.properties.get("unit").map(String::as_str),
-                ))
-                .or_default()
-                .push(&parameter.id);
+            let name_key = (
+                parameter.name.as_str(),
+                parameter.properties.get("unit").map(String::as_str),
+            );
+            workspace.with_storage(|| {
+                ctx.admit_btree_entry(&ids_by_name, &name_key, "nx expression name index")
+            })?;
+            let ids = match ids_by_name.entry(name_key) {
+                std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
+            };
+            workspace.with_storage(|| ctx.reserve_vec(ids, 1, "nx expression name identities"))?;
+            ids.push(&parameter.id);
         }
-        let expected = parameters
-            .iter()
-            .map(|parameter| {
-                let unit = match parameter.properties.get("unit").map(String::as_str) {
-                    None => None,
-                    Some(unit @ ("millimeter" | "inch" | "degree")) => Some(unit),
-                    Some(_) => return None,
-                };
-                let [_] = ids_by_name
-                    .get(&(parameter.name.as_str(), unit))?
-                    .as_slice()
-                else {
-                    return None;
-                };
-                let mut seen = BTreeSet::new();
-                let dependencies = crate::native::expression_parameter_names(&parameter.expression)
-                    .into_iter()
-                    .map(|name| {
-                        let [dependency] = ids_by_name.get(&(name, unit))?.as_slice() else {
-                            return None;
+        let mut expected = workspace.with_storage(|| {
+            ctx.collection_vec(parameters.len(), "nx expected expression dependencies")
+        })?;
+        expected.resize_with(parameters.len(), || None::<Vec<ParameterId>>);
+        for (index, parameter) in parameters.iter().enumerate() {
+            expected[index] =
+                (|| -> Result<Option<Vec<ParameterId>>, cadmpeg_core::CodecError> {
+                    let unit = match parameter.properties.get("unit").map(String::as_str) {
+                        None => None,
+                        Some(unit @ ("millimeter" | "inch" | "degree")) => Some(unit),
+                        Some(_) => return Ok(None),
+                    };
+                    let Some(ids) = ids_by_name.get(&(parameter.name.as_str(), unit)) else {
+                        return Ok(None);
+                    };
+                    let [_] = ids.as_slice() else {
+                        return Ok(None);
+                    };
+                    let mut dependencies = Vec::new();
+                    for name in crate::native::om::expression_parameter_names(&parameter.expression)
+                    {
+                        let Some(ids) = ids_by_name.get(&(name, unit)) else {
+                            return Ok(None);
                         };
-                        Some((*dependency).clone())
-                    })
-                    .collect::<Option<Vec<_>>>()?;
-                Some(
-                    dependencies
-                        .into_iter()
-                        .filter(|dependency| seen.insert(dependency.clone()))
-                        .collect::<Vec<_>>(),
+                        let [dependency] = ids.as_slice() else {
+                            return Ok(None);
+                        };
+                        if dependencies.iter().any(|id| id == *dependency) {
+                            continue;
+                        }
+                        workspace.with_storage(|| {
+                            ctx.reserve_vec(&mut dependencies, 1, "nx expression dependencies")
+                        })?;
+                        dependencies.push(workspace.with_storage(|| {
+                            dependency
+                                .try_clone_for_decode(ctx, "nx expression dependency identity")
+                        })?);
+                    }
+                    Ok(Some(dependencies))
+                })()?;
+        }
+        let mut indices = BTreeMap::new();
+        for (index, parameter) in parameters.iter().enumerate() {
+            workspace.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut indices,
+                    &parameter.id,
+                    index,
+                    "nx expression parameter index",
                 )
-            })
-            .collect::<Vec<_>>();
-        let indices = parameters
-            .iter()
-            .enumerate()
-            .map(|(index, parameter)| (&parameter.id, index))
-            .collect::<BTreeMap<_, _>>();
+            })?;
+        }
         let mut emitted = BTreeSet::new();
-        let mut evaluated = BTreeMap::<ParameterId, f64>::new();
+        let mut evaluated = BTreeMap::<&ParameterId, f64>::new();
         while let Some(index) = (0..parameters.len()).find(|index| {
             !emitted.contains(index)
                 && expected[*index].as_ref().is_some_and(|dependencies| {
@@ -279,30 +344,36 @@ pub(crate) fn incomplete_expression_parameters(ir: &CadIr) -> BTreeSet<Parameter
         }) {
             let parameter = parameters[index];
             let unit = parameter.properties.get("unit").map(String::as_str);
-            let value =
-                crate::native::evaluate_parameterized_expression(&parameter.expression, |name| {
+            let value = crate::native::om::evaluate_parameterized_expression(
+                ctx,
+                &parameter.expression,
+                |name| {
                     let [dependency] = ids_by_name.get(&(name, unit))?.as_slice() else {
                         return None;
                     };
                     evaluated.get(*dependency).copied()
-                });
+                },
+            )?;
             let stored = match (unit, parameter.value.as_ref()) {
                 (
                     Some("millimeter" | "inch"),
                     Some(cadmpeg_ir::features::ParameterValue::Length(value)),
-                ) => Some(value.0),
+                ) => Some(value.get()),
                 (Some("degree"), Some(cadmpeg_ir::features::ParameterValue::Angle(value))) => {
-                    Some(value.0)
+                    Some(value.get())
                 }
-                (None, Some(cadmpeg_ir::features::ParameterValue::Real(value))) => Some(*value),
+                (None, Some(cadmpeg_ir::features::ParameterValue::Real(value))) => {
+                    Some(value.get())
+                }
                 (None, Some(cadmpeg_ir::features::ParameterValue::Integer(value))) => {
-                    Some(*value as f64)
+                    cadmpeg_core::convert::f64_from_i64(*value)
                 }
                 _ => None,
             };
             if let Some(native_value) = value {
+                let native_value = native_value.get();
                 let canonical_value = unit.map_or(Some(native_value), |unit| {
-                    crate::native::canonical_expression_value(unit, native_value)
+                    crate::native::om::canonical_expression_value(unit, native_value)
                 });
                 if let (Some(canonical_value), Some(stored)) = (canonical_value, stored) {
                     let tolerance =
@@ -311,28 +382,43 @@ pub(crate) fn incomplete_expression_parameters(ir: &CadIr) -> BTreeSet<Parameter
                         && stored.is_finite()
                         && (canonical_value - stored).abs() <= tolerance
                     {
-                        evaluated.insert(parameter.id.clone(), native_value);
+                        workspace.with_storage(|| {
+                            ctx.insert_btree_map(
+                                &mut evaluated,
+                                &parameter.id,
+                                native_value,
+                                "nx evaluated expression parameters",
+                            )
+                        })?;
                     }
                 }
             }
-            emitted.insert(index);
+            workspace.with_storage(|| {
+                ctx.insert_btree_set(&mut emitted, index, "nx emitted expression parameters")
+            })?;
         }
         for (index, parameter) in parameters.into_iter().enumerate() {
-            if expected[index].as_ref() != Some(&parameter.dependencies)
+            if expected[index].as_deref() != Some(parameter.dependencies.as_slice())
                 || !emitted.contains(&index)
                 || !evaluated.contains_key(&parameter.id)
             {
-                incomplete.insert(parameter.id.clone());
+                ctx.insert_btree_set(
+                    &mut incomplete,
+                    parameter
+                        .id
+                        .try_clone_for_decode(ctx, "nx incomplete expression identity")?,
+                    "nx incomplete expression parameters",
+                )?;
             }
         }
     }
-    incomplete
+    Ok(incomplete)
 }
 
 pub(crate) fn trim_surface_definition_is_incomplete(feature: &Feature) -> bool {
-    let FeatureDefinition::TrimSurface {
+    let FeatureDefinition::Operation(FeatureOperation::TrimSurface {
         faces, tool, keep, ..
-    } = &feature.definition
+    }) = feature.evaluation.definition()
     else {
         return true;
     };
@@ -342,177 +428,152 @@ pub(crate) fn trim_surface_definition_is_incomplete(feature: &Feature) -> bool {
 }
 
 pub(crate) fn extend_surface_definition_is_incomplete(feature: &Feature) -> bool {
-    let FeatureDefinition::ExtendSurface {
+    let FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
         faces,
         distance,
         method,
-    } = &feature.definition
+    }) = feature.evaluation.definition()
     else {
         return true;
     };
     face_selection_is_incomplete(faces)
-        || distance.is_none_or(|distance| !positive_feature_length(distance))
+        || distance.is_none()
         || matches!(method, cadmpeg_ir::features::SurfaceExtension::Unresolved)
 }
 
 pub(crate) fn sew_bodies_definition_is_incomplete(feature: &Feature) -> bool {
-    let FeatureDefinition::SewBodies {
-        bodies,
-        gap_tolerance,
-    } = &feature.definition
+    let FeatureDefinition::Operation(FeatureOperation::SewBodies { bodies, .. }) =
+        feature.evaluation.definition()
     else {
         return true;
     };
     body_selection_is_incomplete(bodies)
-        || resolved_body_selection_len(bodies).is_some_and(|count| count < 2)
-        || gap_tolerance.is_some_and(|tolerance| !positive_feature_length(tolerance))
 }
 
 pub(crate) fn combine_definition_is_incomplete(feature: &Feature) -> bool {
-    let FeatureDefinition::Combine { target, tools, .. } = &feature.definition else {
-        return true;
-    };
-    body_selection_is_incomplete(target)
-        || body_selection_is_incomplete(tools)
-        || resolved_body_selection_len(target) != Some(1)
-        || body_selections_overlap(target, tools)
-}
-
-pub(crate) fn trim_bodies_definition_is_incomplete(feature: &Feature) -> bool {
-    let FeatureDefinition::TrimBodies {
-        targets,
-        tools,
-        keep,
-    } = &feature.definition
+    let FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) =
+        feature.evaluation.definition()
     else {
         return true;
     };
+    let target = operands.target();
+    let tools = operands.tools();
+    body_selection_is_incomplete(target) || body_selection_is_incomplete(tools)
+}
+
+pub(crate) fn trim_bodies_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Operation(FeatureOperation::TrimBodies { operands, keep }) =
+        feature.evaluation.definition()
+    else {
+        return true;
+    };
+    let targets = operands.targets();
+    let tools = operands.tools();
     body_selection_is_incomplete(targets)
         || body_selection_is_incomplete(tools)
-        || body_selections_overlap(targets, tools)
         || matches!(keep, BodyTrimSide::Unresolved)
 }
 
-pub(crate) fn delete_body_definition_is_incomplete(feature: &Feature) -> bool {
-    let FeatureDefinition::DeleteBody { bodies, mode } = &feature.definition else {
+pub(super) fn delete_body_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Operation(FeatureOperation::DeleteBody { bodies, mode }) =
+        feature.evaluation.definition()
+    else {
         return true;
     };
     body_selection_is_incomplete(bodies) || matches!(mode, BodyRetentionMode::Unresolved)
 }
 
 pub(crate) fn hole_definition_is_incomplete(feature: &Feature) -> bool {
-    let FeatureDefinition::Hole {
+    let FeatureDefinition::Operation(FeatureOperation::Hole {
         profile,
-        profile_filter,
         face,
         placements,
-        construction,
-        exit_kind,
-        diameter,
+        shape,
+
         extent,
-        bottom,
-        taper_angle,
         ..
-    } = &feature.definition
+    }) = feature.evaluation.definition()
     else {
         return true;
     };
-    let (construction_incomplete, specification) = match construction {
-        cadmpeg_ir::features::HoleConstruction::Form {
-            kind,
-            specification,
-        } => (
+    let construction = shape.construction();
+    let exit_kind = shape.exit_kind();
+    let diameter = shape.diameter();
+    let construction_incomplete = match construction {
+        cadmpeg_ir::features::holes::HoleConstruction::Form { kind, .. } => {
             hole_feature_is_incomplete(
                 profile.as_ref(),
                 face.as_ref(),
                 placements.as_deref(),
                 (kind, exit_kind.as_ref()),
-                *diameter,
+                diameter.map(Into::into),
                 extent.as_ref(),
-            ),
-            specification.as_deref(),
-        ),
-        cadmpeg_ir::features::HoleConstruction::NativeThread {
+            )
+        }
+        cadmpeg_ir::features::holes::HoleConstruction::NativeThread {
             major_diameter,
-            thread_depth,
-            pitch,
             drill_point_angle,
+            ..
         } => {
-            let kind = cadmpeg_ir::features::HoleKind::SimpleDrilled {
+            let kind = cadmpeg_ir::features::holes::HoleKind::SimpleDrilled {
                 drill_point_angle: *drill_point_angle,
             };
-            (
-                hole_feature_is_incomplete(
-                    profile.as_ref(),
-                    face.as_ref(),
-                    placements.as_deref(),
-                    (&kind, exit_kind.as_ref()),
-                    *diameter,
-                    extent.as_ref(),
-                ) || !positive_feature_length(*major_diameter)
-                    || !positive_feature_length(*thread_depth)
-                    || pitch.is_some_and(|pitch| !positive_feature_length(pitch))
-                    || diameter.is_none_or(|diameter| major_diameter.0 <= diameter.0),
-                None,
-            )
+            hole_feature_is_incomplete(
+                profile.as_ref(),
+                face.as_ref(),
+                placements.as_deref(),
+                (&kind, exit_kind.as_ref()),
+                diameter.map(Into::into),
+                extent.as_ref(),
+            ) || diameter.is_none_or(|diameter| major_diameter.get() <= diameter.get())
         }
     };
     construction_incomplete
-        || hole_auxiliary_semantics_are_incomplete(
-            profile_filter.as_ref(),
-            bottom.as_ref(),
-            *taper_angle,
-            specification,
-        )
         || extent.as_ref().is_some_and(|extent| {
             termination_dependency_is_incomplete(extent, &feature.dependencies)
         })
-        || profile
-            .as_ref()
-            .is_some_and(|profile| profile_dependency_is_incomplete(profile, &feature.dependencies))
+        || profile.as_ref().is_some_and(|profile| {
+            planar_profile_dependency_is_incomplete(profile, &feature.dependencies)
+        })
 }
 
 pub(crate) fn chamfer_definition_is_incomplete(feature: &Feature) -> bool {
-    let FeatureDefinition::Chamfer { groups, .. } = &feature.definition else {
-        return true;
-    };
-    groups.is_empty()
-        || groups.iter().any(|group| {
-            edge_selection_is_incomplete(&group.edges) || chamfer_spec_is_incomplete(&group.spec)
-        })
-}
-
-pub(crate) fn fillet_definition_is_incomplete(feature: &Feature) -> bool {
-    let FeatureDefinition::Fillet { groups } = &feature.definition else {
-        return true;
-    };
-    groups.is_empty()
-        || groups.iter().any(|group| {
-            edge_selection_is_incomplete(&group.edges)
-                || radius_spec_is_incomplete(&group.radius)
-                || group
-                    .tangency_weight
-                    .is_some_and(|weight| !weight.is_finite())
-        })
-}
-
-pub(crate) fn face_blend_definition_is_incomplete(feature: &Feature) -> bool {
-    let FeatureDefinition::FaceBlend {
-        first_faces,
-        second_faces,
-        radius,
-    } = &feature.definition
+    let FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. }) =
+        feature.evaluation.definition()
     else {
         return true;
     };
-    face_selection_is_incomplete(first_faces)
-        || face_selection_is_incomplete(second_faces)
-        || face_selections_overlap(first_faces, second_faces)
-        || radius_spec_is_incomplete(radius)
+    groups
+        .iter()
+        .any(|group| edge_selection_is_incomplete(&group.edges) || group.spec.is_unresolved())
 }
 
-pub(crate) fn shell_definition_is_incomplete(definition: &FeatureDefinition) -> bool {
-    let FeatureDefinition::Shell {
+pub(super) fn fillet_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) =
+        feature.evaluation.definition()
+    else {
+        return true;
+    };
+    groups
+        .iter()
+        .any(|group| edge_selection_is_incomplete(&group.edges) || group.radius.is_unresolved())
+}
+
+pub(super) fn face_blend_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Operation(FeatureOperation::FaceBlend { operands, radius }) =
+        feature.evaluation.definition()
+    else {
+        return true;
+    };
+    let first_faces = operands.first_faces();
+    let second_faces = operands.second_faces();
+    face_selection_is_incomplete(first_faces)
+        || face_selection_is_incomplete(second_faces)
+        || radius.is_unresolved()
+}
+
+pub(super) fn shell_definition_is_incomplete(definition: &FeatureDefinition) -> bool {
+    let FeatureDefinition::Operation(FeatureOperation::Shell {
         bodies,
         removed_faces,
         thickness,
@@ -521,13 +582,13 @@ pub(crate) fn shell_definition_is_incomplete(definition: &FeatureDefinition) -> 
         join,
         resolve_intersections,
         allow_self_intersections,
-    } = definition
+    }) = definition
     else {
         return true;
     };
     bodies.as_ref().is_some_and(body_selection_is_incomplete)
         || face_selection_is_incomplete(removed_faces)
-        || thickness.is_none_or(|thickness| !positive_feature_length(thickness))
+        || thickness.is_none()
         || outward.is_none()
         || mode.is_none()
         || join.is_none()
@@ -535,43 +596,43 @@ pub(crate) fn shell_definition_is_incomplete(definition: &FeatureDefinition) -> 
         || allow_self_intersections.is_none()
 }
 
-pub(crate) fn offset_surface_definition_is_incomplete(feature: &Feature) -> bool {
-    let FeatureDefinition::OffsetSurface { faces, distance } = &feature.definition else {
-        return true;
-    };
-    face_selection_is_incomplete(faces) || distance.is_none_or(|distance| !distance.0.is_finite())
-}
-
-pub(crate) fn sphere_definition_is_incomplete(feature: &Feature) -> bool {
-    let FeatureDefinition::Sphere { center, radius, op } = &feature.definition else {
-        return true;
-    };
-    !finite_feature_point(*center)
-        || !positive_feature_length(*radius)
-        || matches!(op, BooleanOp::Unresolved)
-}
-
-pub(crate) fn thicken_definition_is_incomplete(feature: &Feature) -> bool {
-    let FeatureDefinition::Thicken {
-        faces,
-        thickness,
-        side,
-    } = &feature.definition
+pub(super) fn offset_surface_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Operation(FeatureOperation::OffsetSurface { faces, distance }) =
+        feature.evaluation.definition()
     else {
         return true;
     };
-    face_selection_is_incomplete(faces)
-        || thickness.is_none_or(|thickness| !positive_feature_length(thickness))
-        || side.is_none()
+    face_selection_is_incomplete(faces) || distance.is_none()
 }
 
-pub(crate) fn draft_definition_is_incomplete(feature: &Feature) -> bool {
-    let FeatureDefinition::Draft {
+pub(crate) fn sphere_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Operation(FeatureOperation::Sphere { op, .. }) =
+        feature.evaluation.definition()
+    else {
+        return true;
+    };
+    matches!(op, BooleanOp::Unresolved)
+}
+
+pub(super) fn thicken_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Operation(FeatureOperation::Thicken {
+        faces,
+        thickness,
+        side,
+    }) = feature.evaluation.definition()
+    else {
+        return true;
+    };
+    face_selection_is_incomplete(faces) || thickness.is_none() || side.is_none()
+}
+
+pub(super) fn draft_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Operation(FeatureOperation::Draft {
         faces,
         anchor,
         angle,
         outward,
-    } = &feature.definition
+    }) = feature.evaluation.definition()
     else {
         return true;
     };
@@ -584,38 +645,33 @@ pub(crate) fn draft_definition_is_incomplete(feature: &Feature) -> bool {
                 face_selection_is_incomplete(tool)
             }
         }
-        || anchor
-            .pull()
-            .is_none_or(|pull| !valid_feature_direction(pull.direction))
+        || anchor.pull().is_none()
         || anchor
             .pull()
             .and_then(|pull| pull.plane.as_ref())
             .is_some_and(|plane| plane.as_str().is_empty())
-        || angle.is_none_or(|angle| !valid_draft_angle(angle))
+        || angle.is_none()
         || outward.is_none()
 }
 
-pub(crate) fn replace_face_definition_is_incomplete(feature: &Feature) -> bool {
-    let FeatureDefinition::ReplaceFace {
-        targets,
-        replacements,
-    } = &feature.definition
+pub(super) fn replace_face_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Operation(FeatureOperation::ReplaceFace { operands }) =
+        feature.evaluation.definition()
     else {
         return true;
     };
-    face_selection_is_incomplete(targets)
-        || face_selection_is_incomplete(replacements)
-        || face_selections_overlap(targets, replacements)
+    let targets = operands.targets();
+    let replacements = operands.replacements();
+    face_selection_is_incomplete(targets) || face_selection_is_incomplete(replacements)
 }
 
 pub(crate) fn loft_definition_is_incomplete(feature: &Feature) -> bool {
-    let FeatureDefinition::Loft {
+    let FeatureDefinition::Operation(FeatureOperation::Loft {
         sections,
         guidance,
         op,
-        max_degree,
         ..
-    } = &feature.definition
+    }) = feature.evaluation.definition()
     else {
         return true;
     };
@@ -636,12 +692,11 @@ pub(crate) fn loft_definition_is_incomplete(feature: &Feature) -> bool {
                 path_ref_is_incomplete(centerline)
             }
         }
-        || max_degree.is_some_and(|degree| degree == 0)
         || matches!(op, BooleanOp::Unresolved)
 }
 
 pub(crate) fn extrude_definition_is_incomplete(feature: &Feature) -> bool {
-    let FeatureDefinition::Extrude {
+    let FeatureDefinition::Operation(FeatureOperation::Extrude {
         profile,
         direction,
         start,
@@ -649,7 +704,7 @@ pub(crate) fn extrude_definition_is_incomplete(feature: &Feature) -> bool {
         op,
         solid,
         ..
-    } = &feature.definition
+    }) = feature.evaluation.definition()
     else {
         return true;
     };
@@ -657,12 +712,7 @@ pub(crate) fn extrude_definition_is_incomplete(feature: &Feature) -> bool {
         || profile_dependency_is_incomplete(profile, &feature.dependencies)
         || matches!(
             direction,
-            cadmpeg_ir::features::ExtrudeDirection::Unresolved
-        )
-        || matches!(
-            direction,
-            cadmpeg_ir::features::ExtrudeDirection::Explicit { vector, .. }
-                if !valid_feature_direction(*vector)
+            cadmpeg_ir::features::ExtrudeDirection::Unresolved {}
         )
         || extrude_start_is_incomplete(start)
         || extrude_extent_is_incomplete(extent, &feature.dependencies)
@@ -678,80 +728,69 @@ pub(crate) fn extrude_definition_is_incomplete(feature: &Feature) -> bool {
 }
 
 pub(crate) fn revolve_definition_is_incomplete(feature: &Feature) -> bool {
-    let FeatureDefinition::Revolve { construction, op } = &feature.definition else {
+    let FeatureDefinition::Operation(FeatureOperation::Revolve { construction, op }) =
+        feature.evaluation.definition()
+    else {
         return true;
     };
     revolve_feature_is_incomplete(construction, *op, &feature.dependencies)
 }
 
 pub(crate) fn rib_definition_is_incomplete(feature: &Feature) -> bool {
-    let FeatureDefinition::Rib { construction, op } = &feature.definition else {
-        return true;
-    };
-    rib_feature_is_incomplete(construction, *op)
-        || construction
-            .profile
-            .as_ref()
-            .is_some_and(|profile| profile_dependency_is_incomplete(profile, &feature.dependencies))
-}
-
-pub(crate) fn sweep_definition_is_incomplete(feature: &Feature) -> bool {
-    let FeatureDefinition::Sweep {
-        section,
-        sections,
-        path,
-        mode,
-        orientation,
-        transition,
-        transformation,
-        twist,
-        scale,
-        ..
-    } = &feature.definition
+    let FeatureDefinition::Operation(FeatureOperation::Rib { construction, op }) =
+        feature.evaluation.definition()
     else {
         return true;
     };
-    matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_))
-        || section
-            .referenced_profile()
-            .is_some_and(profile_ref_is_incomplete)
-        || section
-            .referenced_profile()
-            .is_some_and(|profile| profile_dependency_is_incomplete(profile, &feature.dependencies))
-        || sections.iter().any(|section| {
-            matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_))
-                || section
-                    .referenced_profile()
-                    .is_some_and(profile_ref_is_incomplete)
+    rib_feature_is_incomplete(construction, *op)
+        || construction.profile.as_ref().is_some_and(|profile| {
+            planar_profile_dependency_is_incomplete(profile, &feature.dependencies)
         })
-        || sections.iter().any(|section| {
-            section.referenced_profile().is_some_and(|profile| {
-                profile_dependency_is_incomplete(profile, &feature.dependencies)
-            })
-        })
+}
+
+pub(crate) fn sweep_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Operation(FeatureOperation::Sweep {
+        shape,
+
+        path,
+
+        orientation,
+        transition,
+        transformation,
+        ..
+    }) = feature.evaluation.definition()
+    else {
+        return true;
+    };
+    let mode = shape.mode();
+    let mut profiles = shape.referenced_profiles();
+    shape.any_section_is_unresolved()
+        || profiles.clone().any(planar_profile_ref_is_incomplete)
+        || profiles
+            .any(|profile| planar_profile_dependency_is_incomplete(profile, &feature.dependencies))
         || path.as_ref().is_none_or(path_ref_is_incomplete)
-        || sweep_mode_is_incomplete(*mode)
+        || sweep_mode_is_incomplete(mode)
         || orientation
             .as_ref()
             .is_none_or(sweep_orientation_is_incomplete)
         || transition.is_none()
         || transformation.is_none()
-        || twist.is_some_and(|twist| !twist.0.is_finite())
-        || scale.is_some_and(|scale| !scale.is_finite() || scale <= 0.0)
 }
 
-pub(crate) fn positive_feature_length(length: Length) -> bool {
-    length.0.is_finite() && length.0 > 0.0
+fn positive_feature_length(length: Length) -> bool {
+    length.get() > 0.0
 }
 
-pub(crate) fn valid_draft_angle(angle: cadmpeg_ir::features::Angle) -> bool {
-    angle.0.is_finite() && angle.0.abs() < std::f64::consts::FRAC_PI_2
+fn has_no_body_result_or_reference(feature: &cadmpeg_ir::features::Feature) -> bool {
+    feature.evaluation.outputs().is_empty()
+        && !feature.source_properties.keys().any(|key| {
+            key == "primary_body_reference"
+                || key == "primary_body_object_index"
+                || key == "primary_body_data_block"
+                || key.as_str().starts_with("body_reference.")
+                || key.as_str().starts_with("body_reference_occurrence.")
+        })
 }
 
-pub(crate) fn valid_feature_direction(direction: Vector3) -> bool {
-    direction.norm().is_finite() && direction.norm() > 0.0
-}
-
-pub(crate) fn finite_feature_point(point: Point3) -> bool {
-    [point.x, point.y, point.z].into_iter().all(f64::is_finite)
-}
+#[cfg(test)]
+mod tests;

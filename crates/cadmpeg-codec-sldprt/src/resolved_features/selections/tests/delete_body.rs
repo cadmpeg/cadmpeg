@@ -6,7 +6,11 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::container::make_block;
+use crate::test_support::container::sldprt_with_body;
+use crate::test_support::history::resolved_feature_classes_with_ids;
+use crate::test_support::native::sldprt_native;
+use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
 
 #[test]
@@ -76,12 +80,9 @@ fn decode_and_validate_compact_delete_body_selection() {
         .find(|feature| feature.name.as_deref() == Some("Body-Delete/Keep 1"))
         .expect("delete-body feature");
     assert!(matches!(
-        &delete_feature.definition,
-        cadmpeg_ir::features::FeatureDefinition::DeleteBody { bodies, mode }
-            if bodies == &cadmpeg_ir::features::BodySelection::Local {
-                bodies: vec!["287".into(), "115".into()],
-                native: "sldprt:feature-input:body-ids:287,115".into(),
-            } && *mode == cadmpeg_ir::features::BodyRetentionMode::DeleteSelected
+        delete_feature.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::DeleteBody { bodies, mode })
+            if bodies == &cadmpeg_ir::features::BodySelection::local(vec!["287".into(), "115".into()], "sldprt:feature-input:body-ids:287,115".into(), &cadmpeg_test_support::service_decode_context(),).expect("body selection admission").unwrap() && *mode == cadmpeg_ir::features::BodyRetentionMode::DeleteSelected
     ));
     crate::test_support::plan_inherited_write(
         decoded.ir(),
@@ -126,14 +127,17 @@ fn decode_and_validate_compact_delete_body_selection() {
                 .iter_mut()
                 .find(|feature| feature.name.as_deref() == Some("Renamed Delete Body"))
                 .expect("delete-body feature");
-            let cadmpeg_ir::features::FeatureDefinition::DeleteBody { bodies, .. } =
-                &mut delete_feature.definition
-            else {
-                panic!("typed delete-body feature");
-            };
-            *bodies = cadmpeg_ir::features::BodySelection::Native(
-                "sldprt:feature-input:body-ids:287".into(),
-            );
+            delete_feature.evaluation.edit(|definition, _| {
+                let cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::DeleteBody { bodies, .. },
+                ) = definition
+                else {
+                    panic!("typed delete-body feature");
+                };
+                *bodies = cadmpeg_ir::features::BodySelection::Native(
+                    "sldprt:feature-input:body-ids:287".into(),
+                );
+            });
         }
         let error = crate::test_support::plan_inherited_write(
             decoded.ir(),
@@ -155,16 +159,22 @@ fn decode_and_validate_compact_delete_body_selection() {
                 .iter_mut()
                 .find(|feature| feature.name.as_deref() == Some("Renamed Delete Body"))
                 .expect("delete-body feature");
-            let cadmpeg_ir::features::FeatureDefinition::DeleteBody { bodies, mode } =
-                &mut delete_feature.definition
-            else {
-                unreachable!("typed delete-body feature");
-            };
-            *bodies = cadmpeg_ir::features::BodySelection::Local {
-                bodies: vec!["287".into(), "115".into()],
-                native: "sldprt:feature-input:body-ids:287,115".into(),
-            };
-            *mode = cadmpeg_ir::features::BodyRetentionMode::KeepSelected;
+            delete_feature.evaluation.edit(|definition, _| {
+                let cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::DeleteBody { bodies, mode },
+                ) = definition
+                else {
+                    unreachable!("typed delete-body feature");
+                };
+                *bodies = cadmpeg_ir::features::BodySelection::local(
+                    vec!["287".into(), "115".into()],
+                    "sldprt:feature-input:body-ids:287,115".into(),
+                    &cadmpeg_test_support::service_decode_context(),
+                )
+                .expect("body selection admission")
+                .unwrap();
+                *mode = cadmpeg_ir::features::BodyRetentionMode::KeepSelected;
+            });
         }
         let error = crate::test_support::plan_inherited_write(
             decoded.ir(),
@@ -181,7 +191,12 @@ fn decode_and_validate_compact_delete_body_selection() {
         .body_state_ids
         .push(287);
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    let error = native.store(&mut namespace).unwrap_err();
+    let error = native
+        .store(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut namespace,
+        )
+        .unwrap_err();
     assert!(
         error.to_string().contains("body selection")
             && error.to_string().contains("inconsistent ownership")
@@ -191,7 +206,12 @@ fn decode_and_validate_compact_delete_body_selection() {
     native.feature_input_lanes[0].body_selections[0].mode =
         Some(cadmpeg_ir::features::BodyRetentionMode::KeepSelected);
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    let error = native.store(&mut namespace).unwrap_err();
+    let error = native
+        .store(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut namespace,
+        )
+        .unwrap_err();
     assert!(
         error.to_string().contains("body selection")
             && error.to_string().contains("inconsistent ownership")
@@ -201,7 +221,12 @@ fn decode_and_validate_compact_delete_body_selection() {
 
     native.feature_input_lanes[0].body_selections[0].local_body_ids[0] = 288;
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    let error = native.store(&mut namespace).unwrap_err();
+    let error = native
+        .store(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut namespace,
+        )
+        .unwrap_err();
     assert!(
         error.to_string().contains("body selection")
             && error.to_string().contains("inconsistent ownership")

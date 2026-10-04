@@ -12,7 +12,10 @@
 //! severity from the code so the two cannot drift apart across sites, and it
 //! leaves only the per-instance message to the caller.
 //!
-use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::{
+    loss::{LossKind, LossNote, LossTaxonomy},
+    Severity,
+};
 
 /// A stable, machine-readable identifier for one `.sldprt` transfer loss.
 ///
@@ -20,7 +23,7 @@ use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
 /// string form (via [`SldprtLossCode::code`]) is the stable contract.
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum SldprtLossCode {
+pub(crate) enum SldprtLossCode {
     /// Active configuration identity does not resolve to exactly one record.
     ConfigActiveIdentityUnresolved,
     /// Active configuration does not resolve to the active geometry partition.
@@ -61,6 +64,8 @@ pub enum SldprtLossCode {
     SketchNativeConstraint,
     /// Sketch geometry record retains a native kind without solved geometry.
     SketchNativeGeometry,
+    /// A compact sketch profile failed neutral profile admission.
+    SketchProfileRejected,
     /// Native sketch relation has no projected neutral constraint.
     SketchRelationUnprojected,
     /// Native sketch relation is claimed by multiple neutral objects.
@@ -79,6 +84,8 @@ pub enum SldprtLossCode {
     GeometryEdgeSupportCurveUntyped,
     /// A derived pcurve parameter has multiple geometric candidates.
     GeometryPcurveAmbiguous,
+    /// A spline carrier's pole and weight lanes do not pair.
+    GeometrySplineLanesUnpaired,
     /// Current face records carry conflicting or incoherent color bindings.
     AppearanceFaceColorUnresolved,
     /// Appearance assignments have no unambiguous `DisplayLists` target.
@@ -120,11 +127,15 @@ pub enum SldprtLossCode {
     DialectLayerCollision,
     /// The selected write target differs from the same-format source dialect.
     SourceDialectDisplaced,
+    /// A source record states a property whose key holds no non-whitespace
+    /// character, so the property cannot be keyed and is not transferred.
+    SourcePropertyKeyBlank,
 }
 
 impl SldprtLossCode {
     /// Every code, in declaration order.
-    pub const ALL: &'static [SldprtLossCode] = &[
+    #[cfg(test)]
+    const ALL: &'static [SldprtLossCode] = &[
         Self::ConfigActiveIdentityUnresolved,
         Self::ConfigActivePartitionMismatch,
         Self::ConfigInferredWithoutNative,
@@ -145,6 +156,7 @@ impl SldprtLossCode {
         Self::FeatureIncoherentOutputs,
         Self::SketchNativeConstraint,
         Self::SketchNativeGeometry,
+        Self::SketchProfileRejected,
         Self::SketchRelationUnprojected,
         Self::SketchRelationMultiplyProjected,
         Self::FeatureNativeKindRetained,
@@ -154,6 +166,7 @@ impl SldprtLossCode {
         Self::GeometryFaceSupportSurfaceUntyped,
         Self::GeometryEdgeSupportCurveUntyped,
         Self::GeometryPcurveAmbiguous,
+        Self::GeometrySplineLanesUnpaired,
         Self::AppearanceFaceColorUnresolved,
         Self::AppearanceAssignmentUnresolved,
         Self::TessellationFaceOwnershipUnresolved,
@@ -170,11 +183,12 @@ impl SldprtLossCode {
         Self::KernelDialectUnverified,
         Self::DialectLayerCollision,
         Self::SourceDialectDisplaced,
+        Self::SourcePropertyKeyBlank,
     ];
 
     /// The stable string identifier. This is the gating contract.
     #[must_use]
-    pub const fn code(self) -> &'static str {
+    const fn code(self) -> &'static str {
         match self {
             Self::ConfigActiveIdentityUnresolved => "config.active-identity-unresolved",
             Self::ConfigActivePartitionMismatch => "config.active-partition-mismatch",
@@ -196,6 +210,7 @@ impl SldprtLossCode {
             Self::FeatureIncoherentOutputs => "feature.incoherent-outputs",
             Self::SketchNativeConstraint => "sketch.native-constraint",
             Self::SketchNativeGeometry => "sketch.native-geometry",
+            Self::SketchProfileRejected => "sketch.profile-rejected",
             Self::SketchRelationUnprojected => "sketch.relation-unprojected",
             Self::SketchRelationMultiplyProjected => "sketch.relation-multiply-projected",
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
@@ -205,6 +220,7 @@ impl SldprtLossCode {
             Self::GeometryFaceSupportSurfaceUntyped => "geometry.face-support-surface-untyped",
             Self::GeometryEdgeSupportCurveUntyped => "geometry.edge-support-curve-untyped",
             Self::GeometryPcurveAmbiguous => "geometry.pcurve-ambiguous",
+            Self::GeometrySplineLanesUnpaired => "geometry.spline-lanes-unpaired",
             Self::AppearanceFaceColorUnresolved => "appearance.face-color-unresolved",
             Self::AppearanceAssignmentUnresolved => "appearance.assignment-unresolved",
             Self::TessellationFaceOwnershipUnresolved => "tessellation.face-ownership-unresolved",
@@ -221,18 +237,62 @@ impl SldprtLossCode {
             Self::KernelDialectUnverified => "source.kernel-dialect-unverified",
             Self::DialectLayerCollision => "source.dialect-layer-collision",
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
+            Self::SourcePropertyKeyBlank => "source.property-key-blank",
         }
     }
 
     /// The severity of this loss.
     #[must_use]
-    pub const fn severity(self) -> Severity {
+    const fn severity(self) -> Severity {
         match self {
             Self::GeometryParasolidNotTransferred
             | Self::TopologyGraphNotTransferred
             | Self::SourcePreservedImageUnavailable => Severity::Blocking,
             Self::ContainerNoParasolidStream => Severity::Error,
-            _ => Severity::Warning,
+            Self::ConfigActiveIdentityUnresolved
+            | Self::ConfigActivePartitionMismatch
+            | Self::ConfigInferredWithoutNative
+            | Self::ConfigLaneIdentityUnresolved
+            | Self::ConfigAmbiguousPartition
+            | Self::ConfigAmbiguousNaming
+            | Self::ConfigIncoherentBodyRefs
+            | Self::ConfigIncompleteSnapshot
+            | Self::ParameterUnevaluated
+            | Self::ParameterAmbiguousIdentity
+            | Self::PmiDimensionUnbound
+            | Self::PmiSemanticRecordMalformed
+            | Self::PmiSwiftAnnotationUnsupported
+            | Self::HistoryIncompleteReferences
+            | Self::FeatureIncoherentEdges
+            | Self::FeatureIncoherentContent
+            | Self::FeatureUnresolvedOutputScope
+            | Self::FeatureIncoherentOutputs
+            | Self::SketchNativeConstraint
+            | Self::SketchNativeGeometry
+            | Self::SketchProfileRejected
+            | Self::SketchRelationUnprojected
+            | Self::SketchRelationMultiplyProjected
+            | Self::FeatureNativeKindRetained
+            | Self::FeatureInputObjectUnbound
+            | Self::FeatureTypedOperandIncomplete
+            | Self::FeatureBodyRetentionUnresolved
+            | Self::GeometryFaceSupportSurfaceUntyped
+            | Self::GeometryEdgeSupportCurveUntyped
+            | Self::GeometryPcurveAmbiguous
+            | Self::GeometrySplineLanesUnpaired
+            | Self::AppearanceFaceColorUnresolved
+            | Self::AppearanceAssignmentUnresolved
+            | Self::TessellationFaceOwnershipUnresolved
+            | Self::TopologyBodyHierarchyDerived
+            | Self::TopologyFaceOwnerAmbiguous
+            | Self::TopologyFaceUnclaimed
+            | Self::TopologyPcurveCarrierOffSurface
+            | Self::MaterialMetadataNotTransferred
+            | Self::SourceDialectUnverified
+            | Self::KernelDialectUnverified
+            | Self::DialectLayerCollision
+            | Self::SourceDialectDisplaced
+            | Self::SourcePropertyKeyBlank => Severity::Warning,
         }
     }
 
@@ -245,6 +305,7 @@ impl SldprtLossCode {
             }
             Self::DialectLayerCollision => LossTaxonomy::DecodeDiagnostic,
             Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
+            Self::SourcePropertyKeyBlank => LossTaxonomy::AttributesNotTransferred,
             Self::TopologyBodyHierarchyDerived | Self::TopologyFaceOwnerAmbiguous => {
                 LossTaxonomy::TopologyGaugeSubstituted
             }
@@ -253,6 +314,7 @@ impl SldprtLossCode {
             Self::TopologyGraphNotTransferred => LossTaxonomy::TopologyNotTransferred,
             Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometryEdgeSupportCurveUntyped
+            | Self::GeometrySplineLanesUnpaired
             | Self::GeometryParasolidNotTransferred => LossTaxonomy::GeometryNotTransferred,
             Self::GeometryPcurveAmbiguous => LossTaxonomy::PcurveOmitted,
             Self::AppearanceFaceColorUnresolved | Self::AppearanceAssignmentUnresolved => {
@@ -260,14 +322,49 @@ impl SldprtLossCode {
             }
             Self::TessellationFaceOwnershipUnresolved => LossTaxonomy::ReferenceGraphNotClosed,
             Self::MaterialMetadataNotTransferred => LossTaxonomy::MaterialNotTransferred,
-            _ => LossTaxonomy::FeatureHistoryRetained,
+            Self::ConfigActiveIdentityUnresolved
+            | Self::ConfigActivePartitionMismatch
+            | Self::ConfigInferredWithoutNative
+            | Self::ConfigLaneIdentityUnresolved
+            | Self::ConfigAmbiguousPartition
+            | Self::ConfigAmbiguousNaming
+            | Self::ConfigIncoherentBodyRefs
+            | Self::ConfigIncompleteSnapshot
+            | Self::ParameterUnevaluated
+            | Self::ParameterAmbiguousIdentity
+            | Self::PmiDimensionUnbound
+            | Self::PmiSemanticRecordMalformed
+            | Self::PmiSwiftAnnotationUnsupported
+            | Self::HistoryIncompleteReferences
+            | Self::FeatureIncoherentEdges
+            | Self::FeatureIncoherentContent
+            | Self::FeatureUnresolvedOutputScope
+            | Self::FeatureIncoherentOutputs
+            | Self::SketchNativeConstraint
+            | Self::SketchNativeGeometry
+            | Self::SketchProfileRejected
+            | Self::SketchRelationUnprojected
+            | Self::SketchRelationMultiplyProjected
+            | Self::FeatureNativeKindRetained
+            | Self::FeatureInputObjectUnbound
+            | Self::FeatureTypedOperandIncomplete
+            | Self::FeatureBodyRetentionUnresolved => LossTaxonomy::FeatureHistoryRetained,
         }
     }
 
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
-    pub fn kind(self) -> LossKind {
-        LossKind::namespaced("sldprt", self.code(), self.shared_taxonomy())
+    pub(crate) fn kind(self) -> LossKind {
+        LossKind::namespaced(
+            const {
+                match cadmpeg_ir::report::loss::LossNamespace::new("sldprt") {
+                    Ok(namespace) => namespace,
+                    Err(_) => panic!("reserved codec namespace"),
+                }
+            },
+            self.code(),
+            self.shared_taxonomy(),
+        )
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
@@ -275,17 +372,75 @@ impl SldprtLossCode {
     /// The structured code is `sldprt/<local>`. Severity comes from the local
     /// code; the strict floor comes from the taxonomy.
     #[must_use]
-    pub fn note(self, message: impl Into<String>) -> LossNote {
+    pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
     }
 }
 
+/// One refused spline lane, named by the record that stated it.
+///
+/// `record` names the instance: the attribute id, coedge id, edge id or face
+/// attribute of the record whose lanes do not pair, followed by the pairing's
+/// own refusal. The B-rep model carries the absence of one carrier, so the
+/// refusal is a loss and the decode continues.
+pub(crate) fn spline_lane_refusal(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    record: impl std::fmt::Display,
+) -> Result<LossNote, cadmpeg_core::CodecError> {
+    let message = ctx.format_retained(
+        format_args!(
+            "{record}; the carrier is not emitted and the entities that reference it fall back \
+             to an untyped support."
+        ),
+        "record SLDPRT spline lane loss",
+    )?;
+    Ok(SldprtLossCode::GeometrySplineLanesUnpaired.note(message))
+}
+
 #[cfg(test)]
 mod tests {
-    use cadmpeg_ir::report::{LossTaxonomy, StrictConsequence};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::report::loss::{LossTaxonomy, StrictConsequence};
 
     use super::SldprtLossCode;
     use std::collections::BTreeSet;
+
+    #[test]
+    fn spline_lane_loss_refuses_retained_limit() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 5;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
+        let Err(CodecError::ResourceLimit(limit)) =
+            super::spline_lane_refusal(&ctx, "carrier attribute 9")
+        else {
+            panic!("input-sized loss text must use retained budget")
+        };
+        assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("empty root fits service policy");
+        let note = super::spline_lane_refusal(&ctx, "carrier attribute 9").expect("service budget");
+        assert_eq!(note.message, "carrier attribute 9; the carrier is not emitted and the entities that reference it fall back to an untyped support.");
+    }
+
+    #[test]
+    fn all_covers_every_declared_variant() {
+        let source = include_str!("loss.rs");
+        let declaration = source
+            .split_once("pub(crate) enum SldprtLossCode {")
+            .unwrap()
+            .1;
+        let body = declaration.split_once("\n}").unwrap().0;
+        let variant_count = body
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.starts_with("//") && line.ends_with(','))
+            .count();
+        assert_eq!(SldprtLossCode::ALL.len(), variant_count);
+    }
 
     /// Value-level golden: the stable string form of every code, pinned.
     #[test]
@@ -314,6 +469,7 @@ mod tests {
                 "feature.incoherent-outputs",
                 "sketch.native-constraint",
                 "sketch.native-geometry",
+                "sketch.profile-rejected",
                 "sketch.relation-unprojected",
                 "sketch.relation-multiply-projected",
                 "feature.native-kind-retained",
@@ -323,6 +479,7 @@ mod tests {
                 "geometry.face-support-surface-untyped",
                 "geometry.edge-support-curve-untyped",
                 "geometry.pcurve-ambiguous",
+                "geometry.spline-lanes-unpaired",
                 "appearance.face-color-unresolved",
                 "appearance.assignment-unresolved",
                 "tessellation.face-ownership-unresolved",
@@ -339,6 +496,7 @@ mod tests {
                 "source.kernel-dialect-unverified",
                 "source.dialect-layer-collision",
                 "target.source-dialect-displaced",
+                "source.property-key-blank",
             ]
         );
     }

@@ -12,18 +12,28 @@
 //! severity from the code so the two cannot drift apart across sites, and it
 //! leaves only the per-instance message to the caller.
 //!
-use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::{
+    loss::{LossKind, LossNamespace, LossNote, LossTaxonomy},
+    Severity,
+};
+
+const NAMESPACE: LossNamespace<'static> = match LossNamespace::new("sat") {
+    Ok(namespace) => namespace,
+    Err(_) => panic!("reserved codec namespace"),
+};
 
 /// A stable, machine-readable identifier for one SAT/ASM transfer loss.
 ///
 /// Variants are grouped by the record family whose transfer degraded. The
 /// string form (via [`SatLossCode::code`]) is the stable contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum SatLossCode {
+pub(crate) enum SatLossCode {
     /// The stream framed but decoded no surfaces, points, or faces.
     GeometryFramedWithoutCarriers,
     /// A face rests on a procedural surface construction without a decoded carrier.
     GeometryProceduralSurfaceUntyped,
+    /// A header tolerance cannot supply a positive finite document tolerance.
+    HeaderToleranceUnresolved,
     /// The stream was read with a grammar its own save-format declaration does
     /// not select.
     SourceDialectUnverified,
@@ -31,46 +41,49 @@ pub enum SatLossCode {
 
 impl SatLossCode {
     /// Every code, in declaration order.
-    pub const ALL: &'static [SatLossCode] = &[
+    #[cfg(test)]
+    const ALL: &'static [SatLossCode] = &[
         Self::GeometryFramedWithoutCarriers,
         Self::GeometryProceduralSurfaceUntyped,
+        Self::HeaderToleranceUnresolved,
         Self::SourceDialectUnverified,
     ];
 
     /// The stable string identifier. This is the gating contract.
     #[must_use]
-    pub const fn code(self) -> &'static str {
+    const fn code(self) -> &'static str {
         match self {
             Self::GeometryFramedWithoutCarriers => "geometry.framed-without-carriers",
             Self::GeometryProceduralSurfaceUntyped => "geometry.procedural-surface-untyped",
+            Self::HeaderToleranceUnresolved => "header.tolerance-unresolved",
             Self::SourceDialectUnverified => "source.kernel-dialect-unverified",
         }
     }
 
     /// The severity of this loss.
     #[must_use]
-    pub const fn severity(self) -> Severity {
+    const fn severity(self) -> Severity {
         match self {
             Self::GeometryFramedWithoutCarriers => Severity::Blocking,
-            Self::GeometryProceduralSurfaceUntyped | Self::SourceDialectUnverified => {
-                Severity::Warning
-            }
+            Self::GeometryProceduralSurfaceUntyped
+            | Self::HeaderToleranceUnresolved
+            | Self::SourceDialectUnverified => Severity::Warning,
         }
     }
 
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
-            Self::GeometryFramedWithoutCarriers | Self::GeometryProceduralSurfaceUntyped => {
-                LossTaxonomy::GeometryNotTransferred
-            }
+            Self::GeometryFramedWithoutCarriers
+            | Self::GeometryProceduralSurfaceUntyped
+            | Self::HeaderToleranceUnresolved => LossTaxonomy::GeometryNotTransferred,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
         }
     }
 
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
-    pub fn kind(self) -> LossKind {
-        LossKind::namespaced("sat", self.code(), self.shared_taxonomy())
+    pub(crate) fn kind(self) -> LossKind {
+        LossKind::namespaced(NAMESPACE, self.code(), self.shared_taxonomy())
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
@@ -78,7 +91,7 @@ impl SatLossCode {
     /// The structured code is `sat/<local>`. Severity comes from the local
     /// code; the strict floor comes from the taxonomy.
     #[must_use]
-    pub fn note(self, message: impl Into<String>) -> LossNote {
+    pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
     }
 }
@@ -97,6 +110,7 @@ mod tests {
             [
                 "geometry.framed-without-carriers",
                 "geometry.procedural-surface-untyped",
+                "header.tolerance-unresolved",
                 "source.kernel-dialect-unverified",
             ]
         );

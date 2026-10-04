@@ -1,8 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use super::*;
-use cadmpeg_ir::codec::write::TargetRequest;
+use crate::test_support::test_curves_and_surfaces::conic_arc_file;
+use crate::IgesCodec;
+use crate::IgesVersion;
+use cadmpeg_ir::codec::write::target::TargetRequest;
+use cadmpeg_ir::codec::write::EncodeInput;
+use cadmpeg_ir::codec::write::Encoder;
+use cadmpeg_ir::codec::DecodeOptions;
+use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::Codec;
+use std::io::Cursor;
 
 #[test]
 fn encode_emits_the_typed_ellipse_form_for_v5_0() {
@@ -20,10 +31,9 @@ fn encode_emits_the_typed_ellipse_form_for_v5_0() {
         .expect("V5.0 admits a typed ellipse");
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).expect("V5.0 ellipse writes");
-    assert!(!report
-        .losses
-        .iter()
-        .any(|loss| { loss.code.taxonomy() == cadmpeg_ir::LossTaxonomy::GeometryNotTransferred }));
+    assert!(!report.losses.iter().any(|loss| {
+        loss.code.taxonomy() == cadmpeg_ir::report::loss::LossTaxonomy::GeometryNotTransferred
+    }));
 
     let round_trip = IgesCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
@@ -43,13 +53,15 @@ fn encode_emits_the_typed_ellipse_form_for_v5_0() {
         round_trip.report().dialects().unwrap().primary().declared()["effective_version"],
         "5.0"
     );
-    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
 #[test]
 fn transformed_nurbs_overflow_is_refused_without_changing_the_source() {
-    let nurbs = NurbsCurve::new(
+    let nurbs = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![
@@ -59,6 +71,7 @@ fn transformed_nurbs_overflow_is_refused_without_changing_the_source() {
         None,
         false,
     )
+    .expect("fixture constructor admission")
     .unwrap();
     let transform = cadmpeg_ir::transform::Transform::affine([
         [1.0, 0.0, 0.0, f64::MAX],
@@ -66,12 +79,16 @@ fn transformed_nurbs_overflow_is_refused_without_changing_the_source() {
         [0.0, 0.0, 1.0, 0.0],
     ])
     .unwrap();
-    let geometry = CurveGeometry::Transformed {
-        basis: Box::new(CurveGeometry::Nurbs(nurbs)),
-        transform,
-    };
+    let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
+        cadmpeg_ir::geometry::PlacedCurve::try_new(
+            Box::new(SolvedCurveGeometry::Nurbs(nurbs)),
+            transform,
+        )
+        .expect("placed curve"),
+    ));
     let before = geometry.clone();
-    let error = crate::writer::flatten_curve(&geometry).unwrap_err();
+    let error =
+        crate::writer::flatten_curve(geometry.solved().expect("solved carrier")).unwrap_err();
     assert!(error.to_string().contains("non-finite"));
     assert_eq!(geometry, before);
 }

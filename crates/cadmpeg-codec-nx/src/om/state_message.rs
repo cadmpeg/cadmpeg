@@ -3,7 +3,8 @@
 
 use super::state_message_text::StateMessageText;
 use super::state_tagged_value::StateTaggedValue;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -31,8 +32,8 @@ pub(crate) struct StateMessage<S> {
     pub(crate) count_or_severity: u16,
 }
 
-impl<S: AsRef<str>> StateMessage<S> {
-    pub(crate) fn byte_len(&self) -> usize {
+impl<S: crate::immutable_text::ImmutableText> StateMessage<S> {
+    pub(super) fn byte_len(&self) -> usize {
         usize::from(self.text.declared_length()) + 7 + self.value.raw().len()
     }
     pub(crate) fn severity(&self) -> Option<StateMessageSeverity> {
@@ -41,16 +42,19 @@ impl<S: AsRef<str>> StateMessage<S> {
 }
 
 impl StateMessage<&str> {
-    pub(crate) fn into_owned(self) -> StateMessage<String> {
-        StateMessage {
-            text: self.text.into_owned(),
+    pub(crate) fn into_owned(
+        self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<StateMessage<String>, CodecError> {
+        Ok(StateMessage {
+            text: self.text.into_owned(ctx)?,
             value: self.value,
             count_or_severity: self.count_or_severity,
-        }
+        })
     }
 }
 
-impl<S: AsRef<str>> Serialize for StateMessage<S> {
+impl<S: crate::immutable_text::ImmutableText> Serialize for StateMessage<S> {
     fn serialize<T: Serializer>(&self, serializer: T) -> Result<T::Ok, T::Error> {
         let severity = self.severity();
         let mut state =
@@ -77,7 +81,7 @@ impl<'de> Deserialize<'de> for StateMessage<String> {
             #[serde(flatten)]
             value: StateTaggedValue,
             count_or_severity: u16,
-            #[serde(default)]
+            #[serde(default, deserialize_with = "deserialize_severity")]
             severity: Option<StateMessageSeverity>,
         }
         let wire = Wire::deserialize(deserializer)?;
@@ -102,7 +106,7 @@ pub(crate) struct OperationStateMessage<'a> {
 }
 
 impl<'a> OperationStateMessage<'a> {
-    pub(crate) fn read(bytes: &'a [u8], at: usize, base: usize) -> Option<Self> {
+    pub(super) fn read(bytes: &'a [u8], at: usize, base: usize) -> Option<Self> {
         if bytes.get(at) != Some(&0x03) {
             return None;
         }
@@ -133,7 +137,7 @@ impl<'a> OperationStateMessage<'a> {
     pub(crate) fn offset(self) -> usize {
         self.offset
     }
-    pub(crate) fn end_offset(self) -> usize {
+    pub(super) fn end_offset(self) -> usize {
         self.offset + self.body.byte_len()
     }
     pub(crate) fn body(self) -> StateMessage<&'a str> {
@@ -170,4 +174,15 @@ mod tests {
             .to_string()
             .contains("severity"));
     }
+
+    #[test]
+    fn state_message_wire_refuses_a_null_severity() {
+        let json = r#"{"declared_length":3,"text":"A","value_marker":160,"value":0,"raw_value":[160,0,0],"count_or_severity":256,"severity":null}"#;
+        let error = serde_json::from_str::<StateMessage<String>>(json)
+            .expect_err("a null severity is not a spelling of an absent severity");
+        assert!(error.to_string().contains("null"), "{error}");
+    }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_severity, StateMessageSeverity, "severity");

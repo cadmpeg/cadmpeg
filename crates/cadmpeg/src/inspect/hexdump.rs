@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Hexadecimal rendering with absolute file offsets and an ASCII gutter.
 
-use std::fmt::Write as _;
+use std::num::NonZeroUsize;
+
+use anyhow::{anyhow, Result};
 
 /// Number of hexadecimal digits used for the offset column.
 ///
@@ -17,21 +19,51 @@ fn offset_digits(last_offset: u64) -> usize {
 /// Each line prints the absolute offset, `width` bytes in hexadecimal grouped in
 /// eights, and the printable ASCII for the same bytes between pipes. A short
 /// final line is padded so the gutter stays in one column.
-pub fn render(base: u64, bytes: &[u8], width: usize) -> String {
-    let width = width.max(1);
-    let last = base.saturating_add(bytes.len().saturating_sub(1) as u64);
+pub(super) fn render(base: u64, bytes: &[u8], width: NonZeroUsize) -> Result<String> {
+    rows(base, bytes, width.get())
+}
+
+/// Renders `bytes` at sixteen bytes per line, the width the `hex` command
+/// takes when its argument states none.
+pub(super) fn render_default_width(base: u64, bytes: &[u8]) -> Result<String> {
+    rows(base, bytes, 16)
+}
+
+/// Writes one line per `width` bytes of `bytes`, starting at absolute offset
+/// `base`.
+///
+/// The two entry points above are the only callers: one states the row length
+/// as a `NonZeroUsize` and the other as the literal beside this walk, so the
+/// row length is at least one byte.
+fn rows(base: u64, bytes: &[u8], width: usize) -> Result<String> {
+    if bytes.is_empty() {
+        return Ok(String::new());
+    }
+    let last_index =
+        u64::try_from(bytes.len() - 1).map_err(|_| anyhow!("hex offset exceeds u64"))?;
+    let last = base
+        .checked_add(last_index)
+        .ok_or_else(|| anyhow!("hex offset exceeds u64"))?;
     let digits = offset_digits(last);
     let mut out = String::new();
     for (index, chunk) in bytes.chunks(width).enumerate() {
-        let offset = base.saturating_add((index * width) as u64);
-        let _ = write!(out, "{offset:0digits$x}  ");
+        let row_index = index
+            .checked_mul(width)
+            .and_then(|index| u64::try_from(index).ok())
+            .ok_or_else(|| anyhow!("hex offset exceeds u64"))?;
+        let offset = base
+            .checked_add(row_index)
+            .ok_or_else(|| anyhow!("hex offset exceeds u64"))?;
+        let rendered_offset = format!("{offset:0digits$x}  ");
+        out.push_str(&rendered_offset);
         for column in 0..width {
             if column > 0 && column.is_multiple_of(8) {
                 out.push(' ');
             }
             match chunk.get(column) {
                 Some(byte) => {
-                    let _ = write!(out, "{byte:02x} ");
+                    crate::inspect::layout::push_hex(&mut out, *byte);
+                    out.push(' ');
                 }
                 None => out.push_str("   "),
             }
@@ -43,13 +75,13 @@ pub fn render(base: u64, bytes: &[u8], width: usize) -> String {
         out.push('|');
         out.push('\n');
     }
-    out
+    Ok(out)
 }
 
 /// Maps one byte to its ASCII gutter character.
-const fn printable(byte: u8) -> char {
+fn printable(byte: u8) -> char {
     if byte.is_ascii_graphic() || byte == b' ' {
-        byte as char
+        char::from(byte)
     } else {
         '.'
     }
@@ -57,12 +89,13 @@ const fn printable(byte: u8) -> char {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::render;
+    use std::num::NonZeroUsize;
 
     #[test]
     fn renders_one_full_line_with_grouping_and_gutter() {
         let bytes: Vec<u8> = (0x40u8..0x50).collect();
-        let text = render(0, &bytes, 16);
+        let text = render(0, &bytes, NonZeroUsize::new(16).unwrap()).expect("offset fits");
         assert_eq!(
             text,
             "00000000  40 41 42 43 44 45 46 47  48 49 4a 4b 4c 4d 4e 4f  |@ABCDEFGHIJKLMNO|\n"
@@ -71,9 +104,9 @@ mod tests {
 
     #[test]
     fn pads_a_short_final_line_so_the_gutter_stays_aligned() {
-        let text = render(0x10, b"hi", 16);
+        let text = render(0x10, b"hi", NonZeroUsize::new(16).unwrap()).expect("offset fits");
         let line = text.trim_end_matches('\n');
-        let full = render(0x10, &[0u8; 16], 16);
+        let full = render(0x10, &[0u8; 16], NonZeroUsize::new(16).unwrap()).expect("offset fits");
         let full_line = full.trim_end_matches('\n');
         assert_eq!(
             line.find('|').unwrap(),
@@ -86,25 +119,36 @@ mod tests {
 
     #[test]
     fn non_printable_bytes_become_dots_and_space_stays_a_space() {
-        let text = render(0, &[0x00, 0x20, 0x7e, 0x7f, 0xff], 8);
+        let text = render(
+            0,
+            &[0x00, 0x20, 0x7e, 0x7f, 0xff],
+            NonZeroUsize::new(8).unwrap(),
+        )
+        .expect("offset fits");
         assert!(text.ends_with("|. ~..|\n"), "got {text}");
     }
 
     #[test]
     fn offsets_are_absolute_and_widen_past_four_gibibytes() {
-        let text = render(0x1_0000_0000, &[0u8; 1], 16);
+        let text =
+            render(0x1_0000_0000, &[0u8; 1], NonZeroUsize::new(16).unwrap()).expect("offset fits");
         assert!(text.starts_with("100000000  00 "), "got {text}");
-        let narrow = render(0xff, &[0u8; 1], 16);
+        let narrow = render(0xff, &[0u8; 1], NonZeroUsize::new(16).unwrap()).expect("offset fits");
         assert!(narrow.starts_with("000000ff  00 "), "got {narrow}");
     }
 
     #[test]
     fn respects_a_custom_width() {
-        let text = render(0, &[1, 2, 3, 4, 5], 2);
+        let text = render(0, &[1, 2, 3, 4, 5], NonZeroUsize::new(2).unwrap()).expect("offset fits");
         let lines: Vec<&str> = text.lines().collect();
         assert_eq!(lines.len(), 3);
         assert!(lines[0].starts_with("00000000  01 02 "));
         assert!(lines[1].starts_with("00000002  03 04 "));
         assert!(lines[2].starts_with("00000004  05 "));
+    }
+
+    #[test]
+    fn refuses_an_absolute_offset_that_exceeds_u64() {
+        assert!(render(u64::MAX, b"ab", NonZeroUsize::new(1).unwrap()).is_err());
     }
 }

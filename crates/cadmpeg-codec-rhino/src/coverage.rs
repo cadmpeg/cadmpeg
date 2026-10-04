@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Statically declared decode-coverage measures.
 
-use cadmpeg_ir::CoverageKey;
+use cadmpeg_ir::report::decode::CoverageKey;
 
 pub(crate) const LEGACY_V1_ANNOTATIONS: CoverageKey = CoverageKey::new("legacy_v1_annotations");
 pub(crate) const LEGACY_V1_BREPS: CoverageKey = CoverageKey::new("legacy_v1_breps");

@@ -4,21 +4,25 @@ use super::{
     marker_center_dimensioned_entity, relation_constraint_is_inactive, typed_relation_definition,
     typed_relation_definition_with_profile_axis, unique_locus,
 };
+use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance, SketchInputEntity, SketchInputKind, SketchInputLink,
     SketchRelationKind,
 };
 use crate::resolved_features::transforms::ProfileAxis;
-use cadmpeg_ir::features::{
-    Angle, DesignParameter, DimensionDisplay, Length, ParameterId, ParameterValue,
-};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
-    SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry, SketchId, SketchLocus,
+    SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
+    SketchGeometryDefinition, SketchId, SketchLocus,
+};
+use cadmpeg_ir::{
+    features::{DesignParameter, DimensionDisplay, ParameterId, ParameterValue},
+    scalar::{Angle, Length},
 };
 use std::collections::{BTreeMap, HashMap};
 mod direct_points;
+mod relation_geometry;
 
 fn marker(
     id: &str,
@@ -27,18 +31,17 @@ fn marker(
     kind: SketchInputKind,
     coordinates_m: Option<[f64; 2]>,
 ) -> SketchInputEntity {
-    SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind,
-        state_value: None,
-        coordinates_m,
-        links: None,
+    {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            crate::records::SketchInputEntity::new(marker_id, marker_parent, ordinal, offset, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.state_value = None;
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+        constructed_marker.links = None;
+        constructed_marker
     }
 }
 
@@ -64,9 +67,9 @@ fn dynamic_relation(
             .into_iter()
             .enumerate()
             .map(|(index, entity_index)| FeatureInputOperand {
-                offset: index as u64,
+                offset: cadmpeg_core::decode::u64_from_index(index),
                 reference_ref: format!("reference-{index}"),
-                kind: FeatureInputOperandKind::Native(0x812a),
+                kind: FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x812a).unwrap()),
                 entity_index,
                 entity_ref: None,
             })
@@ -76,14 +79,14 @@ fn dynamic_relation(
 
 fn length_parameter(value: f64) -> DesignParameter {
     DesignParameter {
-        id: ParameterId::mint("parameter").expect("identity grammar"),
+        id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: None,
         ordinal: 0,
         name: "D1".into(),
         expression: value.to_string(),
         display: None,
-        value: Some(ParameterValue::Length(Length(value))),
-        dependencies: Vec::new(),
+        value: Some(ParameterValue::Length(Length::new(value).unwrap())),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -92,66 +95,89 @@ fn length_parameter(value: f64) -> DesignParameter {
 
 fn line_entity(id: &str, sketch: &SketchId, start: Point2, end: Point2) -> SketchEntity {
     SketchEntity::new(
-        SketchEntityId(id.into()),
+        SketchEntityId::mint(id).unwrap(),
         sketch.clone(),
-        SketchGeometry::Line { start, end },
+        SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }).unwrap(),
     )
 }
 
 #[test]
 fn point_operand_requires_one_profile_locus() {
-    let entity = SketchEntityId("entity".into());
+    let entity = SketchEntityId::mint("synthetic:test:id#entity").unwrap();
     let locus = SketchLocus::Start(entity.clone());
-    assert_eq!(unique_locus(std::slice::from_ref(&locus)), Some(locus));
-    assert_eq!(unique_locus(&[]), None);
     assert_eq!(
-        unique_locus(&[SketchLocus::Start(entity.clone()), SketchLocus::End(entity)]),
+        unique_locus(
+            &cadmpeg_test_support::service_decode_context(),
+            std::slice::from_ref(&locus)
+        )
+        .unwrap(),
+        Some(locus)
+    );
+    assert_eq!(
+        unique_locus(&cadmpeg_test_support::service_decode_context(), &[]).unwrap(),
+        None
+    );
+    assert_eq!(
+        unique_locus(
+            &cadmpeg_test_support::service_decode_context(),
+            &[SketchLocus::Start(entity.clone()), SketchLocus::End(entity)]
+        )
+        .unwrap(),
         None
     );
 }
 #[test]
 fn explicit_point_center_binds_one_matching_dimensioned_curve() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let parameter = DesignParameter {
-        id: ParameterId::mint("parameter").expect("identity grammar"),
+        id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: None,
         ordinal: 0,
         name: "D1".into(),
         expression: "<MOD-DIAM>4".into(),
         display: Some(DimensionDisplay::Diameter),
-        value: Some(ParameterValue::Length(Length(4.0))),
-        dependencies: Vec::new(),
+        value: Some(ParameterValue::Length(Length::new(4.0).unwrap())),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
     };
     let center = SketchEntity::new(
-        SketchEntityId("center".into()),
+        SketchEntityId::mint("synthetic:test:id#center").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(1.0, 2.0),
-        },
+        })
+        .unwrap(),
     )
     .with_construction(true)
     .with_native_ref(Some("center-marker".into()));
     let circle = SketchEntity::new(
-        SketchEntityId("circle".into()),
+        SketchEntityId::mint("synthetic:test:id#circle").unwrap(),
         sketch.clone(),
-        SketchGeometry::Circle {
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(1.0, 2.0),
-            radius: Length(2.0),
-        },
+            radius: Length::new(2.0).unwrap(),
+        })
+        .unwrap(),
     );
     let entities = vec![center, circle.clone()];
 
     assert_eq!(
-        marker_center_dimensioned_entity("center-marker", &sketch, &entities, &parameter),
+        marker_center_dimensioned_entity(
+            &cadmpeg_test_support::service_decode_context(),
+            "center-marker",
+            &sketch,
+            &entities,
+            &parameter
+        )
+        .unwrap(),
         Some(circle.id().clone())
     );
 
     let mut ambiguous = entities;
     let duplicate = SketchEntity::new(
-        SketchEntityId("duplicate-circle".into()),
+        SketchEntityId::mint("synthetic:test:id#duplicate-circle").unwrap(),
         circle.sketch.clone(),
         circle.geometry.clone(),
     )
@@ -161,47 +187,59 @@ fn explicit_point_center_binds_one_matching_dimensioned_curve() {
     .with_endpoint_refs(circle.endpoint_refs.clone());
     ambiguous.push(duplicate);
     assert_eq!(
-        marker_center_dimensioned_entity("center-marker", &sketch, &ambiguous, &parameter),
+        marker_center_dimensioned_entity(
+            &cadmpeg_test_support::service_decode_context(),
+            "center-marker",
+            &sketch,
+            &ambiguous,
+            &parameter
+        )
+        .unwrap(),
         None
     );
 }
 
 #[test]
 fn circle_dimension_ignores_marker_resolved_to_line() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let line = SketchEntity::new(
-        SketchEntityId("line".into()),
+        SketchEntityId::mint("synthetic:test:id#line").unwrap(),
         sketch.clone(),
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(1.0, 0.0),
-        },
+        })
+        .unwrap(),
     )
     .with_native_ref(Some("line-marker".into()));
     let circle = SketchEntity::new(
-        SketchEntityId("circle".into()),
+        SketchEntityId::mint("synthetic:test:id#circle").unwrap(),
         sketch.clone(),
-        SketchGeometry::Circle {
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(0.0, 0.0),
-            radius: Length(2.0),
-        },
+            radius: Length::new(2.0).unwrap(),
+        })
+        .unwrap(),
     );
-    let marker = SketchInputEntity {
-        id: "line-marker".into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset: 0,
-        object_index: None,
-        local_id: None,
-        kind: SketchInputKind::LineOrCircle,
-        state_value: None,
-        coordinates_m: None,
-        links: None,
+    let marker = {
+        let marker_id: String = "line-marker".into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = crate::records::SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            0,
+            0,
+            SketchInputKind::LineOrCircle,
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.state_value = None;
+        constructed_marker.coordinates_m = None;
+        constructed_marker.links = None;
+        constructed_marker
     };
-    let markers = HashMap::from([(marker.id.as_str(), &marker)]);
+    let markers = HashMap::from([(marker.id(), &marker)]);
     let loci = HashMap::from([(
-        marker.id.clone(),
+        marker.id().to_string(),
         vec![SketchLocus::Entity(line.id().clone())],
     )]);
     let relation = FeatureInputRelationInstance {
@@ -223,18 +261,18 @@ fn circle_dimension_ignores_marker_resolved_to_line() {
             reference_ref: "reference".into(),
             kind: FeatureInputOperandKind::E1,
             entity_index: 0,
-            entity_ref: Some(marker.id.clone()),
+            entity_ref: Some(marker.id().to_string()),
         }],
     };
     let parameter = DesignParameter {
-        id: ParameterId::mint("parameter").expect("identity grammar"),
+        id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: None,
         ordinal: 0,
         name: "D1".into(),
         expression: "<MOD-DIAM>4".into(),
         display: Some(DimensionDisplay::Diameter),
-        value: Some(ParameterValue::Length(Length(4.0))),
-        dependencies: Vec::new(),
+        value: Some(ParameterValue::Length(Length::new(4.0).unwrap())),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -242,23 +280,27 @@ fn circle_dimension_ignores_marker_resolved_to_line() {
 
     assert_eq!(
         typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
             &[line, circle.clone()],
             &markers,
             &loci,
-        ),
-        Some(cadmpeg_ir::sketches::SketchConstraintDefinition::Diameter {
-            entity: circle.id().clone(),
-            parameter: parameter.id,
-        })
+        )
+        .unwrap(),
+        Some(
+            cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Diameter {
+                entity: circle.id().clone(),
+                parameter: parameter.id,
+            }
+        )
     );
 }
 
 #[test]
 fn dynamic_point_line_relation_uses_curve_marker_ordinal() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let markers = [
         marker(
             "point-marker",
@@ -283,27 +325,28 @@ fn dynamic_point_line_relation_uses_curve_marker_ordinal() {
         ),
     ];
     let point = SketchEntity::new(
-        SketchEntityId("point".into()),
+        SketchEntityId::mint("synthetic:test:id#point").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(5.0, 1.0),
-        },
+        })
+        .unwrap(),
     );
     let first_line = line_entity(
-        "first-line",
+        "synthetic:test:id#first-line",
         &sketch,
         Point2::new(0.0, 10.0),
         Point2::new(10.0, 10.0),
     );
     let second_line = line_entity(
-        "second-line",
+        "synthetic:test:id#second-line",
         &sketch,
         Point2::new(0.0, 0.0),
         Point2::new(10.0, 0.0),
     );
     let markers_by_id = markers
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let loci_by_marker = HashMap::from([
         (
@@ -322,17 +365,19 @@ fn dynamic_point_line_relation_uses_curve_marker_ordinal() {
     let relation = dynamic_relation(FeatureInputRelationFamily::PointLineDistance, [0, 1]);
     let parameter = length_parameter(1.0);
     let definition = typed_relation_definition(
+        &cadmpeg_test_support::service_decode_context(),
         &relation,
         Some(&parameter),
         &sketch,
         &[point.clone(), first_line.clone(), second_line.clone()],
         &markers_by_id,
         &loci_by_marker,
-    );
+    )
+    .unwrap();
 
     assert_eq!(
         definition,
-        Some(SketchConstraintDefinition::DistanceLoci {
+        Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(point.id().clone()),
             second: SketchLocus::Entity(second_line.id().clone()),
             parameter: parameter.id,
@@ -342,41 +387,45 @@ fn dynamic_point_line_relation_uses_curve_marker_ordinal() {
 
 #[test]
 fn dynamic_point_line_relation_uses_unique_geometry_after_solver_alias() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let point = SketchEntity::new(
-        SketchEntityId("point".into()),
+        SketchEntityId::mint("synthetic:test:id#point").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(-14.0, 7.0),
-        },
+        })
+        .unwrap(),
     );
     let mut stale_line = line_entity(
-        "stale-line",
+        "synthetic:test:id#stale-line",
         &sketch,
         Point2::new(-16.0, 0.0),
         Point2::new(-16.0, 10.0),
     );
     stale_line.geometry_ref = Some("feature:solver-line:0".into());
     let mut intended_line = line_entity(
-        "intended-line",
+        "synthetic:test:id#intended-line",
         &sketch,
         Point2::new(0.0, 0.0),
         Point2::new(0.0, 10.0),
     );
     intended_line.geometry_ref = Some("feature:solver-line:4".into());
     let boundary_line = line_entity(
-        "boundary-line",
+        "synthetic:test:id#boundary-line",
         &sketch,
         Point2::new(-14.0, 7.0),
         Point2::new(-13.0, 7.0),
     );
     let mut relation = dynamic_relation(FeatureInputRelationFamily::PointLineDistance, [8, 0]);
-    relation.operands[0].kind = FeatureInputOperandKind::Native(0x8124);
-    relation.operands[1].kind = FeatureInputOperandKind::Native(0x812e);
+    relation.operands[0].kind =
+        FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x8124).unwrap());
+    relation.operands[1].kind =
+        FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x812e).unwrap());
     let parameter = length_parameter(14.0);
 
     assert_eq!(
         typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
@@ -388,8 +437,9 @@ fn dynamic_point_line_relation_uses_unique_geometry_after_solver_alias() {
             ],
             &HashMap::new(),
             &HashMap::new(),
-        ),
-        Some(SketchConstraintDefinition::DistanceLoci {
+        )
+        .unwrap(),
+        Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(point.id().clone()),
             second: SketchLocus::Entity(intended_line.id().clone()),
             parameter: parameter.id,
@@ -399,17 +449,18 @@ fn dynamic_point_line_relation_uses_unique_geometry_after_solver_alias() {
 
 #[test]
 fn dynamic_point_line_relation_uses_unique_complete_roster_line() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let point = SketchEntity::new(
-        SketchEntityId("point".into()),
+        SketchEntityId::mint("synthetic:test:id#point").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(5.0, 1.0),
-        },
+        })
+        .unwrap(),
     )
     .with_native_ref(Some("point-marker".into()));
     let mut line = line_entity(
-        "profile-line",
+        "synthetic:test:id#profile-line",
         &sketch,
         Point2::new(0.0, 0.0),
         Point2::new(10.0, 0.0),
@@ -419,85 +470,94 @@ fn dynamic_point_line_relation_uses_unique_complete_roster_line() {
 
     assert_eq!(
         typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(1.0)),
             &sketch,
             &[point.clone(), line.clone()],
             &HashMap::new(),
             &HashMap::new(),
-        ),
-        Some(SketchConstraintDefinition::DistanceLoci {
+        )
+        .unwrap(),
+        Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(point.id().clone()),
             second: SketchLocus::Entity(line.id().clone()),
-            parameter: ParameterId::mint("parameter").expect("identity grammar"),
+            parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         })
     );
 }
 
 #[test]
 fn dynamic_point_line_relation_with_ambiguous_geometry_stays_native() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let point = SketchEntity::new(
-        SketchEntityId("point".into()),
+        SketchEntityId::mint("synthetic:test:id#point").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(-14.0, 7.0),
-        },
+        })
+        .unwrap(),
     );
     let first_line = line_entity(
-        "first-line",
+        "synthetic:test:id#first-line",
         &sketch,
         Point2::new(0.0, 0.0),
         Point2::new(0.0, 10.0),
     );
     let second_line = line_entity(
-        "second-line",
+        "synthetic:test:id#second-line",
         &sketch,
         Point2::new(-28.0, 0.0),
         Point2::new(-28.0, 10.0),
     );
     let mut relation = dynamic_relation(FeatureInputRelationFamily::PointLineDistance, [0, 0]);
-    relation.operands[0].kind = FeatureInputOperandKind::Native(0x8124);
-    relation.operands[1].kind = FeatureInputOperandKind::Native(0x812e);
+    relation.operands[0].kind =
+        FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x8124).unwrap());
+    relation.operands[1].kind =
+        FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x812e).unwrap());
 
     assert_eq!(
         typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(14.0)),
             &sketch,
             &[point, first_line, second_line],
             &HashMap::new(),
             &HashMap::new(),
-        ),
+        )
+        .unwrap(),
         None
     );
 }
 
 #[test]
 fn solver_point_relation_requires_materialized_positions() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let mut relation = dynamic_relation(FeatureInputRelationFamily::PointPointDistance, [12, 13]);
     for operand in &mut relation.operands {
-        operand.kind = FeatureInputOperandKind::Native(0x8100);
+        operand.kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_8100);
     }
     let parameter = length_parameter(7.0);
 
     assert_eq!(
         typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
             &[],
             &HashMap::new(),
             &HashMap::new(),
-        ),
+        )
+        .unwrap(),
         None
     );
 }
 
 #[test]
 fn point_line_relation_prefers_materialized_point_over_ambiguous_fallback() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let markers = [
         marker(
             "point-marker",
@@ -522,29 +582,31 @@ fn point_line_relation_prefers_materialized_point_over_ambiguous_fallback() {
         ),
     ];
     let point = SketchEntity::new(
-        SketchEntityId("point".into()),
+        SketchEntityId::mint("synthetic:test:id#point").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(5.0, 1.0),
-        },
+        })
+        .unwrap(),
     )
     .with_native_ref(Some("point-marker".into()));
     let unrelated_point = SketchEntity::new(
-        SketchEntityId("unrelated-point".into()),
+        SketchEntityId::mint("synthetic:test:id#unrelated-point").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(15.0, 1.0),
-        },
+        })
+        .unwrap(),
     );
     let line = line_entity(
-        "second-line",
+        "synthetic:test:id#second-line",
         &sketch,
         Point2::new(0.0, 0.0),
         Point2::new(20.0, 0.0),
     );
     let markers_by_id = markers
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let loci_by_marker = HashMap::from([(
         "second-curve-marker".into(),
@@ -555,14 +617,16 @@ fn point_line_relation_prefers_materialized_point_over_ambiguous_fallback() {
 
     assert_eq!(
         typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
             &[point.clone(), unrelated_point, line.clone()],
             &markers_by_id,
             &loci_by_marker,
-        ),
-        Some(SketchConstraintDefinition::DistanceLoci {
+        )
+        .unwrap(),
+        Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(point.id().clone()),
             second: SketchLocus::Entity(line.id().clone()),
             parameter: parameter.id,
@@ -572,7 +636,7 @@ fn point_line_relation_prefers_materialized_point_over_ambiguous_fallback() {
 
 #[test]
 fn dynamic_line_relation_requires_exact_curve_dimension() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let markers = [
         marker(
             "first-curve-marker",
@@ -590,20 +654,20 @@ fn dynamic_line_relation_requires_exact_curve_dimension() {
         ),
     ];
     let first_line = line_entity(
-        "first-line",
+        "synthetic:test:id#first-line",
         &sketch,
         Point2::new(0.0, 10.0),
         Point2::new(10.0, 10.0),
     );
     let second_line = line_entity(
-        "second-line",
+        "synthetic:test:id#second-line",
         &sketch,
         Point2::new(0.0, 0.0),
         Point2::new(10.0, 0.0),
     );
     let markers_by_id = markers
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let loci_by_marker = HashMap::from([
         (
@@ -620,48 +684,54 @@ fn dynamic_line_relation_requires_exact_curve_dimension() {
 
     assert_eq!(
         typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(10.0)),
             &sketch,
             &entities,
             &markers_by_id,
             &loci_by_marker,
-        ),
-        Some(SketchConstraintDefinition::Distance {
+        )
+        .unwrap(),
+        Some(SketchConstraintDefinitionInput::Distance {
             entities: vec![first_line.id().clone(), second_line.id().clone()],
-            parameter: ParameterId::mint("parameter").expect("identity grammar"),
+            parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         })
     );
     assert_eq!(
         typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(9.0)),
             &sketch,
             &entities,
             &markers_by_id,
             &loci_by_marker,
-        ),
+        )
+        .unwrap(),
         None
     );
 }
 
 #[test]
 fn dynamic_point_relation_accepts_model_coordinate_quantization() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let first = SketchEntity::new(
-        SketchEntityId("first-point".into()),
+        SketchEntityId::mint("synthetic:test:id#first-point").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(0.0, 0.0),
-        },
+        })
+        .unwrap(),
     )
     .with_native_ref(Some("first-marker".into()));
     let second = SketchEntity::new(
-        SketchEntityId("second-point".into()),
+        SketchEntityId::mint("synthetic:test:id#second-point").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(1.202_017_17, 0.0),
-        },
+        })
+        .unwrap(),
     )
     .with_native_ref(Some("second-marker".into()));
     let markers = [
@@ -670,7 +740,7 @@ fn dynamic_point_relation_accepts_model_coordinate_quantization() {
     ];
     let markers_by_id = markers
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let mut relation = dynamic_relation(FeatureInputRelationFamily::PointPointDistance, [0, 1]);
     relation.operands[0].entity_ref = Some("first-marker".into());
@@ -679,14 +749,16 @@ fn dynamic_point_relation_accepts_model_coordinate_quantization() {
 
     assert_eq!(
         typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
             &[first.clone(), second.clone()],
             &markers_by_id,
             &HashMap::new(),
-        ),
-        Some(SketchConstraintDefinition::DistanceLoci {
+        )
+        .unwrap(),
+        Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(first.id().clone()),
             second: SketchLocus::Entity(second.id().clone()),
             parameter: parameter.id.clone(),
@@ -696,40 +768,48 @@ fn dynamic_point_relation_accepts_model_coordinate_quantization() {
     let rejected_parameter = length_parameter(1.202_017_195);
     assert_eq!(
         typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&rejected_parameter),
             &sketch,
             &[first.clone(), second.clone()],
             &markers_by_id,
             &HashMap::new(),
-        ),
+        )
+        .unwrap(),
         None
     );
 
-    let definition = SketchConstraintDefinition::DistanceLoci {
-        first: SketchLocus::Entity(SketchEntityId("first-point".into())),
-        second: SketchLocus::Entity(SketchEntityId("second-point".into())),
+    let definition = SketchConstraintDefinitionInput::DistanceLoci {
+        first: SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#first-point").unwrap()),
+        second: SketchLocus::Entity(
+            SketchEntityId::mint("synthetic:test:id#second-point").unwrap(),
+        ),
         parameter: parameter.id.clone(),
     };
     assert!(!relation_constraint_is_inactive(
+        &cadmpeg_test_support::service_decode_context(),
         Some(&parameter),
         &definition,
         &[first.clone(), second.clone()],
-    ));
+    )
+    .unwrap());
     assert!(relation_constraint_is_inactive(
+        &cadmpeg_test_support::service_decode_context(),
         Some(&rejected_parameter),
         &definition,
         &[first, second],
-    ));
+    )
+    .unwrap());
 }
 
 #[test]
 fn dynamic_point_distance_disambiguates_marker_scoped_points_by_distance() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let mut first_marker = marker("first-marker", 0, 10, SketchInputKind::Point, None);
-    first_marker.object_index = Some(2);
+    first_marker = first_marker.with_test_identity(Some(2), first_marker.local_id());
     let mut second_marker = marker("second-marker", 1, 20, SketchInputKind::Point, None);
-    second_marker.object_index = Some(3);
+    second_marker = second_marker.with_test_identity(Some(3), second_marker.local_id());
     second_marker.links = crate::records::SketchInputLinks::new(
         0,
         vec![
@@ -751,41 +831,45 @@ fn dynamic_point_distance_disambiguates_marker_scoped_points_by_distance() {
     let second_near_marker = marker("second-near", 3, 40, SketchInputKind::Point, None);
     let second_other_marker = marker("second-other", 4, 50, SketchInputKind::Point, None);
     let first_point = SketchEntity::new(
-        SketchEntityId("first-point".into()),
+        SketchEntityId::mint("synthetic:test:id#first-point").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(0.0, 0.0),
-        },
+        })
+        .unwrap(),
     )
     .with_native_ref(Some("first-marker".into()));
     let first_edge = line_entity(
-        "first-edge",
+        "synthetic:test:id#first-edge",
         &sketch,
         Point2::new(0.0, 0.0),
         Point2::new(0.0, 10.0),
     );
     let second_target = SketchEntity::new(
-        SketchEntityId("second-target".into()),
+        SketchEntityId::mint("synthetic:test:id#second-target").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(140.0, 0.0),
-        },
+        })
+        .unwrap(),
     )
     .with_native_ref(Some("second-target".into()));
     let second_near = SketchEntity::new(
-        SketchEntityId("second-near".into()),
+        SketchEntityId::mint("synthetic:test:id#second-near").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(0.0, 1.0),
-        },
+        })
+        .unwrap(),
     )
     .with_native_ref(Some("second-near".into()));
     let second_other = SketchEntity::new(
-        SketchEntityId("second-other".into()),
+        SketchEntityId::mint("synthetic:test:id#second-other").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(0.0, 2.0),
-        },
+        })
+        .unwrap(),
     )
     .with_native_ref(Some("second-other".into()));
     let markers = [
@@ -797,7 +881,7 @@ fn dynamic_point_distance_disambiguates_marker_scoped_points_by_distance() {
     ];
     let markers_by_id = markers
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let loci_by_marker = HashMap::from([(
         "first-marker".into(),
@@ -810,23 +894,26 @@ fn dynamic_point_distance_disambiguates_marker_scoped_points_by_distance() {
         second_near,
         second_other,
     ];
-    let first_locus = SketchLocus::Entity(SketchEntityId("first-point".into()));
+    let first_locus =
+        SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#first-point").unwrap());
     let second_locus = SketchLocus::Entity(second_target.id().clone());
     let relation = dynamic_relation(FeatureInputRelationFamily::PointPointDistance, [2, 3]);
 
     assert_eq!(
         typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(140.0)),
             &sketch,
             &entities,
             &markers_by_id,
             &loci_by_marker,
-        ),
-        Some(SketchConstraintDefinition::DistanceLoci {
+        )
+        .unwrap(),
+        Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: first_locus.clone(),
             second: second_locus.clone(),
-            parameter: ParameterId::mint("parameter").expect("identity grammar"),
+            parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         })
     );
 
@@ -836,17 +923,19 @@ fn dynamic_point_distance_disambiguates_marker_scoped_points_by_distance() {
     );
     assert_eq!(
         typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &horizontal,
             Some(&length_parameter(140.0)),
             &sketch,
             &entities,
             &markers_by_id,
             &loci_by_marker,
-        ),
-        Some(SketchConstraintDefinition::HorizontalDistance {
+        )
+        .unwrap(),
+        Some(SketchConstraintDefinitionInput::HorizontalDistance {
             first: first_locus.clone(),
             second: second_locus.clone(),
-            parameter: ParameterId::mint("parameter").expect("identity grammar"),
+            parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         })
     );
 
@@ -856,51 +945,55 @@ fn dynamic_point_distance_disambiguates_marker_scoped_points_by_distance() {
     );
     assert_eq!(
         typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &vertical,
             Some(&length_parameter(0.0)),
             &sketch,
             &entities,
             &markers_by_id,
             &loci_by_marker,
-        ),
-        Some(SketchConstraintDefinition::VerticalDistance {
+        )
+        .unwrap(),
+        Some(SketchConstraintDefinitionInput::VerticalDistance {
             first: first_locus,
             second: second_locus,
-            parameter: ParameterId::mint("parameter").expect("identity grammar"),
+            parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         })
     );
 }
 
 #[test]
 fn dynamic_point_distance_uses_unique_complete_roster() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let point = |id: &str, position| {
         SketchEntity::new(
-            SketchEntityId(id.into()),
+            SketchEntityId::mint(id).unwrap(),
             sketch.clone(),
-            SketchGeometry::Point { position },
+            SketchGeometry::try_from(SketchGeometryDefinition::Point { position }).unwrap(),
         )
     };
     let entities = vec![
-        point("first", Point2::new(0.0, 0.0)),
-        point("second", Point2::new(30.0, 0.0)),
-        point("distractor", Point2::new(7.0, 5.0)),
+        point("synthetic:test:id#first", Point2::new(0.0, 0.0)),
+        point("synthetic:test:id#second", Point2::new(30.0, 0.0)),
+        point("synthetic:test:id#distractor", Point2::new(7.0, 5.0)),
     ];
     let relation = dynamic_relation(FeatureInputRelationFamily::PointPointDistance, [7, 9]);
     let parameter = length_parameter(30.0);
 
     assert_eq!(
         typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
             &entities,
             &HashMap::new(),
             &HashMap::new(),
-        ),
-        Some(SketchConstraintDefinition::DistanceLoci {
-            first: SketchLocus::Entity(SketchEntityId("first".into())),
-            second: SketchLocus::Entity(SketchEntityId("second".into())),
+        )
+        .unwrap(),
+        Some(SketchConstraintDefinitionInput::DistanceLoci {
+            first: SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#first").unwrap()),
+            second: SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#second").unwrap()),
             parameter: parameter.id,
         })
     );
@@ -908,18 +1001,18 @@ fn dynamic_point_distance_uses_unique_complete_roster() {
 
 #[test]
 fn dynamic_axis_distance_uses_unique_complete_roster() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let point = |id: &str, position| {
         SketchEntity::new(
-            SketchEntityId(id.into()),
+            SketchEntityId::mint(id).unwrap(),
             sketch.clone(),
-            SketchGeometry::Point { position },
+            SketchGeometry::try_from(SketchGeometryDefinition::Point { position }).unwrap(),
         )
     };
     let entities = vec![
-        point("first", Point2::new(0.0, 0.0)),
-        point("second", Point2::new(30.0, 0.0)),
-        point("distractor", Point2::new(7.0, 5.0)),
+        point("synthetic:test:id#first", Point2::new(0.0, 0.0)),
+        point("synthetic:test:id#second", Point2::new(30.0, 0.0)),
+        point("synthetic:test:id#distractor", Point2::new(7.0, 5.0)),
     ];
     let parameter = length_parameter(30.0);
 
@@ -929,24 +1022,29 @@ fn dynamic_axis_distance_uses_unique_complete_roster() {
     );
     assert_eq!(
         typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &horizontal,
             Some(&parameter),
             &sketch,
             &entities,
             &HashMap::new(),
             &HashMap::new(),
-        ),
-        Some(SketchConstraintDefinition::HorizontalDistance {
-            first: SketchLocus::Entity(SketchEntityId("first".into())),
-            second: SketchLocus::Entity(SketchEntityId("second".into())),
+        )
+        .unwrap(),
+        Some(SketchConstraintDefinitionInput::HorizontalDistance {
+            first: SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#first").unwrap()),
+            second: SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#second").unwrap()),
             parameter: parameter.id.clone(),
         })
     );
 
     let vertical_entities = vec![
-        point("vertical-first", Point2::new(0.0, 0.0)),
-        point("vertical-second", Point2::new(0.0, 5.0)),
-        point("vertical-distractor", Point2::new(7.0, 13.0)),
+        point("synthetic:test:id#vertical-first", Point2::new(0.0, 0.0)),
+        point("synthetic:test:id#vertical-second", Point2::new(0.0, 5.0)),
+        point(
+            "synthetic:test:id#vertical-distractor",
+            Point2::new(7.0, 13.0),
+        ),
     ];
     let vertical = dynamic_relation(
         FeatureInputRelationFamily::PointPointVerticalDistance,
@@ -954,78 +1052,88 @@ fn dynamic_axis_distance_uses_unique_complete_roster() {
     );
     assert_eq!(
         typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &vertical,
             Some(&length_parameter(5.0)),
             &sketch,
             &vertical_entities,
             &HashMap::new(),
             &HashMap::new(),
-        ),
-        Some(SketchConstraintDefinition::VerticalDistance {
-            first: SketchLocus::Entity(SketchEntityId("vertical-first".into())),
-            second: SketchLocus::Entity(SketchEntityId("vertical-second".into())),
-            parameter: ParameterId::mint("parameter").expect("identity grammar"),
+        )
+        .unwrap(),
+        Some(SketchConstraintDefinitionInput::VerticalDistance {
+            first: SketchLocus::Entity(
+                SketchEntityId::mint("synthetic:test:id#vertical-first").unwrap()
+            ),
+            second: SketchLocus::Entity(
+                SketchEntityId::mint("synthetic:test:id#vertical-second").unwrap()
+            ),
+            parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         })
     );
 }
 
 #[test]
 fn dynamic_point_distance_with_ambiguous_complete_roster_stays_native() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let point = |id: &str, position| {
         SketchEntity::new(
-            SketchEntityId(id.into()),
+            SketchEntityId::mint(id).unwrap(),
             sketch.clone(),
-            SketchGeometry::Point { position },
+            SketchGeometry::try_from(SketchGeometryDefinition::Point { position }).unwrap(),
         )
     };
     let entities = vec![
-        point("origin", Point2::new(0.0, 0.0)),
-        point("horizontal", Point2::new(10.0, 0.0)),
-        point("vertical", Point2::new(0.0, 10.0)),
+        point("synthetic:test:id#origin", Point2::new(0.0, 0.0)),
+        point("synthetic:test:id#horizontal", Point2::new(10.0, 0.0)),
+        point("synthetic:test:id#vertical", Point2::new(0.0, 10.0)),
     ];
     let relation = dynamic_relation(FeatureInputRelationFamily::PointPointDistance, [7, 9]);
 
     assert_eq!(
         typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(10.0)),
             &sketch,
             &entities,
             &HashMap::new(),
             &HashMap::new(),
-        ),
+        )
+        .unwrap(),
         None
     );
 }
 
 #[test]
 fn dynamic_axis_distance_uses_the_mapped_profile_axis() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let mut first_marker = marker("first-marker", 0, 10, SketchInputKind::Point, None);
-    first_marker.object_index = Some(0);
+    first_marker = first_marker.with_test_identity(Some(0), first_marker.local_id());
     let mut second_marker = marker("second-marker", 1, 20, SketchInputKind::Point, None);
-    second_marker.object_index = Some(1);
+    second_marker = second_marker.with_test_identity(Some(1), second_marker.local_id());
     let first = SketchEntity::new(
-        SketchEntityId("first-point".into()),
+        SketchEntityId::mint("synthetic:test:id#first-point").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(0.0, 0.0),
-        },
+        })
+        .unwrap(),
     )
-    .with_native_ref(Some(first_marker.id.clone()));
+    .with_native_ref(Some(first_marker.id().to_string()));
     let second = SketchEntity::new(
-        SketchEntityId("second-point".into()),
+        SketchEntityId::mint("synthetic:test:id#second-point").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(10.0, 0.0),
-        },
+        })
+        .unwrap(),
     )
-    .with_native_ref(Some(second_marker.id.clone()));
+    .with_native_ref(Some(second_marker.id().to_string()));
     let markers = [first_marker, second_marker];
     let markers_by_id = markers
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let relation = dynamic_relation(
         FeatureInputRelationFamily::PointPointVerticalDistance,
@@ -1035,15 +1143,19 @@ fn dynamic_axis_distance_uses_the_mapped_profile_axis() {
 
     assert_eq!(
         typed_relation_definition_with_profile_axis(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&parameter),
-            &sketch,
-            &[first.clone(), second.clone()],
+            crate::resolved_features::relation_loci::SketchRelationEntities {
+                sketch: &sketch,
+                sketch_entities: &[first.clone(), second.clone()]
+            },
             &markers_by_id,
             &HashMap::new(),
-            Some(ProfileAxis::U),
-        ),
-        Some(SketchConstraintDefinition::HorizontalDistance {
+            Some(ProfileAxis::U)
+        )
+        .unwrap(),
+        Some(SketchConstraintDefinitionInput::HorizontalDistance {
             first: SketchLocus::Entity(first.id().clone()),
             second: SketchLocus::Entity(second.id().clone()),
             parameter: parameter.id,
@@ -1053,11 +1165,11 @@ fn dynamic_axis_distance_uses_the_mapped_profile_axis() {
 
 #[test]
 fn dynamic_point_distance_uses_a_unique_arc_center_carrier() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let mut point_marker = marker("point-marker", 0, 10, SketchInputKind::Point, None);
-    point_marker.object_index = Some(0);
+    point_marker = point_marker.with_test_identity(Some(0), point_marker.local_id());
     let mut arc_marker = marker("arc-marker", 1, 20, SketchInputKind::Arc, None);
-    arc_marker.object_index = Some(4);
+    arc_marker = arc_marker.with_test_identity(Some(4), arc_marker.local_id());
     let mut wrapper_marker = marker(
         "arc-wrapper",
         2,
@@ -1065,36 +1177,38 @@ fn dynamic_point_distance_uses_a_unique_arc_center_carrier() {
         SketchInputKind::Relation(SketchRelationKind::Distance),
         None,
     );
-    wrapper_marker.object_index = Some(4);
+    wrapper_marker = wrapper_marker.with_test_identity(Some(4), wrapper_marker.local_id());
     wrapper_marker.links = crate::records::SketchInputLinks::new(
         0,
         vec![SketchInputLink {
             local_id: 0,
-            entity_ref: arc_marker.id.clone(),
+            entity_ref: arc_marker.id().to_string(),
         }],
     );
     let point = SketchEntity::new(
-        SketchEntityId("point".into()),
+        SketchEntityId::mint("synthetic:test:id#point").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(0.0, 0.0),
-        },
+        })
+        .unwrap(),
     )
-    .with_native_ref(Some(point_marker.id.clone()));
+    .with_native_ref(Some(point_marker.id().to_string()));
     let arc = SketchEntity::new(
-        SketchEntityId("arc".into()),
+        SketchEntityId::mint("synthetic:test:id#arc").unwrap(),
         sketch.clone(),
-        SketchGeometry::Arc {
+        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(0.0, 52.0),
-            radius: Length(10.0),
-            start_angle: Angle(0.0),
-            end_angle: Angle(std::f64::consts::PI),
-        },
+            radius: Length::new(10.0).unwrap(),
+            start_angle: Angle::new(0.0).unwrap(),
+            end_angle: Angle::new(std::f64::consts::PI).unwrap(),
+        })
+        .unwrap(),
     );
     let markers = [point_marker, arc_marker, wrapper_marker];
     let markers_by_id = markers
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let loci_by_marker = HashMap::from([(
         "arc-marker".into(),
@@ -1105,14 +1219,16 @@ fn dynamic_point_distance_uses_a_unique_arc_center_carrier() {
 
     assert_eq!(
         typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
             &[point.clone(), arc.clone()],
             &markers_by_id,
             &loci_by_marker,
-        ),
-        Some(SketchConstraintDefinition::DistanceLoci {
+        )
+        .unwrap(),
+        Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(point.id().clone()),
             second: SketchLocus::Center(arc.id().clone()),
             parameter: parameter.id,
@@ -1122,9 +1238,9 @@ fn dynamic_point_distance_uses_a_unique_arc_center_carrier() {
 
 #[test]
 fn dynamic_point_distance_rejects_ambiguous_arc_centers() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let mut point_marker = marker("point-marker", 0, 10, SketchInputKind::Point, None);
-    point_marker.object_index = Some(0);
+    point_marker = point_marker.with_test_identity(Some(0), point_marker.local_id());
     let first_marker = marker("first-arc", 1, 20, SketchInputKind::Arc, None);
     let second_marker = marker("second-arc", 2, 30, SketchInputKind::Arc, None);
     let mut wrapper_marker = marker(
@@ -1134,52 +1250,55 @@ fn dynamic_point_distance_rejects_ambiguous_arc_centers() {
         SketchInputKind::Relation(SketchRelationKind::Distance),
         None,
     );
-    wrapper_marker.object_index = Some(4);
+    wrapper_marker = wrapper_marker.with_test_identity(Some(4), wrapper_marker.local_id());
     wrapper_marker.links = crate::records::SketchInputLinks::new(
         0,
         vec![
             SketchInputLink {
                 local_id: 0,
-                entity_ref: first_marker.id.clone(),
+                entity_ref: first_marker.id().to_string(),
             },
             SketchInputLink {
                 local_id: 1,
-                entity_ref: second_marker.id.clone(),
+                entity_ref: second_marker.id().to_string(),
             },
         ],
     );
     let point = SketchEntity::new(
-        SketchEntityId("point".into()),
+        SketchEntityId::mint("synthetic:test:id#point").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(0.0, 0.0),
-        },
+        })
+        .unwrap(),
     )
-    .with_native_ref(Some(point_marker.id.clone()));
+    .with_native_ref(Some(point_marker.id().to_string()));
     let first_arc = SketchEntity::new(
-        SketchEntityId("first-arc-entity".into()),
+        SketchEntityId::mint("synthetic:test:id#first-arc-entity").unwrap(),
         sketch.clone(),
-        SketchGeometry::Arc {
+        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(0.0, 52.0),
-            radius: Length(10.0),
-            start_angle: Angle(0.0),
-            end_angle: Angle(std::f64::consts::PI),
-        },
+            radius: Length::new(10.0).unwrap(),
+            start_angle: Angle::new(0.0).unwrap(),
+            end_angle: Angle::new(std::f64::consts::PI).unwrap(),
+        })
+        .unwrap(),
     );
     let second_arc = SketchEntity::new(
-        SketchEntityId("second-arc-entity".into()),
+        SketchEntityId::mint("synthetic:test:id#second-arc-entity").unwrap(),
         sketch.clone(),
-        SketchGeometry::Arc {
+        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(0.0, 53.0),
-            radius: Length(10.0),
-            start_angle: Angle(0.0),
-            end_angle: Angle(std::f64::consts::PI),
-        },
+            radius: Length::new(10.0).unwrap(),
+            start_angle: Angle::new(0.0).unwrap(),
+            end_angle: Angle::new(std::f64::consts::PI).unwrap(),
+        })
+        .unwrap(),
     );
     let markers = [point_marker, first_marker, second_marker, wrapper_marker];
     let markers_by_id = markers
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let loci_by_marker = HashMap::from([
         (
@@ -1195,23 +1314,25 @@ fn dynamic_point_distance_rejects_ambiguous_arc_centers() {
 
     assert_eq!(
         typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(52.0)),
             &sketch,
             &[point, first_arc, second_arc],
             &markers_by_id,
             &loci_by_marker,
-        ),
+        )
+        .unwrap(),
         None
     );
 }
 
 #[test]
 fn dynamic_point_line_relation_disambiguates_marker_scoped_lines_by_distance() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let point_marker = marker("point-marker", 0, 10, SketchInputKind::Point, None);
     let mut line_marker = marker("line-marker", 1, 20, SketchInputKind::LineOrCircle, None);
-    line_marker.object_index = Some(1);
+    line_marker = line_marker.with_test_identity(Some(1), line_marker.local_id());
     line_marker.links = crate::records::SketchInputLinks::new(
         0,
         vec![
@@ -1228,22 +1349,23 @@ fn dynamic_point_line_relation_disambiguates_marker_scoped_lines_by_distance() {
     let line_start = marker("line-start", 2, 30, SketchInputKind::Point, None);
     let line_end = marker("line-end", 3, 40, SketchInputKind::Point, None);
     let point = SketchEntity::new(
-        SketchEntityId("point".into()),
+        SketchEntityId::mint("synthetic:test:id#point").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(5.0, 3.0),
-        },
+        })
+        .unwrap(),
     )
     .with_native_ref(Some("point-marker".into()));
     let mut first_line = line_entity(
-        "first-line",
+        "synthetic:test:id#first-line",
         &sketch,
         Point2::new(0.0, 0.0),
         Point2::new(10.0, 0.0),
     );
     first_line.endpoint_refs = vec!["line-start".into(), "line-end".into()];
     let mut alternate_line = line_entity(
-        "alternate-line",
+        "synthetic:test:id#alternate-line",
         &sketch,
         Point2::new(0.0, 1.0),
         Point2::new(10.0, 1.0),
@@ -1252,30 +1374,32 @@ fn dynamic_point_line_relation_disambiguates_marker_scoped_lines_by_distance() {
     let markers = [point_marker, line_marker, line_start, line_end];
     let markers_by_id = markers
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let relation = dynamic_relation(FeatureInputRelationFamily::PointLineDistance, [0, 1]);
 
     assert_eq!(
         typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(2.0)),
             &sketch,
             &[point.clone(), first_line, alternate_line.clone()],
             &markers_by_id,
             &HashMap::new(),
-        ),
-        Some(SketchConstraintDefinition::DistanceLoci {
+        )
+        .unwrap(),
+        Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(point.id().clone()),
             second: SketchLocus::Entity(alternate_line.id().clone()),
-            parameter: ParameterId::mint("parameter").expect("identity grammar"),
+            parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         })
     );
 }
 
 #[test]
 fn dynamic_line_distance_disambiguates_two_marker_scoped_line_sets() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let mut first_marker = marker("first-marker", 0, 10, SketchInputKind::LineOrCircle, None);
     first_marker.links = crate::records::SketchInputLinks::new(
         0,
@@ -1309,28 +1433,28 @@ fn dynamic_line_distance_disambiguates_two_marker_scoped_line_sets() {
     let second_start = marker("second-start", 4, 50, SketchInputKind::Point, None);
     let second_end = marker("second-end", 5, 60, SketchInputKind::Point, None);
     let mut first_line = line_entity(
-        "first-line",
+        "synthetic:test:id#first-line",
         &sketch,
         Point2::new(0.0, 0.0),
         Point2::new(10.0, 0.0),
     );
     first_line.endpoint_refs = vec!["first-start".into(), "first-end".into()];
     let mut first_alternate = line_entity(
-        "first-alternate",
+        "synthetic:test:id#first-alternate",
         &sketch,
         Point2::new(0.0, 1.0),
         Point2::new(10.0, 1.0),
     );
     first_alternate.endpoint_refs = vec!["first-start".into()];
     let mut second_line = line_entity(
-        "second-line",
+        "synthetic:test:id#second-line",
         &sketch,
         Point2::new(0.0, 3.0),
         Point2::new(10.0, 3.0),
     );
     second_line.endpoint_refs = vec!["second-start".into(), "second-end".into()];
     let mut second_alternate = line_entity(
-        "second-alternate",
+        "synthetic:test:id#second-alternate",
         &sketch,
         Point2::new(0.0, 4.0),
         Point2::new(10.0, 4.0),
@@ -1346,7 +1470,7 @@ fn dynamic_line_distance_disambiguates_two_marker_scoped_line_sets() {
     ];
     let markers_by_id = markers
         .iter()
-        .map(|marker| (marker.id.as_str(), marker))
+        .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let relation = dynamic_relation(FeatureInputRelationFamily::LineLineDistance, [0, 1]);
     let entities = vec![
@@ -1358,48 +1482,52 @@ fn dynamic_line_distance_disambiguates_two_marker_scoped_line_sets() {
 
     assert_eq!(
         typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(2.0)),
             &sketch,
             &entities,
             &markers_by_id,
             &HashMap::new(),
-        ),
-        Some(SketchConstraintDefinition::Distance {
+        )
+        .unwrap(),
+        Some(SketchConstraintDefinitionInput::Distance {
             entities: vec![first_alternate.id().clone(), second_line.id().clone()],
-            parameter: ParameterId::mint("parameter").expect("identity grammar"),
+            parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         })
     );
     assert_eq!(
         typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(3.0)),
             &sketch,
             &entities,
             &markers_by_id,
             &HashMap::new(),
-        ),
+        )
+        .unwrap(),
         None
     );
 }
 
 #[test]
 fn dynamic_line_distance_uses_unique_complete_roster() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let first = line_entity(
-        "first-line",
+        "synthetic:test:id#first-line",
         &sketch,
         Point2::new(0.0, 0.0),
         Point2::new(10.0, 0.0),
     );
     let second = line_entity(
-        "second-line",
+        "synthetic:test:id#second-line",
         &sketch,
         Point2::new(0.0, 2.0),
         Point2::new(10.0, 2.0),
     );
     let unrelated = line_entity(
-        "unrelated-line",
+        "synthetic:test:id#unrelated-line",
         &sketch,
         Point2::new(0.0, 1.0),
         Point2::new(10.0, 2.0),
@@ -1408,37 +1536,39 @@ fn dynamic_line_distance_uses_unique_complete_roster() {
 
     assert_eq!(
         typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(2.0)),
             &sketch,
             &[first.clone(), second.clone(), unrelated],
             &HashMap::new(),
             &HashMap::new(),
-        ),
-        Some(SketchConstraintDefinition::Distance {
+        )
+        .unwrap(),
+        Some(SketchConstraintDefinitionInput::Distance {
             entities: vec![first.id().clone(), second.id().clone()],
-            parameter: ParameterId::mint("parameter").expect("identity grammar"),
+            parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         })
     );
 }
 
 #[test]
 fn dynamic_line_distance_with_ambiguous_complete_roster_stays_native() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let first = line_entity(
-        "first-line",
+        "synthetic:test:id#first-line",
         &sketch,
         Point2::new(0.0, 0.0),
         Point2::new(10.0, 0.0),
     );
     let second = line_entity(
-        "second-line",
+        "synthetic:test:id#second-line",
         &sketch,
         Point2::new(0.0, 2.0),
         Point2::new(10.0, 2.0),
     );
     let alternate = line_entity(
-        "alternate-line",
+        "synthetic:test:id#alternate-line",
         &sketch,
         Point2::new(0.0, -2.0),
         Point2::new(10.0, -2.0),
@@ -1447,28 +1577,30 @@ fn dynamic_line_distance_with_ambiguous_complete_roster_stays_native() {
 
     assert_eq!(
         typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(2.0)),
             &sketch,
             &[first, second, alternate],
             &HashMap::new(),
             &HashMap::new(),
-        ),
+        )
+        .unwrap(),
         None
     );
 }
 
 #[test]
 fn dynamic_line_distance_does_not_bypass_explicit_operands() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let first = line_entity(
-        "first-line",
+        "synthetic:test:id#first-line",
         &sketch,
         Point2::new(0.0, 0.0),
         Point2::new(10.0, 0.0),
     );
     let second = line_entity(
-        "second-line",
+        "synthetic:test:id#second-line",
         &sketch,
         Point2::new(0.0, 2.000_000_01),
         Point2::new(10.0, 2.000_000_01),
@@ -1478,373 +1610,40 @@ fn dynamic_line_distance_does_not_bypass_explicit_operands() {
 
     assert_eq!(
         typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(2.0)),
             &sketch,
             &[first.clone(), second.clone()],
             &HashMap::new(),
             &HashMap::new(),
-        ),
+        )
+        .unwrap(),
         None
     );
 
     let known_marker = marker("known-marker", 0, 10, SketchInputKind::LineOrCircle, None);
-    let markers_by_id = HashMap::from([(known_marker.id.as_str(), &known_marker)]);
+    let markers_by_id = HashMap::from([(known_marker.id(), &known_marker)]);
     let loci_by_marker = HashMap::from([(
-        known_marker.id.clone(),
+        known_marker.id().to_string(),
         vec![SketchLocus::Entity(first.id().clone())],
     )]);
-    relation.operands[0].entity_ref = Some(known_marker.id.clone());
+    relation.operands[0].entity_ref = Some(known_marker.id().to_string());
     assert!(matches!(
-        typed_relation_definition(
+        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(2.0)),
             &sketch,
             &[first, second],
             &markers_by_id,
             &loci_by_marker,
-        ),
-        Some(SketchConstraintDefinition::Distance { entities, .. })
-            if entities == vec![SketchEntityId("first-line".into()), SketchEntityId("second-line".into())]
+        ).unwrap(),
+        Some(SketchConstraintDefinitionInput::Distance { entities, .. })
+            if entities == vec![SketchEntityId::mint("synthetic:test:id#first-line").unwrap(), SketchEntityId::mint("synthetic:test:id#second-line").unwrap()]
     ));
 }
 
-#[test]
-fn dynamic_angle_disambiguates_one_marker_scoped_line_by_angle() {
-    let sketch = SketchId("sketch".into());
-    let mut first_marker = marker("first-marker", 0, 10, SketchInputKind::LineOrCircle, None);
-    first_marker.links = crate::records::SketchInputLinks::new(
-        0,
-        vec![
-            SketchInputLink {
-                local_id: 0,
-                entity_ref: "first-start".into(),
-            },
-            SketchInputLink {
-                local_id: 1,
-                entity_ref: "first-end".into(),
-            },
-        ],
-    );
-    let second_marker = marker("second-marker", 1, 20, SketchInputKind::LineOrCircle, None);
-    let first_start = marker("first-start", 2, 30, SketchInputKind::Point, None);
-    let first_end = marker("first-end", 3, 40, SketchInputKind::Point, None);
-    let mut first_line = line_entity(
-        "first-line",
-        &sketch,
-        Point2::new(0.0, 0.0),
-        Point2::new(1.0, 0.0),
-    );
-    first_line.endpoint_refs = vec!["first-start".into(), "first-end".into()];
-    let mut alternate_line = line_entity(
-        "alternate-line",
-        &sketch,
-        Point2::new(0.0, 0.0),
-        Point2::new(0.5, 0.866_025_403_784_438_6),
-    );
-    alternate_line.endpoint_refs = vec!["first-start".into()];
-    let second_line = line_entity(
-        "second-line",
-        &sketch,
-        Point2::new(0.0, 0.0),
-        Point2::new(0.0, 1.0),
-    );
-    let markers = [first_marker, second_marker, first_start, first_end];
-    let markers_by_id = markers
-        .iter()
-        .map(|marker| (marker.id.as_str(), marker))
-        .collect::<HashMap<_, _>>();
-    let loci_by_marker = HashMap::from([(
-        "second-marker".into(),
-        vec![SketchLocus::Entity(second_line.id().clone())],
-    )]);
-    let mut relation = dynamic_relation(FeatureInputRelationFamily::Angle, [0, 1]);
-    relation.operands[0].entity_ref = Some("first-marker".into());
-    relation.operands[1].entity_ref = Some("second-marker".into());
-    let parameter = DesignParameter {
-        id: ParameterId::mint("parameter").expect("identity grammar"),
-        owner: None,
-        ordinal: 0,
-        name: "D1".into(),
-        expression: "90deg".into(),
-        display: None,
-        value: Some(ParameterValue::Angle(Angle(std::f64::consts::FRAC_PI_2))),
-        dependencies: Vec::new(),
-        properties: BTreeMap::new(),
-        pmi: None,
-        native_ref: None,
-    };
-
-    assert_eq!(
-        typed_relation_definition(
-            &relation,
-            Some(&parameter),
-            &sketch,
-            &[first_line.clone(), alternate_line, second_line.clone()],
-            &markers_by_id,
-            &loci_by_marker,
-        ),
-        Some(SketchConstraintDefinition::Angle {
-            first: first_line.id().clone(),
-            second: second_line.id().clone(),
-            parameter: parameter.id,
-        })
-    );
-}
-
-#[test]
-fn dynamic_angle_uses_the_unoriented_solver_line_witness() {
-    let sketch = SketchId("sketch".into());
-    let mut first = line_entity(
-        "first-line",
-        &sketch,
-        Point2::new(0.0, 0.0),
-        Point2::new(1.0, 0.0),
-    );
-    first.geometry_ref = Some("feature:solver-line:0".into());
-    let mut second = line_entity(
-        "second-line",
-        &sketch,
-        Point2::new(0.0, 0.0),
-        Point2::new(-1.0, 1.0),
-    );
-    second.geometry_ref = Some("feature:solver-line:1".into());
-    let relation = dynamic_relation(FeatureInputRelationFamily::Angle, [0, 1]);
-    let parameter = DesignParameter {
-        id: ParameterId::mint("parameter").expect("identity grammar"),
-        owner: None,
-        ordinal: 0,
-        name: "D1".into(),
-        expression: "45deg".into(),
-        display: None,
-        value: Some(ParameterValue::Angle(Angle(std::f64::consts::FRAC_PI_4))),
-        dependencies: Vec::new(),
-        properties: BTreeMap::new(),
-        pmi: None,
-        native_ref: None,
-    };
-
-    assert!(matches!(
-        typed_relation_definition(
-            &relation,
-            Some(&parameter),
-            &sketch,
-            &[first, second],
-            &HashMap::new(),
-            &HashMap::new(),
-        ),
-        Some(SketchConstraintDefinition::Angle { .. })
-    ));
-}
-
-#[test]
-fn dynamic_angle_uses_unique_complete_roster_when_no_line_resolves() {
-    let sketch = SketchId("sketch".into());
-    let first = line_entity(
-        "first-line",
-        &sketch,
-        Point2::new(0.0, 0.0),
-        Point2::new(10.0, 0.0),
-    );
-    let second = line_entity(
-        "second-line",
-        &sketch,
-        Point2::new(0.0, 0.0),
-        Point2::new(10.0, 10.0),
-    );
-    let relation = dynamic_relation(FeatureInputRelationFamily::Angle, [0, 1]);
-    let parameter = DesignParameter {
-        id: ParameterId::mint("parameter").expect("identity grammar"),
-        owner: None,
-        ordinal: 0,
-        name: "D1".into(),
-        expression: "45deg".into(),
-        display: None,
-        value: Some(ParameterValue::Angle(Angle(std::f64::consts::FRAC_PI_4))),
-        dependencies: Vec::new(),
-        properties: BTreeMap::new(),
-        pmi: None,
-        native_ref: None,
-    };
-
-    assert_eq!(
-        typed_relation_definition(
-            &relation,
-            Some(&parameter),
-            &sketch,
-            &[first.clone(), second.clone()],
-            &HashMap::new(),
-            &HashMap::new(),
-        ),
-        Some(SketchConstraintDefinition::Angle {
-            first: first.id().clone(),
-            second: second.id().clone(),
-            parameter: parameter.id,
-        })
-    );
-}
-
-#[test]
-fn dynamic_angle_repairs_one_resolved_line_from_the_profile_roster() {
-    let sketch = SketchId("sketch".into());
-    let known = line_entity(
-        "known-line",
-        &sketch,
-        Point2::new(0.0, 0.0),
-        Point2::new(10.0, 0.0),
-    );
-    let partner = line_entity(
-        "partner-line",
-        &sketch,
-        Point2::new(0.0, 0.0),
-        Point2::new(10.0, 10.0),
-    );
-    let unrelated = line_entity(
-        "unrelated-line",
-        &sketch,
-        Point2::new(0.0, 0.0),
-        Point2::new(0.0, 10.0),
-    );
-    let known_marker = marker("known-marker", 0, 10, SketchInputKind::LineOrCircle, None);
-    let markers = [known_marker];
-    let markers_by_id = markers
-        .iter()
-        .map(|marker| (marker.id.as_str(), marker))
-        .collect::<HashMap<_, _>>();
-    let loci_by_marker = HashMap::from([(
-        "known-marker".into(),
-        vec![SketchLocus::Entity(known.id().clone())],
-    )]);
-    let mut relation = dynamic_relation(FeatureInputRelationFamily::Angle, [0, 1]);
-    relation.operands[0].entity_ref = Some("known-marker".into());
-    let parameter = DesignParameter {
-        id: ParameterId::mint("parameter").expect("identity grammar"),
-        owner: None,
-        ordinal: 0,
-        name: "D1".into(),
-        expression: "45deg".into(),
-        display: None,
-        value: Some(ParameterValue::Angle(Angle(std::f64::consts::FRAC_PI_4))),
-        dependencies: Vec::new(),
-        properties: BTreeMap::new(),
-        pmi: None,
-        native_ref: None,
-    };
-
-    assert_eq!(
-        typed_relation_definition(
-            &relation,
-            Some(&parameter),
-            &sketch,
-            &[known.clone(), partner.clone(), unrelated],
-            &markers_by_id,
-            &loci_by_marker,
-        ),
-        Some(SketchConstraintDefinition::Angle {
-            first: known.id().clone(),
-            second: partner.id().clone(),
-            parameter: parameter.id,
-        })
-    );
-}
-
-#[test]
-fn dynamic_angle_uses_solver_lines_for_indirect_operand_references() {
-    let sketch = SketchId("sketch".into());
-    let mut first = line_entity(
-        "first-line",
-        &sketch,
-        Point2::new(0.0, 0.0),
-        Point2::new(1.0, 0.0),
-    );
-    first.geometry_ref = Some("feature:solver-line:0".into());
-    let mut second = line_entity(
-        "second-line",
-        &sketch,
-        Point2::new(0.0, 0.0),
-        Point2::new(-1.0, 1.0),
-    );
-    second.geometry_ref = Some("feature:solver-line:1".into());
-    let mut relation = dynamic_relation(FeatureInputRelationFamily::Angle, [0, 1]);
-    relation.operands[0].entity_ref = Some("indirect-marker".into());
-    relation.operands[1].entity_ref = Some("indirect-point".into());
-    let parameter = DesignParameter {
-        id: ParameterId::mint("parameter").expect("identity grammar"),
-        owner: None,
-        ordinal: 0,
-        name: "D1".into(),
-        expression: "45deg".into(),
-        display: None,
-        value: Some(ParameterValue::Angle(Angle(std::f64::consts::FRAC_PI_4))),
-        dependencies: Vec::new(),
-        properties: BTreeMap::new(),
-        pmi: None,
-        native_ref: None,
-    };
-
-    assert!(matches!(
-        typed_relation_definition(
-            &relation,
-            Some(&parameter),
-            &sketch,
-            &[first, second],
-            &HashMap::new(),
-            &HashMap::new(),
-        ),
-        Some(SketchConstraintDefinition::Angle { .. })
-    ));
-}
-
-#[test]
-fn dynamic_angle_prefers_an_explicit_line_over_a_conflicting_solver_alias() {
-    let sketch = SketchId("sketch".into());
-    let mut explicit = line_entity(
-        "explicit-line",
-        &sketch,
-        Point2::new(0.0, 0.0),
-        Point2::new(1.0, 0.0),
-    );
-    explicit.native_ref = Some("line-marker".into());
-    let mut conflicting = line_entity(
-        "conflicting-solver-line",
-        &sketch,
-        Point2::new(0.0, 0.0),
-        Point2::new(0.0, 1.0),
-    );
-    conflicting.geometry_ref = Some("feature:solver-line:0".into());
-    let mut second = line_entity(
-        "second-line",
-        &sketch,
-        Point2::new(0.0, 0.0),
-        Point2::new(0.866_025_403_784_438_6, 0.5),
-    );
-    second.geometry_ref = Some("feature:solver-line:1".into());
-    let mut relation = dynamic_relation(FeatureInputRelationFamily::Angle, [0, 1]);
-    relation.operands[0].entity_ref = Some("line-marker".into());
-    let parameter = DesignParameter {
-        id: ParameterId::mint("parameter").expect("identity grammar"),
-        owner: None,
-        ordinal: 0,
-        name: "D1".into(),
-        expression: "30deg".into(),
-        display: None,
-        value: Some(ParameterValue::Angle(Angle(std::f64::consts::PI / 6.0))),
-        dependencies: Vec::new(),
-        properties: BTreeMap::new(),
-        pmi: None,
-        native_ref: None,
-    };
-
-    assert!(matches!(
-        typed_relation_definition(
-            &relation,
-            Some(&parameter),
-            &sketch,
-            &[explicit, conflicting, second],
-            &HashMap::new(),
-            &HashMap::new(),
-        ),
-        Some(SketchConstraintDefinition::Angle { .. })
-    ));
-}
+mod dynamic_angles;
 mod repeated_circle_dimensions;
+
+mod physical_loci;

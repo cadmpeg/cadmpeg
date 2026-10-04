@@ -1,5 +1,141 @@
-use super::super::*;
-use super::*;
+use crate::families::b5::graph::tests::object_stream_pcurve;
+use crate::families::b5::graph::{
+    analytic_offset_magnitude_agrees, counted_cardinality, is_referenced_geometry_class,
+    parse_extrusion_surface, parse_offset_surface, parse_profile, parse_sphere_great_circle_pcurve,
+    parse_surface, surface_alias_target, B5ExtrusionDirectrix, B5ExtrusionSurface, B5OffsetSurface,
+    B5OpaquePcurve, B5Pcurve, B5PcurveParameterization, B5Profile, B5Record,
+    B5SphereGreatCirclePcurve, B5Surface,
+};
+use crate::wire;
+use cadmpeg_ir::geometry::nurbs::NurbsSurface;
+use std::collections::{BTreeMap, HashMap};
+
+fn evaluate_pcurve(pcurve: &B5Pcurve, parameter: f64) -> Option<[f64; 2]> {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::evaluate_pcurve(ctx, pcurve, parameter)
+    })
+    .expect("service budget")
+}
+
+fn parse_line_pcurve(record: &B5Record) -> Option<B5Pcurve> {
+    crate::test_support::with_service_context(|ctx| super::super::parse_line_pcurve(ctx, record))
+        .expect("service budget")
+}
+
+fn parse_circle_pcurve(record: &B5Record) -> Option<B5Pcurve> {
+    crate::test_support::with_service_context(|ctx| super::super::parse_circle_pcurve(ctx, record))
+        .expect("service budget")
+}
+
+fn parse_class_1a_pcurve(record: &B5Record) -> Option<B5Pcurve> {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::parse_class_1a_pcurve(ctx, record)
+    })
+    .expect("service budget")
+}
+
+#[allow(clippy::too_many_arguments)]
+fn rational_arc_pcurve(
+    record: &B5Record,
+    surface: u32,
+    center: [f64; 2],
+    reference_x: [f64; 2],
+    reference_y: [f64; 2],
+    radius: f64,
+    parameter_range: [f64; 2],
+    angle_range: [f64; 2],
+) -> Option<B5Pcurve> {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::rational_arc_pcurve(
+            ctx,
+            crate::families::b5::graph::RationalArcPcurveInputs {
+                record,
+                surface,
+                center,
+                reference_x,
+                reference_y,
+                radius,
+                parameter_range,
+                angle_range,
+            },
+        )
+    })
+    .expect("service budget")
+}
+
+fn parse_opaque_pcurve(record: &B5Record) -> Option<B5OpaquePcurve> {
+    crate::test_support::with_service_context(|ctx| super::super::parse_opaque_pcurve(ctx, record))
+        .expect("service budget")
+}
+
+#[test]
+fn opaque_pcurve_payload_refuses_the_caller_retained_limit() {
+    let mut payload = vec![0x81, 0x82];
+    payload.extend_from_slice(&[0; 16]);
+    payload.extend_from_slice(&[0x05, 0x05]);
+    payload.extend_from_slice(&[0; 56]);
+    let record = B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x1a,
+        object_id: 7,
+        payload,
+    };
+    let limited = crate::test_support::with_retained_limit(0, |ctx| {
+        super::super::parse_opaque_pcurve(ctx, &record)
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_opaque_pcurve_payload")
+    );
+    assert!(parse_opaque_pcurve(&record).is_some());
+}
+
+#[test]
+fn analytic_pcurve_vectors_refuse_the_caller_collection_limit() {
+    let mut line_payload = vec![0x81, 0x82, 0x05];
+    for value in [3.0_f64, -2.0, 7.0] {
+        line_payload.extend_from_slice(&value.to_le_bytes());
+    }
+    let line = B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x18,
+        object_id: 7,
+        payload: line_payload,
+    };
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::parse_line_pcurve(ctx, &line)
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_line_pcurve_knots")
+    );
+
+    let mut circle_payload = vec![0x81, 0x18, 0x34, 0x12];
+    for value in [0.0, 0.0, 2.0, 0.0, 2.0 * std::f64::consts::PI, 1.0, 0.0] {
+        if circle_payload.len() == 20 {
+            circle_payload.extend_from_slice(&[0x05, 0x05]);
+        }
+        circle_payload.extend_from_slice(&value.to_le_bytes());
+    }
+    let circle = B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x19,
+        object_id: 8,
+        payload: circle_payload,
+    };
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::parse_circle_pcurve(ctx, &circle)
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_arc_control_points")
+    );
+    assert!(parse_line_pcurve(&line).is_some());
+    assert!(parse_circle_pcurve(&circle).is_some());
+}
 
 #[test]
 fn circle_pcurve_rejects_unbounded_subdivision_counts() {
@@ -20,21 +156,54 @@ fn circle_pcurve_rejects_unbounded_subdivision_counts() {
 }
 
 #[test]
+fn rational_arc_pcurve_retains_an_interior_knot_in_a_wide_parameter_range() {
+    let record = B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x19,
+        object_id: 7,
+        payload: Vec::new(),
+    };
+    let pcurve = rational_arc_pcurve(
+        &record,
+        1,
+        [0.0, 0.0],
+        [1.0, 0.0],
+        [0.0, 1.0],
+        1.0,
+        [-f64::MAX, f64::MAX],
+        [0.0, std::f64::consts::PI],
+    )
+    .expect("wide parameter interval has finite interior knot");
+    assert_eq!(
+        pcurve
+            .distinct_knots
+            .iter()
+            .map(|knot| knot.get())
+            .collect::<Vec<_>>(),
+        vec![-f64::MAX, 0.0, f64::MAX]
+    );
+}
+
+#[test]
 fn sparse_reference_tokens_fill_selected_id_bytes() {
     let mut position = 0;
     assert_eq!(
-        wire::object_ref(&[0x28, 0x34, 0x02], &mut position, true),
+        wire::tokens::object_ref(&[0x28, 0x34, 0x02], &mut position, true),
         Some(0x02_0034)
     );
     assert_eq!(position, 3);
     position = 0;
     assert_eq!(
-        wire::object_ref(&[0x20, 0x07], &mut position, true),
+        wire::tokens::object_ref(&[0x20, 0x07], &mut position, true),
         Some(0x07_0000)
     );
     assert_eq!(position, 2);
     position = 0;
-    assert_eq!(wire::object_ref(&[0x8b], &mut position, true), Some(11));
+    assert_eq!(
+        wire::tokens::object_ref(&[0x8b], &mut position, true),
+        Some(11)
+    );
     assert_eq!(position, 1);
 }
 
@@ -89,13 +258,14 @@ fn revolution_surface_requires_complete_sparse_reference_chart() {
         parse_surface(&record),
         Some(B5Surface::Revolution {
             profile_curve: 0x16_8600,
-            axis_origin: [1.0, 0.0, 0.0],
-            reference_x: [1.0, 0.0, 0.0],
-            reference_y: [0.0, 1.0, 0.0],
-            axis_direction: [0.0, 0.0, 1.0],
-            profile_range: [-1.0, 1.0],
-            angular_range: [0.0, 2.0 * std::f64::consts::PI],
-            angular_scale: 2.0,
+            axis_origin: crate::test_support::test_b5::point([1.0, 0.0, 0.0]),
+            axis_direction: crate::test_support::test_b5::unit([0.0, 0.0, 1.0]),
+            profile_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+            angular_range: crate::test_support::test_b5::increasing([
+                0.0,
+                2.0 * std::f64::consts::PI
+            ]),
+            angular_scale: crate::test_support::test_b5::positive(2.0)
         })
     );
     let mut left_handed = record.clone();
@@ -132,9 +302,9 @@ fn line_profile_requires_its_complete_unit_metric_chart() {
     assert_eq!(
         parse_profile(&record),
         Some(B5Profile::Line {
-            point: [1.0, 2.0, 3.0],
-            direction: [0.0, 0.0, 1.0],
-            parameter_range: [-2.0, 4.0],
+            point: crate::test_support::test_b5::point([1.0, 2.0, 3.0]),
+            direction: crate::test_support::test_b5::exact_unit([0.0, 0.0, 1.0]),
+            parameter_range: crate::test_support::test_b5::increasing([-2.0, 4.0]),
         })
     );
 
@@ -185,11 +355,11 @@ fn arc_profile_requires_its_complete_centered_periodic_chart() {
     assert_eq!(
         parse_profile(&record),
         Some(B5Profile::Arc {
-            center: [1.0, 2.0, 3.0],
-            direction_x: [1.0, 0.0, 0.0],
-            direction_y: [0.0, 1.0, 0.0],
-            radius,
-            parameter_range,
+            center: crate::test_support::test_b5::point([1.0, 2.0, 3.0]),
+            direction_x: crate::test_support::test_b5::exact_unit([1.0, 0.0, 0.0]),
+            direction_y: crate::test_support::test_b5::exact_unit([0.0, 1.0, 0.0]),
+            radius: crate::test_support::test_b5::positive_length(radius),
+            parameter_range: crate::test_support::test_b5::increasing(parameter_range),
         })
     );
 
@@ -248,19 +418,32 @@ fn cone_surface_reads_the_native_slant_chart() {
     assert_eq!(
         parse_surface(&record),
         Some(B5Surface::Cone {
-            apex: [1.0, 2.0, 3.0],
-            direction_x: [1.0, 0.0, 0.0],
-            direction_y: [0.0, 1.0, 0.0],
-            axis: [0.0, 0.0, 1.0],
-            half_angle: 0.25,
-            reference_radius: 4.0,
-            angular_range: [0.5, 0.5 + std::f64::consts::PI],
-            slant_range: [0.0, 8.0],
-            angular_scale: 3.0,
-            angular_domain: [
+            apex: crate::test_support::test_b5::point([1.0, 2.0, 3.0]),
+            frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
+            direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
+            half_angle: crate::test_support::test_b5::positive_angle(0.25),
+            reference_radius: crate::test_support::test_b5::finite(4.0),
+            angular_range: crate::test_support::test_b5::increasing([
+                0.5,
+                0.5 + std::f64::consts::PI
+            ]),
+            slant_range: crate::test_support::test_b5::increasing([0.0, 8.0]),
+            angular_scale: crate::test_support::test_b5::positive(3.0),
+            angular_domain: crate::test_support::test_b5::increasing([
                 0.5 - std::f64::consts::FRAC_PI_2,
                 0.5 + 3.0 * std::f64::consts::FRAC_PI_2,
-            ],
+            ]),
+            surface: Some(
+                cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+                    cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+                    cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                    cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                    0.0,
+                    1.0,
+                    0.25,
+                )
+                .expect("the apex-chart cone carrier"),
+            ),
         })
     );
 
@@ -317,11 +500,11 @@ fn plane_surface_requires_complete_unit_chart_frame() {
     assert_eq!(
         parse_surface(&record),
         Some(B5Surface::Plane {
-            origin: [1.0, 2.0, 3.0],
-            direction_u: [1.0, 0.0, 0.0],
-            direction_v: [0.0, 1.0, 0.0],
-            u_range: [-4.0, 8.0],
-            v_range: [-2.0, 6.0],
+            origin: crate::test_support::test_b5::point([1.0, 2.0, 3.0]),
+            frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+            direction_v: crate::test_support::test_b5::exact_unit([0.0, 1.0, 0.0]),
+            u_range: crate::test_support::test_b5::increasing([-4.0, 8.0]),
+            v_range: crate::test_support::test_b5::increasing([-2.0, 6.0])
         })
     );
     let mut wrong_family = record.clone();
@@ -331,6 +514,10 @@ fn plane_surface_requires_complete_unit_chart_frame() {
     let mut nonunit = record.clone();
     nonunit.payload[25..33].copy_from_slice(&2.0f64.to_le_bytes());
     assert_eq!(parse_surface(&nonunit), None);
+    let mut parallel = record.clone();
+    parallel.payload[49..57].copy_from_slice(&1.0f64.to_le_bytes());
+    parallel.payload[57..65].copy_from_slice(&0.0f64.to_le_bytes());
+    assert_eq!(parse_surface(&parallel), None);
     let mut reversed_range = record;
     reversed_range.payload[97..105].copy_from_slice(&(-5.0f64).to_le_bytes());
     assert_eq!(parse_surface(&reversed_range), None);
@@ -371,14 +558,13 @@ fn cylinder_surface_retains_independent_angular_gauge_and_domain() {
     assert_eq!(
         parse_surface(&record),
         Some(B5Surface::Cylinder {
-            origin: [1.0, 2.0, 3.0],
-            reference_x: [1.0, 0.0, 0.0],
-            axis: [0.0, 0.0, 1.0],
-            radius,
-            u_range: [2.0, 10.0],
-            v_range: [-4.0, 5.0],
-            angular_scale,
-            chart_origin,
+            origin: crate::test_support::test_b5::point([1.0, 2.0, 3.0]),
+            frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
+            radius: crate::test_support::test_b5::positive_length(radius),
+            u_range: crate::test_support::test_b5::increasing([2.0, 10.0]),
+            v_range: crate::test_support::test_b5::increasing([-4.0, 5.0]),
+            angular_scale: crate::test_support::test_b5::finite(angular_scale),
+            chart_origin: crate::test_support::test_b5::finite(chart_origin)
         })
     );
 
@@ -433,15 +619,14 @@ fn sphere_surface_validates_radius_scaled_frame_and_chart() {
     assert_eq!(
         parse_surface(&record),
         Some(B5Surface::Sphere {
-            center: [1.0, 2.0, 3.0],
-            direction_x: [1.0, 0.0, 0.0],
-            direction_y: [0.0, 1.0, 0.0],
-            axis: [0.0, 0.0, 1.0],
-            radius: 2.0,
-            azimuth_range,
-            latitude_range: [-1.0, 1.0],
-            construction_radius,
-            chart_origin,
+            center: crate::test_support::test_b5::point([1.0, 2.0, 3.0]),
+            frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
+            direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
+            radius: crate::test_support::test_b5::positive_length(2.0),
+            azimuth_range: crate::test_support::test_b5::increasing(azimuth_range),
+            latitude_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+            construction_radius: crate::test_support::test_b5::positive_length(construction_radius),
+            chart_origin: crate::test_support::test_b5::finite(chart_origin)
         })
     );
     let tiny_radius = 1e-200_f64;
@@ -457,12 +642,13 @@ fn sphere_surface_validates_radius_scaled_frame_and_chart() {
     assert!(matches!(
         parse_surface(&tiny),
         Some(B5Surface::Sphere {
-            direction_x: [1.0, 0.0, 0.0],
-            direction_y: [0.0, 1.0, 0.0],
-            axis: [0.0, 0.0, 1.0],
+            frame,
+            direction_y,
             radius,
             ..
-        }) if radius == tiny_radius
+        }) if frame == crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0])
+            && direction_y == crate::test_support::test_b5::unit([0.0, 1.0, 0.0])
+            && radius.get() == tiny_radius
     ));
     tiny.payload[25..33].copy_from_slice(&(2.0 * tiny_radius).to_le_bytes());
     assert_eq!(parse_surface(&tiny), None);
@@ -538,21 +724,29 @@ fn torus_surface_separates_geometric_radii_from_chart_scales() {
     assert_eq!(
         parse_surface(&record),
         Some(B5Surface::Torus {
-            center: [1.0, 2.0, 3.0],
-            direction_x: [1.0, 0.0, 0.0],
-            direction_y: [0.0, 1.0, 0.0],
-            axis: [0.0, 0.0, 1.0],
-            major_radius: 5.0,
-            minor_radius: 2.0,
-            major_angular_range: [0.0, std::f64::consts::TAU],
-            major_angular_domain: [0.0, std::f64::consts::TAU],
-            minor_angular_range: [0.0, std::f64::consts::PI],
-            minor_angular_domain: [
+            center: crate::test_support::test_b5::point([1.0, 2.0, 3.0]),
+            frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
+            direction_y: crate::test_support::test_b5::exact_unit([0.0, 1.0, 0.0]),
+            major_radius: crate::test_support::test_b5::positive_length(5.0),
+            minor_radius: crate::test_support::test_b5::positive_length(2.0),
+            major_angular_range: crate::test_support::test_b5::increasing([
+                0.0,
+                std::f64::consts::TAU
+            ]),
+            major_angular_domain: crate::test_support::test_b5::increasing([
+                0.0,
+                std::f64::consts::TAU
+            ]),
+            minor_angular_range: crate::test_support::test_b5::increasing([
+                0.0,
+                std::f64::consts::PI
+            ]),
+            minor_angular_domain: crate::test_support::test_b5::increasing([
                 -std::f64::consts::FRAC_PI_2,
                 3.0 * std::f64::consts::FRAC_PI_2,
-            ],
-            major_scale: 4.0,
-            minor_scale: 3.0,
+            ]),
+            major_scale: crate::test_support::test_b5::positive(4.0),
+            minor_scale: crate::test_support::test_b5::positive(3.0)
         })
     );
 
@@ -568,6 +762,67 @@ fn torus_surface_separates_geometric_radii_from_chart_scales() {
     let mut nonzero_tail = record;
     nonzero_tail.payload[200] = 1;
     assert_eq!(parse_surface(&nonzero_tail), None);
+}
+
+#[test]
+fn torus_frames_admit_the_native_1e12_distance_band() {
+    let mut payload = vec![0; 201];
+    payload[0] = 0x80;
+    let set = |payload: &mut Vec<u8>, offset: usize, values: &[f64]| {
+        for (index, value) in values.iter().enumerate() {
+            payload[offset + 8 * index..offset + 8 * index + 8]
+                .copy_from_slice(&value.to_le_bytes());
+        }
+    };
+    set(&mut payload, 1, &[1.0, 2.0, 3.0]);
+    set(&mut payload, 25, &[1.0, 0.0, 0.0]);
+    set(&mut payload, 49, &[0.0, 1.0, 0.0]);
+    set(
+        &mut payload,
+        97,
+        &[
+            5.0,
+            2.0,
+            0.0,
+            std::f64::consts::TAU,
+            0.0,
+            std::f64::consts::TAU,
+            0.0,
+            std::f64::consts::PI,
+            -std::f64::consts::FRAC_PI_2,
+            3.0 * std::f64::consts::FRAC_PI_2,
+            4.0,
+            3.0,
+        ],
+    );
+    let torus = |axis: [f64; 3]| {
+        let mut payload = payload.clone();
+        set(&mut payload, 73, &axis);
+        parse_surface(&B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x2b,
+            object_id: 7,
+            payload,
+        })
+    };
+    // One component 0.9e-12 from the cross product is inside the native
+    // 1e-12 distance. The frame holds the stored axis and direction_x.
+    let axis = [0.0, 0.9e-12, 1.0];
+    let Some(B5Surface::Torus { frame, .. }) = torus(axis) else {
+        panic!("the torus frame is admitted");
+    };
+    assert_eq!(
+        *frame.axis().as_raw(),
+        cadmpeg_ir::math::Vector3::from(axis)
+    );
+    assert_eq!(
+        *frame.reference().as_raw(),
+        cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+    );
+    // One component 1.5e-12 from the cross product: inside the cone's 2e-12
+    // band, outside the torus's 1e-12 band.
+    assert_eq!(torus([0.0, 1.5e-12, 1.0]), None);
 }
 
 #[test]
@@ -589,7 +844,10 @@ fn line_pcurve_decodes_every_complete_mode() {
     let general = parse_line_pcurve(&record(0x01, &[2.0, 3.0, 4.0, -2.0, 1.0, 5.0]))
         .expect("general line pcurve");
     assert_eq!(general.surface, 2);
-    assert_eq!(general.distinct_knots, [1.0, 5.0]);
+    assert_eq!(
+        general.distinct_knots,
+        crate::test_support::test_b5::finite_lane(&[1.0, 5.0])
+    );
     assert_eq!(general.control_points, [[6.0, 1.0], [22.0, -7.0]]);
     let tiny = parse_line_pcurve(&record(0x01, &[0.0, 0.0, 1e-200, -1e-200, 1.0, 5.0]))
         .expect("tiny nonzero line direction");
@@ -600,12 +858,18 @@ fn line_pcurve_decodes_every_complete_mode() {
 
     let constant_u =
         parse_line_pcurve(&record(0x05, &[3.0, -2.0, 7.0])).expect("constant-U pcurve");
-    assert_eq!(constant_u.distinct_knots, [-2.0, 7.0]);
+    assert_eq!(
+        constant_u.distinct_knots,
+        crate::test_support::test_b5::finite_lane(&[-2.0, 7.0])
+    );
     assert_eq!(constant_u.control_points, [[3.0, -2.0], [3.0, 7.0]]);
 
     let constant_v =
         parse_line_pcurve(&record(0x09, &[3.0, -2.0, 7.0])).expect("constant-V pcurve");
-    assert_eq!(constant_v.distinct_knots, [-2.0, 7.0]);
+    assert_eq!(
+        constant_v.distinct_knots,
+        crate::test_support::test_b5::finite_lane(&[-2.0, 7.0])
+    );
     assert_eq!(constant_v.control_points, [[-2.0, 3.0], [7.0, 3.0]]);
 }
 
@@ -655,13 +919,17 @@ fn circle_pcurve_preserves_arc_length_parameterization() {
     assert_eq!(pcurve.degree, 2);
     assert_eq!(
         pcurve.distinct_knots,
-        [0.0, std::f64::consts::PI, 2.0 * std::f64::consts::PI]
+        crate::test_support::test_b5::finite_lane(&[
+            0.0,
+            std::f64::consts::PI,
+            2.0 * std::f64::consts::PI
+        ])
     );
     assert_eq!(pcurve.multiplicities, [3, 2, 3]);
     assert_eq!(pcurve.control_points.len(), 5);
     let weights = pcurve.weights.expect("rational weights");
     assert_eq!(weights.len(), 5);
-    assert!((weights[1] - std::f64::consts::FRAC_1_SQRT_2).abs() < 1.0e-12);
+    assert!((weights[1].get() - std::f64::consts::FRAC_1_SQRT_2).abs() < 1.0e-12);
     assert!((pcurve.control_points[0][0] - 2.0).abs() < 1.0e-12);
     assert!((pcurve.control_points[4][0] + 2.0).abs() < 1.0e-12);
     let mut wrong_family = record;
@@ -698,7 +966,11 @@ fn class_1a_pcurve_uses_diameter_period_parameterization() {
     assert_eq!(pcurve.surface, 0x1234);
     assert_eq!(
         pcurve.distinct_knots,
-        [0.0, std::f64::consts::FRAC_PI_2, std::f64::consts::PI]
+        crate::test_support::test_b5::finite_lane(&[
+            0.0,
+            std::f64::consts::FRAC_PI_2,
+            std::f64::consts::PI
+        ])
     );
     assert_eq!(pcurve.multiplicities, [3, 2, 3]);
     assert_eq!(pcurve.control_points.len(), 5);
@@ -753,7 +1025,10 @@ fn class_1a_pcurve_accepts_a_finite_nonzero_diameter() {
             payload,
         };
         let pcurve = parse_class_1a_pcurve(&record).expect("class-1a pcurve");
-        assert_eq!(pcurve.control_points[0], [diameter * 0.5, 0.0]);
+        assert_eq!(
+            pcurve.control_points[0],
+            crate::test_support::test_b5::finite_vector([diameter * 0.5, 0.0])
+        );
     }
 }
 
@@ -784,9 +1059,12 @@ fn pcurve_evaluation_preserves_the_native_parameter() {
         object_id: 1,
         surface: 2,
         degree: 1,
-        distinct_knots: vec![-1.0, 1.0],
+        distinct_knots: crate::test_support::test_b5::finite_lane(&[-1.0, 1.0]),
         multiplicities: vec![2, 2],
-        control_points: vec![[2.0, 3.0], [4.0, 7.0]],
+        control_points: vec![
+            crate::test_support::test_b5::finite_vector([2.0, 3.0]),
+            crate::test_support::test_b5::finite_vector([4.0, 7.0]),
+        ],
         weights: None,
         parameter_range: None,
         parameterization: B5PcurveParameterization::Native,
@@ -878,31 +1156,31 @@ fn class_1d_pcurve_decodes_a_sphere_great_circle_plane() {
         payload,
     };
     let sphere = B5Surface::Sphere {
-        center: [0.0; 3],
-        direction_x: [1.0, 0.0, 0.0],
-        direction_y: [0.0, 1.0, 0.0],
-        axis: [0.0, 0.0, 1.0],
-        radius,
-        azimuth_range: [0.0, 1.5],
-        latitude_range: [-1.0, 1.0],
-        construction_radius: chart_scale,
-        chart_origin,
+        center: crate::test_support::test_b5::point([0.0; 3]),
+        frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
+        direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
+        radius: crate::test_support::test_b5::positive_length(radius),
+        azimuth_range: crate::test_support::test_b5::increasing([0.0, 1.5]),
+        latitude_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+        construction_radius: crate::test_support::test_b5::positive_length(chart_scale),
+        chart_origin: crate::test_support::test_b5::finite(chart_origin),
     };
 
     assert_eq!(
         parse_sphere_great_circle_pcurve(&record, &sphere),
         Some(B5SphereGreatCirclePcurve {
-            chart_bounds: [
-                [chart_scale * 0.25, chart_scale * 1.25],
-                [
-                    chart_origin,
-                    chart_origin + std::f64::consts::TAU * chart_scale,
-                ],
-            ],
-            chart_shift: 2.0,
-            chart_scale,
-            slope: -0.75,
-            phase: -1.25,
+            u_bounds: crate::test_support::test_b5::increasing([
+                chart_scale * 0.25,
+                chart_scale * 1.25
+            ]),
+            v_bounds: crate::test_support::test_b5::finite_pair([
+                chart_origin,
+                chart_origin + std::f64::consts::TAU * chart_scale,
+            ]),
+            chart_shift: crate::test_support::test_b5::finite(2.0),
+            chart_scale: crate::test_support::test_b5::positive(chart_scale),
+            slope: crate::test_support::test_b5::finite(-0.75),
+            phase: crate::test_support::test_b5::finite(-1.25),
         })
     );
 
@@ -938,7 +1216,7 @@ fn class_1d_pcurve_decodes_a_sphere_great_circle_plane() {
     let B5Surface::Sphere { azimuth_range, .. } = &mut rounded_surface_bounds else {
         unreachable!()
     };
-    *azimuth_range = [rounded_lower, 1.5];
+    *azimuth_range = crate::test_support::test_b5::increasing([rounded_lower, 1.5]);
     assert!(parse_sphere_great_circle_pcurve(&record, &rounded_surface_bounds).is_some());
 }
 
@@ -978,18 +1256,18 @@ fn surface_aliases_require_their_complete_class_layout() {
 #[test]
 fn offset_surface_separates_result_carrier_source_and_bounds() {
     let carrier = B5Surface::Plane {
-        origin: [0.0; 3],
-        direction_u: [1.0, 0.0, 0.0],
-        direction_v: [0.0, 1.0, 0.0],
-        u_range: [-1.0, 1.0],
-        v_range: [-1.0, 1.0],
+        origin: crate::test_support::test_b5::point([0.0; 3]),
+        frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+        direction_v: crate::test_support::test_b5::exact_unit([0.0, 1.0, 0.0]),
+        u_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+        v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
     };
     let source = B5Surface::Plane {
-        origin: [0.0, 0.0, 0.5],
-        direction_u: [0.0, 1.0, 0.0],
-        direction_v: [-1.0, 0.0, 0.0],
-        u_range: [-1.0, 1.0],
-        v_range: [-1.0, 1.0],
+        origin: crate::test_support::test_b5::point([0.0, 0.0, 0.5]),
+        frame: crate::test_support::test_b5::plane_frame([0.0, 1.0, 0.0], [-1.0, 0.0, 0.0]),
+        direction_v: crate::test_support::test_b5::exact_unit([-1.0, 0.0, 0.0]),
+        u_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+        v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
     };
     let surfaces = BTreeMap::from([(2, carrier), (3, source)]);
     let mut payload = vec![0x82, 0x82, 0x83];
@@ -1011,9 +1289,12 @@ fn offset_surface_separates_result_carrier_source_and_bounds() {
             object_id: 9,
             carrier_surface: 2,
             source_surface: 3,
-            distance: -0.5,
+            distance: crate::test_support::test_b5::finite(-0.5),
             carrier_kind: crate::families::b5::graph::B5OffsetCarrierKind::Plane,
-            parameter_bounds: [[-2.0, 3.0], [-4.0, 5.0]],
+            parameter_bounds: crate::test_support::test_b5::increasing_bounds([
+                [-2.0, 3.0],
+                [-4.0, 5.0]
+            ]),
         })
     );
 }
@@ -1021,26 +1302,24 @@ fn offset_surface_separates_result_carrier_source_and_bounds() {
 #[test]
 fn offset_surface_accepts_a_sphere_result_carrier() {
     let carrier = B5Surface::Sphere {
-        center: [0.0; 3],
-        direction_x: [1.0, 0.0, 0.0],
-        direction_y: [0.0, 1.0, 0.0],
-        axis: [0.0, 0.0, 1.0],
-        radius: 2.0,
-        azimuth_range: [0.0, 1.0],
-        latitude_range: [-1.0, 1.0],
-        construction_radius: 2.0,
-        chart_origin: -2.0,
+        center: crate::test_support::test_b5::point([0.0; 3]),
+        frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
+        direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
+        radius: crate::test_support::test_b5::positive_length(2.0),
+        azimuth_range: crate::test_support::test_b5::increasing([0.0, 1.0]),
+        latitude_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+        construction_radius: crate::test_support::test_b5::positive_length(2.0),
+        chart_origin: crate::test_support::test_b5::finite(-2.0),
     };
     let source = B5Surface::Sphere {
-        center: [0.0; 3],
-        direction_x: [0.0, 1.0, 0.0],
-        direction_y: [-1.0, 0.0, 0.0],
-        axis: [0.0, 0.0, 1.0],
-        radius: 8.5,
-        azimuth_range: [0.0, 1.0],
-        latitude_range: [-1.0, 1.0],
-        construction_radius: 8.5,
-        chart_origin: -2.0,
+        center: crate::test_support::test_b5::point([0.0; 3]),
+        frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [0.0, 1.0, 0.0]),
+        direction_y: crate::test_support::test_b5::unit([-1.0, 0.0, 0.0]),
+        radius: crate::test_support::test_b5::positive_length(8.5),
+        azimuth_range: crate::test_support::test_b5::increasing([0.0, 1.0]),
+        latitude_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+        construction_radius: crate::test_support::test_b5::positive_length(8.5),
+        chart_origin: crate::test_support::test_b5::finite(-2.0),
     };
     let surfaces = BTreeMap::from([(2, carrier), (3, source)]);
     let mut payload = vec![0x82, 0x82, 0x83];
@@ -1063,26 +1342,108 @@ fn offset_surface_accepts_a_sphere_result_carrier() {
             object_id: 9,
             carrier_surface: 2,
             source_surface: 3,
-            distance: -6.5,
+            distance: crate::test_support::test_b5::finite(-6.5),
             carrier_kind: crate::families::b5::graph::B5OffsetCarrierKind::Sphere,
-            parameter_bounds: [[0.0, 2.0], [-2.0, 4.0]],
+            parameter_bounds: crate::test_support::test_b5::increasing_bounds([
+                [0.0, 2.0],
+                [-2.0, 4.0]
+            ]),
         })
     );
 }
 
 #[test]
+fn cone_frames_admit_the_native_distance_band_on_either_side_of_the_axis() {
+    let mut payload = vec![0; 185];
+    payload[0] = 0x80;
+    let set = |payload: &mut Vec<u8>, offset: usize, values: &[f64]| {
+        for (index, value) in values.iter().enumerate() {
+            payload[offset + 8 * index..offset + 8 * index + 8]
+                .copy_from_slice(&value.to_le_bytes());
+        }
+    };
+    set(&mut payload, 1, &[1.0, 2.0, 3.0]);
+    set(&mut payload, 25, &[1.0, 0.0, 0.0]);
+    set(&mut payload, 49, &[0.0, 1.0, 0.0]);
+    set(
+        &mut payload,
+        97,
+        &[0.25, 4.0, 0.5, 0.5 + std::f64::consts::PI],
+    );
+    set(&mut payload, 129, &[2.0, 8.0, 3.0, 1.0, 0.0]);
+    set(
+        &mut payload,
+        169,
+        &[
+            0.5 - std::f64::consts::FRAC_PI_2,
+            0.5 + 3.0 * std::f64::consts::FRAC_PI_2,
+        ],
+    );
+    let cone = |axis: [f64; 3]| {
+        let mut payload = payload.clone();
+        set(&mut payload, 73, &axis);
+        parse_surface(&B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x29,
+            object_id: 7,
+            payload,
+        })
+    };
+    // One component 1.5e-12 from the cross product: inside the 2e-12
+    // distance, on either side of the axis. The carrier holds the stored
+    // axis and direction_x.
+    for axis in [[0.0, 1.5e-12, 1.0], [0.0, -1.5e-12, -1.0]] {
+        let Some(B5Surface::Cone {
+            surface: Some(surface),
+            ..
+        }) = cone(axis)
+        else {
+            panic!("the cone and its carrier are admitted");
+        };
+        assert_eq!(
+            *surface.frame().axis().as_raw(),
+            cadmpeg_ir::math::Vector3::from(axis)
+        );
+        assert_eq!(
+            *surface.frame().reference().as_raw(),
+            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+        );
+        assert_eq!(surface.radius().get(), 2.0 * 0.25_f64.sin());
+    }
+    // Two components 1.5e-12 from the cross product: about 2.1e-12 away.
+    assert_eq!(cone([1.5e-12, 1.5e-12, 1.0]), None);
+    // An apex whose axis point at the slant start overflows keeps the record
+    // and has no carrier.
+    let mut overflow = payload.clone();
+    set(&mut overflow, 1, &[0.0, 0.0, f64::MAX]);
+    set(&mut overflow, 73, &[0.0, 0.0, 1.0]);
+    set(&mut overflow, 129, &[1.0e308, 1.5e308]);
+    assert!(matches!(
+        parse_surface(&B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x29,
+            object_id: 7,
+            payload: overflow,
+        }),
+        Some(B5Surface::Cone { surface: None, .. })
+    ));
+}
+
+#[test]
 fn offset_surface_does_not_infer_cone_construction_from_result_class() {
     let carrier = B5Surface::Cone {
-        apex: [0.0; 3],
-        direction_x: [1.0, 0.0, 0.0],
-        direction_y: [0.0, 1.0, 0.0],
-        axis: [0.0, 0.0, 1.0],
-        half_angle: 0.25,
-        reference_radius: 0.0,
-        angular_range: [0.0, std::f64::consts::TAU],
-        slant_range: [-2.0, 4.0],
-        angular_scale: 3.0,
-        angular_domain: [0.0, std::f64::consts::TAU],
+        apex: crate::test_support::test_b5::point([0.0; 3]),
+        frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
+        direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
+        half_angle: crate::test_support::test_b5::positive_angle(0.25),
+        reference_radius: crate::test_support::test_b5::finite(0.0),
+        angular_range: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
+        slant_range: crate::test_support::test_b5::increasing([-2.0, 4.0]),
+        angular_scale: crate::test_support::test_b5::positive(3.0),
+        angular_domain: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
+        surface: None,
     };
     let surfaces = BTreeMap::from([(2, carrier)]);
     let mut payload = vec![0x82, 0x82, 0x83];
@@ -1108,11 +1469,11 @@ fn offset_surface_does_not_infer_cone_construction_from_result_class() {
 #[test]
 fn analytic_offset_gate_requires_coaxial_equal_family_carriers() {
     let plane = |origin| B5Surface::Plane {
-        origin,
-        direction_u: [1.0, 0.0, 0.0],
-        direction_v: [0.0, 1.0, 0.0],
-        u_range: [-1.0, 1.0],
-        v_range: [-1.0, 1.0],
+        origin: crate::test_support::test_b5::point(origin),
+        frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+        direction_v: crate::test_support::test_b5::exact_unit([0.0, 1.0, 0.0]),
+        u_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+        v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
     };
     let tiny = 1e-200_f64;
     assert!(analytic_offset_magnitude_agrees(
@@ -1127,14 +1488,13 @@ fn analytic_offset_gate_requires_coaxial_equal_family_carriers() {
     ));
 
     let cylinder = |origin, radius| B5Surface::Cylinder {
-        origin,
-        reference_x: [1.0, 0.0, 0.0],
-        axis: [0.0, 0.0, 1.0],
-        radius,
-        u_range: [0.0, std::f64::consts::TAU * radius],
-        v_range: [-1.0, 1.0],
-        angular_scale: radius,
-        chart_origin: 0.0,
+        origin: crate::test_support::test_b5::point(origin),
+        frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
+        radius: crate::test_support::test_b5::positive_length(radius),
+        u_range: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU * radius]),
+        v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+        angular_scale: crate::test_support::test_b5::finite(radius),
+        chart_origin: crate::test_support::test_b5::finite(0.0),
     };
     assert!(analytic_offset_magnitude_agrees(
         &cylinder([0.0, 0.0, 4.0], 3.0),
@@ -1163,18 +1523,23 @@ fn analytic_offset_gate_requires_coaxial_equal_family_carriers() {
     ));
 
     let torus = |center, major_radius, minor_radius| B5Surface::Torus {
-        center,
-        direction_x: [1.0, 0.0, 0.0],
-        direction_y: [0.0, 1.0, 0.0],
-        axis: [0.0, 0.0, 1.0],
-        major_radius,
-        minor_radius,
-        major_angular_range: [0.0, std::f64::consts::TAU],
-        major_angular_domain: [0.0, std::f64::consts::TAU],
-        minor_angular_range: [0.0, std::f64::consts::TAU],
-        minor_angular_domain: [0.0, std::f64::consts::TAU],
-        major_scale: major_radius,
-        minor_scale: minor_radius,
+        center: crate::test_support::test_b5::point(center),
+        frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
+        direction_y: crate::test_support::test_b5::exact_unit([0.0, 1.0, 0.0]),
+        major_radius: crate::test_support::test_b5::positive_length(major_radius),
+        minor_radius: crate::test_support::test_b5::positive_length(minor_radius),
+        major_angular_range: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
+        major_angular_domain: crate::test_support::test_b5::increasing([
+            0.0,
+            std::f64::consts::TAU,
+        ]),
+        minor_angular_range: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
+        minor_angular_domain: crate::test_support::test_b5::increasing([
+            0.0,
+            std::f64::consts::TAU,
+        ]),
+        major_scale: crate::test_support::test_b5::positive(major_radius),
+        minor_scale: crate::test_support::test_b5::positive(minor_radius),
     };
     assert!(analytic_offset_magnitude_agrees(
         &torus([0.0; 3], 8.0, 3.0),
@@ -1193,15 +1558,14 @@ fn analytic_offset_gate_requires_coaxial_equal_family_carriers() {
     ));
 
     let sphere = |center, radius| B5Surface::Sphere {
-        center,
-        direction_x: [1.0, 0.0, 0.0],
-        direction_y: [0.0, 1.0, 0.0],
-        axis: [0.0, 0.0, 1.0],
-        radius,
-        azimuth_range: [0.0, 1.0],
-        latitude_range: [-1.0, 1.0],
-        construction_radius: radius,
-        chart_origin: 0.0,
+        center: crate::test_support::test_b5::point(center),
+        frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
+        direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
+        radius: crate::test_support::test_b5::positive_length(radius),
+        azimuth_range: crate::test_support::test_b5::increasing([0.0, 1.0]),
+        latitude_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+        construction_radius: crate::test_support::test_b5::positive_length(radius),
+        chart_origin: crate::test_support::test_b5::finite(0.0),
     };
     assert!(analytic_offset_magnitude_agrees(
         &sphere([0.0; 3], 2.0 * tiny),
@@ -1219,19 +1583,20 @@ fn analytic_offset_gate_requires_coaxial_equal_family_carriers() {
 fn offset_surface_accepts_an_identity_checked_class_31_cache() {
     assert!(is_referenced_geometry_class(0xb5, 0x31));
     let source = B5Surface::Nurbs(
-        NurbsSurface::new(
-            1,
-            1,
-            vec![0.0, 0.0, 1.0, 1.0],
-            vec![0.0, 0.0, 1.0, 1.0],
-            2,
-            2,
-            vec![cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0); 4],
-            None,
-            false,
-            false,
+        NurbsSurface::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
+                [cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0); 4]
+                    .chunks(2_usize)
+                    .map(<[_]>::to_vec)
+                    .collect(),
+                None,
+            ),
             false,
         )
+        .expect("fixture constructor admission")
         .expect("valid bilinear NURBS"),
     );
     let surfaces = BTreeMap::from([(3, source.clone()), (4, source)]);
@@ -1267,9 +1632,12 @@ fn offset_surface_accepts_an_identity_checked_class_31_cache() {
             object_id: 9,
             carrier_surface: 2,
             source_surface: 3,
-            distance: -0.5,
+            distance: crate::test_support::test_b5::finite(-0.5),
             carrier_kind: crate::families::b5::graph::B5OffsetCarrierKind::Cache,
-            parameter_bounds: [[-2.0, 3.0], [-4.0, 5.0]],
+            parameter_bounds: crate::test_support::test_b5::increasing_bounds([
+                [-2.0, 3.0],
+                [-4.0, 5.0]
+            ]),
         })
     );
 }
@@ -1330,13 +1698,23 @@ fn extrusion_surface_binds_two_mapped_directrix_supports() {
         parse_extrusion_surface(&record, &records, &pcurves),
         Some(B5ExtrusionSurface {
             object_id: 8,
-            direction: [0.0, 0.0, 1.0],
-            parameter_bounds: [[-2.0, 6.0], [-3.0, 4.0]],
+            direction: crate::test_support::test_b5::unit([0.0, 0.0, 1.0]),
+            parameter_bounds: crate::test_support::test_b5::increasing_bounds([
+                [-2.0, 6.0],
+                [-3.0, 4.0]
+            ]),
             directrix: B5ExtrusionDirectrix::Intersection {
                 object_id: 5,
-                supports: [(6, 3, [-3.0, 4.0]), (7, 4, [10.0, 20.0])],
-                parameter_range: [-3.0, 4.0],
-                cache_fit_tolerance: 0.01,
+                supports: [
+                    (6, 3, crate::test_support::test_b5::finite_pair([-3.0, 4.0])),
+                    (
+                        7,
+                        4,
+                        crate::test_support::test_b5::finite_pair([10.0, 20.0])
+                    )
+                ],
+                parameter_range: crate::test_support::test_b5::increasing([-3.0, 4.0]),
+                cache_fit_tolerance: crate::test_support::test_b5::positive(0.01),
             },
         })
     );
@@ -1386,4 +1764,35 @@ fn extrusion_surface_binds_two_mapped_directrix_supports() {
             "terminal controls {controls:02x?}"
         );
     }
+}
+
+#[test]
+fn point_cell_refuses_positive_spatial_overflow() {
+    let point =
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(f64::MAX, 0.0, 0.0))
+            .expect("finite point");
+    let result =
+        crate::test_support::with_service_context(|ctx| super::super::point_index(ctx, &[point]));
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::Malformed { .. })
+    ));
+}
+
+#[test]
+fn point_cell_refuses_negative_spatial_overflow() {
+    let point =
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(-f64::MAX, 0.0, 0.0))
+            .expect("finite point");
+    let result =
+        crate::test_support::with_service_context(|ctx| super::super::point_index(ctx, &[point]));
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::Malformed { .. })
+    ));
+}
+
+#[test]
+fn point_cell_refuses_nonfinite_coordinate() {
+    assert_eq!(super::super::point_cell([f64::NAN, 0.0, 0.0]), None);
 }

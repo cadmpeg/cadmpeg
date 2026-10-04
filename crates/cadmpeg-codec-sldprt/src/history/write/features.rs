@@ -3,7 +3,9 @@
 
 use crate::records::{Feature, FeatureContent, FeatureHistory, HistoryContent};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{DesignParameter, FeatureDefinition, FeatureId, FeatureSourceContent};
+use cadmpeg_ir::features::{
+    DesignParameter, FeatureDefinition, FeatureId, FeatureOperation, FeatureSourceContent,
+};
 use cadmpeg_ir::topology::Body;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -12,17 +14,33 @@ use crate::history::classify::{
 };
 use crate::history::configuration::enrich_history_parameters_semantic;
 use crate::history::parameters::apply_evaluated_parameters;
-use crate::history::project::neutral_feature_id;
+use crate::history::project::neutral_feature_id_charged;
 
 use super::parameters::restore_equivalent_parameter_expressions;
 use super::project_features_with_native_inputs;
 use super::xml::{feature_xml_tag, valid_xml_name};
 use crate::history::encode::{NeutralFeatureEncoder, NeutralFeatureEncoding};
+use crate::records::FeatureSource;
 
-pub(crate) fn synchronize_feature_input_names(
+/// A write-side request to rewrite one serialized object name.
+///
+/// A stored `FeatureInputName::value` states the payload bytes at that record's
+/// offset and is never edited. A neutral feature rename is this distinct input,
+/// which the writer splices into the payload it emits.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct FeatureInputRename {
+    /// Identifier of the lane that owns the renamed object name.
+    pub(crate) lane: String,
+    /// Position of the renamed record in that lane's `names` arena.
+    pub(crate) name_index: usize,
+    /// The object name to write.
+    pub(crate) value: cadmpeg_core::text::NonBlankString,
+}
+
+fn synchronize_feature_input_names(
     features: &[cadmpeg_ir::features::Feature],
-    native: &mut crate::native::SldprtNative,
-) -> Result<(), CodecError> {
+    native: &crate::native::SldprtNative,
+) -> Result<Vec<FeatureInputRename>, CodecError> {
     let renames = features
         .iter()
         .filter_map(|feature| {
@@ -43,6 +61,7 @@ pub(crate) fn synchronize_feature_input_names(
         })
         .collect::<Vec<_>>();
 
+    let mut requested = Vec::new();
     for (old_name, new_name, input_class) in renames {
         let mut matches = Vec::<(usize, usize)>::new();
         for (lane_index, lane) in native.feature_input_lanes.iter().enumerate() {
@@ -51,7 +70,8 @@ pub(crate) fn synchronize_feature_input_names(
                 .iter()
                 .filter(|class| class.name == input_class)
             {
-                let name_offset = class.offset + 6 + class.name.len() as u64;
+                let name_offset =
+                    class.offset + 6 + cadmpeg_core::decode::u64_from_index(class.name.len());
                 if let Some((name_index, _)) = lane
                     .names
                     .iter()
@@ -67,37 +87,47 @@ pub(crate) fn synchronize_feature_input_names(
                 "SLDPRT feature-input name for {old_name:?} is not uniquely linked"
             )));
         };
-        native.feature_input_lanes[*lane_index].names[*name_index].value = new_name;
+        let value = cadmpeg_core::text::NonBlankString::new(new_name).ok_or_else(|| {
+            CodecError::NotImplemented(format!(
+                "SLDPRT feature-input name for {old_name:?} has no non-blank replacement"
+            ))
+        })?;
+        requested.push(FeatureInputRename {
+            lane: native.feature_input_lanes[*lane_index].id.clone(),
+            name_index: *name_index,
+            value,
+        });
     }
-    Ok(())
+    Ok(requested)
 }
 
 pub(crate) fn generated_feature_record_id(feature: &FeatureId) -> String {
-    format!("sldprt:generated:feature#{}", feature.as_str())
+    format!(
+        "sldprt:generated:feature#{}",
+        feature.as_str().replace('%', "%25").replace('#', "%23")
+    )
 }
 
-pub(crate) fn generated_feature_source_ids(
+fn generated_feature_source_ids(
     features: &[cadmpeg_ir::features::Feature],
     native: &crate::native::SldprtNative,
-) -> Result<HashMap<FeatureId, String>, CodecError> {
+) -> Result<HashMap<FeatureId, FeatureSource>, CodecError> {
     let mut used = native
         .feature_histories
         .iter()
         .flat_map(|history| &history.features)
-        .filter_map(|feature| feature.source_id.as_deref()?.parse::<u32>().ok())
+        .filter_map(crate::records::Feature::source_value)
         .collect::<HashSet<_>>();
     let existing = native
         .feature_histories
         .iter()
         .flat_map(|history| &history.features)
-        .filter_map(|feature| {
-            Some((
-                feature.id.as_str(),
-                feature.source_id.as_deref()?.parse::<u32>().ok()?,
-            ))
-        })
+        .filter_map(|feature| Some((feature.id.as_str(), feature.source_value()?)))
         .collect::<HashMap<_, _>>();
-    let mut next = 1u32;
+    // `next` is the lowest source id not yet offered. `None` states that the
+    // id space is exhausted: every allocation advances it, and the allocation
+    // that finds it exhausted is the one refusal.
+    let mut next = Some(1u32);
     let mut allocated = HashMap::new();
     for feature in features
         .iter()
@@ -107,28 +137,44 @@ pub(crate) fn generated_feature_source_ids(
         let source_id = if let Some(source_id) = existing.get(record_id.as_str()).copied() {
             source_id
         } else {
-            while used.contains(&next) {
-                next = next.checked_add(1).ok_or_else(|| {
-                    CodecError::Malformed("SLDPRT feature source-id space is exhausted".into())
-                })?;
-            }
-            let source_id = next;
-            used.insert(source_id);
-            next = next.checked_add(1).unwrap_or(next);
-            source_id
+            allocate_feature_source_id(&mut used, &mut next)?
         };
-        allocated.insert(feature.id.clone(), source_id.to_string());
+        let source_id = FeatureSource::from_value(source_id).ok_or_else(|| {
+            CodecError::Malformed("SLDPRT feature source-id space is exhausted".into())
+        })?;
+        allocated.insert(feature.id.clone(), source_id);
     }
     Ok(allocated)
 }
 
+/// Take the lowest source id no feature holds, and advance `next` past it.
+///
+/// `next` states the lowest id not yet offered; `None` states that the previous
+/// allocation took `u32::MAX` and the id space holds no further id. Every exit
+/// from this function either returns an id no other feature holds or refuses,
+/// so no caller writes a source id twice and none saturates.
+fn allocate_feature_source_id(
+    used: &mut HashSet<u32>,
+    next: &mut Option<u32>,
+) -> Result<u32, CodecError> {
+    loop {
+        let candidate = next.ok_or_else(|| {
+            CodecError::NotImplemented("SLDPRT feature source-id space is exhausted".into())
+        })?;
+        *next = candidate.checked_add(1);
+        if used.insert(candidate) {
+            return Ok(candidate);
+        }
+    }
+}
+
 /// Apply neutral native-feature edits to the `SolidWorks` history used for writing.
-pub fn sync_neutral_features(
+pub(in crate::history) fn sync_neutral_features(
     model: &cadmpeg_ir::document::Model,
     parameters: &[DesignParameter],
     bodies: &[Body],
     native: &mut Option<crate::native::SldprtNative>,
-) -> Result<(), CodecError> {
+) -> Result<Vec<FeatureInputRename>, CodecError> {
     let features = &model.features;
     if features.is_empty() {
         if let Some(native) = native {
@@ -136,23 +182,20 @@ pub fn sync_neutral_features(
                 history.features.retain(is_custom_property);
             }
         }
-        return Ok(());
+        return Ok(Vec::new());
     }
-    if native.is_none() {
-        *native = Some(crate::native::SldprtNative {
-            feature_histories: vec![FeatureHistory {
-                id: "sldprt:generated:feature-history#0".into(),
-                part_name: None,
-                properties: BTreeMap::new(),
-                content: Vec::new(),
-                configurations: Vec::new(),
-                features: Vec::new(),
-            }],
-            feature_input_lanes: Vec::new(),
-            pmi_dimensions: Vec::new(),
-        });
-    }
-    let native = native.as_mut().expect("initialized above");
+    let native = native.get_or_insert_with(|| crate::native::SldprtNative {
+        feature_histories: vec![FeatureHistory {
+            id: "sldprt:generated:feature-history#0".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: Vec::new(),
+        }],
+        feature_input_lanes: Vec::new(),
+        pmi_dimensions: Vec::new(),
+    });
     let original_parameters = native
         .feature_histories
         .iter()
@@ -160,7 +203,18 @@ pub fn sync_neutral_features(
         .map(|feature| (feature.id.clone(), feature.parameters.clone()))
         .collect::<HashMap<_, _>>();
     let mut resolved_histories = native.feature_histories.clone();
-    enrich_history_parameters_semantic(&mut resolved_histories, &native.feature_input_lanes);
+    let lane_bytes = native
+        .feature_input_lanes
+        .iter()
+        .flat_map(|lane| lane.native_payload.iter().copied())
+        .collect::<Vec<_>>();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &lane_bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+    enrich_history_parameters_semantic(&ctx, &mut resolved_histories, &native.feature_input_lanes)?;
     let resolved_parameter_names = resolved_histories
         .iter()
         .flat_map(|history| &history.features)
@@ -171,7 +225,7 @@ pub fn sync_neutral_features(
             )
         })
         .collect::<HashMap<_, _>>();
-    apply_evaluated_parameters(&mut resolved_histories);
+    apply_evaluated_parameters(&ctx, &mut resolved_histories)?;
     let evaluated_parameters = resolved_histories
         .iter()
         .flat_map(|history| &history.features)
@@ -188,7 +242,7 @@ pub fn sync_neutral_features(
         });
     }
 
-    synchronize_feature_input_names(features, native)?;
+    let renames = synchronize_feature_input_names(features, native)?;
 
     let generated_sources = generated_feature_source_ids(features, native)?;
     let parent_sources = features
@@ -199,9 +253,9 @@ pub fn sync_neutral_features(
                 .iter()
                 .flat_map(|history| &history.features)
                 .find(|candidate| feature.native_ref.as_deref() == Some(candidate.id.as_str()))
-                .and_then(|candidate| candidate.source_id.clone())
-                .or_else(|| generated_sources.get(&feature.id).cloned())
-                .unwrap_or_else(|| feature.id.as_str().to_owned());
+                .and_then(|candidate| candidate.source_id)
+                .or_else(|| generated_sources.get(&feature.id).copied())
+                .map_or_else(|| feature.id.as_str().to_owned(), String::from);
             (feature.id.clone(), source_id)
         })
         .collect::<HashMap<_, _>>();
@@ -213,8 +267,8 @@ pub fn sync_neutral_features(
                 .iter()
                 .flat_map(|history| &history.features)
                 .find(|candidate| feature.native_ref.as_deref() == Some(candidate.id.as_str()))
-                .and_then(|candidate| candidate.source_id.clone())
-                .or_else(|| generated_sources.get(&feature.id).cloned());
+                .and_then(|candidate| candidate.source_id)
+                .or_else(|| generated_sources.get(&feature.id).copied());
             (feature.id.clone(), source_id)
         })
         .collect::<HashMap<_, _>>();
@@ -244,7 +298,7 @@ pub fn sync_neutral_features(
             let by_source = history
                 .features
                 .iter()
-                .filter_map(|feature| Some((feature.source_id.as_deref()?, feature)))
+                .filter_map(|feature| Some((feature.source_id?, feature)))
                 .collect::<HashMap<_, _>>();
             history.features.iter().filter_map(move |feature| {
                 Some((
@@ -261,8 +315,7 @@ pub fn sync_neutral_features(
         .filter_map(|feature| {
             feature
                 .source_id
-                .as_ref()
-                .map(|source| (feature.id.clone(), source.clone()))
+                .map(|source| (feature.id.clone(), String::from(source)))
         })
         .collect::<HashMap<_, _>>();
     let retained_tree_node_roles = native
@@ -288,10 +341,10 @@ pub fn sync_neutral_features(
         .collect::<HashMap<_, _>>();
     let sketch_sources = features
         .iter()
-        .filter_map(|feature| match &feature.definition {
-            FeatureDefinition::Sketch {
+        .filter_map(|feature| match feature.evaluation.definition() {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            } => parent_sources
+            }) => parent_sources
                 .get(&feature.id)
                 .map(|source| (sketch.clone(), source.clone())),
             _ => None,
@@ -350,13 +403,14 @@ pub fn sync_neutral_features(
                 &mut parameters,
             );
         }
-        if feature.outputs.is_empty() {
+        if feature.evaluation.outputs().is_empty() {
             if existing.is_none() {
                 properties.remove("Scope");
             }
         } else {
             let scope = feature
-                .outputs
+                .evaluation
+                .outputs()
                 .iter()
                 .map(|body| body_sources.get(body).cloned())
                 .collect::<Option<Vec<_>>>()
@@ -366,12 +420,12 @@ pub fn sync_neutral_features(
                         feature.id
                     ))
                 })?;
-            properties.insert("Scope".into(), scope.join(","));
+            properties.insert(cadmpeg_core::nonblank_literal!("Scope"), scope.join(","));
         }
         let ordinal = u32::try_from(feature.ordinal)
-            .map_err(|_| CodecError::Malformed("feature ordinal exceeds u32".into()))?;
+            .map_err(|_| CodecError::NotImplemented("feature ordinal exceeds u32".into()))?;
         let tree_parent = model.feature_parent(&feature.id).and_then(|parent| {
-            let source_id = structural_parent_sources.get(parent).cloned().flatten();
+            let source_id = structural_parent_sources.get(parent).copied().flatten();
             match record_ids.get(parent) {
                 Some(record_id) => Some(crate::records::TreeParent::Record {
                     record_id: record_id.clone(),
@@ -411,7 +465,7 @@ pub fn sync_neutral_features(
                 parent: history.id.clone(),
                 xml_tag: feature_xml_tag(feature),
                 tree_parent,
-                source_id: generated_sources.get(&feature.id).cloned(),
+                source_id: generated_sources.get(&feature.id).copied(),
                 ordinal,
                 name: feature.name.clone().unwrap_or_default(),
                 kind,
@@ -447,31 +501,31 @@ pub fn sync_neutral_features(
         })
         .collect::<std::collections::HashSet<_>>();
     crate::resolved_features::parameters::sync_changed_feature_scalars(
+        &ctx,
         &native.feature_histories,
         &mut native.feature_input_lanes,
         &changed_parameters,
     )?;
-    let projected_features = project_features_with_native_inputs(native);
+    let projected_features = project_features_with_native_inputs(native)?;
     let projected_features = projected_features
         .into_iter()
         .map(|feature| (feature.id.clone(), feature))
         .collect::<HashMap<_, _>>();
     for feature in features {
-        let projected_id = neutral_feature_id(&record_ids[&feature.id]);
+        let projected_id = neutral_feature_id_charged(&ctx, &record_ids[&feature.id])?;
         let expected = feature
             .dependencies
             .iter()
-            .map(|dependency| {
-                record_ids
-                    .get(dependency)
-                    .map_or_else(|| dependency.clone(), |record| neutral_feature_id(record))
+            .map(|dependency| match record_ids.get(dependency) {
+                Some(record) => neutral_feature_id_charged(&ctx, record),
+                None => Ok(dependency.clone()),
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, CodecError>>()?;
         let consistent = projected_features
             .get(&projected_id)
             .is_some_and(|projected| {
                 if feature.native_ref.is_some() {
-                    projected.dependencies == expected
+                    projected.dependencies.as_slice() == expected
                 } else {
                     expected
                         .iter()
@@ -487,10 +541,10 @@ pub fn sync_neutral_features(
     }
     synchronize_feature_content_order(native);
     synchronize_history_content_order(native);
-    Ok(())
+    Ok(renames)
 }
 
-pub(crate) fn synchronize_neutral_feature_content(
+fn synchronize_neutral_feature_content(
     features: &[cadmpeg_ir::features::Feature],
     parameters: &[DesignParameter],
     record_ids: &HashMap<FeatureId, String>,
@@ -548,7 +602,7 @@ pub(crate) fn synchronize_neutral_feature_content(
     Ok(())
 }
 
-pub(crate) fn synchronize_history_content_order(native: &mut crate::native::SldprtNative) {
+pub(super) fn synchronize_history_content_order(native: &mut crate::native::SldprtNative) {
     for history in &mut native.feature_histories {
         let configurations = history
             .configurations
@@ -601,7 +655,7 @@ pub(crate) fn synchronize_history_content_order(native: &mut crate::native::Sldp
     }
 }
 
-pub(crate) fn synchronize_feature_content_order(native: &mut crate::native::SldprtNative) {
+fn synchronize_feature_content_order(native: &mut crate::native::SldprtNative) {
     for history in &mut native.feature_histories {
         let mut children = HashMap::<String, Vec<(u32, String)>>::new();
         for feature in &history.features {
@@ -643,5 +697,176 @@ pub(crate) fn synchronize_feature_content_order(native: &mut crate::native::Sldp
                     .map(|(_, id)| FeatureContent::Feature(id.clone())),
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{generated_feature_record_id, neutral_feature_id_charged, sync_neutral_features};
+    use crate::test_support::container::make_block;
+    use crate::test_support::container::sldprt_with_body;
+    use crate::test_support::history::resolved_feature_classes_with_ids;
+    use crate::test_support::native::sldprt_native;
+    use crate::test_support::parasolid::triangle_body;
+    use crate::test_support::plan_inherited_write;
+    use crate::SldprtCodec;
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::features::FeatureId;
+    use std::collections::HashSet;
+    use std::io::Cursor;
+
+    /// A document whose one history feature is linked to one serialized object
+    /// name through a feature-input class declaration, so a neutral rename has
+    /// a name to reach.
+    fn document_with_one_linked_object_name() -> Vec<u8> {
+        let mut source = sldprt_with_body(&triangle_body());
+        source.extend(make_block(
+            0x42,
+            "Contents/Keywords",
+            br#"<Keywords><Feature Name="MatrizL1" Type="MatrizL" id="132"><Dimension Name="D1">15</Dimension></Feature></Keywords>"#,
+        ));
+        source.extend(make_block(
+            0x42,
+            "Contents/Config-0-ResolvedFeatures",
+            &resolved_feature_classes_with_ids(&[("moLPattern_c", "MatrizL1", 132)]),
+        ));
+        source
+    }
+
+    #[test]
+    fn a_neutral_feature_rename_reaches_the_written_object_name_and_survives_a_round_trip() {
+        let decoded = SldprtCodec
+            .decode(
+                &mut Cursor::new(document_with_one_linked_object_name()),
+                &DecodeOptions::default(),
+            )
+            .expect("the fixture decodes");
+        assert_eq!(
+            decoded.ir().model.features[0].name.as_deref(),
+            Some("MatrizL1")
+        );
+        assert_eq!(
+            sldprt_native(decoded.ir()).feature_input_lanes[0].names[0].value,
+            "MatrizL1"
+        );
+
+        let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+        {
+            let mut edit = decoded.ir_mut();
+            edit.model.features[0].name = Some("PatternRenamed".into());
+        }
+        let mut encoded = Vec::new();
+        plan_inherited_write(decoded.ir(), decoded.source_fidelity(), &mut encoded)
+            .expect("the renamed model writes");
+
+        let regenerated = SldprtCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .expect("the written document decodes");
+        let native = sldprt_native(regenerated.ir());
+        assert_eq!(
+            native.feature_input_lanes[0].names[0].value,
+            "PatternRenamed"
+        );
+        assert_eq!(
+            native.feature_histories[0].features[0].name,
+            "PatternRenamed"
+        );
+        assert_eq!(
+            native.feature_histories[0].features[0]
+                .input_class
+                .as_deref(),
+            Some("moLPattern_c")
+        );
+        assert_eq!(
+            regenerated.ir().model.features[0].name.as_deref(),
+            Some("PatternRenamed")
+        );
+    }
+
+    #[test]
+    fn a_rename_of_an_object_name_two_lanes_state_is_refused_naming_the_name() {
+        let decoded = SldprtCodec
+            .decode(
+                &mut Cursor::new(document_with_one_linked_object_name()),
+                &DecodeOptions::default(),
+            )
+            .expect("the fixture decodes");
+        let mut model = decoded.ir().model.clone();
+        model.features[0].name = Some("PatternRenamed".into());
+
+        let mut native = sldprt_native(decoded.ir());
+        let mut second = native.feature_input_lanes[0].clone();
+        second.id = format!("{}-second", second.id);
+        native.feature_input_lanes.push(second);
+
+        let error = sync_neutral_features(&model, &[], &[], &mut Some(native))
+            .expect_err("two lanes state the same object name");
+        assert_eq!(
+            error.to_string(),
+            "not implemented yet: SLDPRT feature-input name for \"MatrizL1\" is not uniquely linked"
+        );
+    }
+
+    #[test]
+    fn a_rename_to_a_blank_feature_name_is_refused_naming_the_name() {
+        let decoded = SldprtCodec
+            .decode(
+                &mut Cursor::new(document_with_one_linked_object_name()),
+                &DecodeOptions::default(),
+            )
+            .expect("the fixture decodes");
+        let mut model = decoded.ir().model.clone();
+        model.features[0].name = Some(" ".into());
+
+        let error = sync_neutral_features(&model, &[], &[], &mut Some(sldprt_native(decoded.ir())))
+            .expect_err("a blank object name is not writable");
+        assert_eq!(
+            error.to_string(),
+            "not implemented yet: SLDPRT feature-input name for \"MatrizL1\" has no non-blank replacement"
+        );
+    }
+
+    #[test]
+    fn generated_feature_identities_escape_embedded_separators() {
+        let feature =
+            FeatureId::mint("test:model:feature#original%23key").expect("fixture identity");
+        let record = generated_feature_record_id(&feature);
+        assert_eq!(
+            record,
+            "sldprt:generated:feature#test:model:feature%23original%2523key"
+        );
+        assert!(cadmpeg_ir::ids::is_valid_identity(&record));
+        let projected =
+            neutral_feature_id_charged(&cadmpeg_test_support::service_decode_context(), &record)
+                .unwrap();
+        assert!(cadmpeg_ir::ids::is_valid_identity(projected.as_str()));
+    }
+    #[test]
+    fn the_source_id_allocator_skips_held_ids_and_refuses_an_exhausted_space() {
+        let mut used = HashSet::from([1, 2, 4]);
+        let mut next = Some(1);
+        assert_eq!(
+            super::allocate_feature_source_id(&mut used, &mut next).expect("first free id"),
+            3
+        );
+        assert_eq!(
+            super::allocate_feature_source_id(&mut used, &mut next).expect("second free id"),
+            5
+        );
+
+        let mut used = HashSet::new();
+        let mut next = Some(u32::MAX);
+        assert_eq!(
+            super::allocate_feature_source_id(&mut used, &mut next).expect("last id"),
+            u32::MAX
+        );
+        assert_eq!(next, None);
+        let error = super::allocate_feature_source_id(&mut used, &mut next)
+            .expect_err("exhausted id space");
+        assert!(
+            matches!(&error, CodecError::NotImplemented(message) if message.contains("exhausted")),
+            "{error:?}"
+        );
     }
 }

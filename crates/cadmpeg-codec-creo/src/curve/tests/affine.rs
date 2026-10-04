@@ -1,7 +1,313 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
+const EPS_NONLINEAR_VALUE: f64 = 1.0e-9;
 
-use super::*;
+use crate::curve::curve_expression_solve_program;
+use crate::curve::expression_records;
+use crate::curve::quantity_value;
+use crate::curve::solve_unique_affine_system;
+use crate::curve::tests::evaluate_expression_program;
+use crate::curve::AffineEquationRow;
+use crate::curve::CurveExpressionEquation;
+use crate::curve::CurveExpressionLine;
+use crate::curve::CurveExpressionSolveBlock;
+use crate::curve::CurveExpressionValue;
+use crate::curve::ExternalRelationSymbols;
+use crate::curve::RelationDimension;
+use crate::curve::RelationEvaluationContext;
+use crate::curve::SolveUnknown;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
+use std::collections::{BTreeMap, BTreeSet};
+
+#[test]
+fn affine_math_arguments_fit_fixed_three_slot_frame() {
+    use crate::curve::{AffineValue, CreoMathFunction, ExpressionValue};
+
+    let values = [
+        AffineValue {
+            constant: 1.0,
+            linear: 0.0,
+        },
+        AffineValue {
+            constant: 2.0,
+            linear: 0.0,
+        },
+        AffineValue {
+            constant: 3.0,
+            linear: 0.0,
+        },
+    ];
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    assert_eq!(
+        AffineValue::function_checked(
+            CreoMathFunction::If,
+            None,
+            &values,
+            RelationEvaluationContext::default(),
+            &ctx,
+        )
+        .expect("fixed frame needs no collection"),
+        Some(values[1]),
+    );
+    assert_eq!(
+        AffineValue::function_checked(
+            CreoMathFunction::If,
+            None,
+            &[values[0], values[1], values[2], values[0]],
+            RelationEvaluationContext::default(),
+            &ctx,
+        )
+        .expect("unsupported arity needs no collection"),
+        None,
+    );
+}
+
+#[derive(Clone, Copy)]
+enum DimensionLimitCase {
+    Basic,
+    KnownNumber,
+    KnownText,
+}
+
+fn dimension_inference_limit_reaches(
+    case: DimensionLimitCase,
+    dimension: ResourceDimension,
+    operation: &'static str,
+) -> bool {
+    let block = CurveExpressionSolveBlock {
+        equations: vec![CurveExpressionEquation {
+            left: "1".to_owned(),
+            right: "x".to_owned(),
+            dependencies: vec!["x".to_owned()],
+            offset: 0,
+        }],
+        assignments: Vec::new(),
+        unknowns: vec![SolveUnknown {
+            name: "x".to_owned(),
+            solution: None,
+        }],
+        offset: 0,
+        for_offset: 1,
+    };
+    let values = match case {
+        DimensionLimitCase::Basic => BTreeMap::new(),
+        DimensionLimitCase::KnownNumber => BTreeMap::from([(
+            "driver".to_owned(),
+            CurveExpressionValue::Number(
+                cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture"),
+            ),
+        )]),
+        DimensionLimitCase::KnownText => BTreeMap::from([(
+            "driver".to_owned(),
+            CurveExpressionValue::String("abc".to_owned()),
+        )]),
+    };
+    let error = crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
+        crate::curve::infer_solve_variable_dimensions(
+            ctx,
+            &block,
+            &values,
+            &[None],
+            RelationEvaluationContext::default(),
+        )
+    });
+    matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == dimension && resource.operation == operation)
+}
+
+macro_rules! dimension_limit_test {
+    ($name:ident, $case:expr, $dimension:expr, $operation:literal) => {
+        #[test]
+        fn $name() {
+            assert!(dimension_inference_limit_reaches(
+                $case, $dimension, $operation
+            ));
+        }
+    };
+}
+
+dimension_limit_test!(
+    dimension_inference_refuses_variable_key_vector,
+    DimensionLimitCase::Basic,
+    ResourceDimension::CollectionItems,
+    "creo dimension variable keys"
+);
+dimension_limit_test!(
+    dimension_inference_refuses_variable_key_text,
+    DimensionLimitCase::Basic,
+    ResourceDimension::RetainedBytes,
+    "creo dimension variable key text"
+);
+dimension_limit_test!(
+    dimension_inference_refuses_symbolic_variable_nodes,
+    DimensionLimitCase::Basic,
+    ResourceDimension::CollectionItems,
+    "creo dimension variable nodes"
+);
+dimension_limit_test!(
+    dimension_inference_refuses_symbolic_variable_names,
+    DimensionLimitCase::Basic,
+    ResourceDimension::RetainedBytes,
+    "creo dimension variable names"
+);
+dimension_limit_test!(
+    dimension_inference_refuses_unknown_value_nodes,
+    DimensionLimitCase::Basic,
+    ResourceDimension::CollectionItems,
+    "creo dimension unknown value nodes"
+);
+dimension_limit_test!(
+    dimension_inference_refuses_unknown_value_names,
+    DimensionLimitCase::Basic,
+    ResourceDimension::RetainedBytes,
+    "creo dimension unknown value names"
+);
+dimension_limit_test!(
+    dimension_inference_refuses_known_value_nodes,
+    DimensionLimitCase::KnownNumber,
+    ResourceDimension::CollectionItems,
+    "creo dimension known value nodes"
+);
+dimension_limit_test!(
+    dimension_inference_refuses_known_value_names,
+    DimensionLimitCase::KnownNumber,
+    ResourceDimension::RetainedBytes,
+    "creo dimension known value names"
+);
+dimension_limit_test!(
+    dimension_inference_refuses_known_text,
+    DimensionLimitCase::KnownText,
+    ResourceDimension::RetainedBytes,
+    "creo dimension known text"
+);
+dimension_limit_test!(
+    dimension_inference_refuses_constraint_rows,
+    DimensionLimitCase::Basic,
+    ResourceDimension::CollectionItems,
+    "creo dimension constraint rows"
+);
+dimension_limit_test!(
+    dimension_inference_refuses_axis_variable_keys,
+    DimensionLimitCase::Basic,
+    ResourceDimension::CollectionItems,
+    "creo dimension axis variable keys"
+);
+dimension_limit_test!(
+    dimension_inference_refuses_axis_variable_names,
+    DimensionLimitCase::Basic,
+    ResourceDimension::RetainedBytes,
+    "creo dimension axis variable names"
+);
+dimension_limit_test!(
+    dimension_inference_refuses_equation_coefficients,
+    DimensionLimitCase::Basic,
+    ResourceDimension::CollectionItems,
+    "creo dimension equation coefficients"
+);
+dimension_limit_test!(
+    dimension_inference_refuses_equation_coefficient_work,
+    DimensionLimitCase::Basic,
+    ResourceDimension::WorkUnits,
+    "creo dimension equation coefficient work"
+);
+dimension_limit_test!(
+    dimension_inference_refuses_equation_rows,
+    DimensionLimitCase::Basic,
+    ResourceDimension::CollectionItems,
+    "creo dimension equation rows"
+);
+dimension_limit_test!(
+    dimension_inference_refuses_difference_variable_nodes,
+    DimensionLimitCase::Basic,
+    ResourceDimension::CollectionItems,
+    "creo dimension difference variable nodes"
+);
+dimension_limit_test!(
+    dimension_inference_refuses_required_column_nodes,
+    DimensionLimitCase::Basic,
+    ResourceDimension::CollectionItems,
+    "creo dimension required column nodes"
+);
+dimension_limit_test!(
+    dimension_inference_refuses_inferred_dimensions,
+    DimensionLimitCase::Basic,
+    ResourceDimension::CollectionItems,
+    "creo inferred variable dimensions"
+);
+
+#[test]
+fn dimension_inference_refuses_duplicate_comparison_work() {
+    let block = CurveExpressionSolveBlock {
+        equations: Vec::new(),
+        assignments: Vec::new(),
+        unknowns: vec![
+            SolveUnknown {
+                name: "x".to_owned(),
+                solution: None,
+            },
+            SolveUnknown {
+                name: "X".to_owned(),
+                solution: None,
+            },
+        ],
+        offset: 0,
+        for_offset: 1,
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = crate::curve::infer_solve_variable_dimensions(
+        &ctx,
+        &block,
+        &BTreeMap::new(),
+        &[None, None],
+        RelationEvaluationContext::default(),
+    )
+    .expect_err("second variable comparison needs work");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo dimension duplicate checks"));
+}
+
+fn with_collection_limit<T>(
+    limit: u64,
+    run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
+) -> T {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test decode context");
+    run(&ctx)
+}
+
+fn evaluate_expression_program_details(
+    lines: &[CurveExpressionLine],
+    model_name: Option<&str>,
+    external_symbols: &ExternalRelationSymbols,
+) -> crate::curve::CurveExpressionEvaluation {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        crate::curve::evaluate_expression_program_details(ctx, lines, model_name, external_symbols)
+    })
+    .expect("test curve expression evaluation")
+}
+
+fn infer_solve_variable_dimensions(
+    block: &CurveExpressionSolveBlock,
+    values: &BTreeMap<String, CurveExpressionValue>,
+    known_dimensions: &[Option<RelationDimension>],
+    context: RelationEvaluationContext<'_>,
+) -> Option<Vec<RelationDimension>> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        crate::curve::infer_solve_variable_dimensions(ctx, block, values, known_dimensions, context)
+    })
+    .expect("test dimension inference")
+}
 
 #[test]
 fn decodes_counted_curve_expression_source_lines() {
@@ -33,7 +339,9 @@ fn decodes_counted_curve_expression_source_lines() {
     assert!(records[0].assignments[0].dependencies.is_empty());
     assert_eq!(
         records[0].assignments[0].value,
-        Some(CurveExpressionValue::Number(5.0))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(5.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         records[0].assignments[1].parameter_target(),
@@ -46,7 +354,9 @@ fn decodes_counted_curve_expression_source_lines() {
     assert_eq!(records[0].assignments[3].dependencies, ["r"]);
     assert_eq!(
         records[0].assignments[3].value,
-        Some(CurveExpressionValue::Number(11.0))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(11.0).expect("finite relation fixture")
+        ))
     );
 }
 
@@ -70,7 +380,9 @@ fn standalone_equality_does_not_create_an_assignment() {
     assert_eq!(assignments[1].parameter_target(), Some(("flag", None)));
     assert_eq!(
         assignments[1].value,
-        Some(CurveExpressionValue::Number(1.0))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture")
+        ))
     );
 }
 
@@ -97,7 +409,9 @@ fn retains_simultaneous_equations_without_sequential_assignments() {
     })
     .collect::<Vec<_>>();
 
-    let program = curve_expression_solve_program(&lines);
+    let program =
+        crate::decode::with_test_decode_ctx(|ctx| curve_expression_solve_program(ctx, &lines))
+            .expect("solve program");
     assert!(!program.unresolved_control);
     let [block] = program.blocks.as_slice() else {
         panic!("one solve block");
@@ -137,12 +451,16 @@ fn retains_simultaneous_equations_without_sequential_assignments() {
     assert_eq!(assignments[3].parameter_target(), Some(("offset", None)));
     assert_eq!(
         assignments[3].value,
-        Some(CurveExpressionValue::Number(11.0))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(11.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(assignments[4].parameter_target(), Some(("present", None)));
     assert_eq!(
         assignments[4].value,
-        Some(CurveExpressionValue::Number(1.0))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         assignments[5].parameter_target(),
@@ -152,7 +470,9 @@ fn retains_simultaneous_equations_without_sequential_assignments() {
     assert_eq!(assignments[6].parameter_target(), Some(("result", None)));
     assert_eq!(
         assignments[6].value,
-        Some(CurveExpressionValue::Number(101.0))
+        Some(CurveExpressionValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(101.0).expect("finite relation fixture")
+        ))
     );
 }
 
@@ -182,8 +502,12 @@ fn solves_complete_affine_simultaneous_equations() {
     assert_eq!(
         evaluation.solve_solutions[&3],
         [
-            CurveExpressionValue::Number(6.0),
-            CurveExpressionValue::Number(4.0),
+            CurveExpressionValue::Number(
+                cadmpeg_ir::scalar::FiniteReal::new(6.0).expect("finite relation fixture")
+            ),
+            CurveExpressionValue::Number(
+                cadmpeg_ir::scalar::FiniteReal::new(4.0).expect("finite relation fixture")
+            ),
         ]
     );
     assert_eq!(evaluation.assignments.len(), 4);
@@ -194,10 +518,18 @@ fn solves_complete_affine_simultaneous_equations() {
             .map(|assignment| assignment.value.clone())
             .collect::<Vec<_>>(),
         [
-            Some(CurveExpressionValue::Number(6.0)),
-            Some(CurveExpressionValue::Number(4.0)),
-            Some(CurveExpressionValue::Number(10.0)),
-            Some(CurveExpressionValue::Number(24.0)),
+            Some(CurveExpressionValue::Number(
+                cadmpeg_ir::scalar::FiniteReal::new(6.0).expect("finite relation fixture")
+            )),
+            Some(CurveExpressionValue::Number(
+                cadmpeg_ir::scalar::FiniteReal::new(4.0).expect("finite relation fixture")
+            )),
+            Some(CurveExpressionValue::Number(
+                cadmpeg_ir::scalar::FiniteReal::new(10.0).expect("finite relation fixture")
+            )),
+            Some(CurveExpressionValue::Number(
+                cadmpeg_ir::scalar::FiniteReal::new(24.0).expect("finite relation fixture")
+            )),
         ]
     );
 }
@@ -219,13 +551,19 @@ fn solves_affine_systems_without_previous_numeric_values() {
     assert_eq!(
         evaluation.solve_solutions[&0],
         [
-            CurveExpressionValue::Length(6.0),
-            CurveExpressionValue::Length(4.0),
+            CurveExpressionValue::Length(
+                cadmpeg_ir::scalar::FiniteReal::new(6.0).expect("finite relation fixture")
+            ),
+            CurveExpressionValue::Length(
+                cadmpeg_ir::scalar::FiniteReal::new(4.0).expect("finite relation fixture")
+            ),
         ]
     );
     assert_eq!(
         evaluation.assignments[0].value,
-        Some(CurveExpressionValue::Length(10.0))
+        Some(CurveExpressionValue::Length(
+            cadmpeg_ir::scalar::FiniteReal::new(10.0).expect("finite relation fixture")
+        ))
     );
 }
 
@@ -253,8 +591,10 @@ fn infers_missing_solve_dimensions_through_known_quantities() {
     assert_eq!(
         evaluation.solve_solutions[&2],
         [
-            CurveExpressionValue::Length(6.0),
-            quantity_value(2.0, RelationDimension::TIME),
+            CurveExpressionValue::Length(
+                cadmpeg_ir::scalar::FiniteReal::new(6.0).expect("finite relation fixture")
+            ),
+            quantity_value(2.0, RelationDimension::TIME).expect("finite relation fixture"),
         ]
     );
 }
@@ -353,8 +693,12 @@ fn solves_affine_systems_with_fixed_boolean_annihilators() {
     assert_eq!(
         evaluation.solve_solutions[&2],
         [
-            CurveExpressionValue::Number(3.0),
-            CurveExpressionValue::Number(4.0),
+            CurveExpressionValue::Number(
+                cadmpeg_ir::scalar::FiniteReal::new(3.0).expect("finite relation fixture")
+            ),
+            CurveExpressionValue::Number(
+                cadmpeg_ir::scalar::FiniteReal::new(4.0).expect("finite relation fixture")
+            ),
         ]
     );
 
@@ -373,8 +717,12 @@ fn solves_affine_systems_with_fixed_boolean_annihilators() {
     assert_eq!(
         evaluation.solve_solutions[&2],
         [
-            CurveExpressionValue::Number(3.0),
-            CurveExpressionValue::Number(4.0),
+            CurveExpressionValue::Number(
+                cadmpeg_ir::scalar::FiniteReal::new(3.0).expect("finite relation fixture")
+            ),
+            CurveExpressionValue::Number(
+                cadmpeg_ir::scalar::FiniteReal::new(4.0).expect("finite relation fixture")
+            ),
         ]
     );
 }
@@ -403,8 +751,12 @@ fn solves_affine_systems_with_fixed_function_powers() {
     assert_eq!(
         evaluation.solve_solutions[&2],
         [
-            CurveExpressionValue::Length(3.0),
-            CurveExpressionValue::Number(4.0),
+            CurveExpressionValue::Length(
+                cadmpeg_ir::scalar::FiniteReal::new(3.0).expect("finite relation fixture")
+            ),
+            CurveExpressionValue::Number(
+                cadmpeg_ir::scalar::FiniteReal::new(4.0).expect("finite relation fixture")
+            ),
         ]
     );
 }
@@ -433,8 +785,12 @@ fn solves_affine_systems_with_branch_and_sign_invariants() {
     assert_eq!(
         evaluation.solve_solutions[&2],
         [
-            CurveExpressionValue::Number(3.0),
-            CurveExpressionValue::Length(4.0),
+            CurveExpressionValue::Number(
+                cadmpeg_ir::scalar::FiniteReal::new(3.0).expect("finite relation fixture")
+            ),
+            CurveExpressionValue::Length(
+                cadmpeg_ir::scalar::FiniteReal::new(4.0).expect("finite relation fixture")
+            ),
         ]
     );
 }
@@ -477,11 +833,11 @@ fn solves_unique_nonlinear_simultaneous_equations() {
     let [CurveExpressionValue::Number(solution)] = evaluation.solve_solutions[&1].as_slice() else {
         panic!("expected one numeric nonlinear solution");
     };
-    assert!((*solution - 2.0).abs() <= 1.0e-9);
+    assert!((solution.get() - 2.0).abs() <= EPS_NONLINEAR_VALUE);
     let Some(CurveExpressionValue::Number(after)) = &evaluation.assignments[1].value else {
         panic!("expected evaluated assignment after nonlinear solve");
     };
-    assert!((*after - 3.0).abs() <= 1.0e-9);
+    assert!((after.get() - 3.0).abs() <= EPS_NONLINEAR_VALUE);
 }
 
 #[test]
@@ -572,7 +928,9 @@ fn affine_solver_is_invariant_under_independent_equation_scaling() {
     ];
 
     let solution =
-        solve_unique_affine_system(&mut rows, 2).expect("independently scaled unique system");
+        crate::decode::with_test_decode_ctx(|ctx| solve_unique_affine_system(ctx, &mut rows, 2))
+            .expect("service profile")
+            .expect("independently scaled unique system");
     assert!((solution[0] - 6.0).abs() <= 1.0e-12);
     assert!((solution[1] - 4.0).abs() <= 1.0e-12);
 }
@@ -602,26 +960,37 @@ fn solves_dimensioned_affine_simultaneous_equations() {
     assert_eq!(
         evaluation.solve_solutions[&2],
         [
-            CurveExpressionValue::Length(6.0),
-            CurveExpressionValue::Length(4.0),
+            CurveExpressionValue::Length(
+                cadmpeg_ir::scalar::FiniteReal::new(6.0).expect("finite relation fixture")
+            ),
+            CurveExpressionValue::Length(
+                cadmpeg_ir::scalar::FiniteReal::new(4.0).expect("finite relation fixture")
+            ),
         ]
     );
     assert_eq!(
         evaluation.assignments[0].value,
-        Some(CurveExpressionValue::Length(6.0))
+        Some(CurveExpressionValue::Length(
+            cadmpeg_ir::scalar::FiniteReal::new(6.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         evaluation.assignments[1].value,
-        Some(CurveExpressionValue::Length(4.0))
+        Some(CurveExpressionValue::Length(
+            cadmpeg_ir::scalar::FiniteReal::new(4.0).expect("finite relation fixture")
+        ))
     );
     assert_eq!(
         evaluation.assignments[2].value,
-        Some(quantity_value(
-            24.0,
-            RelationDimension::LENGTH
-                .scale(2)
-                .expect("squared length dimension")
-        ))
+        Some(
+            quantity_value(
+                24.0,
+                RelationDimension::LENGTH
+                    .scale(2)
+                    .expect("squared length dimension")
+            )
+            .expect("finite relation fixture")
+        )
     );
 }
 
@@ -650,8 +1019,12 @@ fn solves_affine_piecewise_expressions_with_unknown_independent_branches() {
     assert_eq!(
         evaluation.solve_solutions[&2],
         [
-            CurveExpressionValue::Length(6.0),
-            CurveExpressionValue::Length(2.0),
+            CurveExpressionValue::Length(
+                cadmpeg_ir::scalar::FiniteReal::new(6.0).expect("finite relation fixture")
+            ),
+            CurveExpressionValue::Length(
+                cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture")
+            ),
         ]
     );
 }
@@ -708,8 +1081,12 @@ fn solves_parallel_affine_clamps_deadbands_and_tolerance_tests() {
     assert_eq!(
         evaluation.solve_solutions[&2],
         [
-            CurveExpressionValue::Length(8.0),
-            CurveExpressionValue::Length(0.0),
+            CurveExpressionValue::Length(
+                cadmpeg_ir::scalar::FiniteReal::new(8.0).expect("finite relation fixture")
+            ),
+            CurveExpressionValue::Length(
+                cadmpeg_ir::scalar::FiniteReal::new(0.0).expect("finite relation fixture")
+            ),
         ]
     );
 }
@@ -766,8 +1143,10 @@ fn solves_affine_systems_with_different_unknown_dimensions() {
     assert_eq!(
         evaluation.solve_solutions[&4],
         [
-            CurveExpressionValue::Length(6.0),
-            quantity_value(2.0, RelationDimension::TIME),
+            CurveExpressionValue::Length(
+                cadmpeg_ir::scalar::FiniteReal::new(6.0).expect("finite relation fixture")
+            ),
+            quantity_value(2.0, RelationDimension::TIME).expect("finite relation fixture"),
         ]
     );
 }
@@ -796,8 +1175,10 @@ fn infers_independent_dimensions_for_untyped_solve_variables() {
     assert_eq!(
         evaluation.solve_solutions[&2],
         [
-            CurveExpressionValue::Length(6.0),
-            quantity_value(2.0, RelationDimension::TIME),
+            CurveExpressionValue::Length(
+                cadmpeg_ir::scalar::FiniteReal::new(6.0).expect("finite relation fixture")
+            ),
+            quantity_value(2.0, RelationDimension::TIME).expect("finite relation fixture"),
         ]
     );
 }
@@ -819,7 +1200,12 @@ fn infers_integral_dimensions_through_sqrt_for_untyped_variables() {
         offset: 0,
         for_offset: 1,
     };
-    let values = BTreeMap::from([("length".to_owned(), CurveExpressionValue::Length(2.0))]);
+    let values = BTreeMap::from([(
+        "length".to_owned(),
+        CurveExpressionValue::Length(
+            cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite relation fixture"),
+        ),
+    )]);
 
     assert_eq!(
         infer_solve_variable_dimensions(
@@ -852,6 +1238,135 @@ fn infers_integral_dimensions_through_sqrt_for_untyped_variables() {
 }
 
 #[test]
+fn dimension_components_refuse_collection_limit() {
+    let block = CurveExpressionSolveBlock {
+        equations: Vec::new(),
+        assignments: Vec::new(),
+        unknowns: vec![SolveUnknown {
+            name: "length".to_owned(),
+            solution: None,
+        }],
+        offset: 0,
+        for_offset: 1,
+    };
+    let error = with_collection_limit(7, |ctx| {
+        crate::curve::infer_solve_variable_dimensions(
+            ctx,
+            &block,
+            &BTreeMap::new(),
+            &[Some(RelationDimension::LENGTH)],
+            RelationEvaluationContext::default(),
+        )
+    })
+    .expect_err("dimension component allocation exceeds the limit");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo_solve_dimension_components"
+                && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+    ));
+}
+
+#[test]
+fn dimension_axis_refuses_collection_limit() {
+    let mut rows = vec![AffineEquationRow {
+        coefficients: vec![1.0],
+        rhs: 2.0,
+    }];
+    let error = with_collection_limit(1, |ctx| {
+        crate::curve::solve_dimension_axis(ctx, &mut rows, 1, &BTreeSet::from([0]))
+    })
+    .expect_err("axis solution allocation exceeds the limit");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo_solve_dimension_axis"
+                && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+    ));
+}
+
+#[test]
+fn dimension_pivot_rows_refuse_collection_limit() {
+    let mut rows = vec![AffineEquationRow {
+        coefficients: vec![1.0],
+        rhs: 2.0,
+    }];
+    let error = with_collection_limit(0, |ctx| {
+        crate::curve::solve_dimension_axis(ctx, &mut rows, 1, &BTreeSet::from([0]))
+    })
+    .expect_err("pivot row exceeds the collection limit");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo solve dimension pivot rows"
+                && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+    ));
+}
+
+fn nonlinear_seed_error(limit: u64) -> cadmpeg_core::CodecError {
+    with_collection_limit(limit, |ctx| {
+        crate::curve::nonlinear_initial_guesses(
+            ctx,
+            &[Some(CurveExpressionValue::Number(
+                cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture"),
+            ))],
+            &[RelationDimension::default()],
+        )
+    })
+    .expect_err("nonlinear seed allocation exceeds the limit")
+}
+
+#[test]
+fn nonlinear_zero_seed_refuses_collection_limit() {
+    assert!(matches!(
+        nonlinear_seed_error(2),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo_solve_seed_zero"
+                && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+    ));
+}
+
+#[test]
+fn nonlinear_magnitude_seed_refuses_collection_limit() {
+    assert!(matches!(
+        nonlinear_seed_error(4),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo_solve_seed_magnitude"
+                && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+    ));
+}
+
+#[test]
+fn nonlinear_axis_seed_refuses_collection_limit() {
+    assert!(matches!(
+        nonlinear_seed_error(23),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo_solve_seed_axis"
+                && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+    ));
+}
+
+#[test]
+fn nonlinear_initial_seed_refuses_collection_limit() {
+    assert!(matches!(
+        nonlinear_seed_error(0),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo solve initial seed"
+                && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+    ));
+}
+
+#[test]
+fn nonlinear_seed_rows_refuse_collection_limit() {
+    assert!(matches!(
+        nonlinear_seed_error(1),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo solve seed rows"
+                && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+    ));
+}
+
+#[test]
 fn preserves_reserved_quantity_dimensions_in_affine_systems() {
     let lines = [
         "acceleration=0[mm/s^2]",
@@ -872,7 +1387,8 @@ fn preserves_reserved_quantity_dimensions_in_affine_systems() {
 
     assert_eq!(
         evaluation.solve_solutions[&1],
-        [quantity_value(9_800.0, RelationDimension::ACCELERATION)]
+        [quantity_value(9_800.0, RelationDimension::ACCELERATION)
+            .expect("finite relation fixture")]
     );
 }
 
@@ -905,7 +1421,9 @@ fn unterminated_solve_block_cannot_create_assignments() {
         })
         .collect::<Vec<_>>();
 
-    let program = curve_expression_solve_program(&lines);
+    let program =
+        crate::decode::with_test_decode_ctx(|ctx| curve_expression_solve_program(ctx, &lines))
+            .expect("solve program");
     assert!(program.unresolved_control);
     assert!(program.blocks.is_empty());
     let assignments =

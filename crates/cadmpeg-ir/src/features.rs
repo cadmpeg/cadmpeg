@@ -10,33 +10,1184 @@ use crate::ids::{
     VertexId,
 };
 use crate::math::{Point2, Point3, Vector3};
-use crate::products::{JointId, NonEmptyString};
+use crate::products::JointId;
+use crate::scalar::{
+    Angle, FiniteReal, Fraction, InteriorAngle, Length, NonNegativeLength, NonZeroLength,
+    NonZeroReal, PositiveAngle, PositiveLength, PositiveReal, SlopeAngle,
+};
+use crate::transform::Transform;
+use crate::units::{FinitePoint2, FiniteVector, UnitVector3};
+use cadmpeg_core::text::NonBlankString;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
-use serde::{ser::SerializeStruct, Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
+
+macro_rules! selection_field_deserializer {
+    ($name:ident, $field:literal) => {
+        fn $name<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+            T: Deserialize<'de>,
+        {
+            T::deserialize(deserializer)
+                .map_err(|error| serde::de::Error::custom(format!("{}: {error}", $field)))
+        }
+    };
+}
+
+macro_rules! clone_copy_for_decode {
+    ($type:ty) => {
+        impl crate::features::decode_clone::CloneForDecode for $type {
+            fn try_clone_for_decode(
+                &self,
+                ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+                operation: &'static str,
+            ) -> Result<Self, cadmpeg_core::CodecError> {
+                ctx.charge_work(1, operation)?;
+                Ok(*self)
+            }
+        }
+    };
+}
+
+macro_rules! clone_record_for_decode {
+    ($type:ty $(, [$($generic:ident),+])?; { $($field:ident),* }) => {
+        rewrite_record!($type, [$($($generic),+)?]; {$($field),*});
+        impl $(<$($generic: crate::features::decode_clone::CloneForDecode),+>)?
+            crate::features::decode_clone::CloneForDecode for $type {
+            fn try_clone_for_decode(
+                &self,
+                ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+                clone_operation: &'static str,
+            ) -> Result<Self, cadmpeg_core::CodecError> {
+                let Self { $($field),* } = self;
+                Ok(Self { $($field: crate::features::decode_clone::CloneForDecode::try_clone_for_decode($field, ctx, clone_operation)?),* })
+            }
+        }
+    };
+    ($type:ty $(, [$($generic:ident),+])?; ( $($field:ident),* )) => {
+        rewrite_record!($type, [$($($generic),+)?]; ($($field),*));
+        impl $(<$($generic: crate::features::decode_clone::CloneForDecode),+>)?
+            crate::features::decode_clone::CloneForDecode for $type {
+            fn try_clone_for_decode(
+                &self,
+                ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+                clone_operation: &'static str,
+            ) -> Result<Self, cadmpeg_core::CodecError> {
+                let Self($($field),*) = self;
+                Ok(Self($(crate::features::decode_clone::CloneForDecode::try_clone_for_decode($field, ctx, clone_operation)?),*))
+            }
+        }
+    };
+}
+
+macro_rules! clone_enum_for_decode {
+    ($type:ty $(, [$($generic:ident),+])?; {
+        $($variant:ident $( ( $($tuple:ident),* ) )? $( { $($field:ident),* } )?),* $(,)?
+    }) => {
+        rewrite_enum!($type, [$($($generic),+)?]; { $($variant $(($($tuple),*))? $({$($field),*})?),* });
+        impl $(<$($generic: crate::features::decode_clone::CloneForDecode),+>)?
+            crate::features::decode_clone::CloneForDecode for $type {
+            fn try_clone_for_decode(
+                &self,
+                ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+                clone_operation: &'static str,
+            ) -> Result<Self, cadmpeg_core::CodecError> {
+                ctx.charge_work(1, clone_operation)?;
+                match self {
+                    $(Self::$variant $(($($tuple),*))? $({$($field),*})? => Ok(Self::$variant
+                        $(($(crate::features::decode_clone::CloneForDecode::try_clone_for_decode($tuple, ctx, clone_operation)?),*))?
+                        $({$($field: crate::features::decode_clone::CloneForDecode::try_clone_for_decode($field, ctx, clone_operation)?),*})?
+                    ),)*
+                }
+            }
+        }
+    };
+}
+
+mod body_selection;
+mod decode_clone;
+mod membership;
+mod selection_overlap;
+
+pub mod edge_treatments;
+use edge_treatments::{ChamferGroup, FilletGroup, FullRoundFilletGroup, RadiusSpec};
+
+pub mod holes;
+use holes::{HoleBottom, HolePlacement, HoleProfileFilter, HoleShape};
+
+pub mod patterns;
+use patterns::{PatternKind, PatternSeed};
+
+macro_rules! checked_feature_geometry {
+    ($(#[$meta:meta])* $name:ident, $raw:ident, $value:ident, $valid:expr, $error:literal $(, $getter:ident)*) => {
+        $(#[$meta])*
+        #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+        #[cfg_attr(feature = "schema", derive(JsonSchema))]
+        #[serde(transparent)]
+        pub struct $name($raw);
+        rewrite_scalar!($name);
+
+        impl $name {
+            /// Admit a value that satisfies the feature geometry bounds.
+            pub fn new($value: $raw) -> Option<Self> {
+                ($valid).then_some(Self($value))
+            }
+
+            $(checked_feature_geometry!(@getter $getter, $raw);)*
+        }
+
+        impl PartialEq<$raw> for $name {
+            fn eq(&self, other: &$raw) -> bool { self.0 == *other }
+        }
+
+        impl std::ops::Deref for $name {
+            type Target = $raw;
+            fn deref(&self) -> &$raw { &self.0 }
+        }
+
+        impl<'de> Deserialize<'de> for $name {
+            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                let value = $raw::deserialize(deserializer)?;
+                Self::try_from(value).map_err(serde::de::Error::custom)
+            }
+        }
+
+        impl TryFrom<$raw> for $name {
+            type Error = &'static str;
+            fn try_from(value: $raw) -> Result<Self, Self::Error> {
+                Self::new(value).ok_or($error)
+            }
+        }
+
+        impl From<$name> for $raw {
+            fn from(value: $name) -> Self { value.0 }
+        }
+    };
+    (@getter get, $raw:ident) => {
+        /// Return the geometric value.
+        pub const fn get(self) -> $raw { self.0 }
+    };
+    (@getter as_raw, $raw:ident) => {
+        /// Borrow the geometric value.
+        pub const fn as_raw(&self) -> &$raw { &self.0 }
+    };
+}
+
+checked_feature_geometry!(
+    /// A model-space point with finite coordinates.
+    FinitePoint3, Point3, value,
+    value.is_finite(),
+    "FinitePoint3 coordinates must be finite", get, as_raw
+);
+impl FinitePoint3 {
+    /// The model origin.
+    pub const ZERO: Self = Self(Point3 {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+    });
+
+    /// The point with three finite coordinates. Every coordinate is finite,
+    /// so the point is admitted without a check.
+    #[must_use]
+    pub const fn from_coordinates(x: FiniteReal, y: FiniteReal, z: FiniteReal) -> Self {
+        Self(Point3 {
+            x: x.get(),
+            y: y.get(),
+            z: z.get(),
+        })
+    }
+
+    /// Reflect through the model origin. Negation keeps every coordinate
+    /// finite, so the result stays admitted.
+    #[must_use]
+    pub fn negated(self) -> Self {
+        Self(Point3::new(-self.0.x, -self.0.y, -self.0.z))
+    }
+
+    /// The point with every coordinate times `scale`. The product is refused
+    /// only when a coordinate overflows.
+    #[must_use]
+    pub fn scaled(self, scale: PositiveReal) -> Option<Self> {
+        let scale = scale.get();
+        Self::new(Point3::new(
+            self.0.x * scale,
+            self.0.y * scale,
+            self.0.z * scale,
+        ))
+    }
+
+    /// Admit every point, or none of them.
+    pub(crate) fn array<const N: usize>(values: [Point3; N]) -> Option<[Self; N]> {
+        values
+            .iter()
+            .all(Point3::is_finite)
+            .then(|| values.map(Self))
+    }
+
+    /// The raw points of the array, for a reader that writes or edits them.
+    #[must_use]
+    pub fn raw_array<const N: usize>(values: [Self; N]) -> [Point3; N] {
+        values.map(Self::get)
+    }
+}
+
+impl From<FiniteVector<3>> for FinitePoint3 {
+    /// Carry three admitted finite coordinates into a model-space point.
+    fn from(value: FiniteVector<3>) -> Self {
+        let [x, y, z] = value.get();
+        Self(Point3::new(x, y, z))
+    }
+}
+
+checked_feature_geometry!(
+    /// A displacement with finite components, including zero.
+    FiniteVector3, Vector3, value,
+    value.is_finite(),
+    "FiniteVector3 components must be finite", get, as_raw
+);
+impl FiniteVector3 {
+    /// The zero displacement.
+    pub const ZERO: Self = Self(Vector3 {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+    });
+
+    /// The vector with three finite components. Every component is finite,
+    /// so the vector is admitted without a check.
+    #[must_use]
+    pub const fn from_components(x: FiniteReal, y: FiniteReal, z: FiniteReal) -> Self {
+        Self(Vector3 {
+            x: x.get(),
+            y: y.get(),
+            z: z.get(),
+        })
+    }
+
+    /// Use admitted vector coordinates as a finite point.
+    #[must_use]
+    pub const fn as_point(self) -> FinitePoint3 {
+        FinitePoint3(Point3 {
+            x: self.0.x,
+            y: self.0.y,
+            z: self.0.z,
+        })
+    }
+
+    /// Reverse all components.
+    #[must_use]
+    pub fn negated(self) -> Self {
+        Self(Vector3::new(-self.0.x, -self.0.y, -self.0.z))
+    }
+
+    /// Admit every vector, or none of them.
+    pub(crate) fn array<const N: usize>(values: [Vector3; N]) -> Option<[Self; N]> {
+        values
+            .iter()
+            .all(Vector3::is_finite)
+            .then(|| values.map(Self))
+    }
+
+    /// The raw vectors of the array, for a reader that writes or edits them.
+    #[must_use]
+    pub fn raw_array<const N: usize>(values: [Self; N]) -> [Vector3; N] {
+        values.map(Self::get)
+    }
+}
+
+checked_feature_geometry!(
+    /// A direction whose squared norm is finite and nonzero, so its length and
+    /// every product of two of its components are representable.
+    FeatureDirection3, Vector3, value,
+    value.dot(value).is_finite() && value.dot(value) > 0.0,
+    "FeatureDirection3 norm must be finite and nonzero", get
+);
+
+impl From<UnitVector3> for FiniteVector3 {
+    /// Carry an admitted unit direction as a finite displacement. Its
+    /// components are finite, so no admission can refuse it.
+    fn from(value: UnitVector3) -> Self {
+        Self(*value.as_raw())
+    }
+}
+
+impl UnitVector3 {
+    /// The cross product with another unit direction. Each component is a
+    /// difference of two products of components within rounding of one, so
+    /// it is finite and nothing is checked. The route lives beside
+    /// [`FiniteVector3`] because only this module constructs one.
+    #[must_use]
+    pub fn finite_cross(self, other: UnitVector3) -> FiniteVector3 {
+        FiniteVector3(self.as_raw().cross(*other.as_raw()))
+    }
+}
+
+impl Transform {
+    /// The translation column. The transform admits only finite entries, so
+    /// nothing is checked. The route lives beside [`FiniteVector3`] because
+    /// only this module constructs one.
+    #[must_use]
+    pub fn translation(self) -> FiniteVector3 {
+        let rows = self.affine_rows();
+        FiniteVector3(Vector3::new(rows[0][3], rows[1][3], rows[2][3]))
+    }
+
+    /// The columns of the linear part. The transform admits only finite
+    /// entries, so nothing is checked. The route lives beside
+    /// [`FiniteVector3`] because only this module constructs one.
+    #[must_use]
+    pub fn linear_columns(self) -> [FiniteVector3; 3] {
+        let rows = self.affine_rows();
+        std::array::from_fn(|column| {
+            FiniteVector3(Vector3::new(
+                rows[0][column],
+                rows[1][column],
+                rows[2][column],
+            ))
+        })
+    }
+}
+
+impl From<FeatureDirection3> for FiniteVector3 {
+    /// Carry an admitted direction as a finite displacement. A finite squared
+    /// norm states finite components, so no admission can refuse it.
+    fn from(value: FeatureDirection3) -> Self {
+        Self(value.0)
+    }
+}
+
+impl From<UnitVector3> for FeatureDirection3 {
+    /// Carry an admitted unit direction. Its components are finite and its
+    /// squared norm is within rounding of one, so no admission can refuse it.
+    fn from(value: UnitVector3) -> Self {
+        Self(*value.as_raw())
+    }
+}
+
+impl FeatureDirection3 {
+    /// The unit +z direction.
+    pub const Z_AXIS: Self = Self(Vector3 {
+        x: 0.0,
+        y: 0.0,
+        z: 1.0,
+    });
+
+    /// Reverse all components. Each product of two components keeps its
+    /// value under negation, so the squared norm is unchanged and the result
+    /// stays admitted.
+    #[must_use]
+    pub fn reversed(self) -> Self {
+        Self(Vector3::new(-self.0.x, -self.0.y, -self.0.z))
+    }
+
+    /// Canonicalize a unit input by replacing components of magnitude at most
+    /// `1e-12` with positive zero. A unit vector has a component above one
+    /// half in magnitude, so the result keeps a finite nonzero squared norm.
+    #[must_use]
+    pub fn from_unit_without_small_components(direction: UnitVector3) -> Self {
+        const EPS_CANONICAL_COMPONENT: f64 = 1.0e-12;
+        let component = |value: f64| {
+            if value.abs() <= EPS_CANONICAL_COMPONENT {
+                0.0
+            } else {
+                value
+            }
+        };
+        let value = direction.as_raw();
+        Self(Vector3::new(
+            component(value.x),
+            component(value.y),
+            component(value.z),
+        ))
+    }
+}
+
+checked_feature_geometry!(
+    /// A finite right-handed rigid feature placement.
+    FeatureRigidPlacement, Transform, value, value.is_proper_rigid(),
+    "FeatureRigidPlacement must be a finite right-handed rigid transform"
+);
+
+impl FeatureRigidPlacement {
+    /// Return the identity placement.
+    pub fn identity() -> Self {
+        Self(Transform::identity())
+    }
+
+    /// Replace the translation and keep the linear rows. Rigidity is a
+    /// condition on the linear rows alone, so the result keeps the admission
+    /// without a check.
+    #[must_use]
+    pub fn with_translation(self, translation: FiniteVector3) -> Self {
+        Self(self.0.with_translation(translation))
+    }
+
+    /// Scale the translation while keeping the admitted rigid linear rows.
+    #[must_use]
+    pub fn scaled_translation(self, scale: PositiveReal) -> Option<Self> {
+        Some(Self(self.0.scaled_translation(scale)?))
+    }
+}
+
+const EPS_FEATURE_UNIT_FRAME: f64 = 1.0e-9;
+
+/// A finite origin and two perpendicular unit directions.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "FeatureUnitPlaneFrameWire")]
+pub struct FeatureUnitPlaneFrame {
+    origin: FinitePoint3,
+    u_axis: UnitVector3,
+    v_axis: UnitVector3,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct FeatureUnitPlaneFrameWire {
+    /// Model-space origin.
+    origin: Point3,
+    /// First unit direction.
+    u_axis: Vector3,
+    /// Second unit direction.
+    v_axis: Vector3,
+}
+
+impl FeatureUnitPlaneFrame {
+    /// Admit a finite origin and perpendicular unit axes within the feature tolerance.
+    pub fn new(origin: Point3, u_axis: Vector3, v_axis: Vector3) -> Option<Self> {
+        let origin = FinitePoint3::new(origin)?;
+        let u_axis = UnitVector3::new(u_axis)?;
+        let v_axis = UnitVector3::new(v_axis)?;
+        Self::from_parts(origin, u_axis, v_axis)
+    }
+
+    /// Build a plane frame from checked parts; only perpendicularity remains to check.
+    pub fn from_parts(
+        origin: FinitePoint3,
+        u_axis: UnitVector3,
+        v_axis: UnitVector3,
+    ) -> Option<Self> {
+        (u_axis.as_raw().dot(*v_axis.as_raw()).abs() <= EPS_FEATURE_UNIT_FRAME).then_some(Self {
+            origin,
+            u_axis,
+            v_axis,
+        })
+    }
+
+    /// Replace the origin and keep the admitted axes. The axes alone satisfy
+    /// the frame contract, so the result needs no new admission.
+    #[must_use]
+    pub fn with_origin(self, origin: FinitePoint3) -> Self {
+        Self { origin, ..self }
+    }
+
+    /// Return the model-space origin.
+    pub fn origin(self) -> FinitePoint3 {
+        self.origin
+    }
+    /// Return the first unit direction.
+    pub fn u_axis(self) -> UnitVector3 {
+        self.u_axis
+    }
+    /// Return the second unit direction.
+    pub fn v_axis(self) -> UnitVector3 {
+        self.v_axis
+    }
+}
+
+impl TryFrom<FeatureUnitPlaneFrameWire> for FeatureUnitPlaneFrame {
+    type Error = &'static str;
+    fn try_from(wire: FeatureUnitPlaneFrameWire) -> Result<Self, Self::Error> {
+        Self::new(wire.origin, wire.u_axis, wire.v_axis)
+            .ok_or("feature plane requires a finite origin and perpendicular unit axes")
+    }
+}
+
+/// A finite right-handed coordinate frame with perpendicular unit axes.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    try_from = "FeatureCoordinateFrameWire",
+    into = "FeatureCoordinateFrameWire"
+)]
+pub struct FeatureCoordinateFrame {
+    plane: FeatureUnitPlaneFrame,
+    z_axis: UnitVector3,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct FeatureCoordinateFrameWire {
+    /// Model-space origin.
+    origin: Point3,
+    /// First unit axis of the frame.
+    x_axis: Vector3,
+    /// Second unit axis, perpendicular to `x_axis`.
+    y_axis: Vector3,
+    /// Third unit axis, completing a right-handed frame.
+    z_axis: Vector3,
+}
+
+impl FeatureCoordinateFrame {
+    /// Admit a finite right-handed frame within the feature unit-axis tolerance.
+    pub fn new(origin: Point3, x_axis: Vector3, y_axis: Vector3, z_axis: Vector3) -> Option<Self> {
+        let plane = FeatureUnitPlaneFrame::new(origin, x_axis, y_axis)?;
+        let z_axis = UnitVector3::new(z_axis)?;
+        Self::from_parts(plane, z_axis)
+    }
+
+    /// Build a frame from admitted axes and an admitted plane origin.
+    pub fn from_parts(plane: FeatureUnitPlaneFrame, z_axis: UnitVector3) -> Option<Self> {
+        let x_axis = *plane.u_axis().as_raw();
+        let y_axis = *plane.v_axis().as_raw();
+        let z = *z_axis.as_raw();
+        (x_axis.dot(z).abs() <= EPS_FEATURE_UNIT_FRAME
+            && y_axis.dot(z).abs() <= EPS_FEATURE_UNIT_FRAME
+            && x_axis.cross(y_axis).dot(z) >= 1.0 - EPS_FEATURE_UNIT_FRAME)
+            .then_some(Self { plane, z_axis })
+    }
+    /// Replace the origin and keep the admitted axes. The axes alone satisfy
+    /// the frame contract, so the result needs no new admission.
+    #[must_use]
+    pub fn with_origin(self, origin: FinitePoint3) -> Self {
+        Self {
+            plane: self.plane.with_origin(origin),
+            ..self
+        }
+    }
+    /// Return the model-space origin.
+    pub fn origin(self) -> FinitePoint3 {
+        self.plane.origin()
+    }
+    /// Return the x-axis.
+    pub fn x_axis(self) -> UnitVector3 {
+        self.plane.u_axis()
+    }
+    /// Return the y-axis.
+    pub fn y_axis(self) -> UnitVector3 {
+        self.plane.v_axis()
+    }
+    /// Return the z-axis.
+    pub fn z_axis(self) -> UnitVector3 {
+        self.z_axis
+    }
+}
+
+impl TryFrom<FeatureCoordinateFrameWire> for FeatureCoordinateFrame {
+    type Error = &'static str;
+    fn try_from(wire: FeatureCoordinateFrameWire) -> Result<Self, Self::Error> {
+        Self::new(wire.origin, wire.x_axis, wire.y_axis, wire.z_axis)
+            .ok_or("feature coordinate frame requires finite origin and right-handed perpendicular unit axes")
+    }
+}
+impl From<FeatureCoordinateFrame> for FeatureCoordinateFrameWire {
+    fn from(frame: FeatureCoordinateFrame) -> Self {
+        Self {
+            origin: frame.origin().get(),
+            x_axis: frame.x_axis().into(),
+            y_axis: frame.y_axis().into(),
+            z_axis: frame.z_axis().into(),
+        }
+    }
+}
+
+/// Two finite opposite image corners with nonzero extent in both coordinates.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "[Point2; 2]", into = "[Point2; 2]")]
+pub struct FeatureImageBounds([FinitePoint2; 2]);
+impl FeatureImageBounds {
+    /// Admit finite corners with nonzero width and height, in either order.
+    pub fn new(corners: [Point2; 2]) -> Option<Self> {
+        let [first, second] = corners;
+        let (Some(first), Some(second)) = (FinitePoint2::new(first), FinitePoint2::new(second))
+        else {
+            return None;
+        };
+        (first.u != second.u && first.v != second.v).then_some(Self([first, second]))
+    }
+    /// Return the opposite corners.
+    pub fn corners(self) -> [FinitePoint2; 2] {
+        self.0
+    }
+}
+impl TryFrom<[Point2; 2]> for FeatureImageBounds {
+    type Error = &'static str;
+    fn try_from(corners: [Point2; 2]) -> Result<Self, Self::Error> {
+        Self::new(corners).ok_or("image bounds require finite corners and nonzero width and height")
+    }
+}
+impl From<FeatureImageBounds> for [Point2; 2] {
+    fn from(bounds: FeatureImageBounds) -> Self {
+        bounds.0.map(FinitePoint2::get)
+    }
+}
+
+const EPS_FEATURE_PLANE_ORTHOGONAL: f64 = 1.0e-9;
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct FeaturePlaneFrameWire {
+    origin: Point3,
+    normal: Vector3,
+    u_axis: Vector3,
+}
+
+macro_rules! checked_feature_plane_frame {
+    ($(#[$meta:meta])* $name:ident, $normal_length:ident, $u_length:ident, $bound:expr) => {
+        $(#[$meta])*
+        #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+        #[cfg_attr(feature = "schema", derive(JsonSchema))]
+        #[serde(try_from = "FeaturePlaneFrameWire", into = "FeaturePlaneFrameWire")]
+        pub struct $name {
+            origin: FinitePoint3,
+            normal: FeatureDirection3,
+            u_axis: FeatureDirection3,
+        }
+        rewrite_scalar!($name);
+        impl $name {
+            /// Admit finite origin and nonzero perpendicular directions without normalizing them.
+            pub fn new(origin: Point3, normal: Vector3, u_axis: Vector3) -> Option<Self> {
+                let origin = FinitePoint3::new(origin)?;
+                let normal = FeatureDirection3::new(normal)?;
+                let u_axis = FeatureDirection3::new(u_axis)?;
+                Self::from_parts(origin, normal, u_axis)
+            }
+            /// Build a plane frame from admitted parts; only perpendicularity remains to check.
+            pub fn from_parts(origin: FinitePoint3, normal: FeatureDirection3, u_axis: FeatureDirection3) -> Option<Self> {
+                let $normal_length = normal.norm();
+                let $u_length = u_axis.norm();
+                if normal.dot(u_axis.get()).abs() > $bound { return None; }
+                Some(Self { origin, normal, u_axis })
+            }
+            /// Replace the origin and keep the admitted directions. The
+            /// orthogonality bound depends only on the directions, so the
+            /// result needs no new admission.
+            #[must_use]
+            pub fn with_origin(self, origin: FinitePoint3) -> Self { Self { origin, ..self } }
+            /// Return the model-space origin.
+            pub fn origin(self) -> FinitePoint3 { self.origin }
+            /// Return the plane normal with its original magnitude.
+            pub fn normal(self) -> FeatureDirection3 { self.normal }
+            /// Return the in-plane direction with its original magnitude.
+            pub fn u_axis(self) -> FeatureDirection3 { self.u_axis }
+        }
+        impl TryFrom<FeaturePlaneFrameWire> for $name {
+            type Error = &'static str;
+            fn try_from(wire: FeaturePlaneFrameWire) -> Result<Self, Self::Error> {
+                Self::new(wire.origin, wire.normal, wire.u_axis)
+                    .ok_or("plane frame requires finite origin and nonzero perpendicular directions")
+            }
+        }
+        impl From<$name> for FeaturePlaneFrameWire {
+            fn from(frame: $name) -> Self {
+                Self {
+                    origin: frame.origin().get(),
+                    normal: frame.normal().get(),
+                    u_axis: frame.u_axis().get(),
+                }
+            }
+        }
+    };
+}
+
+checked_feature_plane_frame!(
+    /// A datum-plane frame whose orthogonality bound scales with the product of direction norms.
+    FeatureDatumPlaneFrame, normal_length, u_length,
+    { let scale = normal_length * u_length; if !scale.is_finite() { return None; } EPS_FEATURE_PLANE_ORTHOGONAL * scale }
+);
+checked_feature_plane_frame!(
+    /// A resolved support-plane frame whose relative orthogonality bound scales each norm in order.
+    FeatureSupportPlaneFrame, normal_length, u_length,
+    EPS_FEATURE_PLANE_ORTHOGONAL * normal_length * u_length
+);
+
+/// A straight feature edge with distinct finite endpoints.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "FeatureLineSegmentWire")]
+pub struct FeatureLineSegment {
+    start: FinitePoint3,
+    end: FinitePoint3,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct FeatureLineSegmentWire {
+    /// Start point.
+    start: Point3,
+    /// End point.
+    end: Point3,
+}
+
+impl FeatureLineSegment {
+    /// Admit distinct finite line endpoints.
+    pub fn new(start: Point3, end: Point3) -> Option<Self> {
+        let start = FinitePoint3::new(start)?;
+        let end = FinitePoint3::new(end)?;
+        Self::from_parts(start, end)
+    }
+
+    /// Build a line from admitted endpoints, checking only that they differ.
+    pub fn from_parts(start: FinitePoint3, end: FinitePoint3) -> Option<Self> {
+        (start != end).then_some(Self { start, end })
+    }
+
+    /// Return the start point.
+    pub fn start(self) -> FinitePoint3 {
+        self.start
+    }
+
+    /// Return the end point.
+    pub fn end(self) -> FinitePoint3 {
+        self.end
+    }
+}
+
+impl TryFrom<FeatureLineSegmentWire> for FeatureLineSegment {
+    type Error = &'static str;
+    fn try_from(wire: FeatureLineSegmentWire) -> Result<Self, Self::Error> {
+        Self::new(wire.start, wire.end).ok_or("line start and end must be finite and distinct")
+    }
+}
+
+/// A finite feature polyline with distinct adjacent vertices and sufficient vertices for closure.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "FeaturePolylineWire")]
+pub struct FeaturePolyline {
+    points: Vec<FinitePoint3>,
+    closed: bool,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct FeaturePolylineWire {
+    /// Ordered vertices.
+    points: Vec<Point3>,
+    /// Whether the last vertex connects to the first.
+    closed: bool,
+}
+
+impl FeaturePolyline {
+    /// Admit a finite chain with at least two points, or three when closed.
+    pub fn new(points: Vec<Point3>, closed: bool) -> Option<Self> {
+        if points.len() < 2 || (closed && points.len() < 3) {
+            return None;
+        }
+        let points = points
+            .into_iter()
+            .map(FinitePoint3::new)
+            .collect::<Option<Vec<_>>>()?;
+        Self::from_parts(points, closed)
+    }
+
+    /// Build a polyline from finite points if its chain is admissible.
+    pub fn from_parts(points: Vec<FinitePoint3>, closed: bool) -> Option<Self> {
+        if points.len() < 2
+            || (closed && points.len() < 3)
+            || points.windows(2).any(|pair| pair[0] == pair[1])
+        {
+            return None;
+        }
+        Some(Self { points, closed })
+    }
+
+    /// Return the ordered vertices.
+    pub fn points(&self) -> &[FinitePoint3] {
+        &self.points
+    }
+
+    /// Whether the last vertex connects to the first.
+    pub fn closed(&self) -> bool {
+        self.closed
+    }
+}
+
+impl TryFrom<FeaturePolylineWire> for FeaturePolyline {
+    type Error = &'static str;
+    fn try_from(wire: FeaturePolylineWire) -> Result<Self, Self::Error> {
+        Self::new(wire.points, wire.closed).ok_or("polyline points must be finite, adjacent-distinct, and sufficient for its closed state")
+    }
+}
+
+/// Coordinate expressions over a finite increasing feature-curve domain.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    try_from = "FeatureEquationCurveWire",
+    into = "FeatureEquationCurveWire"
+)]
+pub struct FeatureEquationCurve {
+    parameter: String,
+    x_expression: String,
+    y_expression: String,
+    z_expression: String,
+    domain: crate::topology::IncreasingParameterInterval,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct FeatureEquationCurveWire {
+    /// Independent parameter symbol.
+    parameter: String,
+    /// Model-space x expression.
+    x_expression: String,
+    /// Model-space y expression.
+    y_expression: String,
+    /// Model-space z expression.
+    z_expression: String,
+    /// Inclusive lower parameter bound.
+    start: f64,
+    /// Inclusive upper parameter bound.
+    end: f64,
+}
+
+impl FeatureEquationCurve {
+    /// Admit nonblank expressions and finite increasing parameter bounds.
+    pub fn new(
+        parameter: String,
+        x_expression: String,
+        y_expression: String,
+        z_expression: String,
+        start: f64,
+        end: f64,
+    ) -> Option<Self> {
+        if [&parameter, &x_expression, &y_expression, &z_expression]
+            .into_iter()
+            .any(|value| value.trim().is_empty())
+        {
+            return None;
+        }
+        let domain = crate::topology::IncreasingParameterInterval::new([start, end])?;
+        Some(Self {
+            parameter,
+            x_expression,
+            y_expression,
+            z_expression,
+            domain,
+        })
+    }
+
+    /// Return the independent parameter symbol.
+    pub fn parameter(&self) -> &str {
+        &self.parameter
+    }
+
+    /// Return the model-space x expression.
+    pub fn x_expression(&self) -> &str {
+        &self.x_expression
+    }
+
+    /// Return the model-space y expression.
+    pub fn y_expression(&self) -> &str {
+        &self.y_expression
+    }
+
+    /// Return the model-space z expression.
+    pub fn z_expression(&self) -> &str {
+        &self.z_expression
+    }
+
+    /// Return the admitted parameter domain.
+    pub fn domain(&self) -> crate::topology::IncreasingParameterInterval {
+        self.domain
+    }
+}
+
+impl TryFrom<FeatureEquationCurveWire> for FeatureEquationCurve {
+    type Error = &'static str;
+    fn try_from(wire: FeatureEquationCurveWire) -> Result<Self, Self::Error> {
+        Self::new(wire.parameter, wire.x_expression, wire.y_expression, wire.z_expression, wire.start, wire.end)
+            .ok_or("equation-curve expressions must be nonblank and its start and end finite and increasing")
+    }
+}
+
+const EPS_FEATURE_ELLIPSE_AXES_ORTHO: f64 = 1.0e-9;
+
+/// A finite circular feature arc with a nonzero angular span.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "FeatureCircularArcWire", into = "FeatureCircularArcWire")]
+pub struct FeatureCircularArc {
+    center: FinitePoint3,
+    normal: FeatureDirection3,
+    radius: PositiveLength,
+    angles: crate::geometry::DirectedParameterRange,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct FeatureCircularArcWire {
+    /// Circle center.
+    center: Point3,
+    /// Circle-plane normal.
+    normal: Vector3,
+    /// Circle radius.
+    radius: PositiveLength,
+    /// Start of the directed angular interval, in radians.
+    start_angle: f64,
+    /// End of the directed angular interval, in radians.
+    end_angle: f64,
+}
+
+impl FeatureCircularArc {
+    /// Admit a finite circle frame and a nonzero angular interval.
+    pub fn new(
+        center: Point3,
+        normal: Vector3,
+        radius: PositiveLength,
+        angles: crate::geometry::DirectedParameterRange,
+    ) -> Option<Self> {
+        Some(Self::from_parts(
+            FinitePoint3::new(center)?,
+            FeatureDirection3::new(normal)?,
+            radius,
+            angles,
+        ))
+    }
+
+    /// Build an arc from checked parts. The argument types state the whole
+    /// arc contract, so nothing is checked again.
+    #[must_use]
+    pub const fn from_parts(
+        center: FinitePoint3,
+        normal: FeatureDirection3,
+        radius: PositiveLength,
+        angles: crate::geometry::DirectedParameterRange,
+    ) -> Self {
+        Self {
+            center,
+            normal,
+            radius,
+            angles,
+        }
+    }
+
+    /// Return the circle center.
+    pub fn center(self) -> FinitePoint3 {
+        self.center
+    }
+
+    /// Return the circle-plane normal.
+    pub fn normal(self) -> FeatureDirection3 {
+        self.normal
+    }
+
+    /// Return the radius.
+    pub fn radius(self) -> PositiveLength {
+        self.radius
+    }
+
+    /// Return the directed angular interval in radians.
+    pub fn angles(self) -> crate::geometry::DirectedParameterRange {
+        self.angles
+    }
+}
+
+impl TryFrom<FeatureCircularArcWire> for FeatureCircularArc {
+    type Error = &'static str;
+    fn try_from(wire: FeatureCircularArcWire) -> Result<Self, Self::Error> {
+        let angles =
+            crate::geometry::DirectedParameterRange::new([wire.start_angle, wire.end_angle])
+                .map_err(|_| "arc start_angle and end_angle must be finite and distinct")?;
+        Self::new(wire.center, wire.normal, wire.radius, angles)
+            .ok_or("circular-arc center must be finite and normal must have finite nonzero norm")
+    }
+}
+
+impl From<FeatureCircularArc> for FeatureCircularArcWire {
+    fn from(value: FeatureCircularArc) -> Self {
+        let [start_angle, end_angle] = value.angles.endpoints();
+        Self {
+            center: value.center.get(),
+            normal: value.normal.get(),
+            radius: value.radius,
+            start_angle,
+            end_angle,
+        }
+    }
+}
+
+/// A finite elliptic feature arc with perpendicular axes, ordered radii, and a nonzero angular span.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "FeatureEllipticArcWire", into = "FeatureEllipticArcWire")]
+pub struct FeatureEllipticArc {
+    center: FinitePoint3,
+    normal: FeatureDirection3,
+    major_axis: FeatureDirection3,
+    radii: [PositiveLength; 2],
+    angles: crate::geometry::DirectedParameterRange,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct FeatureEllipticArcWire {
+    /// Ellipse center.
+    center: Point3,
+    /// Ellipse-plane normal.
+    normal: Vector3,
+    /// Major-axis direction.
+    major_axis: Vector3,
+    /// Major semiaxis radius.
+    major_radius: PositiveLength,
+    /// Minor semiaxis radius.
+    minor_radius: PositiveLength,
+    /// Start of the directed angular interval, in radians.
+    start_angle: f64,
+    /// End of the directed angular interval, in radians.
+    end_angle: f64,
+}
+
+impl FeatureEllipticArc {
+    /// Admit a finite ellipse frame, major/minor radii, and a directed angular interval.
+    pub fn new(
+        center: Point3,
+        normal: Vector3,
+        major_axis: Vector3,
+        radii: [PositiveLength; 2],
+        angles: crate::geometry::DirectedParameterRange,
+    ) -> Option<Self> {
+        let center = FinitePoint3::new(center)?;
+        let normal = FeatureDirection3::new(normal)?;
+        let major_axis = FeatureDirection3::new(major_axis)?;
+        if normal.dot(major_axis.get()).abs() > EPS_FEATURE_ELLIPSE_AXES_ORTHO
+            || radii[1].get() > radii[0].get()
+        {
+            return None;
+        }
+        Some(Self {
+            center,
+            normal,
+            major_axis,
+            radii,
+            angles,
+        })
+    }
+
+    /// Replace the center and keep the admitted radii, directions and
+    /// interval. The center takes part in no other condition, so nothing is
+    /// checked.
+    #[must_use]
+    pub const fn with_center(self, center: FinitePoint3) -> Self {
+        Self { center, ..self }
+    }
+
+    /// The arc with both radii times `scale`, keeping the center, directions
+    /// and interval.
+    ///
+    /// Rounding is monotone, so the scaled radii keep their order; they can
+    /// round to one value, which the order admits. The scaled major radius is
+    /// refused when it overflows or rounds to zero, and the scaled minor
+    /// radius, which is not above it, when it rounds to zero.
+    #[must_use]
+    pub fn with_scaled_radii(self, scale: PositiveReal) -> Option<Self> {
+        let radii =
+            PositiveLength::scale_ordered_pair(self.radii.map(PositiveLength::get), scale).ok()?;
+        Some(Self { radii, ..self })
+    }
+
+    /// Return the ellipse center.
+    pub fn center(self) -> FinitePoint3 {
+        self.center
+    }
+
+    /// Return the ellipse-plane normal.
+    pub fn normal(self) -> FeatureDirection3 {
+        self.normal
+    }
+
+    /// Return the major-axis direction.
+    pub fn major_axis(self) -> FeatureDirection3 {
+        self.major_axis
+    }
+
+    /// Return the major and minor semiaxis radii.
+    pub fn radii(self) -> [PositiveLength; 2] {
+        self.radii
+    }
+
+    /// Return the directed angular interval in radians.
+    pub fn angles(self) -> crate::geometry::DirectedParameterRange {
+        self.angles
+    }
+}
+
+impl TryFrom<FeatureEllipticArcWire> for FeatureEllipticArc {
+    type Error = &'static str;
+    fn try_from(wire: FeatureEllipticArcWire) -> Result<Self, Self::Error> {
+        let angles =
+            crate::geometry::DirectedParameterRange::new([wire.start_angle, wire.end_angle])
+                .map_err(|_| "arc start_angle and end_angle must be finite and distinct")?;
+        Self::new(
+            wire.center,
+            wire.normal,
+            wire.major_axis,
+            [wire.major_radius, wire.minor_radius],
+            angles,
+        )
+        .ok_or("elliptic-arc center, axes, or major/minor radius order is invalid")
+    }
+}
+
+impl From<FeatureEllipticArc> for FeatureEllipticArcWire {
+    fn from(value: FeatureEllipticArc) -> Self {
+        let [start_angle, end_angle] = value.angles.endpoints();
+        let [major_radius, minor_radius] = value.radii;
+        Self {
+            center: value.center.get(),
+            normal: value.normal.get(),
+            major_axis: value.major_axis.get(),
+            major_radius,
+            minor_radius,
+            start_angle,
+            end_angle,
+        }
+    }
+}
 
 /// Resolved pull frame of a draft anchor.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct DraftPull {
     /// Pull direction used to measure the draft angle.
-    pub direction: Vector3,
+    pub direction: FeatureDirection3,
     /// Datum-plane feature that supplied the direction, when retained.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_plane"
+    )]
     pub plane: Option<FeatureId>,
 }
 
 /// Selection form and pull frame of a draft operation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum DraftAnchor {
     /// A neutral plane remains fixed during the operation.
     NeutralPlane {
         /// Neutral-plane selection.
         plane: FaceSelection,
         /// Explicit pull frame, when the source retains one.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_pull"
+        )]
         pull: Option<DraftPull>,
     },
     /// A parting tool and its pull frame define a parting-line draft.
@@ -57,244 +1208,81 @@ impl DraftAnchor {
             Self::PartingLine { pull, .. } => Some(pull),
         }
     }
-
-    /// Mutable pull frame retained by this anchor, when available.
-    #[must_use]
-    pub fn pull_mut(&mut self) -> Option<&mut DraftPull> {
-        match self {
-            Self::NeutralPlane { pull, .. } => pull.as_mut(),
-            Self::PartingLine { pull, .. } => Some(pull),
-        }
-    }
 }
 
-#[cfg(feature = "schema")]
-#[derive(JsonSchema)]
-#[expect(dead_code, reason = "fields define the draft-anchor wire schema")]
-struct DraftAnchorSchemaWire {
-    neutral_plane: FaceSelection,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    parting_tool: Option<FaceSelection>,
-    pull_direction: Option<Vector3>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pull_plane: Option<FeatureId>,
-}
-
-mod draft_anchor_wire {
-    use super::{DraftAnchor, DraftPull, FaceSelection, FeatureId, Vector3};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    #[derive(Serialize, Deserialize)]
-    struct Wire {
-        neutral_plane: FaceSelection,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        parting_tool: Option<FaceSelection>,
-        pull_direction: Option<Vector3>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        pull_plane: Option<FeatureId>,
-    }
-
-    pub fn serialize<S>(value: &DraftAnchor, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let (neutral_plane, parting_tool, pull) = match value {
-            DraftAnchor::NeutralPlane { plane, pull } => (plane.clone(), None, pull.as_ref()),
-            DraftAnchor::PartingLine { tool, pull } => {
-                (FaceSelection::Unresolved, Some(tool.clone()), Some(pull))
-            }
-        };
-        Wire {
-            neutral_plane,
-            parting_tool,
-            pull_direction: pull.map(|pull| pull.direction),
-            pull_plane: pull.and_then(|pull| pull.plane.clone()),
-        }
-        .serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<DraftAnchor, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = Wire::deserialize(deserializer)?;
-        let pull = match (wire.pull_direction, wire.pull_plane) {
-            (Some(direction), plane) => Some(DraftPull { direction, plane }),
-            (None, None) => None,
-            (None, Some(_)) => {
-                return Err(serde::de::Error::custom(
-                    "draft pull plane requires a pull direction",
-                ));
-            }
-        };
-        match (wire.neutral_plane, wire.parting_tool, pull) {
-            (FaceSelection::Unresolved, Some(tool), Some(pull)) => {
-                Ok(DraftAnchor::PartingLine { tool, pull })
-            }
-            (FaceSelection::Unresolved, Some(_), None) => Err(serde::de::Error::custom(
-                "parting-line draft requires a pull direction",
-            )),
-            (plane, None, pull) => Ok(DraftAnchor::NeutralPlane { plane, pull }),
-            (_, Some(_), _) => Err(serde::de::Error::custom(
-                "draft cannot carry both a neutral plane and a parting tool",
-            )),
-        }
-    }
-}
-
-crate::ids::reference_id_type!(
+crate::ids::id_type!(
     /// Identifies a neutral construction feature.
-    FeatureId
+    FeatureId, compose, into_string, key
 );
 
-crate::ids::reference_id_type!(
+crate::ids::id_type!(
     /// Identifies a neutral design configuration.
-    ConfigurationId
+    ConfigurationId, compose
 );
-
-/// Resolution state of a configuration's source display name.
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(untagged)]
-pub enum ConfigurationName {
-    /// Source display name.
-    Resolved(String),
-    /// Source configuration exists but its display name is not established.
-    #[default]
-    Unresolved,
-}
-
-impl ConfigurationName {
-    /// Return the source display name when resolved.
-    pub fn resolved(&self) -> Option<&str> {
-        match self {
-            Self::Resolved(value) => Some(value),
-            Self::Unresolved => None,
-        }
-    }
-
-    /// Return the mutable source display name when resolved.
-    pub fn resolved_mut(&mut self) -> Option<&mut String> {
-        match self {
-            Self::Resolved(value) => Some(value),
-            Self::Unresolved => None,
-        }
-    }
-
-    /// Whether the source display name remains unresolved.
-    pub fn is_unresolved(&self) -> bool {
-        matches!(self, Self::Unresolved)
-    }
-}
-
-impl From<String> for ConfigurationName {
-    fn from(value: String) -> Self {
-        Self::Resolved(value)
-    }
-}
-
-impl From<&str> for ConfigurationName {
-    fn from(value: &str) -> Self {
-        Self::Resolved(value.to_string())
-    }
-}
-
-impl PartialEq<str> for ConfigurationName {
-    fn eq(&self, other: &str) -> bool {
-        self.resolved() == Some(other)
-    }
-}
-
-impl PartialEq<&str> for ConfigurationName {
-    fn eq(&self, other: &&str) -> bool {
-        self == *other
-    }
-}
-
-impl PartialEq<String> for ConfigurationName {
-    fn eq(&self, other: &String) -> bool {
-        self == other.as_str()
-    }
-}
-
-#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(untagged)]
-/// Resolution state of one configuration's complete body membership.
-pub enum ConfigurationBodies {
-    /// Complete ordered body membership.
-    Resolved(Vec<BodyId>),
-    /// Source configuration exists but its body membership is not established.
-    #[default]
-    Unresolved,
-}
-
-impl ConfigurationBodies {
-    /// Return complete body membership when resolved.
-    pub fn resolved(&self) -> Option<&[BodyId]> {
-        match self {
-            Self::Resolved(value) => Some(value),
-            Self::Unresolved => None,
-        }
-    }
-    /// Whether body membership remains unresolved.
-    pub fn is_unresolved(&self) -> bool {
-        matches!(self, Self::Unresolved)
-    }
-    /// Iterate over resolved membership; unresolved membership yields no values.
-    pub fn iter(&self) -> std::slice::Iter<'_, BodyId> {
-        self.resolved().unwrap_or_default().iter()
-    }
-    /// Number of resolved members; zero when unresolved.
-    pub fn len(&self) -> usize {
-        self.resolved().map_or(0, <[BodyId]>::len)
-    }
-    /// Whether resolved membership is empty; false when unresolved.
-    pub fn is_empty(&self) -> bool {
-        self.resolved().is_some_and(<[BodyId]>::is_empty)
-    }
-}
-
-impl PartialEq<Vec<BodyId>> for ConfigurationBodies {
-    fn eq(&self, other: &Vec<BodyId>) -> bool {
-        self.resolved() == Some(other.as_slice())
-    }
-}
-
-impl<'a> IntoIterator for &'a ConfigurationBodies {
-    type Item = &'a BodyId;
-    type IntoIter = std::slice::Iter<'a, BodyId>;
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
-    }
-}
 
 /// A named parametric model variant.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct DesignConfiguration {
     /// Globally unique configuration id.
     pub id: ConfigurationId,
     /// Position in the design configuration list.
+    #[serde(default)]
     pub ordinal: u32,
     /// Whether this configuration supplies the document's active model state.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub active: bool,
     /// Format-native configuration slot, when distinct from list order.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_source_index"
+    )]
     pub source_index: Option<u32>,
     /// Source display name, when established.
-    pub name: ConfigurationName,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_name"
+    )]
+    pub name: Option<String>,
     /// Material override, when present.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_material"
+    )]
     pub material: Option<String>,
     /// Configuration-local named values not otherwise represented.
-    pub properties: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+    pub properties: BTreeMap<NonBlankString, String>,
     /// Configuration-specific source expressions keyed by the overridden parameter.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub parameter_overrides: BTreeMap<ParameterId, String>,
     /// Bodies present when this configuration is active.
-    pub bodies: ConfigurationBodies,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_bodies"
+    )]
+    pub bodies: Option<DistinctMembers<BodyId>>,
     /// Evaluated parameter state when this configuration is active.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub parameter_values: BTreeMap<ParameterId, ParameterValue>,
     /// Evaluated feature operation state when this configuration is active.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub feature_states: BTreeMap<FeatureId, ConfigurationFeatureState>,
     /// Identifier of the full-fidelity record in a native namespace.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
     pub native_ref: Option<String>,
 }
 
@@ -307,161 +1295,20 @@ impl DesignConfiguration {
     }
 }
 
-#[derive(Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub(crate) struct DesignConfigurationReadWire {
-    id: ConfigurationId,
-    #[serde(default)]
-    ordinal: u32,
-    #[serde(default)]
-    active: bool,
-    #[serde(default)]
-    source_index: Option<u32>,
-    #[serde(default)]
-    name: ConfigurationName,
-    #[serde(default)]
-    material: Option<String>,
-    #[serde(default)]
-    properties: BTreeMap<String, String>,
-    #[serde(default)]
-    parameter_overrides: BTreeMap<ParameterId, String>,
-    #[serde(default)]
-    suppressed_features: Vec<FeatureId>,
-    #[serde(default)]
-    bodies: ConfigurationBodies,
-    #[serde(default)]
-    parameter_values: BTreeMap<ParameterId, ParameterValue>,
-    #[serde(default)]
-    feature_states: BTreeMap<FeatureId, ConfigurationFeatureState>,
-    #[serde(default)]
-    native_ref: Option<String>,
-}
-
-impl DesignConfigurationReadWire {
-    pub(crate) fn into_configuration(self) -> Result<DesignConfiguration, String> {
-        let mut listed = HashSet::new();
-        for feature_id in &self.suppressed_features {
-            if !listed.insert(feature_id.clone()) {
-                return Err(format!(
-                    "configuration repeats suppressed feature `{}`",
-                    feature_id.0
-                ));
-            }
-            let Some(state) = self.feature_states.get(feature_id) else {
-                return Err(format!(
-                    "configuration suppressed feature `{}` has no configuration feature state",
-                    feature_id.0
-                ));
-            };
-            if !state.evaluation.is_suppressed() {
-                return Err(format!(
-                    "configuration suppression disagrees with feature state `{}`",
-                    feature_id.0
-                ));
-            }
-        }
-        if let Some(feature) = self.feature_states.iter().find_map(|(feature, state)| {
-            (state.evaluation.is_suppressed() && !listed.contains(feature)).then_some(feature)
-        }) {
-            return Err(format!(
-                "configuration feature state `{}` is suppressed but absent from suppressed_features",
-                feature.0
-            ));
-        }
-        Ok(DesignConfiguration {
-            id: self.id,
-            ordinal: self.ordinal,
-            active: self.active,
-            source_index: self.source_index,
-            name: self.name,
-            material: self.material,
-            properties: self.properties,
-            parameter_overrides: self.parameter_overrides,
-            bodies: self.bodies,
-            parameter_values: self.parameter_values,
-            feature_states: self.feature_states,
-            native_ref: self.native_ref,
-        })
-    }
-}
-
-impl Serialize for DesignConfiguration {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let suppressed_features = self.suppressed_features().collect::<Vec<_>>();
-        let mut state = serializer.serialize_struct("DesignConfiguration", 13)?;
-        state.serialize_field("id", &self.id)?;
-        state.serialize_field("ordinal", &self.ordinal)?;
-        if self.active {
-            state.serialize_field("active", &self.active)?;
-        }
-        if let Some(source_index) = self.source_index {
-            state.serialize_field("source_index", &source_index)?;
-        }
-        if !self.name.is_unresolved() {
-            state.serialize_field("name", &self.name)?;
-        }
-        if let Some(material) = &self.material {
-            state.serialize_field("material", material)?;
-        }
-        if !self.properties.is_empty() {
-            state.serialize_field("properties", &self.properties)?;
-        }
-        if !self.parameter_overrides.is_empty() {
-            state.serialize_field("parameter_overrides", &self.parameter_overrides)?;
-        }
-        if !suppressed_features.is_empty() {
-            state.serialize_field("suppressed_features", &suppressed_features)?;
-        }
-        if !self.bodies.is_unresolved() {
-            state.serialize_field("bodies", &self.bodies)?;
-        }
-        if !self.parameter_values.is_empty() {
-            state.serialize_field("parameter_values", &self.parameter_values)?;
-        }
-        if !self.feature_states.is_empty() {
-            state.serialize_field("feature_states", &self.feature_states)?;
-        }
-        if let Some(native_ref) = &self.native_ref {
-            state.serialize_field("native_ref", native_ref)?;
-        }
-        state.end()
-    }
-}
-
-impl<'de> Deserialize<'de> for DesignConfiguration {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        DesignConfigurationReadWire::deserialize(deserializer)?
-            .into_configuration()
-            .map_err(serde::de::Error::custom)
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for DesignConfiguration {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "DesignConfiguration".into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        DesignConfigurationReadWire::json_schema(generator)
-    }
-}
-
 /// Configuration-local evaluation state for one construction feature.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct ConfigurationFeatureState {
     /// Whether evaluation produced bodies or was suppressed.
     pub evaluation: ConfigurationEvaluation,
     /// Earlier features consumed during regeneration in source operand order.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub dependencies: Vec<FeatureId>,
+    #[serde(
+        default,
+        skip_serializing_if = "DistinctMembers::is_empty",
+        deserialize_with = "deserialize_dependencies"
+    )]
+    pub dependencies: DistinctMembers<FeatureId>,
     /// Evaluated construction semantics in the configuration.
     pub definition: FeatureDefinition,
 }
@@ -472,13 +1319,13 @@ pub struct ConfigurationFeatureState {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ConfigurationEvaluation {
     /// The feature is suppressed for this configuration.
-    Suppressed,
+    Suppressed {},
     /// The feature is active; the output list may be empty for operations
     /// whose neutral result is carried by the surrounding topology.
     Active {
         /// Bodies produced or modified in the configuration.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        outputs: Vec<BodyId>,
+        #[serde(default, skip_serializing_if = "DistinctMembers::is_empty")]
+        outputs: DistinctMembers<BodyId>,
     },
 }
 
@@ -497,8 +1344,22 @@ impl<'de> Deserialize<'de> for ConfigurationEvaluation {
             },
         }
         Ok(match Wire::deserialize(deserializer)? {
-            Wire::Suppressed {} => Self::Suppressed,
-            Wire::Active { outputs } => Self::Active { outputs },
+            Wire::Suppressed {} => Self::Suppressed {},
+            Wire::Active { outputs } => {
+                let mut seen = std::collections::HashSet::new();
+                seen.try_reserve(outputs.len())
+                    .map_err(serde::de::Error::custom)?;
+                for output in &outputs {
+                    if !seen.insert(output) {
+                        return Err(serde::de::Error::custom(
+                            "outputs: members must be distinct",
+                        ));
+                    }
+                }
+                Self::Active {
+                    outputs: DistinctMembers(outputs),
+                }
+            }
         })
     }
 }
@@ -507,32 +1368,37 @@ impl ConfigurationEvaluation {
     /// Whether evaluation of the feature is suppressed.
     #[must_use]
     pub const fn is_suppressed(&self) -> bool {
-        matches!(self, Self::Suppressed)
+        matches!(self, Self::Suppressed {})
     }
 
     /// Bodies produced or modified by an active feature.
     #[must_use]
     pub fn outputs(&self) -> &[BodyId] {
         match self {
-            Self::Suppressed => &[],
+            Self::Suppressed {} => &[],
             Self::Active { outputs } => outputs,
         }
     }
 }
 
-crate::ids::reference_id_type!(
+crate::ids::id_type!(
     /// Identifies a neutral design parameter.
-    ParameterId
+    ParameterId, compose, key
 );
 
 /// A named design expression, optionally owned by a construction feature.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct DesignParameter {
     /// Globally unique parameter id.
     pub id: ParameterId,
     /// Feature that consumes this parameter; absent for a document parameter.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_owner"
+    )]
     pub owner: Option<FeatureId>,
     /// Position among parameters in the same ownership scope.
     #[serde(default)]
@@ -542,35 +1408,61 @@ pub struct DesignParameter {
     /// Literal or expression text used by the source system.
     pub expression: String,
     /// Geometric display semantics carried by the dimension expression.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_display"
+    )]
     pub display: Option<DimensionDisplay>,
     /// Evaluated scalar when available.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_value"
+    )]
     pub value: Option<ParameterValue>,
     /// Parameters referenced by `expression`, in source expression order.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub dependencies: Vec<ParameterId>,
+    #[serde(
+        default,
+        skip_serializing_if = "DistinctMembers::is_empty",
+        deserialize_with = "deserialize_dependencies"
+    )]
+    pub dependencies: DistinctMembers<ParameterId>,
     /// Source parameter properties not represented by another field.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub properties: BTreeMap<String, String>,
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+    pub properties: BTreeMap<NonBlankString, String>,
     /// Product-manufacturing dimension semantics, when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_pmi"
+    )]
     pub pmi: Option<ParameterPmi>,
     /// Identifier of the full-fidelity source parameter record.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
     pub native_ref: Option<String>,
 }
 
 /// Product-manufacturing semantics attached to a design parameter.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct ParameterPmi {
     /// Semantic dimension family.
     pub subtype: PmiDimensionSubtype,
     /// Display precision carried by the semantic annotation.
     pub precision: i64,
     /// Native formatted dimension text.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_display_text"
+    )]
     pub display_text: Option<String>,
     /// Basic-dimension flag.
     pub basic: bool,
@@ -586,6 +1478,7 @@ pub struct ParameterPmi {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "native_kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum PmiDimensionSubtype {
     /// Linear distance.
     Linear,
@@ -607,6 +1500,7 @@ pub enum PmiDimensionSubtype {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum DimensionDisplay {
     /// Displays the dimension as a diameter.
     Diameter,
@@ -617,14 +1511,19 @@ pub enum DimensionDisplay {
 /// Canonical scalar value of a literal design parameter.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum ParameterValue {
     /// Length in canonical millimeters.
     Length(Length),
     /// Angle in canonical radians.
     Angle(Angle),
     /// Dimensionless real scalar.
-    Real(f64),
+    Real(#[serde(deserialize_with = "deserialize_parameter_real")] FiniteReal),
     /// Integer scalar.
     Integer(i64),
     /// Boolean scalar.
@@ -633,22 +1532,100 @@ pub enum ParameterValue {
     String(String),
 }
 
-/// A length in canonical millimeters.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(transparent)]
-pub struct Length(pub f64);
+crate::units::named_field!(deserialize_parameter_real, FiniteReal, "value");
 
-/// An angle in canonical radians.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+fn deserialize_dependencies<'de, D, T>(deserializer: D) -> Result<DistinctMembers<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de> + Eq + std::hash::Hash,
+{
+    crate::units::deserialize_named(deserializer, "dependencies")
+}
+
+/// A polygon side count of at least three.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
-pub struct Angle(pub f64);
+pub struct PolygonSideCount(u32);
+
+impl PolygonSideCount {
+    /// Admits a side count of at least three.
+    pub fn new(value: u32) -> Option<Self> {
+        (value >= 3).then_some(Self(value))
+    }
+}
+
+impl<'de> Deserialize<'de> for PolygonSideCount {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::new(u32::deserialize(deserializer)?)
+            .ok_or_else(|| serde::de::Error::custom("polygon sides must be at least three"))
+    }
+}
+
+/// A feature definition and the bodies its evaluation produces.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FeatureEvaluation {
+    definition: FeatureDefinition,
+    outputs: DistinctMembers<BodyId>,
+}
+
+impl FeatureEvaluation {
+    /// Construct an evaluation from its semantics and produced bodies.
+    #[must_use]
+    pub const fn new(definition: FeatureDefinition, outputs: DistinctMembers<BodyId>) -> Self {
+        Self {
+            definition,
+            outputs,
+        }
+    }
+
+    /// Construct an evaluation with no produced bodies.
+    #[must_use]
+    pub const fn from_definition(definition: FeatureDefinition) -> Self {
+        Self {
+            definition,
+            outputs: DistinctMembers(Vec::new()),
+        }
+    }
+
+    /// Consume the evaluation and return its semantics and produced bodies.
+    pub fn into_parts(self) -> (FeatureDefinition, DistinctMembers<BodyId>) {
+        (self.definition, self.outputs)
+    }
+
+    /// Return the neutral construction semantics.
+    pub const fn definition(&self) -> &FeatureDefinition {
+        &self.definition
+    }
+
+    /// Return the produced or modified body identities.
+    pub const fn outputs(&self) -> &Vec<BodyId> {
+        &self.outputs.0
+    }
+
+    /// Edit the semantics and the produced bodies together.
+    pub fn edit(
+        &mut self,
+        edit: impl FnOnce(&mut FeatureDefinition, &mut DistinctMembers<BodyId>),
+    ) {
+        edit(&mut self.definition, &mut self.outputs);
+    }
+
+    /// Replace the construction semantics.
+    pub fn set_definition(&mut self, definition: FeatureDefinition) {
+        self.definition = definition;
+    }
+
+    /// Replace the produced body identities.
+    pub fn set_outputs(&mut self, outputs: DistinctMembers<BodyId>) {
+        self.outputs = outputs;
+    }
+}
 
 /// An ordered neutral construction feature and its resulting bodies.
 ///
-/// Prefer [`Feature::new`] for invariant-bearing construction. There is no
-/// public [`Default`]: an empty id with an arbitrary definition is illegal.
+/// Construction requires an admitted identity and feature evaluation. There is
+/// no public [`Default`]: an empty id with an arbitrary definition is illegal.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Feature {
     /// Globally unique feature id.
@@ -660,41 +1637,19 @@ pub struct Feature {
     /// Whether evaluation of this feature is disabled.
     pub suppressed: Option<bool>,
     /// Earlier features consumed during regeneration, in source operand order.
-    pub dependencies: Vec<FeatureId>,
+    pub dependencies: DistinctMembers<FeatureId>,
     /// Source operation attributes not consumed by the neutral definition.
-    pub source_properties: BTreeMap<String, String>,
+    pub source_properties: BTreeMap<NonBlankString, String>,
     /// Source XML element name for the operation record.
     pub source_tag: Option<String>,
     /// Text payload of a source leaf operation.
     pub source_text: Option<String>,
     /// Ordered source text, parameter, and child-feature content.
-    pub source_content: Vec<FeatureSourceContent>,
-    /// Bodies produced or modified by the feature.
-    pub outputs: Vec<BodyId>,
-    /// Neutral construction semantics.
-    pub definition: FeatureDefinition,
+    pub source_content: FeatureContent,
+    /// Construction semantics and their admitted resulting bodies.
+    pub evaluation: FeatureEvaluation,
     /// Identifier of the full-fidelity record in a native namespace.
     pub native_ref: Option<String>,
-}
-
-impl Feature {
-    /// Construct a feature from its identity, construction order, and definition.
-    pub fn new(id: FeatureId, ordinal: u64, definition: FeatureDefinition) -> Self {
-        Self {
-            id,
-            ordinal,
-            name: None,
-            suppressed: None,
-            dependencies: Vec::new(),
-            source_properties: BTreeMap::new(),
-            source_tag: None,
-            source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition,
-            native_ref: None,
-        }
-    }
 }
 
 #[derive(Serialize)]
@@ -704,18 +1659,19 @@ pub(crate) struct FeatureWriteWire<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     name: &'a Option<String>,
     suppressed: &'a Option<bool>,
+    /// Regeneration predecessor of a feature that has no tree parent.
     #[serde(skip_serializing_if = "Option::is_none")]
-    parent: Option<&'a FeatureId>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    dependencies: &'a Vec<FeatureId>,
+    regeneration_parent: Option<&'a FeatureId>,
+    #[serde(skip_serializing_if = "DistinctMembers::is_empty")]
+    dependencies: &'a DistinctMembers<FeatureId>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-    source_properties: &'a BTreeMap<String, String>,
+    source_properties: &'a BTreeMap<NonBlankString, String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     source_tag: &'a Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     source_text: &'a Option<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    source_content: &'a Vec<FeatureSourceContent>,
+    #[serde(skip_serializing_if = "FeatureContent::is_empty")]
+    source_content: &'a FeatureContent,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     outputs: &'a Vec<BodyId>,
     definition: &'a FeatureDefinition,
@@ -724,76 +1680,151 @@ pub(crate) struct FeatureWriteWire<'a> {
 }
 
 impl<'a> FeatureWriteWire<'a> {
-    pub(crate) fn new(feature: &'a Feature, parent: Option<&'a FeatureId>) -> Self {
+    pub(crate) fn new(feature: &'a Feature, regeneration_parent: Option<&'a FeatureId>) -> Self {
         Self {
             id: &feature.id,
             ordinal: feature.ordinal,
             name: &feature.name,
             suppressed: &feature.suppressed,
-            parent,
+            regeneration_parent,
             dependencies: &feature.dependencies,
             source_properties: &feature.source_properties,
             source_tag: &feature.source_tag,
             source_text: &feature.source_text,
             source_content: &feature.source_content,
-            outputs: &feature.outputs,
-            definition: &feature.definition,
+            outputs: feature.evaluation.outputs(),
+            definition: feature.evaluation.definition(),
             native_ref: &feature.native_ref,
         }
     }
 
-    pub(crate) fn standalone(feature: &'a Feature) -> Self {
+    fn standalone(feature: &'a Feature) -> Self {
         Self::new(feature, None)
     }
 }
 
+/// One row of the model route's feature list.
+///
+/// `regeneration_parent` is a model-route datum: the read hands it to
+/// [`crate::document::Model`] with the feature, which is the only owner that
+/// can place the edge. The standalone route reads [`FeatureReadWire`], which
+/// declares no such field, so the difference between the two routes is a
+/// field, not a check.
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub(crate) struct FeatureReadWire {
+#[serde(deny_unknown_fields)]
+pub(crate) struct FeatureRowWire {
     id: FeatureId,
     ordinal: u64,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_name")]
     name: Option<String>,
-    #[serde(default)]
+    #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
     suppressed: Option<bool>,
+    #[serde(default, deserialize_with = "deserialize_regeneration_parent")]
+    regeneration_parent: Option<FeatureId>,
+    #[serde(default, deserialize_with = "deserialize_dependencies")]
+    dependencies: DistinctMembers<FeatureId>,
     #[serde(default)]
-    parent: Option<FeatureId>,
-    #[serde(default)]
-    dependencies: Vec<FeatureId>,
-    #[serde(default)]
-    source_properties: BTreeMap<String, String>,
-    #[serde(default)]
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+    source_properties: BTreeMap<NonBlankString, String>,
+    #[serde(default, deserialize_with = "deserialize_source_tag")]
     source_tag: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_source_text")]
     source_text: Option<String>,
     #[serde(default)]
-    source_content: Vec<FeatureSourceContent>,
+    source_content: FeatureContent,
     #[serde(default)]
-    outputs: Vec<BodyId>,
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<BodyId>"))]
+    outputs: DistinctMembers<BodyId>,
     definition: FeatureDefinition,
+    #[serde(default, deserialize_with = "deserialize_native_ref")]
+    native_ref: Option<String>,
+}
+
+impl FeatureRowWire {
+    pub(crate) fn into_parts(self) -> (Feature, Option<FeatureId>) {
+        let regeneration_parent = self.regeneration_parent;
+        let feature = FeatureReadWire {
+            id: self.id,
+            ordinal: self.ordinal,
+            name: self.name,
+            suppressed: self.suppressed,
+            dependencies: self.dependencies,
+            source_properties: self.source_properties,
+            source_tag: self.source_tag,
+            source_text: self.source_text,
+            source_content: self.source_content,
+            outputs: self.outputs,
+            definition: self.definition,
+            native_ref: self.native_ref,
+        }
+        .into_feature();
+        (feature, regeneration_parent)
+    }
+}
+
+/// The standalone feature wire: one feature outside any model.
+///
+/// It declares no `regeneration_parent`, so a row of the model route does not
+/// read back as a standalone feature and the parent edge cannot arrive without
+/// the model that owns it. `deny_unknown_fields` states the refusal.
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct FeatureReadWire {
+    id: FeatureId,
+    ordinal: u64,
+    #[serde(default, deserialize_with = "deserialize_name")]
+    name: Option<String>,
+    #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+    suppressed: Option<bool>,
+    #[serde(default, deserialize_with = "deserialize_dependencies")]
+    dependencies: DistinctMembers<FeatureId>,
     #[serde(default)]
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+    source_properties: BTreeMap<NonBlankString, String>,
+    #[serde(default, deserialize_with = "deserialize_source_tag")]
+    source_tag: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_source_text")]
+    source_text: Option<String>,
+    #[serde(default)]
+    source_content: FeatureContent,
+    #[serde(default)]
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<BodyId>"))]
+    outputs: DistinctMembers<BodyId>,
+    definition: FeatureDefinition,
+    #[serde(default, deserialize_with = "deserialize_native_ref")]
     native_ref: Option<String>,
 }
 
 impl FeatureReadWire {
-    pub(crate) fn into_parts(self) -> (Feature, Option<FeatureId>) {
-        (
-            Feature {
-                id: self.id,
-                ordinal: self.ordinal,
-                name: self.name,
-                suppressed: self.suppressed,
-                dependencies: self.dependencies,
-                source_properties: self.source_properties,
-                source_tag: self.source_tag,
-                source_text: self.source_text,
-                source_content: self.source_content,
-                outputs: self.outputs,
-                definition: self.definition,
-                native_ref: self.native_ref,
-            },
-            self.parent,
-        )
+    fn into_feature(self) -> Feature {
+        Feature {
+            id: self.id,
+            ordinal: self.ordinal,
+            name: self.name,
+            suppressed: self.suppressed,
+            dependencies: self.dependencies,
+            source_properties: self.source_properties,
+            source_tag: self.source_tag,
+            source_text: self.source_text,
+            source_content: self.source_content,
+            evaluation: FeatureEvaluation::new(self.definition, self.outputs),
+            native_ref: self.native_ref,
+        }
+    }
+}
+
+/// Read one feature outside any model.
+///
+/// The model route reads `FeatureRowWire` and splits the row with `into_parts`.
+/// Standalone reconstruction reads the same feature fields without a parent edge.
+impl<'de> Deserialize<'de> for Feature {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Ok(FeatureReadWire::deserialize(deserializer)?.into_feature())
     }
 }
 
@@ -803,21 +1834,6 @@ impl Serialize for Feature {
         S: serde::Serializer,
     {
         FeatureWriteWire::standalone(self).serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for Feature {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let (feature, parent) = FeatureReadWire::deserialize(deserializer)?.into_parts();
-        if parent.is_some() {
-            return Err(serde::de::Error::custom(
-                "a feature parent requires its owning model",
-            ));
-        }
-        Ok(feature)
     }
 }
 
@@ -835,26 +1851,168 @@ impl JsonSchema for Feature {
 /// Typed topology membership at one feature's evaluation input.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct FeatureInputTopology {
     /// Globally unique state id.
     pub id: FeatureInputTopologyId,
     /// Feature evaluated from this state.
     pub input_of: FeatureId,
     /// Bodies present in this state.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub bodies: Vec<HistoricalBodyId>,
+    #[serde(default, skip_serializing_if = "DistinctMembers::is_empty")]
+    pub bodies: DistinctMembers<HistoricalBodyId>,
     /// Faces present in this state.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub faces: Vec<HistoricalFaceId>,
+    #[serde(default, skip_serializing_if = "DistinctMembers::is_empty")]
+    pub faces: DistinctMembers<HistoricalFaceId>,
     /// Edges present in this state.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub edges: Vec<HistoricalEdgeId>,
+    #[serde(default, skip_serializing_if = "DistinctMembers::is_empty")]
+    pub edges: DistinctMembers<HistoricalEdgeId>,
     /// Vertices present in this state.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub vertices: Vec<HistoricalVertexId>,
+    #[serde(default, skip_serializing_if = "DistinctMembers::is_empty")]
+    pub vertices: DistinctMembers<HistoricalVertexId>,
     /// Full-fidelity source state reference.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
     pub native_ref: Option<String>,
+}
+
+/// One member of a feature result state: a body, face, edge, or vertex.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
+pub enum SelectionMember {
+    /// A feature-local body identity.
+    Body {
+        /// Feature-local identity.
+        id: NonBlankString,
+    },
+    /// A feature-local face identity.
+    Face {
+        /// Feature-local identity.
+        id: NonBlankString,
+    },
+    /// A feature-local edge identity.
+    Edge {
+        /// Feature-local identity.
+        id: NonBlankString,
+    },
+    /// A feature-local vertex identity.
+    Vertex {
+        /// Feature-local identity.
+        id: NonBlankString,
+    },
+}
+
+/// The members of a feature result state, sorted into kinds.
+///
+/// The wire carries one non-empty member list, so "all four lists are empty"
+/// has no spelling and no arm refuses it.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(
+    try_from = "NonEmptyMembers<SelectionMember>",
+    into = "Vec<SelectionMember>"
+)]
+pub struct FeatureResultMembers {
+    bodies: Vec<NonBlankString>,
+    faces: Vec<NonBlankString>,
+    edges: Vec<NonBlankString>,
+    vertices: Vec<NonBlankString>,
+}
+
+/// Refusal for a feature result member list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum FeatureResultMemberError {
+    /// The member list carries no member.
+    #[error(transparent)]
+    Members(#[from] BodySelectionError),
+    /// A feature-local body identity occurs more than once.
+    #[error("feature result bodies must be distinct")]
+    RepeatedBody,
+    /// A feature-local face identity occurs more than once.
+    #[error("feature result faces must be distinct")]
+    RepeatedFace,
+    /// A feature-local edge identity occurs more than once.
+    #[error("feature result edges must be distinct")]
+    RepeatedEdge,
+    /// A feature-local vertex identity occurs more than once.
+    #[error("feature result vertices must be distinct")]
+    RepeatedVertex,
+}
+
+impl TryFrom<NonEmptyMembers<SelectionMember>> for FeatureResultMembers {
+    type Error = FeatureResultMemberError;
+
+    fn try_from(members: NonEmptyMembers<SelectionMember>) -> Result<Self, Self::Error> {
+        let mut sorted = Self {
+            bodies: Vec::new(),
+            faces: Vec::new(),
+            edges: Vec::new(),
+            vertices: Vec::new(),
+        };
+        for member in members {
+            let (target, id) = match member {
+                SelectionMember::Body { id } => (&mut sorted.bodies, id),
+                SelectionMember::Face { id } => (&mut sorted.faces, id),
+                SelectionMember::Edge { id } => (&mut sorted.edges, id),
+                SelectionMember::Vertex { id } => (&mut sorted.vertices, id),
+            };
+            target
+                .try_reserve(1)
+                .map_err(|_| BodySelectionError::Allocation)?;
+            target.push(id);
+        }
+        sorted
+            .validate(&membership::StandardAdmission)
+            .map_err(|_| FeatureResultMemberError::Members(BodySelectionError::Allocation))?
+    }
+}
+
+impl FeatureResultMembers {
+    /// Admit distinct local members in each arena, retaining their source order.
+    pub fn new(
+        bodies: Vec<NonBlankString>,
+        faces: Vec<NonBlankString>,
+        edges: Vec<NonBlankString>,
+        vertices: Vec<NonBlankString>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Result<Self, FeatureResultMemberError>, cadmpeg_core::decode::ResourceLimit> {
+        Self {
+            bodies,
+            faces,
+            edges,
+            vertices,
+        }
+        .validate(&membership::DecodeAdmission { ctx, operation })
+    }
+
+    fn validate<S: membership::Admission>(
+        self,
+        admission: &S,
+    ) -> Result<Result<Self, FeatureResultMemberError>, S::Error> {
+        admission.work(0)?;
+        if self.bodies.is_empty()
+            && self.faces.is_empty()
+            && self.edges.is_empty()
+            && self.vertices.is_empty()
+        {
+            return Ok(Err(BodySelectionError::Empty.into()));
+        }
+        for (error, values) in [
+            (FeatureResultMemberError::RepeatedBody, &self.bodies),
+            (FeatureResultMemberError::RepeatedFace, &self.faces),
+            (FeatureResultMemberError::RepeatedEdge, &self.edges),
+            (FeatureResultMemberError::RepeatedVertex, &self.vertices),
+        ] {
+            if !membership::distinct(admission, values, values.len(), |_| true)? {
+                return Ok(Err(error));
+            }
+        }
+        Ok(Ok(self))
+    }
 }
 
 /// Persistent feature-local topology identities in one regenerated result.
@@ -865,32 +2023,176 @@ pub struct FeatureInputTopology {
 /// identity.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct FeatureResultTopology {
     /// Globally unique result-state id.
     pub id: FeatureResultTopologyId,
     /// Feature that produces this state.
     pub output_of: FeatureId,
-    /// Feature-local body identities in stable source order.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub bodies: Vec<String>,
-    /// Feature-local face identities in stable source order.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub faces: Vec<String>,
-    /// Feature-local edge identities in stable source order.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub edges: Vec<String>,
-    /// Feature-local vertex identities in stable source order.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub vertices: Vec<String>,
+    /// Feature-local identities in stable source order, tagged by arena.
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<SelectionMember>"))]
+    members: FeatureResultMembers,
     /// Full-fidelity source state reference.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
     pub native_ref: Option<String>,
 }
 
+impl FeatureResultTopology {
+    /// Construct a result record from checked local members.
+    pub fn new(
+        id: FeatureResultTopologyId,
+        output_of: FeatureId,
+        members: FeatureResultMembers,
+        native_ref: Option<String>,
+    ) -> Self {
+        Self {
+            id,
+            output_of,
+            members,
+            native_ref,
+        }
+    }
+
+    /// Feature-local body identities.
+    pub fn bodies(&self) -> &[NonBlankString] {
+        &self.members.bodies
+    }
+    /// Feature-local face identities.
+    pub fn faces(&self) -> &[NonBlankString] {
+        &self.members.faces
+    }
+    /// Feature-local edge identities.
+    pub fn edges(&self) -> &[NonBlankString] {
+        &self.members.edges
+    }
+    /// Feature-local vertex identities.
+    pub fn vertices(&self) -> &[NonBlankString] {
+        &self.members.vertices
+    }
+}
+
+/// Ordered source content with distinct parameter and child-feature references.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct FeatureContent(Vec<FeatureSourceContent>);
+
+impl TryFrom<Vec<FeatureSourceContent>> for FeatureContent {
+    type Error = FeatureCollectionError;
+    fn try_from(value: Vec<FeatureSourceContent>) -> Result<Self, Self::Error> {
+        Self::build(&membership::StandardAdmission, value)
+            .map_err(|_| FeatureCollectionError::Invalid("source content allocation failed"))?
+            .map_err(FeatureCollectionError::Invalid)
+    }
+}
+impl FeatureContent {
+    /// Admit distinct references while retaining repeated text and source order.
+    pub fn new(
+        value: Vec<FeatureSourceContent>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, FeatureCollectionError> {
+        Self::build(&membership::DecodeAdmission { ctx, operation }, value)?
+            .map_err(FeatureCollectionError::Invalid)
+    }
+
+    fn build<S: membership::Admission>(
+        admission: &S,
+        value: Vec<FeatureSourceContent>,
+    ) -> Result<Result<Self, &'static str>, S::Error> {
+        let mut count = 0;
+        for item in &value {
+            admission.work(1)?;
+            if !matches!(item, FeatureSourceContent::Text(_)) {
+                count += 1;
+            }
+        }
+        if !membership::distinct(admission, &value, count, |item| {
+            !matches!(item, FeatureSourceContent::Text(_))
+        })? {
+            return Ok(Err(
+                "source_content repeats a parameter or child-feature reference",
+            ));
+        }
+        Ok(Ok(Self(value)))
+    }
+
+    /// Constructs text-only content in source order, retaining repeated text.
+    pub fn text(values: impl IntoIterator<Item = String>) -> Self {
+        Self(values.into_iter().map(FeatureSourceContent::Text).collect())
+    }
+
+    /// Append decoded content without repeating a parameter or child-feature reference.
+    pub fn push(
+        &mut self,
+        value: FeatureSourceContent,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<(), FeatureCollectionError> {
+        if !matches!(value, FeatureSourceContent::Text(_)) {
+            for member in &self.0 {
+                ctx.charge_work_limit(1, operation)?;
+                if member == &value {
+                    return Err(FeatureCollectionError::Invalid(
+                        "source_content repeats a parameter or child-feature reference",
+                    ));
+                }
+            }
+        }
+        ctx.reserve_vec_limit(&mut self.0, 1, operation)?;
+        self.0.push(value);
+        Ok(())
+    }
+
+    /// Reserves capacity for additional ordered source-content entries.
+    pub fn reserve_for_decode(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        additional: usize,
+        operation: &'static str,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        ctx.reserve_capacity_limit(&mut self.0, additional, operation)
+            .map_err(Into::into)
+    }
+
+    /// Whether the sequence has no content.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl std::ops::Deref for FeatureContent {
+    type Target = [FeatureSourceContent];
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<'a> IntoIterator for &'a FeatureContent {
+    type Item = &'a FeatureSourceContent;
+    type IntoIter = std::slice::Iter<'a, FeatureSourceContent>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+impl<'de> Deserialize<'de> for FeatureContent {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let values = Vec::<FeatureSourceContent>::deserialize(deserializer)?;
+        Self::build(&membership::StandardAdmission, values)
+            .map_err(serde::de::Error::custom)?
+            .map_err(serde::de::Error::custom)
+    }
+}
 /// One item in a source feature's mixed-content sequence.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum FeatureSourceContent {
     /// Literal text between child records.
     Text(String),
@@ -901,137 +2203,25 @@ pub enum FeatureSourceContent {
 }
 
 /// Parametric support of an offset datum plane.
-///
-/// The untagged representation retains the legacy feature-id string while face
-/// selections use their existing tagged object representation.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "reference", rename_all = "snake_case", deny_unknown_fields)]
 pub enum DatumPlaneReference {
     /// Another datum-plane feature.
-    Feature(FeatureId),
+    Feature {
+        /// Referenced datum-plane feature.
+        feature: FeatureId,
+    },
     /// A selected planar face whose geometry defines the support plane.
-    Face(FaceSelection),
+    Face {
+        /// Selected planar face.
+        face: FaceSelection,
+    },
     /// A resolved support plane without a face identity.
     ResolvedPlane {
-        /// Point on the support plane.
-        origin: Point3,
-        /// Support-plane normal.
-        normal: Vector3,
-        /// Positive-u direction in the support plane.
-        u_axis: Vector3,
+        /// Finite support plane with nonzero perpendicular directions.
+        frame: FeatureSupportPlaneFrame,
     },
-}
-
-#[derive(Serialize)]
-#[serde(untagged)]
-enum DatumPlaneReferenceWireRef<'a> {
-    Feature(&'a FeatureId),
-    Face {
-        face: &'a FaceSelection,
-    },
-    ResolvedPlane {
-        face: FaceSelection,
-        origin: &'a Point3,
-        normal: &'a Vector3,
-        u_axis: &'a Vector3,
-    },
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(untagged)]
-enum DatumPlaneReferenceWire {
-    Feature(FeatureId),
-    LegacyFace(DatumPlaneLegacyFaceWire),
-    Face(DatumPlaneFaceWire),
-    ResolvedPlane(DatumResolvedPlaneWire),
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
-struct DatumPlaneLegacyFaceWire {
-    face: FaceSelection,
-    origin: Point3,
-    normal: Vector3,
-    u_axis: Vector3,
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
-struct DatumPlaneFaceWire {
-    face: FaceSelection,
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
-struct DatumResolvedPlaneWire {
-    origin: Point3,
-    normal: Vector3,
-    u_axis: Vector3,
-}
-
-impl Serialize for DatumPlaneReference {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        match self {
-            Self::Feature(feature) => DatumPlaneReferenceWireRef::Feature(feature),
-            Self::Face(face) => DatumPlaneReferenceWireRef::Face { face },
-            Self::ResolvedPlane {
-                origin,
-                normal,
-                u_axis,
-            } => DatumPlaneReferenceWireRef::ResolvedPlane {
-                face: FaceSelection::Unresolved,
-                origin,
-                normal,
-                u_axis,
-            },
-        }
-        .serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for DatumPlaneReference {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        Ok(match DatumPlaneReferenceWire::deserialize(deserializer)? {
-            DatumPlaneReferenceWire::Feature(feature) => Self::Feature(feature),
-            DatumPlaneReferenceWire::LegacyFace(DatumPlaneLegacyFaceWire {
-                face: FaceSelection::Unresolved,
-                origin,
-                normal,
-                u_axis,
-            })
-            | DatumPlaneReferenceWire::ResolvedPlane(DatumResolvedPlaneWire {
-                origin,
-                normal,
-                u_axis,
-            }) => Self::ResolvedPlane {
-                origin,
-                normal,
-                u_axis,
-            },
-            DatumPlaneReferenceWire::LegacyFace(DatumPlaneLegacyFaceWire { face, .. })
-            | DatumPlaneReferenceWire::Face(DatumPlaneFaceWire { face }) => Self::Face(face),
-        })
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for DatumPlaneReference {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "DatumPlaneReference".into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        DatumPlaneReferenceWire::json_schema(generator)
-    }
 }
 
 /// Sketch point operand resolved by a datum-point construction or retained in
@@ -1039,6 +2229,7 @@ impl JsonSchema for DatumPlaneReference {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SketchPointSelection {
     /// Selection exists semantically but its sketch entity is not resolved.
     Unresolved,
@@ -1068,6 +2259,7 @@ pub enum SketchPointSelection {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum DatumPointConstruction {
     /// Center of one selected circular edge.
     CircleCenter {
@@ -1106,7 +2298,7 @@ pub enum DatumPointConstruction {
         /// Selected edge.
         edge: EdgeSelection,
         /// Fraction from the path start in the closed interval from zero through one.
-        fraction: f64,
+        fraction: Fraction,
     },
 }
 
@@ -1114,6 +2306,7 @@ pub enum DatumPointConstruction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum DecalMapping {
     /// Scale the complete raster to the selected faces' native parameter domain.
     FitToFaces,
@@ -1121,31 +2314,29 @@ pub enum DecalMapping {
 
 impl DatumPointConstruction {
     /// Return construction features referenced by this rule.
-    pub fn feature_references(&self) -> Vec<&FeatureId> {
-        match self {
-            Self::ThreePlaneIntersection { planes } => planes
-                .iter()
-                .filter_map(|plane| match plane {
-                    DatumPlaneReference::Feature(feature) => Some(feature),
-                    DatumPlaneReference::Face(_) | DatumPlaneReference::ResolvedPlane { .. } => {
-                        None
-                    }
-                })
-                .collect(),
+    pub fn feature_references(&self) -> impl Iterator<Item = &FeatureId> {
+        let references = match self {
+            Self::ThreePlaneIntersection { planes } => planes.each_ref().map(|plane| match plane {
+                DatumPlaneReference::Feature { feature } => Some(feature),
+                DatumPlaneReference::Face { .. } | DatumPlaneReference::ResolvedPlane { .. } => {
+                    None
+                }
+            }),
             Self::EdgePlaneIntersection {
-                plane: DatumPlaneReference::Feature(feature),
+                plane: DatumPlaneReference::Feature { feature },
                 ..
-            } => vec![feature],
+            } => [Some(feature), None, None],
             Self::Vertex {
                 vertex: VertexSelection::Generated { vertex, .. },
-            } => vec![&vertex.feature],
+            } => [Some(&vertex.feature), None, None],
             Self::CircleCenter { .. }
             | Self::TwoEdgeIntersection { .. }
             | Self::Vertex { .. }
             | Self::SketchPoint { .. }
             | Self::EdgePlaneIntersection { .. }
-            | Self::DistanceOnEdge { .. } => Vec::new(),
-        }
+            | Self::DistanceOnEdge { .. } => [None; 3],
+        };
+        references.into_iter().flatten()
     }
 }
 
@@ -1268,21 +2459,337 @@ impl Default for LoftGuidance {
     }
 }
 
-/// Neutral construction semantics, with an explicit native escape hatch.
+fn known_body_count(selection: &BodySelection) -> Option<usize> {
+    match selection {
+        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
+            Some(bodies.len())
+        }
+        BodySelection::Local { bodies, .. } => Some(bodies.len()),
+        BodySelection::ResolvedSet { members } => Some(members.count()),
+        BodySelection::Historical { bodies, .. } => Some(bodies.len()),
+        BodySelection::HistoricalSet { members, .. } => Some(members.count()),
+        BodySelection::Generated { bodies, .. } => Some(bodies.len()),
+        BodySelection::Unresolved | BodySelection::Native(_) | BodySelection::NativeSet(_) => None,
+    }
+}
+
+/// A body selection with at least two members when membership is resolved.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct SewBodySelection(BodySelection);
+
+impl TryFrom<BodySelection> for SewBodySelection {
+    type Error = &'static str;
+    fn try_from(bodies: BodySelection) -> Result<Self, Self::Error> {
+        if known_body_count(&bodies).is_some_and(|count| count < 2) {
+            return Err("bodies must select at least two bodies for sewing");
+        }
+        Ok(Self(bodies))
+    }
+}
+
+impl std::ops::Deref for SewBodySelection {
+    type Target = BodySelection;
+    fn deref(&self) -> &BodySelection {
+        &self.0
+    }
+}
+
+impl AsRef<BodySelection> for SewBodySelection {
+    fn as_ref(&self) -> &BodySelection {
+        &self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for SewBodySelection {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::try_from(BodySelection::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+    }
+}
+
+macro_rules! selection_operands {
+    ($name:ident, $wire:ident, $selection:ty, $first:ident, $second:ident, $arity:expr, $overlap:ident $(, $edit:ident)?) => {
+        /// Two admitted operand selections for one feature operation.
+        #[derive(Debug, Clone, PartialEq, Serialize)]
+        #[cfg_attr(feature = "schema", derive(JsonSchema))]
+        pub struct $name {
+            $first: $selection,
+            $second: $selection,
+        }
+
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct $wire {
+            $first: $selection,
+            $second: $selection,
+        }
+
+        impl $name {
+            /// Admit the operand arity and disjoint membership.
+            pub fn new(
+                $first: $selection,
+                $second: $selection,
+                ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+            ) -> Result<Result<Self, &'static str>, cadmpeg_core::decode::ResourceLimit> {
+                Self::build(ctx, $first, $second)
+            }
+
+            fn build<S: selection_overlap::OverlapAdmission>(
+                admission: &S,
+                $first: $selection,
+                $second: $selection,
+            ) -> Result<Result<Self, &'static str>, S::Error> {
+                admission.work(0)?;
+                if !($arity)(&$first)
+                    || selection_overlap::$overlap(admission, &$first, &$second)?
+                {
+                    return Ok(Err(concat!(
+                        stringify!($first),
+                        " and ",
+                        stringify!($second),
+                        " must have valid arity and disjoint membership"
+                    )));
+                }
+                Ok(Ok(Self { $first, $second }))
+            }
+
+            /// Return the first operand selection.
+            pub fn $first(&self) -> &$selection {
+                &self.$first
+            }
+
+            /// Return the second operand selection.
+            pub fn $second(&self) -> &$selection {
+                &self.$second
+            }
+
+            $(
+            /// Admit both edited selections before replacing either operand.
+            pub fn $edit(
+                &mut self,
+                edit: impl FnOnce(&mut $selection, &mut $selection),
+            ) -> Result<(), &'static str> {
+                let mut first = self.$first.clone();
+                let mut second = self.$second.clone();
+                edit(&mut first, &mut second);
+                *self = selection_overlap::standard_result(Self::build(
+                    &selection_overlap::StandardAdmission, first, second,
+                ))?;
+                Ok(())
+            }
+            )?
+        }
+
+        impl<'de> Deserialize<'de> for $name {
+            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                let wire = $wire::deserialize(deserializer)?;
+                selection_overlap::standard_result(Self::build(
+                    &selection_overlap::StandardAdmission, wire.$first, wire.$second,
+                )).map_err(serde::de::Error::custom)
+            }
+        }
+    };
+}
+
+selection_operands!(
+    FaceBlendOperands,
+    FaceBlendOperandsWire,
+    FaceSelection,
+    first_faces,
+    second_faces,
+    |_: &FaceSelection| true,
+    face_selections_overlap
+);
+selection_operands!(
+    ReplaceFaceOperands,
+    ReplaceFaceOperandsWire,
+    FaceSelection,
+    targets,
+    replacements,
+    |_: &FaceSelection| true,
+    face_selections_overlap,
+    try_edit
+);
+selection_operands!(
+    SectionOperands,
+    SectionOperandsWire,
+    BodySelection,
+    first,
+    second,
+    |_: &BodySelection| true,
+    body_selections_overlap
+);
+selection_operands!(
+    CombineOperands,
+    CombineOperandsWire,
+    BodySelection,
+    target,
+    tools,
+    |first| known_body_count(first).is_none_or(|count| count == 1),
+    body_selections_overlap,
+    try_edit
+);
+selection_operands!(
+    TrimBodyOperands,
+    TrimBodyOperandsWire,
+    BodySelection,
+    targets,
+    tools,
+    |_: &BodySelection| true,
+    body_selections_overlap
+);
+
+impl CombineOperands {
+    /// Move both selections out of this admitted pair.
+    pub fn into_parts(self) -> (BodySelection, BodySelection) {
+        (self.target, self.tools)
+    }
+}
+
+impl ReplaceFaceOperands {
+    /// Move both selections out of this admitted pair.
+    pub fn into_parts(self) -> (FaceSelection, FaceSelection) {
+        (self.targets, self.replacements)
+    }
+}
+
+/// Distinct tree children and an optional active member.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct TreeChildren {
+    #[serde(default, skip_serializing_if = "DistinctMembers::is_empty")]
+    children: DistinctMembers<FeatureId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    active_child: Option<FeatureId>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TreeChildrenWire {
+    #[serde(default)]
+    children: Vec<FeatureId>,
+    #[serde(default, deserialize_with = "deserialize_active_child")]
+    active_child: Option<FeatureId>,
+}
+
+impl TreeChildren {
+    /// Admit distinct children and an active member through the decode budget.
+    pub fn new(
+        children: Vec<FeatureId>,
+        active_child: Option<FeatureId>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Self, FeatureCollectionError> {
+        Self::build(
+            &membership::DecodeAdmission {
+                ctx,
+                operation: "validate active tree child",
+            },
+            &membership::DecodeAdmission {
+                ctx,
+                operation: "validate distinct decoded members",
+            },
+            children,
+            active_child,
+        )?
+        .map_err(FeatureCollectionError::Invalid)
+    }
+
+    fn build<S: membership::Admission>(
+        active_admission: &S,
+        member_admission: &S,
+        children: Vec<FeatureId>,
+        active_child: Option<FeatureId>,
+    ) -> Result<Result<Self, &'static str>, S::Error> {
+        active_admission.work(0)?;
+        if let Some(active) = &active_child {
+            let mut present = false;
+            for child in &children {
+                active_admission.work(1)?;
+                if child.as_str().len() == active.as_str().len() {
+                    active_admission.work(child.as_str().len())?;
+                }
+                if child == active {
+                    present = true;
+                    break;
+                }
+            }
+            if !present {
+                return Ok(Err("active_child must belong to children"));
+            }
+        }
+        if !membership::distinct(member_admission, &children, children.len(), |_| true)? {
+            return Ok(Err("members must be distinct"));
+        }
+        Ok(Ok(Self {
+            children: DistinctMembers(children),
+            active_child,
+        }))
+    }
+
+    /// Whether the node has no children.
+    pub fn is_empty(&self) -> bool {
+        self.children.is_empty()
+    }
+
+    /// Return the active child identity.
+    pub fn active_child(&self) -> &Option<FeatureId> {
+        &self.active_child
+    }
+
+    /// Add a child after admitting its membership comparisons and retained slot.
+    pub fn insert(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        child: FeatureId,
+        operation: &'static str,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        self.children.insert(ctx, child, operation).map(|_| ())
+    }
+}
+
+impl std::ops::Deref for TreeChildren {
+    type Target = [FeatureId];
+    fn deref(&self) -> &[FeatureId] {
+        &self.children
+    }
+}
+
+impl<'a> IntoIterator for &'a TreeChildren {
+    type Item = &'a FeatureId;
+    type IntoIter = std::slice::Iter<'a, FeatureId>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.children.iter()
+    }
+}
+
+impl<'de> Deserialize<'de> for TreeChildren {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let wire = TreeChildrenWire::deserialize(deserializer)?;
+        Self::build(
+            &membership::StandardAdmission,
+            &membership::StandardAdmission,
+            wire.children,
+            wire.active_child,
+        )
+        .map_err(serde::de::Error::custom)?
+        .map_err(serde::de::Error::custom)
+    }
+}
+
+/// A feature operation: neutral construction semantics with an explicit native
+/// escape hatch, and no post-processing layer of its own.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "definition", rename_all = "snake_case")]
-pub enum FeatureDefinition {
+#[serde(tag = "definition", rename_all = "snake_case", deny_unknown_fields)]
+pub enum FeatureOperation {
     /// Non-modeling node retained in the ordered feature tree.
     TreeNode {
         /// Structural or presentation role of the node.
         role: FeatureTreeNodeRole,
-        /// Ordered features owned by this node.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        children: Vec<FeatureId>,
-        /// Active child, when the source design identifies one.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        active_child: Option<FeatureId>,
+        /// Ordered child membership and its optional active child.
+        #[serde(default, skip_serializing_if = "TreeChildren::is_empty")]
+        children: TreeChildren,
     },
     /// Direct-modeling session represented by its captured result bodies.
     BaseFeature {
@@ -1292,12 +2799,15 @@ pub enum FeatureDefinition {
     /// Mesh geometry imported into the parametric timeline.
     MeshImport {
         /// Tessellation identities supplied by the mesh-body records.
-        tessellations: Vec<String>,
+        #[serde(deserialize_with = "deserialize_local_tessellations")]
+        tessellations: SelectionMembers<String>,
     },
-    /// Independent bodies introduced by a copy-and-paste operation.
+    /// Independent bodies introduced by a copy-and-paste operation. The copies
+    /// are the feature's outputs, so the selection carries only its native
+    /// expression.
     InsertBodies {
-        /// Newly created body copies in source order.
-        bodies: BodySelection,
+        /// Native selection expression of the copied bodies.
+        bodies: InsertedBodies,
     },
     /// External component occurrence introduced into an assembly timeline.
     InsertComponent {
@@ -1319,10 +2829,18 @@ pub enum FeatureDefinition {
         /// Cylindrical face carrying the annotation.
         face: FaceSelection,
         /// Nominal thread diameter, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        diameter: Option<Length>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_diameter"
+        )]
+        diameter: Option<PositiveLength>,
         /// Axial extent of the annotation, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_extent"
+        )]
         extent: Option<CosmeticThreadExtent>,
     },
     /// Raster reference image placed in model space.
@@ -1330,7 +2848,7 @@ pub enum FeatureDefinition {
         /// Embedded or external raster resource.
         asset: AssetId,
         /// Whether the raster is visible in the source presentation.
-        #[serde(default = "default_true")]
+        #[serde(default = "crate::default_true")]
         visible: bool,
         /// Whether image u increases toward decreasing plane-local u.
         #[serde(default)]
@@ -1338,17 +2856,17 @@ pub enum FeatureDefinition {
         /// Whether image v increases toward decreasing plane-local v.
         #[serde(default)]
         mirror_v: bool,
-        /// Origin of the image plane in model space.
-        origin: Point3,
-        /// Unit direction of increasing image u coordinate.
-        u_axis: Vector3,
-        /// Unit direction of increasing image v coordinate.
-        v_axis: Vector3,
-        /// Opposite corners of the image rectangle in plane-local millimeters.
-        bounds: [Point2; 2],
+        /// Finite image plane with perpendicular unit directions.
+        frame: FeatureUnitPlaneFrame,
+        /// Opposite corners with nonzero extent in both coordinates.
+        bounds: FeatureImageBounds,
         /// Normalized image opacity.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        opacity: Option<f64>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_opacity"
+        )]
+        opacity: Option<Fraction>,
     },
     /// Raster image applied to model faces.
     Decal {
@@ -1359,8 +2877,12 @@ pub enum FeatureDefinition {
         /// Rule relating image coordinates to the selected faces.
         mapping: DecalMapping,
         /// Normalized image opacity, or the source format's default when absent.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        opacity: Option<f64>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_opacity"
+        )]
+        opacity: Option<Fraction>,
     },
     /// Built-in world-origin reference plane.
     DatumPrincipalPlane {
@@ -1369,28 +2891,24 @@ pub enum FeatureDefinition {
     },
     /// Constructed reference plane.
     DatumPlane {
-        /// Plane origin in model space.
-        origin: Point3,
-        /// Plane normal.
-        normal: Vector3,
-        /// In-plane u-axis.
-        u_axis: Vector3,
+        /// Finite plane with nonzero perpendicular directions.
+        frame: FeatureDatumPlaneFrame,
     },
     /// Reference plane constructed through three selected vertices.
     DatumThreePointPlane {
-        /// Plane origin in model space.
-        origin: Point3,
-        /// Plane normal.
-        normal: Vector3,
-        /// In-plane u-axis.
-        u_axis: Vector3,
+        /// Finite plane with nonzero perpendicular directions.
+        frame: FeatureDatumPlaneFrame,
         /// Construction vertices in source order.
-        points: Box<[VertexSelection; 3]>,
+        points: ThreePointSelection,
     },
     /// Reference plane offset from another datum plane.
     DatumOffsetPlane {
         /// Source plane or planar face, when its identity is available.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_reference"
+        )]
         reference: Option<DatumPlaneReference>,
         /// Signed normal offset from the source plane.
         distance: Length,
@@ -1398,80 +2916,60 @@ pub enum FeatureDefinition {
     /// Constructed reference axis.
     DatumAxis {
         /// Point on the axis in model space.
-        origin: Point3,
+        origin: FinitePoint3,
         /// Axis direction.
-        direction: Vector3,
+        direction: FeatureDirection3,
     },
     /// Constructed reference point.
     DatumPoint {
         /// Point position in model space.
-        position: Point3,
+        position: FinitePoint3,
         /// Rule that derives the point from preceding construction geometry.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_construction"
+        )]
         construction: Option<Box<DatumPointConstruction>>,
     },
     /// Standalone model vertex constructed at one point.
     PointGeometry {
         /// Vertex position in the feature's local construction frame.
-        position: Point3,
+        position: FinitePoint3,
     },
     /// Straight edge between two finite points.
     LineSegment {
-        /// Start point.
-        start: Point3,
-        /// End point.
-        end: Point3,
+        /// Finite distinct endpoints.
+        segment: FeatureLineSegment,
     },
     /// Circular edge over an angular interval.
     CircularArc {
-        /// Circle center in the feature's local construction frame.
-        center: Point3,
-        /// Circle-plane normal.
-        normal: Vector3,
-        /// Circle radius.
-        radius: Length,
-        /// Start parameter angle.
-        start_angle: Angle,
-        /// End parameter angle.
-        end_angle: Angle,
+        /// Finite arc geometry and directed angular span.
+        arc: FeatureCircularArc,
     },
     /// Elliptic edge over an angular interval.
     EllipticArc {
-        /// Ellipse center in the feature's local construction frame.
-        center: Point3,
-        /// Circle-plane normal.
-        normal: Vector3,
-        /// Major-axis direction in the ellipse plane.
-        major_axis: Vector3,
-        /// Major semiaxis radius.
-        major_radius: Length,
-        /// Minor semiaxis radius.
-        minor_radius: Length,
-        /// Start parameter angle.
-        start_angle: Angle,
-        /// End parameter angle.
-        end_angle: Angle,
+        /// Finite arc geometry and directed angular span.
+        arc: FeatureEllipticArc,
     },
     /// Ordered straight-edge chain.
     Polyline {
-        /// Ordered vertices in the feature's local construction frame.
-        points: Vec<Point3>,
-        /// Whether the last point connects back to the first.
-        closed: bool,
+        /// Finite ordered chain and closure.
+        chain: FeaturePolyline,
     },
     /// Regular planar polygon centered at the local origin.
     RegularPolygonCurve {
         /// Number of polygon sides.
-        sides: u32,
+        sides: PolygonSideCount,
         /// Center-to-vertex distance.
-        circumradius: Length,
+        circumradius: PositiveLength,
     },
     /// Rectangular bounded planar face in the local XY plane.
     PlanarPatch {
         /// Length along the local x-axis.
-        length: Length,
+        length: PositiveLength,
         /// Width along the local y-axis.
-        width: Length,
+        width: PositiveLength,
     },
     /// Faces built from an ordered set of source shapes.
     FaceFromShapes {
@@ -1484,38 +2982,24 @@ pub enum FeatureDefinition {
     },
     /// Constructed model-space coordinate system.
     DatumCoordinateSystem {
-        /// Frame origin.
-        origin: Point3,
-        /// Unit x-axis.
-        x_axis: Vector3,
-        /// Unit y-axis.
-        y_axis: Vector3,
-        /// Unit z-axis.
-        z_axis: Vector3,
+        /// Finite right-handed coordinate frame.
+        frame: FeatureCoordinateFrame,
     },
     /// Rectangular solid primitive.
     Block {
         /// Ordered local x, y, and z dimensions, when resolved.
-        dimensions: Option<[Length; 3]>,
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        dimensions: Option<[PositiveLength; 3]>,
         /// Local-to-model placement, when resolved.
-        placement: Option<crate::transform::Transform>,
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        placement: Option<FeatureRigidPlacement>,
         /// Whether the primitive creates or combines material.
         op: BooleanOp,
     },
     /// Parametric model-space curve defined by coordinate expressions.
     EquationCurve {
-        /// Independent parameter symbol used by the coordinate expressions.
-        parameter: String,
-        /// Model-space x-coordinate expression.
-        x_expression: String,
-        /// Model-space y-coordinate expression.
-        y_expression: String,
-        /// Model-space z-coordinate expression.
-        z_expression: String,
-        /// Inclusive lower parameter bound.
-        start: f64,
-        /// Inclusive upper parameter bound.
-        end: f64,
+        /// Coordinate expressions and parameter domain.
+        curve: FeatureEquationCurve,
     },
     /// Curve produced by projecting a source path onto target faces.
     ProjectedCurve {
@@ -1527,28 +3011,34 @@ pub enum FeatureDefinition {
         #[serde(default)]
         direction: CurveProjectionDirection,
         /// Whether projection proceeds in both directions, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_bidirectional"
+        )]
         bidirectional: Option<bool>,
     },
-    /// Shapes projected along a direction onto one support surface.
+    /// Shapes projected along a direction onto a support face selection.
     ProjectOnSurface {
         /// Ordered shapes and subelements projected onto the support.
         sources: PathRef,
-        /// Single support face receiving the projection.
+        /// Support face selection receiving the projection. The selection
+        /// admits any number of faces.
         support_face: FaceSelection,
         /// Unit projection direction.
-        direction: Vector3,
+        direction: UnitVector3,
         /// Result topology retained from the projected shapes.
         mode: SurfaceProjectionMode,
         /// Normal extrusion height used to turn projected faces into solids.
-        height: Length,
+        height: NonNegativeLength,
         /// Normal offset applied to the projected result.
         offset: Length,
     },
     /// Ordered chain of source paths exposed as one construction curve.
     CompositeCurve {
         /// Source segments in traversal order.
-        segments: Vec<PathRef>,
+        #[serde(deserialize_with = "deserialize_local_segments")]
+        segments: NonEmptyMembers<PathRef>,
         /// Whether the final segment joins the first.
         #[serde(default)]
         closed: bool,
@@ -1556,33 +3046,40 @@ pub enum FeatureDefinition {
     /// Circular helix or planar spiral constructed around an axis.
     Helix {
         /// Point on the construction axis at the curve start.
-        axis_origin: Point3,
+        axis_origin: FinitePoint3,
         /// Construction-axis direction.
-        axis_direction: Vector3,
+        axis_direction: FeatureDirection3,
         /// Initial radial distance from the axis.
-        radius: Length,
+        radius: PositiveLength,
         /// Axial or radial construction law.
-        #[serde(flatten, with = "helix_shape_wire")]
-        #[cfg_attr(feature = "schema", schemars(with = "HelixShapeSchemaWire"))]
         shape: HelixShape,
         /// Positive number of revolutions.
-        revolutions: f64,
+        revolutions: PositiveReal,
         /// Angular position at the curve start.
         #[serde(default)]
         start_angle: Angle,
         /// Whether angular travel is clockwise when viewed along the axis.
         clockwise: bool,
         /// Number of turns per generated curve subdivision, when requested.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        segment_turns: Option<f64>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_segment_turns"
+        )]
+        segment_turns: Option<PositiveReal>,
         /// Persisted construction algorithm generation, when selectable.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_construction_style"
+        )]
         construction_style: Option<HelixConstructionStyle>,
     },
     /// Circular helix with retained native axis placement.
     HelixNativeAxis {
         /// Source-native record carrying the unresolved construction axis.
-        axis_native_ref: String,
+        #[serde(deserialize_with = "deserialize_local_axis_native_ref")]
+        axis_native_ref: NonBlankString,
         /// Signed total rise along the axis.
         #[serde(alias = "radius")]
         axial_rise: Length,
@@ -1590,7 +3087,7 @@ pub enum FeatureDefinition {
         #[serde(alias = "height")]
         pitch: Length,
         /// Positive number of revolutions.
-        revolutions: f64,
+        revolutions: PositiveReal,
         /// Angular position at the curve start.
         start_angle: Angle,
         /// Whether angular travel is clockwise when viewed along the axis.
@@ -1606,68 +3103,80 @@ pub enum FeatureDefinition {
     /// Solid sphere primitive.
     Sphere {
         /// Sphere center in model space.
-        center: Point3,
+        center: FinitePoint3,
         /// Positive sphere radius.
-        radius: Length,
+        radius: PositiveLength,
         /// Boolean combination with existing bodies.
         op: BooleanOp,
     },
     /// Solid torus primitive.
     Torus {
         /// Torus center in model space.
-        center: Point3,
+        center: FinitePoint3,
         /// Unit normal of the torus center plane.
-        axis: Vector3,
+        axis: UnitVector3,
         /// Positive distance from the center to the tube centerline.
-        major_radius: Length,
+        major_radius: PositiveLength,
         /// Positive tube radius.
-        minor_radius: Length,
+        minor_radius: PositiveLength,
         /// Boolean combination with existing bodies.
         op: BooleanOp,
     },
     /// Profile mapped onto a target face.
     Wrap {
         /// Sketch or face profile mapped onto the target.
-        profile: ProfileRef,
+        profile: PlanarProfileRef,
         /// Face receiving the mapped profile.
         face: FaceSelection,
         /// Material or imprint operation performed by the mapping.
-        #[serde(flatten, with = "wrap_mode_wire")]
-        #[cfg_attr(feature = "schema", schemars(with = "WrapModeSchemaWire"))]
         mode: WrapMode,
     },
     /// Solved sketch node in the construction history.
     Sketch {
         /// Source-declared sketch space and optional decoded geometry.
-        #[serde(flatten, with = "sketch_feature_wire")]
-        #[cfg_attr(feature = "schema", schemars(with = "SketchFeatureSchemaWire"))]
         sketch: SketchFeatureBinding,
     },
     /// Solved spatial-sketch node in the construction history.
     SpatialSketch {
         /// Neutral model-space sketch geometry owned by this history node, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_sketch"
+        )]
         sketch: Option<crate::sketches::SpatialSketchId>,
     },
     /// Reusable planar sketch geometry.
     SketchBlockDefinition {
         /// Neutral sketch geometry owned by the block, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_feature_operation_sketch"
+        )]
         sketch: Option<crate::sketches::SketchId>,
     },
     /// Placement of one reusable sketch-block definition.
     SketchBlockInstance {
         /// Referenced block definition, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_block"
+        )]
         block: Option<FeatureId>,
         /// Affine placement in the owning sketch space, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_placement"
+        )]
         placement: Option<crate::transform::Transform>,
     },
     /// Directly stored geometry with no replayable parametric construction.
     ///
     /// The feature's `outputs` identify the retained bodies when geometry is present.
-    StoredGeometry,
+    StoredGeometry {},
     /// Body geometry copied from existing bodies.
     ExtractBody {
         /// Bodies supplying the copied geometry.
@@ -1681,7 +3190,7 @@ pub enum FeatureDefinition {
     /// Geometry imported from an external model file.
     ImportedGeometry {
         /// External source path exactly as persisted by the design.
-        path: String,
+        path: GeometryImportPath,
         /// Model format read from the external file.
         format: GeometryImportFormat,
     },
@@ -1692,39 +3201,6 @@ pub enum FeatureDefinition {
         /// Boolean combination with an existing `PartDesign` body.
         op: BooleanOp,
     },
-    /// Linear extrusion of a profile.
-    Extrude {
-        /// Profile swept along `direction`.
-        profile: ProfileRef,
-        /// Direction in which the profile is swept and its optional persisted source.
-        #[serde(flatten, with = "extrude_direction_wire")]
-        #[cfg_attr(feature = "schema", schemars(with = "ExtrudeDirectionSchemaWire"))]
-        direction: ExtrudeDirection,
-        /// Plane or face from which the extrusion begins.
-        #[serde(default)]
-        start: ExtrudeStart,
-        /// How far the extrusion travels on each of its sides.
-        extent: ExtrudeExtent,
-        /// Boolean combination with existing bodies.
-        op: BooleanOp,
-        /// Whether the result is a solid (`true`) or sheet (`false`), when selectable.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        solid: Option<bool>,
-        /// Native face-building policy used to turn closed wires into faces.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[serde(with = "optional_extrusion_face_maker")]
-        #[cfg_attr(feature = "schema", schemars(with = "Option<ExtrusionFaceMakerWire>"))]
-        face_maker: Option<FaceMaker>,
-        /// Taper orientation used for inner wires, when selectable.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        inner_wire_taper: Option<InnerWireTaper>,
-        /// Whether stored lengths are measured along the profile normal instead of the sweep axis.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        length_along_profile_normal: Option<bool>,
-        /// Whether a profile containing multiple faces is accepted as one operation.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        allow_multi_profile_faces: Option<bool>,
-    },
     /// Revolution of a profile around an axis.
     Revolve {
         /// Independently resolved construction inputs.
@@ -1734,24 +3210,35 @@ pub enum FeatureDefinition {
     },
     /// Sweep of a referenced or generated cross-section along a path.
     Sweep {
-        /// Primary cross-section swept along the path.
-        section: SweepSection,
-        /// Additional cross-sections after the primary profile, in path order.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        sections: Vec<SweepSection>,
+        /// Cross-sections and their compatible result mode.
+        shape: SweepShape,
         /// Trajectory followed by the profile, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_path"
+        )]
         path: Option<PathRef>,
-        /// Result family and solid Boolean operation.
-        mode: SweepMode,
         /// Rule used to orient cross-sections along the path.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_orientation"
+        )]
         orientation: Option<SweepOrientation>,
         /// Corner continuation used where path segments meet.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_transition"
+        )]
         transition: Option<SweepTransition>,
         /// Interpolation law used between multiple cross-sections.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_transformation"
+        )]
         transformation: Option<SweepTransformation>,
         /// Whether tangent-connected edges are included in the primary path.
         #[serde(default)]
@@ -1760,22 +3247,46 @@ pub enum FeatureDefinition {
         #[serde(default)]
         linearize: bool,
         /// Total profile twist along the path, when specified.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_twist"
+        )]
         twist: Option<Angle>,
         /// Fractions of the selected path swept on either side of the profile.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_path_extent"
+        )]
         path_extent: Option<SweepPathExtent>,
         /// Guide rail and its independently consumed extent, when present.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_guide_rail"
+        )]
         guide_rail: Option<SweepGuideRail>,
         /// Profile taper angle over the swept extent, when specified.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_taper"
+        )]
         taper: Option<Angle>,
         /// End-to-start profile scale ratio, when specified.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        scale: Option<f64>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_scale"
+        )]
+        scale: Option<PositiveReal>,
         /// Whether a profile containing multiple faces is accepted as one operation.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_allow_multi_profile_faces"
+        )]
         allow_multi_profile_faces: Option<bool>,
     },
     /// Solid sweep of a profile along a parametrically defined helix or spiral.
@@ -1792,33 +3303,6 @@ pub enum FeatureDefinition {
         /// Binding and derived-shape construction semantics.
         construction: BinderConstruction,
     },
-    /// Loft through an ordered sequence of profile or point sections.
-    Loft {
-        /// Ordered cross-sections from the loft start to end.
-        sections: Vec<LoftSection>,
-        /// Mutually exclusive guide trajectories or centerline.
-        guidance: LoftGuidance,
-        /// Boolean combination with existing bodies.
-        op: BooleanOp,
-        /// Whether the loft closes from the last section to the first.
-        #[serde(default)]
-        closed: bool,
-        /// Whether the sections bound a solid instead of a sheet body.
-        #[serde(default = "default_true")]
-        solid: bool,
-        /// Whether adjacent sections are connected by straight ruled spans.
-        #[serde(default)]
-        ruled: bool,
-        /// Whether linear edges and planar faces are simplified after construction.
-        #[serde(default)]
-        linearize: bool,
-        /// Maximum polynomial degree used to interpolate the sections, when constrained.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        max_degree: Option<u32>,
-        /// Whether profiles containing multiple faces are accepted as one operation.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        allow_multi_profile_faces: Option<bool>,
-    },
     /// Thin rib grown from a profile.
     Rib {
         /// Independently resolved construction inputs.
@@ -1829,9 +3313,9 @@ pub enum FeatureDefinition {
     /// Planar sheet-metal body created from a closed profile.
     SheetMetalBaseFlange {
         /// Closed profile defining the planar sheet boundary.
-        profile: ProfileRef,
+        profile: PlanarProfileRef,
         /// Finished sheet thickness.
-        thickness: Length,
+        thickness: PositiveLength,
         /// Distribution of thickness relative to the profile plane.
         side: SheetMetalThicknessSide,
     },
@@ -1850,7 +3334,7 @@ pub enum FeatureDefinition {
         /// Extent of the flange along the selected edge.
         width: SheetMetalFlangeWidth,
         /// Inside radius of the bend joining the flange to its source face.
-        bend_radius: Length,
+        bend_radius: PositiveLength,
     },
     /// Sheet-metal hem grown from one or more selected edges.
     SheetMetalHem {
@@ -1861,31 +3345,32 @@ pub enum FeatureDefinition {
         /// Direction of the hem fold, when the source carries a proven value.
         direction: SheetMetalHemDirection,
         /// Inside radius of the bend joining the hem to its source face.
-        bend_radius: Length,
+        bend_radius: PositiveLength,
     },
     /// Edge fillet.
     Fillet {
         /// Ordered edge groups and their radius laws.
-        groups: Vec<FilletGroup>,
+        #[serde(deserialize_with = "deserialize_local_groups")]
+        groups: NonEmptyMembers<FilletGroup>,
     },
     /// Full-round fillet built from a center-face selection and two side-face sets.
     FullRoundFillet {
         /// Ordered full-round face groups.
-        groups: Vec<FullRoundFilletGroup>,
+        #[serde(deserialize_with = "deserialize_local_groups")]
+        groups: NonEmptyMembers<FullRoundFilletGroup>,
     },
     /// Blend constructed between two face sets.
     FaceBlend {
-        /// First support-face set.
-        first_faces: FaceSelection,
-        /// Second support-face set.
-        second_faces: FaceSelection,
+        /// Disjoint operand selections and their operation arity.
+        operands: FaceBlendOperands,
         /// Radius law along the face intersection.
         radius: RadiusSpec,
     },
     /// Edge chamfer.
     Chamfer {
         /// Ordered edge groups and their dimensional specifications.
-        groups: Vec<ChamferGroup>,
+        #[serde(deserialize_with = "deserialize_local_groups")]
+        groups: NonEmptyMembers<ChamferGroup>,
         /// Whether the dimensional reference side is reversed.
         #[serde(default)]
         flip_direction: bool,
@@ -1893,28 +3378,56 @@ pub enum FeatureDefinition {
     /// Thin-wall shell operation.
     Shell {
         /// Bodies explicitly selected as shell inputs, when the source names them.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_feature_operation_bodies"
+        )]
         bodies: Option<BodySelection>,
         /// Faces removed to open the shell.
         removed_faces: FaceSelection,
         /// Wall thickness left after shelling, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        thickness: Option<Length>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_thickness"
+        )]
+        thickness: Option<PositiveLength>,
         /// Whether the wall is grown outward from the original boundary,
         /// as opposed to inward, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_outward"
+        )]
         outward: Option<bool>,
         /// Offset construction used to generate the wall.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_mode"
+        )]
         mode: Option<ShellMode>,
         /// Corner continuation law used between offset faces.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_join"
+        )]
         join: Option<ShellJoin>,
         /// Whether intersecting offset regions are resolved during construction.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_resolve_intersections"
+        )]
         resolve_intersections: Option<bool>,
         /// Whether self-intersecting offset regions may be retained.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_allow_self_intersections"
+        )]
         allow_self_intersections: Option<bool>,
     },
     /// Offsets an entire source shape without removing opening faces.
@@ -1922,7 +3435,7 @@ pub enum FeatureDefinition {
         /// Source shape or body to offset.
         source: BodySelection,
         /// Signed normal offset in canonical millimeters.
-        distance: Length,
+        distance: NonZeroLength,
         /// Offset construction mode.
         mode: ShellMode,
         /// Corner continuation law.
@@ -1962,12 +3475,14 @@ pub enum FeatureDefinition {
     },
     /// Intersection curves produced where two source shapes meet.
     SectionShape {
-        /// First intersected source shape.
-        first: BodySelection,
-        /// Second intersected source shape.
-        second: BodySelection,
+        /// Disjoint operand selections and their operation arity.
+        operands: SectionOperands,
         /// Whether the resulting section edges are approximated, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_approximate"
+        )]
         approximate: Option<bool>,
     },
     /// Reflects one source shape across a model-space plane.
@@ -1975,11 +3490,15 @@ pub enum FeatureDefinition {
         /// Shape transformed into the mirrored result.
         source: BodySelection,
         /// Point on the persisted resolved mirror plane.
-        plane_origin: Point3,
+        plane_origin: FinitePoint3,
         /// Unit normal of the persisted resolved mirror plane.
-        plane_normal: Vector3,
+        plane_normal: UnitVector3,
         /// Native plane, face, or circle reference that supplied the resolved plane.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_plane_reference"
+        )]
         plane_reference: Option<FaceSelection>,
     },
     /// Adds material normal to selected faces.
@@ -1987,10 +3506,18 @@ pub enum FeatureDefinition {
         /// Faces offset by the operation.
         faces: FaceSelection,
         /// Finished added thickness, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        thickness: Option<Length>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_thickness"
+        )]
+        thickness: Option<PositiveLength>,
         /// Distribution of thickness relative to the selected faces, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_side"
+        )]
         side: Option<ThickenSide>,
     },
     /// Surface copied at a signed normal offset from selected support faces.
@@ -1998,6 +3525,7 @@ pub enum FeatureDefinition {
         /// Faces supplying the source surface geometry.
         faces: FaceSelection,
         /// Signed normal offset in canonical millimeters.
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
         distance: Option<Length>,
     },
     /// Joins selected surface bodies along coincident or near-coincident boundaries.
@@ -2005,19 +3533,26 @@ pub enum FeatureDefinition {
         /// Faces participating in the knit operation.
         faces: FaceSelection,
         /// Whether coincident face and edge entities are merged.
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
         merge_entities: Option<bool>,
         /// Whether a closed result is converted to a solid body.
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
         create_solid: Option<bool>,
         /// Maximum boundary gap accepted by the operation.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        gap_tolerance: Option<Length>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_gap_tolerance"
+        )]
+        gap_tolerance: Option<NonNegativeLength>,
     },
     /// Joins sheet or solid bodies along coincident boundaries.
     SewBodies {
         /// Bodies participating in the sew operation.
-        bodies: BodySelection,
+        bodies: SewBodySelection,
         /// Maximum accepted boundary gap, when resolved.
-        gap_tolerance: Option<Length>,
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        gap_tolerance: Option<PositiveLength>,
     },
     /// Surface patch spanning a selected edge boundary.
     FilledSurface {
@@ -2026,12 +3561,18 @@ pub enum FeatureDefinition {
         /// Adjacent faces supplying tangent or curvature conditions.
         support_faces: FaceSelection,
         /// Uniform, component-specific, or unresolved boundary continuity.
-        #[serde(flatten)]
-        #[cfg_attr(feature = "schema", schemars(with = "FilledSurfaceContinuityWire"))]
+        #[serde(
+            default = "FilledSurfaceContinuityState::unresolved",
+            skip_serializing_if = "FilledSurfaceContinuityState::is_unresolved"
+        )]
         continuity: FilledSurfaceContinuityState,
         /// Whether the generated patch is merged into adjacent surface bodies,
         /// when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_merge_result"
+        )]
         merge_result: Option<bool>,
     },
     /// Restricts selected surface faces to one side of a trimming path.
@@ -2041,8 +3582,6 @@ pub enum FeatureDefinition {
         /// Sketch or model-space path defining the trim boundary.
         tool: PathRef,
         /// Region or explicit partition-cell set retained after trimming.
-        #[serde(flatten, with = "trim_region_wire")]
-        #[cfg_attr(feature = "schema", schemars(with = "TrimRegionSchemaWire"))]
         keep: TrimRegion,
     },
     /// Extends selected surface boundaries by a fixed distance.
@@ -2050,7 +3589,8 @@ pub enum FeatureDefinition {
         /// Surface faces whose boundaries are extended.
         faces: FaceSelection,
         /// Positive extension distance in canonical millimeters.
-        distance: Option<Length>,
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        distance: Option<PositiveLength>,
         /// Geometric continuation law.
         method: SurfaceExtension,
     },
@@ -2063,13 +3603,25 @@ pub enum FeatureDefinition {
         /// Direction law and extension distance.
         mode: RuledSurfaceMode,
         /// Signed rotation from the selected ruled-surface law.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_angle"
+        )]
         angle: Option<Angle>,
         /// Whether the opposite incident face supplies the angle reference.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_alternate_face"
+        )]
         alternate_face: Option<bool>,
         /// Boundary-corner construction law.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_corner"
+        )]
         corner: Option<RuledSurfaceCorner>,
     },
     /// Taper applied to selected faces about a neutral plane.
@@ -2077,20 +3629,18 @@ pub enum FeatureDefinition {
         /// Faces whose angle is modified.
         faces: FaceSelection,
         /// Structurally selected anchor and pull frame.
-        #[serde(flatten, with = "draft_anchor_wire")]
-        #[cfg_attr(feature = "schema", schemars(with = "DraftAnchorSchemaWire"))]
         anchor: DraftAnchor,
         /// Signed draft angle.
-        angle: Option<Angle>,
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        angle: Option<SlopeAngle>,
         /// Whether material is added away from the pull direction.
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
         outward: Option<bool>,
     },
     /// Boolean operation between existing bodies.
     Combine {
-        /// Body modified by the operation.
-        target: BodySelection,
-        /// Bodies consumed as Boolean tools.
-        tools: BodySelection,
+        /// Disjoint operand selections and their operation arity.
+        operands: CombineOperands,
         /// Join, cut, or intersection operation.
         op: BooleanKind,
         /// Whether tool bodies remain present after the Boolean result is created.
@@ -2102,7 +3652,8 @@ pub enum FeatureDefinition {
         /// Bodies whose faces partition space into candidate cells.
         tools: BodySelection,
         /// Enclosed cells retained as result bodies, in source order.
-        cells: Vec<BodySelection>,
+        #[serde(deserialize_with = "deserialize_local_cells")]
+        cells: NonEmptyMembers<BodySelection>,
     },
     /// Removes one side of selected bodies using selected surface faces.
     CutWithSurface {
@@ -2112,15 +3663,17 @@ pub enum FeatureDefinition {
         tools: FaceSelection,
         /// Whether the side opposite the default tool orientation is removed,
         /// when the native side flag is present.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_reverse"
+        )]
         reverse: Option<bool>,
     },
     /// Removes one side of target bodies using ordered tool bodies.
     TrimBodies {
-        /// Bodies modified by the operation.
-        targets: BodySelection,
-        /// Bodies defining the trimming boundary.
-        tools: BodySelection,
+        /// Disjoint operand selections and their operation arity.
+        operands: TrimBodyOperands,
         /// Side retained by the trim.
         keep: BodyTrimSide,
     },
@@ -2156,10 +3709,8 @@ pub enum FeatureDefinition {
     },
     /// Replaces selected faces with another face set.
     ReplaceFace {
-        /// Faces removed from the target body.
-        targets: FaceSelection,
-        /// Faces whose underlying geometry supplies the replacement.
-        replacements: FaceSelection,
+        /// Disjoint operand selections and their operation arity.
+        operands: ReplaceFaceOperands,
     },
     /// Direct motion of selected faces.
     MoveFace {
@@ -2173,9 +3724,13 @@ pub enum FeatureDefinition {
         /// Bodies transformed by the operation.
         bodies: BodySelection,
         /// Model-space translation vector in canonical millimeters.
-        translation: Vector3,
+        translation: FiniteVector3,
         /// Axis-angle rotation applied with the translation.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_rotation"
+        )]
         rotation: Option<AxisAngle>,
         /// Number of transformed copies; zero moves the selected bodies.
         #[serde(default)]
@@ -2186,22 +3741,37 @@ pub enum FeatureDefinition {
         /// Faces that bound the dome base.
         faces: FaceSelection,
         /// Dome height measured normal to the base, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        height: Option<Length>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_height"
+        )]
+        height: Option<PositiveLength>,
         /// Whether the profile is elliptical rather than spherical, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_elliptical"
+        )]
         elliptical: Option<bool>,
         /// Whether growth opposes the selected-face normal, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_reverse"
+        )]
         reverse: Option<bool>,
     },
     /// Deformation of existing geometry about a feature axis.
     Flex {
         /// Flex axis direction in model space, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        axis: Option<Vector3>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_axis"
+        )]
+        axis: Option<FeatureDirection3>,
         /// Applied deformation mode and magnitude.
-        #[cfg_attr(feature = "schema", schemars(with = "FlexModeWire"))]
         mode: FlexMode,
     },
     /// Scales selected bodies about a model-space point.
@@ -2209,52 +3779,82 @@ pub enum FeatureDefinition {
         /// Bodies transformed by the operation.
         bodies: BodySelection,
         /// Fixed locus of the scale transform.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_center"
+        )]
         center: Option<ScaleCenter>,
         /// Uniform, per-axis, or unresolved scale factors.
-        #[cfg_attr(feature = "schema", schemars(with = "ScaleFactorsWire"))]
         factors: ScaleFactors,
     },
     /// Drilled or machined hole.
     Hole {
         /// Sketch or profile supplying one or more hole locations.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        profile: Option<ProfileRef>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_profile"
+        )]
+        profile: Option<PlanarProfileRef>,
         /// Geometry families in the profile that generate hole locations.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_profile_filter"
+        )]
         profile_filter: Option<HoleProfileFilter>,
         /// Face the hole is placed on, when known.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_face"
+        )]
         face: Option<FaceSelection>,
         /// Drilling direction carried independently of complete placements.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        direction: Option<Vector3>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_direction"
+        )]
+        direction: Option<FeatureDirection3>,
         /// Complete one-or-many hole placements, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_placements"
+        )]
         placements: Option<Vec<HolePlacement>>,
-        /// Structural drilling, entry-treatment, and standard/thread construction.
-        #[serde(flatten)]
-        #[cfg_attr(feature = "schema", schemars(flatten))]
-        construction: HoleConstruction,
-        /// Exit treatment at the far side, when distinct from the entry treatment.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[cfg_attr(feature = "schema", schemars(with = "Option<HoleKindWire>"))]
-        exit_kind: Option<HoleKind>,
-        /// Hole diameter, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        diameter: Option<Length>,
+        /// Bore diameter and compatible entry, exit, and thread construction.
+        shape: HoleShape,
         /// How deep the hole extends, when resolved. Holes travel on one side
         /// only, so the termination law needs no sidedness wrapper.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_feature_operation_extent"
+        )]
         extent: Option<LinearTermination>,
         /// Shape and depth convention at the blind end of the hole.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_bottom"
+        )]
         bottom: Option<HoleBottom>,
         /// Included taper angle for a conical hole, when enabled.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        taper_angle: Option<Angle>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_taper_angle"
+        )]
+        taper_angle: Option<InteriorAngle>,
         /// Whether a profile containing multiple faces is accepted as one operation.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_allow_multi_profile_faces"
+        )]
         allow_multi_profile_faces: Option<bool>,
     },
     /// Repetition or reflection of existing features.
@@ -2263,15 +3863,6 @@ pub enum FeatureDefinition {
         seeds: Vec<PatternSeed>,
         /// Spatial transform defining the repetition or reflection.
         pattern: PatternKind,
-    },
-    /// Operation followed by source-requested topology cleanup.
-    PostProcess {
-        /// Underlying construction whose result is post-processed.
-        operation: Box<FeatureDefinition>,
-        /// Whether redundant splitter boundaries are removed.
-        refine: bool,
-        /// Boolean-operation tolerance selection carried by the feature family.
-        fuzzy_tolerance: FuzzyTolerance,
     },
     /// Operation family established without its construction operands.
     Unresolved {
@@ -2284,14 +3875,127 @@ pub enum FeatureDefinition {
         kind: NativeFeatureKind,
         /// Source parametric input values keyed by parameter name.
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-        parameters: BTreeMap<String, String>,
+        #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+        parameters: BTreeMap<NonBlankString, String>,
     },
+    /// Linear extrusion of a profile.
+    Extrude {
+        /// Profile swept along `direction`.
+        profile: ProfileRef,
+        /// Direction in which the profile is swept and its optional persisted source.
+        #[serde(default)]
+        direction: ExtrudeDirection,
+        /// Plane or face from which the extrusion begins.
+        #[serde(default)]
+        start: ExtrudeStart,
+        /// How far the extrusion travels on each of its sides.
+        extent: ExtrudeExtent,
+        /// Boolean combination with existing bodies.
+        op: BooleanOp,
+        /// Whether the result is a solid (`true`) or sheet (`false`), when selectable.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_solid"
+        )]
+        solid: Option<bool>,
+        /// Native face-building policy used to turn closed wires into faces.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_face_maker"
+        )]
+        face_maker: Option<FaceMaker>,
+        /// Taper orientation used for inner wires, when selectable.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_inner_wire_taper"
+        )]
+        inner_wire_taper: Option<InnerWireTaper>,
+        /// Whether stored lengths are measured along the profile normal instead of the sweep axis.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_length_along_profile_normal"
+        )]
+        length_along_profile_normal: Option<bool>,
+        /// Whether a profile containing multiple faces is accepted as one operation.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_allow_multi_profile_faces"
+        )]
+        allow_multi_profile_faces: Option<bool>,
+    },
+    /// Loft through an ordered sequence of profile or point sections.
+    Loft {
+        /// Ordered cross-sections from the loft start to end.
+        sections: Vec<LoftSection>,
+        /// Mutually exclusive guide trajectories or centerline.
+        guidance: LoftGuidance,
+        /// Boolean combination with existing bodies.
+        op: BooleanOp,
+        /// Whether the loft closes from the last section to the first.
+        #[serde(default)]
+        closed: bool,
+        /// Whether the sections bound a solid instead of a sheet body.
+        #[serde(default = "crate::default_true")]
+        solid: bool,
+        /// Whether adjacent sections are connected by straight ruled spans.
+        #[serde(default)]
+        ruled: bool,
+        /// Whether linear edges and planar faces are simplified after construction.
+        #[serde(default)]
+        linearize: bool,
+        /// Maximum polynomial degree used to interpolate the sections, when constrained.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_max_degree"
+        )]
+        max_degree: Option<std::num::NonZeroU32>,
+        /// Whether profiles containing multiple faces are accepted as one operation.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_allow_multi_profile_faces"
+        )]
+        allow_multi_profile_faces: Option<bool>,
+    },
+}
+
+/// Neutral construction semantics: one operation, optionally under a single
+/// post-processing layer.
+///
+/// A post-processed operation carries a [`FeatureOperation`], which has no
+/// post-processing arm, so a post-process inside a post-process has no
+/// spelling. Every other operation reaches the wire through the untagged
+/// [`FeatureDefinition::Operation`] arm, so the wire stays a single flat
+/// `definition`-tagged object.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "definition", rename_all = "snake_case", deny_unknown_fields)]
+pub enum FeatureDefinition {
+    /// Operation followed by source-requested topology cleanup.
+    PostProcess {
+        /// Underlying construction whose result is post-processed.
+        operation: FeatureOperation,
+        /// Whether redundant splitter boundaries are removed.
+        refine: bool,
+        /// Boolean-operation tolerance selection carried by the feature family.
+        fuzzy_tolerance: FuzzyTolerance,
+    },
+    /// Any operation that a post-processing layer also admits.
+    #[serde(untagged)]
+    Operation(FeatureOperation),
 }
 
 /// Operation family of a feature whose construction operands are unresolved.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum UnresolvedFamily {
     /// The `datum_plane` operation family.
     DatumPlane,
@@ -2353,12 +4057,12 @@ pub enum UnresolvedFamily {
     MoveObject,
 }
 
-impl FeatureDefinition {
-    /// Family name of a definition whose replay produces body geometry, and `None` for
+impl FeatureOperation {
+    /// Family name of an operation whose replay produces body geometry, and `None` for
     /// definitions that do not.
     ///
     /// A feature of one of these families carries current result bodies in its
-    /// [`Feature::outputs`] list or intermediate result identities in a
+    /// [`FeatureEvaluation::outputs`] list or intermediate result identities in a
     /// [`FeatureResultTopology`]. The returned name is the stable lowercase label for the
     /// family, suitable for grouping such features in a report.
     pub fn body_output_family(&self) -> Option<&'static str> {
@@ -2424,175 +4128,78 @@ impl FeatureDefinition {
             _ => None,
         }
     }
+}
 
-    /// Operation family of an unresolved definition, and `None` when it is resolved.
-    pub fn unresolved_family(&self) -> Option<UnresolvedFamily> {
+impl FeatureDefinition {
+    /// Copy the admitted definition after charging each owned field allocation.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        decode_clone::CloneForDecode::try_clone_for_decode(self, ctx, operation)
+    }
+
+    /// The operation this definition performs, its post-processing layer aside.
+    #[must_use]
+    pub const fn operation(&self) -> &FeatureOperation {
         match self {
-            Self::Unresolved { family } => Some(*family),
-            _ => None,
+            Self::PostProcess { operation, .. } | Self::Operation(operation) => operation,
+        }
+    }
+
+    /// Family name of a definition whose replay produces body geometry, and
+    /// `None` for definitions that do not.
+    ///
+    /// A feature of one of these families carries current result bodies in its
+    /// [`FeatureEvaluation::outputs`] list or intermediate result identities in a
+    /// [`FeatureResultTopology`]. The returned name is the stable lowercase
+    /// label for the family, suitable for grouping such features in a report.
+    #[must_use]
+    pub fn body_output_family(&self) -> Option<&'static str> {
+        match self {
+            Self::PostProcess { operation, .. } => operation.body_output_family(),
+            Self::Operation(operation) => operation.body_output_family(),
         }
     }
 }
 
 /// Direction in which an extrusion sweeps its profile.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ExtrudeDirection {
     /// Native direction selection is present structurally but unresolved.
-    Unresolved,
+    Unresolved {},
     /// Sweep along the profile's positive normal.
-    #[default]
-    ProfileNormal,
+    ProfileNormal {},
     /// Sweep opposite the profile's positive normal.
-    ReversedProfileNormal,
+    ReversedProfileNormal {},
     /// Sweep along an explicit model-space vector.
     Explicit {
         /// Directed model-space sweep vector.
-        vector: Vector3,
+        vector: FeatureDirection3,
         /// Persisted selection or rule used to resolve the vector, when retained.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_source"
+        )]
         source: Option<ExtrusionDirectionSource>,
     },
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
-enum ExtrudeDirectionValueWire {
-    Unresolved,
-    #[default]
-    ProfileNormal,
-    ReversedProfileNormal,
-    Explicit(Vector3),
-}
-
-#[cfg(feature = "schema")]
-#[derive(JsonSchema)]
-#[expect(
-    dead_code,
-    reason = "fields define the extrusion-direction wire schema"
-)]
-struct ExtrudeDirectionSchemaWire {
-    #[serde(
-        default,
-        skip_serializing_if = "ExtrudeDirectionValueWire::is_profile_normal"
-    )]
-    direction: ExtrudeDirectionValueWire,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    direction_source: Option<ExtrusionDirectionSource>,
-}
-
-impl ExtrudeDirectionValueWire {
-    fn is_profile_normal(&self) -> bool {
-        matches!(self, Self::ProfileNormal)
+impl Default for ExtrudeDirection {
+    fn default() -> Self {
+        Self::ProfileNormal {}
     }
-}
-
-mod extrude_direction_wire {
-    use super::{ExtrudeDirection, ExtrudeDirectionValueWire, ExtrusionDirectionSource};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    #[derive(Serialize, Deserialize)]
-    struct Wire {
-        #[serde(
-            default,
-            skip_serializing_if = "ExtrudeDirectionValueWire::is_profile_normal"
-        )]
-        direction: ExtrudeDirectionValueWire,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        direction_source: Option<ExtrusionDirectionSource>,
-    }
-
-    pub fn serialize<S>(value: &ExtrudeDirection, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let (direction, direction_source) = match value {
-            ExtrudeDirection::Unresolved => (ExtrudeDirectionValueWire::Unresolved, None),
-            ExtrudeDirection::ProfileNormal => (ExtrudeDirectionValueWire::ProfileNormal, None),
-            ExtrudeDirection::ReversedProfileNormal => {
-                (ExtrudeDirectionValueWire::ReversedProfileNormal, None)
-            }
-            ExtrudeDirection::Explicit { vector, source } => {
-                (ExtrudeDirectionValueWire::Explicit(*vector), source.clone())
-            }
-        };
-        Wire {
-            direction,
-            direction_source,
-        }
-        .serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<ExtrudeDirection, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let Wire {
-            direction,
-            direction_source,
-        } = Wire::deserialize(deserializer)?;
-        match direction {
-            ExtrudeDirectionValueWire::Explicit(vector) => Ok(ExtrudeDirection::Explicit {
-                vector,
-                source: direction_source,
-            }),
-            ExtrudeDirectionValueWire::Unresolved if direction_source.is_none() => {
-                Ok(ExtrudeDirection::Unresolved)
-            }
-            ExtrudeDirectionValueWire::ProfileNormal if direction_source.is_none() => {
-                Ok(ExtrudeDirection::ProfileNormal)
-            }
-            ExtrudeDirectionValueWire::ReversedProfileNormal if direction_source.is_none() => {
-                Ok(ExtrudeDirection::ReversedProfileNormal)
-            }
-            _ => Err(serde::de::Error::custom(
-                "direction_source requires an explicit extrusion direction",
-            )),
-        }
-    }
-}
-/// One complete spatial placement in a hole operation.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum HolePlacement {
-    /// Position and directed drilling vector recorded by the feature definition.
-    Directed {
-        /// Hole entry position in model space.
-        position: Point3,
-        /// Directed drilling vector.
-        direction: Vector3,
-    },
-    /// Unoriented geometric axis inferred from a generated cylindrical surface.
-    Axis {
-        /// Point on the cylinder axis in model space.
-        origin: Point3,
-        /// Unoriented cylinder-axis vector; its sign has no semantic meaning.
-        axis: Vector3,
-    },
-}
-
-/// One geometric selection repeated or reflected by a pattern operation.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
-pub enum PatternSeed {
-    /// Complete result of a preceding construction-history feature.
-    Feature(FeatureId),
-    /// Selected faces, including faces in an intermediate regenerated result.
-    Faces(FaceSelection),
-    /// Selected bodies, including bodies in an intermediate regenerated result.
-    Bodies(BodySelection),
-    /// Selected placed component occurrences.
-    Occurrences(Vec<OccurrenceId>),
 }
 
 /// External model format consumed by an imported-geometry feature.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum GeometryImportFormat {
     /// ISO 10303 STEP model data.
     Step,
@@ -2605,24 +4212,26 @@ pub enum GeometryImportFormat {
 /// Selection policy for Boolean-operation fuzzy tolerance.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum FuzzyTolerance {
     /// Let the modeling kernel use its default tolerance.
     KernelDefault,
     /// Determine a suitable tolerance from the participating shapes.
     Automatic,
     /// Use the supplied positive model-unit tolerance.
-    Explicit(f64),
-}
-
-const fn default_true() -> bool {
-    true
+    Explicit(PositiveLength),
 }
 
 /// Geometric offset construction used by a thin-wall shell operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum ShellMode {
     /// Offsets the selected boundary as a skin.
     Skin,
@@ -2636,6 +4245,7 @@ pub enum ShellMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum ShellJoin {
     /// Continues corners with rounded arcs.
     Arc,
@@ -2649,6 +4259,7 @@ pub enum ShellJoin {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum RuledCurveOrientation {
     /// Select curve traversal automatically from endpoint proximity.
     Automatic,
@@ -2658,11 +4269,316 @@ pub enum RuledCurveOrientation {
     Reversed,
 }
 
+/// The refusal of primitive dimensions that define no solid.
+const INVALID_PRIMITIVE_DIMENSIONS: &str = "primitive dimensions are invalid";
+
+/// An analytic solid primitive with valid dimensions.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "PrimitiveSolidKind", into = "PrimitiveSolidKind")]
+pub struct PrimitiveSolid(PrimitiveSolidKind);
+
+/// Which condition refuses a scaled primitive.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrimitiveSolidScaleError {
+    /// A scaled dimension overflows.
+    NonFinite,
+    /// A positive dimension or strict extent collapses under rounding.
+    Admission(&'static str),
+}
+
+impl PrimitiveSolid {
+    /// Admits dimensions that define a solid primitive.
+    pub fn new(kind: PrimitiveSolidKind) -> Result<Self, &'static str> {
+        let positive = |value: Length| value.get() > 0.0;
+        let valid = match &kind {
+            PrimitiveSolidKind::Box {
+                length,
+                width,
+                height,
+            } => positive(*length) && positive(*width) && positive(*height),
+            PrimitiveSolidKind::Cylinder { radius, height, .. } => {
+                positive(*radius) && positive(*height)
+            }
+            PrimitiveSolidKind::Cone {
+                radius1,
+                radius2,
+                height,
+                ..
+            } => {
+                radius1.get() >= 0.0
+                    && radius2.get() >= 0.0
+                    && (positive(*radius1) || positive(*radius2))
+                    && positive(*height)
+            }
+            PrimitiveSolidKind::Sphere {
+                radius,
+                latitude1,
+                latitude2,
+                ..
+            } => positive(*radius) && latitude1.get() < latitude2.get(),
+            PrimitiveSolidKind::Ellipsoid {
+                x_radius,
+                y_radius,
+                z_radius,
+                latitude1,
+                latitude2,
+                ..
+            } => {
+                positive(*x_radius)
+                    && positive(*y_radius)
+                    && positive(*z_radius)
+                    && latitude1.get() < latitude2.get()
+            }
+            PrimitiveSolidKind::Torus {
+                major_radius,
+                minor_radius,
+                latitude1,
+                latitude2,
+                ..
+            } => {
+                positive(*major_radius)
+                    && positive(*minor_radius)
+                    && latitude1.get() < latitude2.get()
+            }
+            PrimitiveSolidKind::Prism {
+                sides,
+                circumradius,
+                height,
+            } => *sides >= 3 && positive(*circumradius) && positive(*height),
+            PrimitiveSolidKind::Wedge {
+                xmin,
+                ymin,
+                zmin,
+                x2min,
+                z2min,
+                xmax,
+                ymax,
+                zmax,
+                x2max,
+                z2max,
+            } => {
+                xmax.get() > xmin.get()
+                    && ymax.get() > ymin.get()
+                    && zmax.get() > zmin.get()
+                    && x2max.get() >= x2min.get()
+                    && z2max.get() >= z2min.get()
+            }
+        };
+        valid
+            .then_some(Self(kind))
+            .ok_or(INVALID_PRIMITIVE_DIMENSIONS)
+    }
+
+    /// The primitive with every length times `scale`, keeping its angles and
+    /// side count.
+    ///
+    /// A non-finite result is distinguished from a collapsed dimension. Rounding is monotone, so a
+    /// positive scale keeps every sign and every non-strict order of the
+    /// lengths, and the angles and the side count are kept. The scaled
+    /// dimensions are tested only for what scaling can break: a positive
+    /// length that rounds to zero, and a wedge extent whose strictly ordered
+    /// bounds round to one value. That refusal is the admission's own text.
+    pub fn scaled(&self, scale: PositiveReal) -> Result<Self, PrimitiveSolidScaleError> {
+        let scaled = |value: Length| {
+            Length::new(value.get() * scale.get()).ok_or(PrimitiveSolidScaleError::NonFinite)
+        };
+        let positive = |value: Length| value.get() > 0.0;
+        let (kind, valid) = match &self.0 {
+            PrimitiveSolidKind::Box {
+                length,
+                width,
+                height,
+            } => {
+                let [length, width, height] = [scaled(*length)?, scaled(*width)?, scaled(*height)?];
+                (
+                    PrimitiveSolidKind::Box {
+                        length,
+                        width,
+                        height,
+                    },
+                    positive(length) && positive(width) && positive(height),
+                )
+            }
+            PrimitiveSolidKind::Cylinder {
+                radius,
+                height,
+                angle,
+            } => {
+                let [radius, height] = [scaled(*radius)?, scaled(*height)?];
+                (
+                    PrimitiveSolidKind::Cylinder {
+                        radius,
+                        height,
+                        angle: *angle,
+                    },
+                    positive(radius) && positive(height),
+                )
+            }
+            PrimitiveSolidKind::Cone {
+                radius1,
+                radius2,
+                height,
+                angle,
+            } => {
+                let [radius1, radius2, height] =
+                    [scaled(*radius1)?, scaled(*radius2)?, scaled(*height)?];
+                (
+                    PrimitiveSolidKind::Cone {
+                        radius1,
+                        radius2,
+                        height,
+                        angle: *angle,
+                    },
+                    (positive(radius1) || positive(radius2)) && positive(height),
+                )
+            }
+            PrimitiveSolidKind::Sphere {
+                radius,
+                latitude1,
+                latitude2,
+                longitude,
+            } => {
+                let radius = scaled(*radius)?;
+                (
+                    PrimitiveSolidKind::Sphere {
+                        radius,
+                        latitude1: *latitude1,
+                        latitude2: *latitude2,
+                        longitude: *longitude,
+                    },
+                    positive(radius),
+                )
+            }
+            PrimitiveSolidKind::Ellipsoid {
+                x_radius,
+                y_radius,
+                z_radius,
+                latitude1,
+                latitude2,
+                longitude,
+            } => {
+                let [x_radius, y_radius, z_radius] =
+                    [scaled(*x_radius)?, scaled(*y_radius)?, scaled(*z_radius)?];
+                (
+                    PrimitiveSolidKind::Ellipsoid {
+                        x_radius,
+                        y_radius,
+                        z_radius,
+                        latitude1: *latitude1,
+                        latitude2: *latitude2,
+                        longitude: *longitude,
+                    },
+                    positive(x_radius) && positive(y_radius) && positive(z_radius),
+                )
+            }
+            PrimitiveSolidKind::Torus {
+                major_radius,
+                minor_radius,
+                latitude1,
+                latitude2,
+                longitude,
+            } => {
+                let [major_radius, minor_radius] = [scaled(*major_radius)?, scaled(*minor_radius)?];
+                (
+                    PrimitiveSolidKind::Torus {
+                        major_radius,
+                        minor_radius,
+                        latitude1: *latitude1,
+                        latitude2: *latitude2,
+                        longitude: *longitude,
+                    },
+                    positive(major_radius) && positive(minor_radius),
+                )
+            }
+            PrimitiveSolidKind::Prism {
+                sides,
+                circumradius,
+                height,
+            } => {
+                let [circumradius, height] = [scaled(*circumradius)?, scaled(*height)?];
+                (
+                    PrimitiveSolidKind::Prism {
+                        sides: *sides,
+                        circumradius,
+                        height,
+                    },
+                    positive(circumradius) && positive(height),
+                )
+            }
+            PrimitiveSolidKind::Wedge {
+                xmin,
+                ymin,
+                zmin,
+                x2min,
+                z2min,
+                xmax,
+                ymax,
+                zmax,
+                x2max,
+                z2max,
+            } => {
+                let [xmin, ymin, zmin, x2min, z2min, xmax, ymax, zmax, x2max, z2max] = [
+                    scaled(*xmin)?,
+                    scaled(*ymin)?,
+                    scaled(*zmin)?,
+                    scaled(*x2min)?,
+                    scaled(*z2min)?,
+                    scaled(*xmax)?,
+                    scaled(*ymax)?,
+                    scaled(*zmax)?,
+                    scaled(*x2max)?,
+                    scaled(*z2max)?,
+                ];
+                (
+                    PrimitiveSolidKind::Wedge {
+                        xmin,
+                        ymin,
+                        zmin,
+                        x2min,
+                        z2min,
+                        xmax,
+                        ymax,
+                        zmax,
+                        x2max,
+                        z2max,
+                    },
+                    xmax.get() > xmin.get() && ymax.get() > ymin.get() && zmax.get() > zmin.get(),
+                )
+            }
+        };
+        valid
+            .then_some(Self(kind))
+            .ok_or(PrimitiveSolidScaleError::Admission(
+                INVALID_PRIMITIVE_DIMENSIONS,
+            ))
+    }
+
+    /// Returns the primitive form and dimensions.
+    pub fn kind(&self) -> &PrimitiveSolidKind {
+        &self.0
+    }
+}
+
+impl TryFrom<PrimitiveSolidKind> for PrimitiveSolid {
+    type Error = &'static str;
+
+    fn try_from(kind: PrimitiveSolidKind) -> Result<Self, Self::Error> {
+        Self::new(kind)
+    }
+}
+
+impl From<PrimitiveSolid> for PrimitiveSolidKind {
+    fn from(solid: PrimitiveSolid) -> Self {
+        solid.0
+    }
+}
+
 /// Canonical dimensions of an analytic solid primitive.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum PrimitiveSolid {
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum PrimitiveSolidKind {
     /// Rectangular solid aligned to its feature frame.
     Box {
         /// Size along the local x-axis.
@@ -2766,46 +4682,189 @@ pub enum PrimitiveSolid {
 }
 
 /// Resolution state and inputs of a profile revolution.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
 pub enum RevolveConstruction {
-    /// One or more required construction inputs are absent.
+    /// The first absent required construction input names the partial state.
     Unresolved(PartialRevolveConstruction),
     /// All required construction inputs are present.
     Resolved {
         /// Profile revolved about the axis.
-        profile: ProfileRef,
+        profile: PlanarProfileRef,
         /// Placed revolution axis and its optional native source.
         axis: RevolutionAxis,
         /// Angular extent.
         extent: RevolveExtent,
         /// Whether a standalone revolution creates a solid rather than a sheet.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_solid"
+        )]
         solid: Option<bool>,
         /// Face-building algorithm used for a standalone solid revolution.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_face_maker_class"
+        )]
+        #[serde(rename = "face_maker_class")]
+        #[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
         face_maker: Option<FaceMaker>,
         /// Compatibility ordering for fusing a `PartDesign` revolution into its body.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_fuse_order"
+        )]
         fuse_order: Option<RevolutionFuseOrder>,
         /// Whether a profile containing multiple faces is accepted as one operation.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_allow_multi_profile_faces"
+        )]
         allow_multi_profile_faces: Option<bool>,
     },
 }
 
-/// Incomplete inputs of a profile revolution.
-#[derive(Debug, Clone, PartialEq)]
-pub struct PartialRevolveConstruction {
-    profile: Option<ProfileRef>,
-    axis: Option<RevolutionAxis>,
-    extent: Option<RevolveExtent>,
-    solid: Option<bool>,
-    face_maker: Option<FaceMaker>,
-    fuse_order: Option<RevolutionFuseOrder>,
-    allow_multi_profile_faces: Option<bool>,
+/// Incomplete inputs of a profile revolution, named by the first absent operand
+/// in the order profile, axis, extent.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "missing", rename_all = "snake_case", deny_unknown_fields)]
+pub enum PartialRevolveConstruction {
+    /// The profile is absent.
+    Profile {
+        /// Placed revolution axis, when decoded.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_partial_revolve_construction_axis"
+        )]
+        axis: Option<RevolutionAxis>,
+        /// Angular extent, when decoded.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_partial_revolve_construction_extent"
+        )]
+        extent: Option<RevolveExtent>,
+        /// Whether a standalone revolution creates a solid rather than a sheet.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_solid"
+        )]
+        solid: Option<bool>,
+        /// Face-building algorithm used for a standalone solid revolution.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_face_maker_class"
+        )]
+        #[serde(rename = "face_maker_class")]
+        #[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
+        face_maker: Option<FaceMaker>,
+        /// Compatibility ordering for fusing a `PartDesign` revolution into its body.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_fuse_order"
+        )]
+        fuse_order: Option<RevolutionFuseOrder>,
+        /// Whether a profile containing multiple faces is accepted as one operation.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_allow_multi_profile_faces"
+        )]
+        allow_multi_profile_faces: Option<bool>,
+    },
+    /// The profile is present and the axis is absent.
+    Axis {
+        /// Profile revolved about the axis.
+        profile: PlanarProfileRef,
+        /// Angular extent, when decoded.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_partial_revolve_construction_extent"
+        )]
+        extent: Option<RevolveExtent>,
+        /// Whether a standalone revolution creates a solid rather than a sheet.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_solid"
+        )]
+        solid: Option<bool>,
+        /// Face-building algorithm used for a standalone solid revolution.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_face_maker_class"
+        )]
+        #[serde(rename = "face_maker_class")]
+        #[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
+        face_maker: Option<FaceMaker>,
+        /// Compatibility ordering for fusing a `PartDesign` revolution into its body.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_fuse_order"
+        )]
+        fuse_order: Option<RevolutionFuseOrder>,
+        /// Whether a profile containing multiple faces is accepted as one operation.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_allow_multi_profile_faces"
+        )]
+        allow_multi_profile_faces: Option<bool>,
+    },
+    /// The profile and the axis are present and the extent is absent.
+    Extent {
+        /// Profile revolved about the axis.
+        profile: PlanarProfileRef,
+        /// Placed revolution axis and its optional native source.
+        axis: RevolutionAxis,
+        /// Whether a standalone revolution creates a solid rather than a sheet.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_solid"
+        )]
+        solid: Option<bool>,
+        /// Face-building algorithm used for a standalone solid revolution.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_face_maker_class"
+        )]
+        #[serde(rename = "face_maker_class")]
+        #[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
+        face_maker: Option<FaceMaker>,
+        /// Compatibility ordering for fusing a `PartDesign` revolution into its body.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_fuse_order"
+        )]
+        fuse_order: Option<RevolutionFuseOrder>,
+        /// Whether a profile containing multiple faces is accepted as one operation.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_allow_multi_profile_faces"
+        )]
+        allow_multi_profile_faces: Option<bool>,
+    },
 }
 
-#[derive(Clone)]
-struct RevolveConstructionComponents {
-    profile: Option<ProfileRef>,
-    axis: Option<RevolutionAxis>,
-    extent: Option<RevolveExtent>,
+/// The four optional selections a revolution carries in every resolution state.
+struct RevolveSelections {
     solid: Option<bool>,
     face_maker: Option<FaceMaker>,
     fuse_order: Option<RevolutionFuseOrder>,
@@ -2813,42 +4872,114 @@ struct RevolveConstructionComponents {
 }
 
 impl RevolveConstruction {
-    /// Constructs the resolved or partial form from independently decoded inputs.
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "the arguments are the complete legacy revolution record"
-    )]
-    pub fn new(
-        profile: Option<ProfileRef>,
-        axis: Option<RevolutionAxis>,
-        extent: Option<RevolveExtent>,
-        solid: Option<bool>,
-        face_maker: Option<FaceMaker>,
-        fuse_order: Option<RevolutionFuseOrder>,
-        allow_multi_profile_faces: Option<bool>,
-    ) -> Self {
-        Self::from_components(RevolveConstructionComponents {
-            profile,
-            axis,
-            extent,
-            solid,
-            face_maker,
-            fuse_order,
-            allow_multi_profile_faces,
-        })
+    fn selections(&self) -> RevolveSelections {
+        let (solid, face_maker, fuse_order, allow_multi_profile_faces) = match self {
+            Self::Resolved {
+                solid,
+                face_maker,
+                fuse_order,
+                allow_multi_profile_faces,
+                ..
+            }
+            | Self::Unresolved(
+                PartialRevolveConstruction::Profile {
+                    solid,
+                    face_maker,
+                    fuse_order,
+                    allow_multi_profile_faces,
+                    ..
+                }
+                | PartialRevolveConstruction::Axis {
+                    solid,
+                    face_maker,
+                    fuse_order,
+                    allow_multi_profile_faces,
+                    ..
+                }
+                | PartialRevolveConstruction::Extent {
+                    solid,
+                    face_maker,
+                    fuse_order,
+                    allow_multi_profile_faces,
+                    ..
+                },
+            ) => (solid, face_maker, fuse_order, allow_multi_profile_faces),
+        };
+        RevolveSelections {
+            solid: *solid,
+            face_maker: face_maker.clone(),
+            fuse_order: *fuse_order,
+            allow_multi_profile_faces: *allow_multi_profile_faces,
+        }
     }
 
-    fn from_components(components: RevolveConstructionComponents) -> Self {
-        let RevolveConstructionComponents {
-            profile,
-            axis,
-            extent,
+    /// Returns whether all required construction inputs are present.
+    pub const fn is_resolved(&self) -> bool {
+        matches!(self, Self::Resolved { .. })
+    }
+
+    /// Returns the profile, when decoded.
+    pub const fn profile(&self) -> Option<&PlanarProfileRef> {
+        match self {
+            Self::Unresolved(PartialRevolveConstruction::Profile { .. }) => None,
+            Self::Unresolved(
+                PartialRevolveConstruction::Axis { profile, .. }
+                | PartialRevolveConstruction::Extent { profile, .. },
+            )
+            | Self::Resolved { profile, .. } => Some(profile),
+        }
+    }
+
+    /// Returns the mutable profile, when decoded.
+    pub const fn profile_mut(&mut self) -> Option<&mut PlanarProfileRef> {
+        match self {
+            Self::Unresolved(PartialRevolveConstruction::Profile { .. }) => None,
+            Self::Unresolved(
+                PartialRevolveConstruction::Axis { profile, .. }
+                | PartialRevolveConstruction::Extent { profile, .. },
+            )
+            | Self::Resolved { profile, .. } => Some(profile),
+        }
+    }
+
+    /// Replaces the decoded profile, naming the resolution state the new
+    /// operand set produces.
+    pub fn set_profile(&mut self, profile: Option<PlanarProfileRef>) {
+        let RevolveSelections {
             solid,
             face_maker,
             fuse_order,
             allow_multi_profile_faces,
-        } = components;
-        match (profile, axis, extent) {
+        } = self.selections();
+        let axis = self.axis().cloned();
+        let extent = self.extent().cloned();
+        *self = match (profile, axis, extent) {
+            (None, axis, extent) => Self::Unresolved(PartialRevolveConstruction::Profile {
+                axis,
+                extent,
+                solid,
+                face_maker,
+                fuse_order,
+                allow_multi_profile_faces,
+            }),
+            (Some(profile), None, extent) => Self::Unresolved(PartialRevolveConstruction::Axis {
+                profile,
+                extent,
+                solid,
+                face_maker,
+                fuse_order,
+                allow_multi_profile_faces,
+            }),
+            (Some(profile), Some(axis), None) => {
+                Self::Unresolved(PartialRevolveConstruction::Extent {
+                    profile,
+                    axis,
+                    solid,
+                    face_maker,
+                    fuse_order,
+                    allow_multi_profile_faces,
+                })
+            }
             (Some(profile), Some(axis), Some(extent)) => Self::Resolved {
                 profile,
                 axis,
@@ -2858,8 +4989,123 @@ impl RevolveConstruction {
                 fuse_order,
                 allow_multi_profile_faces,
             },
-            (profile, axis, extent) => Self::Unresolved(PartialRevolveConstruction {
+        };
+    }
+
+    /// Returns the placed axis, when decoded.
+    pub const fn axis(&self) -> Option<&RevolutionAxis> {
+        match self {
+            Self::Unresolved(
+                PartialRevolveConstruction::Profile { axis: None, .. }
+                | PartialRevolveConstruction::Axis { .. },
+            ) => None,
+            Self::Unresolved(
+                PartialRevolveConstruction::Profile {
+                    axis: Some(axis), ..
+                }
+                | PartialRevolveConstruction::Extent { axis, .. },
+            )
+            | Self::Resolved { axis, .. } => Some(axis),
+        }
+    }
+
+    /// Returns the mutable placed axis, when decoded.
+    pub const fn axis_mut(&mut self) -> Option<&mut RevolutionAxis> {
+        match self {
+            Self::Unresolved(
+                PartialRevolveConstruction::Profile { axis: None, .. }
+                | PartialRevolveConstruction::Axis { .. },
+            ) => None,
+            Self::Unresolved(
+                PartialRevolveConstruction::Profile {
+                    axis: Some(axis), ..
+                }
+                | PartialRevolveConstruction::Extent { axis, .. },
+            )
+            | Self::Resolved { axis, .. } => Some(axis),
+        }
+    }
+
+    /// Replaces the placed axis, naming the resolution state the new operand
+    /// set produces.
+    pub fn set_axis(&mut self, axis: Option<RevolutionAxis>) {
+        let old = std::mem::replace(
+            self,
+            Self::Unresolved(PartialRevolveConstruction::Profile {
+                axis: None,
+                extent: None,
+                solid: None,
+                face_maker: None,
+                fuse_order: None,
+                allow_multi_profile_faces: None,
+            }),
+        );
+        let (profile, extent, solid, face_maker, fuse_order, allow_multi_profile_faces) = match old
+        {
+            Self::Unresolved(PartialRevolveConstruction::Profile {
+                extent,
+                solid,
+                face_maker,
+                fuse_order,
+                allow_multi_profile_faces,
+                ..
+            }) => (
+                None,
+                extent,
+                solid,
+                face_maker,
+                fuse_order,
+                allow_multi_profile_faces,
+            ),
+            Self::Unresolved(PartialRevolveConstruction::Axis {
                 profile,
+                extent,
+                solid,
+                face_maker,
+                fuse_order,
+                allow_multi_profile_faces,
+            }) => (
+                Some(profile),
+                extent,
+                solid,
+                face_maker,
+                fuse_order,
+                allow_multi_profile_faces,
+            ),
+            Self::Unresolved(PartialRevolveConstruction::Extent {
+                profile,
+                solid,
+                face_maker,
+                fuse_order,
+                allow_multi_profile_faces,
+                ..
+            }) => (
+                Some(profile),
+                None,
+                solid,
+                face_maker,
+                fuse_order,
+                allow_multi_profile_faces,
+            ),
+            Self::Resolved {
+                profile,
+                extent,
+                solid,
+                face_maker,
+                fuse_order,
+                allow_multi_profile_faces,
+                ..
+            } => (
+                Some(profile),
+                Some(extent),
+                solid,
+                face_maker,
+                fuse_order,
+                allow_multi_profile_faces,
+            ),
+        };
+        *self = match (profile, axis, extent) {
+            (None, axis, extent) => Self::Unresolved(PartialRevolveConstruction::Profile {
                 axis,
                 extent,
                 solid,
@@ -2867,21 +5113,25 @@ impl RevolveConstruction {
                 fuse_order,
                 allow_multi_profile_faces,
             }),
-        }
-    }
-
-    fn components(&self) -> RevolveConstructionComponents {
-        match self {
-            Self::Unresolved(partial) => RevolveConstructionComponents {
-                profile: partial.profile.clone(),
-                axis: partial.axis.clone(),
-                extent: partial.extent.clone(),
-                solid: partial.solid,
-                face_maker: partial.face_maker.clone(),
-                fuse_order: partial.fuse_order,
-                allow_multi_profile_faces: partial.allow_multi_profile_faces,
-            },
-            Self::Resolved {
+            (Some(profile), None, extent) => Self::Unresolved(PartialRevolveConstruction::Axis {
+                profile,
+                extent,
+                solid,
+                face_maker,
+                fuse_order,
+                allow_multi_profile_faces,
+            }),
+            (Some(profile), Some(axis), None) => {
+                Self::Unresolved(PartialRevolveConstruction::Extent {
+                    profile,
+                    axis,
+                    solid,
+                    face_maker,
+                    fuse_order,
+                    allow_multi_profile_faces,
+                })
+            }
+            (Some(profile), Some(axis), Some(extent)) => Self::Resolved {
                 profile,
                 axis,
                 extent,
@@ -2889,223 +5139,112 @@ impl RevolveConstruction {
                 face_maker,
                 fuse_order,
                 allow_multi_profile_faces,
-            } => RevolveConstructionComponents {
-                profile: Some(profile.clone()),
-                axis: Some(axis.clone()),
-                extent: Some(extent.clone()),
-                solid: *solid,
-                face_maker: face_maker.clone(),
-                fuse_order: *fuse_order,
-                allow_multi_profile_faces: *allow_multi_profile_faces,
             },
-        }
-    }
-
-    fn update(&mut self, update: impl FnOnce(&mut RevolveConstructionComponents)) {
-        let mut components = self.components();
-        update(&mut components);
-        *self = Self::from_components(components);
-    }
-
-    /// Returns whether all required construction inputs are present.
-    pub const fn is_resolved(&self) -> bool {
-        matches!(self, Self::Resolved { .. })
-    }
-
-    /// Returns the profile, when decoded.
-    pub fn profile(&self) -> Option<&ProfileRef> {
-        match self {
-            Self::Unresolved(partial) => partial.profile.as_ref(),
-            Self::Resolved { profile, .. } => Some(profile),
-        }
-    }
-
-    /// Returns the mutable profile, when decoded.
-    pub fn profile_mut(&mut self) -> Option<&mut ProfileRef> {
-        match self {
-            Self::Unresolved(partial) => partial.profile.as_mut(),
-            Self::Resolved { profile, .. } => Some(profile),
-        }
-    }
-
-    /// Replaces the decoded profile and updates the resolution state.
-    pub fn set_profile(&mut self, profile: Option<ProfileRef>) {
-        self.update(|components| components.profile = profile);
-    }
-
-    /// Returns the placed axis, when decoded.
-    pub fn axis(&self) -> Option<&RevolutionAxis> {
-        match self {
-            Self::Unresolved(partial) => partial.axis.as_ref(),
-            Self::Resolved { axis, .. } => Some(axis),
-        }
-    }
-
-    /// Returns the mutable placed axis, when decoded.
-    pub fn axis_mut(&mut self) -> Option<&mut RevolutionAxis> {
-        match self {
-            Self::Unresolved(partial) => partial.axis.as_mut(),
-            Self::Resolved { axis, .. } => Some(axis),
-        }
-    }
-
-    /// Replaces the placed axis and updates the resolution state.
-    pub fn set_axis(&mut self, axis: Option<RevolutionAxis>) {
-        self.update(|components| components.axis = axis);
+        };
     }
 
     /// Returns the angular extent, when decoded.
-    pub fn extent(&self) -> Option<&RevolveExtent> {
+    pub const fn extent(&self) -> Option<&RevolveExtent> {
         match self {
-            Self::Unresolved(partial) => partial.extent.as_ref(),
-            Self::Resolved { extent, .. } => Some(extent),
+            Self::Unresolved(
+                PartialRevolveConstruction::Profile { extent: None, .. }
+                | PartialRevolveConstruction::Axis { extent: None, .. }
+                | PartialRevolveConstruction::Extent { .. },
+            ) => None,
+            Self::Unresolved(
+                PartialRevolveConstruction::Profile {
+                    extent: Some(extent),
+                    ..
+                }
+                | PartialRevolveConstruction::Axis {
+                    extent: Some(extent),
+                    ..
+                },
+            )
+            | Self::Resolved { extent, .. } => Some(extent),
         }
     }
 
     /// Returns the mutable angular extent, when decoded.
-    pub fn extent_mut(&mut self) -> Option<&mut RevolveExtent> {
+    pub const fn extent_mut(&mut self) -> Option<&mut RevolveExtent> {
         match self {
-            Self::Unresolved(partial) => partial.extent.as_mut(),
-            Self::Resolved { extent, .. } => Some(extent),
+            Self::Unresolved(
+                PartialRevolveConstruction::Profile { extent: None, .. }
+                | PartialRevolveConstruction::Axis { extent: None, .. }
+                | PartialRevolveConstruction::Extent { .. },
+            ) => None,
+            Self::Unresolved(
+                PartialRevolveConstruction::Profile {
+                    extent: Some(extent),
+                    ..
+                }
+                | PartialRevolveConstruction::Axis {
+                    extent: Some(extent),
+                    ..
+                },
+            )
+            | Self::Resolved { extent, .. } => Some(extent),
         }
-    }
-
-    /// Replaces the angular extent and updates the resolution state.
-    pub fn set_extent(&mut self, extent: Option<RevolveExtent>) {
-        self.update(|components| components.extent = extent);
     }
 
     /// Returns the standalone solid selection, when carried.
     pub const fn solid(&self) -> Option<bool> {
         match self {
-            Self::Unresolved(partial) => partial.solid,
-            Self::Resolved { solid, .. } => *solid,
+            Self::Resolved { solid, .. }
+            | Self::Unresolved(
+                PartialRevolveConstruction::Profile { solid, .. }
+                | PartialRevolveConstruction::Axis { solid, .. }
+                | PartialRevolveConstruction::Extent { solid, .. },
+            ) => *solid,
         }
     }
 
-    /// Replaces the standalone solid selection.
-    pub fn set_solid(&mut self, solid: Option<bool>) {
-        self.update(|components| components.solid = solid);
-    }
-
     /// Returns the standalone face-maker selection, when carried.
-    pub fn face_maker(&self) -> Option<&FaceMaker> {
+    pub const fn face_maker(&self) -> Option<&FaceMaker> {
         match self {
-            Self::Unresolved(partial) => partial.face_maker.as_ref(),
-            Self::Resolved { face_maker, .. } => face_maker.as_ref(),
+            Self::Resolved { face_maker, .. }
+            | Self::Unresolved(
+                PartialRevolveConstruction::Profile { face_maker, .. }
+                | PartialRevolveConstruction::Axis { face_maker, .. }
+                | PartialRevolveConstruction::Extent { face_maker, .. },
+            ) => face_maker.as_ref(),
         }
     }
 
     /// Returns the `PartDesign` fuse ordering, when carried.
     pub const fn fuse_order(&self) -> Option<RevolutionFuseOrder> {
         match self {
-            Self::Unresolved(partial) => partial.fuse_order,
-            Self::Resolved { fuse_order, .. } => *fuse_order,
+            Self::Resolved { fuse_order, .. }
+            | Self::Unresolved(
+                PartialRevolveConstruction::Profile { fuse_order, .. }
+                | PartialRevolveConstruction::Axis { fuse_order, .. }
+                | PartialRevolveConstruction::Extent { fuse_order, .. },
+            ) => *fuse_order,
         }
     }
 
     /// Returns the multi-profile-face selection, when carried.
     pub const fn allow_multi_profile_faces(&self) -> Option<bool> {
         match self {
-            Self::Unresolved(partial) => partial.allow_multi_profile_faces,
             Self::Resolved {
                 allow_multi_profile_faces,
                 ..
-            } => *allow_multi_profile_faces,
+            }
+            | Self::Unresolved(
+                PartialRevolveConstruction::Profile {
+                    allow_multi_profile_faces,
+                    ..
+                }
+                | PartialRevolveConstruction::Axis {
+                    allow_multi_profile_faces,
+                    ..
+                }
+                | PartialRevolveConstruction::Extent {
+                    allow_multi_profile_faces,
+                    ..
+                },
+            ) => *allow_multi_profile_faces,
         }
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct RevolveConstructionWire {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    profile: Option<ProfileRef>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    axis: Option<RevolutionAxis>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    extent: Option<RevolveExtent>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    axis_reference: Option<PathRef>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    solid: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "face_maker_class")]
-    #[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
-    face_maker: Option<FaceMaker>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    fuse_order: Option<RevolutionFuseOrder>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    allow_multi_profile_faces: Option<bool>,
-}
-
-impl Serialize for RevolveConstruction {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let components = self.components();
-        let axis_reference = components
-            .axis
-            .as_ref()
-            .and_then(|axis| axis.reference.clone());
-        RevolveConstructionWire {
-            profile: components.profile,
-            axis: components.axis,
-            extent: components.extent,
-            axis_reference,
-            solid: components.solid,
-            face_maker: components.face_maker,
-            fuse_order: components.fuse_order,
-            allow_multi_profile_faces: components.allow_multi_profile_faces,
-        }
-        .serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for RevolveConstruction {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let RevolveConstructionWire {
-            profile,
-            mut axis,
-            extent,
-            axis_reference,
-            solid,
-            face_maker,
-            fuse_order,
-            allow_multi_profile_faces,
-        } = RevolveConstructionWire::deserialize(deserializer)?;
-        if let Some(reference) = axis_reference {
-            let Some(axis) = axis.as_mut() else {
-                return Err(serde::de::Error::custom(
-                    "axis_reference requires a revolution axis",
-                ));
-            };
-            axis.reference = Some(reference);
-        }
-        Ok(Self::new(
-            profile,
-            axis,
-            extent,
-            solid,
-            face_maker,
-            fuse_order,
-            allow_multi_profile_faces,
-        ))
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for RevolveConstruction {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "RevolveConstruction".into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        RevolveConstructionWire::json_schema(generator)
     }
 }
 
@@ -3113,6 +5252,7 @@ impl JsonSchema for RevolveConstruction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum RevolutionFuseOrder {
     /// Existing body is the first fuse operand.
     BaseFirst,
@@ -3123,32 +5263,53 @@ pub enum RevolutionFuseOrder {
 /// Complete line placement used as a revolution axis.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct RevolutionAxis {
     /// A point on the axis.
-    pub origin: Point3,
-    /// Unit axis direction.
-    pub direction: Vector3,
+    pub origin: FinitePoint3,
+    /// Axis direction with a finite nonzero norm.
+    pub direction: FeatureDirection3,
     /// Native edge, datum, or sketch-axis selection used to resolve the axis.
-    #[serde(skip)]
-    #[cfg_attr(feature = "schema", schemars(skip))]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_revolution_axis_reference"
+    )]
     pub reference: Option<PathRef>,
 }
 
 /// Independently decoded inputs of a thin rib operation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct RibConstruction {
     /// Rib centerline or open profile, when resolved.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub profile: Option<ProfileRef>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_profile"
+    )]
+    pub profile: Option<PlanarProfileRef>,
     /// Rib growth direction, when resolved.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub direction: Option<Vector3>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_rib_construction_direction"
+    )]
+    pub direction: Option<FeatureDirection3>,
     /// Finished rib thickness, when resolved.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub thickness: Option<Length>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_thickness"
+    )]
+    pub thickness: Option<PositiveLength>,
     /// Distribution of thickness around the profile, when resolved.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_rib_construction_side"
+    )]
     pub side: Option<RibSide>,
     /// Draft state applied to the rib walls.
     #[serde(default)]
@@ -3159,6 +5320,7 @@ pub struct RibConstruction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum RibSide {
     /// Thickness lies on one side of the profile.
     OneSided,
@@ -3170,6 +5332,7 @@ pub enum RibSide {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "angle", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum RibDraft {
     /// Draft semantics are present but unresolved.
     #[default]
@@ -3177,13 +5340,14 @@ pub enum RibDraft {
     /// Rib walls have no draft.
     None,
     /// Rib walls use the specified draft angle.
-    Angle(Angle),
+    Angle(SlopeAngle),
 }
 
 /// Canonical role of a non-modeling feature-tree node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum FeatureTreeNodeRole {
     /// Annotation container.
     Annotations,
@@ -3243,20 +5407,22 @@ pub enum FeatureTreeNodeRole {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum CosmeticThreadExtent {
     /// Fixed thread length along the cylindrical face.
     Blind {
         /// Positive axial thread length.
-        length: Length,
+        length: PositiveLength,
     },
     /// Thread annotation spans the complete cylindrical face.
-    Through,
+    Through {},
 }
 
 /// Canonical role of a built-in reference plane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum PrincipalPlane {
     /// Front plane through the model origin.
     Front,
@@ -3267,7 +5433,10 @@ pub enum PrincipalPlane {
 }
 
 /// Known sketch space and its optional resolved planar geometry.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(from = "SketchFeatureBindingWire", into = "SketchFeatureBindingWire")]
+#[serde(deny_unknown_fields)]
 pub enum SketchFeatureBinding {
     /// The feature's sketch space is unresolved.
     Unresolved,
@@ -3285,81 +5454,29 @@ impl SketchFeatureBinding {
     }
 }
 
-#[cfg(feature = "schema")]
-#[derive(JsonSchema)]
-#[expect(dead_code, reason = "fields define the planar-sketch wire schema")]
-struct SketchFeatureSchemaWire {
-    space: SketchFeatureSpaceSchema,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    sketch: Option<crate::sketches::SketchId>,
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "space", rename_all = "snake_case", deny_unknown_fields)]
+enum SketchFeatureBindingWire {
+    /// The feature's sketch space is unresolved.
+    Unresolved {},
+    /// The source declares a planar sketch, with optional decoded geometry.
+    Planar {
+        /// Resolved planar sketch identity, when available.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_feature_operation_sketch"
+        )]
+        sketch: Option<crate::sketches::SketchId>,
+    },
 }
 
-#[cfg(feature = "schema")]
-#[derive(JsonSchema)]
-#[serde(rename_all = "snake_case")]
-#[expect(dead_code, reason = "variants define the planar-sketch wire schema")]
-enum SketchFeatureSpaceSchema {
-    Unresolved,
-    Planar,
-}
-
-mod sketch_feature_wire {
-    use super::SketchFeatureBinding;
-    use crate::sketches::SketchId;
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    #[derive(Clone, Copy, Default, Deserialize, Serialize)]
-    #[serde(rename_all = "snake_case")]
-    enum Space {
-        Unresolved,
-        #[default]
-        Planar,
-        Spatial,
-    }
-
-    #[derive(Serialize)]
-    struct WriteWire<'a> {
-        space: Space,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        sketch: Option<&'a SketchId>,
-    }
-
-    #[derive(Deserialize)]
-    struct ReadWire {
-        #[serde(default)]
-        space: Space,
-        #[serde(default)]
-        sketch: Option<SketchId>,
-    }
-
-    pub fn serialize<S>(value: &SketchFeatureBinding, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        WriteWire {
-            space: match value {
-                SketchFeatureBinding::Unresolved => Space::Unresolved,
-                SketchFeatureBinding::Planar(_) => Space::Planar,
-            },
-            sketch: value.id(),
-        }
-        .serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<SketchFeatureBinding, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = ReadWire::deserialize(deserializer)?;
-        match (wire.space, wire.sketch) {
-            (Space::Planar, sketch) => Ok(SketchFeatureBinding::Planar(sketch)),
-            (Space::Unresolved, None) => Ok(SketchFeatureBinding::Unresolved),
-            (Space::Unresolved, Some(_)) => Err(serde::de::Error::custom(
-                "sketch must be absent when space is unresolved",
-            )),
-            (Space::Spatial, _) => Err(serde::de::Error::custom(
-                "spatial sketch geometry requires the spatial_sketch definition",
-            )),
+impl From<SketchFeatureBindingWire> for SketchFeatureBinding {
+    fn from(value: SketchFeatureBindingWire) -> Self {
+        match value {
+            SketchFeatureBindingWire::Unresolved {} => Self::Unresolved,
+            SketchFeatureBindingWire::Planar { sketch } => Self::Planar(sketch),
         }
     }
 }
@@ -3368,6 +5485,7 @@ mod sketch_feature_wire {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 /// Side retained by a body-trim operation.
+#[serde(deny_unknown_fields)]
 pub enum BodyTrimSide {
     /// Retained side is unresolved.
     Unresolved,
@@ -3383,7 +5501,7 @@ pub enum BodyTrimSide {
 /// Direction law for projected curves.
 pub enum CurveProjectionDirection {
     /// One explicit model-space vector.
-    Vector(Vector3),
+    Vector(FeatureDirection3),
     /// Direction state without one explicit vector.
     State(CurveProjectionDirectionState),
 }
@@ -3398,6 +5516,7 @@ impl Default for CurveProjectionDirection {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 /// Direction state for projection without an explicit vector.
+#[serde(deny_unknown_fields)]
 pub enum CurveProjectionDirectionState {
     /// Projection direction remains unresolved.
     Unresolved,
@@ -3409,6 +5528,7 @@ pub enum CurveProjectionDirectionState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum BodyRetentionMode {
     /// The operation family is known but the selected retention mode is unavailable.
     Unresolved,
@@ -3421,98 +5541,27 @@ pub enum BodyRetentionMode {
 /// Material effect of a wrapped profile.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum WrapMode {
     /// Add material above the target face.
     Emboss {
         /// Positive normal offset above the target face.
-        depth: Length,
+        depth: PositiveLength,
     },
     /// Remove material below the target face.
     Deboss {
         /// Positive normal offset below the target face.
-        depth: Length,
+        depth: PositiveLength,
     },
     /// Imprint the profile without adding or removing material.
     Scribe,
-}
-
-#[cfg(feature = "schema")]
-#[derive(JsonSchema)]
-#[expect(dead_code, reason = "fields define the wrap-mode wire schema")]
-struct WrapModeSchemaWire {
-    mode: WrapModeSchemaKind,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    depth: Option<Length>,
-}
-
-#[cfg(feature = "schema")]
-#[derive(JsonSchema)]
-#[expect(dead_code, reason = "variants define the wrap-mode wire schema")]
-#[serde(rename_all = "snake_case")]
-enum WrapModeSchemaKind {
-    Emboss,
-    Deboss,
-    Scribe,
-}
-
-mod wrap_mode_wire {
-    use super::{Length, WrapMode};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    #[derive(Serialize, Deserialize)]
-    #[serde(rename_all = "snake_case")]
-    enum Kind {
-        Emboss,
-        Deboss,
-        Scribe,
-    }
-
-    #[derive(Serialize, Deserialize)]
-    struct Wire {
-        mode: Kind,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        depth: Option<Length>,
-    }
-
-    pub fn serialize<S>(value: &WrapMode, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let (mode, depth) = match value {
-            WrapMode::Emboss { depth } => (Kind::Emboss, Some(*depth)),
-            WrapMode::Deboss { depth } => (Kind::Deboss, Some(*depth)),
-            WrapMode::Scribe => (Kind::Scribe, None),
-        };
-        Wire { mode, depth }.serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<WrapMode, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = Wire::deserialize(deserializer)?;
-        match (wire.mode, wire.depth) {
-            (Kind::Emboss, Some(depth)) => Ok(WrapMode::Emboss { depth }),
-            (Kind::Deboss, Some(depth)) => Ok(WrapMode::Deboss { depth }),
-            (Kind::Scribe, None) => Ok(WrapMode::Scribe),
-            (Kind::Emboss, None) => Err(serde::de::Error::custom(
-                "wrap mode emboss requires the depth field",
-            )),
-            (Kind::Deboss, None) => Err(serde::de::Error::custom(
-                "wrap mode deboss requires the depth field",
-            )),
-            (Kind::Scribe, Some(_)) => Err(serde::de::Error::custom(
-                "wrap mode scribe forbids the depth field",
-            )),
-        }
-    }
 }
 
 /// Continuity order imposed at a generated surface boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SurfaceContinuity {
     /// Positional continuity only.
     Contact,
@@ -3523,54 +5572,41 @@ pub enum SurfaceContinuity {
 }
 
 /// Resolved continuity conditions for a filled-surface boundary.
-#[derive(Debug, Clone, PartialEq)]
+///
+/// One condition per boundary component, in source order. A boundary whose
+/// components all impose the same condition is uniform, which [`Self::uniform`]
+/// reports; a uniform boundary has no second spelling to disagree with.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub enum FilledSurfaceContinuity {
-    /// One condition applies to the complete boundary.
-    Uniform(SurfaceContinuity),
-    /// Conditions apply to individual boundary components in source order.
-    PerBoundary {
-        /// Condition of the first component; its presence makes the sequence non-empty.
-        first: SurfaceContinuity,
-        /// Conditions of the remaining components.
-        rest: Vec<SurfaceContinuity>,
-    },
+#[serde(transparent)]
+pub struct FilledSurfaceContinuity {
+    /// Conditions of the boundary components, in source order.
+    pub conditions: NonEmptyMembers<SurfaceContinuity>,
 }
 
 impl FilledSurfaceContinuity {
-    /// Creates a non-empty component-specific condition sequence.
-    #[must_use]
-    pub fn per_boundary(conditions: Vec<SurfaceContinuity>) -> Option<Self> {
-        let mut conditions = conditions.into_iter();
-        Some(Self::PerBoundary {
-            first: conditions.next()?,
-            rest: conditions.collect(),
-        })
-    }
-
     /// Returns the aggregate condition when every component uses one value.
     #[must_use]
     pub fn uniform(&self) -> Option<SurfaceContinuity> {
-        match self {
-            Self::Uniform(continuity) => Some(*continuity),
-            Self::PerBoundary { first, rest }
-                if rest.iter().all(|continuity| continuity == first) =>
-            {
-                Some(*first)
-            }
-            Self::PerBoundary { .. } => None,
-        }
+        let mut components = self.conditions.iter();
+        let first = *components.next()?;
+        components
+            .all(|continuity| continuity == &first)
+            .then_some(first)
     }
 }
 
-/// Optional filled-surface continuity with checked flat-wire deserialization.
+/// Optional filled-surface continuity.
+///
+/// The wire carries the component conditions and nothing else, so an aggregate
+/// condition that disagrees with them is unrepresentable.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(
-    try_from = "FilledSurfaceContinuityWire",
-    into = "FilledSurfaceContinuityWire"
-)]
-pub struct FilledSurfaceContinuityState(Option<FilledSurfaceContinuity>);
+#[serde(transparent)]
+pub struct FilledSurfaceContinuityState(
+    #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+    Option<FilledSurfaceContinuity>,
+);
 
 impl FilledSurfaceContinuityState {
     /// Creates an unresolved continuity state.
@@ -3581,14 +5617,16 @@ impl FilledSurfaceContinuityState {
 
     /// Creates one condition for the complete boundary.
     #[must_use]
-    pub const fn uniform(continuity: SurfaceContinuity) -> Self {
-        Self(Some(FilledSurfaceContinuity::Uniform(continuity)))
+    pub fn uniform(continuity: SurfaceContinuity) -> Self {
+        Self(Some(FilledSurfaceContinuity {
+            conditions: NonEmptyMembers::one(continuity),
+        }))
     }
 
-    /// Creates component-specific conditions, or unresolved state for no conditions.
+    /// Creates component-specific conditions.
     #[must_use]
-    pub fn per_boundary(conditions: Vec<SurfaceContinuity>) -> Self {
-        Self(FilledSurfaceContinuity::per_boundary(conditions))
+    pub const fn per_boundary(conditions: NonEmptyMembers<SurfaceContinuity>) -> Self {
+        Self(Some(FilledSurfaceContinuity { conditions }))
     }
 
     /// Returns the resolved continuity form.
@@ -3610,68 +5648,11 @@ impl FilledSurfaceContinuityState {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct FilledSurfaceContinuityWire {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    continuity: Option<SurfaceContinuity>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    boundary_continuities: Vec<SurfaceContinuity>,
-}
-
-impl From<FilledSurfaceContinuityState> for FilledSurfaceContinuityWire {
-    fn from(value: FilledSurfaceContinuityState) -> Self {
-        match value.0 {
-            None => Self {
-                continuity: None,
-                boundary_continuities: Vec::new(),
-            },
-            Some(FilledSurfaceContinuity::Uniform(continuity)) => Self {
-                continuity: Some(continuity),
-                boundary_continuities: Vec::new(),
-            },
-            Some(FilledSurfaceContinuity::PerBoundary { first, rest }) => {
-                let continuity = rest
-                    .iter()
-                    .all(|candidate| candidate == &first)
-                    .then_some(first);
-                let mut boundary_continuities = Vec::with_capacity(rest.len() + 1);
-                boundary_continuities.push(first);
-                boundary_continuities.extend(rest);
-                Self {
-                    continuity,
-                    boundary_continuities,
-                }
-            }
-        }
-    }
-}
-
-impl TryFrom<FilledSurfaceContinuityWire> for FilledSurfaceContinuityState {
-    type Error = String;
-
-    fn try_from(value: FilledSurfaceContinuityWire) -> Result<Self, Self::Error> {
-        let FilledSurfaceContinuityWire {
-            continuity,
-            boundary_continuities,
-        } = value;
-        let Some(per_boundary) = FilledSurfaceContinuity::per_boundary(boundary_continuities)
-        else {
-            return Ok(continuity.map_or_else(Self::unresolved, Self::uniform));
-        };
-        if continuity.is_some_and(|continuity| per_boundary.uniform() != Some(continuity)) {
-            return Err(
-                "filled-surface continuity disagrees with boundary_continuities".to_string(),
-            );
-        }
-        Ok(Self(Some(per_boundary)))
-    }
-}
-
 /// Boundary input accepted by a filled-surface operation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SurfaceBoundary {
     /// Boundary selected as topological edges.
     Edges(EdgeSelection),
@@ -3683,6 +5664,7 @@ pub enum SurfaceBoundary {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum TrimRegion {
     /// Source trim exists but the retained region is unresolved.
     Unresolved,
@@ -3722,24 +5704,15 @@ impl TrimCellSelection {
             && removed.iter().all(|ordinal| seen.insert(*ordinal)))
         .then_some(Self { removed, total })
     }
-
-    /// Returns the one-based removed-cell ordinals.
-    #[must_use]
-    pub fn removed(&self) -> &[u64] {
-        &self.removed
-    }
-
-    /// Returns the number of cells in the source partition.
-    #[must_use]
-    pub const fn total(&self) -> u64 {
-        self.total
-    }
 }
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct TrimCellSelectionWire {
+    /// One-based ordinals of cells removed by the operation.
     removed: Vec<u64>,
+    /// Number of cells in the operation's partition.
     total: u64,
 }
 
@@ -3751,89 +5724,11 @@ impl TryFrom<TrimCellSelectionWire> for TrimCellSelection {
             .ok_or("trim cell selection removed must be nonempty, unique, and within total")
     }
 }
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-enum TrimRegionWire {
-    Unresolved,
-    Inside,
-    Outside,
-}
-
-#[cfg(feature = "schema")]
-#[derive(JsonSchema)]
-#[expect(dead_code, reason = "fields define the trim region wire schema")]
-struct TrimRegionSchemaWire {
-    keep: TrimRegionWire,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    cell_selection: Option<TrimCellSelection>,
-}
-
-mod trim_region_wire {
-    use super::{TrimCellSelection, TrimRegion, TrimRegionWire};
-    use serde::{de::Error as _, Deserialize, Deserializer, Serialize, Serializer};
-
-    #[derive(Serialize)]
-    struct Borrowed<'a> {
-        keep: TrimRegionWire,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        cell_selection: Option<&'a TrimCellSelection>,
-    }
-
-    #[derive(Deserialize)]
-    struct Owned {
-        keep: TrimRegionWire,
-        #[serde(default)]
-        cell_selection: Option<TrimCellSelection>,
-    }
-
-    pub fn serialize<S>(value: &TrimRegion, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let wire = match value {
-            TrimRegion::Unresolved => Borrowed {
-                keep: TrimRegionWire::Unresolved,
-                cell_selection: None,
-            },
-            TrimRegion::Inside => Borrowed {
-                keep: TrimRegionWire::Inside,
-                cell_selection: None,
-            },
-            TrimRegion::Outside => Borrowed {
-                keep: TrimRegionWire::Outside,
-                cell_selection: None,
-            },
-            TrimRegion::Cells(selection) => Borrowed {
-                keep: TrimRegionWire::Unresolved,
-                cell_selection: Some(selection),
-            },
-        };
-        wire.serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<TrimRegion, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = Owned::deserialize(deserializer)?;
-        match (wire.keep, wire.cell_selection) {
-            (TrimRegionWire::Unresolved, None) => Ok(TrimRegion::Unresolved),
-            (TrimRegionWire::Inside, None) => Ok(TrimRegion::Inside),
-            (TrimRegionWire::Outside, None) => Ok(TrimRegion::Outside),
-            (TrimRegionWire::Unresolved, Some(selection)) => Ok(TrimRegion::Cells(selection)),
-            (_, Some(_)) => Err(D::Error::custom(
-                "trim surface cell_selection requires keep to be unresolved",
-            )),
-        }
-    }
-}
-
 /// Geometric law used to extend a surface boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SurfaceExtension {
     /// Extension law is unresolved.
     Unresolved,
@@ -3849,23 +5744,24 @@ pub enum SurfaceExtension {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum RuledSurfaceMode {
     /// Extend normal to the support faces.
     Normal {
         /// Positive extension distance.
-        distance: Length,
+        distance: PositiveLength,
     },
     /// Extend tangent to the support faces.
     Tangent {
         /// Positive extension distance.
-        distance: Length,
+        distance: PositiveLength,
     },
     /// Extend along one explicit model-space direction.
     Direction {
         /// Extension direction.
-        direction: Vector3,
+        direction: FeatureDirection3,
         /// Positive extension distance.
-        distance: Length,
+        distance: PositiveLength,
     },
 }
 
@@ -3873,6 +5769,7 @@ pub enum RuledSurfaceMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum RuledSurfaceCorner {
     /// Join adjacent ruled strips with rounded corners.
     Rounded,
@@ -3884,13 +5781,14 @@ pub enum RuledSurfaceCorner {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum ScaleCenter {
     /// Combined centroid of the selected bodies.
     Centroid,
     /// Model coordinate-system origin.
     ModelOrigin,
     /// Explicit model-space point.
-    Point(Point3),
+    Point(FinitePoint3),
     /// Format-native coordinate-system or reference identifier.
     Native(String),
 }
@@ -3898,14 +5796,21 @@ pub enum ScaleCenter {
 /// Factors of a body-scale transform.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "ScaleFactorsWire", into = "ScaleFactorsWire")]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum ScaleFactors {
     /// No complete scale factor is available.
-    Unresolved,
+    Unresolved {},
     /// One factor applies on all three axes.
-    Uniform(f64),
+    Uniform {
+        /// The one factor.
+        factor: NonZeroReal,
+    },
     /// Independent factors apply on the model-space axes.
-    PerAxis(Vector3),
+    PerAxis {
+        /// Factors on the model-space axes, in order.
+        factors: [NonZeroReal; 3],
+    },
 }
 
 impl ScaleFactors {
@@ -3913,63 +5818,15 @@ impl ScaleFactors {
     #[must_use]
     pub fn resolved(self) -> Option<Vector3> {
         match self {
-            Self::Unresolved => None,
-            Self::Uniform(factor) => Some(Vector3::new(factor, factor, factor)),
-            Self::PerAxis(factors) => Some(factors),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct ScaleFactorsWire {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    uniform: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    x: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    y: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    z: Option<f64>,
-}
-
-impl From<ScaleFactors> for ScaleFactorsWire {
-    fn from(value: ScaleFactors) -> Self {
-        match value {
-            ScaleFactors::Unresolved => Self {
-                uniform: None,
-                x: None,
-                y: None,
-                z: None,
-            },
-            ScaleFactors::Uniform(factor) => Self {
-                uniform: Some(factor),
-                x: None,
-                y: None,
-                z: None,
-            },
-            ScaleFactors::PerAxis(factors) => Self {
-                uniform: None,
-                x: Some(factors.x),
-                y: Some(factors.y),
-                z: Some(factors.z),
-            },
-        }
-    }
-}
-
-impl TryFrom<ScaleFactorsWire> for ScaleFactors {
-    type Error = String;
-
-    fn try_from(value: ScaleFactorsWire) -> Result<Self, Self::Error> {
-        match (value.uniform, value.x, value.y, value.z) {
-            (None, None, None, None) => Ok(Self::Unresolved),
-            (Some(factor), None, None, None) => Ok(Self::Uniform(factor)),
-            (None, Some(x), Some(y), Some(z)) => Ok(Self::PerAxis(Vector3::new(x, y, z))),
-            _ => Err(
-                "scale factors must be uniformly resolved, resolved on all axes, or absent"
-                    .to_string(),
-            ),
+            Self::Unresolved {} => None,
+            Self::Uniform { factor } => {
+                Some(Vector3::new(factor.get(), factor.get(), factor.get()))
+            }
+            Self::PerAxis { factors } => Some(Vector3::new(
+                factors[0].get(),
+                factors[1].get(),
+                factors[2].get(),
+            )),
         }
     }
 }
@@ -3978,6 +5835,7 @@ impl TryFrom<ScaleFactorsWire> for ScaleFactors {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum ThickenSide {
     /// Add material along the selected-face normal.
     Forward,
@@ -3991,6 +5849,7 @@ pub enum ThickenSide {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SheetMetalHeightDatum {
     /// The height is measured from the inner faces of the sheet.
     InnerFaces,
@@ -4002,6 +5861,7 @@ pub enum SheetMetalHeightDatum {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SheetMetalBendPosition {
     /// The bend lies outside the selected edge.
     Outside,
@@ -4016,47 +5876,48 @@ pub enum SheetMetalBendPosition {
 /// Dimensional owner layout carried by a sheet-metal hem.
 ///
 /// The source uses one owner layout for flat and open hems. A resolved
-/// transition projects that layout to [`Flat`] or [`Open`]; [`GapLength`]
-/// retains the dimensional owners when the transition does not prove either
-/// semantic form.
+/// transition projects that layout to [`Self::Flat`] or [`Self::Open`];
+/// [`Self::GapLength`] retains the dimensional owners when the transition does
+/// not prove either semantic form.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SheetMetalHemForm {
     /// Flat hem with its developed length.
     Flat {
         /// Developed length of the hem.
-        length: Length,
+        length: PositiveLength,
     },
     /// Open hem with a gap and a developed length.
     Open {
         /// Gap between the folded wall and its source.
-        gap: Length,
+        gap: NonNegativeLength,
         /// Developed length of the hem.
-        length: Length,
+        length: PositiveLength,
     },
     /// Unresolved flat-or-open form with a gap and a length owner.
     GapLength {
         /// Gap between the folded wall and its source.
-        gap: Length,
+        gap: NonNegativeLength,
         /// Developed length of the hem.
-        length: Length,
+        length: PositiveLength,
     },
     /// Rolled source form with radius and included-angle owners.
     Rolled {
         /// Rolled section radius.
-        radius: Length,
+        radius: PositiveLength,
         /// Included angle of the rolled section.
         angle: Angle,
     },
     /// Teardrop source form with gap, length, and radius owners.
     Teardrop {
         /// Gap between the folded wall and its source.
-        gap: Length,
+        gap: NonNegativeLength,
         /// Developed length of the hem.
-        length: Length,
+        length: PositiveLength,
         /// Teardrop section radius.
-        radius: Length,
+        radius: PositiveLength,
     },
 }
 
@@ -4064,6 +5925,7 @@ pub enum SheetMetalHemForm {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SheetMetalHemDirection {
     /// Fold in the source operation's forward direction.
     Forward,
@@ -4077,6 +5939,7 @@ pub enum SheetMetalHemDirection {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SheetMetalFlangeHeightTarget {
     /// A neutral construction feature in the same design history.
     Feature(FeatureId),
@@ -4088,9 +5951,10 @@ pub enum SheetMetalFlangeHeightTarget {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SheetMetalFlangeHeight {
     /// Fixed distance from the operation's height datum.
-    Distance(Length),
+    Distance(PositiveLength),
     /// Signed offset from a selected construction entity.
     ToObject {
         /// Construction entity that supplies the height reference.
@@ -4104,20 +5968,21 @@ pub enum SheetMetalFlangeHeight {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SheetMetalFlangeWidth {
     /// The flange spans the complete selected edge.
     FullEdge,
     /// The flange is centred on the edge with one width.
     Symmetric {
         /// Total width centred on the edge.
-        width: Length,
+        width: PositiveLength,
     },
     /// The flange is measured inward from each end of the edge.
     TwoSides {
         /// Distance measured from the edge's first end.
-        first: Length,
+        first: PositiveLength,
         /// Distance measured from the edge's second end.
-        second: Length,
+        second: PositiveLength,
     },
     /// Independent two-sided extents for each selected edge.
     ///
@@ -4146,11 +6011,6 @@ impl SheetMetalFlangeEdgeWidths {
         }
     }
 
-    /// Width pairs in selected source edge-group order.
-    pub fn as_slice(&self) -> &[SheetMetalFlangeTwoSidedWidth] {
-        &self.0
-    }
-
     /// Mutable width values. The number of selected groups cannot change.
     pub fn as_mut_slice(&mut self) -> &mut [SheetMetalFlangeTwoSidedWidth] {
         &mut self.0
@@ -4169,30 +6029,60 @@ impl<'de> Deserialize<'de> for SheetMetalFlangeEdgeWidths {
 /// Two-sided extent assigned to one selected sheet-metal flange edge.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct SheetMetalFlangeTwoSidedWidth {
     /// Distance measured from the edge's first end.
-    pub first: Length,
+    #[serde(deserialize_with = "deserialize_flange_first")]
+    pub first: PositiveLength,
     /// Distance measured from the edge's second end.
-    pub second: Length,
+    #[serde(deserialize_with = "deserialize_flange_second")]
+    pub second: PositiveLength,
 }
 
 /// Distribution of sheet thickness relative to its construction plane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SheetMetalThicknessSide {
     /// Thickness lies along the profile plane's positive normal.
     Forward,
-    /// Thickness lies opposite the profile plane's positive normal.
-    Reverse,
     /// Thickness is split equally across both sides of the profile plane.
     Symmetric,
 }
 
+selection_field_deserializer!(deserialize_selection_native, "native");
+selection_field_deserializer!(deserialize_selection_local_id, "local_id");
+selection_field_deserializer!(deserialize_selection_edges, "edges");
+selection_field_deserializer!(deserialize_selection_faces, "faces");
+selection_field_deserializer!(deserialize_selection_unresolved, "unresolved");
+selection_field_deserializer!(deserialize_flange_first, "first");
+selection_field_deserializer!(deserialize_flange_second, "second");
+selection_field_deserializer!(deserialize_selection_profiles, "profiles");
+selection_field_deserializer!(deserialize_selection_entities, "entities");
+selection_field_deserializer!(deserialize_selection_selections, "selections");
+selection_field_deserializer!(deserialize_selection_curves, "curves");
+selection_field_deserializer!(deserialize_profile_parameter_range, "parameter_range");
+selection_field_deserializer!(deserialize_local_tessellations, "tessellations");
+selection_field_deserializer!(deserialize_local_segments, "segments");
+selection_field_deserializer!(deserialize_local_axis_native_ref, "axis_native_ref");
+selection_field_deserializer!(deserialize_local_groups, "groups");
+selection_field_deserializer!(deserialize_local_cells, "cells");
+selection_field_deserializer!(deserialize_local_document, "document");
+selection_field_deserializer!(deserialize_local_object, "object");
+selection_field_deserializer!(deserialize_local_reference, "reference");
+selection_field_deserializer!(deserialize_local_subelements, "subelements");
+selection_field_deserializer!(deserialize_local_value, "value");
+
 /// Edge operands resolved by the decoder or retained in native form.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum EdgeSelection {
     /// Selection exists semantically but its operands are not resolved.
     Unresolved,
@@ -4212,9 +6102,11 @@ pub enum EdgeSelection {
         /// Input topology containing every selected edge.
         state: FeatureInputTopologyId,
         /// State-local edge identities in operand order.
-        edges: Vec<HistoricalEdgeId>,
+        #[serde(deserialize_with = "deserialize_selection_edges")]
+        edges: SelectionMembers<HistoricalEdgeId>,
         /// Format-native selection reference.
-        native: String,
+        #[serde(deserialize_with = "deserialize_selection_native")]
+        native: NonBlankString,
     },
     /// Proven historical edges plus source operands whose edge identity is unresolved.
     /// `edges` is empty when the input state is known but no member identity resolves.
@@ -4222,19 +6114,24 @@ pub enum EdgeSelection {
         /// Input topology containing every resolved edge.
         state: FeatureInputTopologyId,
         /// Proven state-local edge identities in source operand order.
-        edges: Vec<HistoricalEdgeId>,
+        #[serde(deserialize_with = "deserialize_selection_edges")]
+        edges: DistinctMembers<HistoricalEdgeId>,
         /// Stable native identities of unresolved source operands.
-        unresolved: Vec<String>,
+        #[serde(deserialize_with = "deserialize_selection_unresolved")]
+        unresolved: NativeSelections,
         /// Format-native group selection reference.
-        native: String,
+        #[serde(deserialize_with = "deserialize_selection_native")]
+        native: NonBlankString,
     },
     /// Edges in intermediate regenerated feature results, paired with the
     /// format-native selection required for rewrite.
     Generated {
         /// Feature-local edge identities.
-        edges: Vec<GeneratedEdgeRef>,
+        #[serde(deserialize_with = "deserialize_selection_edges")]
+        edges: NonEmptyMembers<GeneratedEdgeRef>,
         /// Format-native persistent selection reference.
-        native: String,
+        #[serde(deserialize_with = "deserialize_selection_native")]
+        native: SelectionReference,
     },
     /// Format-native selection reference.
     Native(String),
@@ -4243,37 +6140,44 @@ pub enum EdgeSelection {
 /// Persistent identity of an edge in one regenerated feature result.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct GeneratedEdgeRef {
     /// Feature whose regenerated result owns the edge.
     pub feature: FeatureId,
     /// Feature-local persistent edge identity.
-    pub local_id: String,
+    #[serde(deserialize_with = "deserialize_selection_local_id")]
+    pub local_id: SelectionReference,
 }
 
 /// Persistent identity of a face in one regenerated feature result.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct GeneratedFaceRef {
     /// Feature whose regenerated result owns the face.
     pub feature: FeatureId,
     /// Feature-local persistent face identity.
-    pub local_id: String,
+    #[serde(deserialize_with = "deserialize_selection_local_id")]
+    pub local_id: SelectionReference,
 }
 
 /// Persistent identity of a vertex in one regenerated feature result.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct GeneratedVertexRef {
     /// Feature whose regenerated result owns the vertex.
     pub feature: FeatureId,
     /// Feature-local persistent vertex identity.
-    pub local_id: String,
+    #[serde(deserialize_with = "deserialize_selection_local_id")]
+    pub local_id: SelectionReference,
 }
 
 /// Vertex operand resolved by the decoder or retained in native form.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum VertexSelection {
     /// Selection exists semantically but its operand is not resolved.
     Unresolved,
@@ -4283,7 +6187,8 @@ pub enum VertexSelection {
         /// Feature-local vertex identity.
         vertex: GeneratedVertexRef,
         /// Format-native persistent selection reference.
-        native: String,
+        #[serde(deserialize_with = "deserialize_selection_native")]
+        native: SelectionReference,
     },
     /// Vertex resolved in the containing feature's input topology.
     Historical {
@@ -4292,16 +6197,22 @@ pub enum VertexSelection {
         /// State-local vertex identity.
         vertex: HistoricalVertexId,
         /// Format-native persistent selection reference.
-        native: String,
+        #[serde(deserialize_with = "deserialize_selection_native")]
+        native: NonBlankString,
     },
     /// Format-native selection reference.
-    Native(String),
+    Native(#[serde(deserialize_with = "deserialize_selection_native")] SelectionReference),
 }
 
 /// Face operands resolved by the decoder or retained in native form.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum FaceSelection {
     /// Selection exists semantically but its operands are not resolved.
     Unresolved,
@@ -4319,42 +6230,748 @@ pub enum FaceSelection {
         /// Input topology containing every selected face.
         state: FeatureInputTopologyId,
         /// State-local face identities in operand order.
-        faces: Vec<HistoricalFaceId>,
+        #[serde(deserialize_with = "deserialize_selection_faces")]
+        faces: SelectionMembers<HistoricalFaceId>,
         /// Format-native selection reference.
-        native: String,
+        #[serde(deserialize_with = "deserialize_selection_native")]
+        native: NonBlankString,
     },
     /// Historical faces proven for part of a native selection.
     HistoricalPartial {
         /// Input topology containing every resolved face.
         state: FeatureInputTopologyId,
         /// Proven state-local face identities in source operand order.
-        faces: Vec<HistoricalFaceId>,
+        #[serde(deserialize_with = "deserialize_selection_faces")]
+        faces: DistinctMembers<HistoricalFaceId>,
         /// Stable native identities of unresolved source operands.
-        unresolved: Vec<String>,
+        #[serde(deserialize_with = "deserialize_selection_unresolved")]
+        unresolved: NativeSelections,
         /// Format-native selection reference.
-        native: String,
+        #[serde(deserialize_with = "deserialize_selection_native")]
+        native: NonBlankString,
     },
     /// Faces in an intermediate regenerated feature result, paired with the
     /// format-native selection required for rewrite.
     Generated {
         /// Feature-local face identities.
-        faces: Vec<GeneratedFaceRef>,
+        #[serde(deserialize_with = "deserialize_selection_faces")]
+        faces: NonEmptyMembers<GeneratedFaceRef>,
         /// Format-native persistent selection reference.
-        native: String,
+        #[serde(deserialize_with = "deserialize_selection_native")]
+        native: SelectionReference,
     },
     /// Format-native selection reference.
     Native(String),
 }
 
+/// A nonempty sequence of members in source order.
+///
+/// The members stay contiguous: the sequence is read through slice patterns
+/// and slice methods. The mint refuses an empty list, `push` only grows, and
+/// `DerefMut` hands out `&mut [T]`, which cannot shorten the sequence, so no
+/// reader has to ask whether a member is there.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct NonEmptyMembers<T>(Vec<T>);
+
+impl<T> TryFrom<Vec<T>> for NonEmptyMembers<T> {
+    type Error = BodySelectionError;
+    fn try_from(value: Vec<T>) -> Result<Self, Self::Error> {
+        if value.is_empty() {
+            return Err(BodySelectionError::Empty);
+        }
+        Ok(Self(value))
+    }
+}
+
+impl<T> NonEmptyMembers<T> {
+    /// Construct a sequence with one member.
+    pub fn one(member: T) -> Self {
+        Self(vec![member])
+    }
+
+    /// Append a member while retaining the nonempty witness.
+    pub fn push(&mut self, member: T) {
+        self.0.push(member);
+    }
+
+    /// Map the members in source order while retaining the nonempty witness.
+    pub fn map<U>(self, map: impl FnMut(T) -> U) -> NonEmptyMembers<U> {
+        NonEmptyMembers(self.0.into_iter().map(map).collect())
+    }
+
+    /// The members in source order.
+    pub fn as_slice(&self) -> &[T] {
+        &self.0
+    }
+}
+
+impl<T> std::ops::Deref for NonEmptyMembers<T> {
+    type Target = [T];
+    fn deref(&self) -> &[T] {
+        &self.0
+    }
+}
+
+impl<T> IntoIterator for NonEmptyMembers<T> {
+    type Item = T;
+    type IntoIter = std::vec::IntoIter<T>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<'a, T> IntoIterator for &'a NonEmptyMembers<T> {
+    type Item = &'a T;
+    type IntoIter = std::slice::Iter<'a, T>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for NonEmptyMembers<T> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::try_from(Vec::<T>::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+    }
+}
+
+impl<T> std::ops::DerefMut for NonEmptyMembers<T> {
+    fn deref_mut(&mut self) -> &mut [T] {
+        &mut self.0
+    }
+}
+
+impl<'a, T> IntoIterator for &'a mut NonEmptyMembers<T> {
+    type Item = &'a mut T;
+    type IntoIter = std::slice::IterMut<'a, T>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter_mut()
+    }
+}
+
+impl VertexSelection {
+    /// Admit a generated vertex and its native reference.
+    pub fn generated(
+        vertex: GeneratedVertexRef,
+        native: String,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+        Ok(SelectionReference::new(native, ctx)?.map(|native| Self::Generated { vertex, native }))
+    }
+    /// Admit a historical vertex and its native reference.
+    pub fn historical(
+        state: FeatureInputTopologyId,
+        vertex: HistoricalVertexId,
+        native: String,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+        ctx.charge_work_limit(
+            cadmpeg_core::decode::u64_from_index(native.len()),
+            "validate historical vertex native reference",
+        )?;
+        Ok(NonBlankString::new(native)
+            .ok_or(BodySelectionError::BlankNativeMember)
+            .map(|native| Self::Historical {
+                state,
+                vertex,
+                native,
+            }))
+    }
+    /// Admit a native vertex reference.
+    pub fn native(
+        native: String,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+        Ok(SelectionReference::new(native, ctx)?.map(Self::Native))
+    }
+}
+
+impl EdgeSelection {
+    /// Admit selection members with the decode context.
+    pub fn historical(
+        state: FeatureInputTopologyId,
+        edges: Vec<HistoricalEdgeId>,
+        native: String,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+        let edges =
+            match SelectionMembers::new(edges, ctx, "validate EdgeSelection historical members")? {
+                Ok(members) => members,
+                Err(error) => return Ok(Err(error)),
+            };
+        ctx.charge_work_limit(
+            cadmpeg_core::decode::u64_from_index(native.len()),
+            "validate selection native reference",
+        )?;
+        let native = match NonBlankString::new(native).ok_or(BodySelectionError::BlankNativeMember)
+        {
+            Ok(native) => native,
+            Err(error) => return Ok(Err(error)),
+        };
+        Ok(Ok(Self::Historical {
+            state,
+            edges,
+            native,
+        }))
+    }
+
+    /// Admit selection members with the decode context.
+    pub fn historical_partial(
+        state: FeatureInputTopologyId,
+        edges: Vec<HistoricalEdgeId>,
+        unresolved: Vec<String>,
+        native: String,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+        let edges = match DistinctMembers::try_from(edges, ctx) {
+            Ok(members) => members,
+            Err(FeatureCollectionError::Resource(limit)) => return Err(limit),
+            Err(FeatureCollectionError::Invalid(_)) => {
+                return Ok(Err(BodySelectionError::RepeatedBody))
+            }
+        };
+        let unresolved = match NativeSelections::new(
+            unresolved,
+            ctx,
+            "validate EdgeSelection historical partial members",
+        )? {
+            Ok(members) => members,
+            Err(error) => return Ok(Err(error)),
+        };
+        ctx.charge_work_limit(
+            cadmpeg_core::decode::u64_from_index(native.len()),
+            "validate selection native reference",
+        )?;
+        let native = match NonBlankString::new(native).ok_or(BodySelectionError::BlankNativeMember)
+        {
+            Ok(native) => native,
+            Err(error) => return Ok(Err(error)),
+        };
+        Ok(Ok(Self::HistoricalPartial {
+            state,
+            edges,
+            unresolved,
+            native,
+        }))
+    }
+
+    /// Admits generated members and their native reference.
+    pub fn generated(
+        edges: Vec<GeneratedEdgeRef>,
+        native: String,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+        ctx.charge_work_limit(0, "validate persistent selection reference")?;
+        let edges = match edges.try_into() {
+            Ok(members) => members,
+            Err(error) => return Ok(Err(error)),
+        };
+        Ok(SelectionReference::new(native, ctx)?.map(|native| Self::Generated { edges, native }))
+    }
+}
+
+impl FaceSelection {
+    /// Admit selection members with the decode context.
+    pub fn historical(
+        state: FeatureInputTopologyId,
+        faces: Vec<HistoricalFaceId>,
+        native: String,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+        let faces =
+            match SelectionMembers::new(faces, ctx, "validate FaceSelection historical members")? {
+                Ok(members) => members,
+                Err(error) => return Ok(Err(error)),
+            };
+        ctx.charge_work_limit(
+            cadmpeg_core::decode::u64_from_index(native.len()),
+            "validate selection native reference",
+        )?;
+        let native = match NonBlankString::new(native).ok_or(BodySelectionError::BlankNativeMember)
+        {
+            Ok(native) => native,
+            Err(error) => return Ok(Err(error)),
+        };
+        Ok(Ok(Self::Historical {
+            state,
+            faces,
+            native,
+        }))
+    }
+
+    /// Admit selection members with the decode context.
+    pub fn historical_partial(
+        state: FeatureInputTopologyId,
+        faces: Vec<HistoricalFaceId>,
+        unresolved: Vec<String>,
+        native: String,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+        let faces = match DistinctMembers::try_from(faces, ctx) {
+            Ok(members) => members,
+            Err(FeatureCollectionError::Resource(limit)) => return Err(limit),
+            Err(FeatureCollectionError::Invalid(_)) => {
+                return Ok(Err(BodySelectionError::RepeatedBody))
+            }
+        };
+        let unresolved = match NativeSelections::new(
+            unresolved,
+            ctx,
+            "validate FaceSelection historical partial members",
+        )? {
+            Ok(members) => members,
+            Err(error) => return Ok(Err(error)),
+        };
+        ctx.charge_work_limit(
+            cadmpeg_core::decode::u64_from_index(native.len()),
+            "validate selection native reference",
+        )?;
+        let native = match NonBlankString::new(native).ok_or(BodySelectionError::BlankNativeMember)
+        {
+            Ok(native) => native,
+            Err(error) => return Ok(Err(error)),
+        };
+        Ok(Ok(Self::HistoricalPartial {
+            state,
+            faces,
+            unresolved,
+            native,
+        }))
+    }
+
+    /// Admits generated members and their native reference.
+    pub fn generated(
+        faces: Vec<GeneratedFaceRef>,
+        native: String,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+        ctx.charge_work_limit(0, "validate persistent selection reference")?;
+        let faces = match faces.try_into() {
+            Ok(members) => members,
+            Err(error) => return Ok(Err(error)),
+        };
+        Ok(SelectionReference::new(native, ctx)?.map(|native| Self::Generated { faces, native }))
+    }
+}
+
+impl GeneratedEdgeRef {
+    /// Admit a feature-local persistent identity through the caller context.
+    pub fn new(
+        feature: FeatureId,
+        local_id: String,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+        Ok(SelectionReference::new(local_id, ctx)?.map(|local_id| Self { feature, local_id }))
+    }
+}
+
+impl GeneratedFaceRef {
+    /// Admit a feature-local persistent identity through the caller context.
+    pub fn new(
+        feature: FeatureId,
+        local_id: String,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+        Ok(SelectionReference::new(local_id, ctx)?.map(|local_id| Self { feature, local_id }))
+    }
+}
+
+impl GeneratedVertexRef {
+    /// Admit a feature-local persistent identity through the caller context.
+    pub fn new(
+        feature: FeatureId,
+        local_id: String,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+        Ok(SelectionReference::new(local_id, ctx)?.map(|local_id| Self { feature, local_id }))
+    }
+}
+
+/// A nonblank persistent selection reference.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct SelectionReference(String);
+
+impl TryFrom<String> for SelectionReference {
+    type Error = BodySelectionError;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if value.trim().is_empty() {
+            return Err(BodySelectionError::BlankNativeMember);
+        }
+        Ok(Self(value))
+    }
+}
+
+impl SelectionReference {
+    /// Admit validation of a persistent reference with the caller context.
+    pub fn new(
+        value: String,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+        ctx.charge_work_limit(
+            cadmpeg_core::decode::u64_from_index(value.len()),
+            "validate persistent selection reference",
+        )?;
+        Ok(Self::try_from(value))
+    }
+
+    /// The retained reference text.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::ops::Deref for SelectionReference {
+    type Target = str;
+    fn deref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl PartialEq<str> for SelectionReference {
+    fn eq(&self, other: &str) -> bool {
+        self.as_str() == other
+    }
+}
+
+impl PartialEq<&str> for SelectionReference {
+    fn eq(&self, other: &&str) -> bool {
+        self.as_str() == *other
+    }
+}
+
+impl<'de> Deserialize<'de> for SelectionReference {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::try_from(String::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+    }
+}
+
+/// Invalid collection membership or a decode resource refusal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum FeatureCollectionError {
+    /// The collection violates its member constraint.
+    #[error("{0}")]
+    Invalid(&'static str),
+    /// The decode budget or allocator refused the operation.
+    #[error("decode resource limit: {0:?}")]
+    Resource(cadmpeg_core::decode::ResourceLimit),
+}
+
+impl From<cadmpeg_core::decode::ResourceLimit> for FeatureCollectionError {
+    fn from(limit: cadmpeg_core::decode::ResourceLimit) -> Self {
+        Self::Resource(limit)
+    }
+}
+
+impl From<FeatureCollectionError> for cadmpeg_core::CodecError {
+    fn from(error: FeatureCollectionError) -> Self {
+        match error {
+            FeatureCollectionError::Invalid(message) => Self::malformed(message),
+            FeatureCollectionError::Resource(limit) => Self::ResourceLimit(limit),
+        }
+    }
+}
+
+/// Distinct members in source order, including an empty sequence.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct DistinctMembers<T>(Vec<T>);
+
+impl<T> Default for DistinctMembers<T> {
+    fn default() -> Self {
+        Self(Vec::new())
+    }
+}
+
+impl<T: Eq + std::hash::Hash> DistinctMembers<T> {
+    /// Check uniqueness using a scoped index and the caller's work budget.
+    pub fn try_from(
+        value: Vec<T>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Self, FeatureCollectionError> {
+        const OPERATION: &str = "validate distinct decoded members";
+        let admission = membership::DecodeAdmission {
+            ctx,
+            operation: OPERATION,
+        };
+        if !membership::distinct(&admission, &value, value.len(), |_| true)? {
+            return Err(FeatureCollectionError::Invalid("members must be distinct"));
+        }
+        Ok(Self(value))
+    }
+}
+
+impl<T: PartialEq> DistinctMembers<T> {
+    /// Insert a member after admitting comparisons and a retained collection slot.
+    pub fn insert(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        value: T,
+        operation: &'static str,
+    ) -> Result<bool, cadmpeg_core::CodecError> {
+        membership::insert(
+            &membership::DecodeAdmission { ctx, operation },
+            &mut self.0,
+            value,
+        )
+        .map_err(Into::into)
+    }
+
+    /// Append distinct members in source order through the caller context.
+    pub fn append(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        values: impl IntoIterator<Item = T>,
+        operation: &'static str,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        ctx.charge_work_limit(0, operation)?;
+        for value in values {
+            self.insert(ctx, value, operation)?;
+        }
+        Ok(())
+    }
+}
+
+impl<T> DistinctMembers<T> {
+    /// Reserve retained backing storage for additional members.
+    pub fn reserve_for_decode(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        additional: usize,
+        operation: &'static str,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        ctx.reserve_capacity_limit(&mut self.0, additional, operation)
+            .map_err(Into::into)
+    }
+
+    /// Removes all members.
+    pub fn clear(&mut self) {
+        self.0.clear();
+    }
+
+    /// Retains members that satisfy the predicate without changing their order.
+    pub fn retain(&mut self, predicate: impl FnMut(&T) -> bool) {
+        self.0.retain(predicate);
+    }
+
+    /// Whether the sequence contains no members.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// The members in source order.
+    pub fn as_slice(&self) -> &[T] {
+        &self.0
+    }
+}
+
+impl<T: PartialEq> Extend<T> for DistinctMembers<T> {
+    fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
+        for member in iter {
+            match membership::insert(&membership::StandardAdmission, &mut self.0, member) {
+                Ok(_) => {}
+                Err(error) => match error {},
+            }
+        }
+    }
+}
+
+impl<T: PartialEq> FromIterator<T> for DistinctMembers<T> {
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        let mut members = Self::default();
+        members.extend(iter);
+        members
+    }
+}
+
+impl<T> std::ops::Deref for DistinctMembers<T> {
+    type Target = [T];
+    fn deref(&self) -> &[T] {
+        &self.0
+    }
+}
+
+impl<'a, T> IntoIterator for &'a DistinctMembers<T> {
+    type Item = &'a T;
+    type IntoIter = std::slice::Iter<'a, T>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+impl<'de, T: Deserialize<'de> + Eq + std::hash::Hash> Deserialize<'de> for DistinctMembers<T> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let values = Vec::<T>::deserialize(deserializer)?;
+        if !membership::distinct(
+            &membership::StandardAdmission,
+            &values,
+            values.len(),
+            |_| true,
+        )
+        .map_err(serde::de::Error::custom)?
+        {
+            return Err(serde::de::Error::custom("members must be distinct"));
+        }
+        Ok(Self(values))
+    }
+}
+/// Nonempty distinct selection members in source order.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct SelectionMembers<T>(Vec<T>);
+
+impl<T: Eq + std::hash::Hash> TryFrom<Vec<T>> for SelectionMembers<T> {
+    type Error = BodySelectionError;
+    fn try_from(value: Vec<T>) -> Result<Self, Self::Error> {
+        Self::build(&membership::StandardAdmission, value)
+            .map_err(|_| BodySelectionError::Allocation)?
+    }
+}
+impl<T: Eq + std::hash::Hash> SelectionMembers<T> {
+    /// Admit nonempty distinct members using a scoped uniqueness index.
+    pub fn new(
+        value: Vec<T>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+        Self::build(&membership::DecodeAdmission { ctx, operation }, value)
+    }
+
+    fn build<S: membership::Admission>(
+        admission: &S,
+        value: Vec<T>,
+    ) -> Result<Result<Self, BodySelectionError>, S::Error> {
+        admission.work(0)?;
+        if value.is_empty() {
+            return Ok(Err(BodySelectionError::Empty));
+        }
+        if !membership::distinct(admission, &value, value.len(), |_| true)? {
+            return Ok(Err(BodySelectionError::RepeatedBody));
+        }
+        Ok(Ok(Self(value)))
+    }
+}
+
+impl<T> SelectionMembers<T> {
+    /// The selected members in source order.
+    pub fn as_slice(&self) -> &[T] {
+        &self.0
+    }
+}
+
+impl<T> IntoIterator for SelectionMembers<T> {
+    type Item = T;
+    type IntoIter = std::vec::IntoIter<T>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<T> std::ops::Deref for SelectionMembers<T> {
+    type Target = [T];
+    fn deref(&self) -> &[T] {
+        &self.0
+    }
+}
+
+impl<'a, T> IntoIterator for &'a SelectionMembers<T> {
+    type Item = &'a T;
+    type IntoIter = std::slice::Iter<'a, T>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+impl<'de, T: Deserialize<'de> + Eq + std::hash::Hash> Deserialize<'de> for SelectionMembers<T> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let values = Vec::<T>::deserialize(deserializer)?;
+        Self::build(&membership::StandardAdmission, values)
+            .map_err(serde::de::Error::custom)?
+            .map_err(serde::de::Error::custom)
+    }
+}
+/// Nonempty distinct nonblank native selection names.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct NativeSelections(Vec<String>);
+
+impl TryFrom<Vec<String>> for NativeSelections {
+    type Error = BodySelectionError;
+    fn try_from(value: Vec<String>) -> Result<Self, Self::Error> {
+        Self::build(&membership::StandardAdmission, value)
+            .map_err(|_| BodySelectionError::Allocation)?
+    }
+}
+impl NativeSelections {
+    /// Admit nonempty nonblank native names using a scoped uniqueness index.
+    pub fn new(
+        value: Vec<String>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+        Self::build(&membership::DecodeAdmission { ctx, operation }, value)
+    }
+
+    fn build<S: membership::Admission>(
+        admission: &S,
+        value: Vec<String>,
+    ) -> Result<Result<Self, BodySelectionError>, S::Error> {
+        admission.work(0)?;
+        if value.is_empty() {
+            return Ok(Err(BodySelectionError::Empty));
+        }
+        for name in &value {
+            admission.work(name.len())?;
+            if name.trim().is_empty() {
+                return Ok(Err(BodySelectionError::BlankNativeMember));
+            }
+        }
+        if !membership::distinct(admission, &value, value.len(), |_| true)? {
+            return Ok(Err(BodySelectionError::RepeatedNativeMember));
+        }
+        Ok(Ok(Self(value)))
+    }
+
+    /// The native names in source order.
+    pub fn as_slice(&self) -> &[String] {
+        &self.0
+    }
+}
+
+impl IntoIterator for NativeSelections {
+    type Item = String;
+    type IntoIter = std::vec::IntoIter<String>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl std::ops::Deref for NativeSelections {
+    type Target = [String];
+    fn deref(&self) -> &[String] {
+        &self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for NativeSelections {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let values = Vec::<String>::deserialize(deserializer)?;
+        Self::build(&membership::StandardAdmission, values)
+            .map_err(serde::de::Error::custom)?
+            .map_err(serde::de::Error::custom)
+    }
+}
 /// Failure to construct a body-selection member set.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum BodySelectionError {
     /// A selection set contains no members.
     #[error("body selection set must not be empty")]
     Empty,
-    /// Parallel inputs have different member counts.
-    #[error("body selection rows have mismatched lengths")]
-    MismatchedLengths,
     /// A body occurs more than once in the set.
     #[error("body selection set repeats a body")]
     RepeatedBody,
@@ -4364,6 +6981,41 @@ pub enum BodySelectionError {
     /// A native member occurs more than once in the set.
     #[error("body selection set repeats a native member")]
     RepeatedNativeMember,
+    /// The standard allocator refused context-free selection storage.
+    #[error("selection member allocation failed")]
+    Allocation,
+    /// The decode budget or allocator refused selection admission.
+    #[error("decode resource limit: {0:?}")]
+    Resource(cadmpeg_core::decode::ResourceLimit),
+}
+
+/// Native selection of the bodies a copy-and-paste operation introduces. The
+/// copied bodies themselves are the feature's outputs, so no variant restates
+/// them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+pub enum InsertedBodies {
+    /// The copied bodies are not resolved to the neutral model.
+    Native(String),
+    /// The copied bodies are resolved and listed in the feature's outputs.
+    Resolved {
+        /// Format-native selection expression.
+        native: String,
+    },
+}
+
+impl InsertedBodies {
+    /// Whether the copied bodies are resolved to the neutral model.
+    #[must_use]
+    pub const fn is_resolved(&self) -> bool {
+        matches!(self, Self::Resolved { .. })
+    }
 }
 
 /// Body operands resolved by the decoder or retained in native form.
@@ -4371,16 +7023,16 @@ pub enum BodySelectionError {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct BodyMember<B> {
     body: B,
-    native: String,
+    native: cadmpeg_core::text::NonBlankString,
 }
 
 impl<B> BodyMember<B> {
     /// Construct one body/native selection row.
-    pub fn new(body: B, native: String) -> Result<Self, BodySelectionError> {
-        if native.trim().is_empty() {
-            return Err(BodySelectionError::BlankNativeMember);
-        }
-        Ok(Self { body, native })
+    ///
+    /// The native member is non-blank by type; the caller mints it at the
+    /// boundary where the source states it.
+    pub const fn new(body: B, native: cadmpeg_core::text::NonBlankString) -> Self {
+        Self { body, native }
     }
 
     /// Body identity in this row.
@@ -4389,10 +7041,10 @@ impl<B> BodyMember<B> {
         &self.body
     }
 
-    /// Native selection member in this row.
+    /// Consume the row and return its body identity and native member.
     #[must_use]
-    pub fn native(&self) -> &str {
-        &self.native
+    pub fn into_parts(self) -> (B, String) {
+        (self.body, self.native.into_string())
     }
 }
 
@@ -4405,12 +7057,16 @@ where
         D: serde::Deserializer<'de>,
     {
         #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
         struct Wire<B> {
             body: B,
             native: String,
         }
         let wire = Wire::deserialize(deserializer)?;
-        Self::new(wire.body, wire.native).map_err(serde::de::Error::custom)
+        let native = cadmpeg_core::text::NonBlankString::new(wire.native).ok_or_else(|| {
+            serde::de::Error::custom(BodySelectionError::BlankNativeMember.to_string())
+        })?;
+        Ok(Self::new(wire.body, native))
     }
 }
 
@@ -4422,55 +7078,56 @@ pub struct BodyMembers<B>(Vec<BodyMember<B>>);
 
 impl<B> BodyMembers<B> {
     /// Construct checked rows from body/native pairs.
-    pub fn try_from_rows(rows: Vec<BodyMember<B>>) -> Result<Self, BodySelectionError>
+    pub fn try_from_rows(
+        rows: Vec<BodyMember<B>>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit>
     where
         B: Eq + std::hash::Hash,
     {
+        Self::build(
+            &membership::DecodeAdmission {
+                ctx,
+                operation: "validate body selection members",
+            },
+            rows,
+        )
+    }
+
+    fn build<S: membership::Admission>(
+        admission: &S,
+        rows: Vec<BodyMember<B>>,
+    ) -> Result<Result<Self, BodySelectionError>, S::Error>
+    where
+        B: Eq + std::hash::Hash,
+    {
+        admission.work(0)?;
         if rows.is_empty() {
-            return Err(BodySelectionError::Empty);
+            return Ok(Err(BodySelectionError::Empty));
         }
-        let mut bodies = HashSet::with_capacity(rows.len());
-        let mut native = HashSet::with_capacity(rows.len());
+        let mut bodies = admission.index(rows.len())?;
+        let mut native = admission.index(rows.len())?;
         for row in &rows {
-            if !bodies.insert(&row.body) {
-                return Err(BodySelectionError::RepeatedBody);
+            admission.work(1)?;
+            if !bodies.insert(&row.body)? {
+                return Ok(Err(BodySelectionError::RepeatedBody));
             }
-            if !native.insert(&row.native) {
-                return Err(BodySelectionError::RepeatedNativeMember);
+            if !native.insert(&row.native)? {
+                return Ok(Err(BodySelectionError::RepeatedNativeMember));
             }
         }
-        Ok(Self(rows))
+        drop(bodies);
+        drop(native);
+        Ok(Ok(Self(rows)))
     }
 
-    /// Construct checked rows from parallel body and native-member vectors.
-    pub fn try_from_parts(bodies: Vec<B>, native: Vec<String>) -> Result<Self, BodySelectionError>
-    where
-        B: Eq + std::hash::Hash,
-    {
-        if bodies.len() != native.len() {
-            return Err(BodySelectionError::MismatchedLengths);
-        }
-        let rows = bodies
-            .into_iter()
-            .zip(native)
-            .map(|(body, native)| BodyMember::new(body, native))
-            .collect::<Result<Vec<_>, _>>()?;
-        Self::try_from_rows(rows)
-    }
-
-    /// Number of paired selection rows.
+    /// Count paired selection rows.
     #[must_use]
-    pub const fn len(&self) -> usize {
+    pub const fn count(&self) -> usize {
         self.0.len()
     }
 
-    /// Whether this selection has no rows.
-    #[must_use]
-    pub const fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    /// Borrow the checked rows in source order.
+    /// Iterate over paired selection rows in source order.
     pub fn iter(&self) -> std::slice::Iter<'_, BodyMember<B>> {
         self.0.iter()
     }
@@ -4479,11 +7136,6 @@ impl<B> BodyMembers<B> {
     pub fn bodies(&self) -> impl Iterator<Item = &B> {
         self.0.iter().map(BodyMember::body)
     }
-
-    /// Borrow the native members in source order.
-    pub fn native(&self) -> impl Iterator<Item = &str> {
-        self.0.iter().map(BodyMember::native)
-    }
 }
 
 impl<'a, B> IntoIterator for &'a BodyMembers<B> {
@@ -4491,7 +7143,7 @@ impl<'a, B> IntoIterator for &'a BodyMembers<B> {
     type IntoIter = std::slice::Iter<'a, BodyMember<B>>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.0.iter()
+        self.iter()
     }
 }
 
@@ -4504,96 +7156,31 @@ where
         D: serde::Deserializer<'de>,
     {
         let rows = Vec::<BodyMember<B>>::deserialize(deserializer)?;
-        Self::try_from_rows(rows).map_err(serde::de::Error::custom)
-    }
-}
-
-/// Checked aggregate for historical selections whose native members have no
-/// established body-to-member correspondence.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct HistoricalUnorderedBodySelection {
-    bodies: Vec<HistoricalBodyId>,
-    native: Vec<String>,
-}
-
-impl HistoricalUnorderedBodySelection {
-    /// Construct a checked unordered selection while preserving both orders.
-    pub fn try_from_parts(
-        bodies: Vec<HistoricalBodyId>,
-        native: Vec<String>,
-    ) -> Result<Self, BodySelectionError> {
-        if bodies.is_empty() {
-            return Err(BodySelectionError::Empty);
-        }
-        if bodies.len() != native.len() {
-            return Err(BodySelectionError::MismatchedLengths);
-        }
-        if bodies.iter().collect::<HashSet<_>>().len() != bodies.len() {
-            return Err(BodySelectionError::RepeatedBody);
-        }
-        if native.iter().any(|member| member.trim().is_empty()) {
-            return Err(BodySelectionError::BlankNativeMember);
-        }
-        if native.iter().collect::<HashSet<_>>().len() != native.len() {
-            return Err(BodySelectionError::RepeatedNativeMember);
-        }
-        Ok(Self { bodies, native })
-    }
-
-    /// Historical body identities in deterministic source order.
-    #[must_use]
-    pub fn bodies(&self) -> &[HistoricalBodyId] {
-        &self.bodies
-    }
-
-    /// Native members in their retained source order.
-    #[must_use]
-    pub fn native(&self) -> &[String] {
-        &self.native
-    }
-
-    /// Number of retained bodies and native members.
-    #[must_use]
-    pub const fn len(&self) -> usize {
-        self.bodies.len()
-    }
-
-    /// Whether the checked aggregate is empty.
-    #[must_use]
-    pub const fn is_empty(&self) -> bool {
-        self.bodies.is_empty()
-    }
-}
-
-impl<'de> Deserialize<'de> for HistoricalUnorderedBodySelection {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        struct Wire {
-            bodies: Vec<HistoricalBodyId>,
-            native: Vec<String>,
-        }
-        let wire = Wire::deserialize(deserializer)?;
-        Self::try_from_parts(wire.bodies, wire.native).map_err(serde::de::Error::custom)
+        Self::build(&membership::StandardAdmission, rows)
+            .map_err(serde::de::Error::custom)?
+            .map_err(serde::de::Error::custom)
     }
 }
 
 /// Body operands resolved by the decoder or retained in native form.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum BodySelection {
     /// Selection exists semantically but its operands are not resolved.
     Unresolved,
     /// Resolved topological bodies.
-    Bodies(Vec<BodyId>),
+    Bodies(#[cfg_attr(feature = "schema", schemars(with = "Vec<BodyId>"))] DistinctMembers<BodyId>),
     /// Resolved bodies paired with the format-native selection required for rewrite.
     Resolved {
         /// Resolved topological bodies.
-        bodies: Vec<BodyId>,
+        #[cfg_attr(feature = "schema", schemars(with = "Vec<BodyId>"))]
+        bodies: DistinctMembers<BodyId>,
         /// Format-native selection expression.
         native: String,
     },
@@ -4607,9 +7194,9 @@ pub enum BodySelection {
         /// Input topology containing every selected body.
         state: FeatureInputTopologyId,
         /// State-local body identities in operand order.
-        bodies: Vec<HistoricalBodyId>,
+        bodies: SelectionMembers<HistoricalBodyId>,
         /// Format-native selection expression.
-        native: String,
+        native: SelectionReference,
     },
     /// Bodies resolved in the containing feature's input topology from
     /// independently retained native selection members.
@@ -4619,50 +7206,55 @@ pub enum BodySelection {
         /// Checked rows in native member order.
         members: BodyMembers<HistoricalBodyId>,
     },
-    /// Bodies resolved collectively in the containing feature's input topology
-    /// when no body-to-native-member correspondence is established.
-    HistoricalUnorderedSet {
-        /// Input topology containing every selected body.
-        state: FeatureInputTopologyId,
-        /// Checked aggregate retaining both independent source orders.
-        selection: HistoricalUnorderedBodySelection,
-    },
     /// Bodies in intermediate regenerated feature results, paired with the
     /// format-native selection required for rewrite.
     Generated {
         /// Feature-local body identities.
-        bodies: Vec<GeneratedBodyRef>,
+        bodies: SelectionMembers<GeneratedBodyRef>,
         /// Format-native persistent selection reference.
-        native: String,
+        native: SelectionReference,
     },
     /// Persistent bodies in the consuming feature's regeneration input state.
     Local {
         /// Ordered feature-input-local body identities.
-        bodies: Vec<String>,
+        bodies: NativeSelections,
         /// Format-native persistent selection reference.
-        native: String,
+        native: SelectionReference,
     },
     /// Format-native selection expression.
     Native(String),
     /// Ordered format-native selection members that have no enclosing native
     /// group record.
-    NativeSet(Vec<String>),
+    NativeSet(NativeSelections),
 }
 
 /// Persistent identity of a body in one regenerated feature result.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct GeneratedBodyRef {
     /// Feature whose regenerated result owns the body.
     pub feature: FeatureId,
     /// Feature-local persistent body identity.
-    pub local_id: String,
+    pub local_id: SelectionReference,
+}
+
+impl GeneratedBodyRef {
+    /// Admit a feature-local persistent identity through the caller context.
+    pub fn new(
+        feature: FeatureId,
+        local_id: String,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+        Ok(SelectionReference::new(local_id, ctx)?.map(|local_id| Self { feature, local_id }))
+    }
 }
 
 /// Direct face-motion law.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum FaceMotion {
     /// Offset along each face normal.
     Offset {
@@ -4672,16 +7264,16 @@ pub enum FaceMotion {
     /// Translation along one direction.
     Translate {
         /// Translation direction.
-        direction: Vector3,
+        direction: FeatureDirection3,
         /// Signed translation distance.
         distance: Length,
     },
     /// Rotation about an axis.
     Rotate {
         /// Point on the rotation axis.
-        axis_origin: Point3,
+        axis_origin: FinitePoint3,
         /// Rotation-axis direction.
-        axis_dir: Vector3,
+        axis_dir: FeatureDirection3,
         /// Signed rotation angle.
         angle: Angle,
     },
@@ -4690,25 +7282,25 @@ pub enum FaceMotion {
 /// Model-space axis-angle rotation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct AxisAngle {
     /// Point on the rotation axis.
-    pub origin: Point3,
+    pub origin: FinitePoint3,
     /// Rotation-axis direction.
-    pub direction: Vector3,
+    pub direction: FeatureDirection3,
     /// Signed rotation angle.
     pub angle: Angle,
 }
 
 /// Start condition of a linear extrusion.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ExtrudeStart {
     /// Native start condition is present structurally but unresolved.
-    Unresolved,
+    Unresolved {},
     /// Begin on the profile's own plane.
-    #[default]
-    ProfilePlane,
+    ProfilePlane {},
     /// Begin on a plane parallel to the profile plane at a signed offset.
     OffsetProfilePlane {
         /// Signed offset along the profile normal in canonical millimeters.
@@ -4719,7 +7311,11 @@ pub enum ExtrudeStart {
         /// Face defining the start plane.
         face: FaceSelection,
         /// Signed displacement from the selected face.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_offset"
+        )]
         offset: Option<Length>,
     },
 }
@@ -4728,29 +7324,33 @@ pub enum ExtrudeStart {
 /// plane is stated by the owning feature's extent type.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum LinearTermination {
     /// Native termination is present structurally but unresolved.
-    Unresolved,
+    Unresolved {},
     /// Fixed travel distance.
     Blind {
         /// Fixed travel distance.
-        length: Length,
+        length: NonZeroLength,
     },
     /// Extends through all material.
-    ThroughAll,
+    ThroughAll {},
     /// Extends until it exits the next material region.
-    ThroughNext,
+    ThroughNext {},
     /// Extends until the first encountered model face.
-    ToFirst,
+    ToFirst {},
     /// Extends until the last encountered model face.
-    ToLast,
+    ToLast {},
     /// Extends until it reaches a target face.
     ToFace {
         /// Face terminating the operation.
         face: FaceSelection,
         /// Signed displacement from the terminating face.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_offset"
+        )]
         offset: Option<Length>,
     },
     /// Extends until it reaches a target vertex.
@@ -4763,7 +7363,7 @@ pub enum LinearTermination {
         /// Face the termination is measured from.
         face: FaceSelection,
         /// Offset distance from the face.
-        offset: Length,
+        offset: PositiveLength,
     },
     /// Extends until one of the faces in a selected target shape.
     ToShape {
@@ -4776,24 +7376,28 @@ pub enum LinearTermination {
 /// plane is stated by the owning revolution extent.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum AngularTermination {
     /// Native termination is present structurally but unresolved.
-    Unresolved,
+    Unresolved {},
     /// Extends through all material.
-    ThroughAll,
+    ThroughAll {},
     /// Extends until it exits the next material region.
-    ThroughNext,
+    ThroughNext {},
     /// Extends until the first encountered model face.
-    ToFirst,
+    ToFirst {},
     /// Extends until the last encountered model face.
-    ToLast,
+    ToLast {},
     /// Extends until it reaches a target face.
     ToFace {
         /// Face terminating the operation.
         face: FaceSelection,
         /// Signed displacement from the terminating face.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_offset"
+        )]
         offset: Option<Length>,
     },
     /// Extends until it reaches a target vertex.
@@ -4806,7 +7410,7 @@ pub enum AngularTermination {
         /// Face the termination is measured from.
         face: FaceSelection,
         /// Offset distance from the face.
-        offset: Length,
+        offset: PositiveLength,
     },
     /// Extends until one of the faces in a selected target shape.
     ToShape {
@@ -4816,7 +7420,7 @@ pub enum AngularTermination {
     /// Fixed angular travel.
     Angle {
         /// Angular travel.
-        angle: Angle,
+        angle: PositiveAngle,
     },
 }
 
@@ -4825,18 +7429,29 @@ pub enum AngularTermination {
 /// travel; an absent draft leaves the side walls parallel.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct ExtrudeSide {
     /// Where this side's travel terminates.
     pub termination: LinearTermination,
     /// Draft angle applied to this side's walls, when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub draft: Option<Angle>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_draft"
+    )]
+    pub draft: Option<SlopeAngle>,
+}
+
+impl Default for ExtrudeStart {
+    fn default() -> Self {
+        Self::ProfilePlane {}
+    }
 }
 
 /// Extrusion sidedness around the profile plane.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ExtrudeExtent {
     /// Travel on the oriented side only.
     OneSided {
@@ -4862,7 +7477,7 @@ pub enum ExtrudeExtent {
 /// side-local modifiers, only their termination laws.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum RevolveExtent {
     /// Travel on the oriented side only.
     OneSided {
@@ -4887,17 +7502,17 @@ pub enum RevolveExtent {
 /// Persisted source of a resolved linear-extrusion direction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ExtrusionDirectionSource {
     /// Direction comes from the persisted direction vector.
-    Custom,
+    Custom {},
     /// Direction comes from a selected straight edge.
     Edge {
         /// Native edge selection used as the direction axis.
         reference: PathRef,
     },
     /// Direction comes from the source profile's plane normal.
-    ProfileNormal,
+    ProfileNormal {},
 }
 
 /// Native algorithm used to construct faces from wires.
@@ -4914,7 +7529,7 @@ pub enum FaceMaker {
     /// Builds overlapping, nested, or non-planar faces.
     Unified,
     /// Retains an extension face-maker class.
-    Other(NonEmptyString),
+    Other(NonBlankString),
 }
 
 impl FaceMaker {
@@ -4927,7 +7542,7 @@ impl FaceMaker {
             "Part::FaceMakerExtrusion" => Self::Extrusion,
             "Part::FaceMakerBullseye" => Self::Bullseye,
             "Part::FaceMakerUnified" => Self::Unified,
-            _ => Self::Other(NonEmptyString::new(class)?),
+            _ => Self::Other(NonBlankString::new(class)?),
         })
     }
 
@@ -4985,53 +7600,11 @@ impl JsonSchema for FaceMaker {
     }
 }
 
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct ExtrusionFaceMakerWire {
-    class: FaceMaker,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    mode: Option<u32>,
-}
-
-mod optional_extrusion_face_maker {
-    use super::{ExtrusionFaceMakerWire, FaceMaker};
-    use serde::{Deserialize, Serialize};
-
-    // Serde passes the borrowed field to this adapter.
-    #[allow(clippy::ref_option)]
-    pub(super) fn serialize<S>(value: &Option<FaceMaker>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        value
-            .as_ref()
-            .map(|maker| ExtrusionFaceMakerWire {
-                class: maker.clone(),
-                mode: Some(maker.mode()),
-            })
-            .serialize(serializer)
-    }
-
-    pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<Option<FaceMaker>, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let Some(wire) = Option::<ExtrusionFaceMakerWire>::deserialize(deserializer)? else {
-            return Ok(None);
-        };
-        if wire.mode.is_some_and(|mode| mode != wire.class.mode()) {
-            return Err(serde::de::Error::custom(
-                "face_maker.mode does not match face_maker.class",
-            ));
-        }
-        Ok(Some(wire.class))
-    }
-}
-
 /// Relationship between outer-wire and inner-wire taper directions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum InnerWireTaper {
     /// Inner wires taper opposite to outer wires.
     Inverted,
@@ -5043,6 +7616,7 @@ pub enum InnerWireTaper {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum HelixConstructionStyle {
     /// Historical construction retained for document compatibility.
     Legacy,
@@ -5053,19 +7627,19 @@ pub enum HelixConstructionStyle {
 /// Axial or radial construction law of a helix feature.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum HelixShape {
     /// Constant-radius helix with signed axial rise per revolution.
     Cylindrical {
         /// Signed axial rise per revolution.
-        pitch: HelixPitch,
+        pitch: NonZeroLength,
     },
     /// Conical helix with signed axial rise and cone half-angle.
     Conical {
         /// Signed axial rise per revolution.
-        pitch: HelixPitch,
+        pitch: NonZeroLength,
         /// Cone half-angle.
-        cone_angle: Angle,
+        cone_angle: SlopeAngle,
     },
     /// Planar spiral with signed radial growth per revolution.
     Spiral {
@@ -5074,116 +7648,11 @@ pub enum HelixShape {
     },
 }
 
-/// Finite, nonzero signed axial rise per revolution.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(transparent)]
-pub struct HelixPitch(Length);
-
-impl HelixPitch {
-    /// Construct a finite, nonzero axial pitch.
-    #[must_use]
-    pub fn new(value: Length) -> Option<Self> {
-        (value.0.is_finite() && value.0 != 0.0).then_some(Self(value))
-    }
-
-    /// Return the signed axial pitch.
-    #[must_use]
-    pub const fn get(self) -> Length {
-        self.0
-    }
-}
-
-impl<'de> Deserialize<'de> for HelixPitch {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let value = Length::deserialize(deserializer)?;
-        Self::new(value)
-            .ok_or_else(|| serde::de::Error::custom("helix pitch must be finite and nonzero"))
-    }
-}
-
-#[cfg(feature = "schema")]
-#[derive(JsonSchema)]
-#[expect(dead_code, reason = "fields define the helix-shape wire schema")]
-struct HelixShapeSchemaWire {
-    pitch: Length,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    radial_growth: Option<Length>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    cone_angle: Option<Angle>,
-}
-
-mod helix_shape_wire {
-    use super::{Angle, HelixPitch, HelixShape, Length};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    #[derive(Serialize, Deserialize)]
-    struct Wire {
-        pitch: Length,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        radial_growth: Option<Length>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        cone_angle: Option<Angle>,
-    }
-
-    pub fn serialize<S>(value: &HelixShape, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let (pitch, radial_growth, cone_angle) = match value {
-            HelixShape::Cylindrical { pitch } => (pitch.get(), None, None),
-            HelixShape::Conical { pitch, cone_angle } => (pitch.get(), None, Some(*cone_angle)),
-            HelixShape::Spiral { radial_growth } => (Length(0.0), Some(*radial_growth), None),
-        };
-        Wire {
-            pitch,
-            radial_growth,
-            cone_angle,
-        }
-        .serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<HelixShape, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = Wire::deserialize(deserializer)?;
-        match (wire.pitch.0 == 0.0, wire.radial_growth, wire.cone_angle) {
-            (false, None, None) => Ok(HelixShape::Cylindrical {
-                pitch: HelixPitch::new(wire.pitch).ok_or_else(|| {
-                    serde::de::Error::custom("helix pitch field must be finite and nonzero")
-                })?,
-            }),
-            (false, None, Some(cone_angle)) => Ok(HelixShape::Conical {
-                pitch: HelixPitch::new(wire.pitch).ok_or_else(|| {
-                    serde::de::Error::custom("helix pitch field must be finite and nonzero")
-                })?,
-                cone_angle,
-            }),
-            (true, Some(radial_growth), None) => Ok(HelixShape::Spiral { radial_growth }),
-            (_, Some(_), Some(_)) => Err(serde::de::Error::custom(
-                "helix radial_growth and cone_angle fields are mutually exclusive",
-            )),
-            (false, Some(_), None) => Err(serde::de::Error::custom(
-                "helix radial_growth requires a zero pitch field",
-            )),
-            (true, None, Some(_)) => Err(serde::de::Error::custom(
-                "helix cone_angle requires a nonzero pitch field",
-            )),
-            (true, None, None) => Err(serde::de::Error::custom(
-                "helix zero pitch requires the radial_growth field",
-            )),
-        }
-    }
-}
-
 /// Result topology retained by a projection-on-surface operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SurfaceProjectionMode {
     /// Retain all projected result shapes.
     All,
@@ -5197,6 +7666,7 @@ pub enum SurfaceProjectionMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum BooleanOp {
     /// Source operation is retained but not semantically resolved.
     Unresolved,
@@ -5214,6 +7684,7 @@ pub enum BooleanOp {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum BooleanKind {
     /// Union with existing bodies.
     Join,
@@ -5246,14 +7717,40 @@ impl TryFrom<BooleanOp> for BooleanKind {
     }
 }
 
+impl From<SolidSweepOperation> for BooleanOp {
+    fn from(value: SolidSweepOperation) -> Self {
+        match value {
+            SolidSweepOperation::NewBody => Self::NewBody,
+            SolidSweepOperation::Join => Self::Join,
+            SolidSweepOperation::Cut => Self::Cut,
+            SolidSweepOperation::Intersect => Self::Intersect,
+        }
+    }
+}
+
+impl TryFrom<BooleanOp> for SolidSweepOperation {
+    type Error = BooleanOp;
+
+    fn try_from(value: BooleanOp) -> Result<Self, Self::Error> {
+        match value {
+            BooleanOp::NewBody => Ok(Self::NewBody),
+            BooleanOp::Join => Ok(Self::Join),
+            BooleanOp::Cut => Ok(Self::Cut),
+            BooleanOp::Intersect => Ok(Self::Intersect),
+            BooleanOp::Unresolved => Err(value),
+        }
+    }
+}
+
 /// Placement and parameterization of a solid Coil primitive.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct CoilConstruction {
     /// Axis frame and angular origin.
     pub placement: CoilPlacement,
     /// Diameter of the reference trajectory at its start.
-    pub diameter: Length,
+    pub diameter: PositiveLength,
     /// Independent driving dimensions retained from the source feature.
     pub extent: CoilExtent,
     /// Generated section swept along the trajectory.
@@ -5267,58 +7764,92 @@ pub struct CoilConstruction {
 }
 
 /// Geometric placement of a Coil trajectory.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(try_from = "CoilPlacementWire", into = "CoilPlacementWire")]
 pub enum CoilPlacement {
-    /// Complete right-handed model-space frame.
+    /// Complete model-space axis and radial frame.
     Explicit {
-        /// Center of the trajectory on its base plane.
-        origin: Point3,
-        /// Positive trajectory-axis direction.
-        axis: Vector3,
-        /// Direction from `origin` to angular position zero.
-        radial: Vector3,
+        /// Origin, positive trajectory axis, and angular-zero radial direction.
+        frame: FeatureUnitPlaneFrame,
     },
-    /// Complete placement retained in one source-native construction aggregate.
+    /// Placement retained in one source-native construction aggregate.
     Native {
-        /// Native record or scope containing the placement semantics.
-        native_ref: String,
+        /// Nonblank native record or scope containing the placement semantics.
+        native_ref: SelectionReference,
     },
 }
 
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
+enum CoilPlacementWire {
+    /// Complete model-space axis and radial frame.
+    Explicit {
+        /// Model-space origin of the trajectory frame.
+        origin: Point3,
+        /// Positive trajectory axis direction.
+        axis: Vector3,
+        /// Angular-zero radial direction.
+        radial: Vector3,
+    },
+    /// Placement retained in one source-native construction aggregate.
+    Native {
+        /// Nonblank native record or scope containing the placement semantics.
+        native_ref: SelectionReference,
+    },
+}
+impl TryFrom<CoilPlacementWire> for CoilPlacement {
+    type Error = &'static str;
+    fn try_from(wire: CoilPlacementWire) -> Result<Self, Self::Error> {
+        Ok(match wire {
+            CoilPlacementWire::Explicit {
+                origin,
+                axis,
+                radial,
+            } => Self::Explicit {
+                frame: FeatureUnitPlaneFrame::new(origin, axis, radial).ok_or(
+                    "coil placement requires finite origin and perpendicular unit directions",
+                )?,
+            },
+            CoilPlacementWire::Native { native_ref } => Self::Native { native_ref },
+        })
+    }
+}
 /// Independent driving dimensions of a Coil trajectory.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum CoilExtent {
     /// Axial coil driven by revolution count and total signed height.
     RevolutionsHeight {
         /// Positive angular-turn count.
-        revolutions: f64,
+        revolutions: PositiveReal,
         /// Signed axial travel.
         height: Length,
     },
     /// Axial coil driven by revolution count and signed pitch per revolution.
     RevolutionsPitch {
         /// Positive angular-turn count.
-        revolutions: f64,
+        revolutions: PositiveReal,
         /// Signed axial travel per revolution.
-        pitch: Length,
+        pitch: NonZeroLength,
     },
     /// Axial coil driven by total signed height and signed pitch per revolution.
     HeightPitch {
         /// Signed axial travel.
-        height: Length,
+        height: NonZeroLength,
         /// Signed axial travel per revolution.
-        pitch: Length,
+        pitch: NonZeroLength,
     },
     /// Planar spiral driven by revolution count and signed radial pitch.
     Spiral {
         /// Positive angular-turn count.
-        revolutions: f64,
+        revolutions: PositiveReal,
         /// Signed radial growth per revolution.
-        radial_pitch: Length,
+        radial_pitch: NonZeroLength,
     },
 }
 
@@ -5326,26 +7857,27 @@ pub enum CoilExtent {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum CoilSection {
     /// Circular section whose size is its diameter.
     Circular {
         /// Circle diameter.
-        diameter: Length,
+        diameter: PositiveLength,
     },
     /// Square section whose size is its edge length.
     Square {
         /// Edge length.
-        size: Length,
+        size: PositiveLength,
     },
     /// Equilateral triangle pointing radially away from the axis.
     ExternalTriangle {
         /// Edge length.
-        size: Length,
+        size: PositiveLength,
     },
     /// Equilateral triangle pointing radially toward the axis.
     InternalTriangle {
         /// Edge length.
-        size: Length,
+        size: PositiveLength,
     },
 }
 
@@ -5353,6 +7885,7 @@ pub enum CoilSection {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum CoilSectionPlacement {
     /// Section lies inside the reference trajectory.
     Inside,
@@ -5366,9 +7899,10 @@ pub enum CoilSectionPlacement {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum CoilResult {
     /// Create an independent body.
-    NewBody,
+    NewBody {},
     /// Combine the swept volume with selected existing bodies.
     Boolean {
         /// Join, cut, or intersection operation.
@@ -5379,128 +7913,52 @@ pub enum CoilResult {
 }
 
 /// Result semantics of a swept profile.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SweepMode {
     /// Native sweep family is known but its result subtype is unresolved.
-    Unresolved,
-    /// Sweep creates an independent solid body.
-    NewBody,
+    Unresolved {},
     /// Sweep creates or modifies a solid body.
     Solid {
-        /// Boolean combination with existing bodies.
-        op: BooleanKind,
+        /// Independent-body creation or boolean combination with existing bodies.
+        op: SolidSweepOperation,
     },
     /// Sweep creates a sheet body.
-    Surface,
+    Surface {},
 }
 
-#[derive(Clone, Copy, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "mode", rename_all = "snake_case")]
-enum SweepModeWire {
-    Unresolved,
-    Solid { op: SolidSweepOperation },
-    Surface,
-}
-
-#[derive(Clone, Copy, Serialize, Deserialize)]
+/// How a solid sweep result meets the existing bodies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
-enum SolidSweepOperation {
-    Join,
-    Cut,
-    Intersect,
+#[serde(deny_unknown_fields)]
+pub enum SolidSweepOperation {
+    /// Create an independent body.
     NewBody,
-}
-
-impl From<SweepMode> for SweepModeWire {
-    fn from(value: SweepMode) -> Self {
-        match value {
-            SweepMode::Unresolved => Self::Unresolved,
-            SweepMode::NewBody => Self::Solid {
-                op: SolidSweepOperation::NewBody,
-            },
-            SweepMode::Solid { op } => Self::Solid {
-                op: match op {
-                    BooleanKind::Join => SolidSweepOperation::Join,
-                    BooleanKind::Cut => SolidSweepOperation::Cut,
-                    BooleanKind::Intersect => SolidSweepOperation::Intersect,
-                },
-            },
-            SweepMode::Surface => Self::Surface,
-        }
-    }
-}
-
-impl From<SweepModeWire> for SweepMode {
-    fn from(value: SweepModeWire) -> Self {
-        match value {
-            SweepModeWire::Unresolved => Self::Unresolved,
-            SweepModeWire::Solid {
-                op: SolidSweepOperation::NewBody,
-            } => Self::NewBody,
-            SweepModeWire::Solid {
-                op: SolidSweepOperation::Join,
-            } => Self::Solid {
-                op: BooleanKind::Join,
-            },
-            SweepModeWire::Solid {
-                op: SolidSweepOperation::Cut,
-            } => Self::Solid {
-                op: BooleanKind::Cut,
-            },
-            SweepModeWire::Solid {
-                op: SolidSweepOperation::Intersect,
-            } => Self::Solid {
-                op: BooleanKind::Intersect,
-            },
-            SweepModeWire::Surface => Self::Surface,
-        }
-    }
-}
-
-impl Serialize for SweepMode {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        SweepModeWire::from(*self).serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for SweepMode {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        Ok(SweepModeWire::deserialize(deserializer)?.into())
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for SweepMode {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "SweepMode".into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        SweepModeWire::json_schema(generator)
-    }
+    /// Add the swept volume to existing bodies.
+    Join,
+    /// Remove the swept volume from existing bodies.
+    Cut,
+    /// Keep the intersection with existing bodies.
+    Intersect,
 }
 
 /// Directed fractions of a sweep path consumed from the profile location.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct SweepPathExtent {
     /// Fraction consumed in the path's forward traversal direction.
-    pub along_fraction: f64,
+    pub along_fraction: Fraction,
     /// Fraction consumed in the path's reverse traversal direction.
-    pub against_fraction: f64,
+    pub against_fraction: Fraction,
 }
 
 /// Guide rail controlling a sweep, with its directed consumed extent.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct SweepGuideRail {
     /// Ordered guide trajectory.
     pub path: PathRef,
@@ -5508,22 +7966,42 @@ pub struct SweepGuideRail {
     pub extent: SweepPathExtent,
 }
 
+/// The generated cross-section of a result that generates none.
+///
+/// A sheet sweep owns no geometry of its own, so this type has no value and
+/// [`SweepSection::Generated`] is unreachable for a sheet section.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub enum NoGeneratedSection {}
+
+/// A cross-section of a result that generates no geometry of its own.
+pub type SheetSweepSection = SweepSection<NoGeneratedSection>;
+
 /// Cross-section owned or referenced by a sweep construction.
+///
+/// `G` names the geometry the result may generate. A solid result generates a
+/// circular region; a sheet result generates nothing, and its `G` is
+/// uninhabited.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
-pub enum SweepSection {
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+pub enum SweepSection<G = GeneratedSweepSection> {
     /// The source requires a cross-section, but its carrier is unresolved.
-    Unresolved(Option<String>),
+    Unresolved(#[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")] Option<String>),
     /// Cross-section supplied by referenced profile geometry.
-    Profile(ProfileRef),
+    Profile(PlanarProfileRef),
     /// Cross-section generated by the sweep construction itself.
-    Generated(GeneratedSweepSection),
+    Generated(G),
 }
 
-impl SweepSection {
+impl<G> SweepSection<G> {
     /// Returns the referenced profile when this section does not own its geometry.
-    pub fn referenced_profile(&self) -> Option<&ProfileRef> {
+    pub const fn referenced_profile(&self) -> Option<&PlanarProfileRef> {
         match self {
             Self::Profile(profile) => Some(profile),
             Self::Unresolved(_) | Self::Generated(_) => None,
@@ -5531,10 +8009,322 @@ impl SweepSection {
     }
 
     /// Returns the mutable referenced profile when this section does not own its geometry.
-    pub fn referenced_profile_mut(&mut self) -> Option<&mut ProfileRef> {
+    pub fn referenced_profile_mut(&mut self) -> Option<&mut PlanarProfileRef> {
         match self {
             Self::Profile(profile) => Some(profile),
             Self::Unresolved(_) | Self::Generated(_) => None,
+        }
+    }
+
+    /// Whether the source requires a cross-section it did not resolve.
+    pub const fn is_unresolved(&self) -> bool {
+        matches!(self, Self::Unresolved(_))
+    }
+
+    /// The native carrier named by an unresolved cross-section.
+    pub fn unresolved_native(&self) -> Option<&str> {
+        match self {
+            Self::Unresolved(native) => native.as_deref(),
+            Self::Profile(_) | Self::Generated(_) => None,
+        }
+    }
+}
+
+/// A sweep circular section with an optional wall thinner than its radius.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct SweepCircularRegion {
+    outer_radius: PositiveLength,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    wall_thickness: Option<PositiveLength>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SweepCircularRegionWire {
+    outer_radius: PositiveLength,
+    #[serde(default, deserialize_with = "deserialize_wall_thickness")]
+    wall_thickness: Option<PositiveLength>,
+}
+
+impl SweepCircularRegion {
+    /// Admit a disk or a wall thinner than the outer radius.
+    pub fn new(
+        outer_radius: PositiveLength,
+        wall_thickness: Option<PositiveLength>,
+    ) -> Result<Self, &'static str> {
+        if wall_thickness.is_some_and(|wall| wall.get() >= outer_radius.get()) {
+            return Err("wall_thickness must be less than outer_radius");
+        }
+        Ok(Self {
+            outer_radius,
+            wall_thickness,
+        })
+    }
+
+    /// Return the outer radius.
+    pub const fn outer_radius(self) -> PositiveLength {
+        self.outer_radius
+    }
+
+    /// Return the inward radial wall thickness.
+    pub const fn wall_thickness(self) -> Option<PositiveLength> {
+        self.wall_thickness
+    }
+}
+
+impl<'de> Deserialize<'de> for SweepCircularRegion {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let wire = SweepCircularRegionWire::deserialize(deserializer)?;
+        Self::new(wire.outer_radius, wire.wall_thickness).map_err(serde::de::Error::custom)
+    }
+}
+
+impl From<SheetSweepSection> for SweepSection {
+    fn from(section: SheetSweepSection) -> Self {
+        match section {
+            SweepSection::Unresolved(native) => Self::Unresolved(native),
+            SweepSection::Profile(profile) => Self::Profile(profile),
+            SweepSection::Generated(generated) => match generated {},
+        }
+    }
+}
+
+/// Sweep cross-sections nested under the result mode they belong to.
+///
+/// A sheet result generates no geometry, so its sections carry an uninhabited
+/// generated arm and a generated circular region under a sheet result has no
+/// spelling.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "mode", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
+pub enum SweepShape {
+    /// Native sweep family is known but its result subtype is unresolved.
+    Unresolved {
+        /// Primary cross-section.
+        section: SheetSweepSection,
+        /// Additional cross-sections in path order.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        sections: Vec<SheetSweepSection>,
+    },
+    /// Sweep creates or modifies a solid body.
+    Solid {
+        /// Independent-body creation or boolean combination with existing bodies.
+        op: SolidSweepOperation,
+        /// Primary cross-section.
+        section: SweepSection,
+        /// Additional cross-sections in path order.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        sections: Vec<SweepSection>,
+    },
+    /// Sweep creates a sheet body.
+    Surface {
+        /// Primary cross-section.
+        section: SheetSweepSection,
+        /// Additional cross-sections in path order.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        sections: Vec<SheetSweepSection>,
+    },
+}
+
+impl SweepShape {
+    /// Construct an unresolved sweep section and result mode.
+    pub fn unresolved(native: Option<String>) -> Self {
+        Self::Unresolved {
+            section: SweepSection::Unresolved(native),
+            sections: Vec::new(),
+        }
+    }
+
+    /// A sweep under `mode` whose cross-sections generate no geometry.
+    ///
+    /// Referenced and unresolved cross-sections are admissible under every
+    /// result, so a caller that generated nothing may name any mode.
+    pub fn sheet_sections(
+        mode: SweepMode,
+        section: SheetSweepSection,
+        sections: Vec<SheetSweepSection>,
+    ) -> Self {
+        match mode {
+            SweepMode::Unresolved {} => Self::Unresolved { section, sections },
+            SweepMode::Surface {} => Self::Surface { section, sections },
+            SweepMode::Solid { op } => Self::Solid {
+                op,
+                section: section.into(),
+                sections: sections.into_iter().map(Into::into).collect(),
+            },
+        }
+    }
+
+    /// Return the result mode.
+    pub const fn mode(&self) -> SweepMode {
+        match self {
+            Self::Unresolved { .. } => SweepMode::Unresolved {},
+            Self::Solid { op, .. } => SweepMode::Solid { op: *op },
+            Self::Surface { .. } => SweepMode::Surface {},
+        }
+    }
+
+    /// Whether the primary cross-section is unresolved.
+    pub const fn section_is_unresolved(&self) -> bool {
+        match self {
+            Self::Unresolved { section, .. } | Self::Surface { section, .. } => {
+                section.is_unresolved()
+            }
+            Self::Solid { section, .. } => section.is_unresolved(),
+        }
+    }
+
+    /// Whether any cross-section is unresolved.
+    pub fn any_section_is_unresolved(&self) -> bool {
+        match self {
+            Self::Unresolved { section, sections } | Self::Surface { section, sections } => {
+                section.is_unresolved() || sections.iter().any(SweepSection::is_unresolved)
+            }
+            Self::Solid {
+                section, sections, ..
+            } => section.is_unresolved() || sections.iter().any(SweepSection::is_unresolved),
+        }
+    }
+
+    /// Whether any cross-section is unresolved and names a native carrier.
+    pub fn any_section_names_an_unresolved_carrier(&self) -> bool {
+        match self {
+            Self::Unresolved { section, sections } | Self::Surface { section, sections } => {
+                std::iter::once(section)
+                    .chain(sections)
+                    .any(|section| section.unresolved_native().is_some())
+            }
+            Self::Solid {
+                section, sections, ..
+            } => std::iter::once(section)
+                .chain(sections)
+                .any(|section| section.unresolved_native().is_some()),
+        }
+    }
+
+    /// Number of additional cross-sections beyond the primary one.
+    pub fn additional_section_count(&self) -> usize {
+        match self {
+            Self::Unresolved { sections, .. } | Self::Surface { sections, .. } => sections.len(),
+            Self::Solid { sections, .. } => sections.len(),
+        }
+    }
+
+    /// Referenced profile of the primary cross-section, when it references one.
+    pub const fn referenced_profile(&self) -> Option<&PlanarProfileRef> {
+        match self {
+            Self::Unresolved { section, .. } | Self::Surface { section, .. } => {
+                section.referenced_profile()
+            }
+            Self::Solid { section, .. } => section.referenced_profile(),
+        }
+    }
+
+    /// Mutable referenced profile of the primary cross-section.
+    pub fn referenced_profile_mut(&mut self) -> Option<&mut PlanarProfileRef> {
+        match self {
+            Self::Unresolved { section, .. } | Self::Surface { section, .. } => {
+                section.referenced_profile_mut()
+            }
+            Self::Solid { section, .. } => section.referenced_profile_mut(),
+        }
+    }
+
+    /// Every referenced profile, the primary cross-section first.
+    pub fn referenced_profiles(&self) -> impl Iterator<Item = &PlanarProfileRef> + Clone {
+        let (primary, sheet_sections, solid_sections): (
+            Option<&PlanarProfileRef>,
+            &[SheetSweepSection],
+            &[SweepSection],
+        ) = match self {
+            Self::Unresolved { section, sections } | Self::Surface { section, sections } => {
+                (section.referenced_profile(), sections, &[])
+            }
+            Self::Solid {
+                section, sections, ..
+            } => (section.referenced_profile(), &[], sections),
+        };
+        primary
+            .into_iter()
+            .chain(
+                sheet_sections
+                    .iter()
+                    .filter_map(SweepSection::referenced_profile),
+            )
+            .chain(
+                solid_sections
+                    .iter()
+                    .filter_map(SweepSection::referenced_profile),
+            )
+    }
+
+    /// Generated cross-sections, mutable, the primary cross-section first.
+    ///
+    /// Only a solid result generates geometry.
+    pub fn generated_sections_mut(&mut self) -> impl Iterator<Item = &mut GeneratedSweepSection> {
+        let (section, sections) = match self {
+            Self::Unresolved { .. } | Self::Surface { .. } => (None, &mut [][..]),
+            Self::Solid {
+                section, sections, ..
+            } => (Some(section), sections.as_mut_slice()),
+        };
+        section
+            .into_iter()
+            .chain(sections.iter_mut())
+            .filter_map(|section| match section {
+                SweepSection::Generated(generated) => Some(generated),
+                SweepSection::Unresolved(_) | SweepSection::Profile(_) => None,
+            })
+    }
+
+    /// The generated region of the primary cross-section, when the sweep owns it.
+    pub const fn generated_section(&self) -> Option<&GeneratedSweepSection> {
+        match self {
+            Self::Unresolved { .. } | Self::Surface { .. } => None,
+            Self::Solid { section, .. } => match section {
+                SweepSection::Generated(generated) => Some(generated),
+                SweepSection::Unresolved(_) | SweepSection::Profile(_) => None,
+            },
+        }
+    }
+
+    /// A solid sweep under `op` with the given cross-sections.
+    #[must_use]
+    pub fn solid_sections(
+        op: SolidSweepOperation,
+        section: SweepSection,
+        sections: Vec<SweepSection>,
+    ) -> Self {
+        Self::Solid {
+            op,
+            section,
+            sections,
+        }
+    }
+
+    /// Take the cross-sections out of the shape, in path order.
+    #[must_use]
+    pub fn into_sections(self) -> (SweepSection, Vec<SweepSection>) {
+        match self {
+            Self::Unresolved { section, sections } | Self::Surface { section, sections } => (
+                section.into(),
+                sections.into_iter().map(Into::into).collect(),
+            ),
+            Self::Solid {
+                section, sections, ..
+            } => (section, sections),
+        }
+    }
+
+    /// Replaces the primary cross-section with referenced profile geometry.
+    pub fn set_referenced_profile(&mut self, profile: PlanarProfileRef) {
+        match self {
+            Self::Unresolved { section, .. } | Self::Surface { section, .. } => {
+                *section = SweepSection::Profile(profile);
+            }
+            Self::Solid { section, .. } => *section = SweepSection::Profile(profile),
         }
     }
 }
@@ -5543,69 +8333,212 @@ impl SweepSection {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "shape", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum GeneratedSweepSection {
     /// Filled or hollow circular region centered on the sweep path.
     CircularRegion {
-        /// Outer radius of the circular region.
-        outer_radius: Length,
-        /// Inward radial wall thickness. Absence selects a filled disk.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        wall_thickness: Option<Length>,
+        /// Outer radius and optional smaller radial wall thickness.
+        region: SweepCircularRegion,
     },
 }
 
 /// One directed use of a solved sketch curve in an arrangement boundary.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct SketchProfileBoundaryUse {
     /// Sketch entity supplying the curve geometry.
     pub entity: crate::sketches::SketchEntityId,
     /// Parameter endpoints on the source curve, ordered in the entity's stored direction.
-    pub parameter_range: [f64; 2],
+    #[serde(deserialize_with = "deserialize_profile_parameter_range")]
+    pub parameter_range: crate::geometry::DirectedParameterRange,
     /// Whether boundary traversal opposes the interval's stored direction.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub reversed: bool,
 }
 
+/// Whole-loop region with distinct holes that exclude its outer loop.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "SketchProfileLoopsWire")]
+pub struct SketchProfileLoops {
+    outer: u32,
+    #[serde(skip_serializing_if = "DistinctMembers::is_empty")]
+    holes: DistinctMembers<u32>,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct SketchProfileLoopsWire {
+    /// The exterior-loop index.
+    outer: u32,
+    /// The hole-loop indices in source order.
+    #[serde(default)]
+    holes: Vec<u32>,
+}
+
+impl SketchProfileLoops {
+    /// Admit a whole-loop region with a scoped uniqueness index.
+    pub fn new(
+        outer: u32,
+        holes: Vec<u32>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, &'static str>, cadmpeg_core::decode::ResourceLimit> {
+        let holes = match DistinctMembers::try_from(holes, ctx) {
+            Ok(holes) => holes,
+            Err(FeatureCollectionError::Resource(limit)) => return Err(limit),
+            Err(FeatureCollectionError::Invalid(_)) => return Ok(Err("holes must be distinct")),
+        };
+        for hole in holes.as_slice() {
+            ctx.charge_work_limit(1, "validate sketch profile outer loop")?;
+            if hole == &outer {
+                return Ok(Err("holes must not contain outer"));
+            }
+        }
+        Ok(Ok(Self { outer, holes }))
+    }
+
+    /// The exterior-loop index.
+    pub fn outer(&self) -> u32 {
+        self.outer
+    }
+
+    /// The hole-loop indices in source order.
+    pub fn holes(&self) -> &[u32] {
+        self.holes.as_slice()
+    }
+}
+
+impl TryFrom<SketchProfileLoopsWire> for SketchProfileLoops {
+    type Error = FeatureCollectionError;
+    fn try_from(wire: SketchProfileLoopsWire) -> Result<Self, Self::Error> {
+        let mut seen = std::collections::HashSet::new();
+        seen.try_reserve(wire.holes.len())
+            .map_err(|_| FeatureCollectionError::Invalid("hole member allocation failed"))?;
+        for hole in &wire.holes {
+            if !seen.insert(hole) {
+                return Err(FeatureCollectionError::Invalid("holes must be distinct"));
+            }
+        }
+        if seen.contains(&wire.outer) {
+            return Err(FeatureCollectionError::Invalid(
+                "holes must not contain outer",
+            ));
+        }
+        Ok(Self {
+            outer: wire.outer,
+            holes: DistinctMembers(wire.holes),
+        })
+    }
+}
+
 /// One connected planar region bounded by solved sketch curves.
-///
-/// Whole-loop regions retain compact profile indices. Arrangement regions
-/// carry exact trimmed curve uses when their boundary switches source loops at
-/// intersections. The untagged representation preserves the established JSON
-/// shape of whole-loop regions.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(untagged)]
+#[serde(tag = "region", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SketchProfileRegion {
     /// Exterior and holes are complete entries in the sketch profile table.
     Loops {
-        /// Exterior-loop index in the referenced sketch's profile-loop table.
-        outer: u32,
-        /// Immediate child loops removed from the exterior interior.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        holes: Vec<u32>,
+        /// Whole-loop exterior and hole indices.
+        #[serde(flatten)]
+        loops: SketchProfileLoops,
     },
     /// Boundary rings switch source curves at arrangement intersections.
     Trimmed {
         /// Directed exterior boundary ring.
-        outer_boundary: Vec<SketchProfileBoundaryUse>,
+        outer_boundary: NonEmptyMembers<SketchProfileBoundaryUse>,
         /// Directed hole boundary rings.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        hole_boundaries: Vec<Vec<SketchProfileBoundaryUse>>,
+        hole_boundaries: Vec<NonEmptyMembers<SketchProfileBoundaryUse>>,
     },
+}
+
+impl SketchProfileRegion {
+    /// Admit whole-loop regions with the decode context.
+    pub fn loops(
+        outer: u32,
+        holes: Vec<u32>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, &'static str>, cadmpeg_core::decode::ResourceLimit> {
+        Ok(SketchProfileLoops::new(outer, holes, ctx)?.map(|loops| Self::Loops { loops }))
+    }
+
+    /// Admits a trimmed region whose exterior and hole rings are nonempty.
+    pub fn trimmed(
+        outer_boundary: Vec<SketchProfileBoundaryUse>,
+        hole_boundaries: Vec<Vec<SketchProfileBoundaryUse>>,
+    ) -> Result<Self, &'static str> {
+        Ok(Self::Trimmed {
+            outer_boundary: outer_boundary
+                .try_into()
+                .map_err(|_| "outer_boundary must not be empty")?,
+            hole_boundaries: hole_boundaries
+                .into_iter()
+                .map(|ring| {
+                    ring.try_into()
+                        .map_err(|_| "hole_boundaries must not contain an empty ring")
+                })
+                .collect::<Result<_, _>>()?,
+        })
+    }
+}
+
+/// Nonempty distinct profile regions in source selection order.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct SketchProfileRegions(Vec<SketchProfileRegion>);
+
+impl TryFrom<Vec<SketchProfileRegion>> for SketchProfileRegions {
+    type Error = &'static str;
+    fn try_from(regions: Vec<SketchProfileRegion>) -> Result<Self, Self::Error> {
+        if regions.is_empty() {
+            return Err("regions must not be empty");
+        }
+        if regions
+            .iter()
+            .enumerate()
+            .any(|(index, region)| regions[..index].contains(region))
+        {
+            return Err("regions must be distinct");
+        }
+        Ok(Self(regions))
+    }
+}
+
+impl SketchProfileRegions {
+    /// The selected regions in source order.
+    pub fn as_slice(&self) -> &[SketchProfileRegion] {
+        &self.0
+    }
+}
+
+impl std::ops::Deref for SketchProfileRegions {
+    type Target = [SketchProfileRegion];
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for SketchProfileRegions {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::try_from(Vec::<SketchProfileRegion>::deserialize(deserializer)?)
+            .map_err(serde::de::Error::custom)
+    }
 }
 
 /// Cross-section orientation law along a sweep path.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SweepOrientation {
     /// Rotation-minimizing corrected-Frenet frame.
-    CorrectedFrenet,
+    CorrectedFrenet {},
     /// Fixed section frame.
-    Fixed,
+    Fixed {},
     /// Exact Frenet frame from path derivatives.
-    Frenet,
+    Frenet {},
     /// Frame constrained by a secondary path.
     Auxiliary {
         /// Secondary orientation path.
@@ -5623,7 +8556,7 @@ pub enum SweepOrientation {
     /// Frame constrained by a fixed binormal direction.
     Binormal {
         /// Unit binormal direction.
-        direction: Vector3,
+        direction: UnitVector3,
     },
 }
 
@@ -5631,6 +8564,7 @@ pub enum SweepOrientation {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SweepTransition {
     /// Transform the section continuously across the corner.
     Transformed,
@@ -5644,6 +8578,7 @@ pub enum SweepTransition {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SweepTransformation {
     /// Keep one constant section along the path.
     Constant,
@@ -5657,26 +8592,90 @@ pub enum SweepTransformation {
     Interpolation,
 }
 
+/// Signed axial travel and radial growth, named by which components move.
+///
+/// Each arm carries only the components that move, and each is a
+/// [`NonZeroLength`], which refuses zero and every non-finite value. A helix
+/// that neither rises nor grows has no spelling.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
+pub enum HelicalSweepTravel {
+    /// The helix rises along its axis at a constant radius.
+    Axial {
+        /// Total signed axial travel.
+        height: NonZeroLength,
+    },
+    /// The helix grows radially in its base plane.
+    Radial {
+        /// Signed radial change per turn.
+        radial_growth: NonZeroLength,
+    },
+    /// The helix rises and grows.
+    Conical {
+        /// Total signed axial travel.
+        height: NonZeroLength,
+        /// Signed radial change per turn.
+        radial_growth: NonZeroLength,
+    },
+}
+
+impl HelicalSweepTravel {
+    /// Admit finite signed travel with nonzero height or radial growth.
+    pub fn new(height: Length, radial_growth: Length) -> Option<Self> {
+        match (
+            NonZeroLength::try_from(height).ok(),
+            NonZeroLength::try_from(radial_growth).ok(),
+        ) {
+            (None, None) => None,
+            (Some(height), None) => Some(Self::Axial { height }),
+            (None, Some(radial_growth)) => Some(Self::Radial { radial_growth }),
+            (Some(height), Some(radial_growth)) => Some(Self::Conical {
+                height,
+                radial_growth,
+            }),
+        }
+    }
+
+    /// Return the total axial travel.
+    pub fn height(self) -> Length {
+        match self {
+            Self::Radial { .. } => Length::ZERO,
+            Self::Axial { height } | Self::Conical { height, .. } => height.into(),
+        }
+    }
+
+    /// Return the radial change per turn.
+    pub fn radial_growth(self) -> Length {
+        match self {
+            Self::Axial { .. } => Length::ZERO,
+            Self::Radial { radial_growth } | Self::Conical { radial_growth, .. } => {
+                radial_growth.into()
+            }
+        }
+    }
+}
+
 /// Complete construction of a solid helical sweep.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct HelicalSweepConstruction {
     /// Profile swept along the helical path.
-    pub profile: ProfileRef,
+    pub profile: PlanarProfileRef,
     /// Point at the start of the helix axis.
-    pub axis_origin: Point3,
+    pub axis_origin: FinitePoint3,
     /// Unit direction of positive axial travel.
-    pub axis_direction: Vector3,
+    pub axis_direction: UnitVector3,
     /// Persisted authoring law identifying the independent parameters.
     pub law: HelicalSweepLaw,
-    /// Positive axial advance per turn; zero is permitted for a planar spiral.
-    pub pitch: Length,
-    /// Signed total axial travel.
-    pub height: Length,
+    /// Nonnegative axial advance per turn; zero gives a planar spiral.
+    pub pitch: NonNegativeLength,
+    /// Signed axial travel and radial change per turn.
+    pub travel: HelicalSweepTravel,
     /// Positive number of turns.
-    pub turns: f64,
-    /// Signed radial change per turn.
-    pub radial_growth: Length,
+    pub turns: PositiveReal,
     /// Cone half-angle corresponding to radial growth.
     pub cone_angle: Angle,
     /// Whether angular travel is left-handed along the positive axis.
@@ -5684,10 +8683,18 @@ pub struct HelicalSweepConstruction {
     /// Whether path travel runs opposite the declared axis direction.
     pub reversed: bool,
     /// Relative tolerance used while joining the generated sweep, when persisted.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tolerance: Option<f64>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_tolerance"
+    )]
+    pub tolerance: Option<PositiveReal>,
     /// Whether a profile containing multiple faces is accepted as one operation.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_allow_multi_profile_faces"
+    )]
     pub allow_multi_profile_faces: Option<bool>,
 }
 
@@ -5695,6 +8702,7 @@ pub struct HelicalSweepConstruction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum HelicalSweepLaw {
     /// Pitch, height, and cone angle are independent.
     PitchHeightAngle,
@@ -5709,18 +8717,21 @@ pub enum HelicalSweepLaw {
 /// One object or subelement selection consumed by a design binder.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct BinderSource {
     /// Bound object identity.
     pub target: BinderTarget,
     /// Ordered native subelement selectors; empty selects the complete object.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub subelements: Vec<String>,
+    #[serde(deserialize_with = "deserialize_local_subelements")]
+    pub subelements: Vec<NonBlankString>,
 }
 
 /// Resolved or externally scoped binder target.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum BinderTarget {
     /// Feature in this CADIR document.
     Feature {
@@ -5730,14 +8741,17 @@ pub enum BinderTarget {
     /// Object in another source document.
     External {
         /// Source document identity.
-        document: String,
+        #[serde(deserialize_with = "deserialize_local_document")]
+        document: NonBlankString,
         /// Object identity within the source document.
-        object: String,
+        #[serde(deserialize_with = "deserialize_local_object")]
+        object: NonBlankString,
     },
     /// Source-native target identity that cannot be resolved further.
     Native {
         /// Opaque source-native target identity.
-        reference: String,
+        #[serde(deserialize_with = "deserialize_local_reference")]
+        reference: NonBlankString,
     },
 }
 
@@ -5745,6 +8759,7 @@ pub enum BinderTarget {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum BinderConstruction {
     /// Simple binder over one support object.
     Shape {
@@ -5770,10 +8785,18 @@ pub enum BinderConstruction {
         /// Whether redundant edges are removed from the result.
         refine: bool,
         /// Optional two-dimensional offset construction.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_binder_construction_offset"
+        )]
         offset: Option<BinderOffset>,
         /// Context object used to interpret relative placement.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_context"
+        )]
         context: Option<BinderTarget>,
     },
 }
@@ -5782,6 +8805,7 @@ pub enum BinderConstruction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum BinderLifecycle {
     /// Automatically tracks changes to its sources.
     Synchronized,
@@ -5795,6 +8819,7 @@ pub enum BinderLifecycle {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum BinderPlacement {
     /// Interpret source placement relative to the binder context.
     Relative,
@@ -5806,6 +8831,7 @@ pub enum BinderPlacement {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum BinderCopyOnChange {
     /// Do not clone configurable source properties.
     Disabled,
@@ -5818,9 +8844,10 @@ pub enum BinderCopyOnChange {
 /// Two-dimensional offset applied to bound faces or wires.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct BinderOffset {
     /// Signed offset distance.
-    pub distance: Length,
+    pub distance: NonZeroLength,
     /// Join law at offset corners.
     pub join: BinderOffsetJoin,
     /// Whether to fill between original and offset wires.
@@ -5835,6 +8862,7 @@ pub struct BinderOffset {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum BinderOffsetJoin {
     /// Circular corner arcs.
     Arcs,
@@ -5844,11 +8872,17 @@ pub enum BinderOffsetJoin {
     Intersection,
 }
 
-/// Profile consumed by a profile-driven feature.
+/// Profile consumed by a profile-driven feature that admits no spatial-sketch
+/// form.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
-pub enum ProfileRef {
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+pub enum PlanarProfileRef {
     /// A profile is required by the identified native owner but its carrier is unresolved.
     Unresolved(String),
     /// Opaque reference into a native feature-input record; no neutral geometry given.
@@ -5860,51 +8894,42 @@ pub enum ProfileRef {
         /// Sketch containing the selected loops.
         sketch: crate::sketches::SketchId,
         /// Zero-based indices into [`crate::sketches::Sketch::profiles`].
-        profiles: Vec<u32>,
+        #[serde(deserialize_with = "deserialize_selection_profiles")]
+        profiles: SelectionMembers<u32>,
     },
     /// Exact union of bounded atomic regions within one neutral sketch.
     SketchRegions {
         /// Sketch containing every referenced boundary loop.
         sketch: crate::sketches::SketchId,
         /// Connected regions in source selection order.
-        regions: Vec<SketchProfileRegion>,
+        regions: SketchProfileRegions,
     },
     /// Exact ordered sketch entities forming an open or closed profile.
     SketchEntities {
         /// Sketch containing every selected entity.
         sketch: crate::sketches::SketchId,
         /// Selected entities in source order.
-        entities: Vec<crate::sketches::SketchEntityId>,
+        #[serde(deserialize_with = "deserialize_selection_entities")]
+        entities: SelectionMembers<crate::sketches::SketchEntityId>,
     },
     /// Source-native selection within a known neutral sketch.
     SketchSelection {
         /// Sketch containing the unresolved selected geometry.
         sketch: crate::sketches::SketchId,
         /// Full-fidelity native selection records in source order.
-        selections: Vec<String>,
-    },
-    /// Specific solved profile loops within one neutral spatial sketch.
-    SpatialSketchProfiles {
-        /// Spatial sketch containing the selected loops.
-        sketch: crate::sketches::SpatialSketchId,
-        /// Zero-based indices into [`crate::sketches::SpatialSketch::profiles`].
-        profiles: Vec<u32>,
-    },
-    /// Source-native selection within a known neutral spatial sketch.
-    SpatialSketchSelection {
-        /// Spatial sketch containing the unresolved selected geometry.
-        sketch: crate::sketches::SpatialSketchId,
-        /// Full-fidelity native selection records in source order.
-        selections: Vec<String>,
+        #[serde(deserialize_with = "deserialize_selection_selections")]
+        selections: NativeSelections,
     },
     /// Profile given by faces in the consuming feature's input topology.
     HistoricalFaces {
         /// Input topology containing every selected face.
         state: FeatureInputTopologyId,
         /// State-local face identities in source selection order.
-        faces: Vec<HistoricalFaceId>,
+        #[serde(deserialize_with = "deserialize_selection_faces")]
+        faces: SelectionMembers<HistoricalFaceId>,
         /// Full-fidelity source selection groups in source order.
-        native: Vec<String>,
+        #[serde(deserialize_with = "deserialize_selection_native")]
+        native: NativeSelections,
     },
     /// Complete curve result of an earlier construction-history feature.
     Feature(FeatureId),
@@ -5912,12 +8937,70 @@ pub enum ProfileRef {
     /// format-native persistent reference required for rewrite.
     Generated {
         /// Persistent feature-local curve identities.
-        curves: Vec<GeneratedCurveRef>,
+        #[serde(deserialize_with = "deserialize_selection_curves")]
+        curves: NonEmptyMembers<GeneratedCurveRef>,
         /// Format-native persistent profile reference.
-        native: String,
+        #[serde(deserialize_with = "deserialize_selection_native")]
+        native: SelectionReference,
     },
     /// Profile given directly as a set of solved B-rep faces.
     Faces(Vec<FaceId>),
+}
+
+/// Profile consumed by a profile-driven feature.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+pub enum ProfileRef {
+    /// Specific solved profile loops within one neutral spatial sketch.
+    SpatialSketchProfiles {
+        /// Spatial sketch containing the selected loops.
+        sketch: crate::sketches::SpatialSketchId,
+        /// Zero-based indices into [`crate::sketches::SpatialSketch::profiles`].
+        #[serde(deserialize_with = "deserialize_selection_profiles")]
+        profiles: SelectionMembers<u32>,
+    },
+    /// Source-native selection within a known neutral spatial sketch.
+    SpatialSketchSelection {
+        /// Spatial sketch containing the unresolved selected geometry.
+        sketch: crate::sketches::SpatialSketchId,
+        /// Full-fidelity native selection records in source order.
+        #[serde(deserialize_with = "deserialize_selection_selections")]
+        selections: NativeSelections,
+    },
+    /// Any profile form that does not select spatial-sketch geometry.
+    #[serde(untagged)]
+    Planar(PlanarProfileRef),
+}
+
+impl From<crate::sketches::SketchId> for PlanarProfileRef {
+    fn from(sketch: crate::sketches::SketchId) -> Self {
+        Self::Sketch(sketch)
+    }
+}
+
+impl PlanarProfileRef {
+    /// Retain a native profile reference.
+    #[must_use]
+    pub const fn native(reference: String) -> Self {
+        Self::Native(reference)
+    }
+}
+
+impl ProfileRef {
+    /// Planar form of this profile, when it selects no spatial-sketch geometry.
+    #[must_use]
+    pub const fn planar(&self) -> Option<&PlanarProfileRef> {
+        match self {
+            Self::Planar(profile) => Some(profile),
+            _ => None,
+        }
+    }
 }
 
 /// One ordered cross-section consumed by a loft operation.
@@ -5935,12 +9018,13 @@ pub enum LoftSection {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum LoftPointSection {
     /// Source-native point-selection record whose position is not resolved.
     #[serde(rename = "native_point")]
-    Native(String),
+    Native(#[serde(deserialize_with = "deserialize_local_value")] NonBlankString),
     /// Solved model-space point section.
-    Point(Point3),
+    Point(FinitePoint3),
     /// Solved B-rep vertex section.
     Vertex(VertexId),
 }
@@ -5948,17 +9032,24 @@ pub enum LoftPointSection {
 /// Persistent identity of a curve in one regenerated feature result.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct GeneratedCurveRef {
     /// Feature whose regenerated result owns the curve.
     pub feature: FeatureId,
     /// Complete ordered feature-local component identity.
-    pub local_id: String,
+    #[serde(deserialize_with = "deserialize_selection_local_id")]
+    pub local_id: SelectionReference,
 }
 
 /// Trajectory consumed by a sweep or path-driven operation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum PathRef {
     /// Source path exists but its neutral members remain unresolved.
     Unresolved(String),
@@ -5971,21 +9062,24 @@ pub enum PathRef {
         /// Sketch containing every selected curve.
         sketch: crate::sketches::SketchId,
         /// Selected curve identities in source order.
-        curves: Vec<crate::sketches::SketchEntityId>,
+        #[serde(deserialize_with = "deserialize_selection_curves")]
+        curves: SelectionMembers<crate::sketches::SketchEntityId>,
     },
     /// Source-native curve selection within a known neutral spatial sketch.
     SpatialSketchSelection {
         /// Spatial sketch containing the selected curves.
         sketch: crate::sketches::SpatialSketchId,
         /// Full-fidelity native selection records in path order.
-        selections: Vec<String>,
+        #[serde(deserialize_with = "deserialize_selection_selections")]
+        selections: NativeSelections,
     },
     /// Ordered selected curves from one neutral spatial sketch.
     SpatialSketchCurves {
         /// Spatial sketch containing every selected curve.
         sketch: crate::sketches::SpatialSketchId,
         /// Selected curve identities in source order.
-        curves: Vec<crate::sketches::SpatialSketchEntityId>,
+        #[serde(deserialize_with = "deserialize_selection_curves")]
+        curves: SelectionMembers<crate::sketches::SpatialSketchEntityId>,
     },
     /// Path resolved as ordered topological edges.
     Edges(Vec<EdgeId>),
@@ -5996,16 +9090,379 @@ pub enum PathRef {
         /// Input topology containing every path edge.
         state: FeatureInputTopologyId,
         /// State-local edge identities in path order.
-        edges: Vec<HistoricalEdgeId>,
+        #[serde(deserialize_with = "deserialize_selection_edges")]
+        edges: SelectionMembers<HistoricalEdgeId>,
         /// Full-fidelity source path selection.
-        native: String,
+        #[serde(deserialize_with = "deserialize_selection_native")]
+        native: NonBlankString,
     },
+}
+
+impl PlanarProfileRef {
+    /// Admits nonempty distinct profile regions in one sketch.
+    pub fn sketch_regions(
+        sketch: crate::sketches::SketchId,
+        regions: Vec<SketchProfileRegion>,
+    ) -> Result<Self, &'static str> {
+        Ok(Self::SketchRegions {
+            sketch,
+            regions: regions.try_into()?,
+        })
+    }
+
+    /// Admit members with a scoped uniqueness index.
+    pub fn sketch_profiles(
+        sketch: crate::sketches::SketchId,
+        profiles: Vec<u32>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+        let profiles = match SelectionMembers::new(
+            profiles,
+            ctx,
+            "validate PlanarProfileRef sketch profiles profiles",
+        )? {
+            Ok(value) => value,
+            Err(error) => return Ok(Err(error)),
+        };
+        Ok(Ok(Self::SketchProfiles { sketch, profiles }))
+    }
+
+    /// Admit members with a scoped uniqueness index.
+    pub fn sketch_entities(
+        sketch: crate::sketches::SketchId,
+        entities: Vec<crate::sketches::SketchEntityId>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+        let entities = match SelectionMembers::new(
+            entities,
+            ctx,
+            "validate PlanarProfileRef sketch entities entities",
+        )? {
+            Ok(value) => value,
+            Err(error) => return Ok(Err(error)),
+        };
+        Ok(Ok(Self::SketchEntities { sketch, entities }))
+    }
+
+    /// Admit members with a scoped uniqueness index.
+    pub fn sketch_selection(
+        sketch: crate::sketches::SketchId,
+        selections: Vec<String>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+        let selections = match NativeSelections::new(
+            selections,
+            ctx,
+            "validate PlanarProfileRef sketch selection selections",
+        )? {
+            Ok(value) => value,
+            Err(error) => return Ok(Err(error)),
+        };
+        Ok(Ok(Self::SketchSelection { sketch, selections }))
+    }
+
+    /// Admit members with a scoped uniqueness index.
+    pub fn historical_faces(
+        state: FeatureInputTopologyId,
+        faces: Vec<HistoricalFaceId>,
+        native: Vec<String>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+        let faces = match SelectionMembers::new(
+            faces,
+            ctx,
+            "validate PlanarProfileRef historical faces faces",
+        )? {
+            Ok(value) => value,
+            Err(error) => return Ok(Err(error)),
+        };
+        let native = match NativeSelections::new(
+            native,
+            ctx,
+            "validate PlanarProfileRef historical faces native",
+        )? {
+            Ok(value) => value,
+            Err(error) => return Ok(Err(error)),
+        };
+        Ok(Ok(Self::HistoricalFaces {
+            state,
+            faces,
+            native,
+        }))
+    }
+    /// Admits generated profile curves and their native reference.
+    pub fn generated(
+        curves: Vec<GeneratedCurveRef>,
+        native: String,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+        ctx.charge_work_limit(0, "validate persistent selection reference")?;
+        let curves = match curves.try_into() {
+            Ok(members) => members,
+            Err(error) => return Ok(Err(error)),
+        };
+        Ok(SelectionReference::new(native, ctx)?.map(|native| Self::Generated { curves, native }))
+    }
+}
+
+impl ProfileRef {
+    /// Admit members with a scoped uniqueness index.
+    pub fn spatial_sketch_profiles(
+        sketch: crate::sketches::SpatialSketchId,
+        profiles: Vec<u32>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+        let profiles = match SelectionMembers::new(
+            profiles,
+            ctx,
+            "validate ProfileRef spatial sketch profiles profiles",
+        )? {
+            Ok(value) => value,
+            Err(error) => return Ok(Err(error)),
+        };
+        Ok(Ok(Self::SpatialSketchProfiles { sketch, profiles }))
+    }
+
+    /// Admit members with a scoped uniqueness index.
+    pub fn spatial_sketch_selection(
+        sketch: crate::sketches::SpatialSketchId,
+        selections: Vec<String>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+        let selections = match NativeSelections::new(
+            selections,
+            ctx,
+            "validate ProfileRef spatial sketch selection selections",
+        )? {
+            Ok(value) => value,
+            Err(error) => return Ok(Err(error)),
+        };
+        Ok(Ok(Self::SpatialSketchSelection { sketch, selections }))
+    }
+}
+
+impl PathRef {
+    /// Admit members with a scoped uniqueness index.
+    pub fn sketch_curves(
+        sketch: crate::sketches::SketchId,
+        curves: Vec<crate::sketches::SketchEntityId>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+        let curves =
+            match SelectionMembers::new(curves, ctx, "validate PathRef sketch curves curves")? {
+                Ok(value) => value,
+                Err(error) => return Ok(Err(error)),
+            };
+        Ok(Ok(Self::SketchCurves { sketch, curves }))
+    }
+
+    /// Admit members with a scoped uniqueness index.
+    pub fn spatial_sketch_curves(
+        sketch: crate::sketches::SpatialSketchId,
+        curves: Vec<crate::sketches::SpatialSketchEntityId>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+        let curves = match SelectionMembers::new(
+            curves,
+            ctx,
+            "validate PathRef spatial sketch curves curves",
+        )? {
+            Ok(value) => value,
+            Err(error) => return Ok(Err(error)),
+        };
+        Ok(Ok(Self::SpatialSketchCurves { sketch, curves }))
+    }
+
+    /// Admit members with a scoped uniqueness index.
+    pub fn historical_edges(
+        state: FeatureInputTopologyId,
+        edges: Vec<HistoricalEdgeId>,
+        native: String,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+        let edges =
+            match SelectionMembers::new(edges, ctx, "validate PathRef historical edges edges")? {
+                Ok(value) => value,
+                Err(error) => return Ok(Err(error)),
+            };
+        ctx.charge_work_limit(
+            cadmpeg_core::decode::u64_from_index(native.len()),
+            "validate selection native reference",
+        )?;
+        let native = match NonBlankString::new(native).ok_or(BodySelectionError::BlankNativeMember)
+        {
+            Ok(native) => native,
+            Err(error) => return Ok(Err(error)),
+        };
+        Ok(Ok(Self::HistoricalEdges {
+            state,
+            edges,
+            native,
+        }))
+    }
+}
+
+impl GeneratedCurveRef {
+    /// Admit a feature-local persistent identity through the caller context.
+    pub fn new(
+        feature: FeatureId,
+        local_id: String,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
+        Ok(SelectionReference::new(local_id, ctx)?.map(|local_id| Self { feature, local_id }))
+    }
+}
+
+/// Three distinct vertex targets with a common historical input state.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct ThreePointSelection(Box<[VertexSelection; 3]>);
+
+impl TryFrom<Box<[VertexSelection; 3]>> for ThreePointSelection {
+    type Error = &'static str;
+    fn try_from(points: Box<[VertexSelection; 3]>) -> Result<Self, Self::Error> {
+        selection_overlap::standard_result(Self::build(
+            &selection_overlap::StandardAdmission,
+            points,
+        ))
+    }
+}
+
+impl ThreePointSelection {
+    /// Admit target and historical-state comparisons through the caller context.
+    pub fn new(
+        points: Box<[VertexSelection; 3]>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, &'static str>, cadmpeg_core::decode::ResourceLimit> {
+        Self::build(ctx, points)
+    }
+
+    fn build<S: selection_overlap::OverlapAdmission>(
+        admission: &S,
+        points: Box<[VertexSelection; 3]>,
+    ) -> Result<Result<Self, &'static str>, S::Error> {
+        admission.work(0)?;
+        for (first, second) in [(0, 1), (0, 2), (1, 2)] {
+            if selection_overlap::vertex_targets_equal(admission, &points[first], &points[second])?
+            {
+                return Ok(Err("points must select three distinct vertex targets"));
+            }
+        }
+        let mut state: Option<&FeatureInputTopologyId> = None;
+        for point in points.iter() {
+            admission.work(1)?;
+            if let VertexSelection::Historical {
+                state: candidate, ..
+            } = point
+            {
+                match state {
+                    Some(state)
+                        if !selection_overlap::text_equal(
+                            admission,
+                            state.as_str(),
+                            candidate.as_str(),
+                        )? =>
+                    {
+                        return Ok(Err("points must use the same input topology"));
+                    }
+                    Some(_) => {}
+                    None => state = Some(candidate),
+                }
+            }
+        }
+        Ok(Ok(Self(points)))
+    }
+}
+
+impl std::ops::Deref for ThreePointSelection {
+    type Target = [VertexSelection; 3];
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for ThreePointSelection {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::try_from(Box::<[VertexSelection; 3]>::deserialize(deserializer)?)
+            .map_err(serde::de::Error::custom)
+    }
+}
+
+/// At least two distinct datum-plane feature identities in source order.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct SplitFacePlanes(SelectionMembers<FeatureId>);
+
+impl TryFrom<Vec<FeatureId>> for SplitFacePlanes {
+    type Error = &'static str;
+    fn try_from(planes: Vec<FeatureId>) -> Result<Self, Self::Error> {
+        if planes.len() < 2 {
+            return Err("planes must contain at least two planes");
+        }
+        Ok(Self(
+            planes.try_into().map_err(|_| "planes must be distinct")?,
+        ))
+    }
+}
+
+impl std::ops::Deref for SplitFacePlanes {
+    type Target = [FeatureId];
+    fn deref(&self) -> &[FeatureId] {
+        &self.0
+    }
+}
+
+impl<'a> IntoIterator for &'a SplitFacePlanes {
+    type Item = &'a FeatureId;
+    type IntoIter = std::slice::Iter<'a, FeatureId>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+impl<'de> Deserialize<'de> for SplitFacePlanes {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::try_from(Vec::<FeatureId>::deserialize(deserializer)?)
+            .map_err(serde::de::Error::custom)
+    }
+}
+
+/// A nonempty source path without NUL characters.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct GeometryImportPath(String);
+
+impl TryFrom<String> for GeometryImportPath {
+    type Error = &'static str;
+    fn try_from(path: String) -> Result<Self, Self::Error> {
+        if path.is_empty() || path.contains('\0') {
+            return Err("path must be nonempty and contain no NUL");
+        }
+        Ok(Self(path))
+    }
+}
+
+impl std::ops::Deref for GeometryImportPath {
+    type Target = str;
+    fn deref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for GeometryImportPath {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::try_from(String::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+    }
 }
 
 /// Geometry used to partition faces in a `SplitFace` operation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SplitFaceTool {
     /// Sketch or model-space path projected onto the target faces.
     Path(PathRef),
@@ -6017,1021 +9474,30 @@ pub enum SplitFaceTool {
     /// Two or more datum-plane features extended through the target faces.
     Planes {
         /// Unique earlier datum-plane features in operation order.
-        planes: Vec<FeatureId>,
+        planes: SplitFacePlanes,
     },
-}
-
-/// Radius assignment along filleted edges.
-#[derive(Debug, Clone, PartialEq)]
-pub enum RadiusSpec {
-    /// Radius law form is not identified.
-    Unresolved,
-    /// A constant-radius law is identified without its radius.
-    UnresolvedConstant,
-    /// A chordal law is identified without its chord length.
-    UnresolvedChordal,
-    /// An asymmetric law is identified without its offsets.
-    UnresolvedAsymmetric,
-    /// A variable-radius law is identified without its control points.
-    UnresolvedVariable,
-    /// Same radius along the whole edge chain.
-    Constant {
-        /// The fillet radius.
-        radius: Length,
-    },
-    /// Constant transverse chord length across the fillet surface.
-    Chordal {
-        /// Distance between the fillet's two support boundaries.
-        chord_length: Length,
-    },
-    /// Distinct offsets from the selected edge along its two support faces.
-    Asymmetric {
-        /// Offset on the first support-face side.
-        offset_one: Length,
-        /// Offset on the second support-face side.
-        offset_two: Length,
-    },
-    /// Radius varying along the edge chain per explicit control points.
-    Variable {
-        /// Radius samples along the edge chain, in chain-parameter order.
-        points: Vec<VariableRadius>,
-    },
-}
-
-impl RadiusSpec {
-    /// Returns whether the radius law lacks its required dimensions.
-    pub fn is_unresolved(&self) -> bool {
-        matches!(
-            self,
-            Self::Unresolved
-                | Self::UnresolvedConstant
-                | Self::UnresolvedChordal
-                | Self::UnresolvedAsymmetric
-                | Self::UnresolvedVariable
-        )
-    }
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
-enum RadiusSpecWire {
-    Unresolved {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        form: Option<RadiusFormWire>,
-    },
-    Constant {
-        radius: Length,
-    },
-    Chordal {
-        chord_length: Length,
-    },
-    Asymmetric {
-        offset_one: Length,
-        offset_two: Length,
-    },
-    Variable {
-        points: Vec<VariableRadius>,
-    },
-}
-
-#[derive(Clone, Copy, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-enum RadiusFormWire {
-    Constant,
-    Chordal,
-    Asymmetric,
-    Variable,
-}
-
-impl From<RadiusSpec> for RadiusSpecWire {
-    fn from(value: RadiusSpec) -> Self {
-        match value {
-            RadiusSpec::Unresolved => Self::Unresolved { form: None },
-            RadiusSpec::UnresolvedConstant => Self::Unresolved {
-                form: Some(RadiusFormWire::Constant),
-            },
-            RadiusSpec::UnresolvedChordal => Self::Unresolved {
-                form: Some(RadiusFormWire::Chordal),
-            },
-            RadiusSpec::UnresolvedAsymmetric => Self::Unresolved {
-                form: Some(RadiusFormWire::Asymmetric),
-            },
-            RadiusSpec::UnresolvedVariable => Self::Unresolved {
-                form: Some(RadiusFormWire::Variable),
-            },
-            RadiusSpec::Constant { radius } => Self::Constant { radius },
-            RadiusSpec::Chordal { chord_length } => Self::Chordal { chord_length },
-            RadiusSpec::Asymmetric {
-                offset_one,
-                offset_two,
-            } => Self::Asymmetric {
-                offset_one,
-                offset_two,
-            },
-            RadiusSpec::Variable { points } => Self::Variable { points },
-        }
-    }
-}
-
-impl From<RadiusSpecWire> for RadiusSpec {
-    fn from(value: RadiusSpecWire) -> Self {
-        match value {
-            RadiusSpecWire::Unresolved { form: None } => Self::Unresolved,
-            RadiusSpecWire::Unresolved {
-                form: Some(RadiusFormWire::Constant),
-            } => Self::UnresolvedConstant,
-            RadiusSpecWire::Unresolved {
-                form: Some(RadiusFormWire::Chordal),
-            } => Self::UnresolvedChordal,
-            RadiusSpecWire::Unresolved {
-                form: Some(RadiusFormWire::Asymmetric),
-            } => Self::UnresolvedAsymmetric,
-            RadiusSpecWire::Unresolved {
-                form: Some(RadiusFormWire::Variable),
-            } => Self::UnresolvedVariable,
-            RadiusSpecWire::Constant { radius } => Self::Constant { radius },
-            RadiusSpecWire::Chordal { chord_length } => Self::Chordal { chord_length },
-            RadiusSpecWire::Asymmetric {
-                offset_one,
-                offset_two,
-            } => Self::Asymmetric {
-                offset_one,
-                offset_two,
-            },
-            RadiusSpecWire::Variable { points } => Self::Variable { points },
-        }
-    }
-}
-
-impl Serialize for RadiusSpec {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        RadiusSpecWire::from(self.clone()).serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for RadiusSpec {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        Ok(RadiusSpecWire::deserialize(deserializer)?.into())
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for RadiusSpec {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "RadiusSpec".into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        RadiusSpecWire::json_schema(generator)
-    }
-}
-
-/// One independently dimensioned group of filleted edges.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct FilletGroup {
-    /// Edges sharing this radius law.
-    pub edges: EdgeSelection,
-    /// Radius assignment along the edges.
-    pub radius: RadiusSpec,
-    /// Dimensionless tangency weight, when specified.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tangency_weight: Option<f64>,
-}
-
-/// One full-round fillet face-set group.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct FullRoundFilletGroup {
-    /// Center face retained by the full-round construction.
-    pub center_faces: FaceSelection,
-    /// Faces on the first side of the center-face set.
-    pub side_one_faces: FullRoundSideSelection,
-    /// Faces on the second side of the center-face set.
-    pub side_two_faces: FullRoundSideSelection,
-}
-
-/// One side of a full-round fillet.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
-pub enum FullRoundSideSelection {
-    /// The kernel infers this side from the center-face selection.
-    Automatic,
-    /// Explicit side-face selection.
-    Explicit(FaceSelection),
-    /// A side-face selection exists but cannot be resolved.
-    Unresolved,
-}
-
-/// One independently dimensioned group of chamfered edges.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct ChamferGroup {
-    /// Edges sharing this dimensional specification.
-    pub edges: EdgeSelection,
-    /// Dimensional definition applied to the edges.
-    pub spec: ChamferSpec,
-}
-
-/// Radius at a normalized position along a filleted edge chain.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct VariableRadius {
-    /// Position in `[0, 1]` along the edge chain.
-    pub parameter: f64,
-    /// Fillet radius at this position.
-    pub radius: Length,
-}
-
-/// Dimensional definition of an edge chamfer.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum ChamferSpec {
-    /// Dimensional specification form is not identified.
-    Unresolved,
-    /// An equal-distance form is identified without its distance.
-    UnresolvedDistance,
-    /// A two-distance form is identified without its distances.
-    UnresolvedTwoDistances,
-    /// A distance-angle form is identified without its dimensions.
-    UnresolvedDistanceAngle,
-    /// Equal setback distance on both faces meeting the edge.
-    Distance {
-        /// Setback distance from the edge.
-        distance: Length,
-    },
-    /// Independent setback distances on each face meeting the edge.
-    TwoDistances {
-        /// Setback distance on the first face.
-        first: Length,
-        /// Setback distance on the second face.
-        second: Length,
-    },
-    /// A setback distance on one face plus an angle from it to the other.
-    DistanceAngle {
-        /// Setback distance on the reference face.
-        distance: Length,
-        /// Chamfer angle measured from the reference face.
-        angle: Angle,
-    },
-}
-
-impl ChamferSpec {
-    /// Returns whether the chamfer form lacks its required dimensions.
-    pub fn is_unresolved(self) -> bool {
-        matches!(
-            self,
-            Self::Unresolved
-                | Self::UnresolvedDistance
-                | Self::UnresolvedTwoDistances
-                | Self::UnresolvedDistanceAngle
-        )
-    }
-}
-
-#[derive(Clone, Copy, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
-enum ChamferSpecWire {
-    Unresolved {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        form: Option<ChamferFormWire>,
-    },
-    Distance {
-        distance: Length,
-    },
-    TwoDistances {
-        first: Length,
-        second: Length,
-    },
-    DistanceAngle {
-        distance: Length,
-        angle: Angle,
-    },
-}
-
-#[derive(Clone, Copy, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-enum ChamferFormWire {
-    Distance,
-    TwoDistances,
-    DistanceAngle,
-}
-
-impl From<ChamferSpec> for ChamferSpecWire {
-    fn from(value: ChamferSpec) -> Self {
-        match value {
-            ChamferSpec::Unresolved => Self::Unresolved { form: None },
-            ChamferSpec::UnresolvedDistance => Self::Unresolved {
-                form: Some(ChamferFormWire::Distance),
-            },
-            ChamferSpec::UnresolvedTwoDistances => Self::Unresolved {
-                form: Some(ChamferFormWire::TwoDistances),
-            },
-            ChamferSpec::UnresolvedDistanceAngle => Self::Unresolved {
-                form: Some(ChamferFormWire::DistanceAngle),
-            },
-            ChamferSpec::Distance { distance } => Self::Distance { distance },
-            ChamferSpec::TwoDistances { first, second } => Self::TwoDistances { first, second },
-            ChamferSpec::DistanceAngle { distance, angle } => {
-                Self::DistanceAngle { distance, angle }
-            }
-        }
-    }
-}
-
-impl From<ChamferSpecWire> for ChamferSpec {
-    fn from(value: ChamferSpecWire) -> Self {
-        match value {
-            ChamferSpecWire::Unresolved { form: None } => Self::Unresolved,
-            ChamferSpecWire::Unresolved {
-                form: Some(ChamferFormWire::Distance),
-            } => Self::UnresolvedDistance,
-            ChamferSpecWire::Unresolved {
-                form: Some(ChamferFormWire::TwoDistances),
-            } => Self::UnresolvedTwoDistances,
-            ChamferSpecWire::Unresolved {
-                form: Some(ChamferFormWire::DistanceAngle),
-            } => Self::UnresolvedDistanceAngle,
-            ChamferSpecWire::Distance { distance } => Self::Distance { distance },
-            ChamferSpecWire::TwoDistances { first, second } => Self::TwoDistances { first, second },
-            ChamferSpecWire::DistanceAngle { distance, angle } => {
-                Self::DistanceAngle { distance, angle }
-            }
-        }
-    }
-}
-
-impl Serialize for ChamferSpec {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        ChamferSpecWire::from(*self).serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for ChamferSpec {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        Ok(ChamferSpecWire::deserialize(deserializer)?.into())
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for ChamferSpec {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "ChamferSpec".into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        ChamferSpecWire::json_schema(generator)
-    }
-}
-
-/// Structural drilling, entry-treatment, and threading form of a hole.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "HoleKindWire", into = "HoleKindWire")]
-pub enum HoleKind {
-    /// Entry-treatment family whose dimensions remain unresolved.
-    Unresolved(Option<HoleForm>),
-    /// Independently retained counterbore dimensions.
-    PartialCounterbore {
-        /// Counterbore diameter, when resolved.
-        diameter: Option<Length>,
-        /// Counterbore depth, when resolved.
-        depth: Option<Length>,
-    },
-    /// Independently retained countersink dimensions.
-    PartialCountersink {
-        /// Countersink diameter, when resolved.
-        diameter: Option<Length>,
-        /// Countersink included angle, when resolved.
-        angle: Option<Angle>,
-    },
-    /// Plain cylindrical hole with no entry feature.
-    Simple,
-    /// Hole with a chamfered entry.
-    Chamfer {
-        /// Entry chamfer diameter.
-        diameter: Length,
-        /// Included chamfer angle.
-        angle: Angle,
-    },
-    /// Plain cylindrical hole terminating in a conical drill point.
-    SimpleDrilled {
-        /// Included angle of the conical drill point.
-        drill_point_angle: Angle,
-    },
-    /// Hole with a wider, flat-bottomed counterbore at the entry.
-    Counterbore {
-        /// Counterbore diameter, wider than the hole diameter.
-        diameter: Length,
-        /// Counterbore depth.
-        depth: Length,
-    },
-    /// Counterbored hole terminating in a conical drill point.
-    CounterboreDrilled {
-        /// Counterbore diameter, wider than the hole diameter.
-        diameter: Length,
-        /// Axial depth of the counterbore.
-        depth: Length,
-        /// Included angle of the conical drill point.
-        drill_point_angle: Angle,
-    },
-    /// Hole with a conical countersink at the entry.
-    Countersink {
-        /// Countersink diameter at the surface, wider than the hole diameter.
-        diameter: Length,
-        /// Countersink included angle.
-        angle: Angle,
-    },
-    /// Hole with a conical entry followed by a wider cylindrical recess.
-    Counterdrill {
-        /// Cylindrical entry-recess diameter.
-        diameter: Length,
-        /// Diameter at the reference surface before the conical transition.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        entry_diameter: Option<Length>,
-        /// Cylindrical recess depth.
-        depth: Length,
-        /// Included conical entry angle.
-        angle: Angle,
-    },
-}
-
-/// Mutually exclusive ordinary and source-native threaded hole constructions.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "HoleConstructionWire", into = "HoleConstructionWire")]
-pub enum HoleConstruction {
-    /// Entry treatment with optional named standard sizing or thread metadata.
-    Form {
-        /// Structural entry treatment.
-        kind: HoleKind,
-        /// Standard sizing and thread construction, when specified.
-        specification: Option<Box<HoleSpecification>>,
-    },
-    /// SLDPRT native thread geometry carried without a named standard specification.
-    NativeThread {
-        /// Nominal major diameter of the internal thread.
-        major_diameter: Length,
-        /// Axial length over which the thread is cut.
-        thread_depth: Length,
-        /// Thread pitch, when carried independently of a nominal designation.
-        pitch: Option<Length>,
-        /// Included angle of the conical drill point.
-        drill_point_angle: Angle,
-    },
-}
-
-impl HoleConstruction {
-    /// Creates an entry treatment without standard sizing metadata.
-    #[must_use]
-    pub const fn form(kind: HoleKind) -> Self {
-        Self::Form {
-            kind,
-            specification: None,
-        }
-    }
-}
-
-impl HoleKind {
-    /// Whether the entry treatment still lacks required construction data.
-    #[must_use]
-    pub const fn is_unresolved(&self) -> bool {
-        matches!(
-            self,
-            Self::Unresolved(_) | Self::PartialCounterbore { .. } | Self::PartialCountersink { .. }
-        )
-    }
-
-    /// Identified entry-treatment family of an unresolved construction.
-    #[must_use]
-    pub const fn unresolved_form(&self) -> Option<HoleForm> {
-        match self {
-            Self::Unresolved(form) => *form,
-            Self::PartialCounterbore { .. } => Some(HoleForm::Counterbore),
-            Self::PartialCountersink { .. } => Some(HoleForm::Countersink),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
-enum HoleKindWire {
-    Unresolved {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        form: Option<HoleForm>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        counterbore_diameter: Option<Length>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        counterbore_depth: Option<Length>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        countersink_diameter: Option<Length>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        countersink_angle: Option<Angle>,
-    },
-    Simple,
-    Chamfer {
-        diameter: Length,
-        angle: Angle,
-    },
-    SimpleDrilled {
-        drill_point_angle: Angle,
-    },
-    Counterbore {
-        diameter: Length,
-        depth: Length,
-    },
-    CounterboreDrilled {
-        diameter: Length,
-        depth: Length,
-        drill_point_angle: Angle,
-    },
-    Countersink {
-        diameter: Length,
-        angle: Angle,
-    },
-    Threaded {
-        major_diameter: Length,
-        thread_depth: Length,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        pitch: Option<Length>,
-        drill_point_angle: Angle,
-    },
-    Counterdrill {
-        diameter: Length,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        entry_diameter: Option<Length>,
-        depth: Length,
-        angle: Angle,
-    },
-}
-
-impl From<HoleKind> for HoleKindWire {
-    fn from(value: HoleKind) -> Self {
-        match value {
-            HoleKind::Unresolved(form) => Self::Unresolved {
-                form,
-                counterbore_diameter: None,
-                counterbore_depth: None,
-                countersink_diameter: None,
-                countersink_angle: None,
-            },
-            HoleKind::PartialCounterbore { diameter, depth } => Self::Unresolved {
-                form: Some(HoleForm::Counterbore),
-                counterbore_diameter: diameter,
-                counterbore_depth: depth,
-                countersink_diameter: None,
-                countersink_angle: None,
-            },
-            HoleKind::PartialCountersink { diameter, angle } => Self::Unresolved {
-                form: Some(HoleForm::Countersink),
-                counterbore_diameter: None,
-                counterbore_depth: None,
-                countersink_diameter: diameter,
-                countersink_angle: angle,
-            },
-            HoleKind::Simple => Self::Simple,
-            HoleKind::Chamfer { diameter, angle } => Self::Chamfer { diameter, angle },
-            HoleKind::SimpleDrilled { drill_point_angle } => {
-                Self::SimpleDrilled { drill_point_angle }
-            }
-            HoleKind::Counterbore { diameter, depth } => Self::Counterbore { diameter, depth },
-            HoleKind::CounterboreDrilled {
-                diameter,
-                depth,
-                drill_point_angle,
-            } => Self::CounterboreDrilled {
-                diameter,
-                depth,
-                drill_point_angle,
-            },
-            HoleKind::Countersink { diameter, angle } => Self::Countersink { diameter, angle },
-            HoleKind::Counterdrill {
-                diameter,
-                entry_diameter,
-                depth,
-                angle,
-            } => Self::Counterdrill {
-                diameter,
-                entry_diameter,
-                depth,
-                angle,
-            },
-        }
-    }
-}
-
-impl TryFrom<HoleKindWire> for HoleKind {
-    type Error = String;
-
-    fn try_from(value: HoleKindWire) -> Result<Self, Self::Error> {
-        Ok(match value {
-            HoleKindWire::Unresolved {
-                form,
-                counterbore_diameter,
-                counterbore_depth,
-                countersink_diameter,
-                countersink_angle,
-            } => {
-                let counterbore_present =
-                    counterbore_diameter.is_some() || counterbore_depth.is_some();
-                let countersink_present =
-                    countersink_diameter.is_some() || countersink_angle.is_some();
-                match (form, counterbore_present, countersink_present) {
-                    (Some(HoleForm::Counterbore), true, false) => Self::PartialCounterbore {
-                        diameter: counterbore_diameter,
-                        depth: counterbore_depth,
-                    },
-                    (Some(HoleForm::Countersink), false, true) => Self::PartialCountersink {
-                        diameter: countersink_diameter,
-                        angle: countersink_angle,
-                    },
-                    (form, false, false) => Self::Unresolved(form),
-                    _ => {
-                        return Err(
-                            "unresolved hole fields do not match the form field".to_string()
-                        );
-                    }
-                }
-            }
-            HoleKindWire::Simple => Self::Simple,
-            HoleKindWire::Chamfer { diameter, angle } => Self::Chamfer { diameter, angle },
-            HoleKindWire::SimpleDrilled { drill_point_angle } => {
-                Self::SimpleDrilled { drill_point_angle }
-            }
-            HoleKindWire::Counterbore { diameter, depth } => Self::Counterbore { diameter, depth },
-            HoleKindWire::CounterboreDrilled {
-                diameter,
-                depth,
-                drill_point_angle,
-            } => Self::CounterboreDrilled {
-                diameter,
-                depth,
-                drill_point_angle,
-            },
-            HoleKindWire::Countersink { diameter, angle } => Self::Countersink { diameter, angle },
-            HoleKindWire::Threaded { .. } => {
-                return Err("threaded hole kind requires a HoleConstruction".to_string())
-            }
-            HoleKindWire::Counterdrill {
-                diameter,
-                entry_diameter,
-                depth,
-                angle,
-            } => Self::Counterdrill {
-                diameter,
-                entry_diameter,
-                depth,
-                angle,
-            },
-        })
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct HoleConstructionWire {
-    kind: HoleKindWire,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    specification: Option<Box<HoleSpecification>>,
-}
-
-impl From<HoleConstruction> for HoleConstructionWire {
-    fn from(value: HoleConstruction) -> Self {
-        match value {
-            HoleConstruction::Form {
-                kind,
-                specification,
-            } => Self {
-                kind: kind.into(),
-                specification,
-            },
-            HoleConstruction::NativeThread {
-                major_diameter,
-                thread_depth,
-                pitch,
-                drill_point_angle,
-            } => Self {
-                kind: HoleKindWire::Threaded {
-                    major_diameter,
-                    thread_depth,
-                    pitch,
-                    drill_point_angle,
-                },
-                specification: None,
-            },
-        }
-    }
-}
-
-impl TryFrom<HoleConstructionWire> for HoleConstruction {
-    type Error = String;
-
-    fn try_from(value: HoleConstructionWire) -> Result<Self, Self::Error> {
-        match value.kind {
-            HoleKindWire::Threaded {
-                major_diameter,
-                thread_depth,
-                pitch,
-                drill_point_angle,
-            } => {
-                if value.specification.is_some() {
-                    return Err(
-                        "a native threaded hole cannot also carry a standard specification"
-                            .to_string(),
-                    );
-                }
-                Ok(Self::NativeThread {
-                    major_diameter,
-                    thread_depth,
-                    pitch,
-                    drill_point_angle,
-                })
-            }
-            kind => Ok(Self::Form {
-                kind: kind.try_into()?,
-                specification: value.specification,
-            }),
-        }
-    }
-}
-
-/// Profile geometry families accepted as hole-location generators.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct HoleProfileFilter {
-    /// Profile points generate holes.
-    pub points: bool,
-    /// Profile circles generate holes at their centers.
-    pub circles: bool,
-    /// Profile circular arcs generate holes at their centers.
-    pub arcs: bool,
-}
-
-/// Blind-end construction of a drilled hole.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum HoleBottom {
-    /// Flat-bottomed cylindrical end.
-    Flat,
-    /// Conical drill point.
-    Angled {
-        /// Included drill-point angle.
-        included_angle: Angle,
-        /// Whether the declared blind depth reaches the tip instead of the shoulder.
-        depth_to_tip: bool,
-    },
-}
-
-/// Standard sizing and optional physical-thread construction for a hole.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "HoleSpecificationWire", into = "HoleSpecificationWire")]
-pub enum HoleSpecification {
-    /// Clearance-hole sizing, which may carry a fit but cannot carry thread data.
-    Clearance {
-        /// Named fastener standard family.
-        standard: String,
-        /// Nominal size designation within the standard.
-        designation: Option<String>,
-        /// Clearance-hole fit class.
-        fit: Option<String>,
-        /// Whether exact standard geometry is modeled.
-        modeled: bool,
-        /// Whether cosmetic presentation is requested.
-        cosmetic: bool,
-        /// Standard direction value retained from the source record.
-        hand: ThreadHand,
-        /// Standard depth rule retained from the source record.
-        depth: HoleThreadDepth,
-        /// Additional radial clearance used for modeled geometry.
-        clearance: Option<Length>,
-    },
-    /// Internally threaded-hole sizing and thread geometry.
-    Threaded {
-        /// Named thread standard family.
-        standard: String,
-        /// Nominal size designation within the standard.
-        designation: Option<String>,
-        /// Tolerance or thread class.
-        class: Option<String>,
-        /// Whether exact helical thread geometry is modeled.
-        modeled: bool,
-        /// Whether cosmetic thread presentation is requested.
-        cosmetic: bool,
-        /// Thread pitch in canonical millimeters.
-        pitch: Option<Length>,
-        /// Nominal major thread diameter.
-        major_diameter: Option<Length>,
-        /// Thread handedness.
-        hand: ThreadHand,
-        /// Axial thread-depth construction.
-        depth: HoleThreadDepth,
-        /// Additional radial thread clearance used for modeled geometry.
-        clearance: Option<Length>,
-    },
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct HoleSpecificationWire {
-    standard: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    designation: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    class: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    fit: Option<String>,
-    threaded: bool,
-    modeled: bool,
-    cosmetic: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pitch: Option<Length>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    major_diameter: Option<Length>,
-    hand: ThreadHand,
-    depth: HoleThreadDepth,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    clearance: Option<Length>,
-}
-
-impl From<HoleSpecification> for HoleSpecificationWire {
-    fn from(value: HoleSpecification) -> Self {
-        match value {
-            HoleSpecification::Clearance {
-                standard,
-                designation,
-                fit,
-                modeled,
-                cosmetic,
-                hand,
-                depth,
-                clearance,
-            } => Self {
-                standard,
-                designation,
-                class: None,
-                fit,
-                threaded: false,
-                modeled,
-                cosmetic,
-                pitch: None,
-                major_diameter: None,
-                hand,
-                depth,
-                clearance,
-            },
-            HoleSpecification::Threaded {
-                standard,
-                designation,
-                class,
-                modeled,
-                cosmetic,
-                pitch,
-                major_diameter,
-                hand,
-                depth,
-                clearance,
-            } => Self {
-                standard,
-                designation,
-                class,
-                fit: None,
-                threaded: true,
-                modeled,
-                cosmetic,
-                pitch,
-                major_diameter,
-                hand,
-                depth,
-                clearance,
-            },
-        }
-    }
-}
-
-impl TryFrom<HoleSpecificationWire> for HoleSpecification {
-    type Error = String;
-
-    fn try_from(value: HoleSpecificationWire) -> Result<Self, Self::Error> {
-        let HoleSpecificationWire {
-            standard,
-            designation,
-            class,
-            fit,
-            threaded,
-            modeled,
-            cosmetic,
-            pitch,
-            major_diameter,
-            hand,
-            depth,
-            clearance,
-        } = value;
-        if threaded {
-            if fit.is_some() {
-                return Err("fit must be absent for a threaded hole specification".to_string());
-            }
-            Ok(Self::Threaded {
-                standard,
-                designation,
-                class,
-                modeled,
-                cosmetic,
-                pitch,
-                major_diameter,
-                hand,
-                depth,
-                clearance,
-            })
-        } else {
-            if class.is_some() || pitch.is_some() || major_diameter.is_some() {
-                return Err(
-                    "class, pitch, and major_diameter must be absent for a clearance hole specification"
-                        .to_string(),
-                );
-            }
-            Ok(Self::Clearance {
-                standard,
-                designation,
-                fit,
-                modeled,
-                cosmetic,
-                hand,
-                depth,
-                clearance,
-            })
-        }
-    }
-}
-
-/// Thread handedness.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-pub enum ThreadHand {
-    /// Right-hand thread.
-    Right,
-    /// Left-hand thread.
-    Left,
-}
-
-/// Axial extent rule for a hole thread.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum HoleThreadDepth {
-    /// Thread follows the complete hole depth.
-    HoleDepth,
-    /// Explicit thread length.
-    Blind {
-        /// Explicit axial thread length.
-        depth: Length,
-    },
-    /// Standard tapped-hole runout is subtracted from the hole depth.
-    TappedStandard,
-}
-
-/// Structural form of a hole entry treatment.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-pub enum HoleForm {
-    /// Chamfered entry.
-    Chamfer,
-    /// Wider, flat-bottomed entry.
-    Counterbore,
-    /// Conical entry followed by a cylindrical recess.
-    Counterdrill,
-    /// Conical entry.
-    Countersink,
 }
 
 /// Deformation applied by a flex feature.
+///
+/// Each resolved arm carries the one magnitude its family needs, and the
+/// unresolved arm carries no magnitude at all, so a magnitude beside an
+/// unresolved family has no spelling.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "FlexModeWire", into = "FlexModeWire")]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum FlexMode {
     /// Deformation family whose required magnitude remains unresolved.
-    Unresolved(Option<FlexForm>),
+    Unresolved {
+        /// Deformation family, when the source named one.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_form"
+        )]
+        form: Option<FlexForm>,
+    },
     /// Bend through a signed angle.
     Bending {
         /// Total bend angle.
@@ -7045,7 +9511,7 @@ pub enum FlexMode {
     /// Scale transverse sections by a dimensionless factor.
     Tapering {
         /// End-to-start transverse scale ratio.
-        factor: f64,
+        factor: PositiveReal,
     },
     /// Extend or contract along the flex axis.
     Stretching {
@@ -7054,77 +9520,11 @@ pub enum FlexMode {
     },
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
-enum FlexModeWire {
-    Unresolved {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        form: Option<FlexForm>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        angle: Option<Angle>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        factor: Option<f64>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        distance: Option<Length>,
-    },
-    Bending {
-        angle: Angle,
-    },
-    Twisting {
-        angle: Angle,
-    },
-    Tapering {
-        factor: f64,
-    },
-    Stretching {
-        distance: Length,
-    },
-}
-
-impl From<FlexMode> for FlexModeWire {
-    fn from(value: FlexMode) -> Self {
-        match value {
-            FlexMode::Unresolved(form) => Self::Unresolved {
-                form,
-                angle: None,
-                factor: None,
-                distance: None,
-            },
-            FlexMode::Bending { angle } => Self::Bending { angle },
-            FlexMode::Twisting { angle } => Self::Twisting { angle },
-            FlexMode::Tapering { factor } => Self::Tapering { factor },
-            FlexMode::Stretching { distance } => Self::Stretching { distance },
-        }
-    }
-}
-
-impl TryFrom<FlexModeWire> for FlexMode {
-    type Error = String;
-
-    fn try_from(value: FlexModeWire) -> Result<Self, Self::Error> {
-        Ok(match value {
-            FlexModeWire::Unresolved {
-                form,
-                angle: None,
-                factor: None,
-                distance: None,
-            } => Self::Unresolved(form),
-            FlexModeWire::Unresolved { .. } => {
-                return Err("unresolved flex magnitude fields must be absent".to_string());
-            }
-            FlexModeWire::Bending { angle } => Self::Bending { angle },
-            FlexModeWire::Twisting { angle } => Self::Twisting { angle },
-            FlexModeWire::Tapering { factor } => Self::Tapering { factor },
-            FlexModeWire::Stretching { distance } => Self::Stretching { distance },
-        })
-    }
-}
-
 /// Structural form of a flex deformation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum FlexForm {
     /// Angular bending.
     Bending,
@@ -7136,431 +9536,228 @@ pub enum FlexForm {
     Stretching,
 }
 
-/// Spatial transform used to repeat or reflect seed features.
-#[derive(Debug, Clone, PartialEq)]
-pub enum PatternKind {
-    /// Pattern construction whose form is not identified.
-    Unresolved,
-    /// A linear pattern is identified without its required operands.
-    UnresolvedLinear,
-    /// A circular pattern is identified without its required operands.
-    UnresolvedCircular,
-    /// A curve-driven pattern is identified without its required operands.
-    UnresolvedCurveDriven,
-    /// A mirror pattern is identified without its required operands.
-    UnresolvedMirror,
-    /// A scale pattern is identified without its required operands.
-    UnresolvedScale,
-    /// A composite pattern is identified without its required stages.
-    UnresolvedComposite,
-    /// Repeats seeds evenly along a straight direction.
-    Linear {
-        /// Repetition direction, when resolved.
-        direction: Option<Vector3>,
-        /// Distance between consecutive instances.
-        spacing: Length,
-        /// Total number of instances, including the original.
-        count: u32,
-        /// Optional complete second translation direction.
-        second: Option<LinearPatternDirection>,
-    },
-    /// Repeats seeds at explicitly located distances along a straight direction.
-    LinearOffsets {
-        /// Repetition direction, when resolved.
-        direction: Option<Vector3>,
-        /// Cumulative distances from the original instance, beginning with zero.
-        offsets: Vec<Length>,
-    },
-    /// Repeats seeds evenly around an axis.
-    Circular {
-        /// A point on the pattern axis.
-        axis_origin: Point3,
-        /// Unit direction of the pattern axis.
-        axis_dir: Vector3,
-        /// Angular span covered by the pattern.
-        angle: Angle,
-        /// Total number of instances, including the original.
-        count: u32,
-    },
-    /// Repeats seeds at explicitly located angles around an axis.
-    CircularAngles {
-        /// A point on the pattern axis.
-        axis_origin: Point3,
-        /// Unit direction of the pattern axis.
-        axis_dir: Vector3,
-        /// Cumulative angles from the original instance, beginning with zero.
-        angles: Vec<Angle>,
-    },
-    /// Repeats seeds at fixed arc-length spacing along a curve.
-    CurveDriven {
-        /// Pattern path, when its native reference is available.
-        path: Option<PathRef>,
-        /// Arc-length spacing between consecutive instances.
-        spacing: Length,
-        /// Total number of instances, including the original.
-        count: u32,
-    },
-    /// Reflects seeds across a plane.
-    Mirror {
-        /// A point on the mirror plane.
-        plane_origin: Point3,
-        /// Unit normal of the mirror plane.
-        plane_normal: Vector3,
-    },
-    /// Reflects seeds across a source-native plane selection whose frame is not resolved.
-    MirrorReference {
-        /// Plane or planar face that defines the reflection.
-        plane: FaceSelection,
-    },
-    /// Repeats seeds using progressive uniform scales.
-    Scale {
-        /// Fixed locus used by every scale transform.
-        center: PatternScaleCenter,
-        /// Scale factor of the final instance relative to the original.
-        final_factor: f64,
-        /// Total number of instances, including the original.
-        count: u32,
-    },
-    /// Applies an ordered sequence of pattern stages.
-    Composite {
-        /// Stages in application order.
-        stages: Vec<PatternStage>,
-    },
-}
-
-impl PatternKind {
-    /// Returns whether the pattern form lacks its required operands.
-    pub fn is_unresolved(&self) -> bool {
-        matches!(
-            self,
-            Self::Unresolved
-                | Self::UnresolvedLinear
-                | Self::UnresolvedCircular
-                | Self::UnresolvedCurveDriven
-                | Self::UnresolvedMirror
-                | Self::UnresolvedScale
-                | Self::UnresolvedComposite
-        )
-    }
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
-enum PatternKindWire {
-    Unresolved {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        form: Option<PatternFormWire>,
-    },
-    Linear {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        direction: Option<Vector3>,
-        spacing: Length,
-        count: u32,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        second: Option<LinearPatternDirection>,
-    },
-    LinearOffsets {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        direction: Option<Vector3>,
-        offsets: Vec<Length>,
-    },
-    Circular {
-        axis_origin: Point3,
-        axis_dir: Vector3,
-        angle: Angle,
-        count: u32,
-    },
-    CircularAngles {
-        axis_origin: Point3,
-        axis_dir: Vector3,
-        angles: Vec<Angle>,
-    },
-    CurveDriven {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        path: Option<PathRef>,
-        spacing: Length,
-        count: u32,
-    },
-    Mirror {
-        plane_origin: Point3,
-        plane_normal: Vector3,
-    },
-    MirrorReference {
-        plane: FaceSelection,
-    },
-    Scale {
-        center: PatternScaleCenter,
-        final_factor: f64,
-        count: u32,
-    },
-    Composite {
-        stages: Vec<PatternStage>,
-    },
-}
-
-#[derive(Clone, Copy, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-enum PatternFormWire {
-    Linear,
-    Circular,
-    CurveDriven,
-    Mirror,
-    Scale,
-    Composite,
-}
-
-impl From<PatternKind> for PatternKindWire {
-    fn from(value: PatternKind) -> Self {
-        match value {
-            PatternKind::Unresolved => Self::Unresolved { form: None },
-            PatternKind::UnresolvedLinear => Self::Unresolved {
-                form: Some(PatternFormWire::Linear),
-            },
-            PatternKind::UnresolvedCircular => Self::Unresolved {
-                form: Some(PatternFormWire::Circular),
-            },
-            PatternKind::UnresolvedCurveDriven => Self::Unresolved {
-                form: Some(PatternFormWire::CurveDriven),
-            },
-            PatternKind::UnresolvedMirror => Self::Unresolved {
-                form: Some(PatternFormWire::Mirror),
-            },
-            PatternKind::UnresolvedScale => Self::Unresolved {
-                form: Some(PatternFormWire::Scale),
-            },
-            PatternKind::UnresolvedComposite => Self::Unresolved {
-                form: Some(PatternFormWire::Composite),
-            },
-            PatternKind::Linear {
-                direction,
-                spacing,
-                count,
-                second,
-            } => Self::Linear {
-                direction,
-                spacing,
-                count,
-                second,
-            },
-            PatternKind::LinearOffsets { direction, offsets } => {
-                Self::LinearOffsets { direction, offsets }
-            }
-            PatternKind::Circular {
-                axis_origin,
-                axis_dir,
-                angle,
-                count,
-            } => Self::Circular {
-                axis_origin,
-                axis_dir,
-                angle,
-                count,
-            },
-            PatternKind::CircularAngles {
-                axis_origin,
-                axis_dir,
-                angles,
-            } => Self::CircularAngles {
-                axis_origin,
-                axis_dir,
-                angles,
-            },
-            PatternKind::CurveDriven {
-                path,
-                spacing,
-                count,
-            } => Self::CurveDriven {
-                path,
-                spacing,
-                count,
-            },
-            PatternKind::Mirror {
-                plane_origin,
-                plane_normal,
-            } => Self::Mirror {
-                plane_origin,
-                plane_normal,
-            },
-            PatternKind::MirrorReference { plane } => Self::MirrorReference { plane },
-            PatternKind::Scale {
-                center,
-                final_factor,
-                count,
-            } => Self::Scale {
-                center,
-                final_factor,
-                count,
-            },
-            PatternKind::Composite { stages } => Self::Composite { stages },
-        }
-    }
-}
-
-impl From<PatternKindWire> for PatternKind {
-    fn from(value: PatternKindWire) -> Self {
-        match value {
-            PatternKindWire::Unresolved { form: None } => Self::Unresolved,
-            PatternKindWire::Unresolved {
-                form: Some(PatternFormWire::Linear),
-            } => Self::UnresolvedLinear,
-            PatternKindWire::Unresolved {
-                form: Some(PatternFormWire::Circular),
-            } => Self::UnresolvedCircular,
-            PatternKindWire::Unresolved {
-                form: Some(PatternFormWire::CurveDriven),
-            } => Self::UnresolvedCurveDriven,
-            PatternKindWire::Unresolved {
-                form: Some(PatternFormWire::Mirror),
-            } => Self::UnresolvedMirror,
-            PatternKindWire::Unresolved {
-                form: Some(PatternFormWire::Scale),
-            } => Self::UnresolvedScale,
-            PatternKindWire::Unresolved {
-                form: Some(PatternFormWire::Composite),
-            } => Self::UnresolvedComposite,
-            PatternKindWire::Linear {
-                direction,
-                spacing,
-                count,
-                second,
-            } => Self::Linear {
-                direction,
-                spacing,
-                count,
-                second,
-            },
-            PatternKindWire::LinearOffsets { direction, offsets } => {
-                Self::LinearOffsets { direction, offsets }
-            }
-            PatternKindWire::Circular {
-                axis_origin,
-                axis_dir,
-                angle,
-                count,
-            } => Self::Circular {
-                axis_origin,
-                axis_dir,
-                angle,
-                count,
-            },
-            PatternKindWire::CircularAngles {
-                axis_origin,
-                axis_dir,
-                angles,
-            } => Self::CircularAngles {
-                axis_origin,
-                axis_dir,
-                angles,
-            },
-            PatternKindWire::CurveDriven {
-                path,
-                spacing,
-                count,
-            } => Self::CurveDriven {
-                path,
-                spacing,
-                count,
-            },
-            PatternKindWire::Mirror {
-                plane_origin,
-                plane_normal,
-            } => Self::Mirror {
-                plane_origin,
-                plane_normal,
-            },
-            PatternKindWire::MirrorReference { plane } => Self::MirrorReference { plane },
-            PatternKindWire::Scale {
-                center,
-                final_factor,
-                count,
-            } => Self::Scale {
-                center,
-                final_factor,
-                count,
-            },
-            PatternKindWire::Composite { stages } => Self::Composite { stages },
-        }
-    }
-}
-
-impl Serialize for PatternKind {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        PatternKindWire::from(self.clone()).serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for PatternKind {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        Ok(PatternKindWire::deserialize(deserializer)?.into())
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for PatternKind {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "PatternKind".into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        PatternKindWire::json_schema(generator)
-    }
-}
-
-/// Fixed locus for a progressive pattern scale.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
-pub enum PatternScaleCenter {
-    /// Volume centroid of the first seed feature.
-    FirstSeedCentroid,
-    /// Explicit model-space point.
-    Point(Point3),
-    /// Format-native center reference.
-    Native(String),
-}
-
-/// One stage of an ordered composite pattern.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct PatternStage {
-    /// Pattern transform sequence contributed by this stage.
-    pub pattern: Box<PatternKind>,
-    /// Rule used to combine this stage with preceding stages.
-    pub combination: PatternStageCombination,
-}
-
-/// Combination rule for a composite-pattern stage.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-pub enum PatternStageCombination {
-    /// Establishes the initial transform sequence.
-    Initialize,
-    /// Applies each new transform to every preceding transform.
-    CartesianProduct,
-    /// Aligns transforms with equally sized slices of preceding occurrences.
-    AlignedSlices,
-}
-
-/// Complete secondary direction of a two-direction linear pattern.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct LinearPatternDirection {
-    /// Unit translation direction.
-    pub direction: Vector3,
-    /// Distance between consecutive instances.
-    pub spacing: Length,
-    /// Total number of instances, including the original.
-    pub count: u32,
-}
-
 #[cfg(test)]
 mod tests;
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_plane, FeatureId, "plane");
+cadmpeg_core::named_optional_field!(deserialize_pull, DraftPull, "pull");
+cadmpeg_core::named_optional_field!(deserialize_source_index, u32, "source_index");
+cadmpeg_core::named_optional_field!(deserialize_name, String, "name");
+cadmpeg_core::named_optional_field!(deserialize_material, String, "material");
+cadmpeg_core::named_optional_field!(deserialize_bodies, DistinctMembers<BodyId>, "bodies");
+cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
+cadmpeg_core::named_optional_field!(deserialize_owner, FeatureId, "owner");
+cadmpeg_core::named_optional_field!(deserialize_display, DimensionDisplay, "display");
+cadmpeg_core::named_optional_field!(deserialize_value, ParameterValue, "value");
+cadmpeg_core::named_optional_field!(deserialize_pmi, ParameterPmi, "pmi");
+cadmpeg_core::named_optional_field!(deserialize_display_text, String, "display_text");
+cadmpeg_core::named_optional_field!(
+    deserialize_regeneration_parent,
+    FeatureId,
+    "regeneration_parent"
+);
+cadmpeg_core::named_optional_field!(deserialize_source_tag, String, "source_tag");
+cadmpeg_core::named_optional_field!(deserialize_source_text, String, "source_text");
+cadmpeg_core::named_optional_field!(deserialize_active_child, FeatureId, "active_child");
+cadmpeg_core::named_optional_field!(deserialize_diameter, PositiveLength, "diameter");
+cadmpeg_core::named_optional_field!(deserialize_extent, CosmeticThreadExtent, "extent");
+cadmpeg_core::named_optional_field!(deserialize_opacity, Fraction, "opacity");
+cadmpeg_core::named_optional_field!(deserialize_reference, DatumPlaneReference, "reference");
+cadmpeg_core::named_optional_field!(
+    deserialize_construction,
+    Box<DatumPointConstruction>,
+    "construction"
+);
+cadmpeg_core::named_optional_field!(deserialize_bidirectional, bool, "bidirectional");
+cadmpeg_core::named_optional_field!(deserialize_segment_turns, PositiveReal, "segment_turns");
+cadmpeg_core::named_optional_field!(
+    deserialize_construction_style,
+    HelixConstructionStyle,
+    "construction_style"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_sketch,
+    crate::sketches::SpatialSketchId,
+    "sketch"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_feature_operation_sketch,
+    crate::sketches::SketchId,
+    "sketch"
+);
+cadmpeg_core::named_optional_field!(deserialize_block, FeatureId, "block");
+cadmpeg_core::named_optional_field!(
+    deserialize_placement,
+    crate::transform::Transform,
+    "placement"
+);
+cadmpeg_core::named_optional_field!(deserialize_path, PathRef, "path");
+cadmpeg_core::named_optional_field!(deserialize_orientation, SweepOrientation, "orientation");
+cadmpeg_core::named_optional_field!(deserialize_transition, SweepTransition, "transition");
+cadmpeg_core::named_optional_field!(
+    deserialize_transformation,
+    SweepTransformation,
+    "transformation"
+);
+cadmpeg_core::named_optional_field!(deserialize_twist, Angle, "twist");
+cadmpeg_core::named_optional_field!(deserialize_path_extent, SweepPathExtent, "path_extent");
+cadmpeg_core::named_optional_field!(deserialize_guide_rail, SweepGuideRail, "guide_rail");
+cadmpeg_core::named_optional_field!(deserialize_taper, Angle, "taper");
+cadmpeg_core::named_optional_field!(deserialize_scale, PositiveReal, "scale");
+cadmpeg_core::named_optional_field!(
+    deserialize_allow_multi_profile_faces,
+    bool,
+    "allow_multi_profile_faces"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_feature_operation_bodies,
+    BodySelection,
+    "bodies"
+);
+cadmpeg_core::named_optional_field!(deserialize_thickness, PositiveLength, "thickness");
+cadmpeg_core::named_optional_field!(deserialize_outward, bool, "outward");
+cadmpeg_core::named_optional_field!(deserialize_mode, ShellMode, "mode");
+cadmpeg_core::named_optional_field!(deserialize_join, ShellJoin, "join");
+cadmpeg_core::named_optional_field!(
+    deserialize_resolve_intersections,
+    bool,
+    "resolve_intersections"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_allow_self_intersections,
+    bool,
+    "allow_self_intersections"
+);
+cadmpeg_core::named_optional_field!(deserialize_approximate, bool, "approximate");
+cadmpeg_core::named_optional_field!(
+    deserialize_plane_reference,
+    FaceSelection,
+    "plane_reference"
+);
+cadmpeg_core::named_optional_field!(deserialize_side, ThickenSide, "side");
+cadmpeg_core::named_optional_field!(
+    deserialize_gap_tolerance,
+    NonNegativeLength,
+    "gap_tolerance"
+);
+cadmpeg_core::named_optional_field!(deserialize_merge_result, bool, "merge_result");
+cadmpeg_core::named_optional_field!(deserialize_angle, Angle, "angle");
+cadmpeg_core::named_optional_field!(deserialize_alternate_face, bool, "alternate_face");
+cadmpeg_core::named_optional_field!(deserialize_corner, RuledSurfaceCorner, "corner");
+cadmpeg_core::named_optional_field!(deserialize_reverse, bool, "reverse");
+cadmpeg_core::named_optional_field!(deserialize_rotation, AxisAngle, "rotation");
+cadmpeg_core::named_optional_field!(deserialize_height, PositiveLength, "height");
+cadmpeg_core::named_optional_field!(deserialize_elliptical, bool, "elliptical");
+cadmpeg_core::named_optional_field!(deserialize_axis, FeatureDirection3, "axis");
+cadmpeg_core::named_optional_field!(deserialize_center, ScaleCenter, "center");
+cadmpeg_core::named_optional_field!(deserialize_profile, PlanarProfileRef, "profile");
+cadmpeg_core::named_optional_field!(
+    deserialize_profile_filter,
+    HoleProfileFilter,
+    "profile_filter"
+);
+cadmpeg_core::named_optional_field!(deserialize_face, FaceSelection, "face");
+cadmpeg_core::named_optional_field!(deserialize_direction, FeatureDirection3, "direction");
+cadmpeg_core::named_optional_field!(deserialize_placements, Vec<HolePlacement>, "placements");
+cadmpeg_core::named_optional_field!(
+    deserialize_feature_operation_extent,
+    LinearTermination,
+    "extent"
+);
+cadmpeg_core::named_optional_field!(deserialize_bottom, HoleBottom, "bottom");
+cadmpeg_core::named_optional_field!(deserialize_taper_angle, InteriorAngle, "taper_angle");
+cadmpeg_core::named_optional_field!(deserialize_solid, bool, "solid");
+cadmpeg_core::named_optional_field!(deserialize_face_maker, FaceMaker, "face_maker");
+cadmpeg_core::named_optional_field!(
+    deserialize_inner_wire_taper,
+    InnerWireTaper,
+    "inner_wire_taper"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_length_along_profile_normal,
+    bool,
+    "length_along_profile_normal"
+);
+cadmpeg_core::named_optional_field!(deserialize_max_degree, std::num::NonZeroU32, "max_degree");
+cadmpeg_core::named_optional_field!(deserialize_source, ExtrusionDirectionSource, "source");
+cadmpeg_core::named_optional_field!(deserialize_face_maker_class, FaceMaker, "face_maker_class");
+cadmpeg_core::named_optional_field!(deserialize_fuse_order, RevolutionFuseOrder, "fuse_order");
+cadmpeg_core::named_optional_field!(
+    deserialize_partial_revolve_construction_axis,
+    RevolutionAxis,
+    "axis"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_partial_revolve_construction_extent,
+    RevolveExtent,
+    "extent"
+);
+cadmpeg_core::named_optional_field!(deserialize_revolution_axis_reference, PathRef, "reference");
+cadmpeg_core::named_optional_field!(
+    deserialize_rib_construction_direction,
+    FeatureDirection3,
+    "direction"
+);
+cadmpeg_core::named_optional_field!(deserialize_rib_construction_side, RibSide, "side");
+cadmpeg_core::named_optional_field!(deserialize_offset, Length, "offset");
+cadmpeg_core::named_optional_field!(deserialize_draft, SlopeAngle, "draft");
+cadmpeg_core::named_optional_field!(deserialize_wall_thickness, PositiveLength, "wall_thickness");
+cadmpeg_core::named_optional_field!(deserialize_tolerance, PositiveReal, "tolerance");
+cadmpeg_core::named_optional_field!(
+    deserialize_binder_construction_offset,
+    BinderOffset,
+    "offset"
+);
+cadmpeg_core::named_optional_field!(deserialize_context, BinderTarget, "context");
+cadmpeg_core::named_optional_field!(deserialize_form, FlexForm, "form");
+
+macro_rules! feature_copy_api {
+    ($($ty:ty),+ $(,)?) => { $(impl $ty {
+        /// Copy owned feature fields through the caller context.
+        pub fn try_clone_for_decode(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<Self, cadmpeg_core::CodecError> {
+            decode_clone::CloneForDecode::try_clone_for_decode(self, ctx, operation)
+        }
+    })+ };
+}
+feature_copy_api!(
+    RevolutionAxis,
+    PlanarProfileRef,
+    VertexSelection,
+    LinearTermination,
+    ParameterValue,
+    Feature,
+    ConfigurationFeatureState,
+    FaceSelection
+);
+impl Feature {
+    /// Copy the evaluated construction state for one configuration.
+    pub fn configuration_state(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<ConfigurationFeatureState, cadmpeg_core::CodecError> {
+        use decode_clone::CloneForDecode;
+        Ok(ConfigurationFeatureState {
+            evaluation: if self.suppressed.unwrap_or(false) {
+                ConfigurationEvaluation::Suppressed {}
+            } else {
+                ConfigurationEvaluation::Active {
+                    outputs: self
+                        .evaluation
+                        .outputs
+                        .try_clone_for_decode(ctx, operation)?,
+                }
+            },
+            dependencies: self.dependencies.try_clone_for_decode(ctx, operation)?,
+            definition: self
+                .evaluation
+                .definition
+                .try_clone_for_decode(ctx, operation)?,
+        })
+    }
+}
+
+mod identity_rewrite;
+
+mod serialization;

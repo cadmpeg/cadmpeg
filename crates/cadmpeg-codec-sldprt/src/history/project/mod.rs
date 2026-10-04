@@ -3,37 +3,68 @@
 
 use crate::classification::{classify, FeatureClass};
 use crate::records::{Feature, FeatureContent, FeatureHistory};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
-use cadmpeg_ir::features::{
-    ConfigurationBodies, ConfigurationId, DatumPlaneReference, DesignConfiguration,
-    FeatureDefinition, FeatureId, FeatureSourceContent, Length, ParameterId, PathRef, ProfileRef,
-    SplitFaceTool, UnresolvedFamily,
-};
 use cadmpeg_ir::ids::AttributeId;
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::{
+    features::{
+        ConfigurationId, DatumPlaneReference, DesignConfiguration, FeatureDefinition, FeatureId,
+        FeatureOperation, FeatureSourceContent, ParameterId, PathRef, PlanarProfileRef, ProfileRef,
+        SplitFaceTool, UnresolvedFamily,
+    },
+    scalar::Length,
+};
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::fmt::{self, Write};
 
 use crate::history::classify::{
     feature_tree_node_role, is_custom_property, is_history_metadata_record, is_offset_plane,
     is_semantic_note, principal_plane_in_history,
 };
 use crate::history::literals::{parse_point3_mm, parse_vector3, valid_plane_frame};
+use crate::records::FeatureSource;
 
-mod datum;
-mod modify;
-mod pattern;
-mod sketch;
-mod solid;
+#[cfg(test)]
+mod content_tests;
+#[cfg(test)]
+mod custom_property_tests;
+pub(super) mod datum;
+#[cfg(test)]
+mod dimension_projection_tests;
+#[cfg(test)]
+mod feature_projection_tests;
+pub(crate) mod modify;
+pub(crate) mod pattern;
+#[cfg(test)]
+mod regeneration_tests;
+pub(super) mod sketch;
+pub(crate) mod solid;
 mod spin;
+#[cfg(test)]
+mod split_and_identity_tests;
 mod surface;
 
-pub(crate) use datum::*;
-pub(crate) use modify::*;
-pub(crate) use pattern::*;
-pub(crate) use sketch::*;
-pub(crate) use solid::*;
-pub(crate) use spin::*;
-pub(crate) use surface::*;
+use self::datum::{
+    project_composite_curve, project_datum_axis, project_datum_coordinate_system,
+    project_datum_plane, project_datum_point, project_equation_curve, project_helix,
+    project_native_axis_helix, project_offset_plane, project_projected_curve, project_wrap,
+};
+use self::modify::{
+    project_chamfer, project_combine, project_cut_with_surface, project_delete_body,
+    project_delete_face, project_dome, project_draft, project_fillet, project_flex,
+    project_move_body, project_move_face, project_replace_face, project_scale, project_shell,
+    project_thicken,
+};
+use self::pattern::project_pattern;
+use self::sketch::{project_cosmetic_thread, project_split_face, sketch_block_placement};
+use self::solid::{project_extrude, project_hole};
+use self::spin::{project_loft, project_revolve, project_rib, project_sweep};
+use self::surface::{
+    project_extend_surface, project_filled_surface, project_knit_surface, project_offset_surface,
+    project_ruled_surface, project_trim_surface,
+};
 
 const FEATURE_REFERENCE_PROPERTIES: &[&str] = &[
     "Profile",
@@ -50,186 +81,464 @@ const FEATURE_REFERENCE_PROPERTIES: &[&str] = &[
 ];
 
 pub(crate) struct FeatureProjection {
-    pub(crate) features: Vec<cadmpeg_ir::features::Feature>,
+    pub(super) features: Vec<cadmpeg_ir::features::Feature>,
     regeneration_parents: Vec<(FeatureId, FeatureId)>,
 }
 
-impl FeatureProjection {
-    pub(crate) fn install(self, model: &mut cadmpeg_ir::document::Model) {
-        model.features = self.features;
-        for (child, parent) in self.regeneration_parents {
-            let _ = model.set_feature_regeneration_parent(child, parent);
-        }
-    }
+fn charge_projected_text_work(
+    ctx: &DecodeContext<'_>,
+    text: &str,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    // Escaping can emit three bytes per input byte; identity validation scans the result.
+    let work = u64::try_from(text.len())
+        .ok()
+        .and_then(|bytes| bytes.checked_mul(4))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(work, operation)
+}
 
-    pub(crate) fn into_model(self) -> cadmpeg_ir::document::Model {
-        let mut model = cadmpeg_ir::document::Model::default();
-        self.install(&mut model);
-        model
+pub(super) fn copy_projected_feature_text(
+    ctx: &DecodeContext<'_>,
+    text: &str,
+) -> Result<String, CodecError> {
+    charge_projected_text_work(ctx, text, "copy SLDPRT projected feature text")?;
+    ctx.format_retained(format_args!("{text}"), "copy SLDPRT projected feature text")
+}
+
+pub(super) fn neutral_feature_id_charged(
+    ctx: &DecodeContext<'_>,
+    native_id: &str,
+) -> Result<FeatureId, CodecError> {
+    charge_projected_text_work(ctx, native_id, "retain SLDPRT projected feature ID")?;
+    let key = native_id
+        .strip_prefix("sldprt:history:feature#")
+        .unwrap_or(native_id);
+    let id = ctx.format_retained(
+        format_args!("sldprt:model:feature#{}", EncodedNativeKey(key)),
+        "retain SLDPRT projected feature ID",
+    )?;
+    FeatureId::mint(id).map_err(CodecError::malformed)
+}
+
+pub(super) fn copy_projected_feature_id(
+    ctx: &DecodeContext<'_>,
+    id: &FeatureId,
+) -> Result<FeatureId, CodecError> {
+    FeatureId::mint(copy_projected_feature_text(ctx, id.as_str())?).map_err(CodecError::malformed)
+}
+
+fn source_lookup_key(ctx: &DecodeContext<'_>, source: FeatureSource) -> Result<String, CodecError> {
+    match source {
+        FeatureSource::Reserved => {
+            ctx.format_retained(format_args!("-1"), "retain SLDPRT source lookup key")
+        }
+        FeatureSource::Id(id) => ctx.format_retained(
+            format_args!("{}", id.value()),
+            "retain SLDPRT source lookup key",
+        ),
     }
 }
 
-pub(crate) fn project_feature_model(histories: &[FeatureHistory]) -> FeatureProjection {
-    let (mut features, parents): (Vec<_>, Vec<_>) = histories
-        .iter()
-        .flat_map(|history| {
-            let source_bindings = unique_source_bindings(history);
-            let mut by_source = source_bindings
-                .iter()
-                .filter_map(|(source, binding)| {
-                    binding
-                        .as_ref()
-                        .map(|(_, neutral)| (*source, neutral.clone()))
-                })
-                .collect::<HashMap<_, _>>();
-            by_source.extend(
-                history
+pub(super) fn copy_projected_feature_properties(
+    ctx: &DecodeContext<'_>,
+    properties: &BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+    operation: &'static str,
+) -> Result<BTreeMap<cadmpeg_core::text::NonBlankString, String>, CodecError> {
+    let mut copied = BTreeMap::new();
+    for (key, value) in properties {
+        ctx.charge_work(1, operation)?;
+        let key = cadmpeg_core::text::NonBlankString::new(copy_projected_feature_text(
+            ctx,
+            key.as_str(),
+        )?)
+        .ok_or_else(|| CodecError::malformed("blank SLDPRT projected feature property"))?;
+        let value = copy_projected_feature_text(ctx, value)?;
+        ctx.insert_btree_map(&mut copied, key, value, operation)?;
+    }
+    Ok(copied)
+}
+
+impl FeatureProjection {
+    /// Install every projected feature and every regeneration edge the source
+    /// states. An edge the model refuses is reported as a loss naming both
+    /// features, both ordinals and the model's refusal; nothing is dropped
+    /// silently, and the projection recomputes no condition the model owns.
+    pub(crate) fn install(
+        self,
+        ctx: &DecodeContext<'_>,
+        model: &mut cadmpeg_ir::document::Model,
+        losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    ) -> Result<(), CodecError> {
+        model.features = self.features;
+        for (child, parent) in self.regeneration_parents {
+            let error = match model.set_feature_regeneration_parent(ctx, &child, &parent) {
+                Ok(()) => continue,
+                Err(CodecError::Malformed(error)) => error,
+                Err(error) => return Err(error),
+            };
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(model.features.len()),
+                "scan SLDPRT regeneration child ordinal",
+            )?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(model.features.len()),
+                "scan SLDPRT regeneration parent ordinal",
+            )?;
+            let ordinal = |id: &FeatureId| {
+                model
                     .features
                     .iter()
-                    .map(|feature| (feature.id.as_str(), neutral_feature_id(&feature.id))),
-            );
-            let by_native = history
-                .features
-                .iter()
-                .filter(|feature| !is_history_metadata_record(feature, &history.features))
-                .map(|feature| (feature.id.as_str(), neutral_feature_id(&feature.id)))
-                .collect::<HashMap<_, _>>();
-            let native_by_source = source_bindings
-                .iter()
-                .filter_map(|(source, binding)| {
-                    binding.as_ref().map(|(native, _)| (*source, *native))
-                })
-                .collect::<HashMap<_, _>>();
-            let features_by_source = history
-                .features
-                .iter()
-                .filter_map(|feature| Some((feature.source_id.as_deref()?, feature)))
-                .collect::<HashMap<_, _>>();
+                    .find(|feature| feature.id == *id)
+                    .map(|feature| feature.ordinal)
+            };
+            let child_ordinal = ordinal(&child);
+            let parent_ordinal = ordinal(&parent);
+            charge_projected_text_work(
+                ctx,
+                child.as_str(),
+                "retain SLDPRT regeneration edge loss",
+            )?;
+            charge_projected_text_work(
+                ctx,
+                parent.as_str(),
+                "retain SLDPRT regeneration edge loss",
+            )?;
+            charge_projected_text_work(ctx, &error, "retain SLDPRT regeneration edge loss")?;
+            let message = ctx.format_retained(
+                format_args!(
+                    "regeneration edge from child `{child}` (ordinal {}) to parent \
+                     `{parent}` (ordinal {}) was not installed: {error}",
+                    FeatureOrdinal(child_ordinal),
+                    FeatureOrdinal(parent_ordinal),
+                ),
+                "retain SLDPRT regeneration edge loss",
+            )?;
+            ctx.reserve_vec(losses, 1, "collect SLDPRT regeneration edge losses")?;
+            losses.push(crate::loss::SldprtLossCode::FeatureIncoherentEdges.note(message));
+        }
+        Ok(())
+    }
+
+    pub(super) fn into_model(
+        self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<
+        (
+            cadmpeg_ir::document::Model,
+            Vec<cadmpeg_ir::report::loss::LossNote>,
+        ),
+        CodecError,
+    > {
+        let mut model = cadmpeg_ir::document::Model::default();
+        let mut losses = Vec::new();
+        self.install(ctx, &mut model, &mut losses)?;
+        Ok((model, losses))
+    }
+}
+
+struct FeatureOrdinal(Option<u64>);
+
+impl fmt::Display for FeatureOrdinal {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.0 {
+            Some(value) => value.fmt(formatter),
+            None => formatter.write_str("missing"),
+        }
+    }
+}
+
+pub(crate) fn project_feature_model(
+    ctx: &DecodeContext<'_>,
+    histories: &[FeatureHistory],
+) -> Result<FeatureProjection, cadmpeg_core::CodecError> {
+    let (mut features, parents) = histories.iter().try_fold(
+        (Vec::new(), Vec::new()),
+        |(mut features, mut parents), history| -> Result<_, CodecError> {
+            let source_bindings = unique_source_bindings(ctx, history)?;
+            let mut by_source = HashMap::new();
+            let mut native_by_source = HashMap::new();
+            for (source, binding) in &source_bindings {
+                let Some(SourceBinding { native, neutral }) = binding else {
+                    continue;
+                };
+                ctx.insert_hash_map(
+                    &mut by_source,
+                    source_lookup_key(ctx, *source)?,
+                    copy_projected_feature_id(ctx, neutral)?,
+                    "index SLDPRT projected source features",
+                )?;
+                ctx.insert_hash_map(
+                    &mut native_by_source,
+                    source_lookup_key(ctx, *source)?,
+                    *native,
+                    "index SLDPRT native source features",
+                )?;
+            }
+            for feature in &history.features {
+                ctx.insert_hash_map(
+                    &mut by_source,
+                    copy_projected_feature_text(ctx, &feature.id)?,
+                    neutral_feature_id_charged(ctx, &feature.id)?,
+                    "index SLDPRT projected source features",
+                )?;
+            }
+            let mut by_native = HashMap::new();
+            let mut features_by_source = HashMap::new();
+            for feature in &history.features {
+                if !is_history_metadata_record(feature, &history.features) {
+                    ctx.insert_hash_map(
+                        &mut by_native,
+                        feature.id.as_str(),
+                        neutral_feature_id_charged(ctx, &feature.id)?,
+                        "index SLDPRT projected native features",
+                    )?;
+                }
+                if let Some(source) = feature.source_id {
+                    ctx.insert_hash_map(
+                        &mut features_by_source,
+                        source,
+                        feature,
+                        "index SLDPRT native features by source",
+                    )?;
+                }
+            }
             let source_ordered = history.features.iter().any(|feature| {
                 feature.input_class.is_none()
                     && feature.xml_tag.eq_ignore_ascii_case("Extrusion")
                     && feature.parameters.len() == 1
-                    && feature
-                        .source_id
-                        .as_deref()
-                        .and_then(|source| source.parse::<u32>().ok())
-                        .is_some_and(|source| source > 0)
+                    && feature.source_value().is_some_and(|source| source > 0)
             });
-            history
+            for feature in history
                 .features
                 .iter()
                 .filter(|feature| !is_history_metadata_record(feature, &history.features))
-                .map(move |feature| {
-                    let parent = feature
-                        .tree_parent_record_id()
-                        .and_then(|parent| by_native.get(parent).cloned())
-                        .or_else(|| {
-                            feature
-                                .parent_source_id()
-                                .and_then(|source| by_source.get(source).cloned())
-                        });
-                    (
-                        cadmpeg_ir::features::Feature {
-                            id: neutral_feature_id(&feature.id),
-                            ordinal: source_ordered
-                                .then(|| feature.source_id.as_deref()?.parse::<u64>().ok())
-                                .flatten()
-                                .filter(|source| *source > 0)
-                                .unwrap_or(u64::from(feature.ordinal)),
-                            name: (!feature.name.is_empty()).then(|| feature.name.clone()),
-                            suppressed: Some(feature.suppressed),
-                            dependencies: project_feature_dependencies(feature, &by_source),
-                            source_properties: feature.properties.clone(),
-                            source_tag: Some(feature.xml_tag.clone()),
-                            source_text: feature.text.clone(),
-                            source_content: project_feature_content(feature, &by_native),
-                            outputs: Vec::new(),
-                            definition: project_definition(
-                                feature,
-                                &by_source,
-                                &native_by_source,
-                                &features_by_source,
-                                &history.features,
-                            ),
-                            native_ref: Some(feature.id.clone()),
-                        },
-                        parent,
-                    )
-                })
-        })
-        .unzip();
-    let tree_nodes = features
-        .iter()
-        .filter(|feature| matches!(feature.definition, FeatureDefinition::TreeNode { .. }))
-        .map(|feature| feature.id.clone())
-        .collect::<std::collections::HashSet<_>>();
+            {
+                let parent = if let Some(parent) = feature
+                    .tree_parent_record_id()
+                    .and_then(|parent| by_native.get(parent))
+                {
+                    Some(copy_projected_feature_id(ctx, parent)?)
+                } else if let Some(source) = feature.parent_source_id() {
+                    let key = source_lookup_key(ctx, source)?;
+                    by_source
+                        .get(&key)
+                        .map(|parent| copy_projected_feature_id(ctx, parent))
+                        .transpose()?
+                } else {
+                    None
+                };
+                let projected = cadmpeg_ir::features::Feature {
+                    id: neutral_feature_id_charged(ctx, &feature.id)?,
+                    ordinal: source_ordered
+                        .then(|| feature.source_value().map(u64::from))
+                        .flatten()
+                        .filter(|source| *source > 0)
+                        .unwrap_or(u64::from(feature.ordinal)),
+                    name: (!feature.name.is_empty())
+                        .then(|| copy_projected_feature_text(ctx, &feature.name))
+                        .transpose()?,
+                    suppressed: Some(feature.suppressed),
+                    dependencies: project_feature_dependencies(ctx, feature, &by_source)?,
+                    source_properties: copy_projected_feature_properties(
+                        ctx,
+                        &feature.properties,
+                        "collect SLDPRT projected feature properties",
+                    )?,
+                    source_tag: Some(copy_projected_feature_text(ctx, &feature.xml_tag)?),
+                    source_text: feature
+                        .text
+                        .as_deref()
+                        .map(|text| copy_projected_feature_text(ctx, text))
+                        .transpose()?,
+                    source_content: project_feature_content(ctx, feature, &by_native)?,
+
+                    evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                        project_definition(
+                            ctx,
+                            feature,
+                            &by_source,
+                            &native_by_source,
+                            &features_by_source,
+                            &history.features,
+                        )?,
+                    ),
+                    native_ref: Some(copy_projected_feature_text(ctx, &feature.id)?),
+                };
+                ctx.reserve_vec(&mut features, 1, "collect SLDPRT projected features")?;
+                features.push(projected);
+                ctx.reserve_vec(&mut parents, 1, "collect SLDPRT projected feature parents")?;
+                parents.push(parent);
+            }
+            Ok((features, parents))
+        },
+    )?;
     let mut regeneration_parents = Vec::new();
     for (child_index, parent) in parents.into_iter().enumerate() {
         let Some(parent) = parent else {
             continue;
         };
-        let child = features[child_index].id.clone();
-        if !tree_nodes.contains(&parent) {
-            regeneration_parents.push((child, parent));
-            continue;
-        }
-        let Some(parent) = features.iter_mut().find(|feature| feature.id == parent) else {
-            continue;
-        };
-        if let FeatureDefinition::TreeNode { children, .. } = &mut parent.definition {
-            if !children.contains(&child) {
-                children.push(child);
+        charge_projected_text_work(
+            ctx,
+            features[child_index].id.as_str(),
+            "copy SLDPRT tree child ID",
+        )?;
+        let child_text = ctx.format_retained(
+            format_args!("{}", features[child_index].id.as_str()),
+            "copy SLDPRT tree child ID",
+        )?;
+        let child = FeatureId::mint(child_text).map_err(CodecError::malformed)?;
+        let mut tree_parent_index = None;
+        for (index, feature) in features.iter().enumerate() {
+            ctx.charge_work(1, "scan SLDPRT tree parent")?;
+            if feature.id == parent
+                && matches!(
+                    feature.evaluation.definition(),
+                    FeatureDefinition::Operation(FeatureOperation::TreeNode { .. })
+                )
+            {
+                tree_parent_index = Some(index);
+                break;
             }
         }
+        let Some(tree_parent_index) = tree_parent_index else {
+            ctx.reserve_vec(
+                &mut regeneration_parents,
+                1,
+                "collect SLDPRT regeneration parents",
+            )?;
+            regeneration_parents.push((child, parent));
+            continue;
+        };
+        let mut result = Ok(());
+        features[tree_parent_index]
+            .evaluation
+            .edit(|definition, _| {
+                if let FeatureDefinition::Operation(FeatureOperation::TreeNode {
+                    children, ..
+                }) = definition
+                {
+                    result = children.insert(ctx, child, "collect SLDPRT tree children");
+                }
+            });
+        result?;
     }
-    bind_offset_plane_references(&mut features);
-    bind_native_construction_features(&mut features, histories);
-    FeatureProjection {
+    bind_offset_plane_references(ctx, &mut features)?;
+    bind_native_construction_features(ctx, &mut features, histories)?;
+    Ok(FeatureProjection {
         features,
         regeneration_parents,
-    }
+    })
 }
 
-pub fn project_features(histories: &[FeatureHistory]) -> Vec<cadmpeg_ir::features::Feature> {
-    project_feature_model(histories).features
+pub(crate) fn project_features(
+    ctx: &DecodeContext<'_>,
+    histories: &[FeatureHistory],
+) -> Result<Vec<cadmpeg_ir::features::Feature>, cadmpeg_core::CodecError> {
+    project_feature_model(ctx, histories).map(|projection| projection.features)
 }
 
 /// Project standalone history notes into the semantic-annotation arena.
-pub fn project_semantic_notes(
+pub(crate) fn project_semantic_notes(
+    ctx: &DecodeContext<'_>,
     histories: &[FeatureHistory],
-) -> Vec<cadmpeg_ir::semantic_annotations::SemanticAnnotation> {
-    histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .filter(|feature| is_semantic_note(feature))
-        .map(|feature| {
-            let key = feature
+) -> Result<Vec<cadmpeg_ir::semantic_annotations::SemanticAnnotation>, CodecError> {
+    const OPERATION: &str = "project SLDPRT semantic notes";
+    let mut notes = Vec::new();
+    let copy = |value: &str| -> Result<String, CodecError> {
+        charge_projected_text_work(ctx, value, OPERATION)?;
+        let mut copied = String::new();
+        ctx.try_reserve_retained_text(&mut copied, value.len(), OPERATION)?;
+        copied.push_str(value);
+        Ok(copied)
+    };
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(histories.len()),
+        OPERATION,
+    )?;
+    for history in histories {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(history.features.len()),
+            OPERATION,
+        )?;
+        for feature in &history.features {
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(feature.xml_tag.len()),
+                OPERATION,
+            )?;
+            if !is_semantic_note(feature) {
+                continue;
+            }
+            charge_projected_text_work(ctx, &feature.id, OPERATION)?;
+            let native_id = feature
                 .id
                 .strip_prefix("sldprt:history:feature#")
                 .unwrap_or(&feature.id);
-            cadmpeg_ir::semantic_annotations::SemanticAnnotation {
-                id: cadmpeg_ir::semantic_annotations::SemanticAnnotationId::mint(format!(
-                    "sldprt:semantic-annotation:note#{key}"
-                ))
-                .expect("identity grammar"),
-                object: feature.id.clone(),
+            let id = ctx.format_retained(
+                format_args!(
+                    "sldprt:semantic-annotation:note#{}",
+                    EncodedNativeKey(native_id)
+                ),
+                OPERATION,
+            )?;
+            let id = cadmpeg_ir::semantic_annotations::SemanticAnnotationId::mint(id)
+                .map_err(|_| CodecError::malformed("invalid SLDPRT semantic note ID"))?;
+            let mut text = Vec::new();
+            if let Some(value) = &feature.text {
+                let value = copy(value)?;
+                ctx.reserve_vec(&mut text, 1, OPERATION)?;
+                text.push(value);
+            }
+            ctx.reserve_vec(&mut notes, 1, OPERATION)?;
+            notes.push(cadmpeg_ir::semantic_annotations::SemanticAnnotation {
+                id,
+                object: copy(&feature.id)?,
                 kind: cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Text,
-                runtime_type: feature.kind.clone(),
+                runtime_type: copy(&feature.kind)?,
                 order: feature.ordinal,
-                text: feature.text.iter().cloned().collect(),
+                text,
                 references: BTreeMap::new(),
                 value: None,
                 format: None,
                 position: None,
                 parameters: BTreeMap::new(),
                 assets: Vec::new(),
-                native_ref: feature.id.clone(),
-            }
-        })
-        .collect()
+                native_ref: copy(&feature.id)?,
+            });
+        }
+    }
+    Ok(notes)
 }
 
-pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features::Feature]) {
+pub(super) fn bind_offset_plane_references(
+    ctx: &DecodeContext<'_>,
+    features: &mut [cadmpeg_ir::features::Feature],
+) -> Result<(), CodecError> {
+    fn canonical_plane_id<'a>(
+        ctx: &DecodeContext<'_>,
+        id: &'a FeatureId,
+        parents: &'a HashMap<FeatureId, FeatureId>,
+    ) -> Result<&'a FeatureId, CodecError> {
+        let mut current = id;
+        let mut visited = HashSet::new();
+        loop {
+            ctx.charge_work(1, "walk SLDPRT zero offset plane parents")?;
+            if visited.contains(current) {
+                break;
+            }
+            ctx.insert_hash_set(
+                &mut visited,
+                current,
+                "walk SLDPRT zero offset plane parents",
+            )?;
+            let Some(parent) = parents.get(current) else {
+                break;
+            };
+            current = parent;
+        }
+        Ok(current)
+    }
+
     fn history_key(feature: &cadmpeg_ir::features::Feature) -> Option<&str> {
         feature
             .native_ref
@@ -240,7 +549,7 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
     const FRAME_TOLERANCE: f64 = 1.0e-8;
 
     let stored_frame = |feature: &cadmpeg_ir::features::Feature| {
-        let origin = parse_point3_mm(feature.source_properties.get("Origin")?)?;
+        let origin = parse_point3_mm(feature.source_properties.get("Origin")?)?.get();
         let normal = parse_vector3(feature.source_properties.get("Normal")?)?;
         let u_axis = parse_vector3(feature.source_properties.get("UAxis")?)?;
         valid_plane_frame(normal, u_axis).then_some((origin, normal, u_axis))
@@ -308,7 +617,7 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
     };
     let serialized_reference_frame = |feature: &cadmpeg_ir::features::Feature| {
         Some((
-            parse_point3_mm(feature.source_properties.get("ReferenceFaceOrigin")?)?,
+            parse_point3_mm(feature.source_properties.get("ReferenceFaceOrigin")?)?.get(),
             parse_vector3(feature.source_properties.get("ReferenceFaceNormal")?)?,
             parse_vector3(feature.source_properties.get("ReferenceFaceUAxis")?)?,
         ))
@@ -338,83 +647,91 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
             displacement.y - reference.1.y * signed_distance / reference_normal_length,
             displacement.z - reference.1.z * signed_distance / reference_normal_length,
         );
-        same_scalar(tangent.norm(), 0.0) && same_scalar(signed_distance.abs(), distance.0.abs())
+        same_scalar(tangent.norm(), 0.0) && same_scalar(signed_distance.abs(), distance.get().abs())
     };
-    let ordinals = features
-        .iter()
-        .map(|feature| {
-            (
-                feature.id.clone(),
-                (
-                    feature.ordinal,
-                    match feature.definition {
-                        FeatureDefinition::DatumPrincipalPlane { plane } => {
-                            Some(principal_frame(plane))
-                        }
-                        FeatureDefinition::DatumPlane {
-                            origin,
-                            normal,
-                            u_axis,
-                        } => Some((origin, normal, u_axis)),
-                        FeatureDefinition::DatumOffsetPlane { .. } => stored_frame(feature),
-                        _ => None,
-                    },
-                    matches!(
-                        feature.definition,
-                        FeatureDefinition::DatumPrincipalPlane { .. }
-                    ),
-                    matches!(
-                        feature.definition,
-                        FeatureDefinition::DatumPrincipalPlane { .. }
-                            | FeatureDefinition::DatumPlane { .. }
-                    ),
-                ),
-            )
-        })
-        .collect::<HashMap<_, _>>();
+    let mut ordinals = HashMap::new();
+    for feature in features.iter() {
+        ctx.charge_work(1, "index SLDPRT offset plane ordinals")?;
+        let id = copy_projected_feature_id(ctx, &feature.id)?;
+        let value = (
+            feature.ordinal,
+            match feature.evaluation.definition() {
+                FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane { plane }) => {
+                    Some(principal_frame(*plane))
+                }
+                FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) => Some((
+                    frame.origin().get(),
+                    frame.normal().get(),
+                    frame.u_axis().get(),
+                )),
+                FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { .. }) => {
+                    stored_frame(feature)
+                }
+                _ => None,
+            },
+            matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane { .. })
+            ),
+            matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Operation(
+                    FeatureOperation::DatumPrincipalPlane { .. }
+                        | FeatureOperation::DatumPlane { .. }
+                )
+            ),
+        );
+        ctx.insert_hash_map(
+            &mut ordinals,
+            id,
+            value,
+            "index SLDPRT offset plane ordinals",
+        )?;
+    }
     // A zero-distance offset with an explicit feature reference is a geometric
     // alias. Collapse only that provenance chain; independent coincident
     // planes remain distinct candidates and stay ambiguous.
-    let zero_offset_parents = features
-        .iter()
-        .filter_map(|feature| {
-            let FeatureDefinition::DatumOffsetPlane {
-                reference: Some(DatumPlaneReference::Feature(reference)),
-                distance,
-            } = &feature.definition
-            else {
-                return None;
-            };
-            same_scalar(distance.0, 0.0).then_some((feature.id.clone(), reference.clone()))
-        })
-        .collect::<HashMap<_, _>>();
-    let canonical_plane_id = |id: &str| {
-        let mut current = FeatureId::mint(id.to_owned()).expect("identity grammar");
-        let mut visited = HashSet::new();
-        while visited.insert(current.clone()) {
-            let Some(parent) = zero_offset_parents.get(&current).cloned() else {
-                break;
-            };
-            current = parent;
+    let mut zero_offset_parents = HashMap::new();
+    for feature in features.iter() {
+        ctx.charge_work(1, "index SLDPRT zero offset plane parents")?;
+        let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Feature { feature: reference }),
+            distance,
+        }) = feature.evaluation.definition()
+        else {
+            continue;
+        };
+        if same_scalar(distance.get(), 0.0) {
+            let id = copy_projected_feature_id(ctx, &feature.id)?;
+            let reference = copy_projected_feature_id(ctx, reference)?;
+            ctx.insert_hash_map(
+                &mut zero_offset_parents,
+                id,
+                reference,
+                "index SLDPRT zero offset plane parents",
+            )?;
         }
-        current
-    };
+    }
     for feature in features.iter_mut() {
+        ctx.charge_work(1, "validate SLDPRT offset plane references")?;
         let explicit_native_reference = feature.source_properties.contains_key("Reference")
             || feature.source_properties.contains_key("Plane");
         let result_frame = stored_frame(feature);
         let source_reference_frame = serialized_reference_frame(feature);
-        let FeatureDefinition::DatumOffsetPlane {
+        let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference,
             distance,
-        } = &mut feature.definition
+        }) = feature.evaluation.definition()
         else {
             continue;
         };
-        let Some(DatumPlaneReference::Feature(reference_id)) = reference.as_ref() else {
+        let Some(DatumPlaneReference::Feature {
+            feature: reference_id,
+        }) = reference.as_ref()
+        else {
             continue;
         };
-        let reference_id = reference_id.clone();
+        let reference_id = copy_projected_feature_id(ctx, reference_id)?;
         let invalid = reference_id == feature.id
             || match ordinals.get(&reference_id) {
                 None => true,
@@ -451,40 +768,61 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
                             || explicit_frame_identity)
                 }
             };
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(feature.dependencies.as_slice().len()),
+            "validate SLDPRT offset plane dependencies",
+        )?;
         if invalid {
-            *reference = None;
+            feature.evaluation.edit(|definition, _| {
+                if let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+                    reference,
+                    ..
+                }) = definition
+                {
+                    *reference = None;
+                }
+            });
             feature
                 .dependencies
                 .retain(|dependency| dependency != &reference_id);
-            continue;
-        }
-        if !feature.dependencies.contains(&reference_id) {
-            feature.dependencies.push(reference_id);
+        } else if !feature.dependencies.contains(&reference_id) {
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(feature.dependencies.as_slice().len()),
+                "bind SLDPRT offset plane dependencies",
+            )?;
+            feature.dependencies.insert(
+                ctx,
+                reference_id,
+                "bind SLDPRT offset plane dependencies",
+            )?;
         }
     }
-    let mut frames = features
-        .iter()
-        .filter_map(|feature| {
-            let frame = match feature.definition {
-                FeatureDefinition::DatumPrincipalPlane { plane } => principal_frame(plane),
-                FeatureDefinition::DatumPlane {
-                    origin,
-                    normal,
-                    u_axis,
-                } => (origin, normal, u_axis),
-                _ => return None,
-            };
-            Some((feature.id.clone(), frame))
-        })
-        .collect::<HashMap<_, _>>();
+    let mut frames = HashMap::new();
+    for feature in features.iter() {
+        ctx.charge_work(1, "index SLDPRT offset plane frames")?;
+        let frame = match feature.evaluation.definition() {
+            FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane { plane }) => {
+                principal_frame(*plane)
+            }
+            FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) => (
+                frame.origin().get(),
+                frame.normal().get(),
+                frame.u_axis().get(),
+            ),
+            _ => continue,
+        };
+        let id = copy_projected_feature_id(ctx, &feature.id)?;
+        ctx.insert_hash_map(&mut frames, id, frame, "index SLDPRT offset plane frames")?;
+    }
 
     loop {
         let mut changed = false;
         for feature in features.iter() {
-            let FeatureDefinition::DatumOffsetPlane {
-                reference: Some(DatumPlaneReference::Feature(reference)),
+            ctx.charge_work(1, "propagate SLDPRT offset plane frames")?;
+            let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+                reference: Some(DatumPlaneReference::Feature { feature: reference }),
                 distance,
-            } = &feature.definition
+            }) = feature.evaluation.definition()
             else {
                 continue;
             };
@@ -495,121 +833,162 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
                 continue;
             };
             let normal_length = normal.norm();
-            frames.insert(
-                feature.id.clone(),
+            let id = copy_projected_feature_id(ctx, &feature.id)?;
+            ctx.insert_hash_map(
+                &mut frames,
+                id,
                 (
                     Point3::new(
-                        origin.x + normal.x * distance.0 / normal_length,
-                        origin.y + normal.y * distance.0 / normal_length,
-                        origin.z + normal.z * distance.0 / normal_length,
+                        origin.x + normal.x * distance.get() / normal_length,
+                        origin.y + normal.y * distance.get() / normal_length,
+                        origin.z + normal.z * distance.get() / normal_length,
                     ),
                     normal,
                     u_axis,
                 ),
-            );
+                "propagate SLDPRT offset plane frames",
+            )?;
             changed = true;
         }
 
-        let bindings = features
-            .iter()
-            .enumerate()
-            .filter_map(|(index, feature)| {
-                let FeatureDefinition::DatumOffsetPlane {
-                    reference,
-                    distance,
-                } = &feature.definition
-                else {
-                    return None;
-                };
-                let frame_reference_pending = matches!(
-                    reference,
-                    None | Some(DatumPlaneReference::ResolvedPlane { .. })
-                );
-                if !frame_reference_pending {
-                    return None;
-                }
-                let (origin, normal, _) = stored_frame(feature)?;
-                if same_scalar(distance.0, 0.0) {
-                    return None;
-                }
-                let history = history_key(feature)?;
-                let serialized_reference_frame = serialized_reference_frame(feature);
-                let candidates = features
-                    .iter()
-                    .filter(|candidate| {
-                        candidate.ordinal < feature.ordinal
-                            || (serialized_reference_frame.is_some()
-                                && ordinals
-                                    .get(&candidate.id)
-                                    .is_some_and(|(_, _, is_principal, _)| *is_principal))
-                    })
-                    .filter(|candidate| history_key(candidate) == Some(history))
-                    .filter_map(|candidate| {
-                        let &(candidate_origin, candidate_normal, candidate_u_axis) =
-                            frames.get(&candidate.id)?;
-                        if let Some(serialized_reference_frame) = serialized_reference_frame {
-                            if !plane_frames_match(
-                                serialized_reference_frame,
-                                (candidate_origin, candidate_normal, candidate_u_axis),
-                            ) {
-                                return None;
-                            }
-                        }
-                        let candidate_normal_length = candidate_normal.norm();
-                        let result_normal_length = normal.norm();
-                        let normal_dot = (normal.x * candidate_normal.x
-                            + normal.y * candidate_normal.y
-                            + normal.z * candidate_normal.z)
-                            / (result_normal_length * candidate_normal_length);
-                        if !same_scalar(normal_dot.abs(), 1.0) {
-                            return None;
-                        }
-                        let displacement = Vector3::new(
-                            origin.x - candidate_origin.x,
-                            origin.y - candidate_origin.y,
-                            origin.z - candidate_origin.z,
-                        );
-                        let signed_distance = (displacement.x * candidate_normal.x
-                            + displacement.y * candidate_normal.y
-                            + displacement.z * candidate_normal.z)
-                            / candidate_normal_length;
-                        let tangent = Vector3::new(
-                            displacement.x
-                                - candidate_normal.x * signed_distance / candidate_normal_length,
-                            displacement.y
-                                - candidate_normal.y * signed_distance / candidate_normal_length,
-                            displacement.z
-                                - candidate_normal.z * signed_distance / candidate_normal_length,
-                        );
-                        (same_scalar(tangent.norm(), 0.0)
-                            && same_scalar(signed_distance.abs(), distance.0.abs()))
-                        .then_some((
-                            canonical_plane_id(candidate.id.as_str()),
-                            distance.0.abs().copysign(signed_distance),
-                        ))
-                    });
-                let mut candidates_by_root = HashMap::new();
-                for (candidate, distance) in candidates {
-                    candidates_by_root.entry(candidate).or_insert(distance);
-                }
-                let mut candidates = candidates_by_root.into_iter();
-                let candidate = candidates.next()?;
-                candidates.next().is_none().then_some((index, candidate))
-            })
-            .collect::<Vec<_>>();
-        for (index, (reference, distance)) in bindings {
-            let FeatureDefinition::DatumOffsetPlane {
-                reference: slot,
-                distance: stored_distance,
-            } = &mut features[index].definition
+        let mut bindings = Vec::new();
+        for (index, feature) in features.iter().enumerate() {
+            ctx.charge_work(1, "bind SLDPRT offset plane frames")?;
+            let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+                reference,
+                distance,
+            }) = feature.evaluation.definition()
             else {
                 continue;
             };
-            *slot = Some(DatumPlaneReference::Feature(reference.clone()));
-            *stored_distance = Length(distance);
-            if !features[index].dependencies.contains(&reference) {
-                features[index].dependencies.push(reference);
+            if !matches!(
+                reference,
+                None | Some(DatumPlaneReference::ResolvedPlane { .. })
+            ) {
+                continue;
             }
+            let Some((origin, normal, _)) = stored_frame(feature) else {
+                continue;
+            };
+            if same_scalar(distance.get(), 0.0) {
+                continue;
+            }
+            let Some(history) = history_key(feature) else {
+                continue;
+            };
+            let serialized_reference_frame = serialized_reference_frame(feature);
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(features.len()),
+                "find SLDPRT offset plane candidates",
+            )?;
+            let candidates = features
+                .iter()
+                .filter(|candidate| {
+                    candidate.ordinal < feature.ordinal
+                        || (serialized_reference_frame.is_some()
+                            && ordinals
+                                .get(&candidate.id)
+                                .is_some_and(|(_, _, is_principal, _)| *is_principal))
+                })
+                .filter(|candidate| history_key(candidate) == Some(history))
+                .filter_map(|candidate| {
+                    let &(candidate_origin, candidate_normal, candidate_u_axis) =
+                        frames.get(&candidate.id)?;
+                    if let Some(serialized_reference_frame) = serialized_reference_frame {
+                        if !plane_frames_match(
+                            serialized_reference_frame,
+                            (candidate_origin, candidate_normal, candidate_u_axis),
+                        ) {
+                            return None;
+                        }
+                    }
+                    let candidate_normal_length = candidate_normal.norm();
+                    let result_normal_length = normal.norm();
+                    let normal_dot = (normal.x * candidate_normal.x
+                        + normal.y * candidate_normal.y
+                        + normal.z * candidate_normal.z)
+                        / (result_normal_length * candidate_normal_length);
+                    if !same_scalar(normal_dot.abs(), 1.0) {
+                        return None;
+                    }
+                    let displacement = Vector3::new(
+                        origin.x - candidate_origin.x,
+                        origin.y - candidate_origin.y,
+                        origin.z - candidate_origin.z,
+                    );
+                    let signed_distance = (displacement.x * candidate_normal.x
+                        + displacement.y * candidate_normal.y
+                        + displacement.z * candidate_normal.z)
+                        / candidate_normal_length;
+                    let tangent = Vector3::new(
+                        displacement.x
+                            - candidate_normal.x * signed_distance / candidate_normal_length,
+                        displacement.y
+                            - candidate_normal.y * signed_distance / candidate_normal_length,
+                        displacement.z
+                            - candidate_normal.z * signed_distance / candidate_normal_length,
+                    );
+                    (same_scalar(tangent.norm(), 0.0)
+                        && same_scalar(signed_distance.abs(), distance.get().abs()))
+                    .then_some((
+                        &candidate.id,
+                        distance.get().abs().copysign(signed_distance),
+                    ))
+                });
+            let mut candidates_by_root = HashMap::new();
+            for (candidate, distance) in candidates {
+                let root = canonical_plane_id(ctx, candidate, &zero_offset_parents)?;
+                if !candidates_by_root.contains_key(root) {
+                    ctx.insert_hash_map(
+                        &mut candidates_by_root,
+                        root,
+                        distance,
+                        "index SLDPRT offset plane candidate roots",
+                    )?;
+                }
+            }
+            let mut candidates = candidates_by_root.into_iter();
+            let Some((reference, distance)) = candidates.next() else {
+                continue;
+            };
+            if candidates.next().is_some() {
+                continue;
+            }
+            let reference = copy_projected_feature_id(ctx, reference)?;
+            ctx.reserve_vec(&mut bindings, 1, "collect SLDPRT offset plane bindings")?;
+            bindings.push((index, (reference, distance)));
+        }
+        for (index, (reference, distance)) in bindings {
+            let Some(distance) = Length::new(distance) else {
+                continue;
+            };
+            let reference_copy = copy_projected_feature_id(ctx, &reference)?;
+            let mut bound = false;
+            features[index].evaluation.edit(|definition, _| {
+                if let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+                    reference: slot,
+                    distance: stored_distance,
+                }) = definition
+                {
+                    *slot = Some(DatumPlaneReference::Feature {
+                        feature: reference_copy,
+                    });
+                    *stored_distance = distance;
+                    bound = true;
+                }
+            });
+            if !bound {
+                continue;
+            }
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(features[index].dependencies.as_slice().len()),
+                "bind SLDPRT offset plane dependencies",
+            )?;
+            features[index].dependencies.insert(
+                ctx,
+                reference,
+                "bind SLDPRT offset plane dependencies",
+            )?;
             changed = true;
         }
         if !changed {
@@ -617,502 +996,825 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
         }
     }
     for feature in features {
-        let FeatureDefinition::DatumOffsetPlane {
-            reference: reference @ None,
-            ..
-        } = &mut feature.definition
-        else {
-            continue;
-        };
-        *reference = (|| {
-            Some(DatumPlaneReference::ResolvedPlane {
-                origin: parse_point3_mm(feature.source_properties.get("ReferenceFaceOrigin")?)?,
-                normal: parse_vector3(feature.source_properties.get("ReferenceFaceNormal")?)?,
-                u_axis: parse_vector3(feature.source_properties.get("ReferenceFaceUAxis")?)?,
-            })
-        })();
+        ctx.charge_work(1, "resolve SLDPRT offset plane support frames")?;
+        let properties = &feature.source_properties;
+        feature.evaluation.edit(|definition, _| {
+            if let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+                reference: reference @ None,
+                ..
+            }) = definition
+            {
+                *reference = (|| {
+                    Some(DatumPlaneReference::ResolvedPlane {
+                        frame: cadmpeg_ir::features::FeatureSupportPlaneFrame::from_parts(
+                            parse_point3_mm(properties.get("ReferenceFaceOrigin")?)?,
+                            cadmpeg_ir::features::FeatureDirection3::new(parse_vector3(
+                                properties.get("ReferenceFaceNormal")?,
+                            )?)?,
+                            cadmpeg_ir::features::FeatureDirection3::new(parse_vector3(
+                                properties.get("ReferenceFaceUAxis")?,
+                            )?)?,
+                        )?,
+                    })
+                })();
+            }
+        });
     }
+    Ok(())
 }
 
-pub(crate) fn bind_native_construction_features(
+fn bind_native_construction_features(
+    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[FeatureHistory],
-) {
-    let construction_native_refs = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .filter(|feature| {
-            matches!(
-                classify(feature),
-                Some(
-                    FeatureClass::Sketch
-                        | FeatureClass::SketchBlockInstance
-                        | FeatureClass::EquationCurve
-                        | FeatureClass::ProjectedCurve
-                        | FeatureClass::CompositeCurve
-                )
+) -> Result<(), CodecError> {
+    let mut construction_native_refs = HashSet::new();
+    for feature in histories.iter().flat_map(|history| &history.features) {
+        ctx.charge_work(1, "index SLDPRT native construction sources")?;
+        if !matches!(
+            classify(feature),
+            Some(
+                FeatureClass::Sketch
+                    | FeatureClass::SketchBlockInstance
+                    | FeatureClass::EquationCurve
+                    | FeatureClass::ProjectedCurve
+                    | FeatureClass::CompositeCurve
             )
-        })
-        .map(|feature| feature.id.as_str())
-        .collect::<HashSet<_>>();
-    let feature_ids_by_native = features
-        .iter()
-        .filter_map(|feature| {
-            let native = feature.native_ref.as_deref()?;
-            construction_native_refs
-                .contains(native)
-                .then_some((native.to_string(), feature.id.clone()))
-        })
-        .collect::<HashMap<_, _>>();
+        ) || construction_native_refs.contains(feature.id.as_str())
+        {
+            continue;
+        }
+        ctx.insert_hash_set(
+            &mut construction_native_refs,
+            feature.id.as_str(),
+            "index SLDPRT native construction sources",
+        )?;
+    }
+    let mut feature_ids_by_native = HashMap::new();
+    for feature in features.iter() {
+        ctx.charge_work(1, "index SLDPRT native construction features")?;
+        let Some(native) = feature.native_ref.as_deref() else {
+            continue;
+        };
+        if construction_native_refs.contains(native) {
+            let native = copy_projected_feature_text(ctx, native)?;
+            let id = copy_projected_feature_id(ctx, &feature.id)?;
+            ctx.insert_hash_map(
+                &mut feature_ids_by_native,
+                native,
+                id,
+                "index SLDPRT native construction features",
+            )?;
+        }
+    }
 
     for feature in features {
-        let mut dependencies = Vec::new();
-        let mut bind = |profile: &mut ProfileRef| {
-            let ProfileRef::Native(native) = profile else {
-                return;
+        let feature_id = &feature.id;
+        let dependencies = &mut feature.dependencies;
+        let insert_dependency =
+            |dependencies: &mut cadmpeg_ir::features::DistinctMembers<FeatureId>,
+             target: &FeatureId|
+             -> Result<(), CodecError> {
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(dependencies.as_slice().len()),
+                    "bind SLDPRT native construction references",
+                )?;
+                if target != feature_id && !dependencies.contains(target) {
+                    ctx.charge_work(
+                        cadmpeg_core::decode::u64_from_index(dependencies.as_slice().len()),
+                        "bind SLDPRT native construction references",
+                    )?;
+                    dependencies.insert(
+                        ctx,
+                        copy_projected_feature_id(ctx, target)?,
+                        "bind SLDPRT native construction dependencies",
+                    )?;
+                }
+                Ok(())
+            };
+        let bind_planar = |profile: &mut PlanarProfileRef,
+                           dependencies: &mut cadmpeg_ir::features::DistinctMembers<FeatureId>|
+         -> Result<(), CodecError> {
+            ctx.charge_work(1, "bind SLDPRT native construction references")?;
+            let PlanarProfileRef::Native(native) = profile else {
+                return Ok(());
             };
             let Some(target) = feature_ids_by_native.get(native.as_str()) else {
-                return;
+                return Ok(());
             };
-            *profile = ProfileRef::Feature(target.clone());
-            dependencies.push(target.clone());
+            let target_id = copy_projected_feature_id(ctx, target)?;
+            insert_dependency(dependencies, target)?;
+            *profile = PlanarProfileRef::Feature(target_id);
+            Ok(())
         };
-        match &mut feature.definition {
-            FeatureDefinition::Extrude { profile, .. }
-            | FeatureDefinition::Wrap { profile, .. } => bind(profile),
-            FeatureDefinition::Revolve { construction, .. } => {
-                if let Some(profile) = construction.profile_mut() {
-                    bind(profile);
-                }
+        let bind = |profile: &mut ProfileRef,
+                    dependencies: &mut cadmpeg_ir::features::DistinctMembers<FeatureId>|
+         -> Result<(), CodecError> {
+            if let ProfileRef::Planar(profile) = profile {
+                bind_planar(profile, dependencies)?;
             }
-            FeatureDefinition::Rib { construction, .. } => {
-                if let Some(profile) = &mut construction.profile {
-                    bind(profile);
-                }
-            }
-            FeatureDefinition::Sweep { section, .. } => {
-                if let Some(profile) = section.referenced_profile_mut() {
-                    bind(profile);
-                }
-            }
-            FeatureDefinition::Loft { sections, .. } => {
-                for section in sections {
-                    if let cadmpeg_ir::features::LoftSection::Profile(profile) = section {
-                        bind(profile);
+            Ok(())
+        };
+        let mut result: Result<(), CodecError> = Ok(());
+        feature.evaluation.edit(|definition, _| {
+            result = (|| {
+                match definition {
+                    FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) => {
+                        bind(profile, dependencies)?;
                     }
+                    FeatureDefinition::Operation(FeatureOperation::Wrap { profile, .. }) => {
+                        bind_planar(profile, dependencies)?;
+                    }
+                    FeatureDefinition::Operation(FeatureOperation::Revolve {
+                        construction,
+                        ..
+                    }) => {
+                        if let Some(profile) = construction.profile_mut() {
+                            bind_planar(profile, dependencies)?;
+                        }
+                    }
+                    FeatureDefinition::Operation(FeatureOperation::Rib {
+                        construction, ..
+                    }) => {
+                        if let Some(profile) = &mut construction.profile {
+                            bind_planar(profile, dependencies)?;
+                        }
+                    }
+                    FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) => {
+                        if let Some(profile) = shape.referenced_profile_mut() {
+                            bind_planar(profile, dependencies)?;
+                        }
+                    }
+                    FeatureDefinition::Operation(FeatureOperation::Loft { sections, .. }) => {
+                        for section in sections {
+                            if let cadmpeg_ir::features::LoftSection::Profile(profile) = section {
+                                bind(profile, dependencies)?;
+                            }
+                        }
+                    }
+                    FeatureDefinition::Operation(FeatureOperation::SplitFace {
+                        tool: SplitFaceTool::Path(PathRef::Native(native)),
+                        ..
+                    }) => {
+                        ctx.charge_work(1, "bind SLDPRT native construction references")?;
+                        if let Some(target) = feature_ids_by_native.get(native.as_str()) {
+                            insert_dependency(dependencies, target)?;
+                        }
+                    }
+                    _ => {}
                 }
-            }
-            FeatureDefinition::SplitFace {
-                tool: SplitFaceTool::Path(PathRef::Native(native)),
-                ..
-            } => {
-                if let Some(target) = feature_ids_by_native.get(native.as_str()) {
-                    dependencies.push(target.clone());
+                Ok(())
+            })();
+        });
+        result?;
+    }
+    Ok(())
+}
+
+struct EncodedNativeKey<'a>(&'a str);
+
+impl fmt::Display for EncodedNativeKey<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        const HEX: &[u8; 16] = b"0123456789ABCDEF";
+        if self.0.is_empty() {
+            return formatter.write_str("%EMPTY");
+        }
+        for character in self.0.chars() {
+            if character == '%' || character == '#' || character.is_whitespace() {
+                let mut buffer = [0u8; 4];
+                for byte in character.encode_utf8(&mut buffer).as_bytes() {
+                    formatter.write_str("%")?;
+                    formatter.write_char(char::from(HEX[usize::from(byte >> 4)]))?;
+                    formatter.write_char(char::from(HEX[usize::from(byte & 0x0f)]))?;
                 }
-            }
-            _ => {}
-        }
-        for dependency in dependencies {
-            if dependency != feature.id && !feature.dependencies.contains(&dependency) {
-                feature.dependencies.push(dependency);
+            } else {
+                formatter.write_char(character)?;
             }
         }
+        Ok(())
     }
 }
 
 /// Project Keywords custom-property records into document-owned attributes.
-pub(crate) fn custom_property_attributes(histories: &[FeatureHistory]) -> Vec<SourceAttribute> {
-    histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .filter(|feature| is_custom_property(feature))
-        .map(|feature| {
-            let key = feature
+pub(crate) fn custom_property_attributes(
+    ctx: &DecodeContext<'_>,
+    histories: &[FeatureHistory],
+) -> Result<Vec<SourceAttribute>, CodecError> {
+    const OPERATION: &str = "project SLDPRT custom properties";
+    let mut attributes = Vec::new();
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(histories.len()),
+        OPERATION,
+    )?;
+    for history in histories {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(history.features.len()),
+            OPERATION,
+        )?;
+        for feature in &history.features {
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(feature.xml_tag.len()),
+                OPERATION,
+            )?;
+            if !is_custom_property(feature) {
+                continue;
+            }
+            charge_projected_text_work(ctx, &feature.id, OPERATION)?;
+            let native_id = feature
                 .id
                 .strip_prefix("sldprt:history:feature#")
                 .unwrap_or(&feature.id);
-            SourceAttribute {
-                id: AttributeId::mint(format!("sldprt:history:custom-property#{key}"))
-                    .expect("identity grammar"),
-                target: AttributeTarget::Document,
-                name: feature.name.clone(),
-                values: feature
-                    .text
-                    .iter()
-                    .cloned()
-                    .map(AttributeValue::String)
-                    .collect(),
+            let id = ctx.format_retained(
+                format_args!(
+                    "sldprt:history:custom-property#{}",
+                    EncodedNativeKey(native_id)
+                ),
+                OPERATION,
+            )?;
+            let id = AttributeId::mint(id)
+                .map_err(|_| CodecError::malformed("invalid SLDPRT custom-property ID"))?;
+            charge_projected_text_work(ctx, &feature.name, OPERATION)?;
+            let mut name = String::new();
+            ctx.try_reserve_retained_text(&mut name, feature.name.len(), OPERATION)?;
+            name.push_str(&feature.name);
+            let mut values = Vec::new();
+            if let Some(text) = &feature.text {
+                charge_projected_text_work(ctx, text, OPERATION)?;
+                let mut value = String::new();
+                ctx.try_reserve_retained_text(&mut value, text.len(), OPERATION)?;
+                value.push_str(text);
+                ctx.reserve_vec(&mut values, 1, OPERATION)?;
+                values.push(AttributeValue::String(value));
             }
-        })
-        .collect()
+            ctx.reserve_vec(&mut attributes, 1, OPERATION)?;
+            attributes.push(SourceAttribute {
+                id,
+                target: AttributeTarget::Document,
+                name,
+                values,
+            });
+        }
+    }
+    Ok(attributes)
 }
 
-pub(crate) fn unique_source_bindings(
-    history: &FeatureHistory,
-) -> HashMap<&str, Option<(&str, FeatureId)>> {
+struct SourceBinding<'a> {
+    native: &'a str,
+    neutral: FeatureId,
+}
+
+fn unique_source_bindings<'a>(
+    ctx: &DecodeContext<'_>,
+    history: &'a FeatureHistory,
+) -> Result<HashMap<FeatureSource, Option<SourceBinding<'a>>>, CodecError> {
     let mut bindings = HashMap::new();
     for feature in &history.features {
+        ctx.charge_work(1, "scan SLDPRT unique feature sources")?;
         if is_history_metadata_record(feature, &history.features) {
             continue;
         }
-        let Some(source) = feature.source_id.as_deref() else {
+        let Some(source) = feature.source_id else {
             continue;
         };
-        let binding = (feature.id.as_str(), neutral_feature_id(&feature.id));
-        bindings
-            .entry(source)
-            .and_modify(|existing| *existing = None)
-            .or_insert(Some(binding));
+        if let Some(existing) = bindings.get_mut(&source) {
+            *existing = None;
+            continue;
+        }
+        ctx.admit_hash_map_entry(
+            &mut bindings,
+            &source,
+            "index SLDPRT unique feature sources",
+        )?;
+        let binding = SourceBinding {
+            native: feature.id.as_str(),
+            neutral: neutral_feature_id_charged(ctx, &feature.id)?,
+        };
+        bindings.insert(source, Some(binding));
     }
-    bindings
+    Ok(bindings)
 }
 
-pub(crate) fn incomplete_history_reference_features(histories: &[FeatureHistory]) -> usize {
-    histories
-        .iter()
-        .map(|history| {
-            let sources = unique_source_bindings(history);
-            let native_ids = history
-                .features
+pub(crate) fn incomplete_history_reference_features(
+    ctx: &DecodeContext<'_>,
+    histories: &[FeatureHistory],
+) -> Result<usize, CodecError> {
+    let mut incomplete = 0usize;
+    for history in histories {
+        let sources = unique_source_bindings(ctx, history)?;
+        let mut native_ids = HashSet::new();
+        for feature in &history.features {
+            ctx.charge_work(1, "index SLDPRT history feature references")?;
+            if native_ids.contains(feature.id.as_str()) {
+                continue;
+            }
+            ctx.insert_hash_set(
+                &mut native_ids,
+                feature.id.as_str(),
+                "index SLDPRT history feature references",
+            )?;
+        }
+        for feature in &history.features {
+            ctx.charge_work(1, "scan SLDPRT incomplete history references")?;
+            let owner_id = neutral_feature_id_charged(ctx, &feature.id)?;
+            let duplicate_source = feature
+                .source_id
+                .is_some_and(|source| sources.get(&source).is_some_and(Option::is_none));
+            let parent_requested = feature.tree_parent.is_some();
+            let parent_resolved = feature
+                .tree_parent_record_id()
+                .is_some_and(|parent| native_ids.contains(parent))
+                || feature
+                    .parent_source_id()
+                    .is_some_and(|source| sources.get(&source).is_some_and(Option::is_some));
+            let incomplete_content = feature.content.iter().any(|item| match item {
+                FeatureContent::Feature(child) => !native_ids.contains(child.as_str()),
+                FeatureContent::Dimension(name) => !feature.parameters.contains_key(name.as_str()),
+                FeatureContent::Text(_) => false,
+            });
+            let unresolved_dependency = FEATURE_REFERENCE_PROPERTIES
                 .iter()
-                .map(|feature| feature.id.as_str())
-                .collect::<HashSet<_>>();
-            history
-                .features
-                .iter()
-                .filter(|feature| {
-                    let duplicate_source = feature
-                        .source_id
-                        .as_deref()
-                        .is_some_and(|source| sources.get(source).is_some_and(Option::is_none));
-                    let parent_requested = feature.tree_parent.is_some();
-                    let parent_resolved = feature
-                        .tree_parent_record_id()
-                        .is_some_and(|parent| native_ids.contains(parent))
-                        || feature
-                            .parent_source_id()
-                            .is_some_and(|source| sources.get(source).is_some_and(Option::is_some));
-                    let incomplete_content = feature.content.iter().any(|item| match item {
-                        FeatureContent::Feature(child) => !native_ids.contains(child.as_str()),
-                        FeatureContent::Dimension(name) => !feature.parameters.contains_key(name),
-                        FeatureContent::Text(_) => false,
-                    });
-                    let unresolved_dependency = FEATURE_REFERENCE_PROPERTIES
-                        .iter()
-                        .filter_map(|name| feature.properties.get(*name))
-                        .flat_map(|value| {
-                            value.split(|character: char| {
-                                character == ',' || character == ';' || character.is_whitespace()
-                            })
-                        })
-                        .filter(|reference| !reference.is_empty())
-                        .any(|reference| {
-                            sources.get(reference).and_then(Option::as_ref).is_none_or(
-                                |(_, dependency)| dependency == &neutral_feature_id(&feature.id),
-                            )
-                        });
-                    duplicate_source
-                        || (parent_requested && !parent_resolved)
-                        || incomplete_content
-                        || unresolved_dependency
-                })
-                .count()
-        })
-        .sum()
-}
-
-pub(crate) fn project_feature_content(
-    feature: &Feature,
-    by_native: &HashMap<&str, FeatureId>,
-) -> Vec<FeatureSourceContent> {
-    if feature.text.is_some() {
-        return Vec::new();
-    }
-    let parameters = projected_parameter_names(feature)
-        .into_iter()
-        .enumerate()
-        .map(|(ordinal, name)| (name, neutral_parameter_id(feature, ordinal)))
-        .collect::<HashMap<_, _>>();
-    let mut emitted_parameters = HashSet::new();
-    feature
-        .content
-        .iter()
-        .filter_map(|content| match content {
-            FeatureContent::Text(text) => Some(FeatureSourceContent::Text(text.clone())),
-            FeatureContent::Dimension(name) => parameters
-                .get(name)
-                .filter(|parameter| emitted_parameters.insert((*parameter).clone()))
-                .cloned()
-                .map(FeatureSourceContent::Parameter),
-            FeatureContent::Feature(id) => by_native
-                .get(id.as_str())
-                .cloned()
-                .map(FeatureSourceContent::Feature),
-        })
-        .collect()
-}
-
-pub(crate) fn project_feature_dependencies(
-    feature: &Feature,
-    by_source: &HashMap<&str, FeatureId>,
-) -> Vec<FeatureId> {
-    let owner = neutral_feature_id(&feature.id);
-    let mut seen = std::collections::HashSet::new();
-    FEATURE_REFERENCE_PROPERTIES
-        .iter()
-        .filter_map(|name| feature.properties.get(*name))
-        .flat_map(|value| {
-            value
-                .split(|character: char| {
-                    character == ',' || character == ';' || character.is_whitespace()
+                .filter_map(|name| feature.properties.get(*name))
+                .flat_map(|value| {
+                    value.split(|character: char| {
+                        character == ',' || character == ';' || character.is_whitespace()
+                    })
                 })
                 .filter(|reference| !reference.is_empty())
-        })
-        .filter_map(|reference| by_source.get(reference).cloned())
-        .filter(|dependency| dependency != &owner)
-        .filter(|dependency| seen.insert(dependency.clone()))
-        .collect()
+                .any(|reference| {
+                    FeatureSource::try_from(reference)
+                        .ok()
+                        .and_then(|reference| sources.get(&reference))
+                        .and_then(Option::as_ref)
+                        .is_none_or(|binding| binding.neutral == owner_id)
+                });
+            if duplicate_source
+                || (parent_requested && !parent_resolved)
+                || incomplete_content
+                || unresolved_dependency
+            {
+                incomplete = incomplete.checked_add(1).ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "count SLDPRT incomplete history references",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    )
+                })?;
+            }
+        }
+    }
+    Ok(incomplete)
 }
 
-/// Project native configuration records into the neutral configuration arena.
-pub fn project_configurations(histories: &[FeatureHistory]) -> Vec<DesignConfiguration> {
-    histories
-        .iter()
-        .flat_map(|history| &history.configurations)
-        .map(|configuration| DesignConfiguration {
-            id: ConfigurationId::mint(format!(
-                "sldprt:model:configuration#{}",
-                configuration
+fn project_feature_content(
+    ctx: &DecodeContext<'_>,
+    feature: &Feature,
+    by_native: &HashMap<&str, FeatureId>,
+) -> Result<cadmpeg_ir::features::FeatureContent, CodecError> {
+    const OPERATION: &str = "project SLDPRT feature content";
+    if feature.text.is_some() {
+        return Ok(cadmpeg_ir::features::FeatureContent::default());
+    }
+    let mut names = Vec::<&str>::new();
+    for content in &feature.content {
+        ctx.charge_work(1, OPERATION)?;
+        if let FeatureContent::Dimension(name) = content {
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(names.len()), OPERATION)?;
+            if feature.parameters.contains_key(name.as_str()) && !names.contains(&name.as_str()) {
+                ctx.reserve_vec(&mut names, 1, OPERATION)?;
+                names.push(name);
+            }
+        }
+    }
+    for name in feature.parameters.keys() {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(names.len()), OPERATION)?;
+        if !names.contains(&name.as_str()) {
+            ctx.reserve_vec(&mut names, 1, OPERATION)?;
+            names.push(name.as_str());
+        }
+    }
+    let mut result = cadmpeg_ir::features::FeatureContent::default();
+    for content in &feature.content {
+        ctx.charge_work(1, OPERATION)?;
+        let value = match content {
+            FeatureContent::Text(text) => {
+                FeatureSourceContent::Text(copy_projected_feature_text(ctx, text)?)
+            }
+            FeatureContent::Dimension(name) => {
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(names.len()), OPERATION)?;
+                let Some(ordinal) = names.iter().position(|known| *known == name) else {
+                    continue;
+                };
+                charge_projected_text_work(ctx, &feature.id, OPERATION)?;
+                let key = feature
                     .id
-                    .strip_prefix("sldprt:history:configuration#")
-                    .unwrap_or(&configuration.id)
-            ))
-            .expect("identity grammar"),
-            ordinal: configuration.ordinal,
-            active: false,
-            source_index: configuration.source_index,
-            name: configuration.name.clone().into(),
-            material: configuration.material.clone(),
-            properties: configuration.properties.clone(),
-            bodies: ConfigurationBodies::Unresolved,
-            parameter_values: BTreeMap::new(),
-            feature_states: BTreeMap::new(),
-            parameter_overrides: BTreeMap::new(),
-            native_ref: Some(configuration.id.clone()),
-        })
-        .collect()
+                    .strip_prefix("sldprt:history:feature#")
+                    .unwrap_or(&feature.id);
+                let id = ctx.format_retained(
+                    format_args!("sldprt:model:parameter#{}:{ordinal}", EncodedNativeKey(key)),
+                    OPERATION,
+                )?;
+                let parameter = ParameterId::mint(id).map_err(CodecError::malformed)?;
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(result.len()),
+                    OPERATION,
+                )?;
+                if result.iter().any(|value| matches!(value, FeatureSourceContent::Parameter(known) if known == &parameter)) {
+                    continue;
+                }
+                FeatureSourceContent::Parameter(parameter)
+            }
+            FeatureContent::Feature(id) => {
+                let Some(target) = by_native.get(id.as_str()) else {
+                    continue;
+                };
+                FeatureSourceContent::Feature(copy_projected_feature_id(ctx, target)?)
+            }
+        };
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(result.len()),
+            OPERATION,
+        )?;
+        result.push(value, ctx, OPERATION)?;
+    }
+    Ok(result)
+}
+
+fn project_feature_dependencies(
+    ctx: &DecodeContext<'_>,
+    feature: &Feature,
+    by_source: &HashMap<String, FeatureId>,
+) -> Result<cadmpeg_ir::features::DistinctMembers<FeatureId>, CodecError> {
+    let owner = neutral_feature_id_charged(ctx, &feature.id)?;
+    let mut dependencies = cadmpeg_ir::features::DistinctMembers::default();
+    for property in FEATURE_REFERENCE_PROPERTIES {
+        let Some(value) = feature.properties.get(*property) else {
+            continue;
+        };
+        charge_projected_text_work(ctx, value, "scan SLDPRT feature dependencies")?;
+        for reference in value
+            .split(|character: char| {
+                character == ',' || character == ';' || character.is_whitespace()
+            })
+            .filter(|reference| !reference.is_empty())
+        {
+            ctx.charge_work(1, "scan SLDPRT feature dependencies")?;
+            let Some(dependency) = by_source.get(reference) else {
+                continue;
+            };
+            if dependency == &owner || dependencies.contains(dependency) {
+                continue;
+            }
+            dependencies.insert(
+                ctx,
+                copy_projected_feature_id(ctx, dependency)?,
+                "collect SLDPRT feature dependencies",
+            )?;
+        }
+    }
+    Ok(dependencies)
+}
+
+/// Project decoded native configurations under the caller's resource budget.
+pub(crate) fn project_configurations_charged(
+    ctx: &DecodeContext<'_>,
+    histories: &[FeatureHistory],
+) -> Result<Vec<DesignConfiguration>, CodecError> {
+    const OPERATION: &str = "project SLDPRT configurations";
+    let copy = |value: &str| -> Result<String, CodecError> {
+        charge_projected_text_work(ctx, value, OPERATION)?;
+        let mut copied = String::new();
+        ctx.try_reserve_retained_text(&mut copied, value.len(), OPERATION)?;
+        copied.push_str(value);
+        Ok(copied)
+    };
+    let mut projected = Vec::new();
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(histories.len()),
+        OPERATION,
+    )?;
+    for history in histories {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(history.configurations.len()),
+            OPERATION,
+        )?;
+        for configuration in &history.configurations {
+            charge_projected_text_work(ctx, &configuration.id, OPERATION)?;
+            let native_id = configuration
+                .id
+                .strip_prefix("sldprt:history:configuration#")
+                .unwrap_or(&configuration.id);
+            let id = ctx.format_retained(
+                format_args!("sldprt:model:configuration#{}", EncodedNativeKey(native_id)),
+                OPERATION,
+            )?;
+            let id = ConfigurationId::mint(id)
+                .map_err(|_| CodecError::malformed("invalid SLDPRT configuration ID"))?;
+            let mut properties = BTreeMap::new();
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(configuration.properties.len()),
+                OPERATION,
+            )?;
+            for (key, value) in &configuration.properties {
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(key.as_str().len()),
+                    OPERATION,
+                )?;
+                let key = cadmpeg_core::text::NonBlankString::new(copy(key.as_str())?)
+                    .ok_or_else(|| CodecError::malformed("blank SLDPRT configuration property"))?;
+                let value = copy(value)?;
+                ctx.insert_btree_map(&mut properties, key, value, OPERATION)?;
+            }
+            let material = configuration.material.as_deref().map(copy).transpose()?;
+            let native_ref = copy(&configuration.id)?;
+            let name = copy(&configuration.name)?;
+            ctx.reserve_vec(&mut projected, 1, OPERATION)?;
+            projected.push(DesignConfiguration {
+                id,
+                ordinal: configuration.ordinal,
+                active: false,
+                source_index: configuration.source_index,
+                name: Some(name),
+                material,
+                properties,
+                bodies: None,
+                parameter_values: BTreeMap::new(),
+                feature_states: BTreeMap::new(),
+                parameter_overrides: BTreeMap::new(),
+                native_ref: Some(native_ref),
+            });
+        }
+    }
+    Ok(projected)
 }
 
 /// Project every native feature dimension into the neutral parameter arena.
-pub(crate) fn project_definition(
+fn project_definition(
+    ctx: &DecodeContext<'_>,
     feature: &Feature,
-    by_source: &HashMap<&str, FeatureId>,
-    native_by_source: &HashMap<&str, &str>,
-    features_by_source: &HashMap<&str, &Feature>,
+    by_source: &HashMap<String, FeatureId>,
+    native_by_source: &HashMap<String, &str>,
+    features_by_source: &HashMap<FeatureSource, &Feature>,
     history_features: &[Feature],
-) -> FeatureDefinition {
+) -> Result<FeatureDefinition, CodecError> {
     if feature.input_class.as_deref() == Some("moBaseBody_c") {
-        return FeatureDefinition::StoredGeometry;
+        return Ok(FeatureDefinition::Operation(
+            FeatureOperation::StoredGeometry {},
+        ));
     }
     if feature.input_class.as_deref() == Some("moPlanarSurface_c") {
-        return FeatureDefinition::Unresolved {
+        return Ok(FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::DatumPlane,
-        };
+        }));
     }
     if let Some(role) = feature_tree_node_role(feature, history_features) {
-        return FeatureDefinition::TreeNode {
+        return Ok(FeatureDefinition::Operation(FeatureOperation::TreeNode {
             role,
-            children: Vec::new(),
-            active_child: None,
-        };
+            children: cadmpeg_ir::features::TreeChildren::default(),
+        }));
     }
     let class = classify(feature);
+    let projected_pattern = if class == Some(FeatureClass::Pattern) {
+        Some(project_pattern(ctx, feature, by_source, native_by_source)?)
+    } else {
+        None
+    };
     if class == Some(FeatureClass::CosmeticThread) {
-        return project_cosmetic_thread(feature);
+        return project_cosmetic_thread(ctx, feature);
     }
     if class == Some(FeatureClass::Sketch) {
-        return if feature.kind.eq_ignore_ascii_case("3DSketch")
-            || feature.input_class.as_deref() == Some("mo3DProfileFeature_c")
-        {
-            FeatureDefinition::SpatialSketch { sketch: None }
-        } else {
-            FeatureDefinition::Sketch {
-                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
-            }
-        };
+        return Ok(
+            if feature.kind.eq_ignore_ascii_case("3DSketch")
+                || feature.input_class.as_deref() == Some("mo3DProfileFeature_c")
+            {
+                FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch: None })
+            } else {
+                FeatureDefinition::Operation(FeatureOperation::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+                })
+            },
+        );
     }
     if class == Some(FeatureClass::SketchBlockDefinition) {
-        return FeatureDefinition::SketchBlockDefinition { sketch: None };
+        return Ok(FeatureDefinition::Operation(
+            FeatureOperation::SketchBlockDefinition { sketch: None },
+        ));
     }
     if class == Some(FeatureClass::SketchBlockInstance) {
-        return FeatureDefinition::SketchBlockInstance {
-            block: feature
-                .properties
-                .get("BlockDefinition")
-                .and_then(|source| by_source.get(source.as_str()).cloned()),
-            placement: sketch_block_placement(feature),
-        };
+        return Ok(FeatureDefinition::Operation(
+            FeatureOperation::SketchBlockInstance {
+                block: feature
+                    .properties
+                    .get("BlockDefinition")
+                    .and_then(|source| by_source.get(source.as_str()))
+                    .map(|id| copy_projected_feature_id(ctx, id))
+                    .transpose()?,
+                placement: sketch_block_placement(feature),
+            },
+        ));
     }
     if class == Some(FeatureClass::ReferencePlane) && is_offset_plane(feature) {
-        return project_offset_plane(feature, by_source)
-            .unwrap_or_else(|| native_definition(feature));
+        return project_offset_plane(ctx, feature, by_source)?
+            .map_or_else(|| native_definition(ctx, feature), Ok);
     }
     if let Some(plane) = principal_plane_in_history(feature, features_by_source, history_features) {
-        return FeatureDefinition::DatumPrincipalPlane { plane };
+        return Ok(FeatureDefinition::Operation(
+            FeatureOperation::DatumPrincipalPlane { plane },
+        ));
     }
     if class == Some(FeatureClass::ReferencePlane) {
-        return project_datum_plane(feature).unwrap_or_else(|| {
-            if feature.properties.contains_key("NativeRole") {
-                native_definition(feature)
-            } else {
-                FeatureDefinition::Unresolved {
-                    family: UnresolvedFamily::DatumPlane,
+        return project_datum_plane(feature).map_or_else(
+            || {
+                if feature.properties.contains_key("NativeRole") {
+                    native_definition(ctx, feature)
+                } else {
+                    Ok(FeatureDefinition::Operation(FeatureOperation::Unresolved {
+                        family: UnresolvedFamily::DatumPlane,
+                    }))
                 }
-            }
-        });
+            },
+            Ok,
+        );
     }
     if class == Some(FeatureClass::ReferenceAxis) {
-        return project_datum_axis(feature).unwrap_or_else(|| native_definition(feature));
+        return project_datum_axis(feature).map_or_else(|| native_definition(ctx, feature), Ok);
     }
     if class == Some(FeatureClass::ReferencePoint) {
-        return project_datum_point(feature).unwrap_or_else(|| native_definition(feature));
+        return project_datum_point(feature).map_or_else(|| native_definition(ctx, feature), Ok);
     }
     if class == Some(FeatureClass::CoordinateSystem) {
-        return project_datum_coordinate_system(feature).unwrap_or(FeatureDefinition::Unresolved {
-            family: UnresolvedFamily::DatumCoordinateSystem,
-        });
+        return Ok(project_datum_coordinate_system(feature).unwrap_or(
+            FeatureDefinition::Operation(FeatureOperation::Unresolved {
+                family: UnresolvedFamily::DatumCoordinateSystem,
+            }),
+        ));
     }
     if class == Some(FeatureClass::EquationCurve) {
-        return project_equation_curve(feature).unwrap_or_else(|| native_definition(feature));
+        return project_equation_curve(ctx, feature)?
+            .map_or_else(|| native_definition(ctx, feature), Ok);
     }
     if class == Some(FeatureClass::ProjectedCurve) {
-        return project_projected_curve(feature, native_by_source)
-            .unwrap_or_else(|| native_definition(feature));
+        return project_projected_curve(ctx, feature, native_by_source)?
+            .map_or_else(|| native_definition(ctx, feature), Ok);
     }
     if class == Some(FeatureClass::CompositeCurve) {
-        return project_composite_curve(feature, native_by_source)
-            .unwrap_or_else(|| native_definition(feature));
+        return project_composite_curve(ctx, feature, native_by_source)?
+            .map_or_else(|| native_definition(ctx, feature), Ok);
     }
     if class == Some(FeatureClass::Helix) {
-        return project_helix(feature)
-            .or_else(|| project_native_axis_helix(feature))
-            .unwrap_or_else(|| native_definition(feature));
+        return Ok(match project_helix(feature) {
+            Some(definition) => definition,
+            None => project_native_axis_helix(ctx, feature)?
+                .map_or_else(|| native_definition(ctx, feature), Ok)?,
+        });
     }
     if class == Some(FeatureClass::Wrap) {
-        return project_wrap(feature, native_by_source)
-            .unwrap_or_else(|| native_definition(feature));
+        return project_wrap(ctx, feature, native_by_source)?
+            .map_or_else(|| native_definition(ctx, feature), Ok);
     }
-    if class == Some(FeatureClass::Extrude) {
-        project_extrude(feature, native_by_source, features_by_source)
-            .unwrap_or_else(|| native_definition(feature))
+    Ok(if class == Some(FeatureClass::Extrude) {
+        project_extrude(ctx, feature, native_by_source, features_by_source)?
+            .map_or_else(|| native_definition(ctx, feature), Ok)?
     } else if class == Some(FeatureClass::Fillet) {
-        project_fillet(feature)
+        project_fillet(ctx, feature)?
     } else if class == Some(FeatureClass::Chamfer) {
-        project_chamfer(feature)
+        project_chamfer(ctx, feature)?
     } else if class == Some(FeatureClass::Shell) {
-        project_shell(feature)
+        project_shell(ctx, feature)?
     } else if class == Some(FeatureClass::Thicken) {
-        project_thicken(feature)
+        project_thicken(ctx, feature)?
     } else if class == Some(FeatureClass::OffsetSurface) {
-        project_offset_surface(feature)
+        project_offset_surface(ctx, feature)?
     } else if class == Some(FeatureClass::KnitSurface) {
-        project_knit_surface(feature)
+        project_knit_surface(ctx, feature)?
     } else if class == Some(FeatureClass::FilledSurface) {
-        project_filled_surface(feature)
+        project_filled_surface(ctx, feature)?
     } else if class == Some(FeatureClass::TrimSurface) {
-        project_trim_surface(feature, native_by_source)
+        project_trim_surface(ctx, feature, native_by_source)?
     } else if class == Some(FeatureClass::ExtendSurface) {
-        project_extend_surface(feature)
+        project_extend_surface(ctx, feature)?
     } else if class == Some(FeatureClass::RuledSurface) {
-        project_ruled_surface(feature).unwrap_or_else(|| native_definition(feature))
+        project_ruled_surface(ctx, feature)?.map_or_else(|| native_definition(ctx, feature), Ok)?
     } else if class == Some(FeatureClass::Draft) {
-        project_draft(feature)
+        project_draft(ctx, feature)?
     } else if class == Some(FeatureClass::SplitFace) {
-        project_split_face(feature).unwrap_or_else(|| native_definition(feature))
+        project_split_face(ctx, feature)?.map_or_else(|| native_definition(ctx, feature), Ok)?
     } else if class == Some(FeatureClass::Combine) {
-        project_combine(feature).unwrap_or_else(|| native_definition(feature))
+        project_combine(ctx, feature)?.map_or_else(|| native_definition(ctx, feature), Ok)?
     } else if class == Some(FeatureClass::CutWithSurface) {
-        project_cut_with_surface(feature)
+        project_cut_with_surface(ctx, feature)?
     } else if class == Some(FeatureClass::DeleteBody) {
-        project_delete_body(feature).unwrap_or_else(|| native_definition(feature))
+        project_delete_body(ctx, feature)?.map_or_else(|| native_definition(ctx, feature), Ok)?
     } else if class == Some(FeatureClass::DeleteFace) {
-        project_delete_face(feature).unwrap_or_else(|| native_definition(feature))
+        project_delete_face(ctx, feature)?.map_or_else(|| native_definition(ctx, feature), Ok)?
     } else if class == Some(FeatureClass::ReplaceFace) {
-        project_replace_face(feature).unwrap_or_else(|| native_definition(feature))
+        project_replace_face(ctx, feature)?.map_or_else(|| native_definition(ctx, feature), Ok)?
     } else if class == Some(FeatureClass::MoveFace) {
-        project_move_face(feature).unwrap_or_else(|| native_definition(feature))
+        project_move_face(ctx, feature)?.map_or_else(|| native_definition(ctx, feature), Ok)?
     } else if class == Some(FeatureClass::MoveBody) {
-        project_move_body(feature).unwrap_or_else(|| native_definition(feature))
+        project_move_body(ctx, feature)?.map_or_else(|| native_definition(ctx, feature), Ok)?
     } else if class == Some(FeatureClass::Dome) {
-        project_dome(feature)
+        project_dome(ctx, feature)?
     } else if class == Some(FeatureClass::Flex) {
         project_flex(feature)
     } else if class == Some(FeatureClass::Scale) {
-        project_scale(feature)
+        project_scale(ctx, feature)?
     } else if class == Some(FeatureClass::Hole) {
-        project_hole(feature, features_by_source, history_features)
+        project_hole(ctx, feature, features_by_source, history_features)?
+            .map_or_else(|| native_definition(ctx, feature), Ok)?
     } else if class == Some(FeatureClass::Revolve) {
-        project_revolve(feature, native_by_source)
+        project_revolve(ctx, feature, native_by_source)?
     } else if class == Some(FeatureClass::Pattern) {
-        project_pattern(feature, by_source, native_by_source)
+        projected_pattern.map_or_else(|| native_definition(ctx, feature), Ok)?
     } else if class == Some(FeatureClass::Sweep) {
-        project_sweep(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
+        project_sweep(ctx, feature, native_by_source)?
+            .map_or_else(|| native_definition(ctx, feature), Ok)?
     } else if class == Some(FeatureClass::Loft) {
-        project_loft(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
+        project_loft(ctx, feature, native_by_source)?
+            .map_or_else(|| native_definition(ctx, feature), Ok)?
     } else if class == Some(FeatureClass::Rib) {
-        project_rib(feature, native_by_source)
+        project_rib(ctx, feature, native_by_source)?
     } else {
-        native_definition(feature)
-    }
+        native_definition(ctx, feature)?
+    })
 }
 
-pub(crate) fn parameter_names(feature: &Feature) -> Vec<String> {
-    let mut names = feature
-        .content
-        .iter()
-        .filter_map(|content| match content {
-            FeatureContent::Dimension(name) if feature.parameters.contains_key(name) => {
-                Some(name.clone())
+fn parameter_names(ctx: &DecodeContext<'_>, feature: &Feature) -> Result<Vec<String>, CodecError> {
+    const OPERATION: &str = "collect SLDPRT parameter names";
+    let mut names = Vec::new();
+    for content in &feature.content {
+        ctx.charge_work(1, OPERATION)?;
+        if let FeatureContent::Dimension(name) = content {
+            if feature.parameters.contains_key(name.as_str()) {
+                let name = copy_projected_feature_text(ctx, name)?;
+                ctx.reserve_vec(&mut names, 1, OPERATION)?;
+                names.push(name);
             }
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    let missing = feature
-        .parameters
-        .keys()
-        .filter(|name| !names.contains(name))
-        .cloned()
-        .collect::<Vec<_>>();
-    names.extend(missing);
-    names
+        }
+    }
+    for name in feature.parameters.keys() {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(names.len()), OPERATION)?;
+        if !names.iter().any(|known| known == name.as_str()) {
+            let name = copy_projected_feature_text(ctx, name.as_str())?;
+            ctx.reserve_vec(&mut names, 1, OPERATION)?;
+            names.push(name);
+        }
+    }
+    Ok(names)
 }
 
-pub(crate) fn projected_parameter_names(feature: &Feature) -> Vec<String> {
+pub(super) fn projected_parameter_names(
+    ctx: &DecodeContext<'_>,
+    feature: &Feature,
+) -> Result<Vec<String>, CodecError> {
+    const OPERATION: &str = "deduplicate SLDPRT projected parameter names";
     let mut seen = HashSet::new();
-    parameter_names(feature)
-        .into_iter()
-        .filter(|name| seen.insert(name.clone()))
-        .collect()
+    let mut projected = Vec::new();
+    for name in parameter_names(ctx, feature)? {
+        ctx.charge_work(1, OPERATION)?;
+        if seen.contains(&name) {
+            continue;
+        }
+        let key = copy_projected_feature_text(ctx, &name)?;
+        ctx.insert_hash_set(&mut seen, key, OPERATION)?;
+        ctx.reserve_vec(&mut projected, 1, OPERATION)?;
+        projected.push(name);
+    }
+    Ok(projected)
 }
 
-pub(crate) fn neutral_parameter_id(feature: &Feature, ordinal: usize) -> ParameterId {
+pub(super) fn neutral_parameter_id(
+    ctx: &DecodeContext<'_>,
+    feature: &Feature,
+    ordinal: usize,
+) -> Result<ParameterId, CodecError> {
+    charge_projected_text_work(ctx, &feature.id, "retain SLDPRT projected parameter ID")?;
     let key = feature
         .id
         .strip_prefix("sldprt:history:feature#")
         .unwrap_or(&feature.id);
-    ParameterId::mint(format!("sldprt:model:parameter#{key}:{ordinal}")).expect("identity grammar")
+    let id = ctx.format_retained(
+        format_args!("sldprt:model:parameter#{}:{ordinal}", EncodedNativeKey(key)),
+        "retain SLDPRT projected parameter ID",
+    )?;
+    ParameterId::mint(id).map_err(CodecError::malformed)
 }
 
-pub(crate) fn native_definition(feature: &Feature) -> FeatureDefinition {
-    FeatureDefinition::Native {
-        kind: feature.kind.clone().into(),
-        parameters: feature.parameters.clone(),
-    }
-}
-
-pub(crate) fn neutral_feature_id(native_id: &str) -> FeatureId {
-    let key = native_id
-        .strip_prefix("sldprt:history:feature#")
-        .unwrap_or(native_id);
-    FeatureId::mint(format!("sldprt:model:feature#{key}")).expect("identity grammar")
+fn native_definition(
+    ctx: &DecodeContext<'_>,
+    feature: &Feature,
+) -> Result<FeatureDefinition, CodecError> {
+    charge_projected_text_work(ctx, &feature.kind, "retain SLDPRT native definition kind")?;
+    Ok(FeatureDefinition::Operation(FeatureOperation::Native {
+        kind: ctx
+            .format_retained(
+                format_args!("{}", feature.kind),
+                "retain SLDPRT native definition kind",
+            )?
+            .into(),
+        parameters: copy_projected_feature_properties(
+            ctx,
+            &feature.parameters,
+            "collect SLDPRT native definition parameters",
+        )?,
+    }))
 }

@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use crate::native::features::feature_sketch_fixed_points;
+use crate::native::features::feature_sketch_points;
 use crate::native::features::payload_name::FeaturePayloadName;
+use crate::native::features::FeaturePayloadScalar;
+use crate::native::features::FeatureSketchPayloadFixedPair;
+use crate::native::features::FeatureSketchPayloadNamedRecord;
 use crate::om::scalar_pair::{PairPosition, SketchPairForm};
 
 #[test]
@@ -48,7 +52,16 @@ fn sketch_fixed_points_require_one_owned_finite_point_pair() {
         pair("pair-1", SketchPairForm::Legacy),
         pair("pair-2", SketchPairForm::Short),
     ];
-    assert!(feature_sketch_fixed_points(&[record], std::slice::from_ref(&name), &pairs).is_empty());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| feature_sketch_fixed_points(
+            ctx,
+            &[record],
+            std::slice::from_ref(&name),
+            &pairs
+        ))
+        .unwrap()
+        .is_empty()
+    );
 
     let mut foreign = pairs[0].clone();
     foreign.id = "foreign".to_string();
@@ -64,7 +77,16 @@ fn sketch_fixed_points_require_one_owned_finite_point_pair() {
         payload_start_offset: 0,
         payload_end_offset: 100,
     };
-    assert!(feature_sketch_fixed_points(&[record], &[name], &[foreign]).is_empty());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| feature_sketch_fixed_points(
+            ctx,
+            &[record],
+            &[name],
+            &[foreign]
+        ))
+        .unwrap()
+        .is_empty()
+    );
 }
 
 #[test]
@@ -114,11 +136,13 @@ fn sketch_points_require_owned_finite_scalar_fields() {
     };
     let scalars = [scalar("scalar-1", 1.0), scalar("scalar-2", 2.0)];
     assert_eq!(
-        feature_sketch_points(
+        crate::test_support::with_decode_context(|ctx| feature_sketch_points(
+            ctx,
             std::slice::from_ref(&record),
             std::slice::from_ref(&name),
             &scalars
-        )
+        ))
+        .unwrap()
         .len(),
         1
     );
@@ -130,10 +154,14 @@ fn sketch_points_require_owned_finite_scalar_fields() {
         scalar_fields: vec![foreign.id.clone(), scalars[1].id.clone()],
         ..record.clone()
     };
-    assert!(feature_sketch_points(
-        &[foreign_record],
-        std::slice::from_ref(&name),
-        &[foreign, scalars[1].clone()]
-    )
-    .is_empty());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| feature_sketch_points(
+            ctx,
+            &[foreign_record],
+            std::slice::from_ref(&name),
+            &[foreign, scalars[1].clone()]
+        ))
+        .unwrap()
+        .is_empty()
+    );
 }

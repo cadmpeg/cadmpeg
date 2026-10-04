@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{u64_from_index, View};
 
 use super::LEN_TO_MM;
 
@@ -18,24 +18,24 @@ const EPS_BLEND_PARSE_BLEND_E12: f64 = 1.0e-12;
 
 /// One exact constant-radius blend construction.
 #[derive(Debug, Clone)]
-pub(crate) struct BlendCarrier {
+pub(super) struct BlendCarrier {
     /// Stream-local surface carrier attribute.
-    pub attr: u16,
+    attr: u16,
     /// Tag-byte offset in the stream.
-    pub offset: usize,
+    pub(super) offset: usize,
     /// Ordered support references.
-    pub supports: [BlendSupportRef; 2],
+    pub(super) supports: [BlendSupportRef; 2],
     /// Stored center/spine curve attribute.
-    pub spine: u16,
+    pub(super) spine: u16,
     /// Signed rolling-ball radius in millimetres.
-    pub signed_radius: f64,
+    pub(super) signed_radius: f64,
     /// Whether each support uses the opposite natural-normal side.
-    pub reversed: [bool; 2],
+    pub(super) reversed: [bool; 2],
 }
 
 /// Reference used by one rolling-ball support side.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum BlendSupportRef {
+pub(super) enum BlendSupportRef {
     /// Direct surface-carrier attribute.
     Surface(u16),
     /// Zero-offset support-pair attribute; topology selects one member.
@@ -44,11 +44,11 @@ pub(crate) enum BlendSupportRef {
 
 /// Two candidate surface carriers associated with one intersection curve.
 #[derive(Debug, Clone)]
-pub(crate) struct SupportPairCarrier {
+pub(super) struct SupportPairCarrier {
     /// Ordered candidate surface-carrier attributes.
-    pub supports: [u16; 2],
+    pub(super) supports: [u16; 2],
     /// Intersection-curve attribute.
-    pub intersection: u16,
+    pub(super) intersection: u16,
 }
 
 #[derive(PartialEq, Eq)]
@@ -147,12 +147,25 @@ fn parse_blend(bytes: &[u8], offset: usize) -> Option<BlendCarrier> {
     })
 }
 
+pub(super) struct BlendCarriers {
+    pub blends: HashMap<u16, BlendCarrier>,
+    pub pairs: HashMap<u16, SupportPairCarrier>,
+}
+
 /// Scan rolling-ball carriers and their zero-offset support-pair records.
-pub(crate) fn scan(bytes: &[u8]) -> (HashMap<u16, BlendCarrier>, HashMap<u16, SupportPairCarrier>) {
+pub(super) fn scan(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<BlendCarriers, cadmpeg_core::CodecError> {
+    ctx.charge_work(u64_from_index(bytes.len()), "scan SLDPRT blend carriers")?;
     let mut blends = HashMap::new();
     let mut pairs = HashMap::new();
-    for offset in 0..bytes.len().saturating_sub(57) {
+    let Some(last_offset) = bytes.len().checked_sub(57) else {
+        return Ok(BlendCarriers { blends, pairs });
+    };
+    for offset in 0..last_offset {
         if let Some(carrier) = parse_blend(bytes, offset) {
+            ctx.admit_hash_map_entry(&mut blends, &carrier.attr, "index SLDPRT blend carriers")?;
             blends.entry(carrier.attr).or_insert(carrier);
         }
         if let Some(raw) = parse_raw(bytes, offset) {
@@ -160,6 +173,11 @@ pub(crate) fn scan(bytes: &[u8]) -> (HashMap<u16, BlendCarrier>, HashMap<u16, Su
                 && raw.values[0].abs() <= f64::EPSILON
                 && raw.values[1].abs() <= f64::EPSILON
             {
+                ctx.admit_hash_map_entry(
+                    &mut pairs,
+                    &raw.attr,
+                    "index SLDPRT blend support pairs",
+                )?;
                 pairs.entry(raw.attr).or_insert(SupportPairCarrier {
                     supports: [raw.references[0], raw.references[1]],
                     intersection: raw.references[2],
@@ -167,12 +185,28 @@ pub(crate) fn scan(bytes: &[u8]) -> (HashMap<u16, BlendCarrier>, HashMap<u16, Su
             }
         }
     }
-    (blends, pairs)
+    Ok(BlendCarriers { blends, pairs })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{BlendCarrier, BlendSupportRef, SupportPairCarrier};
+    use std::collections::HashMap;
+
+    fn scan_with_service_context(
+        bytes: &[u8],
+    ) -> (HashMap<u16, BlendCarrier>, HashMap<u16, SupportPairCarrier>) {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            bytes,
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .expect("test carrier bytes fit service policy");
+        let super::BlendCarriers { blends, pairs } =
+            super::scan(&ctx, bytes).expect("test carriers fit service policy");
+        (blends, pairs)
+    }
 
     #[test]
     fn parses_constant_radius_support_and_spine_payload() {
@@ -192,7 +226,10 @@ mod tests {
                 bytes.extend_from_slice(&value.to_be_bytes());
             }
 
-            let carrier = scan(&bytes).0.remove(&9).expect("blend carrier");
+            let carrier = scan_with_service_context(&bytes)
+                .0
+                .remove(&9)
+                .expect("blend carrier");
             assert_eq!(carrier.offset, 0);
             assert_eq!(
                 carrier.supports,
@@ -222,7 +259,7 @@ mod tests {
         for value in [-0.0005f64, -0.0006, 1.0, 1.0] {
             bytes.extend_from_slice(&value.to_be_bytes());
         }
-        assert!(scan(&bytes).0.is_empty());
+        assert!(scan_with_service_context(&bytes).0.is_empty());
     }
 
     #[test]
@@ -240,7 +277,11 @@ mod tests {
             bytes.extend_from_slice(&value.to_be_bytes());
         }
         assert_eq!(
-            scan(&bytes).0.get(&9).expect("blend").reversed,
+            scan_with_service_context(&bytes)
+                .0
+                .get(&9)
+                .expect("blend")
+                .reversed,
             [false, true]
         );
     }
@@ -260,7 +301,7 @@ mod tests {
             bytes.extend_from_slice(&value.to_be_bytes());
         }
 
-        let (_, pairs) = scan(&bytes);
+        let (_, pairs) = scan_with_service_context(&bytes);
         let pair = pairs.get(&9).expect("support pair");
         assert_eq!(pair.supports, [11, 12]);
         assert_eq!(pair.intersection, 13);

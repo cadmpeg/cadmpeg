@@ -1,15 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(
-    clippy::cloned_ref_to_slice_refs,
-    clippy::default_trait_access,
-    clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
-)]
-use super::prelude::*;
+
+use cadmpeg_core::decode::u64_from_index;
+
+use crate::design::decode::parameters::parse_design_parameter_record;
+use crate::design::decode::parameters::parse_parameter_owner;
+use crate::design::decode::scopes::direct_face::exact_direct_face_operation;
+use crate::design::decode::scopes::fixed_parameters::exact_fixed_extrude_parameters;
+use crate::design::decode::scopes::work_geometry::{
+    exact_work_axis_construction, exact_work_plane_frame,
+};
+use crate::design::test_support::{parameter_owner_frame, parameter_record};
 use crate::layout::shell_class_369_261_scope_frame as shell_369_261;
 use crate::layout::work_plane_legacy_337_matrix_frame as work_plane_337;
 use crate::layout::work_plane_legacy_class_322_332_matrix_frame as work_plane_class_322_332;
+use crate::records::feature::direct_face::DesignDirectFaceOperation;
+use crate::records::feature::extrude::{
+    DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeStart,
+};
+use crate::records::feature::fixed_parameters::{
+    DesignFixedExtrudeDistance, DesignFixedExtrudeScalar,
+};
+use crate::records::feature::scope::DesignParameterScope;
+use crate::test_support::lp_utf16;
+use cadmpeg_ir::features::FeatureOperation;
+use cadmpeg_ir::features::{Feature, FeatureDefinition};
 
 #[test]
 fn class_369_shell_scope_uses_ordered_scalar_and_body_group() {
@@ -62,29 +76,49 @@ fn class_369_shell_scope_uses_ordered_scalar_and_body_group() {
 
     let mut scope = DesignParameterScope::empty(
         "f3d:test:shell-369#42",
-        crate::records::feature::DesignFeatureKind::Shell,
+        crate::records::feature::scope::DesignFeatureKind::Shell,
         42,
     );
-    scope.byte_offset = 0;
-    scope.class_tag = crate::records::DesignClassTag::try_from("369".to_owned()).unwrap();
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("261".to_owned()).unwrap();
-    scope.frame_length = shell_369_261::LEN as u64;
-    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![9_000, 200, 201]);
-    let records = IndexedRecordOffsets::build(&bytes);
+    scope
+        .try_edit(|draft| {
+            draft.byte_offset = 0;
+            draft.reference_count_offset = draft.byte_offset + 9;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("369".to_owned()).unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("261".to_owned()).unwrap();
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = u64_from_index(shell_369_261::LEN);
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![9_000, 200, 201]);
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     assert!(matches!(
         exact_direct_face_operation(&bytes, &records, &scope),
-        Some(DesignDirectFaceOperation::Shell(crate::records::feature::DesignShellOperation {
-            thickness: 0.25,
+        Some(DesignDirectFaceOperation::Shell(crate::records::feature::direct_face::DesignShellOperation {
+            thickness,
             thickness_record_index: 9_000,
             outward: false,
             thickness_offset,
             outward_offset: 21,
-        })) if thickness_offset == (scalar_start + 40) as u64
+        })) if thickness.get() == 0.25 && thickness_offset == u64_from_index(scalar_start + 40)
     ));
 
     let mut wrong_pair = scope.clone();
     wrong_pair.paired_class_tag =
-        crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
+        crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap();
     assert!(exact_direct_face_operation(&bytes, &records, &wrong_pair).is_none());
 
     let mut invalid_outward = bytes;
@@ -114,16 +148,28 @@ fn class_322_261_work_plane_332_byte_frame_decodes_its_matrix_only_for_that_pair
 
     let mut scope = DesignParameterScope::empty(
         "f3d:test:scope#322",
-        crate::records::feature::DesignFeatureKind::WorkPlane,
+        crate::records::feature::scope::DesignFeatureKind::WorkPlane,
         1,
     );
-    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![85]);
-    let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
-        .expect("class-322/261 WorkPlane frame");
-    assert_eq!(decoded.transform, transform);
+    scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![85]);
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let decoded = exact_work_plane_frame(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &scope,
+    )
+    .expect("class-322/261 WorkPlane frame");
+    assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(
         decoded.transform_offset,
-        work_plane_class_322_332::MATRIX as u64
+        u64_from_index(work_plane_class_322_332::MATRIX)
     );
     assert_eq!(decoded.reference, None);
 
@@ -133,7 +179,7 @@ fn class_322_261_work_plane_332_byte_frame_decodes_its_matrix_only_for_that_pair
     assert_eq!(
         exact_work_plane_frame(
             &wrong_pair,
-            &IndexedRecordOffsets::build(&wrong_pair),
+            &crate::design::test_support::indexed_record_offsets_for_test(&wrong_pair),
             &scope,
         ),
         None
@@ -164,18 +210,33 @@ fn legacy_work_plane_class_350_frame_decodes_its_matrix() {
 
     let mut scope = DesignParameterScope::empty(
         "f3d:test:scope#1",
-        crate::records::feature::DesignFeatureKind::WorkPlane,
+        crate::records::feature::scope::DesignFeatureKind::WorkPlane,
         1,
     );
-    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![76]);
-    let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
-        .expect("class-350 WorkPlane frame");
+    scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![76]);
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let decoded = exact_work_plane_frame(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &scope,
+    )
+    .expect("class-350 WorkPlane frame");
     for (actual_row, expected_row) in decoded.transform.iter().zip(transform.iter()) {
         for (actual, expected) in actual_row.iter().zip(expected_row.iter()) {
             assert!((actual - expected).abs() < EPS_WORK_PLANE_CLASS_350_TEST_VALUE);
         }
     }
-    assert_eq!(decoded.transform_offset, work_plane_337::MATRIX as u64);
+    assert_eq!(
+        decoded.transform_offset,
+        u64_from_index(work_plane_337::MATRIX)
+    );
     assert_eq!(decoded.reference, None);
 }
 
@@ -201,13 +262,25 @@ fn legacy_work_plane_class_400_frame_decodes_its_matrix() {
 
     let mut scope = DesignParameterScope::empty(
         "f3d:test:scope#1",
-        crate::records::feature::DesignFeatureKind::WorkPlane,
+        crate::records::feature::scope::DesignFeatureKind::WorkPlane,
         1,
     );
-    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![72]);
-    let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
-        .expect("class-400 WorkPlane frame");
-    assert_eq!(decoded.transform, transform);
+    scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![72]);
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let decoded = exact_work_plane_frame(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &scope,
+    )
+    .expect("class-400 WorkPlane frame");
+    assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(decoded.transform_offset, 49);
     assert_eq!(decoded.reference, None);
 }
@@ -232,8 +305,9 @@ fn legacy_move_transform_classes_use_the_shared_253_byte_envelope() {
         frame[4..7].copy_from_slice(class_tag.as_bytes());
         frame[7..11].copy_from_slice(&record_index.to_le_bytes());
         frame[43..47].copy_from_slice(&form.to_le_bytes());
-        let mut transform = identity_matrix();
-        transform[0][3] = f64::from(ordinal as u32);
+        let mut transform =
+            crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows();
+        transform[0][3] = f64::from(u32::try_from(ordinal).expect("fixture value fits u32"));
         for (cell, value) in transform.into_iter().flatten().enumerate() {
             let at = 48 + cell * 8;
             frame[at..at + 8].copy_from_slice(&value.to_le_bytes());
@@ -249,30 +323,39 @@ fn legacy_move_transform_classes_use_the_shared_253_byte_envelope() {
 
         let mut scope = DesignParameterScope::empty(
             &format!("f3d:test:legacy-move#{record_index}"),
-            crate::records::feature::DesignFeatureKind::Move,
+            crate::records::feature::scope::DesignFeatureKind::Move,
             1_000 + u32::try_from(ordinal).expect("small test ordinal"),
         );
-        scope.reference_members = crate::records::ReferenceRun::unlocated(vec![record_index]);
-        let decoded = crate::design::decode::scopes::exact_move_operation(
+        scope
+            .try_edit(|draft| {
+                draft.reference_members =
+                    crate::records::identity::ReferenceRun::unlocated(vec![record_index]);
+                draft.layout_fixture_references();
+                draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+                draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &scope,
         )
         .expect("legacy Move transform frame");
 
-        assert_eq!(decoded.transform, transform);
+        assert_eq!(decoded.transform, transform.try_into().unwrap());
         assert_eq!(decoded.transform_record_index, record_index);
         assert_eq!(u32::from(decoded.form), form);
-        assert_eq!(decoded.form_offset, (frame_at + 43) as u64);
-        assert_eq!(decoded.transform_offset, (frame_at + 48) as u64);
+        assert_eq!(decoded.form_offset, u64_from_index(frame_at + 43));
+        assert_eq!(decoded.transform_offset, u64_from_index(frame_at + 48));
 
         if class_tag == "456" {
             let paired_class_at = frame_at + 253 + 4;
             bytes[paired_class_at..paired_class_at + 3].copy_from_slice(b"262");
             assert!(
-                crate::design::decode::scopes::exact_move_operation(
+                crate::design::decode::scopes::direct_face::exact_move_operation(
                     &bytes,
-                    &IndexedRecordOffsets::build(&bytes),
+                    &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
                     &scope,
                 )
                 .is_none(),
@@ -340,52 +423,67 @@ fn direct_work_axis_carriers_project_both_admitted_generations() {
         bytes.extend_from_slice(&support_record_index.to_le_bytes());
 
         let mut scope = DesignParameterScope::empty(
-            "f3d:test:work-axis#1",
-            crate::records::feature::DesignFeatureKind::WorkAxis,
+            "f3d:test/BulkStream.dat:work-axis#1",
+            crate::records::feature::scope::DesignFeatureKind::WorkAxis,
             1,
         );
-        scope.class_tag = crate::records::DesignClassTag::try_from(scope_class.to_owned()).unwrap();
+        scope.class_tag =
+            crate::records::references::DesignClassTag::try_from(scope_class.to_owned()).unwrap();
         scope.paired_class_tag =
-            crate::records::DesignClassTag::try_from(scope_paired_class.to_owned()).unwrap();
-        scope.frame_length = scope_length as u64;
-        scope.reference_members = crate::records::ReferenceRun::unlocated(vec![
-            carrier_record_index,
-            support_record_index,
-        ]);
-        let construction =
-            exact_work_axis_construction(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
-                .expect("direct WorkAxis carrier");
+            crate::records::references::DesignClassTag::try_from(scope_paired_class.to_owned())
+                .unwrap();
+        scope
+            .try_edit(|draft| {
+                draft.frame_length = u64_from_index(scope_length);
+                draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
+                    carrier_record_index,
+                    support_record_index,
+                ]);
+                draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+                draft.layout_fixture_references();
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        let construction = exact_work_axis_construction(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &scope,
+        )
+        .expect("direct WorkAxis carrier");
         assert_eq!(construction.origin_offset, 25);
         assert_eq!(construction.displacement_offset, 49);
         assert!(matches!(
             construction.source,
             Some(
-                crate::records::feature::DesignWorkAxisSource::DirectCarrier {
+                crate::records::feature::work_geometry::DesignWorkAxisSource::DirectCarrier {
                     carrier_record_index: 100,
                     support_record_index: 200,
                 }
             )
         ));
-        if let crate::records::feature::DesignScopePayload::WorkAxis(slot) = &mut scope.payload {
+        if let crate::records::feature::scope::DesignScopePayloadMut::WorkAxis(slot) =
+            scope.payload_mut()
+        {
             *slot = Some(construction);
         }
-        let (features, _) = project_parameter_design(
-            &[],
-            &[],
-            std::slice::from_ref(&scope),
-            &[],
-            &[],
-            &[],
-            &[],
-            &[],
-        );
+        let (features, _) = crate::test_support::with_decode_context(|ctx| {
+            let scopes = std::slice::from_ref(&scope);
+            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+            crate::design::feature_project::project_parameter_design_with_edge_identities(
+                ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    scopes,
+                    timelines: &timelines,
+                    ..Default::default()
+                },
+            )
+            .expect("test projection has a synthetic exact timeline")
+        });
         assert!(matches!(
-            features.as_slice(),
-            [Feature {
-                definition: FeatureDefinition::DatumAxis { .. },
+            features.as_slice(), [Feature {
+                evaluation,
                 ..
-            }]
-        ));
+            }] if matches!((evaluation.definition(),), (FeatureDefinition::Operation(FeatureOperation::DatumAxis { .. }),))));
     }
 }
 
@@ -412,7 +510,7 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
     let taper_start = append_scalar(&mut bytes, 80, 0, -0.013_962_634_015_954_637);
     let along_start = append_scalar(&mut bytes, 82, 1, -2.5);
 
-    let mut taper_parameter = parse_design_parameter(&parameter_record(
+    let mut taper_parameter = parse_design_parameter_record(&parameter_record(
         Some(80),
         "taper",
         "TaperAngle",
@@ -423,7 +521,7 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
     .expect("taper parameter");
     taper_parameter.id = "generated:parameter#81".into();
     taper_parameter.record_index = 81;
-    let mut along_parameter = parse_design_parameter(&parameter_record(
+    let mut along_parameter = parse_design_parameter_record(&parameter_record(
         Some(82),
         "along",
         "AlongDistance",
@@ -435,27 +533,51 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
     along_parameter.id = "generated:parameter#83".into();
     along_parameter.record_index = 83;
 
-    let mut taper_owner = parse_parameter_owner(&parameter_owner_frame()).expect("taper owner");
-    taper_owner.id = "generated:owner#80".into();
-    taper_owner.record_index = 80;
-    taper_owner.scope_record_index = scope_record_index;
-    taper_owner.local_ordinal = 0;
-    taper_owner.parameter_record_index = 81;
+    let mut taper_owner = parse_parameter_owner(&parameter_owner_frame())
+        .expect("taper owner")
+        .into_record("Design/BulkStream.dat", 0)
+        .unwrap();
+    {
+        let mut wire =
+            crate::records::parameters::DesignParameterOwnerWire::from(taper_owner.clone());
+        wire.id = "generated:owner#80".into();
+        wire.record_index = 80;
+        wire.scope_record_index = scope_record_index;
+        wire.local_ordinal = 0;
+        wire.parameter_record_index = 81;
+        wire.companion_record_index = 82;
+        taper_owner = crate::records::parameters::DesignParameterOwner::try_from(wire).unwrap();
+    }
     let mut along_owner = taper_owner.clone();
-    along_owner.id = "generated:owner#82".into();
-    along_owner.record_index = 82;
-    along_owner.local_ordinal = 1;
-    along_owner.parameter_record_index = 83;
+    {
+        let mut wire =
+            crate::records::parameters::DesignParameterOwnerWire::from(along_owner.clone());
+        wire.id = "generated:owner#82".into();
+        wire.record_index = 82;
+        wire.local_ordinal = 1;
+        wire.parameter_record_index = 83;
+        wire.companion_record_index = 84;
+        along_owner = crate::records::parameters::DesignParameterOwner::try_from(wire).unwrap();
+    }
 
     let mut scope = DesignParameterScope::empty(
         "generated:scope#12",
-        crate::records::feature::DesignFeatureKind::Extrude,
+        crate::records::feature::scope::DesignFeatureKind::Extrude,
         12,
     );
-    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![80, 82]);
-    if let crate::records::feature::DesignScopePayload::Extrude(slot)
-    | crate::records::feature::DesignScopePayload::Extrusion(slot)
-    | crate::records::feature::DesignScopePayload::Extrusao(slot) = &mut scope.payload
+    scope
+        .try_edit(|draft| {
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![80, 82]);
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot)
+    | crate::records::feature::scope::DesignScopePayloadMut::Extrusion(slot)
+    | crate::records::feature::scope::DesignScopePayloadMut::Extrusao(slot) = scope.payload_mut()
     {
         slot.get_or_insert_with(Default::default).extrude_prologue =
             Some(DesignExtrudePrologue::ReferenceAware {
@@ -479,7 +601,7 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
 
     let fixed = exact_fixed_extrude_parameters(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &[taper_parameter, along_parameter],
         &[taper_owner, along_owner],
@@ -488,17 +610,17 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
     assert!(matches!(
         fixed.along_distance,
         Some(DesignFixedExtrudeDistance::FixedScalar(DesignFixedExtrudeScalar {
-            value: -2.5,
+            value,
             record_index: 82,
             value_offset,
-        })) if value_offset == (along_start + 40) as u64
+        })) if value.get() == -2.5 && value_offset == u64_from_index(along_start + 40)
     ));
     assert!(matches!(
         fixed.taper_angle,
         Some(DesignFixedExtrudeScalar {
-            value: -0.013_962_634_015_954_637,
+            value,
             record_index: 80,
             value_offset,
-        }) if value_offset == (taper_start + 40) as u64
+        }) if value.get() == -0.013_962_634_015_954_637 && value_offset == u64_from_index(taper_start + 40)
     ));
 }

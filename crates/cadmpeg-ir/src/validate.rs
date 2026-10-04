@@ -8,49 +8,48 @@
 //! positions). It does not evaluate interior surface membership or solid
 //! closure.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
-
-use crate::document::{CadIr, CensusKey};
-use crate::features::Feature;
-use crate::geometry::{
-    CurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
+use crate::document::CadIr;
+use crate::index::identities::BorrowedIdentities;
+use crate::report::{
+    check::{Check, Finding, ValidationReport},
+    loss::LossNote,
+    Severity,
 };
-use crate::math::Vector3;
-use crate::report::{Check, Finding, LossNote, Severity, ValidationReport};
 use crate::source_fidelity::SourceFidelity;
-use crate::topology::Coedge;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::CodecError;
 
-/// Frozen accept/reject IR builders for Phase 5 gate swaps.
-pub mod admissibility_freeze;
 /// Narrow admissibility predicates as documented `Check` subsets.
 pub mod admit;
 mod annotations_native;
-mod assets;
 mod carriers_parameterization;
 mod drawings;
+pub(crate) mod evaluation_cycles;
 mod geometry_consistency;
 mod geometry_payloads;
 mod identity_order;
+mod orders;
 mod pmi;
 mod presentation;
 mod products;
 mod referential_integrity;
+mod scans;
+mod scratch;
 mod semantic_annotations;
 mod sketches;
 mod spreadsheets;
-mod subd;
 mod topology;
 
 use annotations_native::{check_annotations, check_native_links};
-use assets::check_assets;
 use carriers_parameterization::{check_carrier_reachability, check_parameter_domains};
 use drawings::check_drawings;
+use evaluation_cycles::check_evaluation_cycles;
 use geometry_consistency::{
     check_edge_endpoint_consistency, check_pcurve_surface_consistency,
     check_procedural_support_consistency,
 };
-use geometry_payloads::{check_bounds, check_tessellations};
-use identity_order::{check_identity_and_order, collect_native_ids};
+use geometry_payloads::check_tessellations;
+use identity_order::check_identity_and_order;
 use pmi::check_pmi;
 use presentation::check_presentation;
 use products::check_products;
@@ -58,170 +57,456 @@ use referential_integrity::check_typed_references;
 use semantic_annotations::check_semantic_annotations;
 use sketches::check_sketches;
 use spreadsheets::check_spreadsheets;
-use subd::{check_procedural_surfaces, check_source_associations, check_subds};
-use topology::{
-    check_coedge_pairing, check_references, check_shell_connectivity, check_tolerances,
-    check_wire_topology,
-};
+use topology::graphs::{check_coedge_pairing, check_shell_connectivity, check_wire_topology};
+use topology::{check_references, check_tolerances, check_topology_tolerances};
 
-/// A radius/length that is not a finite positive number is invalid geometry.
-fn nonpositive(x: f64) -> bool {
-    !(x.is_finite() && x > 0.0)
+/// The parameter interval a pcurve carrier is defined on, when the carrier
+/// states one.
+///
+/// A nesting carrier states its own interval where it has one and otherwise
+/// reports its basis's: a trim is the interval the trimmed carrier exists on,
+/// and a placement and an offset both keep their basis's parameterization. An
+/// analytic carrier has no bounded domain. The match is exhaustive, so a new
+/// pcurve variant states its answer here rather than inheriting one.
+///
+/// Both the carrier-parameterization pass and the geometric-consistency pass
+/// ask this question of the same carrier, so they ask it of one function.
+///
+/// Each carrier visit enters the caller session and admits its work.
+fn pcurve_parameter_domain(
+    ctx: &DecodeContext<'_>,
+    geometry: &crate::geometry::pcurve::PcurveGeometry,
+) -> Result<Option<crate::topology::IncreasingParameterInterval>, cadmpeg_core::decode::ResourceLimit>
+{
+    use crate::geometry::pcurve::PcurveGeometry;
+    let _depth = ctx.enter_nested_limit("pcurve parameter domain nesting")?;
+    ctx.charge_work_limit(1, "pcurve parameter domain visit")?;
+    Ok(match geometry {
+        PcurveGeometry::Nurbs { nurbs } => crate::eval::nurbs_pcurve_parameter_domain(
+            nurbs.degree(),
+            nurbs.knots(),
+            nurbs.pole_rows().count(),
+        ),
+        PcurveGeometry::PolarNurbs { nurbs } => crate::eval::nurbs_pcurve_parameter_domain(
+            nurbs.degree(),
+            nurbs.knots(),
+            nurbs.pole_rows().count(),
+        ),
+        PcurveGeometry::Trimmed(trimmed_pcurve) => {
+            let [start, end] = trimmed_pcurve.parameter_range().finite_endpoints();
+            match crate::topology::IncreasingParameterInterval::between(start, end) {
+                Some(domain) => Some(domain),
+                None => pcurve_parameter_domain(ctx, trimmed_pcurve.basis())?,
+            }
+        }
+        PcurveGeometry::Offset(offset_pcurve) => {
+            pcurve_parameter_domain(ctx, offset_pcurve.basis())?
+        }
+        PcurveGeometry::Transformed(placed) => pcurve_parameter_domain(ctx, placed.basis())?,
+        PcurveGeometry::Line(_)
+        | PcurveGeometry::Circle(_)
+        | PcurveGeometry::Ellipse(_)
+        | PcurveGeometry::Harmonic(_)
+        | PcurveGeometry::Parabola(_)
+        | PcurveGeometry::Hyperbola(_)
+        | PcurveGeometry::Hyperbolic(_)
+        | PcurveGeometry::PolarHarmonic(_)
+        | PcurveGeometry::SphericalGreatCircle(_) => None,
+    })
 }
 
-/// Count the records represented by the IR arenas without running validation.
-///
-/// Prefer [`CadIr::census`](crate::CadIr::census); this alias remains for
-/// existing `cadmpeg_ir::entity_census` call sites.
-pub fn entity_census(ir: &CadIr) -> BTreeMap<CensusKey, usize> {
-    crate::document::entity_census(ir)
+fn record_finding(
+    ctx: &DecodeContext<'_>,
+    findings: &mut Vec<Finding>,
+    check: Check,
+    severity: Severity,
+    entity: Option<&str>,
+    message: std::fmt::Arguments<'_>,
+) -> Result<(), CodecError> {
+    ctx.reserve_vec(findings, 1, "validation finding storage")?;
+    let message = ctx.format_retained(message, "validation finding message")?;
+    let entity = entity
+        .map(|id| ctx.copy_retained_text(id, "validation finding identity"))
+        .transpose()?;
+    findings.push(Finding {
+        check,
+        severity,
+        message,
+        entity,
+    });
+    Ok(())
 }
 
 /// Validate `ir` and copy `losses` into the returned report unchanged.
-fn validate_model(ir: &CadIr, losses: Vec<LossNote>) -> ValidationReport {
-    let index = crate::index::ModelIndex::new(ir);
-    validate_model_with_index(ir, losses, &index)
+fn validate_model(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    losses: Vec<LossNote>,
+) -> Result<ValidationReport, CodecError> {
+    let index = crate::index::ModelIndex::build(ir, ctx)?;
+    validate_model_with_index(ctx, ir, losses, &index)
 }
 
 fn validate_model_with_index(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     losses: Vec<LossNote>,
     ids: &crate::index::ModelIndex<'_>,
-) -> ValidationReport {
+) -> Result<ValidationReport, CodecError> {
+    let _depth = ctx.enter_nested("IR neutral validation")?;
+    ctx.charge_work(1, "IR neutral validation")?;
     let mut findings = Vec::new();
 
-    check_assets(ir, &mut findings);
     // The identity walk enumerates every entity id in the product document;
     // native links resolve against that set.
-    check_identity_and_order(ir, &mut findings);
-    check_tolerances(ir, &mut findings);
-    check_references(ir, ids, &mut findings);
-    check_pmi(ir, &mut findings);
-    check_coedge_pairing(ir, &mut findings);
-    check_shell_connectivity(ir, &mut findings);
-    check_wire_topology(ir, &mut findings);
-    check_carrier_reachability(ir, &mut findings);
-    check_native_links(ir, ids, &mut findings);
-    check_parameter_domains(ir, &mut findings);
-    check_edge_endpoint_consistency(ir, &mut findings);
-    check_pcurve_surface_consistency(ir, &mut findings);
-    check_procedural_support_consistency(ir, &mut findings);
-    check_bounds(ir, &mut findings);
-    check_tessellations(ir, &mut findings);
-    check_subds(ir, &mut findings);
-    check_procedural_surfaces(ir, &mut findings);
-    check_source_associations(ir, &mut findings);
-    check_sketches(ir, &mut findings);
-    check_spreadsheets(ir, &mut findings);
-    check_products(ir, &mut findings);
-    check_presentation(ir, ids, &mut findings);
-    check_drawings(ir, ids, &mut findings);
-    check_semantic_annotations(ir, ids, &mut findings);
-    check_typed_references(ir, ids, &mut findings);
+    check_identity_and_order(ctx, ids.native_view(), &mut findings)?;
+    check_tolerances(ctx, ir, &mut findings)?;
+    check_references(ctx, ir, ids, &mut findings)?;
+    check_evaluation_cycles(ctx, ir, ids, &mut findings)?;
+    check_pmi(ctx, ir, &mut findings)?;
+    check_coedge_pairing(ctx, ir, &mut findings)?;
+    check_shell_connectivity(ctx, ir, &mut findings)?;
+    check_wire_topology(ctx, ir, &mut findings)?;
+    check_carrier_reachability(ctx, ids.native_view(), &mut findings)?;
+    check_native_links(ctx, ids.native_view(), ids, &mut findings)?;
+    check_parameter_domains(ctx, ir, &mut findings)?;
+    check_edge_endpoint_consistency(ctx, ir, &mut findings)?;
+    check_pcurve_surface_consistency(ctx, ir, &mut findings)?;
+    check_procedural_support_consistency(ctx, ir, &mut findings)?;
+    check_topology_tolerances(ctx, ir, &mut findings)?;
+    check_tessellations(ctx, ir, &mut findings)?;
+    check_sketches(ctx, ir, &mut findings)?;
+    check_spreadsheets(ctx, ir, &mut findings)?;
+    check_products(ctx, ir, &mut findings)?;
+    let reference_ids = BorrowedIdentities::build(ctx, |add| {
+        for id in ids.identities(ctx) {
+            add(id?, ())?;
+        }
+        Ok(())
+    })?;
+    check_presentation(ctx, ir, &reference_ids, &mut findings)?;
+    check_drawings(ctx, ir, &reference_ids, &mut findings)?;
+    check_semantic_annotations(ctx, ir, &reference_ids, &mut findings)?;
+    check_typed_references(ctx, ir, &reference_ids, &mut findings)?;
 
-    ValidationReport {
-        entity_counts: entity_census(ir),
+    Ok(ValidationReport {
+        entity_counts: crate::document::census::count(ctx, ids.native_view())?,
         findings,
         losses,
-    }
+    })
 }
 
-/// Validates a model while treating staged retained-record identities as native entities.
+/// Validate an application-owned document under the explicit standalone policy.
+fn standalone_validation(
+    validate: impl FnOnce(&DecodeContext<'_>) -> Result<ValidationReport, CodecError>,
+) -> Result<ValidationReport, CodecError> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
+    let report = validate(&ctx)?;
+    ctx.finish_session()?;
+    Ok(report)
+}
+
+fn validate_annotations<'a>(
+    ctx: &DecodeContext<'_>,
+    ids: &crate::index::ModelIndex<'a>,
+    annotations: &crate::annotations::Annotations,
+    additional: impl IntoIterator<Item = &'a str>,
+    findings: &mut Vec<Finding>,
+) -> Result<(), CodecError> {
+    let all_ids = BorrowedIdentities::build(ctx, |add| {
+        for id in ids.identities(ctx) {
+            add(id?, ())?;
+        }
+        for id in additional {
+            add(id, ())?;
+        }
+        Ok(())
+    })?;
+    check_annotations(ctx, ids.native_view(), annotations, &all_ids, findings)
+}
+
+fn validate_model_with_annotations(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    annotations: &crate::annotations::Annotations,
+    losses: Vec<LossNote>,
+) -> Result<ValidationReport, CodecError> {
+    let index = crate::index::ModelIndex::build(ir, ctx)?;
+    let mut report = validate_model_with_index(ctx, ir, losses, &index)?;
+    validate_annotations(
+        ctx,
+        &index,
+        annotations,
+        std::iter::empty(),
+        &mut report.findings,
+    )?;
+    Ok(report)
+}
+
+/// Validate while treating staged retained-record identities as native entities.
 pub fn validate_neutral_with_additional_native_identities<'a>(
     ir: &'a CadIr,
     additional: impl IntoIterator<Item = &'a str>,
     losses: Vec<LossNote>,
-) -> ValidationReport {
-    let index = crate::index::ModelIndex::with_additional_native_identities(ir, additional);
-    validate_model_with_index(ir, losses, &index)
+) -> Result<ValidationReport, CodecError> {
+    standalone_validation(|ctx| {
+        let index =
+            crate::index::ModelIndex::with_additional_native_identities(ir, additional, ctx)?;
+        validate_model_with_index(ctx, ir, losses, &index)
+    })
 }
 
-/// Validate one neutral product model.
-pub fn validate_neutral(ir: &CadIr, losses: Vec<LossNote>) -> ValidationReport {
-    validate_model(ir, losses)
+/// Validate one neutral product model under the standalone application policy.
+pub fn validate_neutral(ir: &CadIr, losses: Vec<LossNote>) -> Result<ValidationReport, CodecError> {
+    standalone_validation(|ctx| validate_model(ctx, ir, losses))
 }
 
-/// Validate one neutral product model together with borrowed annotations.
+/// Validate an application-owned model together with borrowed annotations.
 pub fn validate_neutral_with_annotations(
     ir: &CadIr,
     annotations: &crate::annotations::Annotations,
     losses: Vec<LossNote>,
-) -> ValidationReport {
-    let mut report = validate_model(ir, losses);
-    let all_ids = crate::index::ModelIndex::new(ir)
-        .identities()
-        .map(str::to_owned)
-        .collect::<HashSet<_>>();
-    check_annotations(ir, annotations, &all_ids, &mut report.findings);
-    report
+) -> Result<ValidationReport, CodecError> {
+    standalone_validation(|ctx| validate_model_with_annotations(ctx, ir, annotations, losses))
 }
 
-/// Validate a neutral product model together with its decode-time source sidecar.
+/// Validate an application-owned model together with its decode-time source sidecar.
 pub fn validate_neutral_with_source_fidelity(
     ir: &CadIr,
     source_fidelity: &SourceFidelity,
     losses: Vec<LossNote>,
-) -> ValidationReport {
-    let mut report = validate_model(ir, losses);
-    if let Err(error) = source_fidelity.validate() {
-        report.findings.push(Finding {
-            check: Check::PayloadIntegrity,
-            severity: Severity::Error,
-            message: format!("invalid source fidelity: {error}"),
-            entity: None,
-        });
-    }
-    let index = crate::index::ModelIndex::new(ir);
-    let mut all_ids = index
-        .identities()
-        .map(str::to_owned)
-        .collect::<HashSet<_>>();
-    all_ids.extend(
-        source_fidelity
-            .retained_records
-            .iter()
-            .map(|record| record.id().to_owned()),
-    );
-    check_annotations(
-        ir,
-        &source_fidelity.annotations,
-        &all_ids,
-        &mut report.findings,
-    );
-    report
+) -> Result<ValidationReport, CodecError> {
+    standalone_validation(|ctx| {
+        let index = crate::index::ModelIndex::build(ir, ctx)?;
+        let mut report = validate_model_with_index(ctx, ir, losses, &index)?;
+        validate_annotations(
+            ctx,
+            &index,
+            &source_fidelity.annotations,
+            source_fidelity
+                .retained_records()
+                .keys()
+                .map(crate::ids::UnknownId::as_str),
+            &mut report.findings,
+        )?;
+        Ok(report)
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::validate_neutral;
+    use super::{pcurve_parameter_domain, validate_neutral};
     use crate::features::{
         ConfigurationFeatureState, ConfigurationId, DesignConfiguration, FaceSelection, Feature,
-        FeatureDefinition, FeatureId, PrincipalPlane, SplitFaceTool,
+        FeatureDefinition, FeatureId, FeatureOperation, PrincipalPlane, SplitFaceTool,
     };
+    use crate::geometry::pcurve::PcurveGeometry;
     use crate::math::{Point3, Vector3};
     use crate::sketches::{Sketch, SketchId};
     use crate::CadIr;
     use std::collections::BTreeMap;
 
     #[test]
+    fn validation_finding_preserves_the_original_storage_refusal() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        for entity in [None, Some("test:model:point#missing")] {
+            for dimension in [
+                ResourceDimension::RetainedBytes,
+                ResourceDimension::CollectionItems,
+                ResourceDimension::WorkUnits,
+                ResourceDimension::MaterializedBytes,
+            ] {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                match dimension {
+                    ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
+                    ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+                    ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+                    ResourceDimension::MaterializedBytes => {
+                        policy.limits.max_materialized_bytes = 0;
+                    }
+                    _ => unreachable!(),
+                }
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let mut findings = Vec::new();
+                let mut create = || {
+                    super::record_finding(
+                        &ctx,
+                        &mut findings,
+                        crate::report::check::Check::ReferentialIntegrity,
+                        crate::report::Severity::Error,
+                        entity,
+                        format_args!("unresolved reference"),
+                    )
+                };
+                let result = if dimension == ResourceDimension::MaterializedBytes {
+                    ctx.with_scoped_storage("temporary validation findings", create)
+                        .map(|_| ())
+                } else {
+                    create()
+                };
+                let Err(CodecError::ResourceLimit(limit)) = result else {
+                    panic!("finding must refuse");
+                };
+                assert_eq!(limit.dimension, dimension);
+                assert_eq!(
+                    limit.operation,
+                    match dimension {
+                        ResourceDimension::WorkUnits => "validation finding message",
+                        _ => "validation finding storage",
+                    }
+                );
+                assert!(findings.is_empty());
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn validation_finding_keeps_absent_identity_and_formatted_message() {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut findings = Vec::new();
+        for entity in [None, Some("test:model:point#missing")] {
+            super::record_finding(
+                &ctx,
+                &mut findings,
+                crate::report::check::Check::ReferentialIntegrity,
+                crate::report::Severity::Error,
+                entity,
+                format_args!("unresolved reference {}", 7),
+            )
+            .unwrap();
+        }
+        assert_eq!(findings.len(), 2);
+        assert_eq!(findings[0].entity, None);
+        assert_eq!(
+            findings[1].entity.as_deref(),
+            Some("test:model:point#missing")
+        );
+        for finding in findings {
+            assert_eq!(
+                finding.check,
+                crate::report::check::Check::ReferentialIntegrity
+            );
+            assert_eq!(finding.severity, crate::report::Severity::Error);
+            assert_eq!(finding.message, "unresolved reference 7");
+        }
+        ctx.finish_session().unwrap();
+    }
+
+    fn nurbs_pcurve_leaf() -> PcurveGeometry {
+        PcurveGeometry::Nurbs {
+            nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![
+                    crate::math::Point2::new(0.0, 0.0),
+                    crate::math::Point2::new(1.0, 1.0),
+                ],
+                None,
+                false,
+            )
+            .expect("fixture pcurve construction admission")
+            .unwrap(),
+        }
+    }
+
+    fn placed_pcurve(placements: usize) -> Result<PcurveGeometry, &'static str> {
+        let mut geometry = nurbs_pcurve_leaf();
+        for _ in 0..placements {
+            geometry = PcurveGeometry::Transformed(crate::geometry::pcurve::PlacedPcurve::try_new(
+                Box::new(geometry),
+                crate::transform::Transform2::identity(),
+            )?);
+        }
+        Ok(geometry)
+    }
+
+    #[test]
+    fn pcurve_parameter_domain_preserves_session_depth_and_work_refusals() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        let geometry = placed_pcurve(2).unwrap();
+        for (dimension, cap, held_frame) in [
+            (ResourceDimension::RecursionDepth, 0, false),
+            (ResourceDimension::RecursionDepth, 2, false),
+            (ResourceDimension::RecursionDepth, 2, true),
+            (ResourceDimension::WorkUnits, 0, false),
+            (ResourceDimension::WorkUnits, 2, false),
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = cap,
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                _ => unreachable!(),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let guard = held_frame.then(|| ctx.enter_nested_limit("caller frame").unwrap());
+            let limit = pcurve_parameter_domain(&ctx, &geometry).unwrap_err();
+            assert_eq!(limit.dimension, dimension);
+            assert_eq!(limit.limit, cap);
+            assert_eq!(limit.used, cap);
+            assert_eq!(limit.additional, 1);
+            assert_eq!(
+                limit.operation,
+                match dimension {
+                    ResourceDimension::RecursionDepth => "pcurve parameter domain nesting",
+                    _ => "pcurve parameter domain visit",
+                }
+            );
+            drop(guard);
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+            );
+        }
+    }
+
+    #[test]
+    fn pcurve_parameter_domain_stops_at_the_admitted_nesting_depth() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_recursion_depth =
+            cadmpeg_core::decode::u64_from_index(crate::geometry::MAX_GEOMETRY_NESTING + 1);
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let accepted =
+            placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING).expect("admitted nesting");
+        assert!(pcurve_parameter_domain(&ctx, &accepted).unwrap().is_some());
+
+        // Constructor admission also rejects a carrier beyond the inline bound.
+        assert_eq!(
+            placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING + 1),
+            Err("PlacedPcurve.basis nests past the admitted inline basis depth")
+        );
+    }
+
+    #[test]
     fn configuration_feature_sketch_resolves_against_model_sketches() {
         let mut ir = CadIr::empty();
         let feature_id = FeatureId::mint("test:model:feature#sketch").expect("identity grammar");
-        let sketch_id = SketchId("test:model:sketch#sketch".into());
+        let sketch_id = SketchId::mint("test:model:sketch#sketch").unwrap();
         ir.model.features.push(Feature {
             id: feature_id.clone(),
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: crate::features::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Sketch {
-                sketch: crate::features::SketchFeatureBinding::Unresolved,
-            },
+            source_content: crate::features::FeatureContent::default(),
+
+            evaluation: crate::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Operation(FeatureOperation::Sketch {
+                    sketch: crate::features::SketchFeatureBinding::Unresolved,
+                }),
+            ),
             native_ref: None,
         });
         ir.model.sketches.push(Sketch {
@@ -229,12 +514,13 @@ mod tests {
             name: None,
             configuration: None,
             visible: None,
-            placement: crate::sketches::SketchPlacement::Resolved {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
-            profiles: Vec::new(),
+            placement: crate::sketches::SketchPlacement::try_resolved(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+            profiles: crate::sketches::SketchProfiles::default(),
             native_ref: None,
         });
         ir.model.configurations.push(DesignConfiguration {
@@ -243,49 +529,55 @@ mod tests {
             ordinal: 0,
             active: true,
             source_index: None,
-            name: "Default".into(),
+            name: Some("Default".to_string()),
             material: None,
             properties: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
-            bodies: crate::features::ConfigurationBodies::Resolved(Vec::new()),
+            bodies: Some(crate::features::DistinctMembers::default()),
             parameter_values: BTreeMap::new(),
             feature_states: BTreeMap::from([(
                 feature_id,
                 ConfigurationFeatureState {
                     evaluation: crate::features::ConfigurationEvaluation::Active {
-                        outputs: Vec::new(),
+                        outputs: crate::features::DistinctMembers::default(),
                     },
-                    dependencies: Vec::new(),
-                    definition: FeatureDefinition::Sketch {
+                    dependencies: crate::features::DistinctMembers::default(),
+                    definition: FeatureDefinition::Operation(FeatureOperation::Sketch {
                         sketch: crate::features::SketchFeatureBinding::Planar(Some(sketch_id)),
-                    },
+                    }),
                 },
             )]),
             native_ref: None,
         });
 
-        let report = validate_neutral(&ir, Vec::new());
+        let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
 
         assert!(report.findings.is_empty(), "{:?}", report.findings);
     }
 
     #[test]
     fn split_face_plane_sets_require_two_unique_plane_dependencies() {
-        let feature =
-            |id: FeatureId, ordinal, dependencies, definition: FeatureDefinition| Feature {
-                id,
-                ordinal,
-                name: None,
-                suppressed: Some(false),
+        let feature = |id: FeatureId,
+                       ordinal,
+                       dependencies: Vec<FeatureId>,
+                       definition: FeatureDefinition| Feature {
+            id,
+            ordinal,
+            name: None,
+            suppressed: Some(false),
+            dependencies: crate::features::DistinctMembers::try_from(
                 dependencies,
-                source_properties: BTreeMap::new(),
-                source_tag: None,
-                source_text: None,
-                source_content: Vec::new(),
-                outputs: Vec::new(),
-                definition,
-                native_ref: None,
-            };
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .unwrap(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: crate::features::FeatureContent::default(),
+
+            evaluation: crate::features::FeatureEvaluation::from_definition(definition),
+            native_ref: None,
+        };
         let first = FeatureId::mint("test:model:feature#plane-a").expect("identity grammar");
         let second = FeatureId::mint("test:model:feature#plane-b").expect("identity grammar");
         let split = FeatureId::mint("test:model:feature#split").expect("identity grammar");
@@ -295,57 +587,32 @@ mod tests {
                 first.clone(),
                 0,
                 Vec::new(),
-                FeatureDefinition::DatumPrincipalPlane {
+                FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane {
                     plane: PrincipalPlane::Front,
-                },
+                }),
             ),
             feature(
                 second.clone(),
                 1,
                 Vec::new(),
-                FeatureDefinition::DatumPrincipalPlane {
+                FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane {
                     plane: PrincipalPlane::Right,
-                },
+                }),
             ),
             feature(
                 split,
                 2,
                 vec![first.clone(), second.clone()],
-                FeatureDefinition::SplitFace {
+                FeatureDefinition::Operation(FeatureOperation::SplitFace {
                     targets: FaceSelection::Unresolved,
                     tool: SplitFaceTool::Planes {
-                        planes: vec![first.clone(), second.clone()],
+                        planes: vec![first.clone(), second.clone()].try_into().unwrap(),
                     },
-                },
+                }),
             ),
         ];
 
-        let report = validate_neutral(&ir, Vec::new());
+        let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
         assert!(report.findings.is_empty(), "{:?}", report.findings);
-
-        if let FeatureDefinition::SplitFace { tool, .. } = &mut ir.model.features[2].definition {
-            *tool = SplitFaceTool::Planes {
-                planes: vec![first.clone()],
-            };
-        } else {
-            unreachable!();
-        }
-        let report = validate_neutral(&ir, Vec::new());
-        assert!(report.findings.iter().any(|finding| {
-            finding.message == "split-face plane set has fewer than two planes"
-        }));
-
-        if let FeatureDefinition::SplitFace { tool, .. } = &mut ir.model.features[2].definition {
-            *tool = SplitFaceTool::Planes {
-                planes: vec![first.clone(), first],
-            };
-        } else {
-            unreachable!();
-        }
-        let report = validate_neutral(&ir, Vec::new());
-        assert!(report
-            .findings
-            .iter()
-            .any(|finding| { finding.message == "split-face plane set contains repeated planes" }));
     }
 }

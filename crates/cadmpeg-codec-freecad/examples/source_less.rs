@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Generate a small parametric `FCStd` document without a source archive.
 
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
-use cadmpeg_ir::codec::write::TargetRequest;
 use std::fs::File;
 
 use cadmpeg_codec_freecad::{FcstdCodec, FcstdDocumentBuilder, FcstdPropertyValue};

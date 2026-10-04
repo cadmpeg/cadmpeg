@@ -6,8 +6,6 @@ use serde_json::{json, Value};
 fn empty_side_wire() -> Value {
     json!({
         "support_kind": "surface",
-        "surface_ranges": [[null, null], [null, null]],
-        "curve_range": [null, null],
         "location": {"x": 1.0, "y": 2.0, "z": 3.0}
     })
 }
@@ -22,11 +20,15 @@ fn rolling_ball_side_keeps_flat_support_and_extension_fields() {
     assert_eq!(serde_json::to_value(side).unwrap(), empty);
 
     let mut wire = empty_side_wire();
-    wire["surface"] = json!("test:model:surface#support");
-    wire["surface_ranges"] = json!([[1.0, null], [null, 4.0]]);
-    wire["curve"] = json!("test:model:curve#side");
-    wire["curve_range"] = json!([null, 6.0]);
-    wire["extension"] = json!(7);
+    wire["surface"] = json!({
+        "surface": "test:model:surface#support",
+        "parameter_ranges": [[1.0, null], [null, 4.0]]
+    });
+    wire["curve"] = json!({
+        "curve": "test:model:curve#side",
+        "parameter_range": [null, 6.0]
+    });
+    wire["extension"] = json!({"value": 7, "pcurve": null});
     let side: RollingBallSide = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(
         side.surface.as_ref().unwrap().parameter_ranges,
@@ -39,10 +41,13 @@ fn rolling_ball_side_keeps_flat_support_and_extension_fields() {
     assert!(side.extension.as_ref().unwrap().pcurve.is_none());
     assert_eq!(serde_json::to_value(side).unwrap(), wire);
 
-    wire["tertiary_pcurve"] = json!({
-        "kind": "line",
-        "origin": {"u": 0.0, "v": 1.0},
-        "direction": {"u": 2.0, "v": 3.0}
+    wire["extension"] = json!({
+        "value": 7,
+        "pcurve": {
+            "kind": "line",
+            "origin": {"u": 0.0, "v": 1.0},
+            "direction": {"u": 2.0, "v": 3.0}
+        }
     });
     let side: RollingBallSide = serde_json::from_value(wire.clone()).unwrap();
     assert!(side.extension.as_ref().unwrap().pcurve.is_some());
@@ -66,6 +71,8 @@ fn rolling_ball_side_rejects_orphaned_wire_payloads() {
         let mut wire = empty_side_wire();
         wire[field] = payload;
         let error = serde_json::from_value::<RollingBallSide>(wire).unwrap_err();
-        assert!(error.to_string().contains(field), "{error}");
+        let message = error.to_string();
+        assert!(message.contains("unknown field"), "{error}");
+        assert!(message.contains(field), "{error}");
     }
 }

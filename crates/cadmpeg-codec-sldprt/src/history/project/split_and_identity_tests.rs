@@ -1,0 +1,553 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Split-face, body-modifier, and operation-identity projection tests.
+#![allow(clippy::unwrap_used)]
+
+use crate::history::bind::bind_definition_sketch;
+use crate::history::bind::derive_feature_outputs;
+use crate::history::project::modify::project_fillet;
+use crate::history::project::neutral_feature_id_charged;
+use crate::history::project::project_configurations_charged;
+use crate::history::project::project_features;
+use crate::history::project::project_semantic_notes;
+use crate::history::tests::feature;
+use crate::records::Configuration;
+use crate::records::FeatureHistory;
+use cadmpeg_ir::features::BooleanOp;
+use cadmpeg_ir::features::DatumPlaneReference;
+use cadmpeg_ir::features::EdgeSelection;
+use cadmpeg_ir::features::FaceSelection;
+use cadmpeg_ir::features::FeatureDefinition;
+use cadmpeg_ir::features::FeatureId;
+use cadmpeg_ir::features::FeatureOperation;
+use cadmpeg_ir::features::PathRef;
+use cadmpeg_ir::features::RibConstruction;
+use cadmpeg_ir::features::SplitFaceTool;
+use std::collections::BTreeMap;
+
+fn with_test_ctx<T>(run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test decode context");
+    run(&ctx)
+}
+
+#[test]
+fn split_face_path_uses_the_prebound_source_sketch() {
+    let dimensions =
+        BTreeMap::from([(cadmpeg_core::nonblank_literal!("D1"), "<MOD-DIAM>85".into())]);
+    let mut split = feature("split", Some("711"), 0);
+    split.kind = "Split Line".into();
+    split.input_class = Some("moPLine_c".into());
+    split.parameters.clone_from(&dimensions);
+    split.properties.insert(
+        cadmpeg_core::nonblank_const!(
+            crate::resolved_features::operations::SPLIT_LINE_MODE_PROPERTY
+        ),
+        crate::resolved_features::operations::SPLIT_LINE_PROJECTION_MODE.into(),
+    );
+    split.properties.insert(
+        cadmpeg_core::nonblank_const!(
+            crate::resolved_features::operations::SPLIT_LINE_TOOL_PROPERTY
+        ),
+        "sketch".into(),
+    );
+    let mut sketch = feature("sketch", Some("705"), 1);
+    sketch.xml_tag = "Sketch".into();
+    sketch.kind = "Sketch".into();
+    sketch.input_class = Some("moProfileFeature_c".into());
+    sketch.parameters = BTreeMap::from([(
+        cadmpeg_core::nonblank_literal!("D1"),
+        "<MOD-DIAM>2159mm".into(),
+    )]);
+    let history = FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![split.clone(), sketch.clone()],
+    };
+
+    let projected = project_features(
+        &cadmpeg_test_support::service_decode_context(),
+        std::slice::from_ref(&history),
+    )
+    .unwrap();
+    let split_feature = projected
+        .iter()
+        .find(|candidate| candidate.native_ref.as_deref() == Some(split.id.as_str()))
+        .expect("split feature");
+    assert_eq!(
+        *split_feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::SplitFace {
+            targets: FaceSelection::Unresolved,
+            tool: SplitFaceTool::Path(PathRef::Native(sketch.id.clone())),
+        })
+    );
+    assert_eq!(
+        split_feature.dependencies.as_slice(),
+        vec![neutral_feature_id_charged(
+            &cadmpeg_test_support::service_decode_context(),
+            &sketch.id
+        )
+        .unwrap()]
+    );
+}
+
+#[test]
+fn split_face_path_binds_to_projected_sketch_geometry() {
+    let mut definition = FeatureDefinition::Operation(FeatureOperation::SplitFace {
+        targets: FaceSelection::Unresolved,
+        tool: SplitFaceTool::Path(PathRef::Native("sketch-native".into())),
+    });
+    let feature_id = FeatureId::mint("synthetic:test:id#sketch-feature").expect("identity grammar");
+    let sketch_id =
+        cadmpeg_ir::sketches::SketchId::mint("synthetic:test:id#sketch-geometry").unwrap();
+
+    assert!(with_test_ctx(|ctx| bind_definition_sketch(
+        ctx,
+        &mut definition,
+        "sketch-native",
+        &feature_id,
+        &sketch_id,
+        true,
+    ))
+    .unwrap());
+    assert!(matches!(
+        definition,
+        FeatureDefinition::Operation(FeatureOperation::SplitFace {
+            tool: SplitFaceTool::Path(PathRef::Sketch(ref bound)),
+            ..
+        }) if bound == &sketch_id
+    ));
+}
+
+#[test]
+fn standalone_history_note_projects_as_text_annotation_not_feature() {
+    let mut note = feature("sldprt:history:feature#7:3", Some("42"), 3);
+    note.xml_tag = "Note".into();
+    note.name = "Manufacturing note".into();
+    note.kind = "Note".into();
+    note.text = Some("REMOVE ALL BURRS".into());
+    let history = FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![note.clone()],
+    };
+
+    let annotations = with_test_ctx(|ctx| {
+        project_semantic_notes(ctx, std::slice::from_ref(&history))
+            .expect("semantic note projection")
+    });
+    assert!(
+        project_features(&cadmpeg_test_support::service_decode_context(), &[history])
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        annotations[0].id.as_str(),
+        "sldprt:semantic-annotation:note#7:3"
+    );
+    assert!(matches!(
+        annotations.as_slice(),
+        [cadmpeg_ir::semantic_annotations::SemanticAnnotation {
+            kind: cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Text,
+            text,
+            native_ref,
+            ..
+        }] if text == &["REMOVE ALL BURRS"] && native_ref == &note.id
+    ));
+}
+
+#[test]
+fn charged_configuration_projection_preserves_writer_projection() {
+    let history = FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: vec![Configuration {
+            id: "sldprt:history:configuration#name #% µ".into(),
+            parent: "history".into(),
+            ordinal: 1,
+            source_index: Some(5),
+            name: "Inspect".into(),
+            material: Some("Steel".into()),
+            properties: BTreeMap::from([(
+                cadmpeg_core::nonblank_literal!("Finish"),
+                "Ground".into(),
+            )]),
+        }],
+        features: Vec::new(),
+    };
+    let histories = [history];
+    let charged = with_test_ctx(|ctx| {
+        project_configurations_charged(ctx, &histories).expect("charged configuration projection")
+    });
+    assert_eq!(
+        charged,
+        vec![cadmpeg_ir::features::DesignConfiguration {
+            id: cadmpeg_ir::features::ConfigurationId::mint(
+                "sldprt:model:configuration#name%20%23%25%20µ"
+            )
+            .unwrap(),
+            ordinal: 1,
+            active: false,
+            source_index: Some(5),
+            name: Some("Inspect".into()),
+            material: Some("Steel".into()),
+            properties: BTreeMap::from([(
+                cadmpeg_core::nonblank_literal!("Finish"),
+                "Ground".into()
+            )]),
+            bodies: None,
+            parameter_values: BTreeMap::new(),
+            feature_states: BTreeMap::new(),
+            parameter_overrides: BTreeMap::new(),
+            native_ref: Some("sldprt:history:configuration#name #% µ".into()),
+        }]
+    );
+    assert_eq!(
+        charged[0].id.as_str(),
+        "sldprt:model:configuration#name%20%23%25%20µ"
+    );
+}
+
+#[test]
+fn source_less_offset_plane_resolves_a_native_feature_reference() {
+    let mut principal = feature("principal-native", None, 0);
+    principal.name = "Right".into();
+    principal.input_class = Some("moRefPlane_c".into());
+    let mut offset = feature("offset-native", None, 1);
+    offset.input_class = Some("moRefPlane_c".into());
+    offset
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("D1"), "6".into());
+    offset.properties.insert(
+        cadmpeg_core::nonblank_literal!("Reference"),
+        principal.id.clone(),
+    );
+    let history = FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![principal, offset],
+    };
+
+    let projected =
+        project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
+    assert!(matches!(
+        projected[1].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Feature { feature: reference }),
+            distance: actual_distance,
+        }) if (reference == &projected[0].id) && actual_distance.get() == 6.0
+    ));
+    assert_eq!(
+        projected[1].dependencies.as_slice(),
+        [projected[0].id.clone()]
+    );
+}
+
+#[test]
+fn body_modifier_uses_one_based_modeling_history_ordinal() {
+    let first = feature("first-native", Some("700"), 0);
+    let second = feature("second-native", Some("900"), 1);
+    let histories = vec![FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![first, second],
+    }];
+    let mut projected =
+        project_features(&cadmpeg_test_support::service_decode_context(), &histories).unwrap();
+    let body_modifiers = vec![("sldprt:brep:body#333".into(), 2)];
+
+    with_test_ctx(|ctx| {
+        derive_feature_outputs(
+            ctx,
+            &mut projected,
+            &histories,
+            crate::history::bind::FeatureOutputSources {
+                face_producers: &[],
+                body_modifiers: &body_modifiers,
+            },
+            &[],
+            &[],
+            &[],
+        )
+    })
+    .unwrap();
+
+    assert!(projected[0].evaluation.outputs().is_empty());
+    assert_eq!(
+        *projected[1].evaluation.outputs(),
+        [cadmpeg_ir::ids::BodyId::mint("sldprt:brep:body#333").expect("identity grammar")]
+    );
+}
+
+#[test]
+fn body_modifier_ordinal_is_unresolved_when_history_is_ambiguous() {
+    let histories = vec![
+        FeatureHistory {
+            id: "history-a".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![feature("a", None, 0), feature("a-next", None, 1)],
+        },
+        FeatureHistory {
+            id: "history-b".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![feature("b", None, 0), feature("b-next", None, 1)],
+        },
+    ];
+    let mut projected =
+        project_features(&cadmpeg_test_support::service_decode_context(), &histories).unwrap();
+    let body_modifiers = vec![("sldprt:brep:body#333".into(), 2)];
+
+    with_test_ctx(|ctx| {
+        derive_feature_outputs(
+            ctx,
+            &mut projected,
+            &histories,
+            crate::history::bind::FeatureOutputSources {
+                face_producers: &[],
+                body_modifiers: &body_modifiers,
+            },
+            &[],
+            &[],
+            &[],
+        )
+    })
+    .unwrap();
+
+    assert!(projected
+        .iter()
+        .all(|feature| feature.evaluation.outputs().is_empty()));
+}
+
+#[test]
+fn native_operation_identity_selects_surface_and_solid_projectors() {
+    let mut dome = feature("dome", Some("1"), 0);
+    dome.kind = "Dome".into();
+    dome.input_class = Some("moDome_c".into());
+    dome.parameters
+        .insert(cadmpeg_core::nonblank_literal!("D1"), "2mm".into());
+
+    let mut rib = feature("rib", Some("2"), 1);
+    rib.kind = "Rib".into();
+    rib.input_class = Some("moRib_c".into());
+    rib.parameters
+        .insert(cadmpeg_core::nonblank_literal!("D1"), "1mm".into());
+
+    let mut surface_loft = feature("surface-loft", Some("3"), 2);
+    surface_loft.kind = "Surface-Loft".into();
+    surface_loft.input_class = Some("moBlendRefSurface_c".into());
+
+    let mut cut_loft = feature("cut-loft", Some("4"), 3);
+    cut_loft.kind = "Cut-Loft".into();
+    cut_loft.input_class = Some("moBlendCut_c".into());
+
+    let mut surface_extrude = feature("surface-extrude", Some("5"), 4);
+    surface_extrude.kind = "Surface-Extrude".into();
+    surface_extrude.input_class = Some("moExtruRefSurface_c".into());
+    surface_extrude
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("D1"), "3mm".into());
+
+    let mut offset_surface = feature("offset-surface", Some("6"), 5);
+    offset_surface.kind = "Surface-Offset".into();
+    offset_surface.input_class = Some("moOffsetRefSurface_c".into());
+
+    let mut knit_surface = feature("knit-surface", Some("7"), 6);
+    knit_surface.kind = "Surface-Knit".into();
+    knit_surface.input_class = Some("moSewRefSurface_c".into());
+
+    let mut filled_surface = feature("filled-surface", Some("8"), 7);
+    filled_surface.kind = "Surface-Fill".into();
+    filled_surface.input_class = Some("moFillRefSurface_c".into());
+
+    let mut trim_surface = feature("trim-surface", Some("9"), 8);
+    trim_surface.kind = "Surface-Trim".into();
+    trim_surface.input_class = Some("moTrimRefSurface_c".into());
+
+    let mut extend_surface = feature("extend-surface", Some("10"), 9);
+    extend_surface.kind = "Surface-Extend".into();
+    extend_surface.input_class = Some("moExtendRefSurface_c".into());
+
+    let mut draft = feature("draft", Some("11"), 10);
+    draft.kind = "Draft".into();
+    draft.input_class = Some("moDraft_c".into());
+    draft
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("D1"), "3deg".into());
+
+    let projected = project_features(
+        &cadmpeg_test_support::service_decode_context(),
+        &[FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![
+                dome,
+                rib,
+                surface_loft,
+                cut_loft,
+                surface_extrude,
+                offset_surface,
+                knit_surface,
+                filled_surface,
+                trim_surface,
+                extend_surface,
+                draft,
+            ],
+        }],
+    )
+    .unwrap();
+
+    assert!(matches!(
+        projected[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Dome {
+            height: Some(actual_height),
+            ..
+        }) if actual_height.get() == 2.0
+    ));
+    assert!(matches!(
+        projected[1].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Rib {
+            construction: RibConstruction {
+                thickness: Some(actual_thickness),
+                ..
+            },
+            ..
+        }) if actual_thickness.get() == 1.0
+    ));
+    assert!(matches!(
+        projected[2].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Loft {
+            solid: false,
+            op: BooleanOp::Unresolved,
+            ..
+        })
+    ));
+    assert!(matches!(
+        projected[3].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Loft {
+            solid: true,
+            op: BooleanOp::Cut,
+            ..
+        })
+    ));
+    assert!(matches!(
+        projected[4].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
+            solid: Some(false),
+            ..
+        })
+    ));
+    assert!(matches!(
+        projected[5].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
+            faces: FaceSelection::Unresolved,
+            distance: None,
+        })
+    ));
+    assert!(matches!(
+        projected[6].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::KnitSurface {
+            faces: FaceSelection::Unresolved,
+            merge_entities: None,
+            create_solid: None,
+            gap_tolerance: None,
+        })
+    ));
+    assert!(matches!(
+        projected[7].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::FilledSurface {
+            boundary: cadmpeg_ir::features::SurfaceBoundary::Edges(EdgeSelection::Unresolved),
+            support_faces: FaceSelection::Unresolved,
+            ref continuity,
+            merge_result: None,
+            ..
+        }) if continuity.is_unresolved()
+    ));
+    assert!(matches!(
+        projected[8].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::TrimSurface {
+            faces: FaceSelection::Unresolved,
+            tool: PathRef::Unresolved(_),
+            keep: cadmpeg_ir::features::TrimRegion::Unresolved,
+            ..
+        })
+    ));
+    assert!(matches!(
+        projected[9].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
+            faces: FaceSelection::Unresolved,
+            distance: None,
+            method: cadmpeg_ir::features::SurfaceExtension::Unresolved,
+        })
+    ));
+    assert!(matches!(
+        projected[10].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Draft {
+            faces: FaceSelection::Unresolved,
+            anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                plane: FaceSelection::Unresolved,
+                pull: None,
+            },
+            angle: Some(value),
+            outward: None,
+            ..
+        }) if (value.get() - std::f64::consts::PI / 60.0).abs() < 1.0e-12
+    ));
+}
+
+#[test]
+fn variable_fillet_does_not_use_d1_as_a_constant_radius() {
+    let mut feature = feature("variable-fillet", Some("61"), 0);
+    feature.kind = "VarFillet".into();
+    feature.input_class = Some("VarFillet_c".into());
+    feature
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("D1"), "R1".into());
+    assert!(matches!(
+        project_fillet(&cadmpeg_test_support::service_decode_context(), &feature).unwrap(),
+        FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
+            if matches!(groups.as_slice(), [group] if group.radius.is_unresolved())
+    ));
+}
+
+#[test]
+fn variable_fillet_d_dimensions_require_native_vertex_associations() {
+    let mut feature = feature("variable-fillet", Some("61"), 0);
+    feature.kind = "VarFillet".into();
+    feature.input_class = Some("VarFillet_c".into());
+    feature.parameters = BTreeMap::from([
+        (cadmpeg_core::nonblank_literal!("D0"), "R2mm".into()),
+        (cadmpeg_core::nonblank_literal!("D01"), "R3mm".into()),
+        (cadmpeg_core::nonblank_literal!("D02"), "R2mm".into()),
+        (cadmpeg_core::nonblank_literal!("D03"), "R3mm".into()),
+    ]);
+
+    assert!(matches!(
+        project_fillet(&cadmpeg_test_support::service_decode_context(), &feature).unwrap(),
+        FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
+            if matches!(groups.as_slice(), [group] if group.radius.is_unresolved())
+    ));
+}

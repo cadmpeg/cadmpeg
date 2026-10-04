@@ -1,29 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Format-neutral semantic dimensions, notes, symbols, and callouts.
 
+use cadmpeg_core::text::NonBlankString;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-crate::ids::reference_id_type!(
+crate::ids::id_type!(
     /// Stable semantic-annotation identity.
-    SemanticAnnotationId
+    SemanticAnnotationId, compose
 );
 
 /// Semantic role of an annotation independent of its drawing presentation.
+///
+/// GD&T frames and datum features are modelled in [`crate::pmi`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SemanticAnnotationKind {
     /// Measured linear, angular, radial, or other dimension.
     Dimension,
     /// Free or model-associated text note.
     Text,
-    /// Geometric tolerance frame.
-    GeometricTolerance,
-    /// Datum feature or datum target.
-    Datum,
     /// Numbered or named callout balloon.
     Balloon,
     /// Leader associated with a semantic callout.
@@ -37,6 +37,7 @@ pub enum SemanticAnnotationKind {
 /// Semantic content of a persisted annotation, separate from drawing appearance.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct SemanticAnnotation {
     /// Stable semantic identity.
     pub id: SemanticAnnotationId,
@@ -53,22 +54,43 @@ pub struct SemanticAnnotation {
     pub text: Vec<String>,
     /// Ordered references grouped by exact source-property role.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub references: BTreeMap<String, Vec<crate::references::ReferenceSelection>>,
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+    pub references: BTreeMap<NonBlankString, Vec<crate::references::ReferenceSelection>>,
     /// Persisted numeric measurement, when explicitly carried.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub value: Option<f64>,
+    #[serde(deserialize_with = "deserialize_value")]
+    pub value: Option<crate::scalar::FiniteReal>,
     /// Persisted formatting expression or visible dimension format.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_format"
+    )]
     pub format: Option<String>,
     /// Persisted model- or page-space annotation position.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub position: Option<[f64; 3]>,
+    #[serde(deserialize_with = "deserialize_position")]
+    pub position: Option<crate::units::FiniteVector<3>>,
     /// Remaining typed or exactly framed parameters by source name.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub parameters: BTreeMap<String, String>,
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+    pub parameters: BTreeMap<NonBlankString, String>,
     /// Symbol, image, font, or other retained assets.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub assets: Vec<String>,
     /// Native semantic annotation record supplying this entity.
     pub native_ref: String,
 }
+
+cadmpeg_core::named_optional_field!(deserialize_value, crate::scalar::FiniteReal, "value");
+
+cadmpeg_core::named_optional_field!(
+    deserialize_position,
+    crate::units::FiniteVector<3>,
+    "position"
+);
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_format, String, "format");
+
+mod identity_rewrite;

@@ -36,131 +36,133 @@
       "spreadsheets": [],
       "subds": [
         {
-          "edges": [
-            {
-              "sector_coefficients": [
-                0.125,
-                0.875
-              ],
-              "sharpness": [
-                0.25,
-                0.25
-              ],
-              "tag": "smooth",
-              "vertices": [
-                0,
-                1
-              ]
-            },
-            {
-              "sector_coefficients": [
-                0.125,
-                0.875
-              ],
-              "sharpness": [
-                0.25,
-                0.25
-              ],
-              "tag": "smooth",
-              "vertices": [
-                1,
-                2
-              ]
-            },
-            {
-              "sector_coefficients": [
-                0.125,
-                0.875
-              ],
-              "sharpness": [
-                0.25,
-                0.25
-              ],
-              "tag": "smooth",
-              "vertices": [
-                2,
-                3
-              ]
-            },
-            {
-              "sector_coefficients": [
-                0.125,
-                0.875
-              ],
-              "sharpness": [
-                0.25,
-                0.25
-              ],
-              "tag": "smooth",
-              "vertices": [
-                3,
-                0
-              ]
-            }
-          ],
-          "faces": [
-            {
-              "edges": [
-                {
-                  "edge": 0,
-                  "reversed": false
+          "cage": {
+            "edges": [
+              {
+                "sector_coefficients": [
+                  0.125,
+                  0.875
+                ],
+                "sharpness": [
+                  0.25,
+                  0.25
+                ],
+                "tag": "smooth",
+                "vertices": [
+                  0,
+                  1
+                ]
+              },
+              {
+                "sector_coefficients": [
+                  0.125,
+                  0.875
+                ],
+                "sharpness": [
+                  0.25,
+                  0.25
+                ],
+                "tag": "smooth",
+                "vertices": [
+                  1,
+                  2
+                ]
+              },
+              {
+                "sector_coefficients": [
+                  0.125,
+                  0.875
+                ],
+                "sharpness": [
+                  0.25,
+                  0.25
+                ],
+                "tag": "smooth",
+                "vertices": [
+                  2,
+                  3
+                ]
+              },
+              {
+                "sector_coefficients": [
+                  0.125,
+                  0.875
+                ],
+                "sharpness": [
+                  0.25,
+                  0.25
+                ],
+                "tag": "smooth",
+                "vertices": [
+                  3,
+                  0
+                ]
+              }
+            ],
+            "faces": [
+              {
+                "edges": [
+                  {
+                    "edge": 0,
+                    "reversed": false
+                  },
+                  {
+                    "edge": 1,
+                    "reversed": false
+                  },
+                  {
+                    "edge": 2,
+                    "reversed": false
+                  },
+                  {
+                    "edge": 3,
+                    "reversed": false
+                  }
+                ]
+              }
+            ],
+            "vertices": [
+              {
+                "point": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
                 },
-                {
-                  "edge": 1,
-                  "reversed": false
+                "tag": "smooth"
+              },
+              {
+                "point": {
+                  "x": 1.0,
+                  "y": 0.0,
+                  "z": 0.0
                 },
-                {
-                  "edge": 2,
-                  "reversed": false
+                "tag": "smooth"
+              },
+              {
+                "point": {
+                  "x": 1.0,
+                  "y": 1.0,
+                  "z": 0.0
                 },
-                {
-                  "edge": 3,
-                  "reversed": false
-                }
-              ]
-            }
-          ],
+                "tag": "smooth"
+              },
+              {
+                "point": {
+                  "x": 0.0,
+                  "y": 1.0,
+                  "z": 0.0
+                },
+                "tag": "smooth"
+              }
+            ]
+          },
           "id": "rhino:object:subd#record-000000-offset-177",
           "scheme": "catmull_clark",
           "source_object": {
             "format": "rhino",
             "object_id": "00000000-0000-0000-0000-000000000000",
             "visible": true
-          },
-          "vertices": [
-            {
-              "point": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "tag": "smooth"
-            },
-            {
-              "point": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "tag": "smooth"
-            },
-            {
-              "point": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 0.0
-              },
-              "tag": "smooth"
-            },
-            {
-              "point": {
-                "x": 0.0,
-                "y": 1.0,
-                "z": 0.0
-              },
-              "tag": "smooth"
-            }
-          ]
+          }
         }
       ],
       "surfaces": [],
@@ -236,18 +238,19 @@
         "unit_system": "standard:2",
         "unit_value": "2"
       },
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": "admitted",
-          "declared": {
-            "archive_version": "70"
-          },
-          "dialect": "rhino:archive-70",
-          "format": "rhino"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "archive_version": "70"
+            },
+            "dialect": "rhino:archive-70"
+          }
         }
-      },
-      "format": "rhino"
+      }
     },
     "tolerances": {
       "angular": 0.1,
@@ -258,26 +261,26 @@
     }
   },
   "report": {
-    "container_only": false,
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "admitted",
-        "declared": {
-          "archive_version": "70"
-        },
-        "dialect": "rhino:archive-70",
-        "format": "rhino"
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "archive_version": "70"
+          },
+          "dialect": "rhino:archive-70"
+        }
       }
     },
-    "format": "rhino",
-    "geometry_transferred": true,
     "losses": [
       {
         "code": {
           "code": "object.record-census",
           "kind": "object_records_untransferred",
-          "namespace": "rhino"
+          "namespace": "rhino",
+          "scope": "namespaced"
         },
         "message": "decoded 1/1 Rhino object records",
         "severity": "info"
@@ -286,7 +289,9 @@
         "code": {
           "code": "container.integrity-failure",
           "kind": "integrity_failure",
-          "namespace": "rhino"
+          "namespace": "rhino",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "CRC mismatch at offset 177 for typecode 0x20008070: expected 0x0, got 0x678ad2dd",
         "severity": "error"
@@ -295,7 +300,8 @@
         "code": {
           "code": "container.scan-diagnostic",
           "kind": "decode_diagnostic",
-          "namespace": "rhino"
+          "namespace": "rhino",
+          "scope": "namespaced"
         },
         "message": "object at 177 has nil object UUID",
         "severity": "warning"
@@ -304,7 +310,9 @@
         "code": {
           "code": "container.integrity-failure",
           "kind": "integrity_failure",
-          "namespace": "rhino"
+          "namespace": "rhino",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "f09ba4d9-455b-42c3-ba3b-e6ccacef853b: SubD anonymous CRC mismatch at offset 258",
         "severity": "error"
@@ -312,19 +320,23 @@
     ],
     "notes": [
       "decoded 1/1 Rhino object records; retained metadata/digests for 1 records and complete bytes for 1; document cap 268435456 bytes, per-record cap 16777216 bytes"
-    ]
+    ],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {},
-    "retained_records": [
-      {
-        "byte_len": 842,
-        "data": "cIAAID4DAAAAAAAAcQAAggAABAAAAAAA+n8CABYDAAAAAAAA+/8CABQAAAAAAAAA2aSb8FtFw0K6O+bMrO+FO6ndcYP8/wIA3gIAAAAAAAABAIAAQM0CAAAAAAAAAQAAAAAAAAABAAAACQAAAAkAAAAJAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8AAAAAAADwPwAAAAAAAAAAAIAAQHUCAAAAAAAAAQAAAAEAAAAAAAQEBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAA8D8AAAAAAAAAAAEAAAAFAAAACQAAAAoAAAABAAAAZQAAAAAAAAAA/wEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAEAAAIABQAAAAAIAAAAAAEACQAAAAD/AgAAAGYAAAAAAAAAAP8BAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAAAgABAAACAAUAAAAABgAAAAABAAkAAAAA/wMAAABnAAAAAAAAAAD/AQAAAAAAAPA/AAAAAAAA8D8AAAAAAAAAAAIAAQAAAgAGAAAAAAcAAAAAAQAJAAAAAP8EAAAAaAAAAAAAAAAA/wEAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAACAAEAAAIABwAAAAAIAAAAAAEACQAAAAD/BQAAAGkAAAAAAAAAAP8BAQAAAAAAAADAPwAAAAAAAOw/AAAAAAAA0D8CAAEAAAAAAgAAAAABAAkAAAAA/wYAAABqAAAAAAAAAAD/AQEAAAAAAAAAwD8AAAAAAADsPwAAAAAAANA/AgACAAAAAAMAAAAAAQAJAAAAAP8HAAAAawAAAAAAAAAA/wEBAAAAAAAAAMA/AAAAAAAA7D8AAAAAAADQPwIAAwAAAAAEAAAAAAEACQAAAAD/CAAAAGwAAAAAAAAAAP8BAQAAAAAAAADAPwAAAAAAAOw/AAAAAAAA0D8CAAQAAAAAAQAAAAABAAkAAAAA/wkAAABtAAAAAAAAAAD/CQAAAAAAAAAEAAQABQAAAAAGAAAAAAcAAAAACAAAAAD/AAFTRK32t0LQ50a7Yv9/AoAAAAAAAAAAAH8AAIIAAAAAAAAAAN3Simc=",
-        "id": "rhino:object:record#000000",
+    "retained_records": {
+      "rhino:object:record#000000": {
+        "bytes": {
+          "data": "cIAAID4DAAAAAAAAcQAAggAABAAAAAAA+n8CABYDAAAAAAAA+/8CABQAAAAAAAAA2aSb8FtFw0K6O+bMrO+FO6ndcYP8/wIA3gIAAAAAAAABAIAAQM0CAAAAAAAAAQAAAAAAAAABAAAACQAAAAkAAAAJAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8AAAAAAADwPwAAAAAAAAAAAIAAQHUCAAAAAAAAAQAAAAEAAAAAAAQEBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAA8D8AAAAAAAAAAAEAAAAFAAAACQAAAAoAAAABAAAAZQAAAAAAAAAA/wEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAEAAAIABQAAAAAIAAAAAAEACQAAAAD/AgAAAGYAAAAAAAAAAP8BAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAAAgABAAACAAUAAAAABgAAAAABAAkAAAAA/wMAAABnAAAAAAAAAAD/AQAAAAAAAPA/AAAAAAAA8D8AAAAAAAAAAAIAAQAAAgAGAAAAAAcAAAAAAQAJAAAAAP8EAAAAaAAAAAAAAAAA/wEAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAACAAEAAAIABwAAAAAIAAAAAAEACQAAAAD/BQAAAGkAAAAAAAAAAP8BAQAAAAAAAADAPwAAAAAAAOw/AAAAAAAA0D8CAAEAAAAAAgAAAAABAAkAAAAA/wYAAABqAAAAAAAAAAD/AQEAAAAAAAAAwD8AAAAAAADsPwAAAAAAANA/AgACAAAAAAMAAAAAAQAJAAAAAP8HAAAAawAAAAAAAAAA/wEBAAAAAAAAAMA/AAAAAAAA7D8AAAAAAADQPwIAAwAAAAAEAAAAAAEACQAAAAD/CAAAAGwAAAAAAAAAAP8BAQAAAAAAAADAPwAAAAAAAOw/AAAAAAAA0D8CAAQAAAAAAQAAAAABAAkAAAAA/wkAAABtAAAAAAAAAAD/CQAAAAAAAAAEAAQABQAAAAAGAAAAAAcAAAAACAAAAAD/AAFTRK32t0LQ50a7Yv9/AoAAAAAAAAAAAH8AAIIAAAAAAAAAAN3Simc=",
+          "retention": "inline"
+        },
         "offset": 177,
-        "sha256": "b94299ceeca72ac9709f8c3c9c0201f7f01537aa4a47e8fcde7728632d090970",
-        "stream": "source"
+        "stream": ""
       }
-    ]
+    }
   }
 }
