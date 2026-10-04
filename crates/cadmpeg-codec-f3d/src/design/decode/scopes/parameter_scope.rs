@@ -567,10 +567,11 @@ fn copy_sketch_entity_id(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     source: &crate::records::identity::DesignEntityId,
 ) -> Result<crate::records::identity::DesignEntityId, CodecError> {
-    let text = String::from_utf8(
-        ctx.copy_retained(source.as_str().as_bytes(), "f3d Sketch scope entity ID")?,
-    )
-    .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
+    let text = ctx.copy_retained_text(source.as_str(), "f3d Sketch scope entity ID")?;
+    match ctx.validate_utf8(text.as_bytes(), "validate F3D Sketch scope entity ID")? {
+        Ok(_) => {}
+        Err(error) => return Err(CodecError::NotImplemented(error.to_string())),
+    }
     crate::records::identity::DesignEntityId::try_from(text).map_err(CodecError::NotImplemented)
 }
 

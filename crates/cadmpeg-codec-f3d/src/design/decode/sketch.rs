@@ -4250,9 +4250,15 @@ fn decode_sketch_nurbs(
     if View::u32_le_at(payload, base + 8) != Some(3) || payload.get(base + 88) != Some(&1) {
         return None;
     }
-    let subtype_class_tag = std::str::from_utf8(payload.get(base + 12..base + 15)?)
-        .ok()?
-        .to_string();
+    let subtype_class_tag = match ctx.validate_utf8(
+        payload.get(base + 12..base + 15)?,
+        "validate F3D sketch NURBS subtype class tag",
+    ) {
+        Ok(Ok(subtype_class_tag)) => subtype_class_tag,
+        Ok(Err(_)) => return None,
+        Err(error) => return Some(Err(error)),
+    }
+    .to_string();
     let subtype_class_tag =
         crate::records::references::DesignClassTag::try_from(subtype_class_tag).ok()?;
     let degree = View::u32_le_at(payload, base + 90)?;
@@ -4366,9 +4372,15 @@ fn decode_legacy_sketch_nurbs(
     {
         return None;
     }
-    let subtype_class_tag = std::str::from_utf8(payload.get(base + 12..base + 15)?)
-        .ok()?
-        .to_string();
+    let subtype_class_tag = match ctx.validate_utf8(
+        payload.get(base + 12..base + 15)?,
+        "validate F3D legacy sketch NURBS subtype class tag",
+    ) {
+        Ok(Ok(subtype_class_tag)) => subtype_class_tag,
+        Ok(Err(_)) => return None,
+        Err(error) => return Some(Err(error)),
+    }
+    .to_string();
     let subtype_class_tag =
         crate::records::references::DesignClassTag::try_from(subtype_class_tag).ok()?;
     let degree = View::u32_le_at(payload, base + 90)?;
@@ -5185,8 +5197,9 @@ pub(super) fn indexed_record_header_at(
     let Some(class_tag) = bytes.get(at + 4..at + 7) else {
         return Ok(None);
     };
-    let Ok(class_tag) = std::str::from_utf8(class_tag) else {
-        return Ok(None);
+    let class_tag = match ctx.validate_utf8(class_tag, "validate F3D indexed record class tag")? {
+        Ok(class_tag) => class_tag,
+        Err(_) => return Ok(None),
     };
     let class_tag = ctx.copy_retained_text(class_tag, "copy F3D indexed record class tag")?;
     let Ok(class_tag) = crate::records::references::DesignClassTag::try_from(class_tag) else {

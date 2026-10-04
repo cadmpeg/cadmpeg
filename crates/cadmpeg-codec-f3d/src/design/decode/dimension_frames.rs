@@ -672,9 +672,12 @@ fn scan_recipe_reference_operand<'prefix>(
             {
                 continue;
             }
-            if let Ok(token) = std::str::from_utf8(token) {
-                packed = Some((token, token_encoding_at, zero_at + 4));
-                break;
+            match ctx.validate_utf8(token, "validate F3D packed recipe reference token")? {
+                Ok(token) => {
+                    packed = Some((token, token_encoding_at, zero_at + 4));
+                    break;
+                }
+                Err(_) => continue,
             }
         }
     }

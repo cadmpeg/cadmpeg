@@ -2279,11 +2279,18 @@ fn parse_loft_legacy_body_carrier(
     if paired_header.record_index != header.record_index {
         return None;
     }
-    let paired_class_tag = std::str::from_utf8(bytes.get(
+    let paired_class_tag_bytes = bytes.get(
         paired_byte_offset + indexed_header::CLASS_TAG
             ..paired_byte_offset + indexed_header::CLASS_TAG + 3,
-    )?)
-    .ok()?;
+    )?;
+    let paired_class_tag = match ctx.validate_utf8(
+        paired_class_tag_bytes,
+        "validate F3D legacy Loft paired class tag",
+    ) {
+        Ok(Ok(class_tag)) => class_tag,
+        Ok(Err(_)) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     if paired_class_tag != paired_class {
         return None;
     }

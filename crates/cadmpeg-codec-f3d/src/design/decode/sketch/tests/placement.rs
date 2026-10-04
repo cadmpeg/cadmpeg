@@ -1007,6 +1007,49 @@ fn modern_sketch_nurbs_payload() -> Vec<u8> {
 }
 
 #[test]
+fn sketch_nurbs_subtype_utf8_validation_refuses_work() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let modern = modern_sketch_nurbs_payload();
+    let modern_error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        "validate F3D sketch NURBS subtype class tag",
+        0,
+        |ctx| {
+            crate::design::decode::sketch::decode_sketch_nurbs(ctx, &modern, 17)
+                .transpose()
+                .map(|_| ())
+        },
+    );
+    assert!(matches!(
+        modern_error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "validate F3D sketch NURBS subtype class tag"
+                && limit.additional == 3
+    ));
+
+    let legacy = legacy_sketch_nurbs_payload();
+    let legacy_error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        "validate F3D legacy sketch NURBS subtype class tag",
+        0,
+        |ctx| {
+            crate::design::decode::sketch::decode_legacy_sketch_nurbs(ctx, &legacy, 0)
+                .transpose()
+                .map(|_| ())
+        },
+    );
+    assert!(matches!(
+        legacy_error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "validate F3D legacy sketch NURBS subtype class tag"
+                && limit.additional == 3
+    ));
+}
+
+#[test]
 fn modern_sketch_nurbs_collections_refuse_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 

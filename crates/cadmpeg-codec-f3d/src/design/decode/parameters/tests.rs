@@ -44,6 +44,24 @@ fn design_parameter_class_tag_refuses_retained_bytes() {
     ));
 }
 
+#[test]
+fn design_parameter_class_tag_validation_refuses_work() {
+    let bytes = parameter_record(None, "60 mm", "User Parameter", Some("mm"), "Width", 6.0);
+    let refusal = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        "validate F3D Design parameter class tag",
+        0,
+        |ctx| super::parse_design_parameter(ctx, &bytes).map(|_| ()),
+    );
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "validate F3D Design parameter class tag"
+                && limit.additional == 3
+    ));
+}
+
 fn compact_owned_parameter_record(
     owner_record_index: u32,
     source_ordinal: u32,
@@ -1486,6 +1504,26 @@ fn parameter_companion_binding_refuses_output_recipe_and_id_limits() {
             "item limit {items}, retained limit {retained}: {result:?}"
         );
     }
+    let work_refusal = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        "validate F3D companion owned recipe identifier",
+        0,
+        |ctx| {
+            super::bind_parameter_companion_payloads(
+                ctx,
+                vec![companion.clone()],
+                &inputs,
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(
+        work_refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "validate F3D companion owned recipe identifier"
+                && limit.additional == u64::try_from(recipe.id.len()).unwrap()
+    ));
     let bound = super::bind_parameter_companion_payloads(
         &cadmpeg_test_support::service_decode_context(),
         vec![companion],
