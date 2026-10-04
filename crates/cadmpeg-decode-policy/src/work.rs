@@ -227,7 +227,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if self.forwarded_into_body_is_checked(expression, definition, &operands) {
             return;
         }
-        if self.checked_call(expression, definition) {
+        if self.checked_call(expression, definition)
+            || crate::scope::codec_backend_delegation(self.tcx, definition)
+        {
             return;
         }
         let name = name.as_str();

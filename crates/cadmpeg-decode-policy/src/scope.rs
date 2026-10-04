@@ -256,6 +256,20 @@ impl Graph {
     }
 }
 
+fn codec_trait(tcx: TyCtxt<'_>, trait_id: DefId, names: &[&str]) -> bool {
+    names.contains(&tcx.item_name(trait_id).as_str())
+        && (tcx.crate_name(trait_id.krate).as_str() == "cadmpeg_ir"
+            && tcx.item_name(tcx.parent(trait_id)).as_str() == "codec"
+            || std::env::var_os("CADMPEG_POLICY_FIXTURE").is_some())
+}
+
+const CODEC_BACKEND_METHODS: &[&str] = &[
+    "detect_impl",
+    "inspect_impl",
+    "decode_impl",
+    "validate_native",
+];
+
 fn codec_input_method(tcx: TyCtxt<'_>, owner: DefId) -> bool {
     let parent = tcx.parent(owner);
     if !matches!(
@@ -265,21 +279,23 @@ fn codec_input_method(tcx: TyCtxt<'_>, owner: DefId) -> bool {
         return false;
     }
     let trait_id = tcx.impl_trait_ref(parent).skip_binder().def_id;
-    let codec = matches!(tcx.item_name(trait_id).as_str(), "Codec" | "CodecBackend")
-        && (tcx.crate_name(trait_id.krate).as_str() == "cadmpeg_ir"
-            && tcx.item_name(tcx.parent(trait_id)).as_str() == "codec"
-            || std::env::var_os("CADMPEG_POLICY_FIXTURE").is_some());
-    codec
-        && matches!(
-            tcx.item_name(owner).as_str(),
-            "detect_impl"
-                | "inspect_impl"
-                | "decode_impl"
-                | "detect"
-                | "inspect"
-                | "decode"
-                | "decode_with_context"
-        )
+    let name = tcx.item_name(owner);
+    codec_trait(tcx, trait_id, &["Codec", "CodecBackend"])
+        && (CODEC_BACKEND_METHODS.contains(&name.as_str())
+            || matches!(
+                name.as_str(),
+                "detect" | "inspect" | "decode" | "decode_with_context"
+            ))
+}
+
+/// A `CodecBackend` method called through the backend type parameter. Every
+/// backend implementation of it is a decode entry point checked in its own
+/// crate, so the generic call delegates to checked bodies.
+pub(crate) fn codec_backend_delegation(tcx: TyCtxt<'_>, definition: DefId) -> bool {
+    tcx.trait_of_assoc(definition).is_some_and(|trait_id| {
+        codec_trait(tcx, trait_id, &["CodecBackend"])
+            && CODEC_BACKEND_METHODS.contains(&tcx.item_name(definition).as_str())
+    })
 }
 
 fn root(tcx: TyCtxt<'_>, owner: LocalDefId) -> bool {

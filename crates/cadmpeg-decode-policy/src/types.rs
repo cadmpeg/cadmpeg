@@ -294,7 +294,7 @@ pub(crate) fn has_context<'tcx>(
         return false;
     }
     if seen.len() >= tcx.recursion_limit().0 {
-        return true;
+        return false;
     }
     seen.push(value);
     match value.kind() {
