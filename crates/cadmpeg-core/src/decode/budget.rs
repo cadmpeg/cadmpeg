@@ -138,6 +138,19 @@ impl DecodeBudget {
             return Err(resource);
         }
         let before = used.get();
+        #[cfg(any(test, feature = "test-support"))]
+        if let Some(peak) =
+            super::refusal_probe::refusal_limit(dimension, before, amount, operation)
+        {
+            return Err(self.refuse_limit(
+                dimension,
+                ResourceFailure::BudgetExceeded,
+                peak,
+                before,
+                amount,
+                operation,
+            ));
+        }
         if limit
             .checked_sub(before)
             .is_none_or(|remaining| amount > remaining)
