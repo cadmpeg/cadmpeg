@@ -814,7 +814,7 @@ impl Parser<'_, '_, '_> {
                     return self.err("invalid anchor item");
                 }
                 let mut tags = Vec::new();
-                while self.peek(&TokenKind::LBrace) {
+                while self.peek(&TokenKind::LBrace)? {
                     self.next_kind()?;
                     let TokenKind::TagName(name) = self.next_kind()? else {
                         return self.err("expected anchor tag name");
@@ -904,7 +904,7 @@ impl Parser<'_, '_, '_> {
             if implementation_level == ImplementationLevel::LegacyEdition1 && !data.is_empty() {
                 return self.err("2;1 requires one DATA section");
             }
-            let parameters = if self.peek(&TokenKind::LParen) {
+            let parameters = if self.peek(&TokenKind::LParen)? {
                 if data
                     .first()
                     .is_some_and(|section| section.parameters.is_empty())
@@ -1240,11 +1240,11 @@ impl Parser<'_, '_, '_> {
         };
         self.punct(&TokenKind::Equals)?;
         self.budget.charge_entities(1, "step_parse_record")?;
-        let mut partials = if self.peek(&TokenKind::LParen) {
+        let mut partials = if self.peek(&TokenKind::LParen)? {
             self.next_kind()?;
             let first = self.partial()?;
             let mut parts = partials::RecordPartials::single_charged(first, self.budget)?;
-            while !self.peek(&TokenKind::RParen) {
+            while !self.peek(&TokenKind::RParen)? {
                 let partial = self.partial()?;
                 self.budget
                     .push_vec(&mut parts.0, partial, "step_parse_record_partials")?;
@@ -1340,7 +1340,7 @@ impl Parser<'_, '_, '_> {
     fn parameters_inner(&mut self) -> Result<Vec<Value>, ParseError> {
         self.punct(&TokenKind::LParen)?;
         let mut values = Vec::new();
-        if self.peek(&TokenKind::RParen) {
+        if self.peek(&TokenKind::RParen)? {
             self.next_kind()?;
             return Ok(values);
         }
@@ -1348,7 +1348,7 @@ impl Parser<'_, '_, '_> {
             let value = self.value()?;
             self.budget
                 .push_vec(&mut values, value, "step_parse_parameter")?;
-            if self.peek(&TokenKind::Comma) {
+            if self.peek(&TokenKind::Comma)? {
                 self.next_kind()?;
             } else {
                 break;
@@ -1359,7 +1359,7 @@ impl Parser<'_, '_, '_> {
     }
 
     fn value(&mut self) -> Result<Value, ParseError> {
-        let value = if self.peek(&TokenKind::LParen) {
+        let value = if self.peek(&TokenKind::LParen)? {
             Value::List(self.parameter_nesting(Self::parameters_inner)?)
         } else {
             match self.next_kind()? {
@@ -1389,11 +1389,11 @@ impl Parser<'_, '_, '_> {
     fn typed_parameter(&mut self, name: String) -> Result<Value, ParseError> {
         self.parameter_nesting(|parser| {
             parser.punct(&TokenKind::LParen)?;
-            if parser.peek(&TokenKind::RParen) {
+            if parser.peek(&TokenKind::RParen)? {
                 return parser.err("typed parameter requires one value");
             }
             let value = parser.value()?;
-            if parser.peek(&TokenKind::Comma) {
+            if parser.peek(&TokenKind::Comma)? {
                 return parser.err("typed parameter requires one value");
             }
             parser.punct(&TokenKind::RParen)?;
@@ -1434,16 +1434,17 @@ impl Parser<'_, '_, '_> {
     }
     fn punct(&mut self, expected: &TokenKind) -> Result<(), ParseError> {
         let actual = self.next_kind()?;
-        if std::mem::discriminant(&actual) == std::mem::discriminant(expected) {
+        if self.budget.equal(&actual.tag(), &expected.tag(), "STEP parser punctuation tag equality")? {
             Ok(())
         } else {
             self.err("unexpected token")
         }
     }
-    fn peek(&self, expected: &TokenKind) -> bool {
-        self.current.as_ref().is_some_and(|token| {
-            std::mem::discriminant(&token.kind) == std::mem::discriminant(expected)
-        })
+    fn peek(&self, expected: &TokenKind) -> Result<bool, ParseError> {
+        match self.current.as_ref() {
+            Some(token) => self.budget.equal(&token.kind.tag(), &expected.tag(), "STEP parser lookahead tag equality").map_err(ParseError::from),
+            None => Ok(false),
+        }
     }
     fn peek_name(&self, expected: &str) -> Result<bool, ParseError> {
         match self.current.as_ref().map(|token| &token.kind) {

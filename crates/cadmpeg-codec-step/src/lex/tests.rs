@@ -516,3 +516,17 @@ fn integer_number_parse_preserves_refusal() {
         result
     });
 }
+
+#[test]
+fn token_tag_cost_is_exact_and_excludes_payloads() {
+    use cadmpeg_core::decode::cost::DecodeCost;
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let first = super::TokenKind::Name(String::from("FIRST")).tag();
+    let second = super::TokenKind::Name(String::from("different payload")).tag();
+    let width = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<std::mem::Discriminant<super::TokenKind>>());
+    assert_eq!(<super::TokenTag as DecodeCost>::FIXED_BYTES, Some(width));
+    assert_eq!(first.decode_cost(&ctx, "test token category").unwrap(), width);
+    assert_eq!(second.decode_cost(&ctx, "test token category").unwrap(), width);
+    assert_eq!(first, second);
+    assert_ne!(first, super::TokenKind::Comma.tag());
+}
