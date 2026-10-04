@@ -74,6 +74,23 @@ pub(crate) enum TokenKind {
     Colon,
 }
 
+/// Fixed token-category key. Token payloads do not participate in category matching.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct TokenTag(std::mem::Discriminant<TokenKind>);
+
+impl cadmpeg_core::decode::cost::DecodeCost for TokenTag {
+    const FIXED_BYTES: Option<u64> = Some(u64_from_index(std::mem::size_of::<std::mem::Discriminant<TokenKind>>()));
+    fn decode_cost(&self, _ctx: &DecodeContext<'_>, _operation: &'static str) -> Result<u64, CodecError> {
+        Ok(u64_from_index(std::mem::size_of::<std::mem::Discriminant<TokenKind>>()))
+    }
+}
+
+impl TokenKind {
+    pub(crate) fn tag(&self) -> TokenTag {
+        TokenTag(std::mem::discriminant(self))
+    }
+}
+
 /// Binary literal payload packed most-significant nibble first.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct BinaryValue {
