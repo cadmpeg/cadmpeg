@@ -704,7 +704,11 @@ impl<'a> RseInventory<'a> {
         if let ParsedState::Parsed(registry) = &registry {
             join_registry(ctx, &mut segments, registry)?;
         } else {
-            for segment in &mut segments {
+            for index in ctx.admit_iter(
+                &(0..segments.len()),
+                "classify RSe segments without registry",
+            )? {
+                let segment = &mut segments[index];
                 if let SegmentMetaState::Parsed(meta) = &segment.meta {
                     segment.kind = SegmentKind::classify(ctx, &meta.display_name, None)?;
                 } else {
@@ -815,7 +819,8 @@ fn join_registry<B>(
     segments: &mut [SegmentDescriptor<'_, B>],
     registry: &SegmentRegistry,
 ) -> Result<(), CodecError> {
-    for segment in segments {
+    for index in ctx.admit_iter(&(0..segments.len()), "join RSe registry segments")? {
+        let segment = &mut segments[index];
         let SegmentMetaState::Parsed(meta) = &segment.meta else {
             push_identity_issue(
                 ctx,

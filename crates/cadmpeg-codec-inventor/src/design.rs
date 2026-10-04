@@ -880,14 +880,22 @@ fn render_expression<'a>(
                     CodecError::Malformed("Inventor measured expression scalar is missing".into())
                 })?;
                 if scalar.get() == 0.0 {
-                    text.push('0');
+                    ctx.push_retained_char(
+                        &mut text,
+                        '0',
+                        "render Inventor expression bytes",
+                    )?;
                 } else {
                     write!(&mut text, "{}", scalar.get()).map_err(|_| {
                         CodecError::Malformed("Inventor scalar formatting failed".into())
                     })?;
                 }
                 if !unit.symbol.is_empty() {
-                    text.push(' ');
+                    ctx.push_retained_char(
+                        &mut text,
+                        ' ',
+                        "render Inventor expression bytes",
+                    )?;
                     ctx.append_retained(
                         &mut text,
                         unit.symbol,
@@ -915,14 +923,22 @@ fn render_expression<'a>(
                     &rendered[&(operand.index() - 1)],
                     "render Inventor expression bytes",
                 )?;
-                text.push(')');
+                ctx.push_retained_char(
+                    &mut text,
+                    ')',
+                    "render Inventor expression bytes",
+                )?;
             }
             PmDcExpressionKind::Binary {
                 operation,
                 left,
                 right,
             } => {
-                text.push('(');
+                ctx.push_retained_char(
+                    &mut text,
+                    '(',
+                    "render Inventor expression bytes",
+                )?;
                 ctx.append_retained(
                     &mut text,
                     &rendered[&(left.index() - 1)],
@@ -944,7 +960,11 @@ fn render_expression<'a>(
                     &rendered[&(right.index() - 1)],
                     "render Inventor expression bytes",
                 )?;
-                text.push(')');
+                ctx.push_retained_char(
+                    &mut text,
+                    ')',
+                    "render Inventor expression bytes",
+                )?;
             }
         }
         reserved.with_storage(|| {
@@ -1440,10 +1460,6 @@ impl Cursor<'_> {
         let count = usize::try_from(self.u32("reference-array count")?).map_err(|_| {
             CodecError::Malformed("Inventor numeric value exceeds target range".into())
         })?;
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(count),
-            "admit Inventor PmDc unit references",
-        )?;
         let metadata = if count == 0 {
             None
         } else {
@@ -1453,8 +1469,12 @@ impl Cursor<'_> {
             ])
         };
         let mut references = ctx.vector_storage(count, "admit Inventor PmDc unit references")?;
-        for _ in 0..count {
-            references.push(self.reference("reference-array entry")?);
+        for _ in ctx.admit_iter(&(0..count), "admit Inventor PmDc unit references")? {
+            ctx.push_vec(
+                &mut references,
+                self.reference("reference-array entry")?,
+                "admit Inventor PmDc unit references",
+            )?;
         }
         PmDcPairedReferenceList::new(metadata, references).ok_or_else(|| {
             CodecError::Malformed(
