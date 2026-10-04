@@ -406,7 +406,7 @@ fn bind_consolidated_revolution_faces_and_seams(
         if matches.next().is_some() {
             continue;
         }
-        if let Some(stored) = surface_bindings.get_mut(&face.surface) {
+        if let Some(stored) = ctx.get_mut_hash_map(&mut surface_bindings, &face.surface, "catia_revolution_surface_binding_lookup")? {
             if *stored != Some(binding) {
                 *stored = None;
             }
@@ -463,7 +463,7 @@ fn bind_consolidated_revolution_faces_and_seams(
         let Some(owner) = ir.model.procedural_curve_owner(&procedure.id) else {
             continue;
         };
-        if let Some(stored) = procedural_bindings.get_mut(owner) {
+        if let Some(stored) = ctx.get_mut_hash_map(&mut procedural_bindings, owner, "catia_revolution_procedural_binding_lookup")? {
             *stored = None;
         } else {
             let id = owner.try_clone_for_decode(ctx, "catia_revolution_owner_id_copy")?;
@@ -477,7 +477,7 @@ fn bind_consolidated_revolution_faces_and_seams(
     }
     let mut curve_edge_counts = HashMap::<CurveId, usize>::new();
     for curve in ctx.admit_iter(&ir.model.edges, "catia_standard_iteration")?.filter_map(|edge| edge.curve()) {
-        if let Some(count) = curve_edge_counts.get_mut(curve) {
+        if let Some(count) = ctx.get_mut_hash_map(&mut curve_edge_counts, curve, "catia_revolution_curve_edge_count_lookup")? {
             *count += 1;
         } else {
             let id = curve.try_clone_for_decode(ctx, "catia_revolution_count_curve_id_copy")?;
@@ -924,6 +924,7 @@ mod consolidated_revolution_binding_tests {
             Some([0.0, 0.5])
         );
     }
+    mod mutable_lookup;
 }
 
 fn refine_consolidated_analytic_surfaces(

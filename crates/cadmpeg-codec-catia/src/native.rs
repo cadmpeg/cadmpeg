@@ -6912,7 +6912,11 @@ fn semantic_entity_indices(
             id,
             "catia_native_entity_index",
         )?;
-        if let Some(maximum) = maxima.get_mut(entity.object_graph.as_str()) {
+        if let Some(maximum) = ctx.get_mut_hash_map(
+            &mut maxima,
+            entity.object_graph.as_str(),
+            "catia_native_terminal_maximum_lookup",
+        )? {
             *maximum = (*maximum).max(entity.entity_id);
         } else {
             let graph =
@@ -6937,7 +6941,11 @@ fn semantic_entity_indices(
                 "catia_native_binding_graphs",
             )?;
         }
-        let Some(bindings) = parameter_bindings.get_mut(entity.object_graph.as_str()) else {
+        let Some(bindings) = ctx.get_mut_hash_map(
+            &mut parameter_bindings,
+            entity.object_graph.as_str(),
+            "catia_native_binding_graph_lookup",
+        )? else {
             return Err(CodecError::malformed(
                 "CATIA parameter-binding graph disappeared",
             ));
@@ -6947,7 +6955,11 @@ fn semantic_entity_indices(
                 ctx.copy_retained_text(&parameter.binding.value, "catia_native_binding_symbol")?;
             ctx.insert_hash_map(bindings, symbol, Vec::new(), "catia_native_binding_symbols")?;
         }
-        let Some(references) = bindings.get_mut(parameter.binding.value.as_str()) else {
+        let Some(references) = ctx.get_mut_hash_map(
+            bindings,
+            parameter.binding.value.as_str(),
+            "catia_native_binding_symbol_lookup",
+        )? else {
             return Err(CodecError::malformed("CATIA parameter binding disappeared"));
         };
         let class_name = ctx
