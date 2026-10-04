@@ -883,7 +883,12 @@ fn compact_edge_selection_marker_does_not_require_a_class_declaration() {
         sketch_entities: Vec::new(),
     };
 
-    let selections = compact_edge_selections(&history_ctx, &[history], &lane).unwrap();
+    let histories = [history];
+    crate::test_support::work_refusal_at(
+        "deduplicate SLDPRT compact edge selection offsets",
+        |ctx| compact_edge_selections(ctx, &histories, &lane),
+    );
+    let selections = compact_edge_selections(&history_ctx, &histories, &lane).unwrap();
 
     assert_eq!(selections.len(), 1);
     assert_eq!(selections[0].feature_ref, "consumer");
