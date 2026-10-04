@@ -272,11 +272,15 @@ pub(super) fn selection_indices_native(
             .ok_or_else(|| ctx.refuse_codec_limit("NX body selection indices", 0, 1))?;
     }
     ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(length),
+        cadmpeg_core::decode::u64_from_index(
+            length.checked_sub(PREFIX.len()).ok_or_else(|| {
+                ctx.refuse_codec_limit("NX body selection indices", 0, 1)
+            })?,
+        ),
         "NX body selection indices",
     )?;
     let mut text = ctx.retained_string(length, "NX body selection indices")?;
-    text.push_str(PREFIX);
+    ctx.append_retained(&mut text, PREFIX, "NX body selection indices")?;
     for (ordinal, index) in indices.enumerate() {
         if ordinal != 0 {
             text.push(',');
@@ -1032,7 +1036,7 @@ pub(in crate::native) fn feature_source_content(
 
         let mut owned = String::new();
         ctx.try_reserve_retained_text(&mut owned, text.len(), "NX feature source text")?;
-        owned.push_str(text);
+        ctx.append_retained(&mut owned, text, "NX admitted text append")?;
         ctx.reserve_capacity(&mut content, 1, "NX feature source text")?;
         content.push(FeatureSourceContent::Text(owned));
     }

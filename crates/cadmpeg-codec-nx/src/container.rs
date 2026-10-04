@@ -599,7 +599,7 @@ impl<'a> Container<'a> {
         let mut paths = ctx.collection_vec(count, "nx external reference paths")?;
         for (_, _, path) in strings {
             let mut copy = ctx.retained_string(path.len(), "nx external reference path")?;
-            copy.push_str(&path);
+            ctx.append_retained(&mut copy, &path, "NX admitted text append")?;
             paths.push(copy);
         }
         Ok(paths)
@@ -1585,8 +1585,8 @@ pub(crate) fn scan_legacy<'a>(
             .ok_or_else(|| ctx.refuse_codec_limit("retain legacy NX directory entry", 0, 1))?;
         let mut name = String::new();
         ctx.try_reserve_retained_text(&mut name, name_len, "retain legacy NX directory entry")?;
-        name.push_str("/Root/");
-        name.push_str(entry.path());
+        ctx.append_retained(&mut name, "/Root/", "NX admitted text append")?;
+        ctx.append_retained(&mut name, entry.path(), "NX admitted text append")?;
         entries.push(DirEntry {
             name,
             region: Region::Header,
@@ -1700,7 +1700,7 @@ fn try_entry(
     };
     let mut name = String::new();
     ctx.try_reserve_retained_text(&mut name, name_len, "retain NX directory name")?;
-    name.push_str(value);
+    ctx.append_retained(&mut name, value, "NX admitted text append")?;
     // Interpret the 16-byte payload as a file span when it lands within the file.
     let body = match (
         View::u64_le_at(data, payload),

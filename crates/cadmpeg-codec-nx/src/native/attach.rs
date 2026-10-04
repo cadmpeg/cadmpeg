@@ -3225,8 +3225,8 @@ fn attach_feature_operations(
         feature_id_reservation.with_storage(|| {
             ctx.try_reserve_retained_text(&mut id_text, id_len, "NX operation feature identity")
         })?;
-        id_text.push_str(PREFIX);
-        id_text.push_str(key);
+        ctx.append_retained(&mut id_text, PREFIX, "NX admitted text append")?;
+        ctx.append_retained(&mut id_text, key, "NX admitted text append")?;
         let Ok(id) = FeatureId::mint(id_text) else {
             continue;
         };
@@ -3362,9 +3362,9 @@ fn attach_feature_operations(
                 message_len,
                 "allocate NX TEXT annotation order loss",
             )?;
-            message.push_str(PREFIX);
-            message.push_str(&label.id);
-            message.push_str(SUFFIX);
+            ctx.append_retained(&mut message, PREFIX, "NX admitted text append")?;
+            ctx.append_retained(&mut message, &label.id, "NX admitted text append")?;
+            ctx.append_retained(&mut message, SUFFIX, "NX admitted text append")?;
             losses.push(NxLossCode::SemanticAnnotationOrderUnstatable.note(message));
             continue;
         };
@@ -5653,7 +5653,7 @@ fn attach_feature_operations(
                 bodies.push(body);
                 let mut native_ref =
                     ctx.retained_string(write.id.len(), "NX result topology native reference")?;
-                native_ref.push_str(&write.id);
+                ctx.append_retained(&mut native_ref, &write.id, "NX admitted text append")?;
                 append_feature_result_topology(
                     ctx,
                     ir,
@@ -5791,7 +5791,7 @@ fn result_topology_id(
     })?;
     let mut key_reservation = ctx.reserve_scoped(0, "NX result topology key")?;
     ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(key_len),
+        cadmpeg_core::decode::u64_from_index(suffix_len),
         "NX result topology key formatting",
     )?;
     ctx.charge_retained(
@@ -5802,7 +5802,7 @@ fn result_topology_id(
     key_reservation.with_storage(|| {
         ctx.try_reserve_retained_text(&mut owned_key, key_len, "allocate NX result topology key")
     })?;
-    owned_key.push_str(key);
+    ctx.append_retained(&mut owned_key, key, "NX result topology key formatting")?;
     if let Some(ordinal) = ordinal {
         std::fmt::Write::write_fmt(&mut owned_key, format_args!("-{ordinal:010}"))
             .map_err(|_| CodecError::malformed("NX result topology key formatting failed"))?;
@@ -6003,7 +6003,7 @@ fn native_result_body_identity(
     };
     let mut native_ref = String::new();
     ctx.try_reserve_retained_text(&mut native_ref, native.len(), "NX result body identity")?;
-    native_ref.push_str(native);
+    ctx.append_retained(&mut native_ref, native, "NX admitted text append")?;
     Ok(Some((local, native_ref)))
 }
 
@@ -6873,7 +6873,7 @@ fn operation_source_properties(
                 frame.id.len(),
                 "NX operation source property",
             )?;
-            value.push_str(&frame.id);
+            ctx.append_retained(&mut value, &frame.id, "NX admitted text append")?;
             ctx.insert_btree_map(properties, key, value, "NX operation source properties")?;
         }
     }
@@ -6898,14 +6898,14 @@ fn insert_operation_source_property(
 ) -> Result<(), CodecError> {
     let mut owned_key = String::new();
     ctx.try_reserve_retained_text(&mut owned_key, key.len(), "NX operation source property")?;
-    owned_key.push_str(key);
+    ctx.append_retained(&mut owned_key, key, "NX admitted text append")?;
     let mut owned_value = String::new();
     ctx.try_reserve_retained_text(
         &mut owned_value,
         value.len(),
         "NX operation source property",
     )?;
-    owned_value.push_str(value);
+    ctx.append_retained(&mut owned_value, value, "NX admitted text append")?;
     ctx.insert_btree_map(
         properties,
         owned_key,
@@ -7281,9 +7281,9 @@ impl<'a> ParasolidAttributeNameIndex<'a> {
                 )
             })?;
         let mut name = ctx.retained_string(name_len, "NX Parasolid attribute field name")?;
-        name.push_str(definition.name.as_str());
+        ctx.append_retained(&mut name, definition.name.as_str(), "NX admitted text append")?;
         name.push('.');
-        name.push_str(&field_name);
+        ctx.append_retained(&mut name, &field_name, "NX admitted text append")?;
         Ok(Some(name))
     }
 }
@@ -7327,12 +7327,16 @@ fn topology_attribute_name(
             )
         })?;
     ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(name_len),
+        cadmpeg_core::decode::u64_from_index(
+            name_len.checked_sub(class_name.map_or(0, str::len)).ok_or_else(|| {
+                ctx.refuse_codec_limit("NX Parasolid attribute fallback name", 0, 1)
+            })?,
+        ),
         "NX Parasolid attribute fallback name",
     )?;
     let mut name = ctx.retained_string(name_len, "NX Parasolid attribute fallback name")?;
     if let Some(class_name) = class_name {
-        name.push_str(class_name);
+        ctx.append_retained(&mut name, class_name, "NX Parasolid attribute fallback name")?;
         name.push('.');
     }
     std::fmt::Write::write_fmt(
@@ -7508,7 +7512,7 @@ fn insert_parasolid_topology_target(
             "allocate NX Parasolid topology target key",
         )
     })?;
-    key.push_str(id);
+    ctx.append_retained(&mut key, id, "NX admitted text append")?;
     let target = reservation.with_storage(target)?;
     reservation.with_storage(|| {
         ctx.insert_btree_map(targets, key, target, "NX Parasolid topology targets")
@@ -7764,7 +7768,7 @@ fn single_string_attribute_values(
         text.len(),
         "NX Parasolid string attribute value",
     )?;
-    owned.push_str(text);
+    ctx.append_retained(&mut owned, text, "NX admitted text append")?;
     let mut values = Vec::new();
     ctx.reserve_capacity(&mut values, 1, "NX Parasolid string attribute values")?;
     values.push(AttributeValue::String(owned));
@@ -8258,7 +8262,7 @@ fn text_semantic_annotation(
             source.len(),
             "allocate NX TEXT annotation text",
         )?;
-        owned.push_str(source);
+        ctx.append_retained(&mut owned, source, "NX admitted text append")?;
         Ok(owned)
     };
     let mut text_values = Vec::new();
