@@ -95,18 +95,20 @@ impl<'a> OperationBodyInput<'a> {
 }
 
 impl<'a> OperationRecord<'a> {
-    pub(super) fn new(bytes: &'a [u8], label: OperationLabel<'a>) -> Option<Self> {
+    pub(super) fn new(ctx: &cadmpeg_core::decode::DecodeContext<'_>, bytes: &'a [u8], label: OperationLabel<'a>) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        (|| {
         let label_start = usize::from(label.header.byte_len());
         let label_end = label_start.checked_add(label.value.len())?.checked_add(2)?;
         if bytes.get(label_start) != Some(&0x03)
             || usize::from(*bytes.get(label_start + 1)?) != label.value.len() + 2
-            || bytes.get(label_start + 2..label_end)? != label.value.as_bytes()
+            || !propagate_resource!(ctx.equal_bytes(bytes.get(label_start + 2..label_end)?, label.value.as_bytes(), "NX operation record label equality"))
             || bytes.get(label_end) != Some(&0)
         {
             return None;
         }
         label.header.offset().checked_add(bytes.len())?;
-        Some(Self { bytes, label })
+        Some(Ok(Self { bytes, label }))
+            })().transpose()
     }
 
     pub(crate) fn label(self) -> OperationLabel<'a> {
@@ -157,9 +159,19 @@ mod tests {
     }
 
     #[test]
+    fn record_label_byte_equality_refusal_propagates() {
+        let mut bytes = *b"\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\xff\xff\xff\xff\x03\x07BLOCK\0payload";
+        for mismatch in [false, true] {
+            if mismatch { bytes[21] = b'X'; }
+            let error = crate::test_support::resource_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "NX operation record label equality", |ctx| OperationRecord::new(ctx, &bytes, label(100)));
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == 5));
+        }
+    }
+
+    #[test]
     fn record_payload_and_scan_ranges_derive_from_the_label_frame() {
         let bytes = b"\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\xff\xff\xff\xff\x03\x07BLOCK\0payload";
-        let record = OperationRecord::new(bytes, label(100)).unwrap();
+        let record = crate::test_support::with_decode_context(|ctx| OperationRecord::new(ctx, bytes, label(100))).unwrap().unwrap();
         assert_eq!(record.bytes(), bytes);
         assert_eq!(record.label(), label(100));
         assert_eq!(record.offset(), 100);
@@ -175,18 +187,18 @@ mod tests {
         assert_eq!(body.payload_start(), 27);
         assert_eq!(body.payload_view(), payload);
         for end in 0..27 {
-            assert!(OperationRecord::new(&bytes[..end], label(100)).is_none());
+            assert!(crate::test_support::with_decode_context(|ctx| OperationRecord::new(ctx, &bytes[..end], label(100))).unwrap().is_none());
         }
-        assert!(OperationRecord::new(&bytes[..27], label(100))
+        assert!(crate::test_support::with_decode_context(|ctx| OperationRecord::new(ctx, &bytes[..27], label(100))).unwrap()
             .unwrap()
             .payload()
             .is_empty());
-        assert!(OperationRecord::new(bytes, label(usize::MAX - bytes.len())).is_some());
-        assert!(OperationRecord::new(bytes, label(usize::MAX - bytes.len() + 1)).is_none());
+        assert!(crate::test_support::with_decode_context(|ctx| OperationRecord::new(ctx, bytes, label(usize::MAX - bytes.len()))).unwrap().is_some());
+        assert!(crate::test_support::with_decode_context(|ctx| OperationRecord::new(ctx, bytes, label(usize::MAX - bytes.len() + 1))).unwrap().is_none());
         for (offset, value) in [(19, 4), (20, 6), (21, b'X'), (26, 1)] {
             let mut invalid = *bytes;
             invalid[offset] = value;
-            assert!(OperationRecord::new(&invalid, label(100)).is_none());
+            assert!(crate::test_support::with_decode_context(|ctx| OperationRecord::new(ctx, &invalid, label(100))).unwrap().is_none());
         }
     }
 
