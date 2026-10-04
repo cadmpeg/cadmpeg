@@ -7,8 +7,8 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
-IDENTITY_REL = Path("docs") / "dialects.toml"
-SUPPORT_REL = Path("docs") / "dialect-support.toml"
+IDENTITY_REL = Path("crates") / "cadmpeg-registry" / "docs" / "dialects.toml"
+SUPPORT_REL = Path("crates") / "cadmpeg-registry" / "docs" / "dialect-support.toml"
 EVALUATIONS_REL = Path("docs") / "evaluations.toml"
 
 # Formats whose registry rows describe neutral identity or embedded kernel
