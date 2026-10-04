@@ -93,6 +93,7 @@ fn knot_constructors_share_work_keep_storage_and_preserve_refusal() {
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
     );
 
+    // Four finite-lane values use five collection probes, then three order comparisons: eight.
     for (dimension, cap, operation) in [
         (ResourceDimension::RetainedBytes, 0, "IR finite knot values"),
         (
@@ -102,7 +103,8 @@ fn knot_constructors_share_work_keep_storage_and_preserve_refusal() {
         ),
         (ResourceDimension::WorkUnits, 0, "IR finite knot values"),
         (ResourceDimension::WorkUnits, 3, "IR finite knot values"),
-        (ResourceDimension::WorkUnits, 4, "IR NURBS knot order"),
+        (ResourceDimension::WorkUnits, 4, "IR finite knot values"),
+        (ResourceDimension::WorkUnits, 5, "IR NURBS knot order"),
     ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
