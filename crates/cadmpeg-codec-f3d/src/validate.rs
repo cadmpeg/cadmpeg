@@ -1281,11 +1281,12 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
         )?;
         let source_ordinal = timeline_ordinals.entry(segment).or_default();
         for entity_id in design_type.entities.values() {
-            let valid_type =
-                crate::design::decode::meta::is_supported_feature_timeline_type(design_type)
-                    && class_tag.as_ref().is_some_and(|tag| {
-                        records::references::DesignClassTag::try_from(tag.clone()).is_ok()
-                    });
+            let valid_type = crate::design::decode::meta::is_supported_feature_timeline_type(
+                ctx.decode,
+                design_type,
+            )? && class_tag.as_ref().is_some_and(|tag| {
+                records::references::DesignClassTag::try_from(tag.clone()).is_ok()
+            });
             let Some(class_tag) = class_tag.clone() else {
                 continue;
             };
