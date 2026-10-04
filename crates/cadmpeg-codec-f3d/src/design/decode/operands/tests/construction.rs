@@ -40,6 +40,16 @@ fn parse_construction_operand_group(
     crate::design::decode::operands::parse_construction_operand_group(
         &ctx, bytes, scope, ordinal, header,
     )
+    .expect("construction group within the default budget")
+}
+
+/// The frame of an indexed record header.
+fn record_frame(header: &DesignRecordHeader) -> RecordFrame {
+    RecordFrame {
+        record_index: header.record_index,
+        class_tag: header.class_tag.clone(),
+        byte_offset: header.byte_offset,
+    }
 }
 
 fn construction_group_parse_refuses_collection_limit(bytes: &[u8], operation: &str) {
@@ -61,7 +71,7 @@ fn construction_group_parse_refuses_collection_limit(bytes: &[u8], operation: &s
     };
     assert!(matches!(
         crate::design::decode::operands::parse_construction_operand_group(&ctx, bytes, &scope, 0, &header),
-        ConstructionOperandGroupParse::Refused(cadmpeg_core::CodecError::ResourceLimit(failure))
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
             if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
                 && failure.operation == operation
     ));
@@ -206,15 +216,15 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         cadmpeg_core::decode::ResourceDimension::RetainedBytes,
         "copy F3D construction operand paired class tag",
         0,
-        |ctx| match crate::design::decode::operands::parse_construction_operand_group(
-            ctx,
-            &bytes,
-            &scope,
-            0,
-            &RecordFrame::from(&record),
-        ) {
-            ConstructionOperandGroupParse::Refused(error) => Err(error),
-            _ => Ok(()),
+        |ctx| {
+            crate::design::decode::operands::parse_construction_operand_group(
+                ctx,
+                &bytes,
+                &scope,
+                0,
+                &record_frame(&record),
+            )
+            .map(|_| ())
         },
     );
     assert!(matches!(
@@ -225,7 +235,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 && limit.additional == 3
     ));
 
-    let group = parse_construction_operand_group(&bytes, &scope, 0, &RecordFrame::from(&record))
+    let group = parse_construction_operand_group(&bytes, &scope, 0, &record_frame(&record))
         .complete()
         .expect("counted Extrude operand group");
     let id_len = crate::ids::native_scope("Design/BulkStream.dat").len()
@@ -276,14 +286,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 let (ctx, _) =
                     cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
                         .unwrap();
-                let parsed = parse_construction_operand_group(
-                    &bytes,
-                    &scope,
-                    0,
-                    &RecordFrame::from(&record),
-                )
-                .complete()
-                .expect("counted Extrude operand group");
+                let parsed =
+                    parse_construction_operand_group(&bytes, &scope, 0, &record_frame(&record))
+                        .complete()
+                        .expect("counted Extrude operand group");
                 let mut out = Vec::new();
                 crate::design::decode::operands::push_construction_operand_group(
                     &ctx,
@@ -333,14 +339,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 let (ctx, _) =
                     cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
                         .unwrap();
-                let parsed = parse_construction_operand_group(
-                    &bytes,
-                    &scope,
-                    0,
-                    &RecordFrame::from(&record),
-                )
-                .complete()
-                .expect("counted Extrude operand group");
+                let parsed =
+                    parse_construction_operand_group(&bytes, &scope, 0, &record_frame(&record))
+                        .complete()
+                        .expect("counted Extrude operand group");
                 let mut out = Vec::new();
                 crate::design::decode::operands::push_construction_operand_group(
                     &ctx,
@@ -371,10 +373,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         }
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let parsed =
-            parse_construction_operand_group(&bytes, &scope, 0, &RecordFrame::from(&record))
-                .complete()
-                .expect("counted Extrude operand group");
+        let parsed = parse_construction_operand_group(&bytes, &scope, 0, &record_frame(&record))
+            .complete()
+            .expect("counted Extrude operand group");
         let mut out = Vec::new();
         assert!(matches!(
             crate::design::decode::operands::push_construction_operand_group(
@@ -535,7 +536,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         ..usize::try_from(group.role_offset()).expect("fixture offset fits address space") + 8]
         .copy_from_slice(&0x0000_0004_0000_0000u64.to_le_bytes());
     let whole_body =
-        parse_construction_operand_group(&whole_body_bytes, &scope, 0, &RecordFrame::from(&record))
+        parse_construction_operand_group(&whole_body_bytes, &scope, 0, &record_frame(&record))
             .complete()
             .expect("counted Extrude whole-body group");
     assert_eq!(whole_body.role(), DesignOperandRole::BODIES_A);
@@ -558,10 +559,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     flagged.extend_from_slice(&445u64.to_le_bytes());
     let flagged_count_at = flagged.len();
     flagged.extend_from_slice(&bytes[21..]);
-    let flagged =
-        parse_construction_operand_group(&flagged, &scope, 0, &RecordFrame::from(&record))
-            .complete()
-            .expect("operation-flagged counted operand group");
+    let flagged = parse_construction_operand_group(&flagged, &scope, 0, &record_frame(&record))
+        .complete()
+        .expect("operation-flagged counted operand group");
     assert_eq!(
         flagged.frame.member_count_offset,
         u64_from_index(flagged_count_at)
@@ -582,7 +582,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         ..usize::try_from(group.role_offset()).expect("fixture offset fits address space") + 8]
         .copy_from_slice(&0x0000_0005_0000_0000u64.to_le_bytes());
     let retained_role_five =
-        parse_construction_operand_group(&start_face_bytes, &scope, 0, &RecordFrame::from(&record))
+        parse_construction_operand_group(&start_face_bytes, &scope, 0, &record_frame(&record))
             .complete()
             .expect("counted Extrude retained role-five group");
     assert_eq!(retained_role_five.extrude_role(), None);
@@ -616,7 +616,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         &start_face_bytes,
         &from_face_scope,
         0,
-        &RecordFrame::from(&record),
+        &record_frame(&record),
     )
     .complete()
     .expect("counted Extrude start-face group");
@@ -662,14 +662,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     to_face_bytes[usize::try_from(group.role_offset()).expect("fixture offset fits address space")
         ..usize::try_from(group.role_offset()).expect("fixture offset fits address space") + 8]
         .copy_from_slice(&0x0000_0012_0000_0000u64.to_le_bytes());
-    let mut legacy_to_face = parse_construction_operand_group(
-        &to_face_bytes,
-        &to_face_scope,
-        0,
-        &RecordFrame::from(&record),
-    )
-    .complete()
-    .expect("counted Extrude legacy to-face group");
+    let mut legacy_to_face =
+        parse_construction_operand_group(&to_face_bytes, &to_face_scope, 0, &record_frame(&record))
+            .complete()
+            .expect("counted Extrude legacy to-face group");
     assert_eq!(legacy_to_face.role(), DesignOperandRole::ROLE_0X12);
     assert_eq!(legacy_to_face.extrude_role(), None);
     crate::design::decode::operands::assign_extrude_face_roles(
@@ -694,10 +690,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     flagless.extend_from_slice(&[0; 6]);
     let flagless_paired_at = flagless.len();
     indexed_header(&mut flagless, *b"259", 100);
-    let flagless =
-        parse_construction_operand_group(&flagless, &scope, 0, &RecordFrame::from(&record))
-            .complete()
-            .expect("flagless counted operand group");
+    let flagless = parse_construction_operand_group(&flagless, &scope, 0, &record_frame(&record))
+        .complete()
+        .expect("flagless counted operand group");
     assert_eq!(
         flagless
             .members()
@@ -716,7 +711,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let mut bombed = bytes.clone();
     bombed[21..25].copy_from_slice(&u32::MAX.to_le_bytes());
     assert!(matches!(
-        parse_construction_operand_group(&bombed, &scope, 0, &RecordFrame::from(&record)),
+        parse_construction_operand_group(&bombed, &scope, 0, &record_frame(&record)),
         ConstructionOperandGroupParse::NotAGroup
     ));
 
@@ -726,7 +721,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let tail_at = truncated.len() - 40;
     truncated[tail_at..].fill(0x5a);
     assert!(matches!(
-        parse_construction_operand_group(&truncated, &scope, 0, &RecordFrame::from(&record)),
+        parse_construction_operand_group(&truncated, &scope, 0, &record_frame(&record)),
         ConstructionOperandGroupParse::Unclosed
     ));
 
@@ -763,14 +758,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         class_tag: crate::records::references::DesignClassTag::try_from("283".to_owned()).unwrap(),
         ..record.clone()
     };
-    let mut auxiliary = parse_construction_operand_group(
-        &auxiliary,
-        &scope,
-        0,
-        &RecordFrame::from(&auxiliary_record),
-    )
-    .complete()
-    .expect("Extrude face group carrying both optional references");
+    let mut auxiliary =
+        parse_construction_operand_group(&auxiliary, &scope, 0, &record_frame(&auxiliary_record))
+            .complete()
+            .expect("Extrude face group carrying both optional references");
     assert_eq!(
         auxiliary
             .members()

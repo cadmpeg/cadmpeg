@@ -3,8 +3,7 @@
 use cadmpeg_core::decode::u64_from_index;
 
 use super::parse_construction_operand_group;
-use crate::design::decode::operands::ConstructionOperandGroupParse;
-use crate::design::decode::operands::RecordFrame;
+use super::record_frame;
 
 use crate::records::decal::DesignRecordHeader;
 
@@ -111,10 +110,9 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
         class_tag: crate::records::references::DesignClassTag::try_from("323".to_owned()).unwrap(),
         record_index: 296_501,
     };
-    let mut group =
-        parse_construction_operand_group(&bytes, &scope, 0, &RecordFrame::from(&header))
-            .complete()
-            .expect("class-296 two-sided-to-faces construction group");
+    let mut group = parse_construction_operand_group(&bytes, &scope, 0, &record_frame(&header))
+        .complete()
+        .expect("class-296 two-sided-to-faces construction group");
     assert_eq!(group.extrude_role(), None);
     crate::design::decode::operands::assign_extrude_face_roles(
         &scope,
@@ -135,10 +133,9 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let group =
-        parse_construction_operand_group(&bytes, &wrong_length, 0, &RecordFrame::from(&header))
-            .complete()
-            .expect("construction group with otherwise valid frame");
+    let group = parse_construction_operand_group(&bytes, &wrong_length, 0, &record_frame(&header))
+        .complete()
+        .expect("construction group with otherwise valid frame");
     assert_eq!(group.extrude_role(), None);
 
     let mut wrong_extent = scope;
@@ -148,10 +145,9 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
         panic!("synthetic class-296 two-sided-to-faces prologue");
     };
     *extent = Some(DesignExtrudeExtent::SymmetricDistance);
-    let group =
-        parse_construction_operand_group(&bytes, &wrong_extent, 0, &RecordFrame::from(&header))
-            .complete()
-            .expect("construction group with otherwise valid frame");
+    let group = parse_construction_operand_group(&bytes, &wrong_extent, 0, &record_frame(&header))
+        .complete()
+        .expect("construction group with otherwise valid frame");
     assert_eq!(group.extrude_role(), None);
 }
 
@@ -261,31 +257,30 @@ fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
         if class_tag == "323" {
             let refusal = crate::test_support::resource_refusal_at(
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                "copy F3D legacy construction operand paired class tag",
+                "copy F3D construction operand paired class tag",
                 0,
-                |ctx| match crate::design::decode::operands::parse_construction_operand_group(
-                    ctx,
-                    &bytes,
-                    &scope,
-                    0,
-                    &RecordFrame::from(&record),
-                ) {
-                    ConstructionOperandGroupParse::Refused(error) => Err(error),
-                    _ => Ok(()),
+                |ctx| {
+                    crate::design::decode::operands::parse_construction_operand_group(
+                        ctx,
+                        &bytes,
+                        &scope,
+                        0,
+                        &record_frame(&record),
+                    )
+                    .map(|_| ())
                 },
             );
             assert!(matches!(
                 refusal,
                 cadmpeg_core::CodecError::ResourceLimit(limit)
                     if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                        && limit.operation == "copy F3D legacy construction operand paired class tag"
+                        && limit.operation == "copy F3D construction operand paired class tag"
                         && limit.additional == 3
             ));
         }
-        let group =
-            parse_construction_operand_group(&bytes, &scope, 0, &RecordFrame::from(&record))
-                .complete()
-                .expect("legacy body construction group");
+        let group = parse_construction_operand_group(&bytes, &scope, 0, &record_frame(&record))
+            .complete()
+            .expect("legacy body construction group");
 
         assert_eq!(
             group

@@ -206,50 +206,29 @@ fn minimum_vec_bytes<T>() -> u64 {
     .expect("collection bytes fit u64")
 }
 
-fn assert_collector_boundaries<T>(
+fn assert_refusal(
     fixture: &FilletFixture,
+    dimension: ResourceDimension,
     operation: &'static str,
-    materialized_dimension: ResourceDimension,
-    storage_fixture: &FilletFixture,
+    additional: u64,
 ) {
-    for (dimension, additional) in [
-        (ResourceDimension::WorkUnits, 1),
-        (ResourceDimension::CollectionItems, 1),
-        (materialized_dimension, minimum_vec_bytes::<T>()),
-    ] {
-        let selected = if dimension == materialized_dimension {
-            storage_fixture
-        } else {
-            fixture
-        };
-        let error = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
-            selected.decode(ctx).map(|_| ())
-        });
-        assert!(matches!(
+    let error = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
+        fixture.decode(ctx).map(|_| ())
+    });
+    assert!(
+        matches!(
             error,
             CodecError::ResourceLimit(failure)
                 if failure.dimension == dimension
                     && failure.operation == operation
                     && failure.additional == additional
-        ));
-    }
+        ),
+        "{operation}: {error:?}"
+    );
 }
 
-fn assert_work_admission(fixture: &FilletFixture, operation: &'static str, additional: usize) {
-    let expected = u64::try_from(additional).expect("admitted source length fits u64");
-    let error = crate::test_support::resource_refusal_at(
-        ResourceDimension::WorkUnits,
-        operation,
-        0,
-        |ctx| fixture.decode(ctx).map(|_| ()),
-    );
-    assert!(matches!(
-        error,
-        CodecError::ResourceLimit(failure)
-            if failure.dimension == ResourceDimension::WorkUnits
-                && failure.operation == operation
-                && failure.additional == expected
-    ));
+fn admitted(count: usize) -> u64 {
+    u64::try_from(count).expect("admitted count fits u64")
 }
 
 #[test]
@@ -262,39 +241,6 @@ fn fillet_scoped_projection_collectors_refuse_at_each_exact_boundary() {
         .iter()
         .all(|group| matches!(&group.law, DesignFilletRadiusLaw::Constant { .. })));
 
-    // Two indexed parameters avoid a hash-table rehash before the projections.
-    let storage_constant = constant_fixture(1, 1, true);
-    let storage_output =
-        crate::test_support::with_decode_context(|ctx| storage_constant.decode(ctx))
-            .expect("valid single constant Fillet group");
-    assert!(matches!(storage_output.as_slice(), [group]
-        if matches!(&group.law, DesignFilletRadiusLaw::Constant { .. })));
-
-    assert_collector_boundaries::<&DesignConstructionOperandGroup>(
-        &constant,
-        "f3d Fillet scope groups",
-        ResourceDimension::MaterializedBytes,
-        &storage_constant,
-    );
-    assert_collector_boundaries::<(u32, &DesignParameter)>(
-        &constant,
-        "f3d Fillet owned parameters",
-        ResourceDimension::MaterializedBytes,
-        &storage_constant,
-    );
-    assert_collector_boundaries::<&DesignParameter>(
-        &constant,
-        "f3d Fillet radius parameters",
-        ResourceDimension::MaterializedBytes,
-        &storage_constant,
-    );
-    assert_collector_boundaries::<&DesignParameter>(
-        &constant,
-        "f3d Fillet weight parameters",
-        ResourceDimension::MaterializedBytes,
-        &storage_constant,
-    );
-
     let chordal = one_scope_fixture(&["ChordLen"]);
     let output = crate::test_support::with_decode_context(|ctx| chordal.decode(ctx))
         .expect("valid chordal Fillet group");
@@ -302,12 +248,6 @@ fn fillet_scoped_projection_collectors_refuse_at_each_exact_boundary() {
         output.as_slice(),
         [group] if matches!(&group.law, DesignFilletRadiusLaw::Chordal { .. })
     ));
-    assert_collector_boundaries::<u32>(
-        &chordal,
-        "f3d Fillet chord lengths",
-        ResourceDimension::MaterializedBytes,
-        &chordal,
-    );
 
     let asymmetric = one_scope_fixture(&["EdgeOffset1", "EdgeOffset2", "TangencyWeight"]);
     let output = crate::test_support::with_decode_context(|ctx| asymmetric.decode(ctx))
@@ -316,12 +256,6 @@ fn fillet_scoped_projection_collectors_refuse_at_each_exact_boundary() {
         output.as_slice(),
         [group] if matches!(&group.law, DesignFilletRadiusLaw::Asymmetric { .. })
     ));
-    assert_collector_boundaries::<u32>(
-        &asymmetric,
-        "f3d Fillet asymmetric offsets",
-        ResourceDimension::MaterializedBytes,
-        &asymmetric,
-    );
 
     let variable = one_scope_fixture(&["StartRadius", "EndRadius", "MidRadius", "MidParams"]);
     let output = crate::test_support::with_decode_context(|ctx| variable.decode(ctx))
@@ -339,24 +273,70 @@ fn fillet_scoped_projection_collectors_refuse_at_each_exact_boundary() {
                         })
         )
     ));
-    let storage_variable = one_scope_fixture(&["StartRadius", "EndRadius"]);
-    let storage_output =
-        crate::test_support::with_decode_context(|ctx| storage_variable.decode(ctx))
-            .expect("valid endpoint-only variable Fillet group");
-    assert!(matches!(storage_output.as_slice(), [group]
+    let endpoint_only = one_scope_fixture(&["StartRadius", "EndRadius"]);
+    let output = crate::test_support::with_decode_context(|ctx| endpoint_only.decode(ctx))
+        .expect("valid endpoint-only variable Fillet group");
+    assert!(matches!(output.as_slice(), [group]
         if matches!(&group.law, DesignFilletRadiusLaw::Variable { middle, .. }
             if middle.is_empty())));
-    assert_collector_boundaries::<u32>(
-        &variable,
-        "f3d Fillet variable parameters",
-        ResourceDimension::MaterializedBytes,
-        &storage_variable,
+
+    // The scope's groups are copied into exact scoped storage.
+    let scope_groups = constant.groups.len();
+    assert_refusal(
+        &constant,
+        ResourceDimension::WorkUnits,
+        "f3d Fillet scope groups",
+        admitted(scope_groups),
     );
-    assert_collector_boundaries::<DesignFilletMidpoint>(
+    assert_refusal(
+        &constant,
+        ResourceDimension::CollectionItems,
+        "f3d Fillet scope groups",
+        admitted(scope_groups),
+    );
+    assert_refusal(
+        &constant,
+        ResourceDimension::MaterializedBytes,
+        "f3d Fillet scope groups",
+        admitted(scope_groups * std::mem::size_of::<&DesignConstructionOperandGroup>()),
+    );
+    // Owned parameters and their partition grow scoped storage one slot at a time.
+    assert_refusal(
+        &constant,
+        ResourceDimension::CollectionItems,
+        "f3d Fillet owned parameters",
+        1,
+    );
+    assert_refusal(
+        &constant,
+        ResourceDimension::MaterializedBytes,
+        "f3d Fillet owned parameters",
+        minimum_vec_bytes::<(u32, &DesignParameter)>(),
+    );
+    assert_refusal(
+        &constant,
+        ResourceDimension::CollectionItems,
+        "f3d Fillet parameters by kind",
+        1,
+    );
+    assert_refusal(
+        &constant,
+        ResourceDimension::MaterializedBytes,
+        "f3d Fillet parameters by kind",
+        minimum_vec_bytes::<&DesignParameter>(),
+    );
+    // Midpoints are retained in the output law.
+    assert_refusal(
         &variable,
+        ResourceDimension::CollectionItems,
         "f3d Fillet middle parameters",
-        ResourceDimension::RetainedBytes,
+        1,
+    );
+    assert_refusal(
         &variable,
+        ResourceDimension::RetainedBytes,
+        "f3d Fillet middle parameters",
+        minimum_vec_bytes::<DesignFilletMidpoint>(),
     );
 
     for (fixture, operation, additional) in [
@@ -368,69 +348,74 @@ fn fillet_scoped_projection_collectors_refuse_at_each_exact_boundary() {
         (&constant, "scan F3D Fillet scopes", constant.scopes.len()),
         (
             &constant,
-            "scan F3D Fillet scope groups",
+            "index F3D construction operand groups by scope",
             constant.groups.len(),
+        ),
+        (
+            &constant,
+            "index F3D Fillet owners by scope",
+            constant.owners.len(),
         ),
         (&constant, "scan F3D Fillet owners", constant.owners.len()),
         (
             &constant,
-            "scan F3D Fillet radius parameters",
-            constant.owners.len(),
-        ),
-        (
-            &constant,
-            "scan F3D Fillet weight parameters",
+            "classify F3D Fillet parameters",
             constant.owners.len(),
         ),
         (&constant, "pair F3D Fillet groups", 2),
-        (&constant, "pair F3D Fillet radius parameters", 2),
-        (&chordal, "scan F3D Fillet chord-length parameters", 1),
-        (&asymmetric, "scan F3D Fillet asymmetric parameters", 3),
-        (&variable, "scan F3D Fillet variable parameters", 4),
-        (&variable, "scan F3D Fillet midpoint radii", 1),
-        (&variable, "scan F3D Fillet midpoint parameter indices", 1),
     ] {
-        assert_work_admission(fixture, operation, additional);
+        assert_refusal(
+            fixture,
+            ResourceDimension::WorkUnits,
+            operation,
+            admitted(additional),
+        );
     }
+}
+
+/// The least materialized-byte ceiling under which `fixture` decodes.
+fn materialized_peak(fixture: &FilletFixture) -> u64 {
+    let decodes = |ceiling: u64| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = ceiling;
+        crate::test_support::with_decode_policy(&policy, |ctx| fixture.decode(ctx)).is_ok()
+    };
+    let (mut lower, mut upper) = (0_u64, 1 << 20);
+    assert!(decodes(upper), "fixture decodes within the search ceiling");
+    while lower < upper {
+        let middle = lower + (upper - lower) / 2;
+        if decodes(middle) {
+            upper = middle;
+        } else {
+            lower = middle + 1;
+        }
+    }
+    upper
 }
 
 #[test]
 fn fillet_materialized_projection_storage_is_released_between_scopes() {
     let fixture = constant_fixture(2, 2, false);
-    let peak_bytes = minimum_vec_bytes::<&DesignConstructionOperandGroup>()
-        .checked_add(minimum_vec_bytes::<(u32, &DesignParameter)>())
-        .and_then(|bytes| bytes.checked_add(minimum_vec_bytes::<&DesignParameter>()))
-        .expect("one Fillet scope projection peak fits u64");
-    let mut policy = DecodePolicy::service();
-    // The four-entry index grows from four buckets. Its old allocation includes
-    // alignment padding, four control bytes, and the sixteen-byte control tail.
-    let index_overlap = u64::try_from(
-        4 * std::mem::size_of::<((&str, u32), &DesignParameter)>()
-            + std::mem::align_of::<((&str, u32), &DesignParameter)>().max(16)
-            - 1
-            + 4
-            + 16,
-    )
-    .expect("index overlap bytes fit u64");
-    let stream_bytes = u64::try_from(
-        crate::ids::native_stream(&fixture.scopes[0].id)
-            .expect("native stream")
-            .len(),
-    )
-    .expect("stream bytes fit u64");
-    // Output ID growth overlaps the live projections with the copied stream.
-    let output_peak = peak_bytes
-        .checked_add(stream_bytes)
-        .expect("output peak fits u64");
-    policy.limits.max_materialized_bytes = output_peak.max(index_overlap);
-    let output = crate::test_support::with_decode_policy(&policy, |ctx| fixture.decode(ctx))
-        .expect("scoped projection receipts release before the next scope");
-    assert_eq!(output.len(), 4);
+    let output = crate::test_support::with_decode_context(|ctx| fixture.decode(ctx))
+        .expect("valid constant Fillet groups");
     assert_eq!(
         output
             .iter()
             .map(|group| group.scope_record_index)
             .collect::<Vec<_>>(),
         [12, 12, 13, 13]
+    );
+    // The same indexes with one Fillet scope: the second scope is a Chamfer,
+    // which builds no projections.
+    let mut single_projection = constant_fixture(2, 2, false);
+    single_projection.scopes[1] = DesignParameterScope::empty(
+        &format!("f3d:{STREAM}:scope#13"),
+        DesignFeatureKind::Chamfer,
+        13,
+    );
+    assert_eq!(
+        materialized_peak(&fixture),
+        materialized_peak(&single_projection),
+        "one scope's projections are released before the next scope builds its own"
     );
 }
