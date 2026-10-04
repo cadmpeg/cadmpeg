@@ -103,8 +103,7 @@ pub(in crate::design::decode) fn exact_hole_construction(
                 else {
                     continue;
                 };
-                if after_tag != start + 7
-                    || View::u32_le_at(bytes, after_tag) != Some(record_index)
+                if after_tag != start + 7 || View::u32_le_at(bytes, after_tag) != Some(record_index)
                 {
                     continue;
                 }
@@ -153,8 +152,7 @@ fn exact_hole_face_selection(
         scope.reference_members(),
         "scan F3D Hole face-selection scope references",
     )? {
-        if stream_types.get(&u64::from(record_index)) != Some(&(HOLE_FACE_SELECTION_TYPE_GUID, 1))
-        {
+        if stream_types.get(&u64::from(record_index)) != Some(&(HOLE_FACE_SELECTION_TYPE_GUID, 1)) {
             continue;
         }
         for (start, _paired_at) in records.frames(ctx, record_index)? {
@@ -291,10 +289,16 @@ fn hole_construction_frame_at(
             let reference_at = cursor;
             let reference = take_reference(body, &mut cursor)?;
             let target = u32::try_from(reference.target()?).ok()?;
-            if let Err(error) = ctx.push_vec(&mut input_records, crate::records::identity::Located {
-                value: target,
-                offset: u64::try_from(reference_at.checked_add(1)?).ok()?,
-            }, "f3d Hole input records") { return Some(Err(error)); };
+            if let Err(error) = ctx.push_vec(
+                &mut input_records,
+                crate::records::identity::Located {
+                    value: target,
+                    offset: u64::try_from(reference_at.checked_add(1)?).ok()?,
+                },
+                "f3d Hole input records",
+            ) {
+                return Some(Err(error));
+            };
         }
         let paired_end_matches = if version == 4 {
             cursor == paired_at

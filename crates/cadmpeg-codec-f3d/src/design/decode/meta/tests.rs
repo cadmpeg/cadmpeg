@@ -891,11 +891,10 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
     }
 }
 
-
 #[test]
 fn located_design_type_entity_copy_refuses_each_resource_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
     use crate::records::identity::{Located, ReferenceRun};
+    use cadmpeg_core::decode::ResourceDimension;
 
     let mut design_type = crate::design::test_support::design_type(
         "11111111-2222-3333-4444-555555555555",
@@ -914,12 +913,9 @@ fn located_design_type_entity_copy_refuses_each_resource_limit() {
         (ResourceDimension::CollectionItems, 1),
         (ResourceDimension::RetainedBytes, 64),
     ] {
-        let refusal = crate::test_support::resource_refusal_at(
-            dimension,
-            operation,
-            0,
-            |ctx| super::copy_design_type(ctx, &design_type, "Synthetic/MetaStream.dat").map(|_| ()),
-        );
+        let refusal = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
+            super::copy_design_type(ctx, &design_type, "Synthetic/MetaStream.dat").map(|_| ())
+        });
         assert!(matches!(
             refusal,
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -932,6 +928,9 @@ fn located_design_type_entity_copy_refuses_each_resource_limit() {
         super::copy_design_type(ctx, &design_type, "Synthetic/MetaStream.dat")
     })
     .expect("located registration copy");
-    let expected = [Located { value: 17, offset: 23 }];
+    let expected = [Located {
+        value: 17,
+        offset: 23,
+    }];
     assert_eq!(copied.entities.located_rows(), Some(&expected[..]));
 }

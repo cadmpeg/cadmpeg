@@ -25,9 +25,10 @@ pub(in crate::design::decode) fn exact_indexed_header_at(
     if View::u32_le_at(bytes, after_tag) != Some(record_index) {
         return Ok(None);
     }
-    Ok(Some(
-        ctx.copy_retained_text(class_tag, "copy F3D indexed header class tag")?,
-    ))
+    Ok(Some(ctx.copy_retained_text(
+        class_tag,
+        "copy F3D indexed header class tag",
+    )?))
 }
 
 pub(super) fn exact_same_segment_record_reference(bytes: &[u8], at: usize) -> Option<(u32, u64)> {
@@ -63,44 +64,49 @@ pub(super) fn exact_fixed_scalar(
     records: &IndexedRecordOffsets,
     record_index: u32,
 ) -> Result<Option<FixedScalarFrame>, CodecError> {
-    let mut candidates = records.frames(ctx, record_index)?.filter_map(|(start, end)| {
-        let frame_length = end.checked_sub(start)?;
-        matches!(frame_length, 100 | 103 | 104 | 105).then_some(())?;
-        if frame_length == 100 || frame_length == 103 {
-            let (_, after_tag) = lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
-            if after_tag != start + 7
-                || bytes.get(start + 11..start + 19) != Some(&[0; 8])
-                || bytes.get(start + 19..start + 24) != Some(&[1, 1, 0, 0, 0])
-                || bytes.get(start + 29..start + 35) != Some(&[0; 6])
-                || bytes.get(start + 36..start + 40) != Some(&[0; 4])
-            {
-                return None;
+    let mut candidates = records
+        .frames(ctx, record_index)?
+        .filter_map(|(start, end)| {
+            let frame_length = end.checked_sub(start)?;
+            matches!(frame_length, 100 | 103 | 104 | 105).then_some(())?;
+            if frame_length == 100 || frame_length == 103 {
+                let (_, after_tag) =
+                    lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
+                if after_tag != start + 7
+                    || bytes.get(start + 11..start + 19) != Some(&[0; 8])
+                    || bytes.get(start + 19..start + 24) != Some(&[1, 1, 0, 0, 0])
+                    || bytes.get(start + 29..start + 35) != Some(&[0; 6])
+                    || bytes.get(start + 36..start + 40) != Some(&[0; 4])
+                {
+                    return None;
+                }
+                if frame_length == 103
+                    && (marked_record_reference(bytes, start + 24).is_none()
+                        || marked_record_reference(bytes, start + 48).is_none()
+                        || marked_record_reference(bytes, start + 67)
+                            != View::u32_le_at(bytes, start + 25)
+                        || bytes.get(start + 78..start + 80) != Some(&[0; 2])
+                        || marked_record_reference(bytes, start + 80).is_none()
+                        || bytes.get(start + 85..start + 92) != Some(&[0; 7])
+                        || marked_record_reference(bytes, start + 92)
+                            != View::u32_le_at(bytes, start + 25))
+                {
+                    return None;
+                }
             }
-            if frame_length == 103
-                && (marked_record_reference(bytes, start + 24).is_none()
-                    || marked_record_reference(bytes, start + 48).is_none()
-                    || marked_record_reference(bytes, start + 67)
-                        != View::u32_le_at(bytes, start + 25)
-                    || bytes.get(start + 78..start + 80) != Some(&[0; 2])
-                    || marked_record_reference(bytes, start + 80).is_none()
-                    || bytes.get(start + 85..start + 92) != Some(&[0; 7])
-                    || marked_record_reference(bytes, start + 92)
-                        != View::u32_le_at(bytes, start + 25))
-            {
-                return None;
-            }
-        }
-        let value = FiniteReal::new(View::f64_le_at(bytes, start + 40)?)?;
-        Some(FixedScalarFrame {
-            owner_record_index: (bytes.get(start + 24) == Some(&1))
-                .then(|| View::u32_le_at(bytes, start + 25))
-                .flatten(),
-            ordinal: *bytes.get(start + 35)?,
-            value,
-            value_offset: u64::try_from(start + 40).ok()?,
-        })
-    });
-    let Some(candidate) = candidates.next() else { return Ok(None); };
+            let value = FiniteReal::new(View::f64_le_at(bytes, start + 40)?)?;
+            Some(FixedScalarFrame {
+                owner_record_index: (bytes.get(start + 24) == Some(&1))
+                    .then(|| View::u32_le_at(bytes, start + 25))
+                    .flatten(),
+                ordinal: *bytes.get(start + 35)?,
+                value,
+                value_offset: u64::try_from(start + 40).ok()?,
+            })
+        });
+    let Some(candidate) = candidates.next() else {
+        return Ok(None);
+    };
     Ok(candidates.next().is_none().then_some(candidate))
 }
 

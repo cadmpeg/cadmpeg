@@ -671,38 +671,46 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
 
     let mut wrong_presence = class_322.clone();
     wrong_presence[21] = 0;
-    assert!(crate::design::test_support::with_test_decode_context(|ctx| {
-        parse_loft_legacy_body_carrier(
-            ctx,
-            &wrong_presence,
-            &scope,
-            &crate::records::decal::DesignRecordHeader {
-                id: "header-322".into(),
-                record_index: 100,
-                class_tag: crate::records::references::DesignClassTag::try_from("322".to_owned())
+    assert!(
+        crate::design::test_support::with_test_decode_context(|ctx| {
+            parse_loft_legacy_body_carrier(
+                ctx,
+                &wrong_presence,
+                &scope,
+                &crate::records::decal::DesignRecordHeader {
+                    id: "header-322".into(),
+                    record_index: 100,
+                    class_tag: crate::records::references::DesignClassTag::try_from(
+                        "322".to_owned(),
+                    )
                     .unwrap(),
-                byte_offset: 0,
-            },
-        )
-        .unwrap()
-    })
-    .is_none());
+                    byte_offset: 0,
+                },
+            )
+            .unwrap()
+        })
+        .is_none()
+    );
 
     let wrong_pair = carrier(b"322", b"266", 12, 400, false);
-    assert!(crate::design::test_support::with_test_decode_context(|ctx| {
-        parse_loft_legacy_body_carrier(
-            ctx,
-            &wrong_pair,
-            &scope,
-            &crate::records::decal::DesignRecordHeader {
-                id: "header-322".into(),
-                record_index: 400,
-                class_tag: crate::records::references::DesignClassTag::try_from("322".to_owned())
+    assert!(
+        crate::design::test_support::with_test_decode_context(|ctx| {
+            parse_loft_legacy_body_carrier(
+                ctx,
+                &wrong_pair,
+                &scope,
+                &crate::records::decal::DesignRecordHeader {
+                    id: "header-322".into(),
+                    record_index: 400,
+                    class_tag: crate::records::references::DesignClassTag::try_from(
+                        "322".to_owned(),
+                    )
                     .unwrap(),
-                byte_offset: 0,
-            },
-        )
-        .unwrap()
-    })
-    .is_none());
+                    byte_offset: 0,
+                },
+            )
+            .unwrap()
+        })
+        .is_none()
+    );
 }

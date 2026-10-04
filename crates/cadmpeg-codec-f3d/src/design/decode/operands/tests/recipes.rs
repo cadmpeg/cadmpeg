@@ -218,7 +218,9 @@ fn face_recipe_boundary_accepts_omitted_n_plus_four() {
     let next = omitted.len();
     indexed_header(&mut omitted, *b"317", 105);
     let omitted_boundary = crate::design::test_support::with_test_decode_context(|ctx| {
-        crate::design::decode::operands::face_recipe_next_boundary(ctx, &omitted, position, 100, None)
+        crate::design::decode::operands::face_recipe_next_boundary(
+            ctx, &omitted, position, 100, None,
+        )
     })
     .expect("omitted face recipe boundary scan");
     assert_eq!(omitted_boundary, Some((next, 105)));

@@ -248,9 +248,7 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes,
                 "copy F3D As-built frame class tag",
                 0,
-                |ctx| {
-                    exact_assembly_alignment(ctx, &bytes, &records, &scope, &owners).map(|_| ())
-                },
+                |ctx| exact_assembly_alignment(ctx, &bytes, &records, &scope, &owners).map(|_| ()),
             );
             assert!(matches!(
                 refusal,

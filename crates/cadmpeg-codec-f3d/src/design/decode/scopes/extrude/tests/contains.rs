@@ -87,19 +87,16 @@ fn current_extrude_slot_membership_propagates_work_refusal() {
             }
         ))
     ));
-    assert_work_refusal(
-        "search F3D current Extrude slot reference members",
-        |ctx| {
-            super::super::exact_current_extrude_prologue(
-                ctx,
-                &bytes,
-                0,
-                bytes.len(),
-                &SINGLE_REFERENCE,
-                false,
-            )
-        },
-    );
+    assert_work_refusal("search F3D current Extrude slot reference members", |ctx| {
+        super::super::exact_current_extrude_prologue(
+            ctx,
+            &bytes,
+            0,
+            bytes.len(),
+            &SINGLE_REFERENCE,
+            false,
+        )
+    });
 }
 
 fn compact_shifted_extrude_bytes() -> Vec<u8> {
@@ -206,19 +203,10 @@ fn shifted_extrude_parameter_membership_propagates_work_refusal() {
             }
         ))
     ));
-    assert_work_refusal(
-        "search F3D shifted Extrude parameter references",
-        |ctx| {
-            super::super::exact_legacy_shifted_extrude_prologue(
-                ctx,
-                &bytes,
-                0,
-                272,
-                &SINGLE_REFERENCE,
-            )
+    assert_work_refusal("search F3D shifted Extrude parameter references", |ctx| {
+        super::super::exact_legacy_shifted_extrude_prologue(ctx, &bytes, 0, 272, &SINGLE_REFERENCE)
             .transpose()
-        },
-    );
+    });
 }
 
 #[test]
@@ -281,19 +269,16 @@ fn class_338_extrude_membership_propagates_work_refusal() {
             }
         ))
     ));
-    assert_work_refusal(
-        "search F3D class-338 Extrude reference members",
-        |ctx| {
-            super::super::exact_class_338_two_sided_distance_extrude_prologue(
-                ctx,
-                &bytes,
-                0,
-                layout::LEN,
-                "338",
-                "262",
-                layout::REFERENCE_COUNT,
-                &REFERENCES,
-            )
-        },
-    );
+    assert_work_refusal("search F3D class-338 Extrude reference members", |ctx| {
+        super::super::exact_class_338_two_sided_distance_extrude_prologue(
+            ctx,
+            &bytes,
+            0,
+            layout::LEN,
+            "338",
+            "262",
+            layout::REFERENCE_COUNT,
+            &REFERENCES,
+        )
+    });
 }

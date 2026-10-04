@@ -14,7 +14,6 @@ use crate::layout::hem_gap_length_fixed_operation_section as hem_gap;
 use crate::layout::hem_rolled_fixed_operation_section as hem_rolled;
 use crate::layout::hem_teardrop_fixed_operation_section as hem_teardrop;
 use crate::records::feature::scope::DesignParameterScope;
-use crate::records::identity::ReferenceRun;
 use crate::records::feature::sheet_metal::DesignBaseFlangeOperation;
 use crate::records::feature::sheet_metal::DesignBendPosition;
 use crate::records::feature::sheet_metal::DesignEdgeFlangeHeightExtent;
@@ -24,6 +23,7 @@ use crate::records::feature::sheet_metal::DesignEdgeWidthMode;
 use crate::records::feature::sheet_metal::DesignHemOperation;
 use crate::records::feature::sheet_metal::DesignHemParameterOwners;
 use crate::records::feature::sheet_metal::DesignSheetMetalHeightDatum;
+use crate::records::identity::ReferenceRun;
 use crate::records::parameters::DesignParameter;
 use crate::records::parameters::DesignParameterOwner;
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -173,7 +173,14 @@ pub(super) fn exact_edge_flange_operation(
     for header_shift in SHEET_METAL_HEADER_SHIFTS {
         for candidate in [
             edge_flange_operation_at(ctx, bytes, start, paired_at, references, header_shift)?,
-            edge_flange_to_object_operation_at(ctx, bytes, start, paired_at, references, header_shift)?,
+            edge_flange_to_object_operation_at(
+                ctx,
+                bytes,
+                start,
+                paired_at,
+                references,
+                header_shift,
+            )?,
         ]
         .into_iter()
         .flatten()
@@ -410,234 +417,262 @@ fn legacy_edge_flange_operation_at(
         Ok(Some(index))
     };
     let parsed = (|| -> Option<Result<DesignEdgeFlangeOperation, CodecError>> {
-    let edge_count = layout.edge_columns.len();
-    if references.len() != layout.reference_count()
-        || paired_at.checked_sub(start)? != layout.frame_length
-        || View::u32_le_at(bytes, start.checked_add(layout.edge_count_offset)?)?
-            != u32::try_from(edge_count).ok()?
-    {
-        return None;
-    }
-    let mut unclaimed = match ctx.copy_slice(references, "f3d legacy edge-flange reference copy") {
-        Ok(values) => values,
-        Err(error) => return Some(Err(error)),
-    };
-    let mut wrapper_columns = match ctx.admit_iter(
-        layout.edge_columns,
-        "scan F3D legacy edge flange wrapper columns",
-    ) {
-        Ok(columns) => columns,
-        Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
-    };
-    let edge_wrapper_record_indices = match wrapper_columns.try_fold(
-        Vec::new(),
-        |mut record_indices, (offset, _)| -> std::ops::ControlFlow<Option<CodecError>, Vec<u32>> {
-            let Some(at) = start.checked_add(*offset) else {
-                return std::ops::ControlFlow::Break(None);
-            };
-            let Some(record_index) = marked_record_reference(bytes, at) else {
-                return std::ops::ControlFlow::Break(None);
-            };
-            let record_index = match claim(record_index, &mut unclaimed) {
-                Ok(Some(record_index)) => record_index,
-                Ok(None) => return std::ops::ControlFlow::Break(None),
-                Err(error) => return std::ops::ControlFlow::Break(Some(error)),
-            };
-            if let Err(error) = ctx.push_vec(&mut record_indices, record_index, "collect F3D legacy edge flange wrapper references") { return std::ops::ControlFlow::Break(Some(error)); };
-            std::ops::ControlFlow::Continue(record_indices)
-        },
-    ) {
-        std::ops::ControlFlow::Continue(record_indices) => record_indices,
-        std::ops::ControlFlow::Break(None) => return None,
-        std::ops::ControlFlow::Break(Some(error)) => return Some(Err(error)),
-    };
-    let settings_slot = marked_record_reference(bytes, start.checked_add(layout.settings_offset)?)?;
-    let settings_record_index = match claim(settings_slot, &mut unclaimed) {
-        Ok(Some(record_index)) => record_index,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    let height_datum = DesignSheetMetalHeightDatum::from_code(View::u32_le_at(
-        bytes,
-        start.checked_add(layout.height_datum_offset)?,
-    )?);
-    let angle_slot = marked_record_reference(bytes, start.checked_add(layout.angle_owner_offset)?)?;
-    let angle_owner_record_index = match claim(angle_slot, &mut unclaimed) {
-        Ok(Some(record_index)) => record_index,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    let height_slot = marked_record_reference(bytes, start.checked_add(layout.height_owner_offset)?)?;
-    let height_owner_record_index = match claim(height_slot, &mut unclaimed) {
-        Ok(Some(record_index)) => record_index,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    let bend_radius_offset = start.checked_add(layout.bend_radius_offset)?;
-    let bend_radius =
-        cadmpeg_ir::scalar::PositiveReal::new(View::f64_le_at(bytes, bend_radius_offset)?)?;
-    if View::u32_le_at(bytes, start.checked_add(layout.result_count_offset)?)?
-        != u32::try_from(layout.result_trailers.len()).ok()?
-        || View::u32_le_at(bytes, start.checked_add(layout.result_separator_offset)?)? != 1
-    {
-        return None;
-    }
-    // Each static layout lists at most five result references.
-    let mut result_record_indices = [None; 5];
-    let trailers = match ctx.admit_iter(
-        layout.result_trailers,
-        "validate F3D legacy edge flange result trailers",
-    ) {
-        Ok(trailers) => trailers,
-        Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
-    };
-    for (ordinal, expected_trailer) in trailers.enumerate() {
-        let result_offset = layout
-            .result_reference_start
-            .checked_add(ordinal.checked_mul(15)?)?;
-        let result_record_index =
-            marked_record_reference(bytes, start.checked_add(result_offset)?)?;
-        if result_record_indices.contains(&Some(result_record_index))
-            || View::u32_le_at(
-                bytes,
-                start.checked_add(
-                    layout
-                        .result_trailer_start
-                        .checked_add(ordinal.checked_mul(15)?)?,
-                )?,
-            )? != *expected_trailer
+        let edge_count = layout.edge_columns.len();
+        if references.len() != layout.reference_count()
+            || paired_at.checked_sub(start)? != layout.frame_length
+            || View::u32_le_at(bytes, start.checked_add(layout.edge_count_offset)?)?
+                != u32::try_from(edge_count).ok()?
         {
             return None;
         }
-        *result_record_indices.get_mut(ordinal)? = Some(result_record_index);
-    }
-    let aggregate_slot =
-        marked_record_reference(bytes, start.checked_add(layout.aggregate_group_offset)?)?;
-    let aggregate_group_record_index = match claim(aggregate_slot, &mut unclaimed) {
-        Ok(Some(record_index)) => record_index,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    let mut group_columns = match ctx.admit_iter(
-        layout.edge_columns,
-        "scan F3D legacy edge flange group columns",
-    ) {
-        Ok(columns) => columns,
-        Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
-    };
-    let edge_group_record_indices = match group_columns.try_fold(
-        Vec::new(),
-        |mut record_indices, (_, offset)| -> std::ops::ControlFlow<Option<CodecError>, Vec<u32>> {
-            let Some(at) = start.checked_add(*offset) else {
-                return std::ops::ControlFlow::Break(None);
-            };
-            let Some(record_index) = marked_record_reference(bytes, at) else {
-                return std::ops::ControlFlow::Break(None);
-            };
-            let record_index = match claim(record_index, &mut unclaimed) {
-                Ok(Some(record_index)) => record_index,
-                Ok(None) => return std::ops::ControlFlow::Break(None),
-                Err(error) => return std::ops::ControlFlow::Break(Some(error)),
-            };
-            if let Err(error) = ctx.push_vec(&mut record_indices, record_index, "collect F3D legacy edge flange group references") { return std::ops::ControlFlow::Break(Some(error)); };
-            std::ops::ControlFlow::Continue(record_indices)
-        },
-    ) {
-        std::ops::ControlFlow::Continue(record_indices) => record_indices,
-        std::ops::ControlFlow::Break(None) => return None,
-        std::ops::ControlFlow::Break(Some(error)) => return Some(Err(error)),
-    };
-    let mut operand_groups = match ctx.admit_iter(
-        &edge_group_record_indices,
-        "scan F3D legacy edge flange operand groups",
-    ) {
-        Ok(groups) => groups,
-        Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
-    };
-    let edge_operand_record_indices = match operand_groups.try_fold(
-        Vec::new(),
-        |mut record_indices, group_record_index| -> std::ops::ControlFlow<Option<CodecError>, Vec<u32>> {
-            let Some(operand_record_index) = group_record_index.checked_add(3) else {
-                return std::ops::ControlFlow::Break(None);
-            };
-            let record_index = match claim(operand_record_index, &mut unclaimed) {
-                Ok(Some(record_index)) => record_index,
-                Ok(None) => return std::ops::ControlFlow::Break(None),
-                Err(error) => return std::ops::ControlFlow::Break(Some(error)),
-            };
-            if let Err(error) = ctx.push_vec(&mut record_indices, record_index, "collect F3D legacy edge flange operand references") { return std::ops::ControlFlow::Break(Some(error)); };
-            std::ops::ControlFlow::Continue(record_indices)
-        },
-    ) {
-        std::ops::ControlFlow::Continue(record_indices) => record_indices,
-        std::ops::ControlFlow::Break(None) => return None,
-        std::ops::ControlFlow::Break(Some(error)) => return Some(Err(error)),
-    };
-    let aggregate_operand_start = layout.width_owner_count() + layout.auxiliary_reference_count;
-    let aggregate_operand_record_indices = unclaimed.split_off(aggregate_operand_start);
-    let width_distance_owner_record_indices = unclaimed
-        .drain(..layout.width_owner_count())
-        .collect::<Vec<_>>();
-    let auxiliary_reference_record_indices = unclaimed;
-    let width_distance_owner_record_indices_by_edge =
-        if layout.width_mode == DesignEdgeWidthMode::TwoSidesPerEdge {
-            let owners = match ctx.admit_iter(
-                &width_distance_owner_record_indices,
-                "scan F3D edge flange two-sided width owners",
-            ) {
-                Ok(owners) => owners,
-                Err(error) => return Some(Err(CodecError::ResourceLimit(error))),
-            };
-            let pairs = owners
-                .copied()
-                .scan(None, |first, value| match first.take() {
-                    Some(first) => Some(Some([first, value])),
-                    None => {
-                        *first = Some(value);
-                        Some(None)
-                    }
-                })
-                .filter_map(|pair| pair);
-            match ctx.collect_vec(pairs, "collect F3D edge flange two-sided width owners") {
-                Ok(pairs) => pairs,
+        let mut unclaimed =
+            match ctx.copy_slice(references, "f3d legacy edge-flange reference copy") {
+                Ok(values) => values,
                 Err(error) => return Some(Err(error)),
-            }
-        } else {
-            Vec::new()
+            };
+        let mut wrapper_columns = match ctx.admit_iter(
+            layout.edge_columns,
+            "scan F3D legacy edge flange wrapper columns",
+        ) {
+            Ok(columns) => columns,
+            Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
         };
-    let edges = crate::records::feature::sheet_metal::DesignEdgeFlangeEdge::from_columns(
-        edge_wrapper_record_indices,
-        edge_group_record_indices,
-        &edge_operand_record_indices,
-        aggregate_operand_record_indices,
-    )
-    .ok()?;
-    Some(Ok(DesignEdgeFlangeOperation {
-        height_owner_record_index,
-        angle_owner_record_index,
-        auxiliary_reference_record_indices,
-        settings_record_index,
-        bend_radius,
-        bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
-        height_datum,
-        bend_position: DesignBendPosition::from_code(View::u32_le_at(
+        let edge_wrapper_record_indices = match wrapper_columns.try_fold(
+            Vec::new(),
+            |mut record_indices,
+             (offset, _)|
+             -> std::ops::ControlFlow<Option<CodecError>, Vec<u32>> {
+                let Some(at) = start.checked_add(*offset) else {
+                    return std::ops::ControlFlow::Break(None);
+                };
+                let Some(record_index) = marked_record_reference(bytes, at) else {
+                    return std::ops::ControlFlow::Break(None);
+                };
+                let record_index = match claim(record_index, &mut unclaimed) {
+                    Ok(Some(record_index)) => record_index,
+                    Ok(None) => return std::ops::ControlFlow::Break(None),
+                    Err(error) => return std::ops::ControlFlow::Break(Some(error)),
+                };
+                if let Err(error) = ctx.push_vec(
+                    &mut record_indices,
+                    record_index,
+                    "collect F3D legacy edge flange wrapper references",
+                ) {
+                    return std::ops::ControlFlow::Break(Some(error));
+                };
+                std::ops::ControlFlow::Continue(record_indices)
+            },
+        ) {
+            std::ops::ControlFlow::Continue(record_indices) => record_indices,
+            std::ops::ControlFlow::Break(None) => return None,
+            std::ops::ControlFlow::Break(Some(error)) => return Some(Err(error)),
+        };
+        let settings_slot =
+            marked_record_reference(bytes, start.checked_add(layout.settings_offset)?)?;
+        let settings_record_index = match claim(settings_slot, &mut unclaimed) {
+            Ok(Some(record_index)) => record_index,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let height_datum = DesignSheetMetalHeightDatum::from_code(View::u32_le_at(
             bytes,
-            start.checked_add(layout.bend_position_offset)?,
-        )?),
-        selection: crate::records::feature::sheet_metal::DesignEdgeFlangeSelection::try_new(
-            crate::records::feature::sheet_metal::DesignEdgeFlangeShape::from_wire(
-                edges,
-                Some(layout.width_mode),
-                width_distance_owner_record_indices,
-                width_distance_owner_record_indices_by_edge,
-                layout.width_parameter_source,
-                DesignEdgeFlangeHeightExtent::Distance,
+            start.checked_add(layout.height_datum_offset)?,
+        )?);
+        let angle_slot =
+            marked_record_reference(bytes, start.checked_add(layout.angle_owner_offset)?)?;
+        let angle_owner_record_index = match claim(angle_slot, &mut unclaimed) {
+            Ok(Some(record_index)) => record_index,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let height_slot =
+            marked_record_reference(bytes, start.checked_add(layout.height_owner_offset)?)?;
+        let height_owner_record_index = match claim(height_slot, &mut unclaimed) {
+            Ok(Some(record_index)) => record_index,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let bend_radius_offset = start.checked_add(layout.bend_radius_offset)?;
+        let bend_radius =
+            cadmpeg_ir::scalar::PositiveReal::new(View::f64_le_at(bytes, bend_radius_offset)?)?;
+        if View::u32_le_at(bytes, start.checked_add(layout.result_count_offset)?)?
+            != u32::try_from(layout.result_trailers.len()).ok()?
+            || View::u32_le_at(bytes, start.checked_add(layout.result_separator_offset)?)? != 1
+        {
+            return None;
+        }
+        // Each static layout lists at most five result references.
+        let mut result_record_indices = [None; 5];
+        let trailers = match ctx.admit_iter(
+            layout.result_trailers,
+            "validate F3D legacy edge flange result trailers",
+        ) {
+            Ok(trailers) => trailers,
+            Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+        };
+        for (ordinal, expected_trailer) in trailers.enumerate() {
+            let result_offset = layout
+                .result_reference_start
+                .checked_add(ordinal.checked_mul(15)?)?;
+            let result_record_index =
+                marked_record_reference(bytes, start.checked_add(result_offset)?)?;
+            if result_record_indices.contains(&Some(result_record_index))
+                || View::u32_le_at(
+                    bytes,
+                    start.checked_add(
+                        layout
+                            .result_trailer_start
+                            .checked_add(ordinal.checked_mul(15)?)?,
+                    )?,
+                )? != *expected_trailer
+            {
+                return None;
+            }
+            *result_record_indices.get_mut(ordinal)? = Some(result_record_index);
+        }
+        let aggregate_slot =
+            marked_record_reference(bytes, start.checked_add(layout.aggregate_group_offset)?)?;
+        let aggregate_group_record_index = match claim(aggregate_slot, &mut unclaimed) {
+            Ok(Some(record_index)) => record_index,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let mut group_columns = match ctx.admit_iter(
+            layout.edge_columns,
+            "scan F3D legacy edge flange group columns",
+        ) {
+            Ok(columns) => columns,
+            Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+        };
+        let edge_group_record_indices = match group_columns.try_fold(
+            Vec::new(),
+            |mut record_indices,
+             (_, offset)|
+             -> std::ops::ControlFlow<Option<CodecError>, Vec<u32>> {
+                let Some(at) = start.checked_add(*offset) else {
+                    return std::ops::ControlFlow::Break(None);
+                };
+                let Some(record_index) = marked_record_reference(bytes, at) else {
+                    return std::ops::ControlFlow::Break(None);
+                };
+                let record_index = match claim(record_index, &mut unclaimed) {
+                    Ok(Some(record_index)) => record_index,
+                    Ok(None) => return std::ops::ControlFlow::Break(None),
+                    Err(error) => return std::ops::ControlFlow::Break(Some(error)),
+                };
+                if let Err(error) = ctx.push_vec(
+                    &mut record_indices,
+                    record_index,
+                    "collect F3D legacy edge flange group references",
+                ) {
+                    return std::ops::ControlFlow::Break(Some(error));
+                };
+                std::ops::ControlFlow::Continue(record_indices)
+            },
+        ) {
+            std::ops::ControlFlow::Continue(record_indices) => record_indices,
+            std::ops::ControlFlow::Break(None) => return None,
+            std::ops::ControlFlow::Break(Some(error)) => return Some(Err(error)),
+        };
+        let mut operand_groups = match ctx.admit_iter(
+            &edge_group_record_indices,
+            "scan F3D legacy edge flange operand groups",
+        ) {
+            Ok(groups) => groups,
+            Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+        };
+        let edge_operand_record_indices = match operand_groups.try_fold(
+            Vec::new(),
+            |mut record_indices,
+             group_record_index|
+             -> std::ops::ControlFlow<Option<CodecError>, Vec<u32>> {
+                let Some(operand_record_index) = group_record_index.checked_add(3) else {
+                    return std::ops::ControlFlow::Break(None);
+                };
+                let record_index = match claim(operand_record_index, &mut unclaimed) {
+                    Ok(Some(record_index)) => record_index,
+                    Ok(None) => return std::ops::ControlFlow::Break(None),
+                    Err(error) => return std::ops::ControlFlow::Break(Some(error)),
+                };
+                if let Err(error) = ctx.push_vec(
+                    &mut record_indices,
+                    record_index,
+                    "collect F3D legacy edge flange operand references",
+                ) {
+                    return std::ops::ControlFlow::Break(Some(error));
+                };
+                std::ops::ControlFlow::Continue(record_indices)
+            },
+        ) {
+            std::ops::ControlFlow::Continue(record_indices) => record_indices,
+            std::ops::ControlFlow::Break(None) => return None,
+            std::ops::ControlFlow::Break(Some(error)) => return Some(Err(error)),
+        };
+        let aggregate_operand_start = layout.width_owner_count() + layout.auxiliary_reference_count;
+        let aggregate_operand_record_indices = unclaimed.split_off(aggregate_operand_start);
+        let width_distance_owner_record_indices = unclaimed
+            .drain(..layout.width_owner_count())
+            .collect::<Vec<_>>();
+        let auxiliary_reference_record_indices = unclaimed;
+        let width_distance_owner_record_indices_by_edge =
+            if layout.width_mode == DesignEdgeWidthMode::TwoSidesPerEdge {
+                let owners = match ctx.admit_iter(
+                    &width_distance_owner_record_indices,
+                    "scan F3D edge flange two-sided width owners",
+                ) {
+                    Ok(owners) => owners,
+                    Err(error) => return Some(Err(CodecError::ResourceLimit(error))),
+                };
+                let pairs = owners
+                    .copied()
+                    .scan(None, |first, value| match first.take() {
+                        Some(first) => Some(Some([first, value])),
+                        None => {
+                            *first = Some(value);
+                            Some(None)
+                        }
+                    })
+                    .filter_map(|pair| pair);
+                match ctx.collect_vec(pairs, "collect F3D edge flange two-sided width owners") {
+                    Ok(pairs) => pairs,
+                    Err(error) => return Some(Err(error)),
+                }
+            } else {
+                Vec::new()
+            };
+        let edges = crate::records::feature::sheet_metal::DesignEdgeFlangeEdge::from_columns(
+            edge_wrapper_record_indices,
+            edge_group_record_indices,
+            &edge_operand_record_indices,
+            aggregate_operand_record_indices,
+        )
+        .ok()?;
+        Some(Ok(DesignEdgeFlangeOperation {
+            height_owner_record_index,
+            angle_owner_record_index,
+            auxiliary_reference_record_indices,
+            settings_record_index,
+            bend_radius,
+            bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
+            height_datum,
+            bend_position: DesignBendPosition::from_code(View::u32_le_at(
+                bytes,
+                start.checked_add(layout.bend_position_offset)?,
+            )?),
+            selection: crate::records::feature::sheet_metal::DesignEdgeFlangeSelection::try_new(
+                crate::records::feature::sheet_metal::DesignEdgeFlangeShape::from_wire(
+                    edges,
+                    Some(layout.width_mode),
+                    width_distance_owner_record_indices,
+                    width_distance_owner_record_indices_by_edge,
+                    layout.width_parameter_source,
+                    DesignEdgeFlangeHeightExtent::Distance,
+                )
+                .ok()?,
+                aggregate_group_record_index,
             )
             .ok()?,
-            aggregate_group_record_index,
-        )
-        .ok()?,
-    }))
+        }))
     })();
     parsed.transpose()
 }
@@ -740,7 +775,8 @@ fn edge_flange_operation_at(
             .checked_add(22)?
             .checked_add(result_count.checked_mul(15)?)?;
         let aggregate_slot_record_index = marked_record_reference(bytes, aggregate_slot)?;
-        let aggregate_group_record_index = match claim(aggregate_slot_record_index, &mut unclaimed) {
+        let aggregate_group_record_index = match claim(aggregate_slot_record_index, &mut unclaimed)
+        {
             Ok(Some(record_index)) => record_index,
             Ok(None) => return None,
             Err(error) => return Some(Err(error)),
@@ -831,203 +867,206 @@ fn edge_flange_to_object_operation_at(
         Ok(Some(index))
     };
     let parsed = (|| -> Option<Result<DesignEdgeFlangeOperation, CodecError>> {
-    // This form has one target group and one target entity-selection operand in
-    // addition to the distance form's roles. The two marked references between
-    // the target group and the aggregate group are fixed-frame references, not
-    // entries in the scope's ordered reference table, and are retained as
-    // native references for rewrite.
-    if references.len() != 11 {
-        return None;
-    }
-    let common = start.checked_add(85)?.checked_add(header_shift)?;
-    let bend_position = DesignBendPosition::from_code(View::u32_le_at(bytes, common)?);
-    if View::u32_le_at(bytes, common.checked_add(edge_flange::EDGE_COUNT)?)? != 1 {
-        return None;
-    }
-    let mut unclaimed = match ctx.copy_slice(references, "f3d ToObject edge-flange reference copy") {
-        Ok(values) => values,
-        Err(error) => return Some(Err(error)),
-    };
-    let mut cursor = common.checked_add(edge_flange::EDGE_WRAPPER_REFERENCE)?;
-    let edge_wrapper_slot = marked_record_reference(bytes, cursor)?;
-    let edge_wrapper_record_index = match claim(edge_wrapper_slot, &mut unclaimed) {
-        Ok(Some(record_index)) => record_index,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    cursor = common.checked_add(edge_flange::SETTINGS_REFERENCE)?;
-    let settings_slot = marked_record_reference(bytes, cursor)?;
-    let settings_record_index = match claim(settings_slot, &mut unclaimed) {
-        Ok(Some(record_index)) => record_index,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    cursor = common.checked_add(edge_flange::HEIGHT_DATUM)?;
-    let height_datum = DesignSheetMetalHeightDatum::from_code(View::u32_le_at(bytes, cursor)?);
-    cursor = common.checked_add(edge_flange::ANGLE_OWNER_REFERENCE)?;
-    let angle_owner_slot = marked_record_reference(bytes, cursor)?;
-    let angle_owner_record_index = match claim(angle_owner_slot, &mut unclaimed) {
-        Ok(Some(record_index)) => record_index,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    cursor = common.checked_add(edge_flange::HEIGHT_OWNER_REFERENCE)?;
-    let height_owner_slot = marked_record_reference(bytes, cursor)?;
-    let height_owner_record_index = match claim(height_owner_slot, &mut unclaimed) {
-        Ok(Some(record_index)) => record_index,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    let bend_radius_offset = common.checked_add(edge_flange::INSIDE_BEND_RADIUS)?;
-    let bend_radius =
-        cadmpeg_ir::scalar::PositiveReal::new(View::f64_le_at(bytes, bend_radius_offset)?)?;
-    let result_count = View::u32_le_at(bytes, bend_radius_offset.checked_add(14)?)?;
-    if result_count != 1
-        || bytes.get(bend_radius_offset.checked_add(18)?..bend_radius_offset.checked_add(22)?)?
-            != [0; 4]
-    {
-        return None;
-    }
-    if bytes.get(common.checked_add(89)?..common.checked_add(94)?)? != [0; 5] {
-        return None;
-    }
-    let target_slot = marked_record_reference(
-        bytes,
-        common.checked_add(flange_to_object::TARGET_GROUP_REFERENCE)?,
-    )?;
-    let target_group_record_index = match claim(target_slot, &mut unclaimed) {
-        Ok(Some(record_index)) => record_index,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    if View::u32_le_at(
-        bytes,
-        common.checked_add(flange_to_object::TARGET_REFERENCE_COUNT)?,
-    )? != 2
-    {
-        return None;
-    }
-    let reference_record_indices = [
-        marked_record_reference(
-            bytes,
-            common.checked_add(flange_to_object::INSERTED_REFERENCE_ONE)?,
-        )?,
-        marked_record_reference(
-            bytes,
-            common.checked_add(flange_to_object::INSERTED_REFERENCE_TWO)?,
-        )?,
-    ];
-    if reference_record_indices[0] == reference_record_indices[1]
-        || {
-            let mut is_member = false;
-            for record_index in &reference_record_indices {
-                match ctx.contains(
-                    references,
-                    record_index,
-                    "search F3D sheet-metal ToObject reference members",
-                ) {
-                    Ok(true) => {
-                        is_member = true;
-                        break;
-                    }
-                    Ok(false) => {}
-                    Err(error) => return Some(Err(error)),
-                }
-            }
-            is_member
+        // This form has one target group and one target entity-selection operand in
+        // addition to the distance form's roles. The two marked references between
+        // the target group and the aggregate group are fixed-frame references, not
+        // entries in the scope's ordered reference table, and are retained as
+        // native references for rewrite.
+        if references.len() != 11 {
+            return None;
         }
-        || View::u32_le_at(
+        let common = start.checked_add(85)?.checked_add(header_shift)?;
+        let bend_position = DesignBendPosition::from_code(View::u32_le_at(bytes, common)?);
+        if View::u32_le_at(bytes, common.checked_add(edge_flange::EDGE_COUNT)?)? != 1 {
+            return None;
+        }
+        let mut unclaimed =
+            match ctx.copy_slice(references, "f3d ToObject edge-flange reference copy") {
+                Ok(values) => values,
+                Err(error) => return Some(Err(error)),
+            };
+        let mut cursor = common.checked_add(edge_flange::EDGE_WRAPPER_REFERENCE)?;
+        let edge_wrapper_slot = marked_record_reference(bytes, cursor)?;
+        let edge_wrapper_record_index = match claim(edge_wrapper_slot, &mut unclaimed) {
+            Ok(Some(record_index)) => record_index,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        cursor = common.checked_add(edge_flange::SETTINGS_REFERENCE)?;
+        let settings_slot = marked_record_reference(bytes, cursor)?;
+        let settings_record_index = match claim(settings_slot, &mut unclaimed) {
+            Ok(Some(record_index)) => record_index,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        cursor = common.checked_add(edge_flange::HEIGHT_DATUM)?;
+        let height_datum = DesignSheetMetalHeightDatum::from_code(View::u32_le_at(bytes, cursor)?);
+        cursor = common.checked_add(edge_flange::ANGLE_OWNER_REFERENCE)?;
+        let angle_owner_slot = marked_record_reference(bytes, cursor)?;
+        let angle_owner_record_index = match claim(angle_owner_slot, &mut unclaimed) {
+            Ok(Some(record_index)) => record_index,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        cursor = common.checked_add(edge_flange::HEIGHT_OWNER_REFERENCE)?;
+        let height_owner_slot = marked_record_reference(bytes, cursor)?;
+        let height_owner_record_index = match claim(height_owner_slot, &mut unclaimed) {
+            Ok(Some(record_index)) => record_index,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let bend_radius_offset = common.checked_add(edge_flange::INSIDE_BEND_RADIUS)?;
+        let bend_radius =
+            cadmpeg_ir::scalar::PositiveReal::new(View::f64_le_at(bytes, bend_radius_offset)?)?;
+        let result_count = View::u32_le_at(bytes, bend_radius_offset.checked_add(14)?)?;
+        if result_count != 1
+            || bytes
+                .get(bend_radius_offset.checked_add(18)?..bend_radius_offset.checked_add(22)?)?
+                != [0; 4]
+        {
+            return None;
+        }
+        if bytes.get(common.checked_add(89)?..common.checked_add(94)?)? != [0; 5] {
+            return None;
+        }
+        let target_slot = marked_record_reference(
             bytes,
-            common.checked_add(flange_to_object::INSERTED_REFERENCE_COUNT)?,
-        )? != 1
-        || bytes.get(
-            common.checked_add(135)?
-                ..common.checked_add(flange_to_object::AGGREGATE_REFERENCE_COUNT)?,
-        )? != [0; 4]
-        || View::u32_le_at(
+            common.checked_add(flange_to_object::TARGET_GROUP_REFERENCE)?,
+        )?;
+        let target_group_record_index = match claim(target_slot, &mut unclaimed) {
+            Ok(Some(record_index)) => record_index,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        if View::u32_le_at(
             bytes,
-            common.checked_add(flange_to_object::AGGREGATE_REFERENCE_COUNT)?,
-        )? != 1
-        || bytes.get(
-            common.checked_add(154)?..common.checked_add(flange_to_object::EDGE_REFERENCE_COUNT)?,
-        )? != [0; 12]
-        || View::u32_le_at(
+            common.checked_add(flange_to_object::TARGET_REFERENCE_COUNT)?,
+        )? != 2
+        {
+            return None;
+        }
+        let reference_record_indices = [
+            marked_record_reference(
+                bytes,
+                common.checked_add(flange_to_object::INSERTED_REFERENCE_ONE)?,
+            )?,
+            marked_record_reference(
+                bytes,
+                common.checked_add(flange_to_object::INSERTED_REFERENCE_TWO)?,
+            )?,
+        ];
+        if reference_record_indices[0] == reference_record_indices[1]
+            || {
+                let mut is_member = false;
+                for record_index in &reference_record_indices {
+                    match ctx.contains(
+                        references,
+                        record_index,
+                        "search F3D sheet-metal ToObject reference members",
+                    ) {
+                        Ok(true) => {
+                            is_member = true;
+                            break;
+                        }
+                        Ok(false) => {}
+                        Err(error) => return Some(Err(error)),
+                    }
+                }
+                is_member
+            }
+            || View::u32_le_at(
+                bytes,
+                common.checked_add(flange_to_object::INSERTED_REFERENCE_COUNT)?,
+            )? != 1
+            || bytes.get(
+                common.checked_add(135)?
+                    ..common.checked_add(flange_to_object::AGGREGATE_REFERENCE_COUNT)?,
+            )? != [0; 4]
+            || View::u32_le_at(
+                bytes,
+                common.checked_add(flange_to_object::AGGREGATE_REFERENCE_COUNT)?,
+            )? != 1
+            || bytes.get(
+                common.checked_add(154)?
+                    ..common.checked_add(flange_to_object::EDGE_REFERENCE_COUNT)?,
+            )? != [0; 12]
+            || View::u32_le_at(
+                bytes,
+                common.checked_add(flange_to_object::EDGE_REFERENCE_COUNT)?,
+            )? != 1
+        {
+            return None;
+        }
+        let aggregate_slot = marked_record_reference(
             bytes,
-            common.checked_add(flange_to_object::EDGE_REFERENCE_COUNT)?,
-        )? != 1
-    {
-        return None;
-    }
-    let aggregate_slot = marked_record_reference(
-        bytes,
-        common.checked_add(flange_to_object::AGGREGATE_GROUP_REFERENCE)?,
-    )?;
-    let aggregate_group_record_index = match claim(aggregate_slot, &mut unclaimed) {
-        Ok(Some(record_index)) => record_index,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    let edge_slot = marked_record_reference(
-        bytes,
-        common.checked_add(flange_to_object::EDGE_GROUP_REFERENCE)?,
-    )?;
-    let edge_group_record_index = match claim(edge_slot, &mut unclaimed) {
-        Ok(Some(record_index)) => record_index,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    let target_operand_index = target_group_record_index.checked_add(3)?;
-    let target_operand_record_index = match claim(target_operand_index, &mut unclaimed) {
-        Ok(Some(record_index)) => record_index,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    let aggregate_operand_index = aggregate_group_record_index.checked_add(3)?;
-    let aggregate_operand_record_index = match claim(aggregate_operand_index, &mut unclaimed) {
-        Ok(Some(record_index)) => record_index,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    let edge_operand_index = edge_group_record_index.checked_add(3)?;
-    match claim(edge_operand_index, &mut unclaimed) {
-        Ok(Some(_)) => {}
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    }
-    let [offset_owner_record_index] = unclaimed.as_slice() else {
-        return None;
-    };
-    let expected_length = 576usize.checked_add(header_shift)?;
-    if paired_at.checked_sub(start)? != expected_length {
-        return None;
-    }
-    Some(Ok(DesignEdgeFlangeOperation {
-        height_owner_record_index,
-        angle_owner_record_index,
-        auxiliary_reference_record_indices: Vec::new(),
-        settings_record_index,
-        bend_radius,
-        bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
-        height_datum,
-        bend_position,
-        selection: crate::records::feature::sheet_metal::DesignEdgeFlangeSelection::try_new(
-            crate::records::feature::sheet_metal::DesignEdgeFlangeShape::FullEdge {
-                edges: vec![crate::records::feature::sheet_metal::DesignEdgeFlangeEdge {
-                    wrapper: edge_wrapper_record_index,
-                    group_record_index: edge_group_record_index.try_into().ok()?,
-                    aggregate_operand_record_index,
-                }],
-                height: DesignEdgeFlangeHeightExtent::ToObject {
-                    target_group_record_index,
-                    target_operand_record_index,
-                    offset_owner_record_index: *offset_owner_record_index,
-                    reference_record_indices,
+            common.checked_add(flange_to_object::AGGREGATE_GROUP_REFERENCE)?,
+        )?;
+        let aggregate_group_record_index = match claim(aggregate_slot, &mut unclaimed) {
+            Ok(Some(record_index)) => record_index,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let edge_slot = marked_record_reference(
+            bytes,
+            common.checked_add(flange_to_object::EDGE_GROUP_REFERENCE)?,
+        )?;
+        let edge_group_record_index = match claim(edge_slot, &mut unclaimed) {
+            Ok(Some(record_index)) => record_index,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let target_operand_index = target_group_record_index.checked_add(3)?;
+        let target_operand_record_index = match claim(target_operand_index, &mut unclaimed) {
+            Ok(Some(record_index)) => record_index,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let aggregate_operand_index = aggregate_group_record_index.checked_add(3)?;
+        let aggregate_operand_record_index = match claim(aggregate_operand_index, &mut unclaimed) {
+            Ok(Some(record_index)) => record_index,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let edge_operand_index = edge_group_record_index.checked_add(3)?;
+        match claim(edge_operand_index, &mut unclaimed) {
+            Ok(Some(_)) => {}
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        }
+        let [offset_owner_record_index] = unclaimed.as_slice() else {
+            return None;
+        };
+        let expected_length = 576usize.checked_add(header_shift)?;
+        if paired_at.checked_sub(start)? != expected_length {
+            return None;
+        }
+        Some(Ok(DesignEdgeFlangeOperation {
+            height_owner_record_index,
+            angle_owner_record_index,
+            auxiliary_reference_record_indices: Vec::new(),
+            settings_record_index,
+            bend_radius,
+            bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
+            height_datum,
+            bend_position,
+            selection: crate::records::feature::sheet_metal::DesignEdgeFlangeSelection::try_new(
+                crate::records::feature::sheet_metal::DesignEdgeFlangeShape::FullEdge {
+                    edges: vec![crate::records::feature::sheet_metal::DesignEdgeFlangeEdge {
+                        wrapper: edge_wrapper_record_index,
+                        group_record_index: edge_group_record_index.try_into().ok()?,
+                        aggregate_operand_record_index,
+                    }],
+                    height: DesignEdgeFlangeHeightExtent::ToObject {
+                        target_group_record_index,
+                        target_operand_record_index,
+                        offset_owner_record_index: *offset_owner_record_index,
+                        reference_record_indices,
+                    },
                 },
-            },
-            aggregate_group_record_index,
-        )
-        .ok()?,
-    }))
+                aggregate_group_record_index,
+            )
+            .ok()?,
+        }))
     })();
     parsed.transpose()
 }
@@ -1045,22 +1084,8 @@ fn exact_hem_operation(
     let mut resolved = None;
     for header_shift in SHEET_METAL_HEADER_SHIFTS {
         let candidates = [
-            hem_gap_length_operation_at(
-                ctx,
-                bytes,
-                start,
-                paired_at,
-                references,
-                header_shift,
-            )?,
-            hem_radius_angle_operation_at(
-                ctx,
-                bytes,
-                start,
-                paired_at,
-                references,
-                header_shift,
-            )?,
+            hem_gap_length_operation_at(ctx, bytes, start, paired_at, references, header_shift)?,
+            hem_radius_angle_operation_at(ctx, bytes, start, paired_at, references, header_shift)?,
             hem_gap_length_radius_operation_at(
                 ctx,
                 bytes,
@@ -1122,32 +1147,45 @@ pub(super) fn bind_hem_operation_from_parameters(
         return Ok(());
     };
     let has_kind = |record_index: u32, expected: &str| -> Result<bool, CodecError> {
-        let mut matches = parameter_owners.iter().filter_map(|owner| {
-            if native_stream(owner.id()) != Some(stream)
-                || owner.scope_record_index() != scope.record_index
-                || owner.record_index() != record_index
-            {
-                return None;
-            }
-            let mut references = match super::parameter_scope::reference_members(
-                ctx, scope.reference_members(), "check F3D Hem owner references",
-            ) {
-                Ok(references) => references,
-                Err(error) => return Some(Err(error)),
-            };
-            references.any(|value| value == owner.record_index()).then_some(Ok(owner))
-        }).flat_map(|owner| {
-            let (error, owner) = match owner {
-                Ok(owner) => (None, Some(owner)),
-                Err(error) => (Some(error), None),
-            };
-            error.map(Err).into_iter().chain(owner.into_iter().flat_map(|owner| {
-                parameters.iter().filter(move |parameter| {
-                    native_stream(&parameter.id) == Some(stream)
-                        && parameter.record_index == owner.parameter_record_index()
-                }).map(|parameter| Ok(parameter.source_kind()))
-            }))
-        });
+        let mut matches = parameter_owners
+            .iter()
+            .filter_map(|owner| {
+                if native_stream(owner.id()) != Some(stream)
+                    || owner.scope_record_index() != scope.record_index
+                    || owner.record_index() != record_index
+                {
+                    return None;
+                }
+                let mut references = match super::parameter_scope::reference_members(
+                    ctx,
+                    scope.reference_members(),
+                    "check F3D Hem owner references",
+                ) {
+                    Ok(references) => references,
+                    Err(error) => return Some(Err(error)),
+                };
+                references
+                    .any(|value| value == owner.record_index())
+                    .then_some(Ok(owner))
+            })
+            .flat_map(|owner| {
+                let (error, owner) = match owner {
+                    Ok(owner) => (None, Some(owner)),
+                    Err(error) => (Some(error), None),
+                };
+                error
+                    .map(Err)
+                    .into_iter()
+                    .chain(owner.into_iter().flat_map(|owner| {
+                        parameters
+                            .iter()
+                            .filter(move |parameter| {
+                                native_stream(&parameter.id) == Some(stream)
+                                    && parameter.record_index == owner.parameter_record_index()
+                            })
+                            .map(|parameter| Ok(parameter.source_kind()))
+                    }))
+            });
         match matches.next() {
             Some(Ok(kind)) if kind == expected => match matches.next() {
                 None => Ok(true),
@@ -1198,128 +1236,130 @@ fn hem_gap_length_operation_at(
     header_shift: usize,
 ) -> Result<Option<DesignHemOperation>, CodecError> {
     let parsed = (|| -> Option<Result<DesignHemOperation, CodecError>> {
-    if references.len() != 8
-        || paired_at.checked_sub(start)? != 494usize.checked_add(header_shift)?
-    {
-        return None;
-    }
-    let common = start.checked_add(85)?.checked_add(header_shift)?;
-    if View::u32_le_at(bytes, common.checked_add(edge_flange::EDGE_COUNT)?)? != 1 {
-        return None;
-    }
+        if references.len() != 8
+            || paired_at.checked_sub(start)? != 494usize.checked_add(header_shift)?
+        {
+            return None;
+        }
+        let common = start.checked_add(85)?.checked_add(header_shift)?;
+        if View::u32_le_at(bytes, common.checked_add(edge_flange::EDGE_COUNT)?)? != 1 {
+            return None;
+        }
 
-    let _unclaimed_storage;
-    let mut unclaimed;
-    (unclaimed, _unclaimed_storage) = if let Some(values) = references.unlocated_values() {
-        match ctx.with_scoped_storage("collect F3D gap-length Hem references", || {
-            let values = ctx
-                .admit_iter(values, "scan F3D gap-length Hem reference source")
+        let _unclaimed_storage;
+        let mut unclaimed;
+        (unclaimed, _unclaimed_storage) = if let Some(values) = references.unlocated_values() {
+            match ctx.with_scoped_storage("collect F3D gap-length Hem references", || {
+                let values = ctx
+                    .admit_iter(values, "scan F3D gap-length Hem reference source")
+                    .map_err(CodecError::from)?;
+                ctx.collect_vec(values.copied(), "collect F3D gap-length Hem references")
+            }) {
+                Ok(values) => values,
+                Err(error) => return Some(Err(error)),
+            }
+        } else if let Some(rows) = references.located_rows() {
+            match ctx.with_scoped_storage("collect F3D gap-length Hem references", || {
+                let rows = ctx
+                    .admit_iter(rows, "scan F3D gap-length Hem reference source")
+                    .map_err(CodecError::from)?;
+                ctx.collect_vec(
+                    rows.map(|row| row.value),
+                    "collect F3D gap-length Hem references",
+                )
+            }) {
+                Ok(values) => values,
+                Err(error) => return Some(Err(error)),
+            }
+        } else {
+            return None;
+        };
+        let claim = |index: u32, pool: &mut Vec<u32>| -> Result<Option<u32>, CodecError> {
+            let mut entries = ctx
+                .admit_iter(pool, "claim F3D gap-length Hem reference")
                 .map_err(CodecError::from)?;
-            ctx.collect_vec(values.copied(), "collect F3D gap-length Hem references")
-        }) {
-            Ok(values) => values,
+            let Some(at) = entries.position(|entry| *entry == index) else {
+                return Ok(None);
+            };
+            pool.remove(at);
+            Ok(Some(index))
+        };
+        let slot = |offset: usize, pool: &mut Vec<u32>| -> Result<Option<u32>, CodecError> {
+            let Some(at) = common.checked_add(offset) else {
+                return Ok(None);
+            };
+            let Some(index) = marked_record_reference(bytes, at) else {
+                return Ok(None);
+            };
+            claim(index, pool)
+        };
+
+        let edge_wrapper_record_index = match slot(hem_gap::EDGE_WRAPPER_REFERENCE, &mut unclaimed)
+        {
+            Ok(Some(record_index)) => record_index,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let settings_record_index = match slot(hem_gap::SETTINGS_REFERENCE, &mut unclaimed) {
+            Ok(Some(record_index)) => record_index,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        // The two owners are the form's inputs in local-ordinal order.
+        let gap_owner_record_index = match slot(hem_gap::GAP_OWNER_REFERENCE, &mut unclaimed) {
+            Ok(Some(record_index)) => record_index,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let length_owner_record_index = match slot(hem_gap::LENGTH_OWNER_REFERENCE, &mut unclaimed)
+        {
+            Ok(Some(record_index)) => record_index,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+
+        let bend_radius_offset = common.checked_add(hem_gap::INSIDE_BEND_RADIUS)?;
+        let bend_radius =
+            cadmpeg_ir::scalar::PositiveReal::new(View::f64_le_at(bytes, bend_radius_offset)?)?;
+
+        let aggregate_group_record_index = match slot(108, &mut unclaimed) {
+            Ok(Some(record_index)) => record_index,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let edge_group_record_index = match slot(135, &mut unclaimed) {
+            Ok(Some(record_index)) => record_index,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let aggregate_operand_index = aggregate_group_record_index.checked_add(3)?;
+        match claim(aggregate_operand_index, &mut unclaimed) {
+            Ok(Some(_)) => {}
+            Ok(None) => return None,
             Err(error) => return Some(Err(error)),
         }
-    } else if let Some(rows) = references.located_rows() {
-        match ctx.with_scoped_storage("collect F3D gap-length Hem references", || {
-            let rows = ctx
-                .admit_iter(rows, "scan F3D gap-length Hem reference source")
-                .map_err(CodecError::from)?;
-            ctx.collect_vec(
-                rows.map(|row| row.value),
-                "collect F3D gap-length Hem references",
-            )
-        }) {
-            Ok(values) => values,
+        let edge_operand_index = edge_group_record_index.checked_add(3)?;
+        match claim(edge_operand_index, &mut unclaimed) {
+            Ok(Some(_)) => {}
+            Ok(None) => return None,
             Err(error) => return Some(Err(error)),
         }
-    } else {
-        return None;
-    };
-    let claim = |index: u32, pool: &mut Vec<u32>| -> Result<Option<u32>, CodecError> {
-        let mut entries = ctx
-            .admit_iter(pool, "claim F3D gap-length Hem reference")
-            .map_err(CodecError::from)?;
-        let Some(at) = entries.position(|entry| *entry == index) else {
-            return Ok(None);
-        };
-        pool.remove(at);
-        Ok(Some(index))
-    };
-    let slot = |offset: usize, pool: &mut Vec<u32>| -> Result<Option<u32>, CodecError> {
-        let Some(at) = common.checked_add(offset) else {
-            return Ok(None);
-        };
-        let Some(index) = marked_record_reference(bytes, at) else {
-            return Ok(None);
-        };
-        claim(index, pool)
-    };
+        if !unclaimed.is_empty() {
+            return None;
+        }
 
-    let edge_wrapper_record_index = match slot(hem_gap::EDGE_WRAPPER_REFERENCE, &mut unclaimed) {
-        Ok(Some(record_index)) => record_index,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    let settings_record_index = match slot(hem_gap::SETTINGS_REFERENCE, &mut unclaimed) {
-        Ok(Some(record_index)) => record_index,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    // The two owners are the form's inputs in local-ordinal order.
-    let gap_owner_record_index = match slot(hem_gap::GAP_OWNER_REFERENCE, &mut unclaimed) {
-        Ok(Some(record_index)) => record_index,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    let length_owner_record_index = match slot(hem_gap::LENGTH_OWNER_REFERENCE, &mut unclaimed) {
-        Ok(Some(record_index)) => record_index,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-
-    let bend_radius_offset = common.checked_add(hem_gap::INSIDE_BEND_RADIUS)?;
-    let bend_radius =
-        cadmpeg_ir::scalar::PositiveReal::new(View::f64_le_at(bytes, bend_radius_offset)?)?;
-
-    let aggregate_group_record_index = match slot(108, &mut unclaimed) {
-        Ok(Some(record_index)) => record_index,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    let edge_group_record_index = match slot(135, &mut unclaimed) {
-        Ok(Some(record_index)) => record_index,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    let aggregate_operand_index = aggregate_group_record_index.checked_add(3)?;
-    match claim(aggregate_operand_index, &mut unclaimed) {
-        Ok(Some(_)) => {}
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    }
-    let edge_operand_index = edge_group_record_index.checked_add(3)?;
-    match claim(edge_operand_index, &mut unclaimed) {
-        Ok(Some(_)) => {}
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    }
-    if !unclaimed.is_empty() {
-        return None;
-    }
-
-    Some(Ok(DesignHemOperation {
-        edge_wrapper_record_index,
-        edge_group_record_index: edge_group_record_index.try_into().ok()?,
-        aggregate_group_record_index: aggregate_group_record_index.try_into().ok()?,
-        parameter_owners: DesignHemParameterOwners::GapLength {
-            gap_owner_record_index,
-            length_owner_record_index,
-        },
-        settings_record_index,
-        bend_radius,
-        bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
-    }))
+        Some(Ok(DesignHemOperation {
+            edge_wrapper_record_index,
+            edge_group_record_index: edge_group_record_index.try_into().ok()?,
+            aggregate_group_record_index: aggregate_group_record_index.try_into().ok()?,
+            parameter_owners: DesignHemParameterOwners::GapLength {
+                gap_owner_record_index,
+                length_owner_record_index,
+            },
+            settings_record_index,
+            bend_radius,
+            bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
+        }))
     })();
     parsed.transpose()
 }
@@ -1340,125 +1380,128 @@ fn hem_radius_angle_operation_at(
     header_shift: usize,
 ) -> Result<Option<DesignHemOperation>, CodecError> {
     let parsed = (|| -> Option<Result<DesignHemOperation, CodecError>> {
-    if references.len() != 8
-        || paired_at.checked_sub(start)? != 494usize.checked_add(header_shift)?
-    {
-        return None;
-    }
-    let common = start.checked_add(85)?.checked_add(header_shift)?;
-    if View::u32_le_at(bytes, common.checked_add(edge_flange::EDGE_COUNT)?)? != 1 {
-        return None;
-    }
+        if references.len() != 8
+            || paired_at.checked_sub(start)? != 494usize.checked_add(header_shift)?
+        {
+            return None;
+        }
+        let common = start.checked_add(85)?.checked_add(header_shift)?;
+        if View::u32_le_at(bytes, common.checked_add(edge_flange::EDGE_COUNT)?)? != 1 {
+            return None;
+        }
 
-    let _unclaimed_storage;
-    let mut unclaimed;
-    (unclaimed, _unclaimed_storage) = if let Some(values) = references.unlocated_values() {
-        match ctx.with_scoped_storage("collect F3D rolled Hem references", || {
-            let values = ctx
-                .admit_iter(values, "scan F3D rolled Hem reference source")
+        let _unclaimed_storage;
+        let mut unclaimed;
+        (unclaimed, _unclaimed_storage) = if let Some(values) = references.unlocated_values() {
+            match ctx.with_scoped_storage("collect F3D rolled Hem references", || {
+                let values = ctx
+                    .admit_iter(values, "scan F3D rolled Hem reference source")
+                    .map_err(CodecError::from)?;
+                ctx.collect_vec(values.copied(), "collect F3D rolled Hem references")
+            }) {
+                Ok(values) => values,
+                Err(error) => return Some(Err(error)),
+            }
+        } else if let Some(rows) = references.located_rows() {
+            match ctx.with_scoped_storage("collect F3D rolled Hem references", || {
+                let rows = ctx
+                    .admit_iter(rows, "scan F3D rolled Hem reference source")
+                    .map_err(CodecError::from)?;
+                ctx.collect_vec(
+                    rows.map(|row| row.value),
+                    "collect F3D rolled Hem references",
+                )
+            }) {
+                Ok(values) => values,
+                Err(error) => return Some(Err(error)),
+            }
+        } else {
+            return None;
+        };
+        let claim = |index: u32, pool: &mut Vec<u32>| -> Result<Option<u32>, CodecError> {
+            let mut entries = ctx
+                .admit_iter(pool, "claim F3D rolled Hem reference")
                 .map_err(CodecError::from)?;
-            ctx.collect_vec(values.copied(), "collect F3D rolled Hem references")
-        }) {
-            Ok(values) => values,
+            let Some(at) = entries.position(|entry| *entry == index) else {
+                return Ok(None);
+            };
+            pool.remove(at);
+            Ok(Some(index))
+        };
+        let slot = |offset: usize, pool: &mut Vec<u32>| -> Result<Option<u32>, CodecError> {
+            let Some(at) = common.checked_add(offset) else {
+                return Ok(None);
+            };
+            let Some(index) = marked_record_reference(bytes, at) else {
+                return Ok(None);
+            };
+            claim(index, pool)
+        };
+
+        let edge_wrapper_record_index = match slot(hem_gap::EDGE_WRAPPER_REFERENCE, &mut unclaimed)
+        {
+            Ok(Some(record_index)) => record_index,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let settings_record_index = match slot(hem_gap::SETTINGS_REFERENCE, &mut unclaimed) {
+            Ok(Some(record_index)) => record_index,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let angle_owner_record_index = match slot(hem_rolled::ANGLE_OWNER_REFERENCE, &mut unclaimed)
+        {
+            Ok(Some(record_index)) => record_index,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let radius_owner_record_index =
+            match slot(hem_rolled::RADIUS_OWNER_REFERENCE, &mut unclaimed) {
+                Ok(Some(record_index)) => record_index,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
+        let bend_radius_offset = common.checked_add(hem_rolled::INSIDE_BEND_RADIUS)?;
+        let bend_radius =
+            cadmpeg_ir::scalar::PositiveReal::new(View::f64_le_at(bytes, bend_radius_offset)?)?;
+        let aggregate_group_record_index = match slot(108, &mut unclaimed) {
+            Ok(Some(record_index)) => record_index,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let edge_group_record_index = match slot(135, &mut unclaimed) {
+            Ok(Some(record_index)) => record_index,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let aggregate_operand_index = aggregate_group_record_index.checked_add(3)?;
+        match claim(aggregate_operand_index, &mut unclaimed) {
+            Ok(Some(_)) => {}
+            Ok(None) => return None,
             Err(error) => return Some(Err(error)),
         }
-    } else if let Some(rows) = references.located_rows() {
-        match ctx.with_scoped_storage("collect F3D rolled Hem references", || {
-            let rows = ctx
-                .admit_iter(rows, "scan F3D rolled Hem reference source")
-                .map_err(CodecError::from)?;
-            ctx.collect_vec(
-                rows.map(|row| row.value),
-                "collect F3D rolled Hem references",
-            )
-        }) {
-            Ok(values) => values,
+        let edge_operand_index = edge_group_record_index.checked_add(3)?;
+        match claim(edge_operand_index, &mut unclaimed) {
+            Ok(Some(_)) => {}
+            Ok(None) => return None,
             Err(error) => return Some(Err(error)),
         }
-    } else {
-        return None;
-    };
-    let claim = |index: u32, pool: &mut Vec<u32>| -> Result<Option<u32>, CodecError> {
-        let mut entries = ctx
-            .admit_iter(pool, "claim F3D rolled Hem reference")
-            .map_err(CodecError::from)?;
-        let Some(at) = entries.position(|entry| *entry == index) else {
-            return Ok(None);
-        };
-        pool.remove(at);
-        Ok(Some(index))
-    };
-    let slot = |offset: usize, pool: &mut Vec<u32>| -> Result<Option<u32>, CodecError> {
-        let Some(at) = common.checked_add(offset) else {
-            return Ok(None);
-        };
-        let Some(index) = marked_record_reference(bytes, at) else {
-            return Ok(None);
-        };
-        claim(index, pool)
-    };
+        if !unclaimed.is_empty() {
+            return None;
+        }
 
-    let edge_wrapper_record_index = match slot(hem_gap::EDGE_WRAPPER_REFERENCE, &mut unclaimed) {
-        Ok(Some(record_index)) => record_index,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    let settings_record_index = match slot(hem_gap::SETTINGS_REFERENCE, &mut unclaimed) {
-        Ok(Some(record_index)) => record_index,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    let angle_owner_record_index = match slot(hem_rolled::ANGLE_OWNER_REFERENCE, &mut unclaimed) {
-        Ok(Some(record_index)) => record_index,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    let radius_owner_record_index = match slot(hem_rolled::RADIUS_OWNER_REFERENCE, &mut unclaimed) {
-        Ok(Some(record_index)) => record_index,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    let bend_radius_offset = common.checked_add(hem_rolled::INSIDE_BEND_RADIUS)?;
-    let bend_radius =
-        cadmpeg_ir::scalar::PositiveReal::new(View::f64_le_at(bytes, bend_radius_offset)?)?;
-    let aggregate_group_record_index = match slot(108, &mut unclaimed) {
-        Ok(Some(record_index)) => record_index,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    let edge_group_record_index = match slot(135, &mut unclaimed) {
-        Ok(Some(record_index)) => record_index,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    let aggregate_operand_index = aggregate_group_record_index.checked_add(3)?;
-    match claim(aggregate_operand_index, &mut unclaimed) {
-        Ok(Some(_)) => {}
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    }
-    let edge_operand_index = edge_group_record_index.checked_add(3)?;
-    match claim(edge_operand_index, &mut unclaimed) {
-        Ok(Some(_)) => {}
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    }
-    if !unclaimed.is_empty() {
-        return None;
-    }
-
-    Some(Ok(DesignHemOperation {
-        edge_wrapper_record_index,
-        edge_group_record_index: edge_group_record_index.try_into().ok()?,
-        aggregate_group_record_index: aggregate_group_record_index.try_into().ok()?,
-        parameter_owners: DesignHemParameterOwners::RadiusAngle {
-            radius_owner_record_index,
-            angle_owner_record_index,
-        },
-        settings_record_index,
-        bend_radius,
-        bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
-    }))
+        Some(Ok(DesignHemOperation {
+            edge_wrapper_record_index,
+            edge_group_record_index: edge_group_record_index.try_into().ok()?,
+            aggregate_group_record_index: aggregate_group_record_index.try_into().ok()?,
+            parameter_owners: DesignHemParameterOwners::RadiusAngle {
+                radius_owner_record_index,
+                angle_owner_record_index,
+            },
+            settings_record_index,
+            bend_radius,
+            bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
+        }))
     })();
     parsed.transpose()
 }
@@ -1474,131 +1517,134 @@ fn hem_gap_length_radius_operation_at(
     header_shift: usize,
 ) -> Result<Option<DesignHemOperation>, CodecError> {
     let parsed = (|| -> Option<Result<DesignHemOperation, CodecError>> {
-    if references.len() != 9
-        || paired_at.checked_sub(start)? != 515usize.checked_add(header_shift)?
-    {
-        return None;
-    }
-    let common = start.checked_add(85)?.checked_add(header_shift)?;
-    if View::u32_le_at(bytes, common.checked_add(edge_flange::EDGE_COUNT)?)? != 1 {
-        return None;
-    }
+        if references.len() != 9
+            || paired_at.checked_sub(start)? != 515usize.checked_add(header_shift)?
+        {
+            return None;
+        }
+        let common = start.checked_add(85)?.checked_add(header_shift)?;
+        if View::u32_le_at(bytes, common.checked_add(edge_flange::EDGE_COUNT)?)? != 1 {
+            return None;
+        }
 
-    let _unclaimed_storage;
-    let mut unclaimed;
-    (unclaimed, _unclaimed_storage) = if let Some(values) = references.unlocated_values() {
-        match ctx.with_scoped_storage("collect F3D teardrop Hem references", || {
-            let values = ctx
-                .admit_iter(values, "scan F3D teardrop Hem reference source")
+        let _unclaimed_storage;
+        let mut unclaimed;
+        (unclaimed, _unclaimed_storage) = if let Some(values) = references.unlocated_values() {
+            match ctx.with_scoped_storage("collect F3D teardrop Hem references", || {
+                let values = ctx
+                    .admit_iter(values, "scan F3D teardrop Hem reference source")
+                    .map_err(CodecError::from)?;
+                ctx.collect_vec(values.copied(), "collect F3D teardrop Hem references")
+            }) {
+                Ok(values) => values,
+                Err(error) => return Some(Err(error)),
+            }
+        } else if let Some(rows) = references.located_rows() {
+            match ctx.with_scoped_storage("collect F3D teardrop Hem references", || {
+                let rows = ctx
+                    .admit_iter(rows, "scan F3D teardrop Hem reference source")
+                    .map_err(CodecError::from)?;
+                ctx.collect_vec(
+                    rows.map(|row| row.value),
+                    "collect F3D teardrop Hem references",
+                )
+            }) {
+                Ok(values) => values,
+                Err(error) => return Some(Err(error)),
+            }
+        } else {
+            return None;
+        };
+        let claim = |index: u32, pool: &mut Vec<u32>| -> Result<Option<u32>, CodecError> {
+            let mut entries = ctx
+                .admit_iter(pool, "claim F3D teardrop Hem reference")
                 .map_err(CodecError::from)?;
-            ctx.collect_vec(values.copied(), "collect F3D teardrop Hem references")
-        }) {
-            Ok(values) => values,
+            let Some(at) = entries.position(|entry| *entry == index) else {
+                return Ok(None);
+            };
+            pool.remove(at);
+            Ok(Some(index))
+        };
+        let slot = |offset: usize, pool: &mut Vec<u32>| -> Result<Option<u32>, CodecError> {
+            let Some(at) = common.checked_add(offset) else {
+                return Ok(None);
+            };
+            let Some(index) = marked_record_reference(bytes, at) else {
+                return Ok(None);
+            };
+            claim(index, pool)
+        };
+
+        let edge_wrapper_record_index = match slot(hem_gap::EDGE_WRAPPER_REFERENCE, &mut unclaimed)
+        {
+            Ok(Some(record_index)) => record_index,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let settings_record_index = match slot(hem_gap::SETTINGS_REFERENCE, &mut unclaimed) {
+            Ok(Some(record_index)) => record_index,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let gap_owner_record_index = match slot(hem_teardrop::GAP_OWNER_REFERENCE, &mut unclaimed) {
+            Ok(Some(record_index)) => record_index,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let length_owner_record_index =
+            match slot(hem_teardrop::LENGTH_OWNER_REFERENCE, &mut unclaimed) {
+                Ok(Some(record_index)) => record_index,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
+        let radius_owner_record_index =
+            match slot(hem_teardrop::RADIUS_OWNER_REFERENCE, &mut unclaimed) {
+                Ok(Some(record_index)) => record_index,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
+        let bend_radius_offset = common.checked_add(hem_teardrop::INSIDE_BEND_RADIUS)?;
+        let bend_radius =
+            cadmpeg_ir::scalar::PositiveReal::new(View::f64_le_at(bytes, bend_radius_offset)?)?;
+        let aggregate_group_record_index = match slot(118, &mut unclaimed) {
+            Ok(Some(record_index)) => record_index,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let edge_group_record_index = match slot(145, &mut unclaimed) {
+            Ok(Some(record_index)) => record_index,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let aggregate_operand_index = aggregate_group_record_index.checked_add(3)?;
+        match claim(aggregate_operand_index, &mut unclaimed) {
+            Ok(Some(_)) => {}
+            Ok(None) => return None,
             Err(error) => return Some(Err(error)),
         }
-    } else if let Some(rows) = references.located_rows() {
-        match ctx.with_scoped_storage("collect F3D teardrop Hem references", || {
-            let rows = ctx
-                .admit_iter(rows, "scan F3D teardrop Hem reference source")
-                .map_err(CodecError::from)?;
-            ctx.collect_vec(
-                rows.map(|row| row.value),
-                "collect F3D teardrop Hem references",
-            )
-        }) {
-            Ok(values) => values,
+        let edge_operand_index = edge_group_record_index.checked_add(3)?;
+        match claim(edge_operand_index, &mut unclaimed) {
+            Ok(Some(_)) => {}
+            Ok(None) => return None,
             Err(error) => return Some(Err(error)),
         }
-    } else {
-        return None;
-    };
-    let claim = |index: u32, pool: &mut Vec<u32>| -> Result<Option<u32>, CodecError> {
-        let mut entries = ctx
-            .admit_iter(pool, "claim F3D teardrop Hem reference")
-            .map_err(CodecError::from)?;
-        let Some(at) = entries.position(|entry| *entry == index) else {
-            return Ok(None);
-        };
-        pool.remove(at);
-        Ok(Some(index))
-    };
-    let slot = |offset: usize, pool: &mut Vec<u32>| -> Result<Option<u32>, CodecError> {
-        let Some(at) = common.checked_add(offset) else {
-            return Ok(None);
-        };
-        let Some(index) = marked_record_reference(bytes, at) else {
-            return Ok(None);
-        };
-        claim(index, pool)
-    };
+        if !unclaimed.is_empty() {
+            return None;
+        }
 
-    let edge_wrapper_record_index = match slot(hem_gap::EDGE_WRAPPER_REFERENCE, &mut unclaimed) {
-        Ok(Some(record_index)) => record_index,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    let settings_record_index = match slot(hem_gap::SETTINGS_REFERENCE, &mut unclaimed) {
-        Ok(Some(record_index)) => record_index,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    let gap_owner_record_index = match slot(hem_teardrop::GAP_OWNER_REFERENCE, &mut unclaimed) {
-        Ok(Some(record_index)) => record_index,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    let length_owner_record_index = match slot(hem_teardrop::LENGTH_OWNER_REFERENCE, &mut unclaimed) {
-        Ok(Some(record_index)) => record_index,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    let radius_owner_record_index = match slot(hem_teardrop::RADIUS_OWNER_REFERENCE, &mut unclaimed) {
-        Ok(Some(record_index)) => record_index,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    let bend_radius_offset = common.checked_add(hem_teardrop::INSIDE_BEND_RADIUS)?;
-    let bend_radius =
-        cadmpeg_ir::scalar::PositiveReal::new(View::f64_le_at(bytes, bend_radius_offset)?)?;
-    let aggregate_group_record_index = match slot(118, &mut unclaimed) {
-        Ok(Some(record_index)) => record_index,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    let edge_group_record_index = match slot(145, &mut unclaimed) {
-        Ok(Some(record_index)) => record_index,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    let aggregate_operand_index = aggregate_group_record_index.checked_add(3)?;
-    match claim(aggregate_operand_index, &mut unclaimed) {
-        Ok(Some(_)) => {}
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    }
-    let edge_operand_index = edge_group_record_index.checked_add(3)?;
-    match claim(edge_operand_index, &mut unclaimed) {
-        Ok(Some(_)) => {}
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    }
-    if !unclaimed.is_empty() {
-        return None;
-    }
-
-    Some(Ok(DesignHemOperation {
-        edge_wrapper_record_index,
-        edge_group_record_index: edge_group_record_index.try_into().ok()?,
-        aggregate_group_record_index: aggregate_group_record_index.try_into().ok()?,
-        parameter_owners: DesignHemParameterOwners::GapLengthRadius {
-            gap_owner_record_index,
-            length_owner_record_index,
-            radius_owner_record_index,
-        },
-        settings_record_index,
-        bend_radius,
-        bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
-    }))
+        Some(Ok(DesignHemOperation {
+            edge_wrapper_record_index,
+            edge_group_record_index: edge_group_record_index.try_into().ok()?,
+            aggregate_group_record_index: aggregate_group_record_index.try_into().ok()?,
+            parameter_owners: DesignHemParameterOwners::GapLengthRadius {
+                gap_owner_record_index,
+                length_owner_record_index,
+                radius_owner_record_index,
+            },
+            settings_record_index,
+            bend_radius,
+            bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
+        }))
     })();
     parsed.transpose()
 }

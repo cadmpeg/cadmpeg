@@ -50,7 +50,8 @@ pub(super) fn fixed_kind_path_operations(
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &loft_scope,
             &[],
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(DesignPathFeatureConstruction::Loft(
             crate::records::feature::path_features::DesignLoftConstruction {
                 operation: DesignExtrudeOperation::Join,
@@ -361,7 +362,8 @@ pub(super) fn fixed_kind_path_operations(
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &sweep_scope,
             &[],
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(DesignPathFeatureConstruction::Sweep(
             crate::records::feature::path_features::DesignSweepConstruction {
                 operation: DesignExtrudeOperation::NewBody,
@@ -382,7 +384,8 @@ pub(super) fn fixed_kind_path_operations(
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &sweep_scope,
             &[],
-        ).unwrap();
+        )
+        .unwrap();
         sweep_scope
             .try_edit(|draft| {
                 draft.payload =
@@ -676,7 +679,8 @@ pub(super) fn fixed_kind_path_operations(
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &pipe_scope,
             &[],
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(DesignPathFeatureConstruction::Pipe(
             crate::records::feature::path_features::DesignPipeConstruction {
                 operation: DesignExtrudeOperation::NewBody,
@@ -771,7 +775,8 @@ pub(super) fn fixed_kind_path_operations(
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &owner_pipe_scope,
             &owner_pipe_owners,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(DesignPathFeatureConstruction::Pipe(
             crate::records::feature::path_features::DesignPipeConstruction {
                 operation: DesignExtrudeOperation::NewBody,
@@ -803,7 +808,8 @@ pub(super) fn fixed_kind_path_operations(
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &owner_pipe_scope,
             &wrong_owner_class,
-        ).unwrap(),
+        )
+        .unwrap(),
         None
     );
 
@@ -881,7 +887,8 @@ pub(super) fn fixed_kind_path_operations(
                 &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
                 &legacy_scope,
                 &[],
-            ).unwrap(),
+            )
+            .unwrap(),
             Some(DesignPathFeatureConstruction::Pipe(
                 crate::records::feature::path_features::DesignPipeConstruction {
                     operation: DesignExtrudeOperation::NewBody,

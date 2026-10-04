@@ -94,12 +94,13 @@ fn legacy_work_plane_325_byte_frames_decode_their_matrix() {
                 draft.layout_fixture_tail();
             })
             .unwrap();
-        let decoded = exact_work_plane_frame(&cadmpeg_test_support::service_decode_context(),
-
+        let decoded = exact_work_plane_frame(
+            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &scope,
-        ).unwrap()
+        )
+        .unwrap()
         .expect("325-byte WorkPlane frame");
         for (actual_row, expected_row) in decoded.transform.iter().zip(transform.iter()) {
             for (actual, expected) in actual_row.iter().zip(expected_row.iter()) {

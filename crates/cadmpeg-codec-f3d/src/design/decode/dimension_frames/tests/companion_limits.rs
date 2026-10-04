@@ -134,10 +134,8 @@ fn dimension_annotation_interval_owner_scan_refuses_work_limit() {
             id: format!("{native_scope}:design-parameter-owner#10"),
             byte_offset: 120,
             frame_length: 104,
-            class_tag: crate::records::references::DesignClassTag::try_from(
-                "292".to_owned(),
-            )
-            .unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("292".to_owned())
+                .unwrap(),
             record_index: 10,
             scope_record_index: 13,
             local_ordinal: 0,
@@ -192,7 +190,9 @@ fn dimension_annotation_interval_owner_scan_refuses_work_limit() {
             0,
             |ctx| {
                 crate::design::decode::dimension_frames::decode_dimension_annotation_frames(
-                    ctx, &inputs, &[],
+                    ctx,
+                    &inputs,
+                    &[],
                 )
             },
         );

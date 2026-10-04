@@ -77,8 +77,7 @@ fn edge_recipe_structure_refuses_candidate_work_limit() {
 #[test]
 fn edge_recipe_payload_prefix_scans_refuse_work_limits() {
     let program = [
-        0, 0, 0, 0, 0, 0, 0, 1, 0, 2, 0, 0, 5, 0, 1, -1, 0, 0, -1, 1, 1, 4, 1, 1,
-        1, 4, 4, 4,
+        0, 0, 0, 0, 0, 0, 0, 1, 0, 2, 0, 0, 5, 0, 1, -1, 0, 0, -1, 1, 1, 4, 1, 1, 1, 4, 4, 4,
     ];
     for operation in [
         "scan F3D recipe payload prefix delimiters",
@@ -123,12 +122,14 @@ fn edge_recipe_topology_references_refuse_collection_limit() {
 fn edge_recipe_topology_reference_scans_refuse_work_limit() {
     let structure = crate::records::topology::edge_recipe::DesignEdgeRecipeStructure {
         root: 1,
-        sides: vec![crate::records::topology::edge_recipe::DesignTopologyRecipeSide {
-            header_value: 0,
-            scalars: vec![1],
-            payload_prefix: Vec::new(),
-            entries: Vec::new(),
-        }],
+        sides: vec![
+            crate::records::topology::edge_recipe::DesignTopologyRecipeSide {
+                header_value: 0,
+                scalars: vec![1],
+                payload_prefix: Vec::new(),
+                entries: Vec::new(),
+            },
+        ],
     };
     let result = crate::test_support::with_decode_context(|ctx| {
         edge_recipe_local_topology_references_with_context(ctx, &structure, 1)
@@ -187,16 +188,19 @@ fn edge_recipe_entries_preserve_tail_and_work_refusal() {
     let words = [1, 4, 1, 1, 1, 4, 4, 4, -1];
     let operation = "scan F3D topology recipe entry words";
     let error = crate::test_support::resource_refusal_at(
-        ResourceDimension::WorkUnits, operation, 0,
+        ResourceDimension::WorkUnits,
+        operation,
+        0,
         |ctx| edge_recipe_entries_with_context(ctx, &words),
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == operation
             && limit.additional == 9));
-    let parsed = edge_recipe_entries_with_context(
-        &cadmpeg_test_support::service_decode_context(), &words,
-    ).unwrap().expect("one complete topology entry");
+    let parsed =
+        edge_recipe_entries_with_context(&cadmpeg_test_support::service_decode_context(), &words)
+            .unwrap()
+            .expect("one complete topology entry");
     assert_eq!(parsed.len(), 1);
     assert_eq!(parsed[0].selector, 1);
 }
@@ -277,9 +281,8 @@ fn surface_patch_field_and_clause_pushes_refuse_each_collection_item() {
 #[test]
 fn surface_patch_recipe_scans_refuse_work_limits() {
     let program = [
-        0, -1, 1, 1, -1, 2, -1, 2, 2, -1, 1, -1, 2, 0, -1, 0, 0, -1, 2, -1, 0, 0,
-        -1, 1, 0, 2, 1, 1, 1, 2, 1, 2, -1, 2, 3, -1, 1, -1, 2, 0, -1, 0, 0, -1, 3,
-        -1, 0, 0, -1, 0, -1,
+        0, -1, 1, 1, -1, 2, -1, 2, 2, -1, 1, -1, 2, 0, -1, 0, 0, -1, 2, -1, 0, 0, -1, 1, 0, 2, 1,
+        1, 1, 2, 1, 2, -1, 2, 3, -1, 1, -1, 2, 0, -1, 0, 0, -1, 3, -1, 0, 0, -1, 0, -1,
     ];
     for operation in [
         "scan F3D SurfacePatch field delimiters",

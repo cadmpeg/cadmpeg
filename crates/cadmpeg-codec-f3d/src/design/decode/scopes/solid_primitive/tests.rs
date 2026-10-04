@@ -393,7 +393,8 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
             &crate::design::test_support::indexed_record_offsets_for_test(&translated),
             &expanded_scope,
             &expanded_owners,
-        ).unwrap()
+        )
+        .unwrap()
         .is_none());
     }
 }

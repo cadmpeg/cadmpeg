@@ -24,13 +24,8 @@ fn scoped_candidate_faces<'ctx>(
     design_reference: i64,
     tags: &[PersistentSubentityTag],
     owner_id: Option<&str>,
-) -> Result<
-    (
-        Vec<FaceId>,
-        cadmpeg_core::decode::ScopedReservation<'ctx>,
-    ),
-    cadmpeg_core::CodecError,
-> {
+) -> Result<(Vec<FaceId>, cadmpeg_core::decode::ScopedReservation<'ctx>), cadmpeg_core::CodecError>
+{
     ctx.with_scoped_storage(
         "F3D validation expected edge operand candidate faces",
         || super::super::edge_operand_candidate_faces(ctx, design_reference, tags, owner_id),

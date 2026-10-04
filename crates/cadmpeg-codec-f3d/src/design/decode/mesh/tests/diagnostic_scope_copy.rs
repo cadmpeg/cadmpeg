@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::ResourceDimension;
-use cadmpeg_core::CodecError;
+use super::super::parse_mesh_design_records;
 use super::{
     no_texture_asset, put_reference, sole_typed_frame, synthetic_mesh_graph_with_body_count,
     MESH_FEATURE_SCOPE_TYPE_GUID,
 };
-use super::super::parse_mesh_design_records;
+use cadmpeg_core::decode::ResourceDimension;
+use cadmpeg_core::CodecError;
 
 #[test]
 fn mesh_diagnostic_scope_body_copy_refuses_each_resource_limit() {

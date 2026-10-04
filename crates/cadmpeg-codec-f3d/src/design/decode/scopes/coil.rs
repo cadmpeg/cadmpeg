@@ -130,16 +130,12 @@ pub(super) fn exact_coil_placement(
         {
             return None;
         }
-        let transform_paired_class_tag = match exact_indexed_header_at(
-            ctx,
-            bytes,
-            transform_paired,
-            transform_record_index,
-        ) {
-            Ok(Some(class_tag)) => class_tag,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+        let transform_paired_class_tag =
+            match exact_indexed_header_at(ctx, bytes, transform_paired, transform_record_index) {
+                Ok(Some(class_tag)) => class_tag,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
         let frame_length = transform_paired.checked_sub(transform_start)?;
         let explicit_transform = match frame_length {
             coil_legacy_identity::LEN
@@ -289,9 +285,9 @@ pub(super) fn exact_coil_placement(
                 transform_start,
                 recipes,
             ) {
-            Ok(Some(selection)) => selection,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
+                Ok(Some(selection)) => selection,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
             },
         };
         Some(Ok(DesignCoilPlacement {
@@ -541,10 +537,8 @@ fn exact_coil_face_selection(
         };
         let design = match recipe.design.as_ref() {
             Some(design) => Some(crate::records::recipes::ConstructionRecipeDesign {
-                id: match ctx.copy_retained_text(
-                    &design.id.value,
-                    "copy F3D Coil recipe design ID",
-                ) {
+                id: match ctx.copy_retained_text(&design.id.value, "copy F3D Coil recipe design ID")
+                {
                     Ok(id) => id,
                     Err(error) => return Some(Err(error)),
                 },

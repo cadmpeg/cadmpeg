@@ -118,7 +118,8 @@ fn base_feature_result_runs_refuse_each_collection_limit() {
         bodies,
         metadata_field,
         ..
-    } = result else {
+    } = result
+    else {
         panic!("unexpected BaseFeature construction");
     };
     assert_eq!(bodies.iter().count(), 3);
@@ -129,12 +130,9 @@ fn base_feature_result_runs_refuse_each_collection_limit() {
         (ResourceDimension::CollectionItems, 2),
         (ResourceDimension::RetainedBytes, 2),
     ] {
-        let refusal = crate::test_support::resource_refusal_at(
-            dimension,
-            operation,
-            0,
-            |ctx| exact_base_feature_construction(ctx, &bytes, &scope).map(|_| ()),
-        );
+        let refusal = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
+            exact_base_feature_construction(ctx, &bytes, &scope).map(|_| ())
+        });
         assert!(matches!(
             refusal,
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -357,7 +355,6 @@ fn base_feature_snapshot_guid_refusal_is_not_an_absent_candidate() {
     );
 }
 
-
 #[test]
 fn base_feature_267_byte_metadata_copy_refuses_each_resource_limit() {
     let mut bytes = vec![0u8; 267];
@@ -394,12 +391,9 @@ fn base_feature_267_byte_metadata_copy_refuses_each_resource_limit() {
         (ResourceDimension::CollectionItems, 6),
         (ResourceDimension::RetainedBytes, 6),
     ] {
-        let refusal = crate::test_support::resource_refusal_at(
-            dimension,
-            operation,
-            0,
-            |ctx| exact_base_feature_construction(ctx, &bytes, &scope).map(|_| ()),
-        );
+        let refusal = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
+            exact_base_feature_construction(ctx, &bytes, &scope).map(|_| ())
+        });
         assert!(matches!(
             refusal,
             cadmpeg_core::CodecError::ResourceLimit(limit)

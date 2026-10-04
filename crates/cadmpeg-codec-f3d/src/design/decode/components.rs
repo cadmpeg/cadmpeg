@@ -393,8 +393,7 @@ mod tests {
             "scan F3D indexed record headers",
             0,
             |ctx| {
-                exact_component_occurrence(ctx, &seed, 0, "f3d:Design/BulkStream.dat")
-                    .map(|_| ())
+                exact_component_occurrence(ctx, &seed, 0, "f3d:Design/BulkStream.dat").map(|_| ())
             },
         );
         assert!(matches!(
@@ -447,7 +446,9 @@ mod tests {
         archive
             .start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
             .expect("Design stream entry");
-        archive.write_all(&seed).expect("component occurrence frame");
+        archive
+            .write_all(&seed)
+            .expect("component occurrence frame");
         let archive = archive.finish().expect("synthetic archive").into_inner();
         crate::test_support::zip_test::with_scan(&archive, |scan| {
             let output = crate::test_support::with_decode_context(|ctx| {
@@ -457,12 +458,16 @@ mod tests {
             let [occurrence] = output.as_slice() else {
                 panic!("expected one component occurrence");
             };
-            assert_eq!(occurrence.id, "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-component-occurrence#0");
+            assert_eq!(
+                occurrence.id,
+                "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-component-occurrence#0"
+            );
             assert_eq!(occurrence.class_tag.as_str(), "256");
             assert_eq!(occurrence.record_index, 20);
             assert_eq!(occurrence.byte_offset(), 0);
             assert_eq!(
-                serde_json::to_value(occurrence).expect("native component record")["component_record_index"],
+                serde_json::to_value(occurrence).expect("native component record")
+                    ["component_record_index"],
                 10,
             );
             assert_eq!(occurrence.component_guid.as_str(), COMPONENT);
@@ -485,5 +490,4 @@ mod tests {
             ));
         });
     }
-
 }

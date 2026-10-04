@@ -72,9 +72,12 @@ fn exact_base_feature_scope_tail(
             || scope.frame_length() != u64::try_from(layout.frame_length).ok()?
             || scope.reference_count_offset()
                 != scope.byte_offset() + u64::try_from(layout.reference_count).ok()?
-            || !scope.reference_members().offsets().copied().eq([
-                scope.byte_offset() + u64::try_from(layout.generic_scope_reference_record).ok()?
-            ])
+            || !scope
+                .reference_members()
+                .offsets()
+                .copied()
+                .eq([scope.byte_offset()
+                    + u64::try_from(layout.generic_scope_reference_record).ok()?])
             || scope.kind_offset() != scope.byte_offset() + u64::try_from(layout.kind).ok()?
             || scope.feature_ordinal_offset()
                 != scope.byte_offset() + u64::try_from(layout.feature_ordinal).ok()?
@@ -86,9 +89,9 @@ fn exact_base_feature_scope_tail(
                 != Some(&class_377::GENERIC_SCOPE_REFERENCE_MARKER_VALUE)
             || marked_record_reference(bytes, start + layout.generic_scope_reference_marker)
                 != Some(*scope.reference_members().values().next()?)
-            || bytes
-                .get(start + layout.generic_scope_reference_field..start + layout.history_state_id)?
-                != [0; 6]
+            || bytes.get(
+                start + layout.generic_scope_reference_field..start + layout.history_state_id,
+            )? != [0; 6]
             || View::u32_le_at(bytes, start + layout.history_state_id)?
                 != scope
                     .history_state_id()
@@ -97,13 +100,15 @@ fn exact_base_feature_scope_tail(
         {
             return None;
         }
-        let kind_end = match fixed_utf16_ascii_eq(ctx, bytes, start + layout.kind_length, "Base Feature") {
-            Ok(Some(kind_end)) => kind_end,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+        let kind_end =
+            match fixed_utf16_ascii_eq(ctx, bytes, start + layout.kind_length, "Base Feature") {
+                Ok(Some(kind_end)) => kind_end,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
         if kind_end != start + layout.feature_ordinal
-            || View::u32_le_at(bytes, start + layout.feature_ordinal)? != scope.feature_ordinal.get()
+            || View::u32_le_at(bytes, start + layout.feature_ordinal)?
+                != scope.feature_ordinal.get()
         {
             return None;
         }
@@ -820,13 +825,11 @@ pub(super) fn exact_base_feature_construction(
                 return None;
             }
             let padding = bytes.get(start + legacy_zero_body::ZERO_PADDING_8..uuid_offset)?;
-            let padding_is_zero = match ctx.admit_iter(
-                padding,
-                "validate F3D legacy BaseFeature zero padding",
-            ) {
-                Ok(mut bytes) => bytes.all(|byte| *byte == 0),
-                Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
-            };
+            let padding_is_zero =
+                match ctx.admit_iter(padding, "validate F3D legacy BaseFeature zero padding") {
+                    Ok(mut bytes) => bytes.all(|byte| *byte == 0),
+                    Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+                };
             if !padding_is_zero {
                 return None;
             }
@@ -979,7 +982,13 @@ pub(super) fn exact_base_feature_construction(
             Err(error) => return Some(Err(error)),
         };
         for _ in 0..body_count {
-            if let Err(error) = ctx.push_vec(&mut entities, read_base_feature_entry_at(bytes, &mut cursor)?, "f3d BaseFeature entities") { return Some(Err(error)); };
+            if let Err(error) = ctx.push_vec(
+                &mut entities,
+                read_base_feature_entry_at(bytes, &mut cursor)?,
+                "f3d BaseFeature entities",
+            ) {
+                return Some(Err(error));
+            };
         }
         let mut references = match ctx.vector_storage(body_count, "f3d BaseFeature references") {
             Ok(rows) => rows,
@@ -987,11 +996,17 @@ pub(super) fn exact_base_feature_construction(
         };
         for _ in 0..body_count {
             let entry = read_base_feature_entry_at(bytes, &mut cursor)?;
-            if let Err(error) = ctx.push_vec(&mut references, DesignBaseFeatureEntry {
-                value: u32::try_from(entry.value).ok()?,
-                offset: entry.offset,
-                field: entry.field,
-            }, "f3d BaseFeature references") { return Some(Err(error)); };
+            if let Err(error) = ctx.push_vec(
+                &mut references,
+                DesignBaseFeatureEntry {
+                    value: u32::try_from(entry.value).ok()?,
+                    offset: entry.offset,
+                    field: entry.field,
+                },
+                "f3d BaseFeature references",
+            ) {
+                return Some(Err(error));
+            };
         }
         if expanded {
             if bytes.get(cursor) != Some(&1)
@@ -1054,10 +1069,16 @@ pub(super) fn exact_base_feature_construction(
             {
                 return None;
             }
-            if let Err(error) = ctx.push_vec(&mut repeated_reference_fields, bytes
+            if let Err(error) = ctx.push_vec(
+                &mut repeated_reference_fields,
+                bytes
                     .get(cursor + compact_entry::BODY_FIELD..cursor + compact_entry::LEN)?
                     .try_into()
-                    .ok()?, "f3d BaseFeature repeated reference fields") { return Some(Err(error)); };
+                    .ok()?,
+                "f3d BaseFeature repeated reference fields",
+            ) {
+                return Some(Err(error));
+            };
             cursor += compact_entry::LEN;
         }
         if bytes.get(cursor) != Some(&0) {
@@ -1098,7 +1119,8 @@ pub(super) fn exact_base_feature_construction(
             Ok(rows) => rows.copied(),
             Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
         };
-        let references = match ctx.admit_iter(&references, "scan F3D BaseFeature result references") {
+        let references = match ctx.admit_iter(&references, "scan F3D BaseFeature result references")
+        {
             Ok(rows) => rows.copied(),
             Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
         };
@@ -1109,9 +1131,7 @@ pub(super) fn exact_base_feature_construction(
             Ok(fields) => fields.copied(),
             Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
         };
-        for ((entity, reference), field) in entities
-            .zip(references)
-            .zip(repeated_reference_fields)
+        for ((entity, reference), field) in entities.zip(references).zip(repeated_reference_fields)
         {
             if bytes.get(cursor) != Some(&1) {
                 return None;
@@ -1132,7 +1152,11 @@ pub(super) fn exact_base_feature_construction(
             if first.is_none() {
                 first = Some(row);
             } else {
-                if let Err(error) = ctx.push_vec(&mut rest, row, "f3d BaseFeature remaining result bodies") { return Some(Err(error)); };
+                if let Err(error) =
+                    ctx.push_vec(&mut rest, row, "f3d BaseFeature remaining result bodies")
+                {
+                    return Some(Err(error));
+                };
             }
             cursor += 11;
         }
@@ -1141,10 +1165,9 @@ pub(super) fn exact_base_feature_construction(
             .checked_sub(102)?;
         let admitted = if cursor <= uuid_offset {
             match bytes.get(cursor..uuid_offset) {
-                Some(padding) => match ctx.admit_iter(
-                    padding,
-                    "validate F3D BaseFeature result padding",
-                ) {
+                Some(padding) => match ctx
+                    .admit_iter(padding, "validate F3D BaseFeature result padding")
+                {
                     Ok(mut bytes) => bytes.all(|byte| *byte == 0),
                     Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
                 },
@@ -1182,13 +1205,11 @@ fn exact_base_feature_body_snapshot(
         let start = usize::try_from(scope.byte_offset()).ok()?;
         let body_count =
             usize::try_from(View::u32_le_at(bytes, start + snapshot::BODY_COUNT)?).ok()?;
-        let kind_width = match ctx.admit_iter(
-            scope.kind_name(),
-            "count F3D BaseFeature kind UTF-16 units",
-        ) {
-            Ok(characters) => characters.encode_utf16().count().checked_mul(2)?,
-            Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
-        };
+        let kind_width =
+            match ctx.admit_iter(scope.kind_name(), "count F3D BaseFeature kind UTF-16 units") {
+                Ok(characters) => characters.encode_utf16().count().checked_mul(2)?,
+                Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+            };
         let expected_frame_length = FIXED_FRAME_LENGTH
             .checked_add(u64::try_from(body_count.checked_mul(snapshot_entry::LEN)?).ok()?)?
             .checked_add(u64::try_from(kind_width).ok()?)?;
@@ -1209,7 +1230,9 @@ fn exact_base_feature_body_snapshot(
             if bytes.get(cursor) != Some(&1) {
                 return None;
             }
-            if let Err(error) = ctx.push_vec(&mut bodies, crate::records::feature::base_feature::DesignBaseFeatureEntry {
+            if let Err(error) = ctx.push_vec(
+                &mut bodies,
+                crate::records::feature::base_feature::DesignBaseFeatureEntry {
                     value: View::u64_le_at(bytes, cursor + snapshot_entry::BODY_ENTITY_SUFFIX)?,
                     offset: u64::try_from(cursor + snapshot_entry::BODY_ENTITY_SUFFIX).ok()?,
                     field: bytes
@@ -1219,7 +1242,11 @@ fn exact_base_feature_body_snapshot(
                         )?
                         .try_into()
                         .ok()?,
-                }, "f3d BaseFeature snapshot bodies") { return Some(Err(error)); };
+                },
+                "f3d BaseFeature snapshot bodies",
+            ) {
+                return Some(Err(error));
+            };
             cursor += snapshot_entry::LEN;
         }
         let preamble = bytes.get(cursor..cursor + snapshot_expanded_preamble::LEN)?;

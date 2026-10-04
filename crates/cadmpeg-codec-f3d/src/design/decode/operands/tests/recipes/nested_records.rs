@@ -1173,27 +1173,27 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert_eq!(edge_operand.next_record_index, 104);
     assert_eq!(edge_operand.next_byte_offset(), next_at);
     let edge_candidate_tags = [
-            PersistentSubentityTag {
-                id: "f3d:asm:persistent-subentity-tag#1".into(),
-                target: AttributeTarget::Face(
-                    FaceId::mint("f3d:brep:entity#50").expect("identity grammar"),
-                ),
-                selector: 1,
-                token: cadmpeg_core::text::NonBlankString::try_from("3").unwrap(),
-                design_references: vec![303],
-                ordinal: 0,
-            },
-            PersistentSubentityTag {
-                id: "f3d:xref/other/occurrence-0/design:persistent-subentity-tag#1".into(),
-                target: AttributeTarget::Face(
-                    FaceId::mint("f3d:brep:entity#xref").expect("identity grammar"),
-                ),
-                selector: 1,
-                token: cadmpeg_core::text::NonBlankString::try_from("3").unwrap(),
-                design_references: vec![303],
-                ordinal: 0,
-            },
-        ];
+        PersistentSubentityTag {
+            id: "f3d:asm:persistent-subentity-tag#1".into(),
+            target: AttributeTarget::Face(
+                FaceId::mint("f3d:brep:entity#50").expect("identity grammar"),
+            ),
+            selector: 1,
+            token: cadmpeg_core::text::NonBlankString::try_from("3").unwrap(),
+            design_references: vec![303],
+            ordinal: 0,
+        },
+        PersistentSubentityTag {
+            id: "f3d:xref/other/occurrence-0/design:persistent-subentity-tag#1".into(),
+            target: AttributeTarget::Face(
+                FaceId::mint("f3d:brep:entity#xref").expect("identity grammar"),
+            ),
+            selector: 1,
+            token: cadmpeg_core::text::NonBlankString::try_from("3").unwrap(),
+            design_references: vec![303],
+            ordinal: 0,
+        },
+    ];
     bind_edge_operand_candidates(
         &ctx,
         std::slice::from_mut(&mut edge_operand),
@@ -1208,18 +1208,24 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     for (skip, additional) in [(0, 1), (1, 8), (2, 8)] {
         let operation = "find F3D edge operand Design reference";
         let error = crate::test_support::resource_refusal_at(
-            cadmpeg_core::decode::ResourceDimension::WorkUnits, operation, skip,
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            skip,
             |ctx| {
                 let mut limited_operand = edge_operand.clone();
                 bind_edge_operand_candidates(
-                    ctx, std::slice::from_mut(&mut limited_operand),
-                    std::slice::from_ref(&recipe), &edge_candidate_tags,
+                    ctx,
+                    std::slice::from_mut(&mut limited_operand),
+                    std::slice::from_ref(&recipe),
+                    &edge_candidate_tags,
                 )
             },
         );
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && limit.operation == operation && limit.additional == additional));
+                && limit.operation == operation && limit.additional == additional)
+        );
     }
     let mut local_recipe = recipe.clone();
     local_recipe.record_index =
@@ -1512,37 +1518,37 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         alternate_selector_edges: Vec::new(),
     });
     let face_candidate_tags = [
-            PersistentSubentityTag {
-                id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#1".into(),
-                target: AttributeTarget::Face(
-                    FaceId::mint("f3d:brep:entity#50").expect("identity grammar"),
-                ),
-                selector: 1,
-                token: cadmpeg_core::text::NonBlankString::try_from("3").unwrap(),
-                design_references: vec![303],
-                ordinal: 0,
-            },
-            PersistentSubentityTag {
-                id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#2".into(),
-                target: AttributeTarget::Face(
-                    FaceId::mint("f3d:brep:entity#51").expect("identity grammar"),
-                ),
-                selector: 1,
-                token: cadmpeg_core::text::NonBlankString::try_from("4").unwrap(),
-                design_references: vec![303],
-                ordinal: 1,
-            },
-            PersistentSubentityTag {
-                id: "f3d:xref/other/occurrence-0/design:persistent-subentity-tag#1".into(),
-                target: AttributeTarget::Face(
-                    FaceId::mint("f3d:brep:entity#xref").expect("identity grammar"),
-                ),
-                selector: 1,
-                token: cadmpeg_core::text::NonBlankString::try_from("3").unwrap(),
-                design_references: vec![303],
-                ordinal: 0,
-            },
-        ];
+        PersistentSubentityTag {
+            id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#1".into(),
+            target: AttributeTarget::Face(
+                FaceId::mint("f3d:brep:entity#50").expect("identity grammar"),
+            ),
+            selector: 1,
+            token: cadmpeg_core::text::NonBlankString::try_from("3").unwrap(),
+            design_references: vec![303],
+            ordinal: 0,
+        },
+        PersistentSubentityTag {
+            id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#2".into(),
+            target: AttributeTarget::Face(
+                FaceId::mint("f3d:brep:entity#51").expect("identity grammar"),
+            ),
+            selector: 1,
+            token: cadmpeg_core::text::NonBlankString::try_from("4").unwrap(),
+            design_references: vec![303],
+            ordinal: 1,
+        },
+        PersistentSubentityTag {
+            id: "f3d:xref/other/occurrence-0/design:persistent-subentity-tag#1".into(),
+            target: AttributeTarget::Face(
+                FaceId::mint("f3d:brep:entity#xref").expect("identity grammar"),
+            ),
+            selector: 1,
+            token: cadmpeg_core::text::NonBlankString::try_from("3").unwrap(),
+            design_references: vec![303],
+            ordinal: 0,
+        },
+    ];
     bind_face_operand_candidates(
         &ctx,
         std::slice::from_mut(&mut operand),
@@ -1564,18 +1570,24 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     for (skip, additional) in [(0, 1), (1, 8), (2, 8)] {
         let operation = "find F3D face operand Design reference";
         let error = crate::test_support::resource_refusal_at(
-            cadmpeg_core::decode::ResourceDimension::WorkUnits, operation, skip,
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            skip,
             |ctx| {
                 let mut limited_operand = operand.clone();
                 bind_face_operand_candidates(
-                    ctx, std::slice::from_mut(&mut limited_operand),
-                    std::slice::from_ref(&face_recipe), &face_candidate_tags,
+                    ctx,
+                    std::slice::from_mut(&mut limited_operand),
+                    std::slice::from_ref(&face_recipe),
+                    &face_candidate_tags,
                 )
             },
         );
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && limit.operation == operation && limit.additional == additional));
+                && limit.operation == operation && limit.additional == additional)
+        );
     }
     let mut direct_face = operand.clone();
     direct_face.recipe_kind = ConstructionRecipeKind::Face;

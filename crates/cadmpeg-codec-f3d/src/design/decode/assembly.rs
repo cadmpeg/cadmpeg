@@ -108,7 +108,8 @@ pub(super) fn exact_legacy_as_built_421_alignment(
         let Some(entry_offset) = ordinal.checked_mul(11) else {
             return Ok(None);
         };
-        let Some(reference_entry) = as_built_421::REFERENCE_ENTRIES.checked_add(entry_offset) else {
+        let Some(reference_entry) = as_built_421::REFERENCE_ENTRIES.checked_add(entry_offset)
+        else {
             return Ok(None);
         };
         let Some(reference_at) = start.checked_add(reference_entry) else {
@@ -156,9 +157,11 @@ pub(super) fn exact_legacy_as_built_421_alignment(
     {
         return Ok(None);
     }
-    if ctx.admit_iter(lanes, "scan F3D legacy AsBuilt alignment owner lanes")?
+    if ctx
+        .admit_iter(lanes, "scan F3D legacy AsBuilt alignment owner lanes")?
         .any(|owner| {
-        owner.class_tag().as_str() != generation.owner_class_tag() || owner.frame_length() != 103
+            owner.class_tag().as_str() != generation.owner_class_tag()
+                || owner.frame_length() != 103
         })
     {
         return Ok(None);
@@ -222,7 +225,9 @@ pub(super) fn exact_legacy_as_built_421_alignment(
             maximum,
             owner_record_indices: limit_owner_record_indices,
             value_offsets: limit_value_offsets,
-        }).try_into() {
+        })
+        .try_into()
+        {
             Ok(limits) => limits,
             Err(_) => return Ok(None),
         },
@@ -236,89 +241,94 @@ pub(super) fn exact_legacy_as_built_421_solved_frame(
     scope: &DesignParameterScope,
 ) -> Result<Option<DesignAssemblySolvedFrame>, CodecError> {
     let parsed = (|| -> Option<Result<DesignAssemblySolvedFrame, CodecError>> {
-    let generation = crate::design::assembly::legacy_as_built_421_generation(
-        scope.frame_length(),
-        scope.class_tag.as_str(),
-        scope.paired_class_tag.as_str(),
-    )?;
-    let references = scope.reference_members().located_rows()?;
-    let [_, _, _, _, _, _, _, _, frame_reference, _, _] = references else {
-        return None;
-    };
-    if scope.kind() != crate::records::feature::scope::DesignFeatureKind::AsBuilt {
-        return None;
-    }
-    let frame_record_index = frame_reference.value;
-    let expected_class_tag = generation.frame_class_tag();
-    let mut frame_candidates = records.offsets(frame_record_index).iter().copied().filter_map(
-        |frame_start| match exact_indexed_header_at(ctx, bytes, frame_start, frame_record_index) {
-            Ok(Some(class_tag)) if class_tag == expected_class_tag => Some(Ok(frame_start)),
-            Ok(Some(_)) | Ok(None) => None,
-            Err(error) => Some(Err(error)),
-        },
-    );
-    let frame_start = match frame_candidates.next() {
-        Some(Ok(frame_start)) => frame_start,
-        Some(Err(error)) => return Some(Err(error)),
-        None => return None,
-    };
-    match frame_candidates.next() {
-        Some(Ok(_)) => return None,
-        Some(Err(error)) => return Some(Err(error)),
-        None => {}
-    }
-    let frame_length = generation.frame_length();
-    let matrix_prefix = generation.matrix_prefix();
-    let transform_offset = generation.matrix_offset();
-    let matrix_prefix_value = match generation {
-        crate::design::assembly::LegacyAsBuilt421Generation::Class364 => {
-            as_built_421_frame_376::MATRIX_PREFIX_VALUE
+        let generation = crate::design::assembly::legacy_as_built_421_generation(
+            scope.frame_length(),
+            scope.class_tag.as_str(),
+            scope.paired_class_tag.as_str(),
+        )?;
+        let references = scope.reference_members().located_rows()?;
+        let [_, _, _, _, _, _, _, _, frame_reference, _, _] = references else {
+            return None;
+        };
+        if scope.kind() != crate::records::feature::scope::DesignFeatureKind::AsBuilt {
+            return None;
         }
-        crate::design::assembly::LegacyAsBuilt421Generation::Class420 => {
-            as_built_421_frame_327::MATRIX_PREFIX_VALUE
+        let frame_record_index = frame_reference.value;
+        let expected_class_tag = generation.frame_class_tag();
+        let mut frame_candidates = records
+            .offsets(frame_record_index)
+            .iter()
+            .copied()
+            .filter_map(|frame_start| {
+                match exact_indexed_header_at(ctx, bytes, frame_start, frame_record_index) {
+                    Ok(Some(class_tag)) if class_tag == expected_class_tag => Some(Ok(frame_start)),
+                    Ok(Some(_)) | Ok(None) => None,
+                    Err(error) => Some(Err(error)),
+                }
+            });
+        let frame_start = match frame_candidates.next() {
+            Some(Ok(frame_start)) => frame_start,
+            Some(Err(error)) => return Some(Err(error)),
+            None => return None,
+        };
+        match frame_candidates.next() {
+            Some(Ok(_)) => return None,
+            Some(Err(error)) => return Some(Err(error)),
+            None => {}
         }
-        crate::design::assembly::LegacyAsBuilt421Generation::Class417 => {
-            as_built_421_frame_448::MATRIX_PREFIX_VALUE
+        let frame_length = generation.frame_length();
+        let matrix_prefix = generation.matrix_prefix();
+        let transform_offset = generation.matrix_offset();
+        let matrix_prefix_value = match generation {
+            crate::design::assembly::LegacyAsBuilt421Generation::Class364 => {
+                as_built_421_frame_376::MATRIX_PREFIX_VALUE
+            }
+            crate::design::assembly::LegacyAsBuilt421Generation::Class420 => {
+                as_built_421_frame_327::MATRIX_PREFIX_VALUE
+            }
+            crate::design::assembly::LegacyAsBuilt421Generation::Class417 => {
+                as_built_421_frame_448::MATRIX_PREFIX_VALUE
+            }
+            crate::design::assembly::LegacyAsBuilt421Generation::Class457 => {
+                as_built_421_frame_297::MATRIX_PREFIX_VALUE
+            }
+        };
+        let paired_class_tag = match exact_indexed_header_at(
+            ctx,
+            bytes,
+            frame_start.checked_add(frame_length)?,
+            frame_record_index,
+        ) {
+            Ok(Some(class_tag)) => class_tag,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        if paired_class_tag != generation.frame_paired_class_tag() {
+            return None;
         }
-        crate::design::assembly::LegacyAsBuilt421Generation::Class457 => {
-            as_built_421_frame_297::MATRIX_PREFIX_VALUE
+        if bytes.get(
+            frame_start.checked_add(matrix_prefix)?..frame_start.checked_add(transform_offset)?,
+        )? != matrix_prefix_value
+        {
+            return None;
         }
-    };
-    let paired_class_tag = match exact_indexed_header_at(
-        ctx,
-        bytes,
-        frame_start.checked_add(frame_length)?,
-        frame_record_index,
-    ) {
-        Ok(Some(class_tag)) => class_tag,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
-    if paired_class_tag != generation.frame_paired_class_tag() {
-        return None;
-    }
-    if bytes
-        .get(frame_start.checked_add(matrix_prefix)?..frame_start.checked_add(transform_offset)?)?
-        != matrix_prefix_value
-    {
-        return None;
-    }
-    let transform_at = frame_start.checked_add(transform_offset)?;
-    let class_tag = match ctx.copy_retained_text(expected_class_tag, "copy F3D As-built frame class tag") {
-        Ok(class_tag) => class_tag,
-        Err(error) => return Some(Err(error)),
-    };
-    let Ok(class_tag) = class_tag.try_into() else {
-        return None;
-    };
-    Some(Ok(DesignAssemblySolvedFrame {
-        reference_record_index: frame_record_index,
-        reference_offset: frame_reference.offset,
-        record_byte_offset: u64::try_from(frame_start).ok()?,
-        class_tag,
-        transform: rigid_transform_at(bytes, transform_at)?,
-        transform_offset: u64::try_from(transform_at).ok()?,
-    }))
+        let transform_at = frame_start.checked_add(transform_offset)?;
+        let class_tag =
+            match ctx.copy_retained_text(expected_class_tag, "copy F3D As-built frame class tag") {
+                Ok(class_tag) => class_tag,
+                Err(error) => return Some(Err(error)),
+            };
+        let Ok(class_tag) = class_tag.try_into() else {
+            return None;
+        };
+        Some(Ok(DesignAssemblySolvedFrame {
+            reference_record_index: frame_record_index,
+            reference_offset: frame_reference.offset,
+            record_byte_offset: u64::try_from(frame_start).ok()?,
+            class_tag,
+            transform: rigid_transform_at(bytes, transform_at)?,
+            transform_offset: u64::try_from(transform_at).ok()?,
+        }))
     })();
     parsed.transpose()
 }
@@ -555,17 +565,14 @@ fn exact_legacy_as_built_face_selection(
             if class_tag != expected_class_tag {
                 return None;
             }
-            let id = match ctx.copy_retained_text(
-                &scope.id,
-                "f3d legacy AsBuilt selection header ID",
-            ) {
-                Ok(id) => id,
-                Err(error) => return Some(Err(error)),
-            };
-            let copied_class_tag = match ctx.copy_retained_text(
-                class_tag.as_str(),
-                "copy F3D As-built selection class tag",
-            ) {
+            let id =
+                match ctx.copy_retained_text(&scope.id, "f3d legacy AsBuilt selection header ID") {
+                    Ok(id) => id,
+                    Err(error) => return Some(Err(error)),
+                };
+            let copied_class_tag = match ctx
+                .copy_retained_text(class_tag.as_str(), "copy F3D As-built selection class tag")
+            {
                 Ok(class_tag) => class_tag,
                 Err(error) => return Some(Err(error)),
             };

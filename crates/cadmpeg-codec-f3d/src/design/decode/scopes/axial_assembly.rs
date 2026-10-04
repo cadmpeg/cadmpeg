@@ -320,27 +320,19 @@ fn exact_assembly_axial_component_operand_at(
     start: usize,
 ) -> Result<Option<AxialComponentOperand>, CodecError> {
     (|| {
-        let construction_class_tag = match exact_indexed_header_at(
-            ctx,
-            bytes,
-            start,
-            frame.reference_record_index,
-        ) {
-            Ok(Some(class_tag)) => class_tag,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+        let construction_class_tag =
+            match exact_indexed_header_at(ctx, bytes, start, frame.reference_record_index) {
+                Ok(Some(class_tag)) => class_tag,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
         let paired_at = start.checked_add(axial_carrier::PAIRED_INDEXED_HEADER)?;
-        let construction_paired_class_tag = match exact_indexed_header_at(
-            ctx,
-            bytes,
-            paired_at,
-            frame.reference_record_index,
-        ) {
-            Ok(Some(class_tag)) => class_tag,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+        let construction_paired_class_tag =
+            match exact_indexed_header_at(ctx, bytes, paired_at, frame.reference_record_index) {
+                Ok(Some(class_tag)) => class_tag,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
         let construction_transform_at = start.checked_add(axial_carrier::OPERAND_TRANSFORM)?;
         if rigid_transform_at(bytes, construction_transform_at)? != frame.transform {
             return None;
@@ -393,9 +385,7 @@ fn exact_assembly_axial_component_operand_at(
                     scope.reference_members(),
                     "count F3D axial scope member references",
                 ) {
-                    Ok(references) => references
-                        .filter(|member| *member == record_index)
-                        .count(),
+                    Ok(references) => references.filter(|member| *member == record_index).count(),
                     Err(error) => return Some(Err(error)),
                 };
                 if member_count != 1 {
@@ -490,16 +480,18 @@ fn exact_assembly_axial_selector(
         ) else {
             return None;
         };
-        let selector_class_tag = match exact_indexed_header_at(ctx, bytes, selector_at, selector_record_index) {
-            Ok(Some(class_tag)) => class_tag,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
-        let selector_paired_class_tag = match exact_indexed_header_at(ctx, bytes, selector_paired_at, selector_record_index) {
-            Ok(Some(class_tag)) => class_tag,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+        let selector_class_tag =
+            match exact_indexed_header_at(ctx, bytes, selector_at, selector_record_index) {
+                Ok(Some(class_tag)) => class_tag,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
+        let selector_paired_class_tag =
+            match exact_indexed_header_at(ctx, bytes, selector_paired_at, selector_record_index) {
+                Ok(Some(class_tag)) => class_tag,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
         if bytes.get(
             selector_at.checked_add(axial_selector::ZERO_RUN_11)?
                 ..selector_at.checked_add(axial_selector::NESTED_RECORD_REFERENCE)?,

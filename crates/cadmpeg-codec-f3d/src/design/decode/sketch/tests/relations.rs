@@ -50,7 +50,11 @@ fn variable_width_relation_uses_counted_runs_and_next_record_boundary() {
     bytes.extend_from_slice(b"277");
     bytes.extend_from_slice(&1240u32.to_le_bytes());
 
-    assert_eq!(next_indexed_record_offset(&cadmpeg_test_support::service_decode_context(), &bytes, 11).unwrap(), Some(127));
+    assert_eq!(
+        next_indexed_record_offset(&cadmpeg_test_support::service_decode_context(), &bytes, 11)
+            .unwrap(),
+        Some(127)
+    );
     let parsed = tested_parse_classed_sketch_relation(&record, SketchRelationClass::Plain).unwrap();
     assert_eq!(
         parsed
@@ -105,9 +109,19 @@ fn indexed_record_search_requires_the_expected_identity() {
     bytes.extend_from_slice(b"306");
     bytes.extend_from_slice(&42u32.to_le_bytes());
 
-    assert_eq!(next_indexed_record_offset(&cadmpeg_test_support::service_decode_context(), &bytes, 0).unwrap(), Some(decoy));
     assert_eq!(
-        next_indexed_record_offset_with_index(&cadmpeg_test_support::service_decode_context(), &bytes, 0, 42).unwrap(),
+        next_indexed_record_offset(&cadmpeg_test_support::service_decode_context(), &bytes, 0)
+            .unwrap(),
+        Some(decoy)
+    );
+    assert_eq!(
+        next_indexed_record_offset_with_index(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            0,
+            42
+        )
+        .unwrap(),
         Some(expected)
     );
 }
@@ -169,7 +183,12 @@ fn genesis_relation_parses_u64_text_frame_mask_and_relation_ordinals() {
         (vec![SketchConstraintKind::TextFrame], 0)
     );
     assert_eq!(
-        decode_pattern_definition(&cadmpeg_test_support::service_decode_context(), &record, &mut parsed).unwrap(),
+        decode_pattern_definition(
+            &cadmpeg_test_support::service_decode_context(),
+            &record,
+            &mut parsed
+        )
+        .unwrap(),
         Some(
             crate::records::sketch_relations::SketchPatternDefinition::TextFrame {
                 text_reference: 2394
@@ -270,7 +289,12 @@ fn genesis_relation_parses_text_path_glyph_run() {
         (vec![SketchConstraintKind::TextPath], 0)
     );
     assert_eq!(
-        decode_pattern_definition(&cadmpeg_test_support::service_decode_context(), &record, &mut parsed).unwrap(),
+        decode_pattern_definition(
+            &cadmpeg_test_support::service_decode_context(),
+            &record,
+            &mut parsed
+        )
+        .unwrap(),
         Some(
             crate::records::sketch_relations::SketchPatternDefinition::TextPath {
                 text_reference: 304,
@@ -327,7 +351,12 @@ fn genesis_relation_parses_circular_pattern_auxiliary_run() {
     );
     assert_eq!(parsed.state, 0x1000_0000);
     assert_eq!(
-        decode_pattern_definition(&cadmpeg_test_support::service_decode_context(), &record, &mut parsed).unwrap(),
+        decode_pattern_definition(
+            &cadmpeg_test_support::service_decode_context(),
+            &record,
+            &mut parsed
+        )
+        .unwrap(),
         Some(
             crate::records::sketch_relations::SketchPatternDefinition::Circular {
                 angle_parameter: 336,
@@ -398,7 +427,12 @@ fn genesis_relation_parses_rectangular_pattern_auxiliary_run() {
     ));
     assert_eq!(parsed.state, 0x2000_0000);
     let Some(crate::records::sketch_relations::SketchPatternDefinition::Rectangular { directions }) =
-        decode_pattern_definition(&cadmpeg_test_support::service_decode_context(), &record, &mut parsed).unwrap()
+        decode_pattern_definition(
+            &cadmpeg_test_support::service_decode_context(),
+            &record,
+            &mut parsed,
+        )
+        .unwrap()
     else {
         panic!("expected rectangular pattern definition");
     };
@@ -535,8 +569,8 @@ fn indexed_record_header_requires_a_complete_class_header() {
 
 #[test]
 fn indexed_record_header_class_tag_copy_refuses_retained_bytes() {
-    use cadmpeg_core::decode::ResourceDimension;
     use crate::design::decode::sketch::indexed_record_header_at;
+    use cadmpeg_core::decode::ResourceDimension;
 
     let header = [3, 0, 0, 0, b'2', b'5', b'7', 42, 0, 0, 0];
     let refusal = crate::test_support::resource_refusal_at(
@@ -556,8 +590,8 @@ fn indexed_record_header_class_tag_copy_refuses_retained_bytes() {
 
 #[test]
 fn indexed_record_header_class_tag_validation_refuses_work() {
-    use cadmpeg_core::decode::ResourceDimension;
     use crate::design::decode::sketch::indexed_record_header_at;
+    use cadmpeg_core::decode::ResourceDimension;
 
     let header = [3, 0, 0, 0, b'2', b'5', b'7', 42, 0, 0, 0];
     let refusal = crate::test_support::resource_refusal_at(

@@ -117,19 +117,21 @@ fn dimension_locus_pair_resolves_two_typed_geometry_records() {
 
     let mut competing = bytes.clone();
     competing.extend_from_slice(&bytes);
-    assert!(crate::design::test_support::with_test_decode_context(|ctx| {
-        find_dimension_locus_pair(
-            ctx,
-            &competing,
-            0,
-            competing.len(),
-            228,
-            &HashSet::from([192, 194]),
-        )
-        .transpose()
-    })
-    .expect("competing dimension locus frames")
-    .is_none());
+    assert!(
+        crate::design::test_support::with_test_decode_context(|ctx| {
+            find_dimension_locus_pair(
+                ctx,
+                &competing,
+                0,
+                competing.len(),
+                228,
+                &HashSet::from([192, 194]),
+            )
+            .transpose()
+        })
+        .expect("competing dimension locus frames")
+        .is_none()
+    );
 }
 
 #[test]
@@ -163,11 +165,14 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
     assert_eq!(pair.loci()[1].role, 7);
     assert_eq!(pair.paired_class_tag.as_str(), "273");
 
-    assert!(crate::design::test_support::with_test_decode_context(|ctx| {
-        parse_dimension_null_locus_pair(ctx, &bytes, 0, 1290, &HashSet::from([1110])).transpose()
-    })
-    .expect("wrong dimension locus reference")
-    .is_none());
+    assert!(
+        crate::design::test_support::with_test_decode_context(|ctx| {
+            parse_dimension_null_locus_pair(ctx, &bytes, 0, 1290, &HashSet::from([1110]))
+                .transpose()
+        })
+        .expect("wrong dimension locus reference")
+        .is_none()
+    );
 
     let mut nested = Vec::new();
     nested.extend_from_slice(&3u32.to_le_bytes());

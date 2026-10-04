@@ -104,9 +104,7 @@ fn assembly_path_identity_guid_push_refuses_each_collection_item() {
             ResourceDimension::CollectionItems,
             "collect F3D assembly path identity GUIDs",
             skip,
-            |ctx| {
-                exact_assembly_operand_path(ctx, &bytes, 0, 65, end, path_link()).map(|_| ())
-            },
+            |ctx| exact_assembly_operand_path(ctx, &bytes, 0, 65, end, path_link()).map(|_| ()),
         );
         assert!(matches!(
             refusal,

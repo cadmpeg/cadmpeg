@@ -50,8 +50,7 @@ pub(super) fn exact_copy_paste_bodies_operation(
         }
         let mut body_group_cursor = body_group_count_at.checked_add(4)?;
         {
-        let mut validate_body_reference =
-            |expected: u32| -> Option<Result<(), CodecError>> {
+            let mut validate_body_reference = |expected: u32| -> Option<Result<(), CodecError>> {
                 let actual = marked_record_reference(bytes, body_group_cursor)?;
                 if actual != expected {
                     return None;
@@ -69,32 +68,36 @@ pub(super) fn exact_copy_paste_bodies_operation(
                 body_group_cursor = body_group_cursor.checked_add(11)?;
                 Some(Ok(()))
             };
-        let references = scope.reference_members();
-        if let Some(values) = references.unlocated_values() {
-            let admitted = match ctx.admit_iter(values, "scan F3D CopyPasteBodies scope references") {
-                Ok(admitted) => admitted,
-                Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
-            };
-            for expected in admitted.skip(1) {
-                match validate_body_reference(*expected) {
-                    Some(Ok(())) => {}
-                    Some(Err(error)) => return Some(Err(error)),
-                    None => return None,
+            let references = scope.reference_members();
+            if let Some(values) = references.unlocated_values() {
+                let admitted = match ctx
+                    .admit_iter(values, "scan F3D CopyPasteBodies scope references")
+                {
+                    Ok(admitted) => admitted,
+                    Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+                };
+                for expected in admitted.skip(1) {
+                    match validate_body_reference(*expected) {
+                        Some(Ok(())) => {}
+                        Some(Err(error)) => return Some(Err(error)),
+                        None => return None,
+                    }
+                }
+            } else if let Some(rows) = references.located_rows() {
+                let admitted = match ctx
+                    .admit_iter(rows, "scan F3D CopyPasteBodies located scope references")
+                {
+                    Ok(admitted) => admitted,
+                    Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+                };
+                for expected in admitted.skip(1).map(|row| &row.value) {
+                    match validate_body_reference(*expected) {
+                        Some(Ok(())) => {}
+                        Some(Err(error)) => return Some(Err(error)),
+                        None => return None,
+                    }
                 }
             }
-        } else if let Some(rows) = references.located_rows() {
-            let admitted = match ctx.admit_iter(rows, "scan F3D CopyPasteBodies located scope references") {
-                Ok(admitted) => admitted,
-                Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
-            };
-            for expected in admitted.skip(1).map(|row| &row.value) {
-                match validate_body_reference(*expected) {
-                    Some(Ok(())) => {}
-                    Some(Err(error)) => return Some(Err(error)),
-                    None => return None,
-                }
-            }
-        }
         }
         let relation_at = records.first_at_or_after(search_at, relation_record_index)?;
         let (relation_class_tag, after_tag) =
@@ -112,21 +115,22 @@ pub(super) fn exact_copy_paste_bodies_operation(
             return None;
         }
         let references_at = count_at.checked_add(5)?;
-        let body_reference = |at: usize, trailing_zeros: usize| -> Result<Option<u32>, CodecError> {
-            if bytes.get(at) != Some(&1) {
-                return Ok(None);
-            }
-            let Some(zeroes) = bytes.get(at + 5..at + 5 + trailing_zeros) else {
-                return Ok(None);
+        let body_reference =
+            |at: usize, trailing_zeros: usize| -> Result<Option<u32>, CodecError> {
+                if bytes.get(at) != Some(&1) {
+                    return Ok(None);
+                }
+                let Some(zeroes) = bytes.get(at + 5..at + 5 + trailing_zeros) else {
+                    return Ok(None);
+                };
+                if !ctx
+                    .admit_iter(zeroes, "validate F3D copied-body reference padding")?
+                    .all(|byte| *byte == 0)
+                {
+                    return Ok(None);
+                }
+                Ok(View::u32_le_at(bytes, at + 1))
             };
-            if !ctx
-                .admit_iter(zeroes, "validate F3D copied-body reference padding")?
-                .all(|byte| *byte == 0)
-            {
-                return Ok(None);
-            }
-            Ok(View::u32_le_at(bytes, at + 1))
-        };
         let operands = match ctx.admit_iter(&operands, "scan F3D CopyPasteBodies operands") {
             Ok(operands) => operands.copied(),
             Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
@@ -140,42 +144,42 @@ pub(super) fn exact_copy_paste_bodies_operation(
                 Err(error) => return Some(Err(error)),
             };
             let source_offset = u64::try_from(source_at + 1).ok()?;
-            let copied_record_index = match body_reference(
-                copied_at,
-                if ordinal + 1 == body_count { 6 } else { 10 },
+            let copied_record_index =
+                match body_reference(copied_at, if ordinal + 1 == body_count { 6 } else { 10 }) {
+                    Ok(Some(index)) => index,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                };
+            if let Err(error) = ctx.push_vec(
+                &mut bodies,
+                body_ops::DesignCopiedBody {
+                    operand,
+                    source: crate::records::identity::Located {
+                        value: source_record_index,
+                        offset: source_offset,
+                    },
+                    copied: crate::records::identity::Located {
+                        value: copied_record_index,
+                        offset: u64::try_from(copied_at + 1).ok()?,
+                    },
+                },
+                "f3d CopyPasteBodies bodies",
             ) {
-                Ok(Some(index)) => index,
-                Ok(None) => return None,
+                return Some(Err(error));
+            };
+        }
+        let body_group_class_tag =
+            match crate::design::decode::text::class_tag_from_view(ctx, body_group_class_tag) {
+                Ok(Ok(class_tag)) => class_tag,
+                Ok(Err(_)) => return None,
                 Err(error) => return Some(Err(error)),
             };
-            if let Err(error) = ctx.push_vec(&mut bodies, body_ops::DesignCopiedBody {
-                operand,
-                source: crate::records::identity::Located {
-                    value: source_record_index,
-                    offset: source_offset,
-                },
-                copied: crate::records::identity::Located {
-                    value: copied_record_index,
-                    offset: u64::try_from(copied_at + 1).ok()?,
-                },
-            }, "f3d CopyPasteBodies bodies") { return Some(Err(error)); };
-        }
-        let body_group_class_tag = match crate::design::decode::text::class_tag_from_view(
-            ctx,
-            body_group_class_tag,
-        ) {
-            Ok(Ok(class_tag)) => class_tag,
-            Ok(Err(_)) => return None,
-            Err(error) => return Some(Err(error)),
-        };
-        let relation_class_tag = match crate::design::decode::text::class_tag_from_view(
-            ctx,
-            relation_class_tag,
-        ) {
-            Ok(Ok(class_tag)) => class_tag,
-            Ok(Err(_)) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+        let relation_class_tag =
+            match crate::design::decode::text::class_tag_from_view(ctx, relation_class_tag) {
+                Ok(Ok(class_tag)) => class_tag,
+                Ok(Err(_)) => return None,
+                Err(error) => return Some(Err(error)),
+            };
         Some(DesignCopyPasteBodiesOperation::try_new_charged(
             ctx,
             bodies,

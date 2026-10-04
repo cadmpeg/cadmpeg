@@ -140,19 +140,24 @@ fn compact_mirror_ascii_tag_refusal_propagates() {
         |ctx| compact_feature_reference(ctx, &bytes, &header),
     );
     assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-&& limit.operation == "validate F3D Mirror ASCII tag"
-&& limit.additional == 3
-    ));
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+    if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+    && limit.operation == "validate F3D Mirror ASCII tag"
+    && limit.additional == 3
+        ));
 }
 
 #[test]
 fn class_413_mirror_scope_decodes_inline_tolerance() {
     let (bytes, scope) = class_413_tolerance_fixture();
-    let (value, offset, carrier) =
-        exact_legacy_mirror_scope_tolerance(&cadmpeg_test_support::service_decode_context(), &bytes, &scope).unwrap().expect("class-413 tolerance");
+    let (value, offset, carrier) = exact_legacy_mirror_scope_tolerance(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        &scope,
+    )
+    .unwrap()
+    .expect("class-413 tolerance");
     assert_eq!(value.get(), 0.25);
     assert_eq!(offset, 32 + 51);
     assert_eq!(carrier.first_reference, 12);
@@ -169,12 +174,12 @@ fn class_413_mirror_kind_count_refusal_propagates() {
         |ctx| exact_legacy_mirror_scope_tolerance(ctx, &bytes, &scope),
     );
     assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-&& limit.operation == "count F3D Mirror kind UTF-16 units"
-&& limit.additional == 6
-    ));
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+    if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+    && limit.operation == "count F3D Mirror kind UTF-16 units"
+    && limit.additional == 6
+        ));
 }
 
 #[test]
@@ -205,8 +210,13 @@ fn class_369_mirror_scope_decodes_inline_tolerance() {
     bytes[32 + 64..32 + 68].copy_from_slice(&12_u32.to_le_bytes());
     bytes[32 + 76] = 1;
     bytes[32 + 77..32 + 81].copy_from_slice(&11_u32.to_le_bytes());
-    let (value, offset, carrier) =
-        exact_legacy_mirror_scope_tolerance(&cadmpeg_test_support::service_decode_context(), &bytes, &scope).unwrap().expect("class-369 tolerance");
+    let (value, offset, carrier) = exact_legacy_mirror_scope_tolerance(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        &scope,
+    )
+    .unwrap()
+    .expect("class-369 tolerance");
     assert_eq!(value.get(), 0.25);
     assert_eq!(offset, 32 + 51);
     assert_eq!(carrier.marker.code(), 89);
@@ -215,7 +225,15 @@ fn class_369_mirror_scope_decodes_inline_tolerance() {
     assert_eq!(carrier.second_reference, 11);
 
     bytes[32 + 59..32 + 63].copy_from_slice(&90_u32.to_le_bytes());
-    assert_eq!(exact_legacy_mirror_scope_tolerance(&cadmpeg_test_support::service_decode_context(), &bytes, &scope).unwrap(), None);
+    assert_eq!(
+        exact_legacy_mirror_scope_tolerance(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &scope
+        )
+        .unwrap(),
+        None
+    );
 }
 
 #[test]
@@ -246,8 +264,13 @@ fn class_391_mirror_scope_decodes_inline_tolerance() {
     bytes[32 + 63..32 + 67].copy_from_slice(&12_u32.to_le_bytes());
     bytes[32 + 75] = 1;
     bytes[32 + 76..32 + 80].copy_from_slice(&11_u32.to_le_bytes());
-    let (value, offset, carrier) =
-        exact_legacy_mirror_scope_tolerance(&cadmpeg_test_support::service_decode_context(), &bytes, &scope).unwrap().expect("class-391 tolerance");
+    let (value, offset, carrier) = exact_legacy_mirror_scope_tolerance(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        &scope,
+    )
+    .unwrap()
+    .expect("class-391 tolerance");
     assert_eq!(value.get(), 0.25);
     assert_eq!(offset, 32 + 50);
     assert_eq!(carrier.marker.code(), 94);
@@ -256,7 +279,15 @@ fn class_391_mirror_scope_decodes_inline_tolerance() {
     assert_eq!(carrier.second_reference, 11);
 
     bytes[32 + 58..32 + 62].copy_from_slice(&95_u32.to_le_bytes());
-    assert_eq!(exact_legacy_mirror_scope_tolerance(&cadmpeg_test_support::service_decode_context(), &bytes, &scope).unwrap(), None);
+    assert_eq!(
+        exact_legacy_mirror_scope_tolerance(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &scope
+        )
+        .unwrap(),
+        None
+    );
 }
 
 #[test]
@@ -287,8 +318,13 @@ fn class_440_mirror_scope_decodes_inline_tolerance() {
     bytes[32 + 64..32 + 68].copy_from_slice(&12_u32.to_le_bytes());
     bytes[32 + 76] = 1;
     bytes[32 + 77..32 + 81].copy_from_slice(&11_u32.to_le_bytes());
-    let (value, offset, carrier) =
-        exact_legacy_mirror_scope_tolerance(&cadmpeg_test_support::service_decode_context(), &bytes, &scope).unwrap().expect("class-440 tolerance");
+    let (value, offset, carrier) = exact_legacy_mirror_scope_tolerance(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        &scope,
+    )
+    .unwrap()
+    .expect("class-440 tolerance");
     assert_eq!(value.get(), 0.25);
     assert_eq!(offset, 32 + 51);
     assert_eq!(carrier.marker.code(), 100);
@@ -323,8 +359,13 @@ fn class_441_mirror_scope_decodes_the_unrepeated_inline_tolerance() {
     bytes[32 + 59..32 + 63].copy_from_slice(&12_u32.to_le_bytes());
     bytes[32 + 71] = 1;
     bytes[32 + 72..32 + 76].copy_from_slice(&11_u32.to_le_bytes());
-    let (value, offset, carrier) =
-        exact_legacy_mirror_scope_tolerance(&cadmpeg_test_support::service_decode_context(), &bytes, &scope).unwrap().expect("class-441 tolerance");
+    let (value, offset, carrier) = exact_legacy_mirror_scope_tolerance(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        &scope,
+    )
+    .unwrap()
+    .expect("class-441 tolerance");
     assert_eq!(value.get(), 0.125);
     assert_eq!(offset, 32 + 50);
     assert_eq!(carrier.marker.code(), 61);
@@ -384,7 +425,13 @@ fn class_441_mirror_scope_decodes_the_inline_count_owner() {
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
 
     assert_eq!(
-        exact_legacy_mirror_scope_count(&cadmpeg_test_support::service_decode_context(), &bytes, &records, &scope).unwrap(),
+        exact_legacy_mirror_scope_count(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &records,
+            &scope
+        )
+        .unwrap(),
         Some((count_record_index, 40))
     );
     let error = crate::test_support::resource_refusal_at(
@@ -394,12 +441,12 @@ fn class_441_mirror_scope_decodes_the_inline_count_owner() {
         |ctx| exact_legacy_mirror_scope_count(ctx, &bytes, &records, &scope),
     );
     assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-&& limit.operation == "find F3D Mirror count reference"
-&& limit.additional == 4
-    ));
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+    if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+    && limit.operation == "find F3D Mirror count reference"
+    && limit.additional == 4
+        ));
 }
 
 #[test]
@@ -465,12 +512,12 @@ fn mirror_header_index_refuses_collection_limit() {
             },
         );
         assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-if limit.dimension == ResourceDimension::WorkUnits
-&& limit.operation == "scan F3D Mirror record headers"
-&& limit.additional == 1
-        ));
+                    error,
+                    cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+        && limit.operation == "scan F3D Mirror record headers"
+        && limit.additional == 1
+                ));
     });
 }
 

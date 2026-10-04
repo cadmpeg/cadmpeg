@@ -64,7 +64,9 @@ fn paired_bulk_entry_name<'a>(
     prefix: &str,
 ) -> Result<&'a str, CodecError> {
     let mut entries = ctx.admit_iter(&scan.entries, "find F3D paired Design BulkStream")?;
-    if let Some(entry) = entries.find(|entry| entry.name.strip_prefix(prefix) == Some("BulkStream.dat")) {
+    if let Some(entry) =
+        entries.find(|entry| entry.name.strip_prefix(prefix) == Some("BulkStream.dat"))
+    {
         return Ok(&entry.name);
     }
     let length = "entry "
@@ -110,11 +112,7 @@ fn copy_design_type(
 
     let entities = if let Some(rows) = design_type.entities.located_rows() {
         let mut copied = Vec::new();
-        ctx.extend_from_slice(
-            &mut copied,
-            rows,
-            "f3d design type registered entities",
-        )?;
+        ctx.extend_from_slice(&mut copied, rows, "f3d design type registered entities")?;
         ReferenceRun::located(copied)
     } else {
         let mut copied = ctx.collection_vec(count, "f3d design type registered entities")?;
@@ -204,21 +202,27 @@ pub(crate) fn decode_component_naming_spaces(
 ) -> Result<Vec<DesignComponentNamingSpace>, CodecError> {
     let mut out = Vec::new();
     for meta_entry in ctx
-        .admit_iter(&scan.entries, "scan F3D component naming MetaStream entries")?
+        .admit_iter(
+            &scan.entries,
+            "scan F3D component naming MetaStream entries",
+        )?
         .filter_map(|entry| MetaStreamEntry::from_design_entry(scan, entry))
     {
         let meta = scan.parsed_metastream(ctx, &meta_entry.entry.name)?;
         let mut component_entities = HashSet::new();
-        for design_type in ctx.admit_iter(&meta.types, "scan F3D component naming types")?.filter(|design_type| {
-            design_type.module == COMPONENT_MODULE
-                && design_type
-                    .base_type_guid
-                    .value()
-                    .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
-                    .is_some_and(|base| {
-                        base.eq_ignore_ascii_case(COMPONENT_NAMING_SPACE_BASE_TYPE_GUID)
-                    })
-        }) {
+        for design_type in ctx
+            .admit_iter(&meta.types, "scan F3D component naming types")?
+            .filter(|design_type| {
+                design_type.module == COMPONENT_MODULE
+                    && design_type
+                        .base_type_guid
+                        .value()
+                        .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
+                        .is_some_and(|base| {
+                            base.eq_ignore_ascii_case(COMPONENT_NAMING_SPACE_BASE_TYPE_GUID)
+                        })
+            })
+        {
             let entities = &design_type.entities;
             for entity_id in ctx
                 .admit_iter(
@@ -327,7 +331,10 @@ pub(crate) fn decode_component_naming_spaces(
                         .is_none_or(|base| {
                             !base.eq_ignore_ascii_case(COMPONENT_NAMING_SPACE_BASE_TYPE_GUID)
                         })
-                    || !design_type.type_guid.as_str().eq_ignore_ascii_case(inline_type_guid)
+                    || !design_type
+                        .type_guid
+                        .as_str()
+                        .eq_ignore_ascii_case(inline_type_guid)
                 {
                     continue;
                 }
@@ -416,8 +423,8 @@ pub(crate) fn metadata_for_bulk_stream(
         .strip_suffix("BulkStream.dat")
         .ok_or_else(|| CodecError::Malformed("Design stream has no BulkStream suffix".into()))?;
     let mut entries = ctx.admit_iter(&scan.entries, "find paired F3D MetaStream")?;
-    let Some(meta_entry) = entries
-        .find(|entry| entry.name.strip_prefix(prefix) == Some("MetaStream.dat"))
+    let Some(meta_entry) =
+        entries.find(|entry| entry.name.strip_prefix(prefix) == Some("MetaStream.dat"))
     else {
         return Ok(None);
     };
@@ -450,8 +457,7 @@ fn record_header_class_tag(
     end: usize,
     expected_entity_id: u64,
 ) -> Result<Option<crate::records::references::DesignClassTag>, CodecError> {
-    let Some((class_tag, after_tag)) =
-        lp_ascii_filtered_view(bytes, at, 3..=3, u8::is_ascii_digit)
+    let Some((class_tag, after_tag)) = lp_ascii_filtered_view(bytes, at, 3..=3, u8::is_ascii_digit)
     else {
         return Ok(None);
     };
@@ -486,7 +492,10 @@ pub(super) fn design_primary_frames<'a>(
 ) -> Result<Vec<DesignPrimaryFrame<'a>>, CodecError> {
     let indexed = crate::metastream::primary_record_frames(ctx, meta, bytes.len())?;
     let mut registered_entities = HashSet::new();
-    for (ordinal, design_type) in ctx.admit_iter(&meta.types, "scan F3D primary record types")?.enumerate() {
+    for (ordinal, design_type) in ctx
+        .admit_iter(&meta.types, "scan F3D primary record types")?
+        .enumerate()
+    {
         let entities = &design_type.entities;
         for entity_id in ctx
             .admit_iter(
@@ -513,7 +522,8 @@ pub(super) fn design_primary_frames<'a>(
     ctx.reserve_capacity(&mut frames, indexed.len(), "f3d design primary frames")?;
     for frame in ctx.admit_iter(&indexed, "scan F3D indexed primary record frames")? {
         let entity_id = frame.entity_id;
-        let Some(class_tag) = record_header_class_tag(ctx, bytes, frame.start, frame.end, entity_id)?
+        let Some(class_tag) =
+            record_header_class_tag(ctx, bytes, frame.start, frame.end, entity_id)?
         else {
             return Err(CodecError::Malformed(
                 "F3D primary record index points to an invalid record header".into(),
@@ -543,13 +553,17 @@ pub(super) fn design_primary_frames<'a>(
                 ));
             }
         }
-        ctx.push_vec(&mut frames, DesignPrimaryFrame {
-            entity_id,
-            class_tag,
-            start: frame.start,
-            end: frame.end,
-            design_type,
-        }, "f3d design primary frames")?;
+        ctx.push_vec(
+            &mut frames,
+            DesignPrimaryFrame {
+                entity_id,
+                class_tag,
+                start: frame.start,
+                end: frame.end,
+                design_type,
+            },
+            "f3d design primary frames",
+        )?;
     }
     Ok(frames)
 }
@@ -739,7 +753,10 @@ fn meta_scope_matches_bulk(
         let bytes = character.encode_utf8(&mut buffer).as_bytes();
         if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
             const HEX: &[u8; 16] = b"0123456789ABCDEF";
-            for byte in ctx.admit_iter(bytes, "scan F3D escaped BulkStream prefix")?.copied() {
+            for byte in ctx
+                .admit_iter(bytes, "scan F3D escaped BulkStream prefix")?
+                .copied()
+            {
                 if observed.next() != Some(b'%')
                     || observed.next() != Some(HEX[usize::from(byte >> 4)])
                     || observed.next() != Some(HEX[usize::from(byte & 0x0f)])
@@ -811,8 +828,7 @@ fn parse_feature_timeline_record(
         let context_reference_offset = at.checked_add(1)?;
         let reference = take_reference(bytes, &mut at)?;
         Some((class_tag, at, context_reference_offset, reference))
-    })()
-    else {
+    })() else {
         return Ok(None);
     };
     let Some(context_record_index) =
@@ -859,10 +875,14 @@ fn parse_feature_timeline_record(
         let Some(target_offset) = u64::try_from(target_offset).ok() else {
             return Ok(None);
         };
-        ctx.push_vec(&mut items, crate::records::identity::Located {
-            value: target,
-            offset: target_offset,
-        }, "admit F3D timeline item slots")?;
+        ctx.push_vec(
+            &mut items,
+            crate::records::identity::Located {
+                value: target,
+                offset: target_offset,
+            },
+            "admit F3D timeline item slots",
+        )?;
     }
     if at != frame.end {
         return Ok(None);
@@ -972,7 +992,9 @@ pub(crate) fn decode_feature_timelines(
             ));
         }
         let Some(record_pair_width) = std::num::NonZeroUsize::new(2) else {
-            return Err(CodecError::malformed("F3D MetaStream record pair width is zero"));
+            return Err(CodecError::malformed(
+                "F3D MetaStream record pair width is zero",
+            ));
         };
         if ctx
             .admit_iter(&meta.records, "validate F3D MetaStream record offsets")?

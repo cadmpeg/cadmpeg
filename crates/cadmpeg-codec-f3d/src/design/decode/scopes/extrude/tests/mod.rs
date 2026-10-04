@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-mod contains;
 mod class_296;
 mod coil;
+mod contains;
 mod extent;
 
 fn assert_work_refusal<T>(
