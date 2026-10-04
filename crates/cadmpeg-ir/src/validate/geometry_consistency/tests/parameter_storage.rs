@@ -7,8 +7,10 @@ use cadmpeg_core::CodecError;
 #[test]
 fn parameter_uniqueness_preserves_first_values_and_negative_zero() {
     let ctx = cadmpeg_test_support::service_decode_context();
-    let values =
-        super::super::unique(&ctx, [3.0, f64::NAN, -0.0, 0.0, 3.0, 2.0], FiniteReal::new).unwrap();
+    let values = super::super::unique(&ctx, &[3.0, f64::NAN, -0.0, 0.0, 3.0, 2.0], |value| {
+        FiniteReal::new(*value)
+    })
+    .unwrap();
     assert_eq!(
         values.iter().map(|value| value.get()).collect::<Vec<_>>(),
         [3.0, -0.0, 2.0]
@@ -25,9 +27,9 @@ fn parameter_uniqueness_admits_source_before_projection_and_comparison_before_st
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let projected = std::cell::Cell::new(0);
         let Err(CodecError::ResourceLimit(limit)) =
-            super::super::unique(&ctx, [1.0, 2.0], |value| {
+            super::super::unique(&ctx, &[1.0, 2.0], |value| {
                 projected.set(projected.get() + 1);
-                FiniteReal::new(value)
+                FiniteReal::new(*value)
             })
         else {
             panic!("uniqueness must refuse");
@@ -46,6 +48,23 @@ fn parameter_uniqueness_admits_source_before_projection_and_comparison_before_st
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
         );
     }
+}
+
+#[test]
+fn parameter_uniqueness_admits_only_visited_candidates() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // The total is four source slots, three scratch copies, and four visited comparisons.
+    policy.limits.max_work_units = 11;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let values =
+        super::super::unique(&ctx, &[1.0, 2.0, 3.0, 1.0], |value| FiniteReal::new(*value)).unwrap();
+    assert_eq!(
+        values.iter().map(|value| value.get()).collect::<Vec<_>>(),
+        [1.0, 2.0, 3.0]
+    );
+    drop(values);
+    ctx.finish_session().unwrap();
 }
 
 #[test]

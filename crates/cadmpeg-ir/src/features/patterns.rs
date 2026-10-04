@@ -34,6 +34,21 @@ pub enum PatternSeed {
     ),
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for PatternSeed {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        match self {
+            Self::Feature(value) => (0_u8, value).decode_cost(ctx, operation),
+            Self::Faces(value) => (1_u8, value).decode_cost(ctx, operation),
+            Self::Bodies(value) => (2_u8, value).decode_cost(ctx, operation),
+            Self::Occurrences(value) => (3_u8, value).decode_cost(ctx, operation),
+        }
+    }
+}
+
 /// The stages of a composite pattern nested inside a composite stage.
 ///
 /// A composite stage applies one transform, never another sequence of stages,
@@ -43,6 +58,16 @@ pub enum PatternSeed {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub enum NoNestedComposite {}
+
+impl cadmpeg_core::decode::cost::DecodeCost for NoNestedComposite {
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        match *self {}
+    }
+}
 
 /// A pattern transform a composite stage may apply.
 pub type StagePatternKind = PatternKind<NoNestedComposite>;
@@ -133,6 +158,18 @@ impl CompositeStages for NoNestedComposite {
 /// `C` names the stages a composite arm applies.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PatternKind<C = CompositePattern>(PatternTransform<C>);
+
+impl<C: cadmpeg_core::decode::cost::DecodeCost> cadmpeg_core::decode::cost::DecodeCost
+    for PatternKind<C>
+{
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        self.0.decode_cost(ctx, operation)
+    }
+}
 
 /// A pattern field whose value changes under a length-unit conversion.
 pub enum PatternLengthField<'a> {
@@ -431,6 +468,23 @@ pub enum PatternForm {
     Composite,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for PatternForm {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        match self {
+            Self::Linear => (0_u8,).decode_cost(ctx, operation),
+            Self::Circular => (1_u8,).decode_cost(ctx, operation),
+            Self::CurveDriven => (2_u8,).decode_cost(ctx, operation),
+            Self::Mirror => (3_u8,).decode_cost(ctx, operation),
+            Self::Scale => (4_u8,).decode_cost(ctx, operation),
+            Self::Composite => (5_u8,).decode_cost(ctx, operation),
+        }
+    }
+}
+
 /// Spatial transform used to repeat or reflect seed features.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -542,12 +596,72 @@ pub enum PatternTransform<C = CompositePattern> {
     },
 }
 
+impl<C: cadmpeg_core::decode::cost::DecodeCost> cadmpeg_core::decode::cost::DecodeCost
+    for PatternTransform<C>
+{
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        match self {
+            Self::Unresolved { form } => (0_u8, form).decode_cost(ctx, operation),
+            Self::Linear {
+                direction,
+                spacing,
+                count,
+                second,
+            } => (1_u8, direction, spacing, count, second).decode_cost(ctx, operation),
+            Self::LinearOffsets { direction, offsets } => {
+                (2_u8, direction, offsets).decode_cost(ctx, operation)
+            }
+            Self::Circular {
+                axis_origin,
+                axis_dir,
+                angle,
+                count,
+            } => (3_u8, axis_origin, axis_dir, angle, count).decode_cost(ctx, operation),
+            Self::CircularAngles {
+                axis_origin,
+                axis_dir,
+                angles,
+            } => (4_u8, axis_origin, axis_dir, angles).decode_cost(ctx, operation),
+            Self::CurveDriven {
+                path,
+                spacing,
+                count,
+            } => (5_u8, path, spacing, count).decode_cost(ctx, operation),
+            Self::Mirror {
+                plane_origin,
+                plane_normal,
+            } => (6_u8, plane_origin, plane_normal).decode_cost(ctx, operation),
+            Self::MirrorReference { plane } => (7_u8, plane).decode_cost(ctx, operation),
+            Self::Scale {
+                center,
+                final_factor,
+                count,
+            } => (8_u8, center, final_factor, count).decode_cost(ctx, operation),
+            Self::Composite { stages } => (9_u8, stages).decode_cost(ctx, operation),
+        }
+    }
+}
+
 /// Ordered composite-pattern stages whose combination rules and occurrence
 /// counts compose.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "Vec<PatternStage>", into = "Vec<PatternStage>")]
 pub struct CompositePattern(Vec<PatternStage>);
+
+impl cadmpeg_core::decode::cost::DecodeCost for CompositePattern {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        self.0.decode_cost(ctx, operation)
+    }
+}
 
 impl CompositePattern {
     /// Admits ordered stages whose occurrence counts compose.
@@ -701,6 +815,20 @@ pub enum PatternScaleCenter {
     Native(String),
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for PatternScaleCenter {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        match self {
+            Self::FirstSeedCentroid => (0_u8,).decode_cost(ctx, operation),
+            Self::Point(value) => (1_u8, value).decode_cost(ctx, operation),
+            Self::Native(value) => (2_u8, value).decode_cost(ctx, operation),
+        }
+    }
+}
+
 /// One stage of an ordered composite pattern.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -708,6 +836,16 @@ pub enum PatternScaleCenter {
 pub struct PatternStage {
     /// Pattern transform contributed by this stage; never a nested sequence.
     pub pattern: Box<StagePatternKind>,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for PatternStage {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        (&self.pattern,).decode_cost(ctx, operation)
+    }
 }
 
 /// Combination rule for a composite-pattern stage.
@@ -735,6 +873,16 @@ pub struct LinearPatternDirection {
     pub spacing: PositiveLength,
     /// Total number of instances, including the original.
     pub count: u32,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for LinearPatternDirection {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        (&self.direction, &self.spacing, &self.count).decode_cost(ctx, operation)
+    }
 }
 
 // Each optional key below names itself in whatever it refuses.
