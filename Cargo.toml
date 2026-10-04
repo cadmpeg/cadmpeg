@@ -72,7 +72,7 @@ anyhow = "1"
 zip = { version = "8", default-features = false, features = ["deflate-flate2", "zstd"] }
 lzma-rs = "0.3"
 flate2 = "1"
-zstd = "0.13"
+zstd = "0.14"
 crc32fast = "1"
 roxmltree = "0.21"
 hdf5-reader = { version = "0.9.1", default-features = false }
