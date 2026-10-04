@@ -114,8 +114,7 @@ pub(super) fn project_trim_surface(
         )?),
         Some(tool) => PathRef::Native(copy_projected_feature_text(
             ctx,
-            native_by_source
-                .get(tool.as_str())
+            ctx.get_hash_map(&(native_by_source), tool.as_str(), "look up SLDPRT hash key")?
                 .copied()
                 .unwrap_or(tool.as_str()),
         )?),

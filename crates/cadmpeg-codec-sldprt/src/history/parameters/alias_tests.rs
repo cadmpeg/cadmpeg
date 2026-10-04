@@ -171,7 +171,7 @@ fn layered_parameter_aliases_match_materialized_precedence() {
         let materialized = aliases.materialize(owner.as_ref());
         let layered = aliases.for_owner(owner.as_ref());
         for alias in ["Width", "global-id", "local-id", "missing"] {
-            assert_eq!(layered.get(alias), materialized.get(alias));
+            assert_eq!(layered.get(&cadmpeg_test_support::service_decode_context(), alias).unwrap(), materialized.get(alias));
         }
     }
 }
@@ -573,4 +573,25 @@ fn stored_configuration_id_precedes_ordinal_fallback() {
         .unwrap(),
         [(0, 0)]
     );
+}
+
+#[test]
+fn alias_lookup_refusal_does_not_become_a_missing_alias() {
+    let aliases = ParameterAliases {
+        global: HashMap::new(),
+        exact: HashMap::new(),
+        document_local: HashMap::new(),
+        feature_local: HashMap::new(),
+    };
+    let view = aliases.for_owner(None);
+    for work_limit in [0, 5] {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        // Five work units admit one hash lookup of the five-byte alias.
+        policy.limits.max_work_units = work_limit;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = view.get(&ctx, "Width").unwrap_err();
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("resource refusal"); };
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    }
 }

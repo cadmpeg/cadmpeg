@@ -83,7 +83,7 @@ pub(super) fn project_pattern(
     if let Some(source_seeds) = feature.properties.get("Seeds") {
         for source in source_seeds.split(',').map(str::trim) {
             ctx.charge_work(1, OPERATION)?;
-            let Some(id) = by_source.get(source) else {
+            let Some(id) = ctx.get_hash_map(&(by_source), source, "look up SLDPRT hash key")? else {
                 seeds.clear();
                 break;
             };
@@ -98,8 +98,7 @@ pub(super) fn project_pattern(
             .properties
             .get("Path")
             .map(|source| {
-                let text = native_by_source
-                    .get(source.as_str())
+                let text = ctx.get_hash_map(&(native_by_source), source.as_str(), "look up SLDPRT hash key")?
                     .copied()
                     .unwrap_or(source);
                 ctx.format_retained(format_args!("{text}"), "retain SLDPRT pattern path")

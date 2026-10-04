@@ -28,7 +28,6 @@ const EPS_CONFIGURATION_ALIGN_CONFIGURATION_PARAMETER_KINDS_E9: f64 = 1.0e-9;
 
 struct ConfigurationDefinitions<'features> {
     definitions: HashMap<&'features FeatureId, &'features FeatureDefinition>,
-    key_bytes: usize,
 }
 
 impl<'features> ConfigurationDefinitions<'features> {
@@ -52,10 +51,7 @@ impl<'features> ConfigurationDefinitions<'features> {
             ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), OPERATION)?;
             definitions.insert(&feature.id, feature.evaluation.definition());
         }
-        Ok(Self {
-            definitions,
-            key_bytes,
-        })
+        Ok(Self { definitions })
     }
 
     fn get(
@@ -63,14 +59,7 @@ impl<'features> ConfigurationDefinitions<'features> {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         id: &FeatureId,
     ) -> Result<Option<&'features FeatureDefinition>, cadmpeg_core::CodecError> {
-        const OPERATION: &str = "match SLDPRT configuration base definition";
-        let work = self
-            .key_bytes
-            .checked_add(id.as_str().len())
-            .and_then(|bytes| bytes.checked_add(1))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), OPERATION)?;
-        Ok(self.definitions.get(id).copied())
+        Ok(ctx.get_hash_map(&(self.definitions), id, "look up SLDPRT hash key")?.copied())
     }
 }
 
@@ -1704,7 +1693,7 @@ pub(crate) fn align_configuration_parameter_kinds(
     {
         ctx.charge_work(1, "align SLDPRT configuration parameter kinds")?;
         let (parameter, value) = value;
-        let Some(canonical) = parameter_kinds.get(parameter) else {
+        let Some(canonical) = ctx.get_hash_map(&(parameter_kinds), parameter, "look up SLDPRT hash key")? else {
             continue;
         };
         // The canonical parameter definition declares the kind of each
@@ -1762,12 +1751,16 @@ pub(crate) fn align_configuration_parameter_kinds(
             cadmpeg_core::decode::u64_from_index(configuration.parameter_values.len()),
             "retain SLDPRT configuration parameter kinds",
         )?;
-        configuration.parameter_values.retain(|parameter, value| {
-            let Some(canonical) = parameter_kinds.get(parameter) else {
-                return true;
-            };
-            std::mem::discriminant(&**canonical) == std::mem::discriminant(value)
-        });
+        let mut refusal = None;
+configuration.parameter_values.retain(|parameter, value| {
+    if refusal.is_some() { return true; }
+    match ctx.get_hash_map(&parameter_kinds, parameter, "look up SLDPRT hash key") {
+        Ok(Some(canonical)) => std::mem::discriminant(&**canonical) == std::mem::discriminant(value),
+        Ok(None) => true,
+        Err(error) => { refusal = Some(error); true }
+    }
+});
+if let Some(error) = refusal { return Err(error); }
     }
     Ok(())
 }
@@ -1903,7 +1896,7 @@ pub(crate) fn unresolved_configuration_lanes(
         )?;
         ctx.charge_work(1, "count unresolved SLDPRT configuration lanes")?;
         if match lane.configuration.as_deref() { Some(slot) => {
-            occurrences.get(slot).copied() != Some(1)
+            ctx.get_hash_map(&(occurrences), slot, "look up SLDPRT hash key")?.copied() != Some(1)
                 || !ctx.admit_iter(&assigned_lanes[..], "scan SLDPRT unresolved_configuration_lanes values")?
                     .any(|(_, assigned)| *assigned == lane_index)
         }, None => false } {

@@ -30,8 +30,7 @@ pub(super) fn project_rib(
         .map(|profile| {
             copy_projected_feature_text(
                 ctx,
-                native_by_source
-                    .get(profile.as_str())
+                ctx.get_hash_map(&(native_by_source), profile.as_str(), "look up SLDPRT hash key")?
                     .copied()
                     .unwrap_or(profile.as_str()),
             )
@@ -154,7 +153,7 @@ fn project_native_refs<T>(
         .filter(|source| !source.is_empty())
     {
         ctx.reserve_vec(&mut references, 1, "project SLDPRT loft references")?;
-        let reference = native_by_source.get(source).copied().unwrap_or(source);
+        let reference = ctx.get_hash_map(&(native_by_source), source, "look up SLDPRT hash key")?.copied().unwrap_or(source);
         let reference =
             ctx.format_retained(format_args!("{reference}"), "retain SLDPRT loft reference")?;
         references.push(wrap(reference));
@@ -170,8 +169,7 @@ pub(super) fn project_sweep(
     let native_ref = |source: &String| {
         copy_projected_feature_text(
             ctx,
-            native_by_source
-                .get(source.as_str())
+            ctx.get_hash_map(&(native_by_source), source.as_str(), "look up SLDPRT hash key")?
                 .copied()
                 .unwrap_or(source.as_str()),
         )
@@ -334,8 +332,7 @@ pub(super) fn project_revolve(
     };
     let profile = feature
         .properties
-        .get("Profile")
-        .and_then(|source| native_by_source.get(source.as_str()))
+        .get("Profile").map(|source| {Ok::<_, cadmpeg_core::CodecError>(ctx.get_hash_map(&(native_by_source), source.as_str(), "look up SLDPRT hash key")?)}).transpose()?.flatten()
         .map(|id| copy_projected_feature_text(ctx, id).map(PlanarProfileRef::native))
         .transpose()?;
     let axis = feature
