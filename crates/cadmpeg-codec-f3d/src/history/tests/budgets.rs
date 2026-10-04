@@ -207,6 +207,26 @@ fn one_insert_only_state() -> crate::history_records::AsmHistory {
     history
 }
 
+fn one_archived_state_with_delete() -> crate::history_records::AsmHistory {
+    use crate::history_records::{AsmBulletinBoard, AsmEntityChange, AsmEntityChangeKind};
+
+    let mut history = one_archived_state();
+    history.states[0].bulletin_boards.push(AsmBulletinBoard {
+        id: "board".into(),
+        parent: "state".into(),
+        byte_offset: 0,
+        owner_ref: 0,
+        number: 1,
+        changes: vec![AsmEntityChange {
+            id: "change".into(),
+            parent: "board".into(),
+            byte_offset: 0,
+            kind: AsmEntityChangeKind::Delete { old: 1 },
+        }],
+    });
+    history
+}
+
 fn archive_record() -> cadmpeg_asm::sab::Record {
     cadmpeg_asm::sab::Record {
         index: 0,
@@ -238,6 +258,75 @@ fn history_active_revision_index_refuses_collection_limit() {
 }
 
 #[test]
+fn history_active_revision_index_refuses_materialized_limit() {
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "index F3D active record revisions",
+        0,
+        |ctx| {
+            super::super::historical_record_archive(
+                ctx,
+                &[],
+                &[archive_record()],
+                Default::default(),
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "index F3D active record revisions"
+    ));
+}
+
+#[test]
+fn history_active_record_archive_refuses_materialized_limit() {
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "retain F3D active record archive",
+        0,
+        |ctx| {
+            super::super::historical_record_archive(
+                ctx,
+                &[],
+                &[archive_record()],
+                Default::default(),
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "retain F3D active record archive"
+    ));
+}
+
+#[test]
+fn history_active_record_ordinals_refuse_work() {
+    let operation = "validate F3D active record ordinals";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| {
+            super::super::historical_record_archive(
+                ctx,
+                &[],
+                &[archive_record()],
+                Default::default(),
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
 fn history_active_record_archive_refuses_collection_limit() {
     let error = archive_error(1);
     assert!(
@@ -257,74 +346,119 @@ fn history_archived_token_copy_refuses_collection_limit() {
 
 #[test]
 fn history_record_name_copy_refuses_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "copy F3D historical record text",
-        |cap| {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            let arena = DecodeArena::new();
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    // The live archive reservation charges this copy as MaterializedBytes.
+    let operation = "copy F3D historical record text";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        operation,
+        0,
+        |ctx| {
             super::super::historical_record_archive(
-                &ctx,
+                ctx,
                 &[],
                 &[archive_record()],
                 Default::default(),
             )
             .map(|_| ())
         },
-    ) {
-        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
-        error => panic!("unexpected refusal: {error:?}"),
-    };
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error =
-        super::super::historical_record_archive(&ctx, &[], &[archive_record()], Default::default())
-            .unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "copy F3D historical record text")
     );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
 }
 
 #[test]
 fn history_token_text_copy_refuses_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
-    let record = cadmpeg_asm::sab::Record {
-        name: String::new(),
-        tokens: vec![cadmpeg_asm::sab::Token::Str("x".into())].into(),
-        ..archive_record()
-    };
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "copy F3D historical record text",
-        |cap| {
-            let record = record.clone();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            let arena = DecodeArena::new();
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            super::super::historical_record_archive(&ctx, &[], &[record], Default::default())
+    // The live archive reservation charges this copy as MaterializedBytes.
+    let operation = "copy F3D historical record text";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        operation,
+        0,
+        |ctx| {
+            let record = cadmpeg_asm::sab::Record {
+                name: String::new(),
+                tokens: vec![cadmpeg_asm::sab::Token::Str("x".into())].into(),
+                ..archive_record()
+            };
+            super::super::historical_record_archive(ctx, &[], &[record], Default::default())
                 .map(|_| ())
         },
-    ) {
-        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
-        error => panic!("unexpected refusal: {error:?}"),
-    };
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::super::historical_record_archive(&ctx, &[], &[record], Default::default())
-        .unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "copy F3D historical record text")
     );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn history_archived_token_copy_refuses_work_limit() {
+    let operation = "copy F3D archived record tokens";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| {
+            super::super::historical_record_archive(
+                ctx,
+                &[],
+                &[archive_record()],
+                Default::default(),
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn history_archived_token_vector_refuses_materialized_limit() {
+    let operation = "copy F3D archived record tokens";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        operation,
+        0,
+        |ctx| {
+            super::super::historical_record_archive(
+                ctx,
+                &[],
+                &[archive_record()],
+                Default::default(),
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn history_archived_token_arc_copy_refuses_materialized_limit() {
+    let operation = "copy F3D archived record tokens";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        operation,
+        1,
+        |ctx| {
+            super::super::historical_record_archive(
+                ctx,
+                &[],
+                &[archive_record()],
+                Default::default(),
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
 }
 
 fn table_error(max_items: u64) -> cadmpeg_core::CodecError {
@@ -340,8 +474,40 @@ fn table_error(max_items: u64) -> cadmpeg_core::CodecError {
     policy.limits.max_collection_items = max_items;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let archive = std::collections::HashMap::from([(0, archive_record())]);
+    let archive = super::super::HistoricalRecordArchive {
+        records: std::collections::HashMap::from([(0, archive_record())]),
+        _storage: ctx
+            .reserve_scoped(0, "retain F3D active record archive")
+            .unwrap(),
+        _token_storage: ctx
+            .reserve_scoped(0, "copy F3D archived record tokens")
+            .unwrap(),
+    };
     super::super::materialize_record_table(&ctx, &history.states[0], &archive).unwrap_err()
+}
+
+fn table_materialized_error(operation: &'static str) -> cadmpeg_core::CodecError {
+    use crate::history_records::AsmEntityVersion;
+    use cadmpeg_core::decode::ResourceDimension;
+
+    crate::test_support::resource_refusal_at(
+        ResourceDimension::MaterializedBytes,
+        operation,
+        0,
+        |ctx| {
+            let mut history = one_state_history();
+            history.states[0].entity_versions.push(AsmEntityVersion {
+                entity_ref: 0,
+                record_ref: 0,
+            });
+            let archive = super::super::HistoricalRecordArchive {
+                records: std::collections::HashMap::from([(0, archive_record())]),
+                _storage: ctx.reserve_scoped(0, "retain F3D active record archive")?,
+                _token_storage: ctx.reserve_scoped(0, "copy F3D archived record tokens")?,
+            };
+            super::super::materialize_record_table(ctx, &history.states[0], &archive).map(|_| ())
+        },
+    )
 }
 
 #[test]
@@ -354,12 +520,70 @@ fn history_record_presence_refuses_collection_limit() {
 }
 
 #[test]
+fn history_record_presence_refuses_materialized_limit() {
+    let error = table_materialized_error("index F3D historical record presence");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "index F3D historical record presence"
+    ));
+}
+
+#[test]
+fn history_record_table_refuses_materialized_limit() {
+    let error = table_materialized_error("materialize F3D historical record table");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "materialize F3D historical record table"
+    ));
+}
+
+#[test]
 fn history_record_table_refuses_collection_limit() {
     let error = table_error(1);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "materialize F3D historical record table")
     );
+}
+
+#[test]
+fn history_topology_slot_index_refuses_materialized_limit() {
+    let topology = crate::history_records::AsmHistoricalTopology {
+        bodies: vec![1],
+        ..Default::default()
+    };
+    let operation = "index F3D historical topology slots";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        operation,
+        0,
+        |ctx| super::super::topology_entity_slots(ctx, &topology).map(|_| ()),
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn history_topology_slot_index_refuses_work_limit() {
+    let topology = crate::history_records::AsmHistoricalTopology {
+        bodies: vec![1],
+        ..Default::default()
+    };
+    let operation = "index F3D historical topology slots";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| super::super::topology_entity_slots(ctx, &topology).map(|_| ()),
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
 }
 
 #[test]
@@ -560,6 +784,24 @@ historical_versions_limit_test!(
     false,
     "index F3D history node ordinals"
 );
+
+#[test]
+fn history_version_node_index_refuses_materialized_limit() {
+    let operation = "index F3D history node ordinals";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        operation,
+        0,
+        |ctx| {
+            let mut history = one_archived_state();
+            super::super::bind_historical_entity_versions(ctx, &mut history.states)
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
 historical_versions_limit_test!(
     history_version_seed_refuses_limit,
     3,
@@ -1092,6 +1334,65 @@ fn history_delta_offset_scan_refuses_work_limit() {
 }
 
 #[test]
+fn history_record_collection_preserves_framed_output() {
+    let bytes = one_framed_history_record();
+    let records = crate::test_support::with_decode_context(|ctx| {
+        super::super::decode_history_records(
+            ctx,
+            &bytes,
+            0,
+            None,
+            "history",
+            "state",
+            cadmpeg_asm::kernel_header::RefWidth::Four,
+        )
+    })
+    .unwrap();
+    let [record] = records.as_slice() else {
+        panic!("expected one framed record");
+    };
+    assert_eq!(record.name(), "x");
+    assert_eq!(record.parent, "state");
+    assert_eq!(record.byte_offset, 0);
+    assert_eq!(record.raw_bytes, bytes);
+    assert!(matches!(
+        &record.framing,
+        crate::history_records::AsmHistoryRecordFraming::Framed {
+            index: 0,
+            entity_references,
+            ..
+        } if entity_references == &[3]
+    ));
+}
+
+#[test]
+fn history_record_collection_refuses_work_limit() {
+    let operation = "frame F3D history record";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| {
+            let bytes = one_framed_history_record();
+            super::super::decode_history_records(
+                ctx,
+                &bytes,
+                0,
+                None,
+                "history",
+                "state",
+                cadmpeg_asm::kernel_header::RefWidth::Four,
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
 fn history_record_reference_count_refuses_work_limit() {
     let operation = "count F3D history record references";
     let error = crate::test_support::resource_refusal_at(
@@ -1365,6 +1666,207 @@ fn history_state_reach_range_refuses_work_limit() {
         |decode| {
             super::super::history_state_reaches(decode, &history, state, state.state_id)
                 .map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn history_archived_revision_map_refuses_materialized_limit() {
+    use crate::history_records::AsmEntityChangeKind;
+
+    let mut history = one_insert_only_state();
+    history.states[0].bulletin_boards[0].changes[0].kind =
+        AsmEntityChangeKind::Delete { old: 1 };
+    let archive = crate::test_support::with_decode_context(|ctx| {
+        super::super::historical_record_archive(
+            ctx,
+            &history.states,
+            &[],
+            std::collections::HashMap::from([(1, archive_record())]),
+        )
+        .map(|archive| archive.is_some())
+    })
+    .unwrap();
+    assert!(archive);
+    let operation = "index F3D archived record revisions";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        operation,
+        0,
+        |ctx| {
+            super::super::historical_record_archive(
+                ctx,
+                &history.states,
+                &[],
+                std::collections::HashMap::from([(1, archive_record())]),
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn history_archived_frame_map_refuses_materialized_limit() {
+    let operation = "retain F3D archived record archive";
+    let frames = std::collections::HashMap::from([(1, archive_record())]);
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        operation,
+        0,
+        |ctx| {
+            super::super::historical_record_archive(ctx, &[], &[], frames.clone()).map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn history_version_projection_map_refuses_materialized_limit() {
+    let operation = "index F3D state version projections";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        operation,
+        0,
+        |ctx| {
+            let mut history = one_archived_state();
+            super::super::bind_historical_entity_versions(ctx, &mut history.states).map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn history_archived_revision_state_scan_refuses_work() {
+    let operation = "scan F3D archived revision states";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| {
+            let mut history = one_archived_state();
+            super::super::bind_historical_entity_versions(ctx, &mut history.states)
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn history_archived_revision_record_scan_refuses_work() {
+    let operation = "scan F3D archived revision records";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| {
+            let mut history = one_archived_state();
+            super::super::bind_historical_entity_versions(ctx, &mut history.states)
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn history_node_source_scan_refuses_work() {
+    let operation = "scan F3D history node ordinals";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| {
+            let mut history = one_archived_state();
+            super::super::bind_historical_entity_versions(ctx, &mut history.states)
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn history_version_bulletin_board_scan_refuses_work() {
+    let operation = "scan F3D historical version bulletin boards";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| {
+            let mut history = one_archived_state_with_delete();
+            super::super::bind_historical_entity_versions(ctx, &mut history.states)
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn history_version_bulletin_change_scan_refuses_work() {
+    let operation = "scan F3D historical version changes";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| {
+            let mut history = one_archived_state_with_delete();
+            super::super::bind_historical_entity_versions(ctx, &mut history.states)
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn history_version_binding_loop_refuses_work() {
+    let operation = "bind F3D historical entity versions";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| {
+            let mut history = one_archived_state();
+            super::super::bind_historical_entity_versions(ctx, &mut history.states)
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn history_version_state_vector_refuses_retained_limit() {
+    let operation = "materialize F3D state versions";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        operation,
+        0,
+        |ctx| {
+            let mut history = one_archived_state();
+            super::super::bind_historical_entity_versions(ctx, &mut history.states)
         },
     );
     assert!(matches!(

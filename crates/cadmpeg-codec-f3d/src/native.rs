@@ -1445,22 +1445,25 @@ impl F3dNative {
         let sketch_relations = {
             let wires: Vec<SketchRelationSerde> = read_arena!("sketch_relations");
 
-            let mut relations = Vec::new();
-            ctx.reserve_vec(&mut relations, wires.len(), "load sketch relations")?;
-            for wire in wires {
-                relations.push(
+            ctx.try_collect_vec(
+                wires.into_iter().map(|wire| {
                     SketchRelation::from_wire_charged(ctx, wire).map_err(|error| match error {
                         cadmpeg_core::CodecError::ResourceLimit(_) => {
                             cadmpeg_ir::NativeConvertError::Resource(error)
                         }
-                        _ => match ctx.format_retained(format_args!("{error}"), "report F3D invalid sketch relation") {
-                            Ok(text) => cadmpeg_ir::NativeConvertError::InvalidCollection(text),
+                        _ => match ctx.format_retained(
+                            format_args!("{error}"),
+                            "report F3D invalid sketch relation",
+                        ) {
+                            Ok(text) => {
+                                cadmpeg_ir::NativeConvertError::InvalidCollection(text)
+                            }
                             Err(refusal) => cadmpeg_ir::NativeConvertError::Resource(refusal),
                         },
-                    })?,
-                );
-            }
-            relations
+                    })
+                }),
+                "load sketch relations",
+            )?
         };
         let null_locus_entries: Vec<crate::records::dimension_null_locus_wire::Entry> =
             read_arena!("design_dimension_null_locus_pairs");
@@ -1567,18 +1570,16 @@ impl F3dNative {
             |change| &change.id,
             |change| &change.parent,
         )?;
-        let mut attached_boards = Vec::new();
-        {
-            ctx.reserve_vec(
-                &mut attached_boards,
-                boards.len(),
-                "attach F3D history boards",
-            )?;
-        }
-        for (mut board, changes) in boards.into_iter().zip(changes_by_board) {
-            board.changes = changes;
-            attached_boards.push(board);
-        }
+        let attached_boards = ctx.try_collect_vec(
+            boards
+                .into_iter()
+                .zip(changes_by_board)
+                .map(|(mut board, changes)| {
+                    board.changes = changes;
+                    Ok::<_, cadmpeg_ir::NativeConvertError>(board)
+                }),
+            "attach F3D history boards",
+        )?;
         let boards = attached_boards;
         let state_indices = owner_indices(ctx, &states, |state| state.id.as_str())?;
         let boards_by_state = group_by_owner(
@@ -1597,23 +1598,18 @@ impl F3dNative {
             |record| &record.id,
             |record| &record.parent,
         )?;
-        let mut attached_states = Vec::new();
-        {
-            ctx.reserve_vec(
-                &mut attached_states,
-                states.len(),
-                "attach F3D history states",
-            )?;
-        }
-        for ((mut state, bulletin_boards), records) in states
-            .into_iter()
-            .zip(boards_by_state)
-            .zip(records_by_state)
-        {
-            state.bulletin_boards = bulletin_boards;
-            state.records = records;
-            attached_states.push(state);
-        }
+        let attached_states = ctx.try_collect_vec(
+            states
+                .into_iter()
+                .zip(boards_by_state)
+                .zip(records_by_state)
+                .map(|((mut state, bulletin_boards), records)| {
+                    state.bulletin_boards = bulletin_boards;
+                    state.records = records;
+                    Ok::<_, cadmpeg_ir::NativeConvertError>(state)
+                }),
+            "attach F3D history states",
+        )?;
         let states = attached_states;
         let history_indices = owner_indices(
             ctx,

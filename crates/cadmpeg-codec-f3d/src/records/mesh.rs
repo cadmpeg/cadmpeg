@@ -323,7 +323,10 @@ impl DesignMeshTextureTable {
     ) -> Result<Vec<&DesignMeshTextureResource>, CodecError> {
         let operation = "order F3D mesh texture resources";
         let mut resources = ctx.collection_vec(self.resources.len(), operation)?;
-        resources.extend(&self.resources);
+        resources.extend(ctx.admit_iter(
+            &self.resources,
+            "scan F3D mesh texture resources for flag order",
+        )?);
         ctx.stable_sort_by(&mut resources, |value| &value.ordinal, Ord::cmp, operation)?;
         Ok(resources)
     }

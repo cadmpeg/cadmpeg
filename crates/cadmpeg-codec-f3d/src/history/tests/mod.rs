@@ -8,6 +8,7 @@ mod body_recipe_budget;
 mod body_recipe_selection_limits;
 mod body_selection;
 mod budgets;
+mod combination;
 mod component_spaces;
 mod draft;
 mod edge_operands;
