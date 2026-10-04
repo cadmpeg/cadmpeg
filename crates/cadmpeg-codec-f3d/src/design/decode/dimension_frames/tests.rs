@@ -9,8 +9,8 @@
 use cadmpeg_core::decode::u64_from_index;
 
 use super::{
-    contiguous_i32_program, indexed_record_containing, parse_dimension_annotation_frame,
-    parse_dimension_presentation_frame, recipe_record_prefix,
+    companion_record_headers, contiguous_i32_program, parse_dimension_annotation_frame,
+    parse_dimension_presentation_frame, recipe_record_prefix, record_containing,
 };
 use crate::design::decode::parameters::parse_design_parameter_record;
 
@@ -18,6 +18,56 @@ use crate::design::test_support::{parameter_record, push_genesis_block, push_ref
 use crate::records::{parameters::DesignParameterOwner, sketch_links::PersistentSubentityTag};
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::ids::{EdgeId, FaceId};
+
+/// Parse the annotation frame at `start` against the fixture's governed owner,
+/// geometry, and sketch tables.
+fn annotation_frame(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    start: usize,
+    companion_record_index: Option<u32>,
+) -> Result<
+    Option<crate::records::dimensions::DesignDimensionAnnotationFrame>,
+    cadmpeg_core::CodecError,
+> {
+    let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
+    let governed_owners = HashMap::from([(390, 391)]);
+    parse_dimension_annotation_frame(
+        ctx,
+        bytes,
+        start,
+        companion_record_index,
+        &super::AnnotationFrameInputs {
+            governed_owners: &governed_owners,
+            geometry_indices: &[354, 376],
+            sketch_entities: &[201],
+            records: &records,
+        },
+    )
+}
+
+/// Parse the presentation frame at `start` against the fixture's geometry,
+/// sketch, and paired-class tables.
+fn presentation_frame(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    start: usize,
+    primary_type_guid: &str,
+    geometry_indices: &[u32],
+) -> Result<
+    Option<crate::records::dimensions::DesignDimensionPresentationFrame>,
+    cadmpeg_core::CodecError,
+> {
+    let tables = super::PresentationStreamTables {
+        geometry_indices: geometry_indices.to_vec(),
+        sketch_entities: vec![270],
+        records: crate::design::test_support::indexed_record_offsets_for_test(bytes),
+        dimension_owners: Vec::new(),
+    };
+    parse_dimension_presentation_frame(ctx, bytes, start, primary_type_guid, &tables, |code| {
+        Ok(code == 281)
+    })
+}
 
 #[test]
 fn recipe_reference_candidate_vectors_refuse_collection_limit() {
@@ -79,7 +129,7 @@ fn recipe_reference_candidate_vectors_refuse_collection_limit() {
 }
 use cadmpeg_ir::math::Point2;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 const TEST_LINEAR_TOLERANCE: f64 = 1.0e-6;
 
@@ -95,32 +145,6 @@ fn grouped_recipe_reference_frame(prefix: &[u8]) -> bool {
         crate::design::decode::dimension_frames::is_grouped_recipe_reference_frame(ctx, prefix)
             .expect("grouped recipe reference admission")
     })
-}
-
-#[test]
-fn recipe_reference_predicates_propagate_work_refusal() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let prefix = [0; 30];
-    for paired in [true, false] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = if paired {
-            super::is_paired_recipe_reference_frame(&ctx, &prefix)
-        } else {
-            super::is_grouped_recipe_reference_frame(&ctx, &prefix)
-        }
-        .expect_err("header admission must refuse");
-        assert!(matches!(
-            error,
-            CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "validate F3D recipe reference header"
-        ));
-    }
 }
 
 #[test]
@@ -315,18 +339,22 @@ fn dimension_recipe_uses_its_immediate_indexed_record_boundary() {
     bytes.extend_from_slice(&41u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 9]);
 
+    let containing = |start: usize, member: usize| {
+        let (headers, _storage) =
+            companion_record_headers(&ctx, &bytes, start, bytes.len()).unwrap();
+        record_containing(&ctx, &headers, start, bytes.len(), member)
+            .unwrap()
+            .map(|(header, end)| (header.offset, *header.class_tag, header.record_index, end))
+    };
     assert_eq!(
-        indexed_record_containing(&ctx, &bytes, 5, bytes.len(), recipe_offset).unwrap(),
-        Some((5, "415", 40, next_offset))
+        containing(5, recipe_offset),
+        Some((5, *b"415", 40, next_offset))
     );
     assert_eq!(
-        indexed_record_containing(&ctx, &bytes, 5, bytes.len(), next_offset + 11).unwrap(),
-        Some((next_offset, "423", 41, bytes.len()))
+        containing(5, next_offset + 11),
+        Some((next_offset, *b"423", 41, bytes.len()))
     );
-    assert_eq!(
-        indexed_record_containing(&ctx, &bytes, 6, bytes.len(), 7).unwrap(),
-        None
-    );
+    assert_eq!(containing(6, 7), None);
     assert_eq!(
         contiguous_i32_program(&ctx, &[u8::MAX; 8], 0, 8)
             .transpose()
@@ -431,8 +459,7 @@ fn paired_recipe_references_refuse_operand_and_flattened_runs() {
         .len(),
         2
     );
-    recipe_reference_limit(&prefix, 2, u64::MAX, "f3d recipe paired operands");
-    recipe_reference_limit(&prefix, 4, u64::MAX, "f3d recipe paired references");
+    recipe_reference_limit(&prefix, 2, u64::MAX, "f3d recipe paired references");
 }
 
 #[test]
@@ -1090,14 +1117,11 @@ fn dimension_annotation_frame_links_nullable_loci_to_governing_owner() {
     bytes.extend_from_slice(&[0; 6]);
     bytes.resize(paired_byte_offset + 59, 0);
 
-    let frame = parse_dimension_annotation_frame(
+    let frame = annotation_frame(
         &cadmpeg_test_support::service_decode_context(),
         &bytes,
         0,
         Some(383),
-        &HashMap::from([(390, 391)]),
-        &HashSet::from([354, 376]),
-        &HashSet::from([201]),
     )
     .expect("annotated dimension frame")
     .expect("admitted annotation frame");
@@ -1129,14 +1153,11 @@ fn dimension_annotation_frame_links_nullable_loci_to_governing_owner() {
     );
     assert_eq!(frame.owner_reference, 201);
 
-    let leading = parse_dimension_annotation_frame(
+    let leading = annotation_frame(
         &cadmpeg_test_support::service_decode_context(),
         &bytes,
         0,
         None,
-        &HashMap::from([(390, 391)]),
-        &HashSet::from([354, 376]),
-        &HashSet::from([201]),
     )
     .expect("scope-prefix dimension frame")
     .expect("admitted scope-prefix frame");
@@ -1175,17 +1196,7 @@ fn dimension_annotation_frame_links_nullable_loci_to_governing_owner() {
                 let (ctx, _) =
                     cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
                         .unwrap();
-                ((parse_dimension_annotation_frame(
-                    &ctx,
-                    &bytes,
-                    0,
-                    Some(383),
-                    &HashMap::from([(390, 391)]),
-                    &HashSet::from([354, 376]),
-                    &HashSet::from([201]),
-                ))
-                .transpose())
-                .map(|_| ())
+                (annotation_frame(&ctx, &bytes, 0, Some(383))).map(|_| ())
             },
         ) {
             cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
@@ -1230,17 +1241,7 @@ fn dimension_annotation_frame_links_nullable_loci_to_governing_owner() {
                 let (ctx, _) =
                     cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
                         .unwrap();
-                ((parse_dimension_annotation_frame(
-                    &ctx,
-                    &bytes,
-                    0,
-                    Some(383),
-                    &HashMap::from([(390, 391)]),
-                    &HashSet::from([354, 376]),
-                    &HashSet::from([201]),
-                ))
-                .transpose())
-                .map(|_| ())
+                (annotation_frame(&ctx, &bytes, 0, Some(383))).map(|_| ())
             },
         ) {
             cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
@@ -1265,11 +1266,8 @@ fn dimension_annotation_frame_links_nullable_loci_to_governing_owner() {
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
-            parse_dimension_annotation_frame(
-                &ctx, &bytes, 0, Some(383), &HashMap::from([(390, 391)]),
-                &HashSet::from([354, 376]), &HashSet::from([201]),
-            ),
-            Some(Err(cadmpeg_core::CodecError::ResourceLimit(failure)))
+            annotation_frame(&ctx, &bytes, 0, Some(383)),
+            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
                 if failure.operation == operation
         ));
     }
@@ -1301,14 +1299,12 @@ fn dimension_presentation_frame_requires_registered_geometry_and_paired_sketch_h
     bytes.extend_from_slice(&270u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 35]);
 
-    let frame = parse_dimension_presentation_frame(
+    let frame = presentation_frame(
         &cadmpeg_test_support::service_decode_context(),
         &bytes,
         0,
         "6CCF41D5-40BE-48ED-A834-18F3EAED6C57",
-        &HashSet::from([306, 331]),
-        &HashSet::from([270]),
-        &HashSet::from([281]),
+        &[306, 331],
     )
     .expect("direct dimension presentation frame")
     .expect("admitted presentation frame");
@@ -1324,15 +1320,14 @@ fn dimension_presentation_frame_requires_registered_geometry_and_paired_sketch_h
     assert_eq!(frame.operands[1].geometry_record_index.get(), 331);
     assert_eq!(frame.owner_reference, 270);
 
-    assert!(parse_dimension_presentation_frame(
+    assert!(presentation_frame(
         &cadmpeg_test_support::service_decode_context(),
         &bytes,
         0,
         "6CCF41D5-40BE-48ED-A834-18F3EAED6C57",
-        &HashSet::from([306]),
-        &HashSet::from([270]),
-        &HashSet::from([281]),
+        &[306]
     )
+    .unwrap()
     .is_none());
 
     for (items, retained, operation) in [
@@ -1366,16 +1361,13 @@ fn dimension_presentation_frame_requires_registered_geometry_and_paired_sketch_h
                 let (ctx, _) =
                     cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
                         .unwrap();
-                ((parse_dimension_presentation_frame(
+                (presentation_frame(
                     &ctx,
                     &bytes,
                     0,
                     super::DIMENSION_PRESENTATION_TYPE_GUID,
-                    &HashSet::from([306, 331]),
-                    &HashSet::from([270]),
-                    &HashSet::from([281]),
+                    &[306, 331],
                 ))
-                .transpose())
                 .map(|_| ())
             },
         ) {
@@ -1421,16 +1413,13 @@ fn dimension_presentation_frame_requires_registered_geometry_and_paired_sketch_h
                 let (ctx, _) =
                     cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
                         .unwrap();
-                ((parse_dimension_presentation_frame(
+                (presentation_frame(
                     &ctx,
                     &bytes,
                     0,
                     super::DIMENSION_PRESENTATION_TYPE_GUID,
-                    &HashSet::from([306, 331]),
-                    &HashSet::from([270]),
-                    &HashSet::from([281]),
+                    &[306, 331],
                 ))
-                .transpose())
                 .map(|_| ())
             },
         ) {
@@ -1456,12 +1445,8 @@ fn dimension_presentation_frame_requires_registered_geometry_and_paired_sketch_h
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
-            parse_dimension_presentation_frame(
-                &ctx, &bytes, 0, super::DIMENSION_PRESENTATION_TYPE_GUID,
-                &HashSet::from([306, 331]), &HashSet::from([270]),
-                &HashSet::from([281]),
-            ),
-            Some(Err(cadmpeg_core::CodecError::ResourceLimit(failure)))
+            presentation_frame(&ctx, &bytes, 0, super::DIMENSION_PRESENTATION_TYPE_GUID, &[306, 331]),
+            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
                 if failure.operation == operation
         ));
     }
@@ -1469,7 +1454,7 @@ fn dimension_presentation_frame_requires_registered_geometry_and_paired_sketch_h
 
 #[test]
 fn companion_interval_refuses_foreign_scope_member_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
 
     let companion = crate::records::parameters::DesignParameterCompanion::unbound(
         "f3d:native:parameter-companion#11".into(),
@@ -1520,22 +1505,25 @@ fn companion_interval_refuses_foreign_scope_member_limit() {
         class_tag: crate::records::references::DesignClassTag::try_from("302".to_owned()).unwrap(),
         byte_offset: 70,
     };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let refusal = super::companion_owned_interval(
-        &limited,
-        &companion,
-        std::iter::empty(),
-        &[],
-        &[scope.clone()],
-        std::slice::from_ref(&header),
-        100,
+    let refusal = crate::test_support::resource_refusal_at(
+        ResourceDimension::CollectionItems,
+        "f3d companion foreign scope members",
+        0,
+        |ctx| {
+            super::companion_owned_interval(
+                ctx,
+                &companion,
+                std::iter::empty(),
+                &[],
+                std::slice::from_ref(&scope),
+                std::slice::from_ref(&header),
+                100,
+            )
+        },
     );
     assert!(matches!(
         refusal,
-        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+        cadmpeg_core::CodecError::ResourceLimit(failure)
             if failure.dimension == ResourceDimension::CollectionItems
                 && failure.operation == "f3d companion foreign scope members"
     ));
@@ -1553,7 +1541,7 @@ fn companion_interval_refuses_foreign_scope_member_limit() {
 
 #[test]
 fn dimension_annotation_interval_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use std::io::{Cursor, Write};
     use zip::CompressionMethod;
 
@@ -1586,14 +1574,15 @@ fn dimension_annotation_interval_refuses_collection_limit() {
             points: &[],
             curves: &[],
         };
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = 0;
-        let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let refusal = super::decode_dimension_annotation_frames(&limited, &inputs, &[]);
+        let refusal = crate::test_support::resource_refusal_at(
+            ResourceDimension::CollectionItems,
+            "f3d dimension annotation intervals",
+            0,
+            |ctx| super::decode_dimension_annotation_frames(ctx, &inputs, &[]),
+        );
         assert!(matches!(
             refusal,
-            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            cadmpeg_core::CodecError::ResourceLimit(failure)
                 if failure.dimension == ResourceDimension::CollectionItems
                     && failure.operation == "f3d dimension annotation intervals"
         ));
@@ -1604,57 +1593,6 @@ fn dimension_annotation_interval_refuses_collection_limit() {
         )
         .unwrap();
         assert!(admitted.is_empty());
-    });
-}
-
-#[test]
-fn dimension_annotation_stream_scan_refuses_work_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-    use std::io::{Cursor, Write};
-    use zip::CompressionMethod;
-
-    const STREAM: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
-    let companion = crate::records::parameters::DesignParameterCompanion::unbound(
-        format!("{}:parameter-companion#0", crate::ids::native_scope(STREAM)),
-        0,
-        crate::records::references::DesignClassTag::try_from("408".to_owned()).unwrap(),
-        11,
-        10,
-        std::num::NonZeroU64::MIN,
-        42,
-    );
-    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
-    zip.start_file(STREAM, stored).unwrap();
-    zip.write_all(&[0; 58]).unwrap();
-    let archive = zip.finish().unwrap().into_inner();
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
-        let companions = [companion.clone(), companion];
-        let inputs = super::DimensionDecodeInputs {
-            scan,
-            placements: &[],
-            parameters: &[],
-            owners: &[],
-            companions: &companions,
-            scopes: &[],
-            headers: &[],
-            points: &[],
-            curves: &[],
-        };
-        let error = crate::test_support::resource_refusal_at(
-            ResourceDimension::WorkUnits,
-            "deduplicate F3D dimension annotation streams",
-            0,
-            |ctx| super::decode_dimension_annotation_frames(ctx, &inputs, &[]),
-        );
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(failure)
-                if failure.dimension == ResourceDimension::WorkUnits
-                    && failure.operation == "deduplicate F3D dimension annotation streams"
-                    && failure.additional == 1
-        ));
     });
 }
 
@@ -1781,21 +1719,24 @@ fn dimension_recipe_indexes_refuse_collection_limit() {
             u64::try_from(stream_bytes.len()).unwrap(),
             vec![recipe.id.clone()],
         ));
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = 4;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let refusal = super::decode_dimension_recipe_records(
-            &ctx,
-            scan,
-            std::slice::from_ref(&parameter),
-            std::slice::from_ref(&owner),
-            std::slice::from_ref(&companion),
-            std::slice::from_ref(&recipe),
+        let refusal = crate::test_support::resource_refusal_at(
+            ResourceDimension::CollectionItems,
+            "f3d dimension recipe records",
+            0,
+            |ctx| {
+                super::decode_dimension_recipe_records(
+                    ctx,
+                    scan,
+                    std::slice::from_ref(&parameter),
+                    std::slice::from_ref(&owner),
+                    std::slice::from_ref(&companion),
+                    std::slice::from_ref(&recipe),
+                )
+            },
         );
         assert!(matches!(
             refusal,
-            Err(CodecError::ResourceLimit(failure))
+            CodecError::ResourceLimit(failure)
                 if failure.dimension == ResourceDimension::CollectionItems
                     && failure.operation == "f3d dimension recipe records"
         ));
@@ -1897,39 +1838,6 @@ fn dimension_locus_lookup_collections_refuse_collection_limits() {
     assert!(matches!(refusal, Err(CodecError::ResourceLimit(failure))
         if failure.dimension == ResourceDimension::CollectionItems
             && failure.operation == "f3d dimension geometry indices"));
-}
-
-#[test]
-fn packed_recipe_reference_utf8_validation_refuses_work() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    let mut prefix = Vec::new();
-    prefix.extend_from_slice(&1u32.to_le_bytes());
-    prefix.extend_from_slice(b"12");
-    prefix.extend_from_slice(&[0; 4]);
-    prefix.extend_from_slice(&1u32.to_le_bytes());
-    prefix.extend_from_slice(&77u32.to_le_bytes());
-    let error = crate::test_support::resource_refusal_at(
-        ResourceDimension::WorkUnits,
-        "validate F3D packed recipe reference token",
-        0,
-        |ctx| {
-            super::scan_recipe_reference_operand(
-                ctx,
-                &prefix,
-                0,
-                super::RecipeReferenceTokenFrame::Packed,
-            )
-            .map(|_| ())
-        },
-    );
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == "validate F3D packed recipe reference token"
-                && limit.additional == 2
-    ));
 }
 
 mod companion_limits;

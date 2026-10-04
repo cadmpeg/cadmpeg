@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::design::decode::dimension_frames::parse_dimension_null_locus_pair;
-use std::collections::HashSet;
 
 #[test]
 fn typed_dimension_companions_refuse_collection_limit() {
@@ -24,7 +23,14 @@ fn typed_dimension_companions_refuse_collection_limit() {
     bytes.extend_from_slice(b"273");
     bytes.extend_from_slice(&1394u32.to_le_bytes());
     let mut pair = crate::design::test_support::with_test_decode_context(|ctx| {
-        parse_dimension_null_locus_pair(ctx, &bytes, 0, 1290, &HashSet::from([1109]))
+        parse_dimension_null_locus_pair(
+            ctx,
+            &bytes,
+            0,
+            1290,
+            &[1109],
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        )
     })
     .expect("null-locus dimension frame")
     .expect("valid null-locus dimension frame");
