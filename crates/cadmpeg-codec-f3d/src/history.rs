@@ -1217,16 +1217,21 @@ pub(crate) fn bind_feature_outputs(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut state_outputs = HashMap::<i64, Option<Vec<i64>>>::new();
     for history in ctx.admit_iter(histories, "scan F3D feature output histories")? {
+        let mut by_node_storage =
+            ctx.reserve_scoped(0, "index F3D feature output history nodes")?;
         let mut by_node = HashMap::new();
         for state in ctx
             .admit_iter(&history.states, "scan F3D history states")?
         {
-            ctx.insert_hash_map(
-                &mut by_node,
-                state.node_index,
-                state,
-                "index F3D feature output history nodes",
-            )?;
+            by_node_storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut by_node,
+                    state.node_index,
+                    state,
+                    "index F3D feature output history nodes",
+                )
+                .map(|_| ())
+            })?;
         }
         if by_node.len() != history.states.len() {
             continue;
@@ -1253,20 +1258,25 @@ pub(crate) fn bind_feature_outputs(
                 .or_insert_with(|| Some(outputs));
         }
     }
+    let mut active_storage =
+        ctx.reserve_scoped(0, "index F3D active feature output bodies")?;
     let mut active = HashMap::new();
     for body in ctx.admit_iter(active_bodies, "scan F3D active bodies")? {
         let Some(slot) = stable_ref(body.id.as_str()) else {
             continue;
         };
-        let id = body
-            .id
-            .try_clone_for_decode(ctx, "copy F3D active body identity")?;
-        ctx.insert_hash_map(
-            &mut active,
-            slot,
-            id,
-            "index F3D active feature output bodies",
-        )?;
+        active_storage.with_storage(|| {
+            let id = body
+                .id
+                .try_clone_for_decode(ctx, "copy F3D active body identity")?;
+            ctx.insert_hash_map(
+                &mut active,
+                slot,
+                id,
+                "index F3D active feature output bodies",
+            )
+            .map(|_| ())
+        })?;
     }
     for feature in features {
         let Some(id) = feature.native_ref.as_deref() else {
@@ -1364,14 +1374,18 @@ pub(crate) fn bind_sweep_result_modes(
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, SweepMode, SweepShape};
     use cadmpeg_ir::topology::BodyKind;
 
+    let mut body_kind_storage = ctx.reserve_scoped(0, "index F3D sweep body kinds")?;
     let mut body_kinds = HashMap::new();
     for body in ctx.admit_iter(bodies, "scan F3D sweep bodies")? {
-        ctx.insert_hash_map(
-            &mut body_kinds,
-            &body.id,
-            body.kind,
-            "index F3D sweep body kinds",
-        )?;
+        body_kind_storage.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut body_kinds,
+                &body.id,
+                body.kind,
+                "index F3D sweep body kinds",
+            )
+            .map(|_| ())
+        })?;
     }
     let mut feature_position_storage =
         ctx.reserve_scoped(0, "stage F3D sweep feature positions")?;

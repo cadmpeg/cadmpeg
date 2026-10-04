@@ -2195,9 +2195,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             }
             Some(operation) => {
                 let group_header =
-                    records_by_index.get(&(native_stream, operation.body_group_record_index));
+                    ctx.decode.get_hash_map(records_by_index, &(native_stream, operation.body_group_record_index), "find F3D validation linked record")?;
                 let relation_header =
-                    records_by_index.get(&(native_stream, operation.relation_record_index));
+                    ctx.decode.get_hash_map(records_by_index, &(native_stream, operation.relation_record_index), "find F3D validation linked record")?;
                 scope.reference_members().values().next()
                     == Some(&operation.body_group_record_index)
                     && scope
@@ -2800,7 +2800,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             }
             Some(construction) => {
                 let relation =
-                    records_by_index.get(&(native_stream, construction.relation_record_index));
+                    ctx.decode.get_hash_map(records_by_index, &(native_stream, construction.relation_record_index), "find F3D validation linked record")?;
                 let frame_matches_transform = match (
                     scope.frame_length(),
                     scope.paired_class_tag.as_str(),
@@ -5663,7 +5663,7 @@ fn validate_fillet_radius_groups<'a>(
         let native_stream = design_stream(&assignment.id);
         let scope = ctx.decode.get_hash_map(scopes_by_index, &(native_stream, assignment.scope_record_index), "find F3D validation record index")?;
         let group =
-            construction_groups_by_index.get(&(native_stream, assignment.group_record_index));
+            ctx.decode.get_hash_map(construction_groups_by_index, &(native_stream, assignment.group_record_index), "find F3D validation linked record")?;
         let assignment_parameter = |record_index: u32| {
             let parameter = *parameters_by_index.get(&(native_stream, record_index))?;
             let owner = *owners_by_index.get(&(native_stream, parameter.owner_record_index()?))?;
@@ -6011,9 +6011,12 @@ fn validate_construction_operand_identities<'a>(
     for identity in ctx.decode.admit_iter(&native.design_construction_operand_identities, "scan F3D design construction operand identities")? {
         let native_stream = design_stream(&identity.id);
         let group = ctx.decode.get_hash_map(operand_groups_by_index, &(native_stream, identity.group_record_index), "find F3D validation record index")?;
-        let selected_profile = group
-            .and_then(|group| scopes_by_index.get(&(native_stream, group.scope_record_index)))
-            .and_then(|scope| scope.extrude_profile());
+        let selected_scope = match group {
+            Some(group) => ctx.decode.get_hash_map(scopes_by_index,
+                &(native_stream, group.scope_record_index), "find F3D selected profile scope")?,
+            None => None,
+        };
+        let selected_profile = selected_scope.and_then(|scope| scope.extrude_profile());
         let wrapper_shape = identity.wrappers().iter().all(|wrapper| {
             records_by_index
                 .get(&(native_stream, wrapper.record_index))
@@ -6203,7 +6206,7 @@ fn validate_edge_identity_operands<'a>(
                     == Some(&operand.record_index())
         }) && header.is_some_and(|header| {
             header.byte_offset == operand.byte_offset() && header.class_tag == operand.class_tag
-        }) && expected_edge_identity_operands.get(operand.id.as_str())
+        }) && ctx.decode.get_hash_map(&expected_edge_identity_operands, operand.id.as_str(), "find F3D expected operand")?
             == Some(&operand)
             && ctx.decode.insert_hash_set(
                 &mut edge_identity_slots,
@@ -6361,7 +6364,7 @@ fn validate_body_recipe_operands<'a>(
                     && recipe.byte_offset < operand.next_byte_offset()
                     && selector_is_valid
             })
-            && expected_operands.get(operand.id.as_str()) == Some(&operand)
+            && ctx.decode.get_hash_map(&expected_operands, operand.id.as_str(), "find F3D expected operand")? == Some(&operand)
             && ctx.decode.insert_hash_set(
                 &mut member_slots,
                 (native_stream, operand.scope_record_index, operand.owner),
@@ -6601,9 +6604,12 @@ fn validate_extrude_selection_members(
         let native_stream = design_stream(&member.id);
         let group = ctx.decode.get_hash_map(groups_by_index, &(native_stream, member.group_record_index), "find F3D validation record index")?;
         let header = ctx.decode.get_hash_map(records_by_index, &(native_stream, member.record_index()), "find F3D validation record index")?;
-        let selected_profile = group
-            .and_then(|group| scopes_by_index.get(&(native_stream, group.scope_record_index)))
-            .and_then(|scope| scope.extrude_profile());
+        let selected_scope = match group {
+            Some(group) => ctx.decode.get_hash_map(scopes_by_index,
+                &(native_stream, group.scope_record_index), "find F3D selected profile scope")?,
+            None => None,
+        };
+        let selected_profile = selected_scope.and_then(|scope| scope.extrude_profile());
         let selected_sketch =
             selected_profile.and_then(|profile| u32::try_from(profile.entity_id.suffix()).ok());
         let point_targets = native.sketch_points.iter().filter_map(|point| {
@@ -6824,8 +6830,8 @@ fn validate_extrude_selection_group_members(
                     })
             })
         });
-        let context_id = members_by_slot
-            .get(&(native_stream, group.record_index, 0))
+        let context_id = ctx.decode.get_hash_map(members_by_slot,
+            &(native_stream, group.record_index, 0), "find F3D first group member")?
             .map(|member| member.context_id.as_str());
         let context_consistent = context_id.is_some_and(|context_id| {
             (0..group.members().len()).all(|ordinal| {
@@ -6867,22 +6873,31 @@ fn recipe_program_operand_length(kind: records::recipes::ConstructionRecipeKind)
 }
 
 fn recipe_reference_frames_match(
+    decode: &DecodeContext<'_>,
     actual: &[records::dimensions::DesignRecipeReference],
     expected: &[records::dimensions::DesignRecipeReference],
     ignore_derived_candidates: bool,
-) -> bool {
+) -> Result<bool, CodecError> {
     if !ignore_derived_candidates {
-        return actual == expected;
+        return decode.equal(actual, expected, "compare F3D recipe references");
     }
-    actual.len() == expected.len()
-        && actual.iter().zip(expected).all(|(actual, expected)| {
-            actual.selector == expected.selector
-                && actual.selector_offset == expected.selector_offset
-                && actual.token == expected.token
-                && actual.token_offset == expected.token_offset
-                && actual.design_reference == expected.design_reference
-                && actual.design_reference_offset == expected.design_reference_offset
-        })
+    if actual.len() != expected.len() {
+        return Ok(false);
+    }
+    for (actual, expected) in decode.admit_iter(actual, "scan F3D actual recipe reference frames")?
+        .zip(decode.admit_iter(expected, "scan F3D expected recipe reference frames")?)
+    {
+        if !(actual.selector == expected.selector
+            && actual.selector_offset == expected.selector_offset
+            && decode.equal(&actual.token, &expected.token, "compare F3D recipe reference token")?
+            && actual.token_offset == expected.token_offset
+            && actual.design_reference == expected.design_reference
+            && actual.design_reference_offset == expected.design_reference_offset)
+        {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 /// Validate edge operands and their recipe frames; returns their record set.
@@ -7003,10 +7018,11 @@ fn validate_edge_operands<'a>(
                 .zip(recipe.and_then(|recipe| recipe.byte_offset.checked_sub(4)))
                 .is_some_and(|(prefix_end, recipe_prefix_end)| prefix_end == recipe_prefix_end)
             && recipe_reference_frames_match(
+                decode,
                 &operand.recipe_references,
                 &expected_references,
                 historical_candidates_retained,
-            )
+            )?
             && recipe.is_some_and(|recipe| {
                 design_stream(&recipe.id) == native_stream
                     && recipe.kind == crate::records::recipes::ConstructionRecipeKind::Edge
@@ -7019,7 +7035,7 @@ fn validate_edge_operands<'a>(
             )? == operand.recipe_structure
             && expected_surface_patch_recipe_structure == operand.surface_patch_recipe_structure
             && (historical_candidates_retained || expected_faces == operand.candidate_faces)
-            && expected_edge_operands.get(operand.id.as_str()) == Some(&operand);
+            && ctx.decode.get_hash_map(&expected_edge_operands, operand.id.as_str(), "find F3D expected operand")? == Some(&operand);
         let valid = valid
             && ctx.decode.insert_hash_set(
                 &mut edge_operand_slots,
@@ -7105,9 +7121,7 @@ fn validate_edge_treatment_vertex_operands<'a>(
     let mut records = HashSet::new();
     for operand in ctx.decode.admit_iter(&native.design_edge_treatment_vertex_operands, "scan F3D design edge treatment vertex operands")? {
         let stream = design_stream(&operand.id);
-        let scope = ctx
-            .scopes_by_index
-            .get(&(stream, operand.scope_record_index));
+        let scope = ctx.decode.get_hash_map(&ctx.scopes_by_index, &(stream, operand.scope_record_index), "find F3D validation linked record")?;
         let mut groups = native
             .design_construction_operand_groups
             .iter()
@@ -7138,7 +7152,7 @@ fn validate_edge_treatment_vertex_operands<'a>(
                     == Some(&operand.recipe.record_index())
             })
             && groups.next().is_none()
-            && expected.get(operand.id.as_str()) == Some(&operand);
+            && ctx.decode.get_hash_map(&expected, operand.id.as_str(), "find F3D expected operand")? == Some(&operand);
         let valid = valid
             && ctx.decode.insert_hash_set(
                 &mut records,
@@ -7400,12 +7414,14 @@ fn validate_face_operands<'a>(
                 None => false,
             };
         let expected_history = ctx.decode.get_hash_map(&expected_face_operands, operand.id.as_str(), "find F3D validation record index")?;
-        let valid = scope.is_some_and(|scope| {
+        let valid = (match scope {
+            None => false,
+            Some(scope) => {
             let family = design::design_feature_family(&scope.kind());
             match (operand.group_record_index(), operand.group_member_ordinal()) {
                 (Some(group_record_index), Some(group_member_ordinal)) => {
-                    let group = face_groups_by_index
-                        .get(&(native_stream, group_record_index))
+                    let group = ctx.decode.get_hash_map(&face_groups_by_index,
+                        &(native_stream, group_record_index), "find F3D face operand group")?
                         .copied();
                     let exact_group_member = group.is_some_and(|group| {
                         group.scope_record_index == operand.scope_record_index
@@ -7575,15 +7591,16 @@ fn validate_face_operands<'a>(
                 }
                 _ => false,
             }
-        }) && header.is_some_and(|header| {
+        }}) && header.is_some_and(|header| {
             header.byte_offset == operand.byte_offset() && header.class_tag == operand.class_tag
         }) && operand
             .recipe_prefix_offset().checked_add(u64_from_index(operand.recipe_prefix_bytes.len())).zip(recipe.and_then(|recipe| recipe.byte_offset.checked_sub(4))).is_some_and(|(prefix_end, recipe_prefix_end)| prefix_end == recipe_prefix_end)
             && recipe_reference_frames_match(
+                ctx.decode,
                 &operand.recipe_references,
                 &expected_references,
                 historical_candidates_retained,
-            )
+            )?
             && valid_program
             && recipe_program_operand_length(operand.recipe_kind).is_some_and(|operand_length| {
                 recipe.is_some_and(|recipe| {
@@ -7593,11 +7610,11 @@ fn validate_face_operands<'a>(
             && u64_from_index(operand.recipe_program.len()).checked_mul(4).and_then(|delta| operand
                     .recipe_program_offset.checked_add(delta)).is_some_and(|expected_offset| operand.next_byte_offset() == expected_offset)
             && (historical_candidates_retained
-                || face_ids_match_refs(&operand.candidate_faces, &expected_faces))
+                || face_ids_match_refs(ctx.decode, &operand.candidate_faces, &expected_faces)?)
             && (historical_candidates_retained
-                || face_ids_match_refs(&operand.unreferenced_candidate_faces, &expected_unreferenced_faces))
+                || face_ids_match_refs(ctx.decode, &operand.unreferenced_candidate_faces, &expected_unreferenced_faces)?)
             && (historical_candidates_retained
-                || face_ids_match_refs(&operand.alternate_selector_candidate_faces, &expected_alternate_selector_faces))
+                || face_ids_match_refs(ctx.decode, &operand.alternate_selector_candidate_faces, &expected_alternate_selector_faces)?)
             && expected_history.is_some_and(|expected| {
                 operand.preceding_candidate_faces == expected.preceding_candidate_faces
                     && operand.changed_candidate_faces == expected.changed_candidate_faces
@@ -7635,14 +7652,21 @@ fn validate_face_operands<'a>(
 }
 
 fn face_ids_match_refs(
+    decode: &DecodeContext<'_>,
     actual: &[cadmpeg_ir::ids::FaceId],
     expected: &[&cadmpeg_ir::ids::FaceId],
-) -> bool {
-    actual.len() == expected.len()
-        && actual
-            .iter()
-            .zip(expected)
-            .all(|(actual, expected)| actual == *expected)
+) -> Result<bool, CodecError> {
+    if actual.len() != expected.len() {
+        return Ok(false);
+    }
+    for (actual, expected) in decode.admit_iter(actual, "scan F3D actual face identities")?
+        .zip(decode.admit_iter(expected, "scan F3D expected face identities")?)
+    {
+        if !decode.equal(actual, *expected, "compare F3D face identity")? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 /// Report face-group members with no resolved recipe operand.
@@ -7692,15 +7716,9 @@ fn validate_face_source_groups(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result
     let mut carrier_records = HashSet::new();
     for group in ctx.decode.admit_iter(&native.design_face_source_groups, "scan F3D design face source groups")? {
         let native_stream = design_stream(&group.id);
-        let scope = ctx
-            .scopes_by_index
-            .get(&(native_stream, group.scope_record_index));
-        let carrier_header = ctx
-            .records_by_index
-            .get(&(native_stream, group.carrier_record_index));
-        let paired_header = ctx
-            .records_by_index
-            .get(&(native_stream, group.paired_record_index));
+        let scope = ctx.decode.get_hash_map(&ctx.scopes_by_index, &(native_stream, group.scope_record_index), "find F3D validation linked record")?;
+        let carrier_header = ctx.decode.get_hash_map(&ctx.records_by_index, &(native_stream, group.carrier_record_index), "find F3D validation linked record")?;
+        let paired_header = ctx.decode.get_hash_map(&ctx.records_by_index, &(native_stream, group.paired_record_index), "find F3D validation linked record")?;
         let carrier_ordinal = usize::try_from(group.carrier_reference_ordinal).ok();
         let source_spec = design::decode::operands::face_source_carrier_spec(
             group.carrier_class_tag.as_str(),
@@ -7824,9 +7842,11 @@ fn validate_sketch_placements(
             )?,
             None => true,
         };
-        let scope = placement
-            .scope_record_index
-            .and_then(|index| scopes_by_index.get(&(native_stream, index)));
+        let scope = match placement.scope_record_index {
+            Some(index) => ctx.decode.get_hash_map(scopes_by_index,
+                &(native_stream, index), "find F3D placement scope")?,
+            None => None,
+        };
         let visibility_valid = if let Some(visibility) = placement.visibility.as_ref() {
             let header_valid = ctx
                 .entities_by_suffix
@@ -8121,7 +8141,7 @@ fn validate_dimension_recipe_records<'a>(
                 Some(&record.id),
             )?;
         }
-        let references_match = decoded_references == record.references;
+        let references_match = ctx.decode.equal(&decoded_references, &record.references, "compare F3D dimension recipe references")?;
         let matching_edge_operands =
             design::decode::dimension_frames::dimension_recipe_matching_edge_operand_ids(
                 ctx.decode,
@@ -8824,7 +8844,7 @@ fn validate_sketch_relations(
         let native_stream = design_stream(&relation.id);
         let owner_matches = matches!(
             (
-                sketch_owner_ids.get(&(native_stream, relation.owner_reference)),
+                ctx.decode.get_hash_map(sketch_owner_ids, &(native_stream, relation.owner_reference), "find F3D sketch relation owner")?,
                 relation.owner_entity_id.as_ref().map(cadmpeg_core::text::NonBlankString::as_str),
             ),
             (Some(expected), Some(actual)) if *expected == actual

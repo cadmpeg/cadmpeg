@@ -1095,3 +1095,18 @@ fn sketch_link_invalid_text_remains_absent() {
         .unwrap()
         .is_none());
 }
+
+#[test]
+fn brep_statistic_count_overflow_preserves_resource_refusal() {
+    crate::test_support::with_decode_context(|ctx| {
+        let mut target = std::collections::BTreeMap::from([("body".to_owned(), usize::MAX)]);
+        let source = std::collections::BTreeMap::from([("body".to_owned(), 1)]);
+        let error = super::merge_brep_counts(ctx, &mut target, source).unwrap_err();
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = &error else {
+            panic!("expected resource refusal: {error}");
+        };
+        assert_eq!(limit.operation, "merge F3D BREP statistic counts");
+        assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+        assert_eq!(target.get("body"), Some(&usize::MAX));
+    });
+}

@@ -95,6 +95,35 @@ pub(crate) struct DesignRecipeReference {
     pub(crate) alternate_selector_edges: Vec<EdgeId>,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for DesignRecipeReference {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                (
+                    self.selector,
+                    self.selector_offset,
+                    &self.token,
+                    self.token_offset,
+                    self.design_reference,
+                    self.design_reference_offset,
+                ),
+                (
+                    &self.candidate_faces,
+                    &self.candidate_edges,
+                    &self.alternate_selector_faces,
+                    &self.alternate_selector_edges,
+                ),
+            ),
+            ctx,
+            operation,
+        )
+    }
+}
+
 impl DesignRecipeReference {
     pub(crate) fn try_clone_for_decode(
         &self,
