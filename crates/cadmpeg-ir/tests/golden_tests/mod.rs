@@ -378,6 +378,8 @@ mod scanner_tests {
         let error = collect_goldens(&missing, &mut found)
             .expect_err("a selected golden root must fail the census");
         assert!(error.contains(&missing.display().to_string()));
-        assert!(error.contains("No such file") || error.contains("not found"));
+        let cause = std::fs::read_dir(&missing).expect_err("the golden root is absent");
+        assert_eq!(cause.kind(), std::io::ErrorKind::NotFound);
+        assert!(error.contains(&cause.to_string()), "{error}");
     }
 }

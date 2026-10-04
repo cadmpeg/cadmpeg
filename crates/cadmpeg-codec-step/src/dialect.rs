@@ -73,7 +73,7 @@ const DECLARED_FILE_SCHEMA_IDENTIFIERS: &str = "file_schema_identifiers";
 ///
 /// The text between the braces, verbatim as read and untrimmed, so
 /// `'… { 1 0 10303 442 3 1 4 }'` records `" 1 0 10303 442 3 1 4 "`. This is
-/// evidence, not a join key: `docs/dialects.toml` writes the same arcs trimmed
+/// evidence, not a join key: `crates/cadmpeg-registry/docs/dialects.toml` writes the same arcs trimmed
 /// under `long_form_arcs`, and the resolved id is what a consumer compares.
 const DECLARED_LONG_FORM_ARCS: &str = "long_form_arcs";
 /// Key of the `FILE_DESCRIPTION` implementation level, in
@@ -83,7 +83,7 @@ const DECLARED_LONG_FORM_ARCS: &str = "long_form_arcs";
 /// this value (`crate::parse::ImplementationLevel`) but no row here does.
 const DECLARED_IMPLEMENTATION_LEVEL: &str = "implementation_level";
 
-/// One row of `docs/dialects.toml` under the `step` namespace.
+/// One row of `crates/cadmpeg-registry/docs/dialects.toml` under the `step` namespace.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum StepDialect {
     /// A Part 21 identity row: every row with a `FILE_SCHEMA` identifier.
