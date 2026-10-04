@@ -426,6 +426,148 @@ fn equation_scan() -> (crate::container::ContainerScan<'static>, usize) {
     (scan, row_start)
 }
 
+fn scalar_equality_equation_scan() -> crate::container::ContainerScan<'static> {
+    let mut scan = empty_section_scan();
+    let definition = &mut scan.features.definitions[0];
+    definition.offset = 1000;
+    definition.saved_section = None;
+    definition.body = vec![0; 20];
+    definition.body.extend_from_slice(
+        b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
+            \xe0\x01id\0\0\xf1\xf7\x80\x9f\xe2\
+            \x01\x05\xf8\x03\x00\x01\x02\xf6\xe2",
+    );
+    let row = |variable_type, key, value: Option<f64>| {
+        let value = value.map_or(
+            crate::feature::definitions::ScalarLane::DimensionDriven,
+            crate::feature::definitions::ScalarLane::Value,
+        );
+        crate::feature::definitions::FeatureVariableRow {
+            variable_type: crate::feature::definitions::VariableType::from(variable_type),
+            key,
+            value,
+            value_body: Vec::new(),
+            guess: value,
+            guess_body: Vec::new(),
+            known: Some(0),
+            homogeneity: Some(1),
+            uvar_id: None,
+            offset: 0,
+        }
+    };
+    definition.variables = Some(crate::feature::definitions::FeatureVariableTable {
+        declared_count: 3,
+        entity_ref: None,
+        rows: vec![
+            row(6, 10, Some(2.5)),
+            row(6, 11, Some(2.5)),
+            row(5, 20, Some(0.0)),
+        ],
+        offset: 0,
+    });
+    scan
+}
+
+fn scalar_equality_candidates(
+    scan: &crate::container::ContainerScan<'_>,
+) -> Vec<(SketchConstraint, usize)> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let sketch = SketchId::mint("creo:model:sketch#source-admission")
+            .expect("valid source-admission sketch ID");
+        super::section_equation_function_five_scalar_equality_constraints(
+            ctx,
+            &scan.features.definitions[0],
+            &sketch,
+        )
+    })
+    .expect("function-five scalar-equality fixture is typed")
+}
+
+fn scalar_equality_transfer_result(
+    ctx: &DecodeContext<'_>,
+    scan: &crate::container::ContainerScan<'_>,
+) -> Result<(Vec<(u32, u32)>, Vec<u64>), CodecError> {
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+    super::transfer_sketches(
+        ctx,
+        scan,
+        &mut ir,
+        &mut annotations,
+        &mut Vec::new(),
+        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+    )?;
+    let scalar_equalities = ir
+        .model
+        .sketch_constraints
+        .iter()
+        .filter_map(|constraint| match constraint.definition.kind() {
+            SketchConstraintDefinitionInput::ScalarEquality { first, second } => {
+                Some((*first, *second))
+            }
+            _ => None,
+        })
+        .collect();
+    let equation_annotation_offsets = annotations
+        .build()
+        .provenance
+        .values()
+        .filter(|note| note.tag.as_deref() == Some("section_equation_constraint"))
+        .map(|note| note.offset)
+        .collect();
+    Ok((scalar_equalities, equation_annotation_offsets))
+}
+
+#[test]
+fn equation_offset_source_admission_refuses_work_and_emits_typed_scalar_equality() {
+    let scan = scalar_equality_equation_scan();
+    let typed_rows = scalar_equality_candidates(&scan);
+    assert_eq!(typed_rows.len(), 1, "fixture produces one typed row");
+    let source_offsets = typed_rows
+        .iter()
+        .map(|(_, offset)| *offset)
+        .collect::<BTreeSet<_>>();
+    assert_eq!(source_offsets.len(), 1, "typed source set is nonempty");
+    let expected_offset = cadmpeg_core::decode::u64_from_index(
+        1000 + *source_offsets
+            .iter()
+            .next()
+            .expect("one typed source offset"),
+    );
+    let (scalar_equalities, equation_annotation_offsets) =
+        crate::test_support::assert_work_boundaries(
+            &["creo equation offset source"],
+            |ctx| scalar_equality_transfer_result(ctx, &scan),
+        );
+    assert_eq!(scalar_equalities, vec![(10, 11)]);
+    assert_eq!(equation_annotation_offsets, vec![expected_offset]);
+}
+
+#[test]
+fn typed_equation_offset_source_admission_refuses_work_and_emits_typed_scalar_equality() {
+    let scan = scalar_equality_equation_scan();
+    let typed_rows = scalar_equality_candidates(&scan);
+    assert_eq!(typed_rows.len(), 1, "fixture produces one typed row");
+    let source_offsets = typed_rows
+        .iter()
+        .map(|(_, offset)| *offset)
+        .collect::<BTreeSet<_>>();
+    assert_eq!(source_offsets.len(), 1, "typed source set is nonempty");
+    let expected_offset = cadmpeg_core::decode::u64_from_index(
+        1000 + *source_offsets
+            .iter()
+            .next()
+            .expect("one typed source offset"),
+    );
+    let (scalar_equalities, equation_annotation_offsets) =
+        crate::test_support::assert_work_boundaries(
+            &["creo typed equation offset source"],
+            |ctx| scalar_equality_transfer_result(ctx, &scan),
+        );
+    assert_eq!(scalar_equalities, vec![(10, 11)]);
+    assert_eq!(equation_annotation_offsets, vec![expected_offset]);
+}
+
 #[test]
 fn equation_header_uses_definition_source_base() {
     let (scan, _) = equation_scan();
@@ -550,94 +692,21 @@ fn sketch_profile_entity_membership_refuses_work_and_preserves_resolved_chain() 
         offset: 0,
     });
 
-    let run = |ctx: &DecodeContext<'_>| -> Result<cadmpeg_ir::document::CadIr, CodecError> {
-        let mut output = cadmpeg_ir::document::CadIr::empty();
-        super::transfer_sketches(
-            ctx,
-            &scan,
-            &mut output,
-            &mut cadmpeg_ir::AnnotationBuilder::new(),
-            &mut Vec::new(),
-            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
-        )?;
-        Ok(output)
-    };
-    let operation = "creo sketch profile entity membership";
-    let service_work_limit = DecodePolicy::service().limits.max_work_units;
-    let mut work_cap = 0_u64;
-    loop {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = work_cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        match run(&ctx) {
-            Err(CodecError::ResourceLimit(resource)) => {
-                assert_eq!(resource.dimension, ResourceDimension::WorkUnits);
-                assert_eq!(ctx.resource_refusal().as_ref(), Some(&resource));
-                let need = resource
-                    .used
-                    .checked_add(resource.additional)
-                    .expect("work need fits");
-                assert!(need > work_cap);
-                assert!(need <= service_work_limit, "triangle exceeds service work limit");
-                if resource.operation == operation {
-                    assert!(resource.additional > 0, "named membership work is positive");
-                    let below = need.checked_sub(1).expect("positive work need");
-                    let below_arena = DecodeArena::new();
-                    policy.limits.max_work_units = below;
-                    let (below_ctx, _) = DecodeContext::from_root_bytes(
-                        &[],
-                        &below_arena,
-                        &policy,
-                    )
-                    .expect("empty root");
-                    match run(&below_ctx) {
-                        Err(CodecError::ResourceLimit(below_resource)) => {
-                            assert_eq!(below_resource.dimension, ResourceDimension::WorkUnits);
-                            assert_eq!(below_resource.operation, operation);
-                            assert_eq!(
-                                below_ctx.resource_refusal().as_ref(),
-                                Some(&below_resource)
-                            );
-                            assert_eq!(
-                                below_resource
-                                    .used
-                                    .checked_add(below_resource.additional),
-                                Some(need)
-                            );
-                        }
-                        Err(error) => panic!("unexpected refusal below named boundary: {error:?}"),
-                        Ok(_) => panic!("named boundary must refuse one unit below its need"),
-                    }
-                    let at_arena = DecodeArena::new();
-                    policy.limits.max_work_units = need;
-                    let (at_ctx, _) =
-                        DecodeContext::from_root_bytes(&[], &at_arena, &policy)
-                            .expect("empty root");
-                    match run(&at_ctx) {
-                        Err(CodecError::ResourceLimit(at_resource)) => {
-                            assert_eq!(at_resource.dimension, ResourceDimension::WorkUnits);
-                            assert_eq!(at_ctx.resource_refusal().as_ref(), Some(&at_resource));
-                            assert!(
-                                at_resource.used >= need,
-                                "the named charge must pass at its exact work limit"
-                            );
-                        }
-                        Err(error) => panic!(
-                            "unexpected transfer error at named boundary: {error:?}"
-                        ),
-                        Ok(_) => {}
-                    }
-                    break;
-                }
-                work_cap = need;
-            }
-            Err(error) => panic!("unexpected triangle transfer refusal: {error:?}"),
-            Ok(_) => panic!("service route completed before named work boundary"),
-        }
-    }
-    let service = crate::decode::with_test_decode_ctx(|ctx| run(ctx))
-        .expect("service triangle transfer");
+    let service = crate::test_support::assert_work_boundaries(
+        &["creo sketch profile entity membership"],
+        |ctx| {
+            let mut output = cadmpeg_ir::document::CadIr::empty();
+            super::transfer_sketches(
+                ctx,
+                &scan,
+                &mut output,
+                &mut cadmpeg_ir::AnnotationBuilder::new(),
+                &mut Vec::new(),
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )?;
+            Ok(output)
+        },
+    );
     assert_eq!(service.model.sketches.len(), 1);
     assert_eq!(service.model.sketch_entities.len(), 3);
     let sketch = &service.model.sketches[0];
