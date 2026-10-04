@@ -928,7 +928,7 @@ fn decimal(bytes: &[u8], mut offset: usize) -> Option<(u32, usize)> {
     (offset > start).then_some((value, offset))
 }
 
-fn compact_real(_ctx: &cadmpeg_core::decode::DecodeContext<'_>, bytes: &[u8]) -> Result<Option<Real>, cadmpeg_core::CodecError> {
+fn compact_real(ctx: &cadmpeg_core::decode::DecodeContext<'_>, bytes: &[u8]) -> Result<Option<Real>, cadmpeg_core::CodecError> {
     let (digits, repeat_last) = bytes
         .strip_suffix(b"R")
         .map_or((bytes, false), |digits| (digits, true));
@@ -941,7 +941,7 @@ fn compact_real(_ctx: &cadmpeg_core::decode::DecodeContext<'_>, bytes: &[u8]) ->
         return Ok(None);
     }
     let digits = { let Some(value) = std::str::from_utf8(digits).ok() else { return Ok(None); }; value };
-    let mut bits = { let Some(value) = u64::from_str_radix(digits, 16).ok() else { return Ok(None); }; value };
+    let mut bits = { let Some(value) = ctx.parse_radix::<u64>(digits, 16, "creo compact real hexadecimal parsing")?.ok() else { return Ok(None); }; value };
     let fill = if repeat_last { bits & 0x0f } else { 0 };
     for _ in digits.len()..16 {
         bits = { let Some(value) = bits.checked_shl(4) else { return Ok(None); }; value } | fill;
