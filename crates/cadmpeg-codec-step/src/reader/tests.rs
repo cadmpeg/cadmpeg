@@ -1770,3 +1770,68 @@ fn protected_root_copy_refuses_collection_limit() {
 mod set_lookups;
 
 mod equality;
+
+#[test]
+fn instance_identity_reverse_split_preserves_refusal() {
+    cadmpeg_test_support::refusal::resource_limit_at(cadmpeg_core::decode::ResourceDimension::WorkUnits, "STEP instance identity reverse split", |cap| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = super::step_instance_id(&ctx, "step:data:curve#7").map(|_| ());
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}
+
+#[test]
+fn source_record_identity_reverse_split_preserves_refusal() {
+    cadmpeg_test_support::refusal::resource_limit_at(cadmpeg_core::decode::ResourceDimension::WorkUnits, "STEP source record identity reverse split", |cap| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = super::source_record_id(&ctx, "step:data:curve#7-member").map(|_| ());
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}
+
+#[test]
+fn instance_identity_number_parse_preserves_refusal() {
+    cadmpeg_test_support::refusal::resource_limit_at(cadmpeg_core::decode::ResourceDimension::WorkUnits, "STEP instance identity number parse", |cap| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = super::step_instance_id(&ctx, "step:data:curve#7").map(|_| ());
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}
+
+#[test]
+fn identity_reader_splits_preserve_existing_optional_results() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    for (identity, expected) in [("step:data:curve#7", Some(7)), ("#0", Some(0)), ("#1#2", Some(2)), ("curve", None), ("#", None), ("#x", None), ("#18446744073709551616", None)] {
+        assert_eq!(super::step_instance_id(&ctx, identity).unwrap(), expected, "{identity}");
+    }
+    for (identity, expected) in [("step:data:curve#7-member", Some(7)), ("#1#2-member", Some(2)), ("#7", Some(7)), ("curve", None), ("#-7", None), ("#x-member", None), ("#18446744073709551616-member", None)] {
+        assert_eq!(super::source_record_id(&ctx, identity).unwrap(), expected, "{identity}");
+    }
+}
+
+#[test]
+fn retained_carrier_identity_refusal_reaches_caller() {
+    let removed = std::collections::BTreeSet::from([7_u64]);
+    let protected = std::collections::BTreeSet::new();
+    cadmpeg_test_support::refusal::resource_limit_at(cadmpeg_core::decode::ResourceDimension::WorkUnits, "STEP instance identity reverse split", |cap| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = super::retains_carrier(&ctx, "step:data:curve#7", &removed, &protected).map(|_| ());
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}

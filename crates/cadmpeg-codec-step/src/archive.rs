@@ -113,7 +113,7 @@ fn resolve_uri<'a>(
     }
     let mut components = Vec::new();
     let mut component_bytes = ctx.reserve_scoped(0, "step_zip_uri_components_temp")?;
-    if let Some((directory, _)) = base_member.rsplit_once('/') {
+    if let Some((directory, _)) = ctx.rsplit_once(base_member, "/", "STEP ZIP base member reverse split")? {
         for component in directory.split('/') {
             ctx.push_scoped_vec(
                 &mut component_bytes,
