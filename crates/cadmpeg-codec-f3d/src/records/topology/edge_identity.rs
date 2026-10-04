@@ -566,6 +566,69 @@ pub(crate) struct DesignEdgeOperand {
     next_byte_offset: u64,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for DesignEdgeOperand {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        (
+            (
+                (
+                    &self.frame,
+                    &self.id,
+                    &self.scope_record_index,
+                    &self.scope_reference_ordinal,
+                    &self.class_tag,
+                    &self.paired_byte_offset,
+                ),
+                (
+                    &self.paired_class_tag,
+                    &self.recipe_record_byte_offset,
+                    &self.recipe_id,
+                    &self.recipe_prefix_bytes,
+                    &self.recipe_references,
+                    &self.recipe_program_offset,
+                ),
+                (
+                    &self.recipe_program,
+                    &self.recipe_structure,
+                    &self.surface_patch_recipe_structure,
+                    &self.local_topology_references,
+                    &self.candidate_faces,
+                    &self.result_candidate_faces,
+                ),
+                (
+                    &self.result_boundary_edge_slots,
+                    &self.preceding_candidate_faces,
+                    &self.terminal_candidate_faces,
+                    &self.changed_candidate_faces,
+                    &self.preceding_boundary_edge_slots,
+                    &self.terminal_boundary_edge_slots,
+                ),
+                (
+                    &self.changed_boundary_edge_slots,
+                    &self.deleted_boundary_edge_slots,
+                    &self.updated_boundary_edge_slots,
+                    &self.treatment_radius_candidates,
+                    &self.changed_boundary_edge_contexts,
+                    &self.terminal_boundary_edge_contexts,
+                ),
+                (
+                    &self.terminal_reference_edge_slots,
+                    &self.recipe_reference_contexts,
+                    &self.recipe_selectors,
+                    &self.recipe_state_id,
+                    &self.resolved_edge_slot,
+                    &self.resolved_axis,
+                ),
+            ),
+            (&self.next_record_index, &self.next_byte_offset),
+        )
+        .decode_cost(ctx, operation)
+    }
+}
+
 #[cfg(test)]
 thread_local! {
     static EDGE_OPERAND_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };

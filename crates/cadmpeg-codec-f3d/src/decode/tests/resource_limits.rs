@@ -257,7 +257,7 @@ fn face_appearance_binding_id_refuses_retained_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let assignment = face_assignment();
     let face = cadmpeg_ir::ids::FaceId::mint("f3d:test:face#one").unwrap();
-    let error = crate::ids::face_appearance_binding_id_charged(
+    let error = crate::ids::face_appearance_binding_id(
         &ctx,
         &assignment.face_guid,
         &assignment.visual_guid,
@@ -273,20 +273,17 @@ fn face_appearance_binding_id_preserves_identity_text() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
     let assignment = face_assignment();
     let face = cadmpeg_ir::ids::FaceId::mint("f3d:test:face#one").unwrap();
-    let charged = crate::ids::face_appearance_binding_id_charged(
+    let charged = crate::ids::face_appearance_binding_id(
         &ctx,
         &assignment.face_guid,
         &assignment.visual_guid,
         &face,
     )
     .unwrap();
-    let original = crate::ids::face_appearance_binding_id(
-        &assignment.face_guid,
-        assignment.visual_guid.identity_key(),
-        &face,
-    )
-    .unwrap();
-    assert_eq!(charged, original);
+    assert_eq!(
+        charged.as_str(),
+        "f3d:appearance:face#aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb:11111111-2222-3333-4444-555555555555_Post2015:23:f3d%3Atest%3Aface%23one"
+    );
 }
 
 #[test]

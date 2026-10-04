@@ -9,6 +9,153 @@ use crate::history_records::{
 };
 use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 
+fn mirror_selection_comparison_fixture() -> (
+    crate::records::feature::scope::DesignParameterScope,
+    crate::records::topology::construction::DesignConstructionOperandGroup,
+    crate::records::topology::entity_selection::DesignEntitySelectionOperand,
+    AsmHistory,
+) {
+    let stream = "f3d:Design/BulkStream.dat";
+    let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
+        &format!("{stream}:scope#42"),
+        crate::records::feature::scope::DesignFeatureKind::Mirror,
+        42,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(2);
+            draft.previous_history_state_id = Some(1);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    if let crate::records::feature::scope::DesignScopePayloadMut::Mirror(slot)
+    | crate::records::feature::scope::DesignScopePayloadMut::SymetrieMiroir(slot) =
+        scope.payload_mut()
+    {
+        *slot = Some(
+            serde_json::from_value(serde_json::json!({
+                "count": 2, "count_record_index": 11, "count_offset": 0,
+                "stitch_tolerance": 0.001, "stitch_tolerance_record_index": 12,
+                "stitch_tolerance_offset": 0, "seed_group_record_index": 20,
+                "plane_group_record_index": 30, "plane_selection_record_index": 40
+            }))
+            .unwrap(),
+        );
+    }
+    let group = serde_json::from_value(serde_json::json!({
+        "id": format!("{stream}:group#30"), "scope_record_index": 42,
+        "scope_reference_ordinal": 0, "record_index": 30, "byte_offset": 0,
+        "class_tag": "282", "members": [40], "member_offsets": [0],
+        "frame": {"member_count_offset": 0, "opaque_index": 1,
+            "opaque_index_offset": 18, "opaque_scalar": 0.0,
+            "opaque_scalar_offset": 22, "variant": false},
+        "role": 21_474_836_480u64, "role_offset": 0,
+        "paired_class_tag": "261", "paired_byte_offset": 0
+    }))
+    .unwrap();
+    let operand = serde_json::from_value(serde_json::json!({
+        "id": format!("{stream}:operand#40"), "scope_record_index": 42,
+        "group_record_index": 30, "group_member_ordinal": 0, "record_index": 40,
+        "byte_offset": 0, "class_tag": "313",
+        "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "asset_id_offset": 0,
+        "context_id": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e", "context_id_offset": 0,
+        "identity_record_index": 43, "identity_record_offset": 0,
+        "primary_identity": 10, "primary_identity_offset": 21,
+        "next_record_index": 42, "next_byte_offset": 29
+    }))
+    .unwrap();
+    let state = |state_id, transition| AsmDeltaState {
+        id: format!("history:state#{state_id}"),
+        parent: "history".into(),
+        byte_offset: 0,
+        state_id,
+        version_flag: 1,
+        state_flag: 0,
+        previous_ref: None,
+        next_ref: None,
+        node_index: state_id,
+        partner_ref: None,
+        owner_ref: 0,
+        bulletin_boards: Vec::new(),
+        records: Vec::new(),
+        entity_versions: Vec::new(),
+        topology_cache: crate::history_records::AsmTopologyCache::Complete(
+            AsmHistoricalTopology::default(),
+        ),
+        transition,
+    };
+    let history = AsmHistory {
+        id: "history".into(),
+        byte_offset: 0,
+        preamble: None,
+        record_table_binding_budget_exceeded: false,
+        states: vec![
+            state(
+                2,
+                Some(crate::history_records::AsmHistoricalTransition {
+                    previous_state_id: Some(1),
+                    records: Default::default(),
+                    topology: Default::default(),
+                }),
+            ),
+            state(1, None),
+        ],
+    };
+    (scope, group, operand, history)
+}
+
+fn mirror_face_operand_for_comparison() -> crate::records::topology::face::DesignFaceOperand {
+    serde_json::from_value(serde_json::json!({
+        "id": "f3d:Design/BulkStream.dat:face-operand#40",
+        "scope_record_index": 42,
+        "scope_reference_ordinal": 0,
+        "group_record_index": 30,
+        "group_member_ordinal": 0,
+        "record_index": 40,
+        "byte_offset": 0,
+        "class_tag": "276",
+        "paired_byte_offset": 16,
+        "paired_class_tag": "262",
+        "recipe_record_index": 43,
+        "recipe_record_byte_offset": 32,
+        "recipe_id": "f3d:Design/BulkStream.dat:construction-recipe#43",
+        "recipe_prefix_offset": 43,
+        "recipe_prefix_bytes": "",
+        "recipe_references": [],
+        "recipe_kind": "face",
+        "recipe_program_offset": 0,
+        "recipe_program": [0, -1],
+        "recipe_node_offsets": [],
+        "recipe_nodes": [],
+        "preceding_candidate_faces": ["f3d:brep:entity#10"],
+        "next_record_index": 44,
+        "next_byte_offset": 160
+    }))
+    .unwrap()
+}
+
+fn mirror_identity_for_comparison(
+) -> crate::records::topology::construction::DesignConstructionOperandIdentity {
+    use crate::records::topology::construction::{
+        DesignConstructionOperandIdentity, DesignConstructionOperandIdentityDraft,
+    };
+
+    DesignConstructionOperandIdentity::try_new(DesignConstructionOperandIdentityDraft {
+        id: "f3d:Design/BulkStream.dat:operand-identity#50".into(),
+        group_record_index: 30,
+        wrappers: Vec::new(),
+        following_record_index: 51,
+        following_byte_offset: 0,
+        following_class_tag: crate::records::references::DesignClassTag::try_from(
+            "289".to_owned(),
+        )
+        .unwrap(),
+        tracking_path: None,
+        persistent_identity: None,
+    })
+    .unwrap()
+}
+
 #[test]
 fn mirror_plane_candidate_uses_unique_primary_when_persistent_identity_is_absent() {
     let candidate = |history_id: &str, face_slot| {
@@ -230,6 +377,50 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
                 .expect("finite plane normal")
         )
     );
+}
+
+#[test]
+fn mirror_plane_binding_propagates_work_refusals_for_stream_comparisons() {
+    for (operation, include_face_operand, include_identity) in [
+        ("compare F3D Mirror plane group stream", false, false),
+        ("compare F3D Mirror plane operand stream", false, false),
+        ("compare F3D Mirror plane face-operand stream", true, false),
+        ("compare F3D Mirror plane identity stream", false, true),
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |decode| {
+                let (mut scope, group, operand, history) =
+                    mirror_selection_comparison_fixture();
+                let face_operands = if include_face_operand {
+                    vec![mirror_face_operand_for_comparison()]
+                } else {
+                    Vec::new()
+                };
+                let identities = if include_identity {
+                    vec![mirror_identity_for_comparison()]
+                } else {
+                    Vec::new()
+                };
+                bind_mirror_selection_planes(
+                    decode,
+                    std::slice::from_mut(&mut scope),
+                    std::slice::from_ref(&group),
+                    std::slice::from_ref(&operand),
+                    &face_operands,
+                    &identities,
+                    std::slice::from_ref(&history),
+                )
+                .map(|_| ())
+            },
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+        ));
+    }
 }
 
 #[test]

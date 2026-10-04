@@ -313,6 +313,18 @@ impl DesignVertexResolution {
     }
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for DesignVertexResolution {
+    const FIXED_BYTES: Option<u64> = Some(u64_from_index(std::mem::size_of::<Self>()));
+
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (&self.state_id, &self.vertex_slot).decode_cost(ctx, operation)
+    }
+}
+
 /// Exact persistent `vertex_recipe_data` envelope.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "DesignVertexRecipeWire")]
@@ -342,6 +354,36 @@ pub(crate) struct DesignVertexRecipe {
     pub(crate) resolution: Option<DesignVertexResolution>,
     /// Byte offset of the indexed record closing the envelope.
     next_byte_offset: u64,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for DesignVertexRecipe {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (
+            (
+                &self.frame,
+                &self.class_tag,
+                &self.paired_byte_offset,
+                &self.paired_class_tag,
+            ),
+            (
+                &self.recipe_record_byte_offset,
+                &self.recipe_id,
+                &self.recipe_prefix_bytes,
+                &self.recipe_references,
+            ),
+            (
+                &self.recipe_program_offset,
+                &self.recipe_program,
+                &self.resolution,
+                &self.next_byte_offset,
+            ),
+        )
+            .decode_cost(ctx, operation)
+    }
 }
 
 impl DesignVertexRecipe {
@@ -630,6 +672,28 @@ pub(crate) struct DesignEdgeTreatmentVertexOperand {
     pub(crate) group_member_ordinal: u32,
     /// Exact persistent vertex-recipe envelope and resolved historical corner.
     pub(crate) recipe: DesignVertexRecipe,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for DesignEdgeTreatmentVertexOperand {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (
+            (
+                &self.id,
+                &self.scope_record_index,
+                &self.scope_reference_ordinal,
+            ),
+            (
+                &self.group_record_index,
+                &self.group_member_ordinal,
+                &self.recipe,
+            ),
+        )
+            .decode_cost(ctx, operation)
+    }
 }
 
 /// Plane through three persistent B-rep vertices.

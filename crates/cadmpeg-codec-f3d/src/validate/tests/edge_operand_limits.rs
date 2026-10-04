@@ -172,3 +172,32 @@ fn edge_operand_invalid_entity_refuses_retained_limit() {
         if limit.operation == "retain F3D validation entity")
     );
 }
+
+#[test]
+fn edge_operand_full_value_comparison_refuses_work_limit() {
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "compare F3D expected edge operand",
+        0,
+        |decode| {
+            let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+            let native = native(true);
+            ir.native
+                .namespace_mut("f3d")
+                .set_arena(
+                    &cadmpeg_test_support::service_decode_context(),
+                    "design_edge_operands",
+                    &native.design_edge_operands,
+                )
+                .unwrap();
+            let ctx = super::super::Ctx::new(&ir, &native, decode)?;
+            super::super::validate_edge_operands(decode, &ctx, &mut Vec::new()).map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "compare F3D expected edge operand"
+                && limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+    ));
+}

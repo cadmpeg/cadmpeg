@@ -235,6 +235,163 @@ fn component_history_context_comparison_propagates_work_refusal() {
     ));
 }
 
+struct ComponentHistorySelectionFixture {
+    member: crate::records::topology::extrude_selection::DesignExtrudeSelectionMember,
+    naming_spaces: [crate::records::recipes::DesignComponentNamingSpace; 1],
+    body_bindings: [crate::records::bodies::DesignBodyBinding; 1],
+    histories: [AsmHistory; 2],
+}
+
+fn component_history_selection_fixture() -> ComponentHistorySelectionFixture {
+    let design_stream = "Asset/Design1/BulkStream.dat";
+    let naming_spaces = [crate::records::recipes::DesignComponentNamingSpace {
+        id: crate::test_support::with_decode_context(|ctx| {
+            crate::ids::native_design_component_naming_space_id(ctx, design_stream, 0)
+                .expect("test F3D native identity")
+        }),
+        byte_offset: 0,
+        component_record_index: 10,
+        context_uuid: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+            .to_owned()
+            .try_into()
+            .expect("GUID"),
+        context_uuid_offset: 12,
+    }];
+    let body_bindings = [
+        crate::records::bodies::DesignBodyBinding::try_from(
+            crate::records::bodies::DesignBodyBindingWire::<String> {
+                id: crate::test_support::with_decode_context(|ctx| {
+                    crate::ids::native_design_body_binding_id(ctx, design_stream, 200)
+                        .expect("test F3D native identity")
+                }),
+                stream: design_stream.into(),
+                pair_count: 1,
+                pair_ordinal: 0,
+                asm_body_key: 1,
+                asm_body_key_offset: 200,
+                entity_suffix: 15,
+                entity_suffix_offset: 208,
+                blob_name: "BREP.fixture-alpha.smbh".into(),
+                blob_name_offset: 216,
+                body: None,
+            },
+        )
+        .unwrap(),
+    ];
+    let history_id = crate::test_support::with_decode_context(|ctx| {
+        crate::ids::native_scoped_id(
+            ctx,
+            "Asset/Breps.BlobParts/BREP.fixture-alpha.smbh",
+            "asm-history",
+            0,
+        )
+        .expect("test F3D native identity")
+    });
+    let history = AsmHistory {
+        id: history_id,
+        byte_offset: 0,
+        preamble: None,
+        record_table_binding_budget_exceeded: false,
+        states: Vec::new(),
+    };
+    let histories = [history.clone(), history];
+    let member = crate::records::topology::extrude_selection::DesignExtrudeSelectionMember::try_new(
+        crate::records::topology::extrude_selection::DesignExtrudeSelectionMemberDraft {
+            id: crate::test_support::with_decode_context(|ctx| {
+                crate::ids::native_scoped_id(
+                    ctx,
+                    design_stream,
+                    "extrude-selection-member",
+                    400,
+                )
+                .expect("test F3D native identity")
+            }),
+            group_record_index: 1,
+            group_member_ordinal: 0,
+            record_index: 2,
+            byte_offset: 400,
+            class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned())
+                .unwrap(),
+            local_id: 42,
+            local_id_offset: 421,
+            asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+                "11111111-2222-4333-8444-555555555555".to_owned(),
+            )
+            .unwrap(),
+            asset_id_offset: 433,
+            context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+                "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee".to_owned(),
+            )
+            .unwrap(),
+            context_id_offset: 505,
+            tail_slot_present: false,
+            tail_slot_offset: 581,
+            resolved_geometry: None,
+            operand_identity_ids: Vec::new(),
+            historical: None,
+            next_record_index: 3,
+            next_byte_offset: 590,
+        },
+    )
+    .unwrap();
+    ComponentHistorySelectionFixture {
+        member,
+        naming_spaces,
+        body_bindings,
+        histories,
+    }
+}
+
+#[test]
+fn component_history_blob_scan_propagates_work_refusal() {
+    let fixture = component_history_selection_fixture();
+    let operation = "match F3D component history blobs";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |decode| {
+            historical_extrude_selection_identity_kind(
+                decode,
+                &fixture.member,
+                &fixture.naming_spaces,
+                &fixture.body_bindings,
+                &fixture.histories,
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn component_history_id_dedup_propagates_work_refusal() {
+    let fixture = component_history_selection_fixture();
+    let operation = "compare F3D component history IDs";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |decode| {
+            historical_extrude_selection_identity_kind(
+                decode,
+                &fixture.member,
+                &fixture.naming_spaces,
+                &fixture.body_bindings,
+                &fixture.histories,
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
 #[test]
 fn historical_recipe_join_unions_fragments_without_raw_selector_equality() {
     let mut topology = AsmHistoricalTopology {

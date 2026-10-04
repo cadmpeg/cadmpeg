@@ -294,7 +294,7 @@ fn ascii_field_views<'ctx, 'text>(
     Ok((storage, fields))
 }
 
-fn subd_id_charged(
+pub(crate) fn subd_id(
     ctx: &DecodeContext<'_>,
     name: &str,
     source_key: &str,
@@ -791,7 +791,7 @@ fn build_fan(
         let phantom_count = if fan.len() < 4 { 4 - fan.len() } else { 0 };
 
         ctx.reserve_vec(&mut fan, phantom_count, "complete T-spline fan gaps")?;
-        for _ in 0..phantom_count {
+        for _ in ctx.admit_iter(&(0..phantom_count), "complete T-spline fan gaps")? {
             let moved_slots = cadmpeg_core::decode::u64_from_index(fan.len() - gap - 1);
             let move_work = moved_slots
                 .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FanSlot>()))
@@ -2125,7 +2125,7 @@ ctx.push_vec(&mut symmetry_blocks, block, "read T-spline symmetry blocks")?;
         crease_incidence[index_from_u32(vertices[1])] += 1;
     }
     let mut vertices = Vec::new();
-    for index in 0..live_vertices {
+    for index in ctx.admit_iter(&(0..live_vertices), "project T-spline vertices")? {
         let secondary_layout = secondary_layouts[index].take();
         let vertex_index = u32::try_from(index)
             .map_err(|_| malformed(ctx, name, "T-spline vertex index exceeds u32"))?;
@@ -2185,7 +2185,7 @@ ctx.push_vec(&mut symmetry_blocks, block, "read T-spline symmetry blocks")?;
         .unwrap_or(name);
     Ok(ParsedCage {
         surface: SubdSurface {
-            id: subd_id_charged(ctx, name, source_key)?,
+            id: subd_id(ctx, name, source_key)?,
             scheme: SubdScheme::CatmullClark,
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::F3d,
@@ -2411,8 +2411,8 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
     #[test]
     fn tsm_charged_source_identity_matches_composed_identity() {
         let ctx = cadmpeg_test_support::service_decode_context();
-        let actual = super::subd_id_charged(&ctx, "synthetic.tsm", "synthetic").unwrap();
-        assert_eq!(actual, crate::ids::subd_id("synthetic").unwrap());
+        let actual = super::subd_id(&ctx, "synthetic.tsm", "synthetic").unwrap();
+        assert_eq!(actual.as_str(), "f3d:tspline:subd#synthetic");
     }
 
     #[test]
@@ -2545,6 +2545,24 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         quad_source(),
         "project T-spline vertices"
     );
+
+    #[test]
+    fn tsm_vertex_projection_refuses_work_limit() {
+        let source = quad_source();
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "project T-spline vertices",
+            0,
+            |ctx| super::parse(ctx, "synthetic.tsm", source.as_bytes()).map(|_| ()),
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                    && limit.operation == "project T-spline vertices"
+        ));
+    }
+
     tsm_quad_projection_limit_test!(
         tsm_creased_edge_index_refuses_collection_limit,
         quad_source(),
@@ -2613,6 +2631,29 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "complete T-spline fan gaps")
         );
+    }
+
+    #[test]
+    fn tsm_fan_gap_completion_refuses_work_limit() {
+        let half_edges = [super::HalfEdge {
+            next: super::HalfEdgeId(0),
+            previous: super::HalfEdgeId(0),
+            mate: super::HalfEdgeId(0),
+            vertex: 0,
+            face: None,
+        }];
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "complete T-spline fan gaps",
+            0,
+            |ctx| super::build_fan(ctx, "synthetic.tsm", 0, 0, &half_edges, &[]).map(|_| ()),
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                    && limit.operation == "complete T-spline fan gaps"
+        ));
     }
 
     #[test]

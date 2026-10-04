@@ -1680,19 +1680,32 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
             .collect::<Vec<_>>(),
         [Some([vec![7, 8], vec![7, 8]]), None]
     );
-    assert!(incident_loop_counts_satisfy_sides(
-        &[4, 5],
-        &[Some(5), Some(4)]
-    ));
-    assert!(!incident_loop_counts_satisfy_sides(
-        &[5, 6],
-        &[Some(5), Some(5)]
-    ));
-    assert!(incident_loop_counts_satisfy_sides(
-        &[5, 5],
-        &[Some(5), Some(5)]
-    ));
-    assert!(incident_loop_counts_satisfy_sides(&[5], &[None, Some(5)]));
+    crate::test_support::with_decode_context(|decode_ctx| {
+        assert!(incident_loop_counts_satisfy_sides(
+            decode_ctx,
+            &[4, 5],
+            &[Some(5), Some(4)]
+        )
+        .unwrap());
+        assert!(!incident_loop_counts_satisfy_sides(
+            decode_ctx,
+            &[5, 6],
+            &[Some(5), Some(5)]
+        )
+        .unwrap());
+        assert!(incident_loop_counts_satisfy_sides(
+            decode_ctx,
+            &[5, 5],
+            &[Some(5), Some(5)]
+        )
+        .unwrap());
+        assert!(incident_loop_counts_satisfy_sides(
+            decode_ctx,
+            &[5],
+            &[None, Some(5)]
+        )
+        .unwrap());
+    });
     assert_eq!(topology.edge_vertices[0].start_vertex, 8);
     assert_eq!(topology.edge_vertices[0].end_vertex, 9);
     assert_eq!(topology.face_surfaces[0].carrier, 20);
@@ -1897,3 +1910,18 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
 }
 
 mod identity;
+
+#[test]
+fn recipe_selector_side_count_scan_refuses_work_limit() {
+    let operation = "scan F3D recipe selector required sides";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |decode| incident_loop_counts_satisfy_sides(decode, &[5], &[Some(5)]),
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
