@@ -515,7 +515,7 @@ or exhausted bound retains an unproven finding.
 | `try_fold` | `fold` for slices; `admit_iter` before iterator consumption |
 | `Display output extent unresolved` | `format_retained` |
 | `attribute` | `xml_attribute` |
-| `retain` | `retain_vec`; hash tables are not scan-retained |
+| `retain` | `retain_vec` for vectors; `retain_btree_map` or `retain_btree_set` for B-trees; hash tables are not scan-retained |
 | `cmp` | `compare` |
 | `sum` | `sum` for slices; `admit_iter` before a standard scalar consumer |
 | `entry` | `entry_hash_map` or `entry_btree_map`; subsequent insertion uses typed storage admission |

@@ -727,7 +727,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     | "resize"
                     | "append"
                     | "extend"
-            ) || self.deep_work(checked_value) && !fixed_copy
+            ) || self.deep_work(checked_value)
+                && !fixed_copy
+                && !matches!(name, "retain" | "retain_mut")
                 || consumers && self.capacity_iteration(receiver))
         {
             paid = None;
