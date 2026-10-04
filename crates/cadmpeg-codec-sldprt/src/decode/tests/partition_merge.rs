@@ -599,3 +599,84 @@ fn decode_resolves_suffix_prefixed_edge_curve_with_high_byte_one() {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
     )));
 }
+
+#[test]
+fn colour_site_qualifier_character_refusal_reaches_the_decode_caller() {
+
+    let mut first = face_color_definition();
+    first.extend(entity51(
+        1,
+        700,
+        FACE_COLOR_DEFINITION_ID,
+        &[0, 0, 0, 0, 0, 900],
+    ));
+    first.extend(entity53_color(900, [0.25, 0.5, 0.75]));
+    first.extend(owned_triangle(0, 700, 0.0));
+    let mut second = face_color_definition();
+    second.extend(entity51(
+        1,
+        701,
+        FACE_COLOR_DEFINITION_ID,
+        &[0, 0, 0, 0, 0, 901],
+    ));
+    second.extend(entity53_color(901, [0.75, 0.5, 0.25]));
+    second.extend(owned_triangle(0, 701, 10.0));
+
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x20,
+        "Contents/Config-0-Partition",
+        &parasolid_with_body("first partition", "SCH_SW_33103_11000", &first),
+    ));
+    source.extend(make_block(
+        0x21,
+        "Contents/Config-1-Partition",
+        &parasolid_with_body("second partition", "SCH_SW_33103_11000", &second),
+    ));
+
+
+    let run = |cap| {
+        let mut options = DecodeOptions::default();
+        options.policy.limits.max_work_units = cap;
+        SldprtCodec.decode(&mut Cursor::new(&source), &options).map_err(|error| match error {
+            cadmpeg_ir::DecodeFailure::Codec(error) => error,
+            error => panic!("unexpected qualifier refusal: {error:?}"),
+        })
+    };
+    // Key insertion order changes the preceding work. Match one pair of fresh runs.
+    let error = (0..64).find_map(|_| {
+        let mut cap = 0;
+        for _ in 0..8192 {
+            match run(cap) {
+                Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
+                    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+                    let need = limit.used.checked_add(limit.additional).unwrap();
+                    assert!(need > cap);
+                    if limit.operation == "retain SLDPRT colour site qualifier" {
+                        match run(need - 1) {
+                            Err(cadmpeg_core::CodecError::ResourceLimit(replay)) => {
+                                assert_eq!(replay.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+                                if replay.operation == limit.operation
+                                    && replay.used.checked_add(replay.additional) == Some(need)
+                                {
+                                    return Some(cadmpeg_core::CodecError::ResourceLimit(replay));
+                                }
+                            }
+                            Err(error) => panic!("unexpected qualifier replay: {error:?}"),
+                            Ok(_) => {}
+                        }
+                        break;
+                    }
+                    cap = need;
+                }
+                Err(error) => panic!("unexpected qualifier refusal: {error:?}"),
+                Ok(_) => break,
+            }
+        }
+        None
+    }).expect("a named qualifier boundary and its one-unit-below replay");
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("colour qualifier refusal"); };
+    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "retain SLDPRT colour site qualifier");
+    assert_eq!(limit.additional, 1);
+}

@@ -307,19 +307,15 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
             let (mut value, reservation) = self
                 .ctx
                 .scoped_string(end - start, "retain SLDPRT quoted parameter token")?;
-            self.ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(end - start),
-                "copy SLDPRT quoted parameter token",
-            )?;
             let mut cursor = start;
             while cursor < end {
                 let rest = &self.input[cursor..end];
                 if rest.starts_with("\"\"") {
-                    value.push('"');
+                    self.ctx.push_retained_char(&mut value, '"', "append SLDPRT decoded character")?;
                     cursor += 2;
                 } else {
                     let character = rest.chars().next().ok_or(ExpressionFailure::NoValue)?;
-                    value.push(character);
+                    self.ctx.push_retained_char(&mut value, character, "append SLDPRT decoded character")?;
                     cursor += character.len_utf8();
                 }
             }

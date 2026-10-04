@@ -2453,7 +2453,7 @@ fn rendered_dimensions(
         };
         let (mut text, _text_reservation) =
             ctx.scoped_string(bytes, "decode SWIFT rendered literal text")?;
-        if decode_rendered_utf16(payload, start, units, &mut text).is_none() {
+        if decode_rendered_utf16(ctx, payload, start, units, &mut text)?.is_none() {
             continue;
         }
         let parsed = rendered_dimension_literals(ctx, &text)?;
@@ -2468,38 +2468,38 @@ fn rendered_dimensions(
 }
 
 fn decode_rendered_utf16(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     units: usize,
     text: &mut String,
-) -> Option<()> {
+) -> Result<Option<()>, cadmpeg_core::CodecError> {
     let mut view = View::over_retained(payload);
-    view.seek(start)?;
+    if view.seek(start).is_none() { return Ok(None); }
     let mut remaining = units;
     while remaining > 0 {
-        let unit = view.u16_le()?;
-        remaining = remaining.checked_sub(1)?;
+        let Some(unit) = view.u16_le() else { return Ok(None); };
+        let Some(next_remaining) = remaining.checked_sub(1) else { return Ok(None); };
+        remaining = next_remaining;
         let codepoint = if (0xd800..=0xdbff).contains(&unit) {
-            if remaining == 0 {
-                return None;
-            }
-            let low = view.u16_le()?;
-            remaining = remaining.checked_sub(1)?;
-            if !(0xdc00..=0xdfff).contains(&low) {
-                return None;
-            }
-            let upper = u32::from(unit & 0x03ff).checked_shl(10)?;
-            0x10000u32
-                .checked_add(upper)?
-                .checked_add(u32::from(low & 0x03ff))?
+            if remaining == 0 { return Ok(None); }
+            let Some(low) = view.u16_le() else { return Ok(None); };
+            let Some(next_remaining) = remaining.checked_sub(1) else { return Ok(None); };
+            remaining = next_remaining;
+            if !(0xdc00..=0xdfff).contains(&low) { return Ok(None); }
+            let Some(upper) = u32::from(unit & 0x03ff).checked_shl(10) else { return Ok(None); };
+            let Some(upper) = 0x10000u32.checked_add(upper) else { return Ok(None); };
+            let Some(codepoint) = upper.checked_add(u32::from(low & 0x03ff)) else { return Ok(None); };
+            codepoint
         } else if (0xdc00..=0xdfff).contains(&unit) {
-            return None;
+            return Ok(None);
         } else {
             u32::from(unit)
         };
-        text.push(char::from_u32(codepoint)?);
+        let Some(character) = char::from_u32(codepoint) else { return Ok(None); };
+        ctx.push_retained_char(&mut *text, character, "append SLDPRT decoded character")?;
     }
-    Some(())
+    Ok(Some(()))
 }
 
 fn rendered_dimension_literals(

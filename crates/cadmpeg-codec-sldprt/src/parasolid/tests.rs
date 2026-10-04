@@ -540,3 +540,23 @@ fn parasolid_frame_storage_refuses_before_expansion_allocation() {
     assert_eq!(ctx.resource_refusal(), Some(limit));
     assert_eq!(allocations, 0);
 }
+
+#[test]
+fn lossy_description_character_refusal_preserves_the_resource_limit() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let mut output = String::new();
+    super::append_lossy_utf8(&ctx, &mut output, &[b'a', 0xff, b'z']).unwrap();
+    assert_eq!(output, "a�z");
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut output = String::new();
+    let error = super::append_lossy_utf8(&ctx, &mut output, &[0xff]).unwrap_err();
+    let CodecError::ResourceLimit(limit) = error else { panic!("replacement character refusal"); };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "append SLDPRT decoded character");
+    assert_eq!(limit.additional, 3);
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+    assert!(output.is_empty());
+}

@@ -50,7 +50,13 @@ pub(super) fn admit(
             }).ok_or_else(|| ctx.refuse_codec_limit("decode SLDPRT native validation name", u64::MAX, u64::MAX))?;
             let (mut expected, _reservation) =
                 ctx.scoped_string(length, "decode SLDPRT native validation name")?;
-            expected.extend(characters()?.filter_map(Result::ok));
+            for character in characters()?.filter_map(Result::ok) {
+                ctx.push_retained_char(
+                    &mut expected,
+                    character,
+                    "decode SLDPRT native validation name",
+                )?;
+            }
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                     "SolidWorks feature-input name value does not match its native payload: lane {} name {index} states {:?}, its payload states {:?}",
                     lane.id, actual.value, expected

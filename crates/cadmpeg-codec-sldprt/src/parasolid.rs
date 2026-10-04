@@ -497,7 +497,7 @@ pub(crate) fn stream_header(
         description_len,
         "retain Parasolid stream description",
     )?;
-    append_lossy_utf8(&mut description, description_bytes);
+    append_lossy_utf8(ctx, &mut description, description_bytes)?;
 
     let schema_text = token.value();
     let owned_schema = ctx.copy_retained_text(schema_text, "retain Parasolid schema token")?;
@@ -527,7 +527,7 @@ fn lossy_utf8_len(mut bytes: &[u8]) -> Option<usize> {
     }
 }
 
-fn append_lossy_utf8(output: &mut String, mut bytes: &[u8]) {
+fn append_lossy_utf8(ctx: &cadmpeg_core::decode::DecodeContext<'_>, output: &mut String, mut bytes: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
     loop {
         match std::str::from_utf8(bytes) {
             Ok(valid) => {
@@ -539,7 +539,7 @@ fn append_lossy_utf8(output: &mut String, mut bytes: &[u8]) {
                 if let Ok(valid) = valid {
                     output.push_str(valid);
                 }
-                output.push(char::REPLACEMENT_CHARACTER);
+                ctx.push_retained_char(&mut *output, char::REPLACEMENT_CHARACTER, "append SLDPRT decoded character")?;
                 let invalid = error
                     .error_len()
                     .unwrap_or(bytes.len() - error.valid_up_to());
@@ -550,6 +550,7 @@ fn append_lossy_utf8(output: &mut String, mut bytes: &[u8]) {
             }
         }
     }
+    Ok::<_, cadmpeg_core::CodecError>(())
 }
 
 /// Test whether the description identifies a partition or deltas body stream.
