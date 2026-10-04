@@ -319,7 +319,7 @@ pub(super) fn insert_parameter_property(
         .ok_or_else(|| {
         cadmpeg_core::CodecError::malformed(format_args!("NX parameter property key is blank"))
     })?;
-    if !properties.contains_key(&key) {
+    if !ctx.contains_key_btree_map(properties, &key, "NX parameter property membership")? {
         ctx.charge_collection_items(1, "NX parameter properties")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(
