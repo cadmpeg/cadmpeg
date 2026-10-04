@@ -66,13 +66,33 @@ pub fn collection_growth(
     output.extend(texts.iter().map(String::as_str)); // finding: unproven_decode_charge, uncharged_decode_work
     // replacement: push_vec
     values.push(byte); // finding: uncharged_decode_allocation
+    // replacement: insert_vec
+    values.insert(0, byte); // finding: unproven_decode_charge, uncharged_decode_work
+    // replacement: extend_vec
+    values.extend(Some(byte)); // finding: unproven_decode_charge
+}
+
+pub fn borrowed_extension(_ctx: &DecodeContext, values: &mut Vec<u8>, source: &[u8]) {
+    // The slice supplies a resolved input-sized slot extent; neither dimension is admitted.
+    // replacement: extend_vec
+    values.extend(source); // finding: uncharged_decode_allocation, uncharged_decode_work
 }
 
 impl DecodeContext {
+    pub fn equal_hash_set<S>(&self, _left: &S, _right: &S, _operation: &str) -> Result<bool, ()> { Ok(false) }
     pub fn retained_string(&self, _capacity: usize, _operation: &str) -> Result<String, ()> { Ok(String::new()) }
     pub fn collect_text(&self, _values: impl IntoIterator<Item = char>, _operation: &str) -> Result<String, ()> { Ok(String::new()) }
     pub fn strip_prefix<'a>(&self, bytes: &'a [u8], _prefix: &[u8], _operation: &str) -> Result<Option<&'a [u8]>, ()> { Ok(Some(bytes)) }
     pub fn strip_suffix<'a>(&self, bytes: &'a [u8], _suffix: &[u8], _operation: &str) -> Result<Option<&'a [u8]>, ()> { Ok(Some(bytes)) }
+}
+pub fn set_equality(ctx: &DecodeContext, left: &HashSet<String>, right: &HashSet<String>, optional_left: &Option<HashSet<String>>, optional_right: &Option<HashSet<String>>) -> Result<(), ()> {
+    // replacement: equal_hash_set
+    let _value = left == right; // finding: uncharged_decode_work
+    // replacement: equal_hash_set
+    let _value = optional_left == optional_right; // finding: uncharged_decode_work
+    let _value = ctx.equal_hash_set(left, right, "sets")?;
+    let _value = ctx.equal_hash_set(optional_left, optional_right, "optional sets")?;
+    Ok(())
 }
 pub fn string_collection(ctx: &DecodeContext, chars: &[char], capacity: usize) -> Result<(), ()> {
     // replacement: retained_string
@@ -91,4 +111,27 @@ pub fn byte_queries(ctx: &DecodeContext, bytes: &[u8], pattern: &[u8]) -> Result
     let _value = ctx.strip_prefix(bytes, pattern, "prefix")?;
     let _value = ctx.strip_suffix(bytes, pattern, "suffix")?;
     Ok(())
+}
+
+impl DecodeContext {
+    pub fn xml_root_element<'n, 'i>(&self, document: &'n roxmltree::Document<'i>, _operation: &str) -> Result<roxmltree::Node<'n, 'i>, ()> { Ok(document.root()) }
+    pub fn xml_has_tag_name(&self, _node: roxmltree::Node<'_, '_>, _name: &str, _operation: &str) -> Result<bool, ()> { Ok(false) }
+    pub fn xml_attribute<'n, 'i>(&self, _node: roxmltree::Node<'n, 'i>, _name: &str, _operation: &str) -> Result<Option<&'n str>, ()> { Ok(None) }
+}
+pub fn xml_queries(ctx: &DecodeContext, document: &roxmltree::Document<'_>, node: roxmltree::Node<'_, '_>, name: &str) -> Result<(), ()> {
+    // replacement: xml_root_element
+    let _value = document.root_element(); // finding: uncharged_decode_work
+    // replacement: xml_has_tag_name
+    let _value = node.has_tag_name(name); // finding: uncharged_decode_work
+    // replacement: xml_attribute
+    let _value = node.attribute(name); // finding: uncharged_decode_work
+    let _value = ctx.xml_root_element(document, "root")?;
+    let _value = ctx.xml_has_tag_name(node, name, "tag")?;
+    let _value = ctx.xml_attribute(node, name, "attribute")?;
+    Ok(())
+}
+
+pub fn zip_name_probe(_ctx: &DecodeContext, archive: &mut zip::ZipArchive<std::io::Cursor<&[u8]>>, index: usize) {
+    // replacement: cadmpeg_container::ArchiveSnapshot::probe_readable_names for tolerant name probes; ArchiveSnapshot::new followed by ArchiveSnapshot::open for payload reads; DecodeContext::begin_expand admits decompression
+    let _entry = archive.by_index(index); // finding: uncharged_decode_allocation, uncharged_decode_work
 }

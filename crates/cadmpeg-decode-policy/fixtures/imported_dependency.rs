@@ -101,6 +101,43 @@ pub mod decode {
     pub mod cost {
         pub trait DecodeCost {}
         impl DecodeCost for String {}
+        impl DecodeCost for super::super::key_callbacks::ImportedMarkerHashKey {}
+        impl DecodeCost for super::super::key_callbacks::ImportedMarkerEqKey {}
+        impl DecodeCost for super::super::key_callbacks::ImportedSelfEqWithOtherRhs {}
+    }
+
+    pub mod context {
+        use std::collections::HashSet;
+        use std::hash::{BuildHasher, Hash};
+
+        use super::cost::DecodeCost;
+
+        pub struct DecodeContext;
+
+        impl DecodeContext {
+            pub fn charge_key<K: DecodeCost>(
+                &self,
+                _key: &K,
+                _factor: u64,
+                _operation: &'static str,
+            ) -> Result<(), ()> {
+                Ok(())
+            }
+
+            pub fn equal_hash_set<K, S>(
+                &self,
+                values: &HashSet<K, S>,
+                key: &K,
+                operation: &'static str,
+            ) -> Result<bool, ()>
+            where
+                K: DecodeCost + Eq + Hash,
+                S: BuildHasher,
+            {
+                self.charge_key(key, 1, operation)?;
+                Ok(values.contains(key))
+            }
+        }
     }
 }
 impl DecodeContext {
@@ -148,4 +185,73 @@ pub fn generic_write_str<W: std::fmt::Write>(
     suffix: &str,
 ) -> std::fmt::Result {
     output.write_str(suffix)
+}
+
+pub mod key_callbacks {
+    use std::hash::{Hash, Hasher};
+
+    pub struct ImportedMarkerHashKey(pub String);
+
+    #[automatically_derived]
+    impl Hash for ImportedMarkerHashKey {
+        fn hash<H: Hasher>(&self, state: &mut H) {
+            for byte in self.0.bytes() {
+                state.write_u8(byte);
+            }
+        }
+    }
+
+    #[automatically_derived]
+    impl PartialEq for ImportedMarkerHashKey {
+        fn eq(&self, other: &Self) -> bool {
+            self.0 == other.0
+        }
+    }
+
+    #[automatically_derived]
+    impl Eq for ImportedMarkerHashKey {}
+
+    pub struct ImportedMarkerEqKey(pub String);
+
+    #[automatically_derived]
+    impl Hash for ImportedMarkerEqKey {
+        fn hash<H: Hasher>(&self, state: &mut H) {
+            self.0.hash(state);
+        }
+    }
+
+    #[automatically_derived]
+    impl PartialEq for ImportedMarkerEqKey {
+        fn eq(&self, other: &Self) -> bool {
+            for (left, right) in self.0.bytes().zip(other.0.bytes()) {
+                if left != right {
+                    return false;
+                }
+            }
+            true
+        }
+    }
+
+    #[automatically_derived]
+    impl Eq for ImportedMarkerEqKey {}
+
+    #[derive(Hash, PartialEq, Eq)]
+    pub struct ImportedSelfEqWithOtherRhs(pub String);
+
+    pub struct ImportedScanningRhs(pub String);
+
+    #[automatically_derived]
+    impl PartialEq<ImportedScanningRhs> for ImportedSelfEqWithOtherRhs {
+        fn eq(&self, other: &ImportedScanningRhs) -> bool {
+            if self.0.len() != other.0.len() {
+                return false;
+            }
+            for (left, right) in self.0.bytes().zip(other.0.bytes()) {
+                if left != right {
+                    return false;
+                }
+            }
+            true
+        }
+    }
 }

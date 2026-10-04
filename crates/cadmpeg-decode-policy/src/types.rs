@@ -27,9 +27,118 @@ pub(crate) fn standard(tcx: TyCtxt<'_>, definition: rustc_span::def_id::DefId) -
     )
 }
 
+/// Matches an item's defining path, without using a public re-export path.
+/// Anonymous path components are rejected, so closures and impl-owned items
+/// cannot collapse onto a shorter named path.
+pub(crate) fn physical_item_path(
+    tcx: TyCtxt<'_>,
+    definition: rustc_span::def_id::DefId,
+    crate_name: &str,
+    parts: &[&str],
+) -> bool {
+    if tcx.crate_name(definition.krate).as_str() != crate_name {
+        return false;
+    }
+    let path = tcx.def_path(definition);
+    path.data.len() == parts.len()
+        && path.data.iter().zip(parts).all(|(component, expected)| {
+            let name = match component.data {
+                rustc_hir::definitions::DefPathData::TypeNs(name)
+                | rustc_hir::definitions::DefPathData::ValueNs(name)
+                | rustc_hir::definitions::DefPathData::MacroNs(name) => name,
+                _ => return false,
+            };
+            name.as_str() == *expected
+        })
+}
+
+/// Matches one exact inherent method through its defining impl self type.
+/// This handles the anonymous `Impl` component without matching by display
+/// string or by method name alone.
+pub(crate) fn physical_inherent_method(
+    tcx: TyCtxt<'_>,
+    definition: rustc_span::def_id::DefId,
+    crate_name: &str,
+    owner_parts: &[&str],
+    method: &str,
+) -> bool {
+    if tcx.crate_name(definition.krate).as_str() != crate_name
+        || tcx
+            .opt_item_name(definition)
+            .is_none_or(|name| name.as_str() != method)
+        || !matches!(
+            tcx.def_kind(tcx.parent(definition)),
+            rustc_hir::def::DefKind::Impl { of_trait: false }
+        )
+    {
+        return false;
+    }
+    let implementation = tcx.parent(definition);
+    let self_type = tcx
+        .type_of(implementation)
+        .instantiate_identity()
+        .skip_norm_wip();
+    matches!(self_type.kind(), ty::Adt(owner, _)
+        if physical_item_path(tcx, owner.did(), crate_name, owner_parts))
+}
+
+pub(crate) fn inherent_method_owner(
+    tcx: TyCtxt<'_>,
+    definition: rustc_span::def_id::DefId,
+    crate_name: &str,
+    owner_path: &str,
+    method: &str,
+) -> bool {
+    let owner_parts: Vec<_> = owner_path.split("::").collect();
+    physical_inherent_method(tcx, definition, crate_name, &owner_parts, method)
+}
+
+pub(crate) fn decode_context_method(
+    tcx: TyCtxt<'_>,
+    definition: rustc_span::def_id::DefId,
+    method: &str,
+) -> bool {
+    inherent_method_owner(
+        tcx,
+        definition,
+        "cadmpeg_core",
+        "decode::context::DecodeContext",
+        method,
+    )
+}
+
 pub(crate) fn standard_string(tcx: TyCtxt<'_>, value: Ty<'_>) -> bool {
     matches!(value.peel_refs().kind(), ty::Adt(owner, _)
         if standard(tcx, owner.did()) && tcx.item_name(owner.did()).as_str() == "String")
+}
+
+pub(crate) fn standard_str_chars_call(
+    tcx: TyCtxt<'_>,
+    definition: rustc_span::def_id::DefId,
+    receiver: Ty<'_>,
+    output: Ty<'_>,
+) -> bool {
+    if tcx.crate_name(definition.krate).as_str() != "core"
+        || tcx
+            .opt_item_name(definition)
+            .is_none_or(|name| name.as_str() != "chars")
+        || !matches!(
+            tcx.def_kind(tcx.parent(definition)),
+            rustc_hir::def::DefKind::Impl { of_trait: false }
+        )
+    {
+        return false;
+    }
+    let implementation = tcx.parent(definition);
+    let self_type = tcx
+        .type_of(implementation)
+        .instantiate_identity()
+        .skip_norm_wip();
+    matches!(self_type.kind(), ty::Str)
+        && (matches!(receiver.peel_refs().kind(), ty::Str)
+            || standard_string(tcx, receiver))
+        && matches!(output.peel_refs().kind(), ty::Adt(owner, _)
+            if physical_item_path(tcx, owner.did(), "core", &["str", "iter", "Chars"]))
 }
 
 pub(crate) fn reveal_opaque<'tcx>(tcx: TyCtxt<'tcx>, value: Ty<'tcx>) -> Ty<'tcx> {
@@ -50,7 +159,7 @@ impl<'tcx> TypeFolder<TyCtxt<'tcx>> for RevealOpaque<'tcx> {
     }
 
     fn fold_ty(&mut self, value: Ty<'tcx>) -> Ty<'tcx> {
-        if self.active.contains(&value) {
+        if self.active.contains(&value) || self.active.len() >= self.tcx.recursion_limit().0 {
             return value;
         }
         self.active.push(value);
@@ -103,7 +212,7 @@ pub(crate) fn slot_storage<'tcx>(tcx: TyCtxt<'tcx>, element: Ty<'tcx>) -> Shape 
 }
 
 pub(crate) fn heap<'tcx>(tcx: TyCtxt<'tcx>, value: Ty<'tcx>, seen: &mut Vec<Ty<'tcx>>) -> Shape {
-    if seen.contains(&value) {
+    if seen.contains(&value) || seen.len() >= tcx.recursion_limit().0 {
         return Shape::Unknown;
     }
     let depth = seen.len();
@@ -173,6 +282,9 @@ pub(crate) fn has_context<'tcx>(
     if seen.contains(&value) {
         return false;
     }
+    if seen.len() >= tcx.recursion_limit().0 {
+        return true;
+    }
     seen.push(value);
     match value.kind() {
         ty::Adt(definition, arguments) => {
@@ -209,7 +321,7 @@ pub(crate) fn has_context<'tcx>(
 
 pub(crate) fn work<'tcx>(tcx: TyCtxt<'tcx>, value: Ty<'tcx>, seen: &mut Vec<Ty<'tcx>>) -> Shape {
     let value = value.peel_refs();
-    if seen.contains(&value) {
+    if seen.contains(&value) || seen.len() >= tcx.recursion_limit().0 {
         return Shape::Unknown;
     }
     let depth = seen.len();
@@ -345,18 +457,32 @@ pub(crate) fn admitted_iterator<'tcx>(tcx: TyCtxt<'tcx>, value: Ty<'tcx>) -> boo
     let ty::Adt(owner, arguments) = reveal_opaque(tcx, value.peel_refs()).kind() else {
         return false;
     };
-    if tcx.item_name(owner.did()).as_str() == "AdmittedIter"
-        && (tcx.crate_name(owner.did().krate).as_str() == "cadmpeg_core"
-            && matches!(
-                tcx.def_path_str(owner.did()).as_str(),
-                "decode::scan::AdmittedIter" | "cadmpeg_core::decode::scan::AdmittedIter"
-            )
-            || std::env::var_os("CADMPEG_POLICY_FIXTURE").is_some()
-                && owner.did().is_local()
-                && tcx
-                    .def_path_str(owner.did())
-                    .ends_with("decode::scan::AdmittedIter"))
-    {
+    let admitted_type = physical_item_path(
+        tcx,
+        owner.did(),
+        "cadmpeg_core",
+        &["decode", "scan", "AdmittedIter"],
+    ) || std::env::var_os("CADMPEG_POLICY_FIXTURE").is_some()
+        && owner.did().is_local()
+        && tcx.opt_item_name(owner.did()).is_some_and(|name| name.as_str() == "AdmittedIter")
+        && tcx
+            .def_path(owner.did())
+            .data
+            .iter()
+            .rev()
+            .take(3)
+            .map(|part| match part.data {
+                rustc_hir::definitions::DefPathData::TypeNs(name)
+                | rustc_hir::definitions::DefPathData::ValueNs(name)
+                | rustc_hir::definitions::DefPathData::MacroNs(name) => Some(name),
+                _ => None,
+            })
+            .eq([
+                Some(rustc_span::Symbol::intern("AdmittedIter")),
+                Some(rustc_span::Symbol::intern("scan")),
+                Some(rustc_span::Symbol::intern("decode")),
+            ]);
+    if admitted_type {
         return true;
     }
     if !standard(tcx, owner.did()) {
@@ -419,21 +545,24 @@ pub(crate) fn serde_deserialize(tcx: TyCtxt<'_>, trait_id: rustc_span::def_id::D
 }
 
 pub(crate) fn cost_trait(tcx: TyCtxt<'_>, trait_id: rustc_span::def_id::DefId) -> bool {
-    tcx.crate_name(trait_id.krate).as_str() == "cadmpeg_core"
-        && matches!(
-            tcx.def_path_str(trait_id).as_str(),
-            "cadmpeg_core::decode::cost::DecodeCost" | "decode::cost::DecodeCost"
-        )
+    physical_item_path(
+        tcx,
+        trait_id,
+        "cadmpeg_core",
+        &["decode", "cost", "DecodeCost"],
+    )
 }
 
-pub(crate) fn text_source_trait(tcx: TyCtxt<'_>, trait_id: rustc_span::def_id::DefId) -> bool {
-    tcx.crate_name(trait_id.krate).as_str() == "cadmpeg_core"
-        && matches!(
-            tcx.def_path_str(trait_id).as_str(),
-            "cadmpeg_core::decode::text::TextSource" | "decode::text::TextSource"
-                | "cadmpeg_core::decode::text::QuerySource" | "decode::text::QuerySource"
-                | "cadmpeg_core::decode::text_collect::TextFragment" | "decode::text_collect::TextFragment"
-        )
+pub(crate) fn closed_source_trait(tcx: TyCtxt<'_>, trait_id: rustc_span::def_id::DefId) -> bool {
+    [
+        &["decode", "text", "TextSource"][..],
+        &["decode", "text", "QuerySource"][..],
+        &["decode", "text_collect", "TextFragment"][..],
+        &["decode", "extend_source", "ExtendSource"][..],
+        &["decode", "compare", "HashSetSource"][..],
+    ]
+    .iter()
+    .any(|path| physical_item_path(tcx, trait_id, "cadmpeg_core", path))
 }
 
 pub(crate) fn closed_admission_body(tcx: TyCtxt<'_>, mut owner: rustc_span::def_id::DefId) -> bool {
@@ -442,7 +571,7 @@ pub(crate) fn closed_admission_body(tcx: TyCtxt<'_>, mut owner: rustc_span::def_
             tcx.def_kind(parent),
             rustc_hir::def::DefKind::Impl { of_trait: true }
         ) && (cost_trait(tcx, tcx.impl_trait_ref(parent).skip_binder().def_id)
-            || text_source_trait(tcx, tcx.impl_trait_ref(parent).skip_binder().def_id))
+            || closed_source_trait(tcx, tcx.impl_trait_ref(parent).skip_binder().def_id))
         {
             return true;
         }

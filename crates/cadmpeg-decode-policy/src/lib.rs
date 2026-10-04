@@ -14,10 +14,14 @@ mod allocation;
 mod callback;
 mod callee;
 mod conversion;
+mod decoder_progress;
 mod extent;
 mod external;
+mod external_callbacks;
 mod fixed;
 mod flow;
+mod grammar;
+mod hash_set_callbacks;
 mod instantiation;
 mod iteration;
 mod key_work;
@@ -26,7 +30,16 @@ mod replacement;
 mod scalar;
 mod scope;
 mod serde;
+mod serde_bounds;
 mod storage;
+mod structural_fixed;
+mod structural_derived;
+mod structural_json;
+mod structural_map;
+mod structural_projection;
+mod structural_record;
+mod structural_scalar;
+mod structural_wire;
 mod types;
 mod work;
 
@@ -44,6 +57,7 @@ struct Findings {
     externals: BTreeSet<String>,
     conversions: HashMap<rustc_hir::HirId, Vec<bool>>,
     admitted_operations: HashSet<rustc_hir::HirId>,
+    handled_work_operations: HashSet<rustc_hir::HirId>,
     admitted_growth_operations: HashSet<rustc_hir::HirId>,
     key_work_proofs: BTreeSet<String>,
     entries: BTreeMap<(String, usize, u32, u32, String), BTreeSet<String>>,
