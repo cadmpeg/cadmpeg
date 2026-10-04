@@ -1737,7 +1737,7 @@ pub(crate) fn project_compact_surface_selections(
                             ctx.try_reserve_retained_text(&mut local_id, local_id_bytes, OPERATION)?;
                             for id in target.components.iter().filter_map(|component| component.local_id) {
                                 if !local_id.is_empty() {
-                                    local_id.push(',');
+                                    ctx.push_retained_char(&mut local_id, ',', "format SLDPRT surface cut body separator")?;
                                 }
                                 write!(local_id, "{id}").map_err(|_| {
                                     cadmpeg_core::CodecError::malformed("cannot format SLDPRT surface cut body id")
@@ -2569,12 +2569,12 @@ fn format_surface_path_set<'a>(
             continue;
         }
         if emitted != 0 {
-            value.push(';');
+            ctx.push_retained_char(&mut value, ';', "format SLDPRT surface path separator")?;
         }
         ctx.append_retained(&mut value, PATH_PREFIX, operation)?;
         for (component_index, component) in components.iter().enumerate() {
             if component_index != 0 {
-                value.push(',');
+                ctx.push_retained_char(&mut value, ',', "format SLDPRT surface component separator")?;
             }
             match component.local_id {
                 Some(local_id) => write!(value, "{local_id}").map_err(|_| {
@@ -2921,7 +2921,7 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                             continue;
                         }
                         if last.is_some() {
-                            native.push(',');
+                            ctx.push_retained_char(&mut native, ',', "format SLDPRT cylinder reference separator")?;
                         }
                         ctx.append_retained(&mut native, reference, NATIVE_OPERATION)?;
                         last = Some(reference.as_str());
