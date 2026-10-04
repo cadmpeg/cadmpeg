@@ -811,7 +811,7 @@ pub(super) fn bind_offset_plane_references(
             else {
                 continue;
             };
-            if frames.contains_key(&feature.id) {
+            if ctx.contains_key_hash_map(&(frames), &feature.id, "test SLDPRT map key")? {
                 continue;
             }
             let Some(&(origin, normal, u_axis)) = ctx.get_hash_map(&(frames), reference, "look up SLDPRT hash key")? else {
@@ -907,7 +907,7 @@ pub(super) fn bind_offset_plane_references(
                 let candidate = &candidate.id;
                 let distance = distance.get().abs().copysign(signed_distance);
                 let root = canonical_plane_id(ctx, candidate, &zero_offset_parents)?;
-                if !candidates_by_root.contains_key(root) {
+                if !ctx.contains_key_hash_map(&(candidates_by_root), root, "test SLDPRT map key")? {
                     ctx.insert_hash_map(
                         &mut candidates_by_root,
                         root,

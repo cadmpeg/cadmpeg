@@ -2851,7 +2851,7 @@ fn decode_graph(
                     == Some(appearance.value.face_attr)
             })
             .map(|face| id_face(face.bridge_attr))
-            .filter(|face| emitted_faces.contains_key(face.as_str()))
+            .map(|face| Ok::<_, cadmpeg_core::CodecError>(ctx.contains_key_hash_map(&emitted_faces, face.as_str(), "test SLDPRT map key")?.then_some(face))).transpose()?.flatten()
             .map(cadmpeg_ir::ids::FaceId::into_string);
     }
     let mut bound_faces = HashSet::new();
@@ -6872,7 +6872,7 @@ fn solve_face_orientation(
                     .id
                     .try_clone_for_decode(ctx, "SLDPRT orientation root identity")?;
                 ctx.charge_work(1, "solve Parasolid face senses")?;
-                if solved.contains_key(&root) {
+                if ctx.contains_key_hash_map(&(solved), &root, "test SLDPRT map key")? {
                     continue;
                 }
                 ctx.admit_hash_map_entry(&mut solved, &root, "track solved Parasolid face senses")?;
@@ -6888,7 +6888,7 @@ fn solve_face_orientation(
                     let sense = solved[&face];
                     if let Some(values) = ctx.get_hash_map(&(adjacency), &face, "look up SLDPRT hash key")? {
 for (neighbor, parity) in ctx.admit_iter(values, "walk Parasolid face adjacency")? {
-                        if !solved.contains_key(neighbor) {
+                        if !ctx.contains_key_hash_map(&(solved), neighbor, "test SLDPRT map key")? {
                             ctx.admit_hash_map_entry(
                                 &mut solved,
                                 neighbor,

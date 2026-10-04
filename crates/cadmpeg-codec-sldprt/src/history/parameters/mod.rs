@@ -667,7 +667,7 @@ impl ParameterAliases {
                 }
             }
             let local = if let Some(owner) = parameter.owner.as_ref() {
-                if !aliases.feature_local.contains_key(owner) {
+                if !ctx.contains_key_hash_map(&(aliases.feature_local), owner, "test SLDPRT map key")? {
                     let id = copy_projected_feature_id(ctx, owner)?;
                     ctx.insert_hash_map(
                         &mut aliases.feature_local,
