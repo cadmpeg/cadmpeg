@@ -22,6 +22,7 @@ pub mod scan;
 mod sort;
 mod space;
 pub mod text;
+pub mod text_collect;
 mod text_queries;
 pub mod tree;
 mod unique;

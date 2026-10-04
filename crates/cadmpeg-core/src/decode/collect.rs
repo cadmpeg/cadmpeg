@@ -77,7 +77,7 @@ pub(super) enum LinearGrowth {
 impl DecodeContext<'_> {
     /// Charges the next source step before it can yield or run an adapter.
     /// Callers supply a fixed-step source or adapters over admitted bases.
-    pub(crate) fn next_charged<I: Iterator>(
+    pub fn next_charged<I: Iterator>(
         &self,
         values: &mut I,
         operation: &'static str,
@@ -1663,6 +1663,7 @@ impl DecodeContext<'_> {
         length: usize,
         operation: &'static str,
     ) -> Result<String, CodecError> {
+        self.validate_vector_length::<u8>(0, length, operation)?;
         self.charge_retained(u64_from_index(length), operation)?;
         let mut value = String::new();
         value.try_reserve_exact(length).map_err(|_| {
