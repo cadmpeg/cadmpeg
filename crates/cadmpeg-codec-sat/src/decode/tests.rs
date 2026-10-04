@@ -399,8 +399,8 @@ fn unknown_record_retention_preserves_its_resource_refusal() {
     )
     .unwrap();
     let mut policy = DecodePolicy::service();
-    // One dialect layer, twelve native arenas and two coverage nodes precede the unknown links.
-    policy.limits.max_collection_items = 15;
+    // One dialect layer, twelve native arenas, one geometry loss and two coverage nodes use sixteen slots.
+    policy.limits.max_collection_items = 16;
     let error = with_context(&[], &policy, |ctx| {
         super::build_result(
             ctx,

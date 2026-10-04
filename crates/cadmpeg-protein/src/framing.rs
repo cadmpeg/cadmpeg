@@ -239,7 +239,9 @@ mod tests {
         // The frame vector has four slots. Its byte vector starts with eight
         // slots and doubles to sixteen for the marker and five-byte payload.
         let live = 4 * std::mem::size_of::<super::RecordFrame>() + 16;
-        policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(live);
+        // Reallocation overlaps the old eight-byte vector with its new storage.
+        let peak = live + 8;
+        policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(peak);
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
@@ -253,16 +255,20 @@ mod tests {
         drop(frames);
         let reservation = ctx
             .reserve_scoped(
-                cadmpeg_core::decode::u64_from_index(live),
+                cadmpeg_core::decode::u64_from_index(peak),
                 "reuse frame storage",
             )
             .expect("frame owner released all scoped storage");
         drop(reservation);
         let frames =
             super::record_frames_admitted(&ctx, &bytes).expect("frame storage can be reused");
+        let overlap = ctx
+            .reserve_scoped(8, "unused growth overlap allowance")
+            .expect("growth overlap is released while frames remain live");
         assert!(
             matches!(ctx.reserve_scoped(1, "probe live frame storage"), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
         );
+        drop(overlap);
         drop(frames);
     }
 
