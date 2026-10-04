@@ -107,6 +107,12 @@ impl<'s, 'ctx, 'arena> Projector<'s, 'ctx, 'arena> {
         self.ctx.charge_work(1, self.operation)?;
         Ok(self.ctx.enter_nested(self.operation)?)
     }
+    fn source_steps(self, count: usize) -> Result<(), Error> {
+        self.admit(
+            self.ctx
+                .charge_work(u64_from_index(count), self.operation),
+        )
+    }
     fn text(self, text: &str) -> Result<Value, Error> {
         let _depth = self.node()?;
         self.ctx
@@ -124,8 +130,13 @@ impl<'s, 'ctx, 'arena> Projector<'s, 'ctx, 'arena> {
             .grow(u64_from_index(size_of::<Value>()))?;
         Ok(Box::new(value))
     }
-    fn sequence(self, variant: Option<&'static str>) -> Result<Sequence<'s, 'ctx, 'arena>, Error> {
+    fn sequence(
+        self,
+        variant: Option<&'static str>,
+        source_steps: usize,
+    ) -> Result<Sequence<'s, 'ctx, 'arena>, Error> {
         let depth = self.node()?;
+        self.source_steps(source_steps)?;
         let variant_depth = variant.map(|_| self.node()).transpose()?;
         let variant = variant.map(|name| self.text(name)).transpose()?;
         Ok(Sequence {
@@ -136,8 +147,13 @@ impl<'s, 'ctx, 'arena> Projector<'s, 'ctx, 'arena> {
             _variant_depth: variant_depth,
         })
     }
-    fn map(self, variant: Option<&'static str>) -> Result<Object<'s, 'ctx, 'arena>, Error> {
+    fn map(
+        self,
+        variant: Option<&'static str>,
+        source_steps: usize,
+    ) -> Result<Object<'s, 'ctx, 'arena>, Error> {
         let depth = self.node()?;
+        self.source_steps(source_steps)?;
         let variant_depth = variant.map(|_| self.node()).transpose()?;
         let variant = variant.map(|name| self.text(name)).transpose()?;
         Ok(Object {
@@ -214,7 +230,7 @@ fn key_work(
                 .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
         }
         Value::Map(entries) => {
-            for (key, value) in entries {
+            for (key, value) in ctx.admit_iter(entries, operation)? {
                 for child in [key, value] {
                     count = count
                         .checked_add(key_work(ctx, child, operation)?)
@@ -223,7 +239,7 @@ fn key_work(
             }
         }
         Value::Seq(values) => {
-            for value in values {
+            for value in ctx.admit_iter(values, operation)? {
                 count = count
                     .checked_add(key_work(ctx, value, operation)?)
                     .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
@@ -323,46 +339,46 @@ impl<'s, 'ctx, 'arena> Serializer for Projector<'s, 'ctx, 'arena> {
         let value = value.serialize(self)?;
         self.variant(Some(key), value)
     }
-    fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq, Error> {
-        self.sequence(None)
+    fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq, Error> {
+        self.sequence(None, len.unwrap_or(0))
     }
-    fn serialize_tuple(self, _len: usize) -> Result<Self::SerializeTuple, Error> {
-        self.sequence(None)
+    fn serialize_tuple(self, len: usize) -> Result<Self::SerializeTuple, Error> {
+        self.sequence(None, len)
     }
     fn serialize_tuple_struct(
         self,
         _name: &'static str,
-        _len: usize,
+        len: usize,
     ) -> Result<Self::SerializeTupleStruct, Error> {
-        self.sequence(None)
+        self.sequence(None, len)
     }
     fn serialize_tuple_variant(
         self,
         _name: &'static str,
         _index: u32,
         variant: &'static str,
-        _len: usize,
+        len: usize,
     ) -> Result<Self::SerializeTupleVariant, Error> {
-        self.sequence(Some(variant))
+        self.sequence(Some(variant), len)
     }
-    fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap, Error> {
-        self.map(None)
+    fn serialize_map(self, len: Option<usize>) -> Result<Self::SerializeMap, Error> {
+        self.map(None, len.unwrap_or(0))
     }
     fn serialize_struct(
         self,
         _name: &'static str,
-        _len: usize,
+        len: usize,
     ) -> Result<Self::SerializeStruct, Error> {
-        self.map(None)
+        self.map(None, len)
     }
     fn serialize_struct_variant(
         self,
         _name: &'static str,
         _index: u32,
         variant: &'static str,
-        _len: usize,
+        len: usize,
     ) -> Result<Self::SerializeStructVariant, Error> {
-        self.map(Some(variant))
+        self.map(Some(variant), len)
     }
 }
 
