@@ -159,7 +159,7 @@ impl DraftIdentityFrame {
             return Ok(None);
         };
         let mut identity = ctx.retained_string(len, "NX draft identity text")?;
-        identity.push_str(text);
+        ctx.append_retained(&mut identity, text, "NX admitted text append")?;
         Ok(Some(Self {
             prefix,
             identity,

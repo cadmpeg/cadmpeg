@@ -509,7 +509,7 @@ pub(crate) fn offset_store_named_point<'a>(
                 if candidate.is_none() {
                     let value = name.value();
                     let mut owned = ctx.retained_string(value.len(), "NX named point name")?;
-                    owned.push_str(value);
+                    ctx.append_retained(&mut owned, value, "NX admitted text append")?;
                     candidate = Some(OffsetStoreNamedPoint {
                         name: owned,
                         values: [first_scalar, second_scalar].map(|field| LocatedBinary64 {

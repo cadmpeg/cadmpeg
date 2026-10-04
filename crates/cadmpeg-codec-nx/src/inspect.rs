@@ -361,18 +361,18 @@ fn insert_summary_attribute(
 
     let mut key = String::new();
     ctx.try_reserve_retained_text(&mut key, key_len, "nx summary attribute text")?;
-    key.push_str(prefix);
+    ctx.append_retained(&mut key, prefix, "NX admitted text append")?;
     if lowercase_suffix {
         for character in suffix.chars() {
             key.push(character.to_ascii_lowercase());
         }
     } else {
-        key.push_str(suffix);
+        ctx.append_retained(&mut key, suffix, "NX admitted text append")?;
     }
     let mut rendered = String::new();
     ctx.try_reserve_retained_text(&mut rendered, value_len, "nx summary attribute text")?;
     match value {
-        SummaryValue::Text(text) => rendered.push_str(text),
+        SummaryValue::Text(text) => ctx.append_retained(&mut rendered, text, "NX admitted text append")?,
         SummaryValue::Number(number) => write!(&mut rendered, "{number}")
             .map_err(|_| ctx.refuse_codec_limit("nx summary attribute text", 0, 1))?,
     }

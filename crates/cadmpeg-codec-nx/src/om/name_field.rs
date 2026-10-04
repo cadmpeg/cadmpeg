@@ -88,7 +88,7 @@ impl NameField<&str, usize, ()> {
             target: source_offset(u64_from_index(code.offset)),
         });
         let mut value = ctx.retained_string(self.value.len(), "NX native name field")?;
-        value.push_str(self.value);
+        ctx.append_retained(&mut value, self.value, "NX admitted text append")?;
         Ok(NameField::new(value, offset, code).ok())
     }
 }
