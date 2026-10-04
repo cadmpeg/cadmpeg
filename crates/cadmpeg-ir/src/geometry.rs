@@ -499,13 +499,7 @@ impl SolvedCurveGeometry {
             Self::Nurbs(value) => Self::Nurbs(value.try_clone_for_decode(ctx, operation)?),
             Self::Polyline(value) => Self::Polyline(value.try_clone_for_decode(ctx, operation)?),
             Self::Transformed(value) => {
-                let _depth = ctx.enter_nested(operation)?;
-                charge_decode_copy::<Self>(1, ctx, operation)?;
-                Self::Transformed(PlacedCurve {
-                    basis: Box::new(value.basis.try_clone_for_decode(ctx, operation)?),
-                    transform: value.transform,
-                    depth: value.depth,
-                })
+                Self::Transformed(value.try_clone_for_decode(ctx, operation)?)
             }
             Self::Unknown { record } => Self::Unknown {
                 record: record
@@ -564,6 +558,27 @@ struct PlacedCurveWire {
 }
 
 impl PlacedCurve {
+    // Keep placement recursion out of the carrier match's large stack frame.
+    fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        let _depth = ctx.enter_nested(operation)?;
+        charge_decode_copy::<SolvedCurveGeometry>(1, ctx, operation)?;
+        let basis = if let SolvedCurveGeometry::Transformed(placed) = self.basis.as_ref() {
+            ctx.charge_work(1, operation)?;
+            SolvedCurveGeometry::Transformed(placed.try_clone_for_decode(ctx, operation)?)
+        } else {
+            self.basis.try_clone_for_decode(ctx, operation)?
+        };
+        Ok(Self {
+            basis: Box::new(basis),
+            transform: self.transform,
+            depth: self.depth,
+        })
+    }
+
     /// Place a basis curve, refusing a chain past [`MAX_GEOMETRY_NESTING`].
     ///
     /// # Errors
