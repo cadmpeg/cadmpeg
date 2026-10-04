@@ -46,10 +46,7 @@ impl Identifier16 {
 struct NonzeroDocumentId(Identifier16);
 
 impl NonzeroDocumentId {
-    fn try_new(
-        ctx: &DecodeContext<'_>,
-        value: Identifier16,
-    ) -> Result<Option<Self>, CodecError> {
+    fn try_new(ctx: &DecodeContext<'_>, value: Identifier16) -> Result<Option<Self>, CodecError> {
         if ctx
             .admit_iter(
                 value.as_str().as_bytes(),
@@ -80,8 +77,14 @@ pub(crate) fn occurrence_issue(header_padding_words: u8, record_len: u64) -> Opt
     }
 }
 
-fn malformed(ctx: &DecodeContext<'_>, detail: &str, operation: &'static str) -> Result<CodecError, CodecError> {
-    Ok(CodecError::Malformed(ctx.copy_retained_text(detail, operation)?))
+fn malformed(
+    ctx: &DecodeContext<'_>,
+    detail: &str,
+    operation: &'static str,
+) -> Result<CodecError, CodecError> {
+    Ok(CodecError::Malformed(
+        ctx.copy_retained_text(detail, operation)?,
+    ))
 }
 
 fn qualify_error(
@@ -91,10 +94,9 @@ fn qualify_error(
     operation: &'static str,
 ) -> Result<CodecError, CodecError> {
     match error {
-        CodecError::Malformed(detail) => Ok(CodecError::Malformed(ctx.format_retained(
-            format_args!("{field}: {detail}"),
-            operation,
-        )?)),
+        CodecError::Malformed(detail) => Ok(CodecError::Malformed(
+            ctx.format_retained(format_args!("{field}: {detail}"), operation)?,
+        )),
         error => Ok(error),
     }
 }
@@ -129,10 +131,9 @@ fn arena_conversion_error(
     }
     let message = match error {
         CodecError::Malformed(message) => message,
-        error => ctx.format_retained(
-            format_args!("{error}"),
-            "format Inventor UFRx reader issue",
-        )?,
+        error => {
+            ctx.format_retained(format_args!("{error}"), "format Inventor UFRx reader issue")?
+        }
     };
     let source = NativeConvertError::ReadRecordMessage {
         id: record.identity_for_decode(ctx, "retain Inventor native record error identity")?,
@@ -155,8 +156,7 @@ fn convert_arena<Wire, Record>(
     arena: &'static str,
     operation: &'static str,
     mut convert: impl FnMut(Wire, &DecodeContext<'_>) -> Result<Record, CodecError>,
-)
-    -> Result<Vec<Record>, NativeConvertError>
+) -> Result<Vec<Record>, NativeConvertError>
 where
     Wire: serde::de::DeserializeOwned,
 {
@@ -298,41 +298,35 @@ impl UfrxRepresentationRecordWire {
         self,
         ctx: &DecodeContext<'_>,
     ) -> Result<UfrxRepresentationRecord, CodecError> {
-        let active_representation = match (
-            self.active_representation,
-            self.active_representation_kind,
-        ) {
-            (None, None) => None,
-            (Some(name), Some(kind)) => {
-                let name = required(
-                    ctx,
-                    NonBlankString::for_decode(
+        let active_representation =
+            match (self.active_representation, self.active_representation_kind) {
+                (None, None) => None,
+                (Some(name), Some(kind)) => {
+                    let name = required(
                         ctx,
-                        name,
-                        "validate active_representation",
-                    )?,
-                    "active_representation must not be empty",
-                    "retain Inventor UFRx representation conversion issue",
-                )?;
-                let kind = required(
-                    ctx,
-                    NonBlankString::for_decode(
+                        NonBlankString::for_decode(ctx, name, "validate active_representation")?,
+                        "active_representation must not be empty",
+                        "retain Inventor UFRx representation conversion issue",
+                    )?;
+                    let kind = required(
                         ctx,
-                        kind,
-                        "validate active_representation_kind",
-                    )?,
-                    "active_representation_kind must not be empty",
-                    "retain Inventor UFRx representation conversion issue",
-                )?;
-                Some((name, kind))
-            }
-            _ => {
-                return Err(CodecError::Malformed(ctx.copy_retained_text(
+                        NonBlankString::for_decode(
+                            ctx,
+                            kind,
+                            "validate active_representation_kind",
+                        )?,
+                        "active_representation_kind must not be empty",
+                        "retain Inventor UFRx representation conversion issue",
+                    )?;
+                    Some((name, kind))
+                }
+                _ => {
+                    return Err(CodecError::Malformed(ctx.copy_retained_text(
                     "active_representation and active_representation_kind must be present together",
                     "retain Inventor UFRx representation conversion issue",
                 )?));
-            }
-        };
+                }
+            };
         let active_model_state = required(
             ctx,
             NonBlankString::for_decode(
@@ -860,7 +854,11 @@ pub(crate) struct ExternalReferenceRecordWire {
     pub(crate) display_name: String,
     pub(crate) state_groups: Vec<[u16; 3]>,
     pub(crate) state: [u16; 2],
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_document_id"
+    )]
     pub(crate) document_id: Option<String>,
     pub(crate) database_id: String,
     pub(crate) reference_id: u32,
@@ -868,6 +866,8 @@ pub(crate) struct ExternalReferenceRecordWire {
     pub(crate) version: u32,
     pub(crate) flags: u32,
 }
+
+cadmpeg_core::named_optional_field!(deserialize_document_id, String, "document_id");
 
 impl ExternalReferenceRecordWire {
     pub(crate) fn into_record(
@@ -917,10 +917,8 @@ impl ExternalReferenceRecordWire {
                 "retain Inventor UFRx external conversion issue",
             )?);
         }
-        let parsed_ordinal = ctx.parse_text::<u32>(
-            suffix,
-            "parse Inventor UFRx external reference ordinal",
-        )?;
+        let parsed_ordinal =
+            ctx.parse_text::<u32>(suffix, "parse Inventor UFRx external reference ordinal")?;
         if parsed_ordinal.ok() != Some(self.ordinal) {
             return Err(malformed(
                 ctx,
@@ -957,11 +955,7 @@ impl ExternalReferenceRecordWire {
             }
             None => None,
         };
-        let path = NonBlankString::for_decode(
-            ctx,
-            self.path,
-            "validate path",
-        )?;
+        let path = NonBlankString::for_decode(ctx, self.path, "validate path")?;
         let identity = match (path, document_id) {
             (Some(path), document_id) => ExternalReferenceIdentity::Path { path, document_id },
             (None, Some(document_id)) => ExternalReferenceIdentity::DocumentId(document_id),
@@ -1015,19 +1009,15 @@ impl ExternalReferenceRecord {
     ) -> Result<cadmpeg_ir::products::ExternalDocument, CodecError> {
         use cadmpeg_ir::products::ExternalDocument;
         Ok(match &self.identity {
-            ExternalReferenceIdentity::Path { path, .. } => {
-                ExternalDocument::Path {
-                    path: path.try_clone_for_decode(
-                        ctx,
-                        "copy Inventor UFRx external document path",
-                    )?,
-                }
-            }
+            ExternalReferenceIdentity::Path { path, .. } => ExternalDocument::Path {
+                path: path
+                    .try_clone_for_decode(ctx, "copy Inventor UFRx external document path")?,
+            },
             ExternalReferenceIdentity::DocumentId(document_id) => ExternalDocument::DocumentId {
-                document_id: document_id.0 .0.try_clone_for_decode(
-                    ctx,
-                    "copy Inventor UFRx external document identifier",
-                )?,
+                document_id: document_id
+                    .0
+                     .0
+                    .try_clone_for_decode(ctx, "copy Inventor UFRx external document identifier")?,
             },
         })
     }
@@ -1299,18 +1289,20 @@ impl UfrxRecord {
         )?;
         if record_count != 1 {
             return Err(NativeConvertError::ConversionMessage(ctx.format_retained(
-                    format_args!(
-                        "Inventor native data has {} UFRxDoc state records",
-                        record_count
-                    ),
-                    "format Inventor UFRx record count issue",
-                )?));
+                format_args!(
+                    "Inventor native data has {} UFRxDoc state records",
+                    record_count
+                ),
+                "format Inventor UFRx record count issue",
+            )?));
         }
         let Some((wire, representation)) = record else {
-            return Err(NativeConvertError::ConversionMessage(ctx.copy_retained_text(
-                "native record disappeared during UFRx conversion",
-                "retain Inventor UFRx reader issue",
-            )?));
+            return Err(NativeConvertError::ConversionMessage(
+                ctx.copy_retained_text(
+                    "native record disappeared during UFRx conversion",
+                    "retain Inventor UFRx reader issue",
+                )?,
+            ));
         };
         let model_states = convert_arena::<UfrxModelStateRecordWire, _>(
             ctx,
@@ -1378,9 +1370,7 @@ mod tests {
         convert(wire, &ctx).map_err(|error| error.to_string())
     }
 
-    fn decode_representation(
-        value: serde_json::Value,
-    ) -> Result<UfrxRepresentationRecord, String> {
+    fn decode_representation(value: serde_json::Value) -> Result<UfrxRepresentationRecord, String> {
         from_wire::<UfrxRepresentationRecordWire, _>(value, |wire, ctx| wire.into_record(ctx))
     }
 
@@ -1388,11 +1378,15 @@ mod tests {
         from_wire::<UfrxModelStateRecordWire, _>(value, |wire, ctx| wire.into_record(ctx))
     }
 
-    fn decode_external_reference(value: serde_json::Value) -> Result<ExternalReferenceRecord, String> {
+    fn decode_external_reference(
+        value: serde_json::Value,
+    ) -> Result<ExternalReferenceRecord, String> {
         from_wire::<ExternalReferenceRecordWire, _>(value, |wire, ctx| wire.into_record(ctx))
     }
 
-    fn decode_embedded_reference(value: serde_json::Value) -> Result<EmbeddedReferenceRecord, String> {
+    fn decode_embedded_reference(
+        value: serde_json::Value,
+    ) -> Result<EmbeddedReferenceRecord, String> {
         from_wire::<EmbeddedReferenceRecordWire, _>(value, |wire, ctx| wire.into_record(ctx))
     }
 
@@ -1413,11 +1407,11 @@ mod tests {
             "active_representation_kind": "LOD", "secondary_active_lod_state": [0, 0],
             "active_model_state": "Primary", "active_model_state_state": [0, 0]
         });
-        let admitted: UfrxRepresentationRecord = from_wire::<UfrxRepresentationRecordWire, _>(
-            representation.clone(),
-            |wire, ctx| wire.into_record(ctx),
-        )
-        .expect("valid fixture");
+        let admitted: UfrxRepresentationRecord =
+            from_wire::<UfrxRepresentationRecordWire, _>(representation.clone(), |wire, ctx| {
+                wire.into_record(ctx)
+            })
+            .expect("valid fixture");
         let record = Row {
             id: "inventor:ufrx:representation#0",
             representation: &admitted,
@@ -1435,11 +1429,11 @@ mod tests {
             "name": "Primary", "state": [0, 0], "prefix_count": 0,
             "parameters": [], "suffix_len": 77, "suffix_sha256": "a".repeat(64)
         });
-        let record: UfrxModelStateRecord = from_wire::<UfrxModelStateRecordWire, _>(
-            expected.clone(),
-            |wire, ctx| wire.into_record(ctx),
-        )
-        .expect("valid fixture");
+        let record: UfrxModelStateRecord =
+            from_wire::<UfrxModelStateRecordWire, _>(expected.clone(), |wire, ctx| {
+                wire.into_record(ctx)
+            })
+            .expect("valid fixture");
         assert_native_limit(&record, expected);
     }
 
@@ -1452,11 +1446,11 @@ mod tests {
             "database_id": "0".repeat(32), "reference_id": 1, "occurrence_count": 0,
             "version": 0, "flags": 0
         });
-        let record: ExternalReferenceRecord = from_wire::<ExternalReferenceRecordWire, _>(
-            expected.clone(),
-            |wire, ctx| wire.into_record(ctx),
-        )
-        .expect("valid fixture");
+        let record: ExternalReferenceRecord =
+            from_wire::<ExternalReferenceRecordWire, _>(expected.clone(), |wire, ctx| {
+                wire.into_record(ctx)
+            })
+            .expect("valid fixture");
         assert_native_limit(&record, expected);
     }
 
@@ -1470,11 +1464,11 @@ mod tests {
             "state_values": [0,0,0,0,0,0,0,0], "record_len": 1,
             "record_sha256": "a".repeat(64)
         });
-        let record: EmbeddedReferenceRecord = from_wire::<EmbeddedReferenceRecordWire, _>(
-            expected.clone(),
-            |wire, ctx| wire.into_record(ctx),
-        )
-        .expect("valid fixture");
+        let record: EmbeddedReferenceRecord =
+            from_wire::<EmbeddedReferenceRecordWire, _>(expected.clone(), |wire, ctx| {
+                wire.into_record(ctx)
+            })
+            .expect("valid fixture");
         assert_native_limit(&record, expected);
     }
 
@@ -1487,11 +1481,11 @@ mod tests {
             "header_padding_words": 8, "record_len": 1,
             "record_sha256": "a".repeat(64)
         });
-        let record: UfrxOccurrenceRecord = from_wire::<UfrxOccurrenceRecordWire, _>(
-            expected.clone(),
-            |wire, ctx| wire.into_record(ctx),
-        )
-        .expect("valid fixture");
+        let record: UfrxOccurrenceRecord =
+            from_wire::<UfrxOccurrenceRecordWire, _>(expected.clone(), |wire, ctx| {
+                wire.into_record(ctx)
+            })
+            .expect("valid fixture");
         assert_native_limit(&record, expected);
     }
 
@@ -1523,18 +1517,20 @@ mod tests {
             "state": [0, 0], "prefix_count": 0, "parameters": [],
             "suffix_len": 76, "suffix_sha256": "a".repeat(64)
         });
-        assert!(from_wire::<UfrxModelStateRecordWire, _>(model.clone(), |wire, ctx| {
-            wire.into_record(ctx)
-        })
-        .expect_err("wrong suffix length")
-        .contains("suffix_len must be 77"));
+        assert!(
+            from_wire::<UfrxModelStateRecordWire, _>(model.clone(), |wire, ctx| {
+                wire.into_record(ctx)
+            })
+            .expect_err("wrong suffix length")
+            .contains("suffix_len must be 77")
+        );
         let mut model = model;
         model["suffix_len"] = serde_json::json!(77);
-        assert!(from_wire::<UfrxModelStateRecordWire, _>(model, |wire, ctx| {
-            wire.into_record(ctx)
-        })
-        .expect_err("blank model name")
-        .contains("name must not be empty"));
+        assert!(
+            from_wire::<UfrxModelStateRecordWire, _>(model, |wire, ctx| { wire.into_record(ctx) })
+                .expect_err("blank model name")
+                .contains("name must not be empty")
+        );
         assert_eq!(
             embedded_reference_issue(0),
             Some("record_len must not be zero")
@@ -1549,46 +1545,48 @@ mod tests {
             "active_representation_kind": " ", "secondary_active_lod_state": [0, 0],
             "active_model_state": " ", "active_model_state_state": [0, 0]
         });
-        assert!(from_wire::<UfrxRepresentationRecordWire, _>(
-            representation,
-            |wire, ctx| wire.into_record(ctx)
-        )
-        .expect_err("blank representation name")
-        .contains("active_representation must not be empty"));
+        assert!(
+            from_wire::<UfrxRepresentationRecordWire, _>(representation, |wire, ctx| wire
+                .into_record(ctx))
+            .expect_err("blank representation name")
+            .contains("active_representation must not be empty")
+        );
         let mut representation = serde_json::json!({
             "prefix": 0, "active_representation": "name",
             "active_representation_kind": null, "secondary_active_lod_state": [0, 0],
             "active_model_state": " ", "active_model_state_state": [0, 0]
         });
         representation["active_representation_kind"] = serde_json::json!(" ");
-        assert!(from_wire::<UfrxRepresentationRecordWire, _>(
-            representation,
-            |wire, ctx| wire.into_record(ctx)
-        )
-        .expect_err("blank representation kind")
-        .contains("active_representation_kind must not be empty"));
+        assert!(
+            from_wire::<UfrxRepresentationRecordWire, _>(representation, |wire, ctx| wire
+                .into_record(ctx))
+            .expect_err("blank representation kind")
+            .contains("active_representation_kind must not be empty")
+        );
         let representation = serde_json::json!({
             "prefix": 0, "active_representation": "name",
             "active_representation_kind": null, "secondary_active_lod_state": [0, 0],
             "active_model_state": " ", "active_model_state_state": [0, 0]
         });
-        assert!(from_wire::<UfrxRepresentationRecordWire, _>(
-            representation,
-            |wire, ctx| wire.into_record(ctx)
-        )
-        .expect_err("half representation pair")
-        .contains("active_representation and active_representation_kind must be present together"));
+        assert!(
+            from_wire::<UfrxRepresentationRecordWire, _>(representation, |wire, ctx| wire
+                .into_record(ctx))
+            .expect_err("half representation pair")
+            .contains(
+                "active_representation and active_representation_kind must be present together"
+            )
+        );
         let representation = serde_json::json!({
             "prefix": 0, "active_representation": null,
             "active_representation_kind": null, "secondary_active_lod_state": [0, 0],
             "active_model_state": " ", "active_model_state_state": [0, 0]
         });
-        assert!(from_wire::<UfrxRepresentationRecordWire, _>(
-            representation,
-            |wire, ctx| wire.into_record(ctx)
-        )
-        .expect_err("blank active model state")
-        .contains("active_model_state must not be empty"));
+        assert!(
+            from_wire::<UfrxRepresentationRecordWire, _>(representation, |wire, ctx| wire
+                .into_record(ctx))
+            .expect_err("blank active model state")
+            .contains("active_model_state must not be empty")
+        );
         let external = serde_json::json!({
             "id": "inventor:ufrx:external-reference#0", "ordinal": 0,
             "path": " ", "library_id": 0, "library_name": "", "display_name": "",
@@ -1596,11 +1594,13 @@ mod tests {
             "database_id": "0".repeat(32), "reference_id": 1, "occurrence_count": 0,
             "version": 0, "flags": 0
         });
-        assert!(from_wire::<ExternalReferenceRecordWire, _>(external, |wire, ctx| {
-            wire.into_record(ctx)
-        })
-        .expect_err("blank path and zero document ID")
-        .contains("path or a nonzero document_id is required"));
+        assert!(
+            from_wire::<ExternalReferenceRecordWire, _>(external, |wire, ctx| {
+                wire.into_record(ctx)
+            })
+            .expect_err("blank path and zero document ID")
+            .contains("path or a nonzero document_id is required")
+        );
     }
 
     #[test]
@@ -1698,7 +1698,8 @@ mod tests {
             serde_json::to_value(admitted).expect("valid native record fixture"),
             occurrence
         );
-        let admitted = decode_embedded_reference(embedded.clone()).expect("valid native record fixture");
+        let admitted =
+            decode_embedded_reference(embedded.clone()).expect("valid native record fixture");
         assert_eq!(
             serde_json::to_value(admitted).expect("valid native record fixture"),
             embedded
@@ -1820,8 +1821,7 @@ mod tests {
             .install(&crate::native::test_ctx(), &mut namespace)
             .expect("valid test fixture");
         assert_eq!(
-            UfrxRecord::read(&crate::native::test_ctx(), &namespace)
-                .expect("valid test fixture"),
+            UfrxRecord::read(&crate::native::test_ctx(), &namespace).expect("valid test fixture"),
             record
         );
         let mut wire = namespace

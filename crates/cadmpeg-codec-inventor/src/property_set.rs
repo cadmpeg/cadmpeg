@@ -127,9 +127,7 @@ impl PropertyValue<'_> {
             Self::String { value, .. } => {
                 ctx.copy_retained_text(value, "retain OLE scalar text")?
             }
-            Self::Guid { value, .. } => {
-                hex(ctx, value)?
-            }
+            Self::Guid { value, .. } => hex(ctx, value)?,
             Self::Empty { .. }
             | Self::Float { .. }
             | Self::Binary { .. }
@@ -170,13 +168,11 @@ pub(crate) fn inventory<'a>(
         }
         let state = match parse_property_set_stream(ctx, view) {
             Ok(property_set) => PropertySetState::Parsed(property_set),
-            Err(error) => {
-                PropertySetState::Malformed(crate::issue_detail(
-                    ctx,
-                    error,
-                    "retain Inventor malformed property-set detail",
-                )?)
-            }
+            Err(error) => PropertySetState::Malformed(crate::issue_detail(
+                ctx,
+                error,
+                "retain Inventor malformed property-set detail",
+            )?),
         };
         ctx.push_vec(
             &mut property_sets,
@@ -227,9 +223,9 @@ pub(crate) fn parse_property_set_stream<'a>(
     let mut fmtids_storage = ctx.reserve_scoped(0, "admit OLE section FMTIDs")?;
     for _ in 0..section_count {
         let fmtid = cursor.array("section FMTID")?;
-        if !fmtids_storage.with_storage(|| {
-            ctx.insert_btree_set(&mut fmtids, fmtid, "admit OLE section FMTIDs")
-        })? {
+        if !fmtids_storage
+            .with_storage(|| ctx.insert_btree_set(&mut fmtids, fmtid, "admit OLE section FMTIDs"))?
+        {
             return Err(CodecError::Malformed(
                 "OLE property-set stream duplicates a section FMTID".into(),
             ));
@@ -252,9 +248,7 @@ pub(crate) fn parse_property_set_stream<'a>(
     )?;
     let mut previous_end = header_end;
     let mut sections = ctx.vector_storage(section_count, "admit OLE property-set sections")?;
-    for &(fmtid, offset) in
-        ctx.admit_iter(&directories, "scan OLE section directories")?
-    {
+    for &(fmtid, offset) in ctx.admit_iter(&directories, "scan OLE section directories")? {
         if offset < previous_end || offset % 4 != 0 {
             return Err(CodecError::Malformed(
                 "OLE property-set section ranges overlap or are not aligned".into(),
@@ -327,7 +321,9 @@ fn parse_section<'a>(
     let mut directory_storage = ctx.reserve_scoped(0, "admit OLE property directory")?;
     for _ in 0..property_count {
         let id = cursor.u32("property id")?;
-        if !ids_storage.with_storage(|| ctx.insert_btree_set(&mut ids, id, "admit OLE property IDs"))? {
+        if !ids_storage
+            .with_storage(|| ctx.insert_btree_set(&mut ids, id, "admit OLE property IDs"))?
+        {
             return Err(CodecError::malformed(format_args!(
                 "OLE property set duplicates property id {id}"
             )));
@@ -339,11 +335,7 @@ fn parse_section<'a>(
             )));
         }
         directory_storage.with_storage(|| {
-            ctx.push_vec(
-                &mut directory,
-                (offset, id),
-                "admit OLE property directory",
-            )
+            ctx.push_vec(&mut directory, (offset, id), "admit OLE property directory")
         })?;
     }
     let mut previous_offset = None;
@@ -374,26 +366,22 @@ fn parse_section<'a>(
     if let Some((offset, _)) = directory.first() {
         require_zero_range(ctx, bytes, directory_end, *offset, "property-directory gap")?;
     }
-    let (ranges, ranges_storage) = ctx.with_scoped_storage(
-        "admit OLE property ranges",
-        || {
-            ctx.try_collect_vec(
-                directory.iter().enumerate()
-                    .map(|(index, (start, id))| {
-                        let end = directory
-                            .get(index + 1)
-                            .map_or(bytes.len(), |(offset, _)| *offset);
-                        if end > bytes.len() || *start >= end {
-                            return Err(CodecError::malformed(format_args!(
-                                "OLE property {id} range is invalid"
-                            )));
-                        }
-                        Ok((*id, *start, end))
-                    }),
-                "admit OLE property ranges",
-            )
-        },
-    )?;
+    let (ranges, ranges_storage) = ctx.with_scoped_storage("admit OLE property ranges", || {
+        ctx.try_collect_vec(
+            directory.iter().enumerate().map(|(index, (start, id))| {
+                let end = directory
+                    .get(index + 1)
+                    .map_or(bytes.len(), |(offset, _)| *offset);
+                if end > bytes.len() || *start >= end {
+                    return Err(CodecError::malformed(format_args!(
+                        "OLE property {id} range is invalid"
+                    )));
+                }
+                Ok((*id, *start, end))
+            }),
+            "admit OLE property ranges",
+        )
+    })?;
     drop(directory);
     drop(directory_storage);
     let code_page = match ctx
@@ -499,35 +487,32 @@ fn parse_dictionary(
     for _ in 0..count {
         let id = cursor.u32("entry id")?;
         let size = cursor.count("entry string size", MAX_STREAM_SIZE)?;
-        let name = names_storage.with_storage(|| {
-            cursor.code_page_string(ctx, size, code_page, "entry name")
-        })?;
-        let name_copy = ctx.copy_scoped_text(
-            &name,
-            names_storage,
-            "retain OLE dictionary name copy",
-        )?;
+        let name = names_storage
+            .with_storage(|| cursor.code_page_string(ctx, size, code_page, "entry name"))?;
+        let name_copy =
+            ctx.copy_scoped_text(&name, names_storage, "retain OLE dictionary name copy")?;
         if id == 0 {
             return Err(CodecError::Malformed(
                 "OLE property dictionary duplicates or names a reserved id".into(),
             ));
         }
-        if names_storage.with_storage(|| {
-            ctx.insert_btree_map(
-                &mut names,
-                id,
-                name_copy,
-                "admit OLE property dictionary entries",
-            )
-        })?.is_some()
+        if names_storage
+            .with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut names,
+                    id,
+                    name_copy,
+                    "admit OLE property dictionary entries",
+                )
+            })?
+            .is_some()
         {
             return Err(CodecError::Malformed(
                 "OLE property dictionary duplicates or names a reserved id".into(),
             ));
         }
-        let uppercase_name = folded_names_storage.with_storage(|| {
-            ctx.to_uppercase(&name, "retain OLE dictionary uppercase name")
-        })?;
+        let uppercase_name = folded_names_storage
+            .with_storage(|| ctx.to_uppercase(&name, "retain OLE dictionary uppercase name"))?;
         if !folded_names_storage.with_storage(|| {
             ctx.insert_btree_set(
                 &mut folded_names,
@@ -751,13 +736,13 @@ fn parse_scalar<'a>(
         ScalarType::CodePageString => {
             let size = cursor.count("code-page string size", MAX_STREAM_SIZE)?;
             let value = cursor.code_page_string(ctx, size, code_page, "string")?;
-        cursor.align4(ctx, "string padding")?;
+            cursor.align4(ctx, "string padding")?;
             PropertyValue::String { type_code, value }
         }
         ScalarType::UnicodeString => {
             let count = cursor.count("Unicode string length", MAX_STREAM_SIZE / 2)?;
             let value = cursor.unicode_string(ctx, count, "Unicode string")?;
-        cursor.align4(ctx, "Unicode string padding")?;
+            cursor.align4(ctx, "Unicode string padding")?;
             PropertyValue::String { type_code, value }
         }
         ScalarType::Filetime => PropertyValue::Filetime {
@@ -877,25 +862,29 @@ fn decode_code_page(
     let mut decoded_len = 0_usize;
     loop {
         ctx.charge_work(1, "scan OLE code-page decoder chunks")?;
-        let input = source
-            .get(read..)
-            .ok_or_else(|| CodecError::Malformed("OLE code-page decoder offset is invalid".into()))?;
-        let (result, consumed, written) = measure_decoder
-            .decode_to_utf8_without_replacement(input, &mut scratch, true);
-        read = read
-            .checked_add(consumed)
-            .ok_or_else(|| ctx.refuse_codec_limit("decode OLE code-page string", u64::MAX, u64::MAX))?;
-        decoded_len = decoded_len
-            .checked_add(written)
-            .ok_or_else(|| ctx.refuse_codec_limit("decode OLE code-page string", u64::MAX, u64::MAX))?;
+        let input = source.get(read..).ok_or_else(|| {
+            CodecError::Malformed("OLE code-page decoder offset is invalid".into())
+        })?;
+        let (result, consumed, written) =
+            measure_decoder.decode_to_utf8_without_replacement(input, &mut scratch, true);
+        read = read.checked_add(consumed).ok_or_else(|| {
+            ctx.refuse_codec_limit("decode OLE code-page string", u64::MAX, u64::MAX)
+        })?;
+        decoded_len = decoded_len.checked_add(written).ok_or_else(|| {
+            ctx.refuse_codec_limit("decode OLE code-page string", u64::MAX, u64::MAX)
+        })?;
         match result {
             encoding_rs::DecoderResult::InputEmpty if read == source.len() => break,
             encoding_rs::DecoderResult::InputEmpty => {
-                return Err(CodecError::malformed("OLE code-page decoder ended before its input"));
+                return Err(CodecError::malformed(
+                    "OLE code-page decoder ended before its input",
+                ));
             }
             encoding_rs::DecoderResult::OutputFull if consumed != 0 || written != 0 => {}
             encoding_rs::DecoderResult::OutputFull => {
-                return Err(CodecError::malformed("OLE code-page decoder made no progress"));
+                return Err(CodecError::malformed(
+                    "OLE code-page decoder made no progress",
+                ));
             }
             encoding_rs::DecoderResult::Malformed(..) => {
                 return Err(CodecError::malformed(format_args!(
@@ -905,11 +894,7 @@ fn decode_code_page(
         }
     }
     let mut decoded = String::new();
-    ctx.try_reserve_retained_text(
-        &mut decoded,
-        decoded_len,
-        "retain OLE property string",
-    )?;
+    ctx.try_reserve_retained_text(&mut decoded, decoded_len, "retain OLE property string")?;
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(source.len()),
         "decode OLE code-page string",
@@ -1057,11 +1042,7 @@ impl<'a> Cursor<'a> {
             .map_err(|_| CodecError::malformed(format_args!("{} {field} is too large", self.scope)))
     }
 
-    fn align4(
-        &mut self,
-        ctx: &DecodeContext<'_>,
-        field: &'static str,
-    ) -> Result<(), CodecError> {
+    fn align4(&mut self, ctx: &DecodeContext<'_>, field: &'static str) -> Result<(), CodecError> {
         let padding = (4 - self.position() % 4) % 4;
         let padding = self.take(padding, field)?;
         if ctx
@@ -1119,7 +1100,10 @@ impl<'a> Cursor<'a> {
         if zero_suffix {
             Ok(())
         } else {
-            Err(CodecError::malformed(format_args!("{} has nonzero trailing bytes", self.scope)))
+            Err(CodecError::malformed(format_args!(
+                "{} has nonzero trailing bytes",
+                self.scope
+            )))
         }
     }
 }
@@ -1201,9 +1185,9 @@ mod tests {
                 &mut names_storage,
                 &mut folded_names_storage,
             )
-                .expect("dictionary admitted")
-                .get(&2)
-                .map(String::as_str),
+            .expect("dictionary admitted")
+            .get(&2)
+            .map(String::as_str),
             Some("abc")
         );
         // Scoped admissions total 7 bytes after the name copy, 459 after its map node, 539 after uppercase, and 947 after its set node.
@@ -1302,10 +1286,11 @@ mod tests {
     fn section_collections_refuse_each_limit_before_materialization() {
         let bytes = fixture();
         let arena = DecodeArena::new();
+        // Section insertion follows FMTID/directory slots and three IDs, directory entries, ranges, and properties.
         for (cap, operation) in [
-            (0, "admit OLE section directories"),
-            (1, "admit OLE section FMTIDs"),
-            (2, "admit OLE property-set sections"),
+            (0, "admit OLE section FMTIDs"),
+            (1, "admit OLE section directories"),
+            (2 + 4 * 3, "admit OLE property-set sections"),
         ] {
             let mut policy = DecodePolicy::service();
             policy.limits.max_collection_items = cap;

@@ -321,7 +321,11 @@ pub(crate) fn inventory(
         issues: Vec::new(),
     };
     for segment in ctx.admit_iter(&document.segments, "visit Inventor design items")? {
-        if !ctx.equal(&segment.kind, &SegmentKind::PmDc, "match Inventor design segment kind")? {
+        if !ctx.equal(
+            &segment.kind,
+            &SegmentKind::PmDc,
+            "match Inventor design segment kind",
+        )? {
             continue;
         }
         let Some(version) = segment.registry.map(|join| join.version_major) else {
@@ -433,14 +437,25 @@ pub(crate) fn inventory(
                 }
                 ctx.charge_entities(1, "admit Inventor PmDc design issue")?;
                 let detail = crate::issue_detail(ctx, error, "retain Inventor PmDc issue detail")?;
-                ctx.push_vec(&mut inventory.issues, RecordIssue {
-                    family: RecordIssueFamily::Design {
-                        type_id: crate::record_identity::RecordTypeId::from_bytes(ctx, record.type_id, "retain Inventor PmDc issue type id")?,
+                ctx.push_vec(
+                    &mut inventory.issues,
+                    RecordIssue {
+                        family: RecordIssueFamily::Design {
+                            type_id: crate::record_identity::RecordTypeId::from_bytes(
+                                ctx,
+                                record.type_id,
+                                "retain Inventor PmDc issue type id",
+                            )?,
+                        },
+                        segment_token: segment.pair.token.key().try_clone_for_decode(
+                            ctx,
+                            "retain Inventor PmDc issue segment token",
+                        )?,
+                        record_ordinal: record.ordinal,
+                        detail,
                     },
-                    segment_token: segment.pair.token.key().try_clone_for_decode(ctx, "retain Inventor PmDc issue segment token")?,
-                    record_ordinal: record.ordinal,
-                    detail,
-                }, "admit Inventor PmDc design issue")?;
+                    "admit Inventor PmDc design issue",
+                )?;
             }
         }
     }
@@ -453,67 +468,77 @@ pub(crate) fn project_parameters(
     admitted_entities: &mut u64,
 ) -> Result<(Vec<DesignParameter>, usize), CodecError> {
     let (expressions, _expressions_storage) = ctx.unique_index(
-        ctx.admit_iter(&inventory.expressions, "index Inventor expressions")?.map(|record| {
-            (
-                {
-                    (
-                        record.identity.segment_token.as_str(),
-                        record.identity.record_ordinal,
-                    )
-                },
-                record,
-            )
-        }),
+        ctx.admit_iter(&inventory.expressions, "index Inventor expressions")?
+            .map(|record| {
+                (
+                    {
+                        (
+                            record.identity.segment_token.as_str(),
+                            record.identity.record_ordinal,
+                        )
+                    },
+                    record,
+                )
+            }),
         "index Inventor expressions",
     )?;
     let (units, _units_storage) = ctx.unique_index(
-        ctx.admit_iter(&inventory.units, "index Inventor units")?.map(|record| {
-            (
-                {
-                    (
-                        record.identity.segment_token.as_str(),
-                        record.identity.record_ordinal,
-                    )
-                },
-                record,
-            )
-        }),
+        ctx.admit_iter(&inventory.units, "index Inventor units")?
+            .map(|record| {
+                (
+                    {
+                        (
+                            record.identity.segment_token.as_str(),
+                            record.identity.record_ordinal,
+                        )
+                    },
+                    record,
+                )
+            }),
         "index Inventor units",
     )?;
     let (parameters, _parameters_storage) = ctx.unique_index(
-        ctx.admit_iter(&inventory.parameters, "index Inventor parameters")?.map(|record| {
-            (
-                {
-                    (
-                        record.identity.segment_token.as_str(),
-                        record.identity.record_ordinal,
-                    )
-                },
-                record,
-            )
-        }),
+        ctx.admit_iter(&inventory.parameters, "index Inventor parameters")?
+            .map(|record| {
+                (
+                    {
+                        (
+                            record.identity.segment_token.as_str(),
+                            record.identity.record_ordinal,
+                        )
+                    },
+                    record,
+                )
+            }),
         "index Inventor parameters",
     )?;
     let mut projected = Vec::new();
     let mut projected_storage = ctx.reserve_scoped(0, "project Inventor parameter")?;
     let mut unresolved = 0usize;
     for parameter in ctx.admit_iter(&inventory.parameters, "visit Inventor design items")? {
-        if !ctx.contains_key_hash_map(&parameters, &(
-            parameter.identity.segment_token.as_str(),
-            parameter.identity.record_ordinal,
-        ), "access Inventor design records")? {
+        if !ctx.contains_key_hash_map(
+            &parameters,
+            &(
+                parameter.identity.segment_token.as_str(),
+                parameter.identity.record_ordinal,
+            ),
+            "access Inventor design records",
+        )? {
             unresolved += 1;
             continue;
         }
         let Some(unit) = resolve_unit(
-            ctx, parameter.identity.segment_token.as_str(),
+            ctx,
+            parameter.identity.segment_token.as_str(),
             parameter.unit.index(),
             &units,
-        )? else {
+        )?
+        else {
             unresolved += 1;
             continue;
         };
-        let mut dependency_storage = ctx.reserve_scoped(0, "collect Inventor expression dependency ids")?;
+        let mut dependency_storage =
+            ctx.reserve_scoped(0, "collect Inventor expression dependency ids")?;
         let mut dependencies = Vec::new();
         let Some(expression) = render_expression(
             ctx,
@@ -541,8 +566,9 @@ pub(crate) fn project_parameters(
             unresolved += 1;
             continue;
         };
-        let projected_count = projected.len().checked_add(1)
-            .ok_or_else(|| ctx.refuse_codec_limit("project Inventor parameter", u64::MAX, u64::MAX))?;
+        let projected_count = projected.len().checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit("project Inventor parameter", u64::MAX, u64::MAX)
+        })?;
         ctx.admit_entities(
             cadmpeg_core::decode::u64_from_index(projected_count),
             admitted_entities,
@@ -556,12 +582,28 @@ pub(crate) fn project_parameters(
             dependencies.len(),
             "collect Inventor parameter dependencies",
         )?;
-        let peer_count = if dependencies.is_empty() { 0 } else { dependencies.len() - 1 };
-        let comparison_bytes = ctx.admit_iter(&dependencies, "measure Inventor parameter dependency comparisons")?
-            .try_fold(0_u64, |total, id| total.checked_add(cadmpeg_core::decode::u64_from_index(id.as_str().len())))
+        let peer_count = if dependencies.is_empty() {
+            0
+        } else {
+            dependencies.len() - 1
+        };
+        let comparison_bytes = ctx
+            .admit_iter(
+                &dependencies,
+                "measure Inventor parameter dependency comparisons",
+            )?
+            .try_fold(0_u64, |total, id| {
+                total.checked_add(cadmpeg_core::decode::u64_from_index(id.as_str().len()))
+            })
             .and_then(|total| total.checked_mul(cadmpeg_core::decode::u64_from_index(peer_count)))
             .and_then(|total| total.checked_mul(2))
-            .ok_or_else(|| ctx.refuse_codec_limit("compare Inventor parameter dependencies", u64::MAX, u64::MAX))?;
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "compare Inventor parameter dependencies",
+                    u64::MAX,
+                    u64::MAX,
+                )
+            })?;
         // Each distinct pair is compared in both insert_for_decode and insert.
         ctx.charge_work(comparison_bytes, "compare Inventor parameter dependencies")?;
         dependency_members.extend_for_decode(
@@ -583,7 +625,11 @@ pub(crate) fn project_parameters(
             native_ref: Some(parameter.id(ctx)?),
         };
         projected_storage.with_storage(|| {
-            ctx.push_vec(&mut projected, projected_parameter, "project Inventor parameter")
+            ctx.push_vec(
+                &mut projected,
+                projected_parameter,
+                "project Inventor parameter",
+            )
         })?;
     }
     let (projected, graph_rejections) = close_parameter_graph(ctx, projected)?;
@@ -601,49 +647,87 @@ fn close_parameter_graph(
 ) -> Result<(Vec<DesignParameter>, usize), CodecError> {
     let count = parameters.len();
     let mut scratch = ctx.reserve_scoped(0, "Inventor parameter closure storage")?;
-    let indices = scratch.with_storage(|| ctx.collect_hash_map(
-        ctx.admit_iter(&parameters, "index Inventor parameter closure")?
-            .enumerate().map(|(index, parameter)| (&parameter.id, index)),
-        "index Inventor parameter closure",
-    ))?;
-    let mut remaining = scratch.with_storage(|| ctx.alloc_filled(count, 0usize, "admit Inventor parameter indegrees"))?;
-    let mut dependents = scratch.with_storage(|| ctx.collect_indexed_vec(count, "admit Inventor parameter adjacency", |_| Ok(Vec::<usize>::new())))?;
+    let indices = scratch.with_storage(|| {
+        ctx.collect_hash_map(
+            ctx.admit_iter(&parameters, "index Inventor parameter closure")?
+                .enumerate()
+                .map(|(index, parameter)| (&parameter.id, index)),
+            "index Inventor parameter closure",
+        )
+    })?;
+    let mut remaining = scratch
+        .with_storage(|| ctx.alloc_filled(count, 0usize, "admit Inventor parameter indegrees"))?;
+    let mut dependents = scratch.with_storage(|| {
+        ctx.collect_indexed_vec(count, "admit Inventor parameter adjacency", |_| {
+            Ok(Vec::<usize>::new())
+        })
+    })?;
     let mut ready = VecDeque::new();
-    for (index, parameter) in ctx.admit_iter(&parameters, "visit Inventor parameter closure inputs")?.enumerate() {
-        for dependency in ctx.admit_iter(parameter.dependencies.as_slice(), "index Inventor parameter edge")? {
-            if let Some(&source) = ctx.get_hash_map(&indices, dependency, "access Inventor parameter closure index")? {
+    for (index, parameter) in ctx
+        .admit_iter(&parameters, "visit Inventor parameter closure inputs")?
+        .enumerate()
+    {
+        for dependency in ctx.admit_iter(
+            parameter.dependencies.as_slice(),
+            "index Inventor parameter edge",
+        )? {
+            if let Some(&source) = ctx.get_hash_map(
+                &indices,
+                dependency,
+                "access Inventor parameter closure index",
+            )? {
                 remaining[index] += 1;
-                scratch.with_storage(|| ctx.push_vec(&mut dependents[source], index, "admit Inventor parameter edges"))?;
+                scratch.with_storage(|| {
+                    ctx.push_vec(
+                        &mut dependents[source],
+                        index,
+                        "admit Inventor parameter edges",
+                    )
+                })?;
             } else {
                 remaining[index] += 1;
             }
         }
         if remaining[index] == 0 {
-            scratch.with_storage(|| ctx.push_back(&mut ready, index, "admit Inventor parameter traversal"))?;
+            scratch.with_storage(|| {
+                ctx.push_back(&mut ready, index, "admit Inventor parameter traversal")
+            })?;
         }
     }
-    let mut closed = scratch.with_storage(|| ctx.alloc_filled(count, false, "admit Inventor parameter closure"))?;
+    let mut closed = scratch
+        .with_storage(|| ctx.alloc_filled(count, false, "admit Inventor parameter closure"))?;
     loop {
         ctx.charge_work(1, "visit Inventor parameter traversal")?;
-        let Some(source) = ready.pop_front() else { break; };
+        let Some(source) = ready.pop_front() else {
+            break;
+        };
         closed[source] = true;
         for &dependent in ctx.admit_iter(&dependents[source], "visit Inventor parameter edge")? {
             remaining[dependent] -= 1;
             if remaining[dependent] == 0 {
-                scratch.with_storage(|| ctx.push_back(&mut ready, dependent, "admit Inventor parameter traversal"))?;
+                scratch.with_storage(|| {
+                    ctx.push_back(&mut ready, dependent, "admit Inventor parameter traversal")
+                })?;
             }
         }
     }
-    let accepted = ctx.admit_iter(&closed, "count closed Inventor parameters")?.filter(|&&value| value).count();
+    let accepted = ctx
+        .admit_iter(&closed, "count closed Inventor parameters")?
+        .filter(|&&value| value)
+        .count();
     drop(indices);
     let mut index = 0_usize;
-    ctx.retain_vec(&mut parameters, |_| {
-        let keep = closed[index];
-        index = index.checked_add(1).ok_or_else(|| {
-            ctx.refuse_codec_limit("select closed Inventor parameters", u64::MAX, u64::MAX)
-        })?;
-        Ok(keep)
-    }, "select closed Inventor parameters")?;
+    ctx.retain_vec(
+        &mut parameters,
+        |_| {
+            let keep = closed[index];
+            index = index.checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit("select closed Inventor parameters", u64::MAX, u64::MAX)
+            })?;
+            Ok(keep)
+        },
+        "select closed Inventor parameters",
+    )?;
     // The owned Vec source advances one slot per next call; no filtering adapter remains.
     let parameters = ctx.collect_vec(parameters, "collect closed Inventor parameters")?;
     Ok((parameters, count - accepted))
@@ -654,11 +738,22 @@ fn parameter_id(
     parameter: &PmDcParameter,
 ) -> Result<ParameterId, CodecError> {
     let token_len = parameter.identity.segment_token.as_str().len();
-    let key_len = token_len.checked_add(1).and_then(|len| len.checked_add(decimal_len(parameter.identity.record_ordinal)))
-        .ok_or_else(|| ctx.refuse_codec_limit("compose Inventor parameter id", u64::MAX, u64::MAX))?;
-    let id_len = "inventor:design:parameter#".len().checked_add(key_len)
-        .ok_or_else(|| ctx.refuse_codec_limit("compose Inventor parameter id", u64::MAX, u64::MAX))?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(id_len), "compose Inventor parameter id")?;
+    let key_len = token_len
+        .checked_add(1)
+        .and_then(|len| len.checked_add(decimal_len(parameter.identity.record_ordinal)))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("compose Inventor parameter id", u64::MAX, u64::MAX)
+        })?;
+    let id_len = "inventor:design:parameter#"
+        .len()
+        .checked_add(key_len)
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("compose Inventor parameter id", u64::MAX, u64::MAX)
+        })?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(id_len),
+        "compose Inventor parameter id",
+    )?;
     ctx.charge_retained(
         cadmpeg_core::decode::u64_from_index(id_len),
         "retain Inventor parameter id",
@@ -695,8 +790,15 @@ fn resolve_unit<'a>(
     reference: u32,
     units: &HashMap<(&str, u32), Option<&'a PmDcUnit>>,
 ) -> Result<Option<ResolvedUnit<'a>>, CodecError> {
-    let Some(ordinal) = reference.checked_sub(1) else { return Ok(None); };
-    let Some(definition) = ctx.get_hash_map(units, &(token, ordinal), "access Inventor design records")?.and_then(Option::as_ref) else { return Ok(None); };
+    let Some(ordinal) = reference.checked_sub(1) else {
+        return Ok(None);
+    };
+    let Some(definition) = ctx
+        .get_hash_map(units, &(token, ordinal), "access Inventor design records")?
+        .and_then(Option::as_ref)
+    else {
+        return Ok(None);
+    };
     let PmDcUnitKind::Definition {
         numerators,
         denominators,
@@ -712,8 +814,19 @@ fn resolve_unit<'a>(
     {
         return Ok(None);
     }
-    let Some(base_ordinal) = numerators.references()[0].index().checked_sub(1) else { return Ok(None); };
-    let Some(base) = ctx.get_hash_map(units, &(token, base_ordinal), "access Inventor design records")?.and_then(Option::as_ref) else { return Ok(None); };
+    let Some(base_ordinal) = numerators.references()[0].index().checked_sub(1) else {
+        return Ok(None);
+    };
+    let Some(base) = ctx
+        .get_hash_map(
+            units,
+            &(token, base_ordinal),
+            "access Inventor design records",
+        )?
+        .and_then(Option::as_ref)
+    else {
+        return Ok(None);
+    };
     let PmDcUnitKind::Base {
         dimension,
         symbol,
@@ -738,7 +851,10 @@ fn render_expression<'a>(
     expressions: &HashMap<(&str, u32), Option<&'a PmDcExpression>>,
     units: &HashMap<(&str, u32), Option<&'a PmDcUnit>>,
     parameters: &HashMap<(&str, u32), Option<&'a PmDcParameter>>,
-    dependencies: (&mut Vec<ParameterId>, &mut cadmpeg_core::decode::ScopedReservation<'_>),
+    dependencies: (
+        &mut Vec<ParameterId>,
+        &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    ),
 ) -> Result<Option<String>, CodecError> {
     let (dependencies, dependency_storage) = dependencies;
     let mut plan = ExpressionRenderPlan {
@@ -770,7 +886,12 @@ fn render_expression<'a>(
                 ctx.try_reserve_retained_text(&mut text, length, "render Inventor expression bytes")
             })?;
         }
-        let expression = ctx.get_hash_map(&expressions, &(token, ordinal), "access Inventor design records")?
+        let expression = ctx
+            .get_hash_map(
+                &expressions,
+                &(token, ordinal),
+                "access Inventor design records",
+            )?
             .and_then(Option::as_ref)
             .ok_or_else(|| {
                 CodecError::Malformed("Inventor unique index reference is absent".into())
@@ -795,11 +916,20 @@ fn render_expression<'a>(
                 }
                 if !unit.symbol.is_empty() {
                     text.push(' ');
-                    ctx.append_retained(&mut text, unit.symbol, "render Inventor expression bytes")?;
+                    ctx.append_retained(
+                        &mut text,
+                        unit.symbol,
+                        "render Inventor expression bytes",
+                    )?;
                 }
             }
             PmDcExpressionKind::ParameterReference { operand } => {
-                let target = ctx.get_hash_map(&parameters, &(token, operand.index() - 1), "access Inventor design records")?
+                let target = ctx
+                    .get_hash_map(
+                        &parameters,
+                        &(token, operand.index() - 1),
+                        "access Inventor design records",
+                    )?
                     .and_then(Option::as_ref)
                     .ok_or_else(|| {
                         CodecError::Malformed("Inventor unique index reference is absent".into())
@@ -808,7 +938,11 @@ fn render_expression<'a>(
             }
             PmDcExpressionKind::Unary { operand, .. } => {
                 ctx.append_retained(&mut text, "-(", "render Inventor expression bytes")?;
-                ctx.append_retained(&mut text, &rendered[&(operand.index() - 1)], "render Inventor expression bytes")?;
+                ctx.append_retained(
+                    &mut text,
+                    &rendered[&(operand.index() - 1)],
+                    "render Inventor expression bytes",
+                )?;
                 text.push(')');
             }
             PmDcExpressionKind::Binary {
@@ -817,7 +951,11 @@ fn render_expression<'a>(
                 right,
             } => {
                 text.push('(');
-                ctx.append_retained(&mut text, &rendered[&(left.index() - 1)], "render Inventor expression bytes")?;
+                ctx.append_retained(
+                    &mut text,
+                    &rendered[&(left.index() - 1)],
+                    "render Inventor expression bytes",
+                )?;
                 ctx.append_retained(&mut text, ") ", "render Inventor expression bytes")?;
                 let symbol = match operation {
                     PmDcBinaryOperation::Add => "+",
@@ -829,11 +967,22 @@ fn render_expression<'a>(
                 };
                 ctx.append_retained(&mut text, symbol, "render Inventor expression bytes")?;
                 ctx.append_retained(&mut text, " (", "render Inventor expression bytes")?;
-                ctx.append_retained(&mut text, &rendered[&(right.index() - 1)], "render Inventor expression bytes")?;
+                ctx.append_retained(
+                    &mut text,
+                    &rendered[&(right.index() - 1)],
+                    "render Inventor expression bytes",
+                )?;
                 text.push(')');
             }
         }
-        reserved.with_storage(|| ctx.insert_hash_map(&mut rendered, ordinal, text, "memoize Inventor expression text"))?;
+        reserved.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut rendered,
+                ordinal,
+                text,
+                "memoize Inventor expression text",
+            )
+        })?;
     }
     let root = reference - 1;
     let result = rendered.remove(&root).ok_or_else(|| {
@@ -841,14 +990,28 @@ fn render_expression<'a>(
     })?;
     drop(rendered);
     drop(reserved);
-    for &ordinal in ctx.admit_iter(&plan.dependency_ordinals, "visit Inventor expression dependencies")? {
-        let target = ctx.get_hash_map(&parameters, &(token, ordinal), "access Inventor design records")?
+    for &ordinal in ctx.admit_iter(
+        &plan.dependency_ordinals,
+        "visit Inventor expression dependencies",
+    )? {
+        let target = ctx
+            .get_hash_map(
+                &parameters,
+                &(token, ordinal),
+                "access Inventor design records",
+            )?
             .and_then(Option::as_ref)
             .ok_or_else(|| {
                 CodecError::Malformed("Inventor unique index reference is absent".into())
             })?;
         let id = parameter_id(ctx, target)?;
-        dependency_storage.with_storage(|| ctx.push_vec(dependencies, id, "collect Inventor expression dependency ids"))?;
+        dependency_storage.with_storage(|| {
+            ctx.push_vec(
+                dependencies,
+                id,
+                "collect Inventor expression dependency ids",
+            )
+        })?;
     }
     Ok(Some(result))
 }
@@ -890,7 +1053,13 @@ impl ExpressionRenderPlan<'_, '_> {
             admit_cached_expression_depth(self.ctx, measured.height - 1)?;
             return Ok(Some((measured.length, measured.height)));
         }
-        let Some(expression) = self.ctx.get_hash_map(self.expressions, &(self.token, ordinal), "access Inventor expression record")?
+        let Some(expression) = self
+            .ctx
+            .get_hash_map(
+                self.expressions,
+                &(self.token, ordinal),
+                "access Inventor expression record",
+            )?
             .and_then(Option::as_ref)
         else {
             return Ok(None);
@@ -904,7 +1073,8 @@ impl ExpressionRenderPlan<'_, '_> {
         })?;
         let measured = match &expression.kind {
             PmDcExpressionKind::Value { value, .. } => {
-                let Some(unit) = resolve_unit(self.ctx, self.token, expression.unit.index(), self.units)?
+                let Some(unit) =
+                    resolve_unit(self.ctx, self.token, expression.unit.index(), self.units)?
                 else {
                     return Ok(None);
                 };
@@ -931,7 +1101,13 @@ impl ExpressionRenderPlan<'_, '_> {
                 let Some(target_ordinal) = operand.index().checked_sub(1) else {
                     return Ok(None);
                 };
-                let Some(target) = self.ctx.get_hash_map(self.parameters, &(self.token, target_ordinal), "access Inventor expression parameter")?
+                let Some(target) = self
+                    .ctx
+                    .get_hash_map(
+                        self.parameters,
+                        &(self.token, target_ordinal),
+                        "access Inventor expression parameter",
+                    )?
                     .and_then(Option::as_ref)
                 else {
                     return Ok(None);
@@ -1529,13 +1705,15 @@ mod tests {
     fn pmdc_record_scan_refuses_work_limit_before_parsing() {
         let payload = [0_u8; 14];
         let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
+        // Visit one design segment, then compare two one-byte segment tags.
+        policy.limits.max_work_units = 3;
         assert!(matches!(
             inventory_with_record(EXPRESSION_REFERENCE_TYPE, &payload, policy),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::WorkUnits
                     && limit.operation == "scan Inventor PmDc design record"
-                    && limit.used == 0
+                    && limit.used == 3
+                    && limit.additional == 1
         ));
     }
 
@@ -1708,7 +1886,12 @@ mod tests {
                     factor: real(1.0),
                 },
             },
-            crate::record_identity::RecordTypeId::from_bytes(&cadmpeg_test_support::service_decode_context(), [0; 16], "retain Inventor fixture type id").expect("fixture type id"),
+            crate::record_identity::RecordTypeId::from_bytes(
+                &cadmpeg_test_support::service_decode_context(),
+                [0; 16],
+                "retain Inventor fixture type id",
+            )
+            .expect("fixture type id"),
             token
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),
@@ -1729,7 +1912,12 @@ mod tests {
                     state: 0,
                 },
             },
-            crate::record_identity::RecordTypeId::from_bytes(&cadmpeg_test_support::service_decode_context(), [0; 16], "retain Inventor fixture type id").expect("fixture type id"),
+            crate::record_identity::RecordTypeId::from_bytes(
+                &cadmpeg_test_support::service_decode_context(),
+                [0; 16],
+                "retain Inventor fixture type id",
+            )
+            .expect("fixture type id"),
             token
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),
@@ -1743,7 +1931,9 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("empty fixture view");
-        let mut dependency_storage = ctx.reserve_scoped(0, "collect Inventor expression dependency ids").expect("scope");
+        let mut dependency_storage = ctx
+            .reserve_scoped(0, "collect Inventor expression dependency ids")
+            .expect("scope");
         assert!(render_expression(
             &ctx,
             token.as_str(),
@@ -1928,7 +2118,12 @@ mod tests {
                     factor: real(1.0),
                 },
             },
-            crate::record_identity::RecordTypeId::from_bytes(&cadmpeg_test_support::service_decode_context(), [0; 16], "retain Inventor fixture type id").expect("fixture type id"),
+            crate::record_identity::RecordTypeId::from_bytes(
+                &cadmpeg_test_support::service_decode_context(),
+                [0; 16],
+                "retain Inventor fixture type id",
+            )
+            .expect("fixture type id"),
             token
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),
@@ -1954,7 +2149,12 @@ mod tests {
                     derived: reference(0, false),
                 },
             },
-            crate::record_identity::RecordTypeId::from_bytes(&cadmpeg_test_support::service_decode_context(), [0; 16], "retain Inventor fixture type id").expect("fixture type id"),
+            crate::record_identity::RecordTypeId::from_bytes(
+                &cadmpeg_test_support::service_decode_context(),
+                [0; 16],
+                "retain Inventor fixture type id",
+            )
+            .expect("fixture type id"),
             token
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),
@@ -1975,7 +2175,12 @@ mod tests {
                     state: 0,
                 },
             },
-            crate::record_identity::RecordTypeId::from_bytes(&cadmpeg_test_support::service_decode_context(), [0; 16], "retain Inventor fixture type id").expect("fixture type id"),
+            crate::record_identity::RecordTypeId::from_bytes(
+                &cadmpeg_test_support::service_decode_context(),
+                [0; 16],
+                "retain Inventor fixture type id",
+            )
+            .expect("fixture type id"),
             token
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),
@@ -2004,7 +2209,12 @@ mod tests {
                 tolerance: 0,
                 terminal_value: -1,
             },
-            crate::record_identity::RecordTypeId::from_bytes(&cadmpeg_test_support::service_decode_context(), [0; 16], "retain Inventor fixture type id").expect("fixture type id"),
+            crate::record_identity::RecordTypeId::from_bytes(
+                &cadmpeg_test_support::service_decode_context(),
+                [0; 16],
+                "retain Inventor fixture type id",
+            )
+            .expect("fixture type id"),
             token
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),
@@ -2023,7 +2233,12 @@ mod tests {
                     operand: reference(4, true),
                 },
             },
-            crate::record_identity::RecordTypeId::from_bytes(&cadmpeg_test_support::service_decode_context(), [0; 16], "retain Inventor fixture type id").expect("fixture type id"),
+            crate::record_identity::RecordTypeId::from_bytes(
+                &cadmpeg_test_support::service_decode_context(),
+                [0; 16],
+                "retain Inventor fixture type id",
+            )
+            .expect("fixture type id"),
             token
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),
@@ -2052,7 +2267,12 @@ mod tests {
                 tolerance: 0,
                 terminal_value: -1,
             },
-            crate::record_identity::RecordTypeId::from_bytes(&cadmpeg_test_support::service_decode_context(), [0; 16], "retain Inventor fixture type id").expect("fixture type id"),
+            crate::record_identity::RecordTypeId::from_bytes(
+                &cadmpeg_test_support::service_decode_context(),
+                [0; 16],
+                "retain Inventor fixture type id",
+            )
+            .expect("fixture type id"),
             token
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),
@@ -2068,9 +2288,8 @@ mod tests {
             issues: Vec::new(),
         };
         let mut limited_policy = DecodePolicy::service();
-        let indexed_records = inventory.expressions.len()
-            + inventory.units.len()
-            + inventory.parameters.len();
+        let indexed_records =
+            inventory.expressions.len() + inventory.units.len() + inventory.parameters.len();
         // Six index slots, eight plan slots, two rendered entries, one dependency ID, and one projection use 18 slots before insertion; the capacity reservation adds no item slot.
         limited_policy.limits.max_collection_items =
             12 + cadmpeg_core::decode::u64_from_index(indexed_records);
@@ -2120,7 +2339,12 @@ mod tests {
                     factor: real(1.0),
                 },
             },
-            crate::record_identity::RecordTypeId::from_bytes(&cadmpeg_test_support::service_decode_context(), [0; 16], "retain Inventor fixture type id").expect("fixture type id"),
+            crate::record_identity::RecordTypeId::from_bytes(
+                &cadmpeg_test_support::service_decode_context(),
+                [0; 16],
+                "retain Inventor fixture type id",
+            )
+            .expect("fixture type id"),
             token
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),
@@ -2146,7 +2370,12 @@ mod tests {
                     derived: reference(0, false),
                 },
             },
-            crate::record_identity::RecordTypeId::from_bytes(&cadmpeg_test_support::service_decode_context(), [0; 16], "retain Inventor fixture type id").expect("fixture type id"),
+            crate::record_identity::RecordTypeId::from_bytes(
+                &cadmpeg_test_support::service_decode_context(),
+                [0; 16],
+                "retain Inventor fixture type id",
+            )
+            .expect("fixture type id"),
             token
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),
@@ -2167,7 +2396,12 @@ mod tests {
                     state: 0,
                 },
             },
-            crate::record_identity::RecordTypeId::from_bytes(&cadmpeg_test_support::service_decode_context(), [0; 16], "retain Inventor fixture type id").expect("fixture type id"),
+            crate::record_identity::RecordTypeId::from_bytes(
+                &cadmpeg_test_support::service_decode_context(),
+                [0; 16],
+                "retain Inventor fixture type id",
+            )
+            .expect("fixture type id"),
             token
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),
@@ -2196,7 +2430,12 @@ mod tests {
                 tolerance: 0,
                 terminal_value: -1,
             },
-            crate::record_identity::RecordTypeId::from_bytes(&cadmpeg_test_support::service_decode_context(), [0; 16], "retain Inventor fixture type id").expect("fixture type id"),
+            crate::record_identity::RecordTypeId::from_bytes(
+                &cadmpeg_test_support::service_decode_context(),
+                [0; 16],
+                "retain Inventor fixture type id",
+            )
+            .expect("fixture type id"),
             token
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),
@@ -2383,10 +2622,18 @@ mod tests {
         };
         let parameters = vec![make("c", Some("b")), make("b", Some("a")), make("a", None)];
         let mut policy = DecodePolicy::service();
-        let id_bytes = parameters.iter().map(|parameter| parameter.id.as_str().len()).sum::<usize>();
-        let dependency_bytes = parameters.iter().flat_map(|parameter| parameter.dependencies.as_slice()).map(|id| id.as_str().len()).sum::<usize>();
+        let id_bytes = parameters
+            .iter()
+            .map(|parameter| parameter.id.as_str().len())
+            .sum::<usize>();
+        let dependency_bytes = parameters
+            .iter()
+            .flat_map(|parameter| parameter.dependencies.as_slice())
+            .map(|id| id.as_str().len())
+            .sum::<usize>();
         // Twenty-two source, fill, collector and queue visits plus two index hashes and each dependency lookup precede the first edge visit.
-        policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(22 + 2 * id_bytes + dependency_bytes);
+        policy.limits.max_work_units =
+            cadmpeg_core::decode::u64_from_index(22 + 2 * id_bytes + dependency_bytes);
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty fixture view");
@@ -2483,7 +2730,12 @@ mod tests {
                 tolerance: 0,
                 terminal_value: 0,
             },
-            crate::record_identity::RecordTypeId::from_bytes(&cadmpeg_test_support::service_decode_context(), [0; 16], "retain Inventor fixture type id").expect("fixture type id"),
+            crate::record_identity::RecordTypeId::from_bytes(
+                &cadmpeg_test_support::service_decode_context(),
+                [0; 16],
+                "retain Inventor fixture type id",
+            )
+            .expect("fixture type id"),
             token
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),
@@ -2504,7 +2756,12 @@ mod tests {
                         unit: reference(0, false),
                         kind,
                     },
-                    crate::record_identity::RecordTypeId::from_bytes(&cadmpeg_test_support::service_decode_context(), [0; 16], "retain Inventor fixture type id").expect("fixture type id"),
+                    crate::record_identity::RecordTypeId::from_bytes(
+                        &cadmpeg_test_support::service_decode_context(),
+                        [0; 16],
+                        "retain Inventor fixture type id",
+                    )
+                    .expect("fixture type id"),
                     token
                         .try_clone_for_decode(
                             &cadmpeg_test_support::service_decode_context(),
@@ -2522,7 +2779,8 @@ mod tests {
         let parameters = HashMap::from([((token.as_str(), 0), Some(&parameter))]);
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
-        let mut dependency_storage = ctx.reserve_scoped(0, "collect Inventor expression dependency ids")?;
+        let mut dependency_storage =
+            ctx.reserve_scoped(0, "collect Inventor expression dependency ids")?;
         let mut dependencies = Vec::new();
         let text = render_expression(
             &ctx,
@@ -2570,9 +2828,7 @@ mod tests {
             kinds.push(shared_add(ordinal));
         }
         let mut policy = DecodePolicy::service();
-        // Eight active/memoized nodes require sixteen hash buckets. The one
-        // dependency uses four set buckets and four vector slots; node order
-        // uses eight vector slots. Controls and padding add buckets + 31.
+        // Plan bytes count 16-bucket visiting/length maps, a 4-bucket set, and 12 vector slots.
         let plan_bytes = 16 * std::mem::size_of::<u32>()
             + 16
             + 31
@@ -2583,16 +2839,44 @@ mod tests {
             + 16
             + 31
             + 12 * std::mem::size_of::<u32>();
-        // The first rendered leaf is one byte, with four memo-map buckets.
-        let live = plan_bytes + 1 + 4 * std::mem::size_of::<(u32, String)>() + 4 + 31;
+        // The cap includes planning overlap and rendered-map overlap with earlier text live.
+        let length_map_overlap =
+            8 * std::mem::size_of::<(u32, super::MeasuredExpression)>() + 8 + 31;
+        // Add length is 2 * child length + 7 bytes: 1, 9, 25, 57, 121, 249.
+        let rendered_lengths_before_map_growth = 1 + 9 + 25 + 57;
+        let rendered_map_four_buckets = 4 * std::mem::size_of::<(u32, String)>() + 4 + 31;
+        let rendered_map_eight_buckets = 8 * std::mem::size_of::<(u32, String)>() + 8 + 31;
+        let planning_peak = plan_bytes + length_map_overlap;
+        let rendered_map_growth_peak = plan_bytes
+            + rendered_lengths_before_map_growth
+            + rendered_map_four_buckets
+            + rendered_map_eight_buckets;
+        let live = planning_peak.max(rendered_map_growth_peak);
+
+        // Each Add emits twice its child length plus seven delimiters. The
+        // four-bucket overlap determines whether 121 bytes fit before refusal.
+        let next_rendered_length = 2 * 57 + 7;
+        let map_growth_fits_next_text = rendered_map_four_buckets >= next_rendered_length;
+        let rendered_lengths_before_refusal = rendered_lengths_before_map_growth
+            + if map_growth_fits_next_text {
+                next_rendered_length
+            } else {
+                0
+            };
+        let refusal_length = if map_growth_fits_next_text {
+            2 * next_rendered_length + 7
+        } else {
+            next_rendered_length
+        };
+        let used = plan_bytes + rendered_lengths_before_refusal + rendered_map_eight_buckets;
         policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(live);
         assert!(matches!(
             render_graph(&policy, kinds, 8),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::MaterializedBytes
                     && limit.operation == "render Inventor expression bytes"
-                    && limit.used == cadmpeg_core::decode::u64_from_index(live)
-                    && limit.additional == cadmpeg_core::decode::u64_from_index("(x) + (x)".len())
+                    && limit.used == cadmpeg_core::decode::u64_from_index(used)
+                    && limit.additional == cadmpeg_core::decode::u64_from_index(refusal_length)
         ));
     }
 
