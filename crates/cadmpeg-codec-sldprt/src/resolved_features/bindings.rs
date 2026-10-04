@@ -1020,13 +1020,7 @@ pub(crate) fn bind_mirror_surface_planes(
     }
     let mut faces_by_identity = HashMap::<(FeatureSourceId, u32), Vec<&str>>::new();
     for (face, identity) in face_identities {
-        reserve_feature_binding_map(
-            ctx,
-            &mut faces_by_identity,
-            "index SLDPRT mirror surface planes",
-        )?;
-        let candidates = faces_by_identity
-            .entry((identity.feature_source_id, identity.local_id))
+        let candidates = ctx.entry_hash_map(&mut faces_by_identity, (identity.feature_source_id, identity.local_id), "index SLDPRT mirror surface planes")?
             .or_default();
         if !candidates.contains(&face.as_str()) {
             ctx.reserve_vec(candidates, 1, "collect SLDPRT mirror face identities")?;
@@ -1522,8 +1516,7 @@ pub(crate) fn finalize_lane_bindings(
     let mut entities_by_feature = HashMap::<&str, Vec<&SketchInputEntity>>::new();
     for entity in &lane.sketch_entities {
         if let Some(feature) = entity.feature_ref.as_deref() {
-            ctx.reserve_map(&mut entities_by_feature, 1, SCALAR_BINDING_INDEX)?;
-            let entities = entities_by_feature.entry(feature).or_default();
+            let entities = ctx.entry_hash_map(&mut entities_by_feature, feature, SCALAR_BINDING_INDEX)?.or_default();
             ctx.reserve_vec(entities, 1, "collect SLDPRT scalar owner entities")?;
             entities.push(entity);
         }

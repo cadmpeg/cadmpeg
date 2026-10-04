@@ -351,8 +351,7 @@ pub(crate) fn project_adjacent_extrusion_profiles(
         };
         for (_, (name, feature)) in &objects {
             if object_kind(name, feature) == NativeClassKind::Extrusion {
-                ctx.reserve_map(&mut profiles, 1, "index SLDPRT adjacent profiles")?;
-                let votes = profiles.entry(feature.id.as_str()).or_default();
+                let votes = ctx.entry_hash_map(&mut profiles, feature.id.as_str(), "index SLDPRT adjacent profiles")?.or_default();
                 ctx.reserve_vec(votes, 1, "collect SLDPRT adjacent profile votes")?;
                 votes.push(ProfileVote::Missing);
             }

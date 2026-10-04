@@ -1260,3 +1260,27 @@ fn relation_diameter_expression_propagates_format_work_refusal() {
     assert_eq!(display, Some(cadmpeg_ir::features::DimensionDisplay::Diameter));
     assert!(matches!(value, cadmpeg_ir::features::ParameterValue::Length(length) if length.get() == 2000.0));
 }
+
+#[test]
+fn surface_lane_group_entry_propagates_slot_refusal() {
+    let selection = full_round_selection();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::super::surface_selections_by_lane(&ctx, &[&selection], "group SLDPRT test surface lanes"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "group SLDPRT test surface lanes"
+    ));
+    let grouped = super::super::surface_selections_by_lane(
+        &cadmpeg_test_support::service_decode_context(), &[&selection, &selection],
+        "group SLDPRT test surface lanes",
+    ).unwrap();
+    assert_eq!(grouped.len(), 1);
+    let entries = grouped.get(selection.parent.as_str()).unwrap();
+    assert_eq!(entries.len(), 2);
+    assert!(std::ptr::eq(entries[0], &selection));
+    assert!(std::ptr::eq(entries[1], &selection));
+}

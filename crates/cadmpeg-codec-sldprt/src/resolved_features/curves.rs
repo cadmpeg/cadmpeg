@@ -1315,12 +1315,7 @@ fn closed_marker_profiles_with_policy<E: Borrow<SketchEntity>>(
     for index in &curves {
         let entity = entities[*index].borrow();
         for endpoint in &entity.endpoint_refs {
-            ctx.admit_hash_map_entry(
-                &mut incidence,
-                &endpoint.as_str(),
-                "index SLDPRT closed curve endpoints",
-            )?;
-            let adjacent = incidence.entry(endpoint.as_str()).or_default();
+            let adjacent = ctx.entry_hash_map(&mut incidence, endpoint.as_str(), "index SLDPRT closed curve endpoints")?.or_default();
             ctx.reserve_vec(adjacent, 1, "collect SLDPRT endpoint incidence")?;
             adjacent.push(*index);
         }
