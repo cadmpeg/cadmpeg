@@ -203,3 +203,170 @@ fn historical_edge_vertices_refuse_collection_limit() {
         if limit.operation == "collect F3D historical shell vertices")
     );
 }
+
+#[test]
+fn historical_body_closure_disjointness_refuses_work() {
+    let topology = wire_topology(false);
+    let operation = "check F3D changed body closure";
+    let changed = std::collections::BTreeSet::from([99]);
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| super::super::bodies_intersecting(ctx, &topology, &changed).map(|_| ()),
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+fn complete_topology() -> crate::history_records::AsmHistoricalTopology {
+    use crate::history_records::{
+        AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalEdge, AsmHistoricalRelation,
+        AsmHistoricalTopology,
+    };
+    let relation = |owner_ref, member_refs| AsmHistoricalRelation {
+        owner_ref,
+        member_refs,
+    };
+    AsmHistoricalTopology {
+        bodies: vec![1],
+        body_regions: vec![relation(1, vec![2])],
+        region_shells: vec![relation(2, vec![3])],
+        shell_faces: vec![relation(3, vec![4])],
+        shell_wire_edges: vec![relation(3, vec![7])],
+        shell_free_vertices: vec![relation(3, Vec::new())],
+        face_loops: vec![relation(4, vec![5])],
+        loop_coedges: vec![relation(5, vec![6])],
+        coedge_topology: vec![AsmHistoricalCoedge {
+            coedge: 6,
+            owner_loop: 5,
+            edge: 7,
+            next: 6,
+            previous: 6,
+            radial_next: 6,
+        }],
+        edge_vertices: vec![AsmHistoricalEdge {
+            edge: 7,
+            start_vertex: 8,
+            end_vertex: 9,
+        }],
+        face_surfaces: vec![AsmHistoricalCarrierBinding {
+            entity: 4,
+            carrier: 10,
+        }],
+        vertex_points: vec![
+            AsmHistoricalCarrierBinding {
+                entity: 8,
+                carrier: 11,
+            },
+            AsmHistoricalCarrierBinding {
+                entity: 9,
+                carrier: 12,
+            },
+        ],
+        ..Default::default()
+    }
+}
+
+fn body_hierarchy_scan_error(operation: &'static str) -> cadmpeg_core::CodecError {
+    let topology = complete_topology();
+    let changed = std::collections::BTreeSet::from([99]);
+    crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| super::super::bodies_intersecting(ctx, &topology, &changed).map(|_| ()),
+    )
+}
+
+#[test]
+fn historical_body_region_scan_refuses_work() {
+    let operation = "scan F3D body regions";
+    let error = body_hierarchy_scan_error(operation);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == operation));
+}
+
+#[test]
+fn historical_region_shell_scan_refuses_work() {
+    let operation = "scan F3D region shells";
+    let error = body_hierarchy_scan_error(operation);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == operation));
+}
+
+#[test]
+fn historical_shell_face_scan_refuses_work() {
+    let operation = "scan F3D shell faces";
+    let error = body_hierarchy_scan_error(operation);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == operation));
+}
+
+#[test]
+fn historical_face_loop_scan_refuses_work() {
+    let operation = "scan F3D face loops";
+    let error = body_hierarchy_scan_error(operation);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == operation));
+}
+
+#[test]
+fn historical_loop_coedge_scan_refuses_work() {
+    let operation = "scan F3D loop coedges";
+    let error = body_hierarchy_scan_error(operation);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == operation));
+}
+
+#[test]
+fn historical_shell_edge_scan_refuses_work() {
+    let operation = "scan F3D shell edges";
+    let error = body_hierarchy_scan_error(operation);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == operation));
+}
+
+#[test]
+fn historical_shell_vertex_scan_refuses_work() {
+    let operation = "scan F3D historical shell vertices";
+    let error = body_hierarchy_scan_error(operation);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == operation));
+}
+
+#[test]
+fn historical_treatment_carrier_face_scan_refuses_work() {
+    use crate::history_records::{AsmHistoricalCarrierBinding, AsmHistoricalTopology};
+    let result = AsmHistoricalTopology::default();
+    let preceding = AsmHistoricalTopology {
+        face_surfaces: vec![AsmHistoricalCarrierBinding {
+            entity: 4,
+            carrier: 10,
+        }],
+        ..Default::default()
+    };
+    let operation = "scan F3D carrier face candidates";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| {
+            super::super::treatment_edge_candidates(
+                ctx,
+                None,
+                &[],
+                &result,
+                &preceding,
+                &[],
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}

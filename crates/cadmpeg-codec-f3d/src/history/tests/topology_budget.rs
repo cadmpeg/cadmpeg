@@ -339,3 +339,148 @@ fn historical_topology_reference_owner_slices_refuse_work() {
         ));
     }
 }
+
+fn face_boundary_topology(with_members: bool) -> crate::history_records::AsmHistoricalTopology {
+    use crate::history_records::{AsmHistoricalCoedge, AsmHistoricalRelation};
+
+    crate::history_records::AsmHistoricalTopology {
+        faces: vec![3],
+        face_loops: vec![AsmHistoricalRelation {
+            owner_ref: 3,
+            member_refs: if with_members { vec![2] } else { Vec::new() },
+        }],
+        loop_coedges: if with_members {
+            vec![AsmHistoricalRelation {
+                owner_ref: 2,
+                member_refs: vec![1],
+            }]
+        } else {
+            Vec::new()
+        },
+        coedge_topology: if with_members {
+            vec![AsmHistoricalCoedge {
+                coedge: 1,
+                owner_loop: 2,
+                edge: 4,
+                next: 1,
+                previous: 1,
+                radial_next: 1,
+            }]
+        } else {
+            Vec::new()
+        },
+        ..Default::default()
+    }
+}
+
+#[test]
+fn historical_face_loop_relation_scan_refuses_work() {
+    let topology = face_boundary_topology(true);
+    let operation = "scan F3D boundary relations";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| super::super::face_boundary_edge_index(ctx, &topology).map(|_| ()),
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn historical_loop_coedge_relation_scan_refuses_work() {
+    let topology = face_boundary_topology(true);
+    let operation = "scan F3D boundary relations";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        1,
+        |ctx| super::super::face_boundary_edge_index(ctx, &topology).map(|_| ()),
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn historical_face_boundary_faces_refuse_work() {
+    let topology = face_boundary_topology(true);
+    let operation = "scan F3D boundary faces";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| super::super::face_boundary_edge_index(ctx, &topology).map(|_| ()),
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn historical_face_boundary_loop_slots_refuse_work() {
+    let topology = face_boundary_topology(true);
+    let operation = "scan F3D boundary face loops";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| super::super::face_boundary_edge_index(ctx, &topology).map(|_| ()),
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn historical_face_boundary_coedge_slots_refuse_work() {
+    let topology = face_boundary_topology(true);
+    let operation = "scan F3D boundary loop coedges";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| super::super::face_boundary_edge_index(ctx, &topology).map(|_| ()),
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn historical_face_boundary_index_refuses_materialized_limit() {
+    let topology = face_boundary_topology(false);
+    let operation = "index F3D face boundaries";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        operation,
+        0,
+        |ctx| super::super::face_boundary_edge_index(ctx, &topology).map(|_| ()),
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn historical_face_boundary_edges_refuse_materialized_limit() {
+    let topology = face_boundary_topology(true);
+    let operation = "index F3D face boundary edges";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        operation,
+        0,
+        |ctx| super::super::face_boundary_edge_index(ctx, &topology).map(|_| ()),
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}

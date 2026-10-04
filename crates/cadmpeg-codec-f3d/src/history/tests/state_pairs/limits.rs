@@ -127,6 +127,114 @@ fn identity_index_refuses_history_collection_limit() {
     );
 }
 
+fn complete_record_binding_fixture() -> (Vec<u8>, Vec<AsmDeltaState>) {
+    use crate::history_records::{AsmHistoryRecord, AsmHistoryRecordFraming};
+    let mut bytes = crate::test_support::smbh_header_test::smbh_header_prefix();
+    let start = bytes.len();
+    crate::test_support::tokens_test::t_ident(&mut bytes, "body");
+    crate::test_support::tokens_test::t_end(&mut bytes);
+    let framed = cadmpeg_asm::test_support::sab::frame(
+        &bytes,
+        start,
+        bytes.len(),
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
+    let record = &framed[0];
+    let limit = record.offset.checked_add(record.len).unwrap();
+    let record_bytes = bytes[record.offset..limit].to_vec();
+    let state_id = "complete-state".to_owned();
+    let state = AsmDeltaState {
+        id: state_id.clone(),
+        parent: "history".to_owned(),
+        byte_offset: 0,
+        state_id: 1,
+        version_flag: 1,
+        state_flag: 0,
+        previous_ref: None,
+        next_ref: None,
+        node_index: 1,
+        partner_ref: None,
+        owner_ref: 0,
+        bulletin_boards: Vec::new(),
+        records: vec![AsmHistoryRecord {
+            id: "record".to_owned(),
+            parent: state_id,
+            revision_id: Some(1),
+            byte_offset: cadmpeg_core::decode::u64_from_index(record.offset),
+            framing: AsmHistoryRecordFraming::Framed {
+                index: cadmpeg_core::decode::u64_from_index(record.index),
+                name: record.name.clone(),
+                entity_references: Vec::new(),
+            },
+            raw_bytes: record_bytes,
+        }],
+        entity_versions: Vec::new(),
+        topology_cache: crate::history_records::AsmTopologyCache::Absent,
+        transition: None,
+    };
+    (bytes, vec![state])
+}
+
+fn complete_record_binding_refusal(operation: &str) -> cadmpeg_core::CodecError {
+    crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| {
+            let (bytes, mut states) = complete_record_binding_fixture();
+            crate::history::bind_complete_record_tables(
+                ctx,
+                &mut states,
+                &bytes,
+                cadmpeg_asm::kernel_header::RefWidth::Eight,
+                &cadmpeg_core::decode::ResourceLimits::service(),
+            )
+            .map(|_| ())
+        },
+    )
+}
+
+#[test]
+fn complete_record_state_scan_refuses_work() {
+    let operation = "scan F3D complete record states";
+    let error = complete_record_binding_refusal(operation);
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn complete_state_record_scan_refuses_work() {
+    let operation = "scan F3D complete state records";
+    let error = complete_record_binding_refusal(operation);
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn complete_record_byte_comparison_refuses_work() {
+    let operation = "compare F3D archived record bytes";
+    let error = complete_record_binding_refusal(operation);
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn complete_record_name_comparison_refuses_work() {
+    let operation = "compare F3D archived record names";
+    let error = complete_record_binding_refusal(operation);
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
 #[test]
 fn identity_index_refuses_local_id_scan_work() {
     let error = crate::test_support::resource_refusal_at(
@@ -1175,12 +1283,14 @@ fn treatment_preceding_face_index_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let empty_boundaries =
+        face_boundary_edge_index(&ctx, &AsmHistoricalTopology::default()).unwrap();
     let error = treatment_face_supports(
         &ctx,
         &[],
         &AsmHistoricalTopology::default(),
         &preceding,
-        &HashMap::new(),
+        &empty_boundaries,
     )
     .unwrap_err();
     assert!(
@@ -1365,5 +1475,170 @@ fn entity_selection_scope_stream_comparison_propagates_work_refusal() {
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "compare F3D selection entity scope stream"
+    ));
+}
+
+
+fn treatment_face_support_scan_fixture() -> (
+    [i64; 1],
+    AsmHistoricalTopology,
+    AsmHistoricalTopology,
+) {
+    let inserted_faces = [1];
+    let result = AsmHistoricalTopology {
+        faces: vec![1, 2],
+        face_loops: vec![
+            AsmHistoricalRelation {
+                owner_ref: 1,
+                member_refs: vec![10],
+            },
+            AsmHistoricalRelation {
+                owner_ref: 2,
+                member_refs: vec![20],
+            },
+        ],
+        loop_coedges: vec![
+            AsmHistoricalRelation {
+                owner_ref: 10,
+                member_refs: vec![100, 101],
+            },
+            AsmHistoricalRelation {
+                owner_ref: 20,
+                member_refs: vec![200, 201],
+            },
+        ],
+        coedge_topology: vec![
+            crate::history_records::AsmHistoricalCoedge {
+                coedge: 100,
+                owner_loop: 10,
+                edge: 30,
+                next: 101,
+                previous: 101,
+                radial_next: 200,
+            },
+            crate::history_records::AsmHistoricalCoedge {
+                coedge: 101,
+                owner_loop: 10,
+                edge: 31,
+                next: 100,
+                previous: 100,
+                radial_next: 201,
+            },
+            crate::history_records::AsmHistoricalCoedge {
+                coedge: 200,
+                owner_loop: 20,
+                edge: 30,
+                next: 201,
+                previous: 201,
+                radial_next: 100,
+            },
+            crate::history_records::AsmHistoricalCoedge {
+                coedge: 201,
+                owner_loop: 20,
+                edge: 31,
+                next: 200,
+                previous: 200,
+                radial_next: 101,
+            },
+        ],
+        face_surfaces: vec![
+            AsmHistoricalCarrierBinding {
+                entity: 1,
+                carrier: 100,
+            },
+            AsmHistoricalCarrierBinding {
+                entity: 2,
+                carrier: 200,
+            },
+        ],
+        ..AsmHistoricalTopology::default()
+    };
+    let preceding = AsmHistoricalTopology {
+        faces: vec![2],
+        face_surfaces: vec![AsmHistoricalCarrierBinding {
+            entity: 2,
+            carrier: 200,
+        }],
+        ..AsmHistoricalTopology::default()
+    };
+    (inserted_faces, result, preceding)
+}
+
+fn treatment_supports_for_fixture(
+    decode: &cadmpeg_core::decode::DecodeContext<'_>,
+    inserted_faces: &[i64],
+    result: &AsmHistoricalTopology,
+    preceding: &AsmHistoricalTopology,
+) -> Result<Vec<(i64, i64, Vec<i64>)>, cadmpeg_core::CodecError> {
+    let result_boundaries = face_boundary_edge_index(decode, result)?;
+    treatment_face_supports(decode, inserted_faces, result, preceding, &result_boundaries)
+}
+
+#[test]
+fn history_treatment_support_fixture_keeps_neighbor_face() {
+    let (inserted_faces, result, preceding) = treatment_face_support_scan_fixture();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (decode, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let supports = treatment_supports_for_fixture(
+        &decode,
+        &inserted_faces,
+        &result,
+        &preceding,
+    )
+    .unwrap();
+    assert_eq!(supports, vec![(1, 100, vec![2])]);
+}
+
+fn treatment_face_support_refusal(operation: &str) -> cadmpeg_core::CodecError {
+    crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |decode| {
+            let (inserted_faces, result, preceding) = treatment_face_support_scan_fixture();
+            treatment_supports_for_fixture(decode, &inserted_faces, &result, &preceding).map(|_| ())
+        },
+    )
+}
+
+#[test]
+fn history_treatment_result_boundary_edge_scan_refuses_work() {
+    let operation = "scan F3D result face boundary edges";
+    let error = treatment_face_support_refusal(operation);
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn history_treatment_inserted_boundary_scan_refuses_work() {
+    let operation = "scan F3D inserted boundary edges";
+    let error = treatment_face_support_refusal(operation);
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn history_treatment_adjacent_face_lists_refuse_work() {
+    let operation = "scan F3D adjacent treatment faces";
+    let error = treatment_face_support_refusal(operation);
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn history_treatment_support_face_dedup_refuses_work() {
+    let operation = "deduplicate F3D treatment support faces";
+    let error = treatment_face_support_refusal(operation);
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
     ));
 }

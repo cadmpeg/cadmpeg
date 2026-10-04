@@ -926,7 +926,8 @@ fn combine_external_tools_refuse_collection_limit() {
     });
     assert!(matches!(
         result,
-        Err(cadmpeg_core::CodecError::ResourceLimit { .. })
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "collect F3D Combine external tools"
     ));
 }
 
@@ -1432,7 +1433,7 @@ fn materialized_record_table_normalizes_revision_references() {
     .expect("archived record frames")
     .try_into()
     .expect("one archived record");
-    let table = with_history_decode_context(|ctx| {
+    with_history_decode_context(|ctx| {
         let archive = historical_record_archive(
             ctx,
             std::slice::from_ref(&state),
@@ -1441,14 +1442,14 @@ fn materialized_record_table_normalizes_revision_references() {
         )
         .expect("history archive budget")
         .expect("complete historical record archive");
-        materialize_record_table(ctx, &state, &archive)
+        let table = materialize_record_table(ctx, &state, &archive)
             .expect("historical table budget")
-            .expect("complete historical RecordTable")
-    });
+            .expect("complete historical RecordTable");
 
-    assert_eq!(table.len(), 2);
-    assert_eq!(table[1].index, 1);
-    assert_eq!(&*table[1].tokens, [cadmpeg_asm::sab::Token::Ref(1)]);
+        assert_eq!(table.records.len(), 2);
+        assert_eq!(table.records[1].index, 1);
+        assert_eq!(&*table.records[1].tokens, [cadmpeg_asm::sab::Token::Ref(1)]);
+    });
 }
 
 #[test]
@@ -1539,20 +1540,20 @@ fn qualified_history_marker_remains_an_archived_record() {
     .expect("archived record frames")
     .try_into()
     .expect("one archived record");
-    let archive = with_history_decode_context(|ctx| {
-        historical_record_archive(
+    with_history_decode_context(|ctx| {
+        let archive = historical_record_archive(
             ctx,
             std::slice::from_ref(&state),
             &active,
             HashMap::from([(2, framed)]),
         )
         .expect("history archive budget")
-        .expect("qualified history marker is an archived record")
+        .expect("qualified history marker is an archived record");
+        let record = archive.records.get(&2).expect("marker revision is retained");
+        assert_eq!(record.name, "End-of-ASM-History-Section");
+        assert_eq!(record.index, 1);
+        assert!(record.tokens.contains(&cadmpeg_asm::sab::Token::Ref(1)));
     });
-    let record = archive.get(&2).expect("marker revision is retained");
-    assert_eq!(record.name, "End-of-ASM-History-Section");
-    assert_eq!(record.index, 1);
-    assert!(record.tokens.contains(&cadmpeg_asm::sab::Token::Ref(1)));
 }
 
 fn reverse_history_state_fixture() -> Vec<AsmDeltaState> {
@@ -1938,3 +1939,5 @@ fn grouped_face_reference_selects_one_changed_topology_face() {
 }
 
 mod extrude_profile;
+mod grouped_reference_face_candidate;
+mod combine_external_limits;
