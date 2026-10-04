@@ -581,9 +581,12 @@ pub(crate) fn is_part28_xml(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<boo
     // Its governing-schema namespace varies by AP, but the Part 28 common
     // namespace remains the bounded admission marker. Schema selection and
     // the derived XML Schema remain caller inputs.
-    Ok(PART28_COMMON_NAMESPACES
-        .iter()
-        .any(|namespace| has_namespace_value(attributes, namespace)))
+    for namespace in PART28_COMMON_NAMESPACES {
+        if has_namespace_value(ctx, attributes, namespace)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 const PART28_COMMON_NAMESPACES: [&[u8]; 3] = [
@@ -686,17 +689,18 @@ fn find_xml_tag_end(bytes: &[u8], mut cursor: usize) -> Option<usize> {
     None
 }
 
-fn has_namespace_value(attributes: &[u8], expected: &[u8]) -> bool {
-    xml_attribute_value(attributes, |name, value| {
-        (name == b"xmlns" || name.starts_with(b"xmlns:")) && value == expected
-    })
-    .is_some()
+fn has_namespace_value(ctx: &DecodeContext<'_>, attributes: &[u8], expected: &[u8]) -> Result<bool, CodecError> {
+    Ok(xml_attribute_value(ctx, attributes, |ctx, name, value| {
+        Ok((name == b"xmlns" || name.starts_with(b"xmlns:"))
+            && ctx.equal_bytes(value, expected, "STEP XML namespace value equality")?)
+    })?.is_some())
 }
 
-fn xml_attribute_value(
-    attributes: &[u8],
-    mut matches: impl FnMut(&[u8], &[u8]) -> bool,
-) -> Option<&[u8]> {
+fn xml_attribute_value<'a>(
+    ctx: &DecodeContext<'_>,
+    attributes: &'a [u8],
+    mut matches: impl FnMut(&DecodeContext<'_>, &[u8], &[u8]) -> Result<bool, CodecError>,
+) -> Result<Option<&'a [u8]>, CodecError> {
     let mut cursor = 0;
     while cursor < attributes.len() {
         while attributes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
@@ -717,15 +721,15 @@ fn xml_attribute_value(
             cursor += 1;
         }
         if attributes.get(cursor) != Some(&b'=') {
-            return None;
+            return Ok(None);
         }
         cursor += 1;
         while attributes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
             cursor += 1;
         }
-        let delimiter = *attributes.get(cursor)?;
+        let Some(&delimiter) = attributes.get(cursor) else { return Ok(None); };
         if delimiter != b'\'' && delimiter != b'"' {
-            return None;
+            return Ok(None);
         }
         cursor += 1;
         let value_start = cursor;
@@ -737,11 +741,11 @@ fn xml_attribute_value(
         }
         let value = &attributes[value_start..cursor];
         cursor += 1;
-        if matches(name, value) {
-            return Some(value);
+        if matches(ctx, name, value)? {
+            return Ok(Some(value));
         }
     }
-    None
+    Ok(None)
 }
 
 pub(crate) fn is_ap242_bo_model_xml(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<bool, CodecError> {
@@ -755,10 +759,15 @@ pub(crate) fn is_ap242_bo_model_xml(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Re
     // BM-03: the published namespace must be bound on the Uos document
     // element. Text, comments, schemaLocation values, and local names do not
     // identify the alternate encoding.
-    Ok(local_name == b"Uos"
-        && BO_MODEL_NAMESPACES
-            .iter()
-            .any(|namespace| has_namespace_value(attributes, namespace)))
+    if local_name != b"Uos" {
+        return Ok(false);
+    }
+    for namespace in BO_MODEL_NAMESPACES {
+        if has_namespace_value(ctx, attributes, namespace)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 const BO_MODEL_NAMESPACES: [&[u8]; 2] = [
@@ -777,6 +786,27 @@ mod tests {
     use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
     use super::{insert_attribute, starts_with_step_magic, StepCodec};
+
+    #[test]
+    fn xml_namespace_value_equality_preserves_resource_refusal() {
+        let attributes = b" xmlns='urn:test:namespace'";
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(attributes, &arena, &policy).unwrap();
+        let error = super::has_namespace_value(&ctx, attributes, b"urn:test:namespace").unwrap_err();
+        let CodecError::ResourceLimit(refusal) = error else {
+            panic!("namespace comparison must preserve its resource refusal");
+        };
+        assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(refusal.operation, "STEP XML namespace value equality");
+        assert_eq!(ctx.resource_refusal(), Some(refusal));
+        let service = cadmpeg_test_support::service_decode_context();
+        assert!(super::has_namespace_value(&service, attributes, b"urn:test:namespace").unwrap());
+        assert!(!super::has_namespace_value(&service, attributes, b"urn:test:different").unwrap());
+        assert!(!super::has_namespace_value(&service, b" xmlns", b"urn:test:namespace").unwrap());
+    }
+
 
     const INSPECTION_TEXT_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
 
