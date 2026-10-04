@@ -52,12 +52,11 @@ pub(crate) fn decode_recipes(
     scan: &ContainerScan,
 ) -> Result<Vec<ConstructionRecipe>, CodecError> {
     let mut out = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
-        let bytes = scan.entry_bytes(&entry.name)?;
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D Design stream entries")? {
+        if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
+            continue;
+        }
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         decode_stream(ctx, bytes, &entry.name, &mut out)?;
     }
     Ok(out)
@@ -69,12 +68,11 @@ pub(crate) fn decode_parameters(
     scan: &ContainerScan,
 ) -> Result<Vec<DesignParameter>, CodecError> {
     let mut out = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
-        let bytes = scan.entry_bytes(&entry.name)?;
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D Design stream entries")? {
+        if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
+            continue;
+        }
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let mut position = 0usize;
         let mut emitted_record_indices = HashSet::new();
         while let Some(at) = next_indexed_record_offset(bytes, position) {
@@ -623,12 +621,11 @@ pub(crate) fn decode_parameter_owners(
         }
     }
     let mut streams = HashMap::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
-        let bytes = scan.entry_bytes(&entry.name)?;
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D Design stream entries")? {
+        if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
+            continue;
+        }
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let stream = native_scope_charged(ctx, &entry.name)?;
         if streams.contains_key(&stream) {
             return Err(CodecError::Malformed(
@@ -670,7 +667,7 @@ pub(crate) fn decode_parameter_owners(
         let (entry, records) = streams
             .get(scope)
             .ok_or_else(|| malformed("has no containing Design BulkStream"))?;
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let at = usize::try_from(header.byte_offset)
             .map_err(|_| malformed("primary header offset exceeds the platform address space"))?;
         let end = records
@@ -1019,11 +1016,11 @@ pub(crate) fn decode_parameter_companions(
         let Some(header) = headers_by_record.get(&(scope, owner.companion_record_index())) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, scope)
+        let Some(entry) = scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, scope)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let at = usize::try_from(header.byte_offset).ok();
         let prefix = at.and_then(|at| at.checked_add(58).and_then(|end| bytes.get(at..end)));
         let Some(parsed) = prefix.and_then(parse_parameter_companion) else {

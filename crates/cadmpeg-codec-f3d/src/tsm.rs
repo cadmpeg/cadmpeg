@@ -177,7 +177,7 @@ pub(crate) fn decode(
                 .strip_prefix(folder)
                 .is_some_and(|relative| relative.starts_with(ENTRY_MARKER))
     }) {
-        match parse(ctx, &entry.name, scan.entry_bytes(&entry.name)?) {
+        match parse(ctx, &entry.name, scan.entry_bytes(ctx, &entry.name)?) {
             Ok(parsed) => {
                 if !parsed.unknown_record_kinds.is_empty() {
                     let message = ctx.format_retained(

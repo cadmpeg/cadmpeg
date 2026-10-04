@@ -41,12 +41,11 @@ pub(crate) fn decode_body_members(
     prefix.extend_from_slice(&0u16.to_le_bytes());
     prefix.extend_from_slice(&10u32.to_le_bytes());
     prefix.extend_from_slice(b"BodiesRoot");
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
-        let bytes = scan.entry_bytes(&entry.name)?;
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D Design stream entries")? {
+        if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
+            continue;
+        }
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let Some(start) = bytes
             .windows(prefix.len())
             .position(|window| window == prefix)
@@ -130,11 +129,11 @@ pub(crate) fn decode_body_bounds(
         let Some(stream) = native_stream(&entity.id) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) = scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let Some(start) = usize::try_from(entity.byte_offset).ok() else {
             continue;
         };
@@ -989,13 +988,12 @@ pub(crate) fn design_model_blob_names(
     let mut model_names = Vec::new();
     let mut carrier_counts = HashMap::<String, usize>::new();
     let mut saw_design_stream = false;
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D Design stream entries")? {
+        if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
+            continue;
+        }
         saw_design_stream = true;
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let Some(metadata) =
             crate::design::decode::meta::metadata_for_bulk_stream(ctx, scan, &entry.name)?
         else {
@@ -1033,10 +1031,12 @@ pub(crate) fn design_model_blob_names(
     }
 
     let mut archive_counts = HashMap::<String, usize>::new();
-    for entry in scan.entries.iter().filter(|entry| {
-        scan.belongs_to_design_asset(&entry.name)
-            && matches!(entry.role, ContainerRole::BrepSmb | ContainerRole::BrepSmbh)
-    }) {
+    for entry in ctx.admit_iter(&scan.entries, "count F3D Design asset BREP names")? {
+        if !scan.belongs_to_design_asset(ctx, &entry.name)?
+            || !matches!(entry.role, ContainerRole::BrepSmb | ContainerRole::BrepSmbh)
+        {
+            continue;
+        }
         let basename = entry.name.rsplit('/').next().unwrap_or(&entry.name);
         if let Some(count) = archive_counts.get_mut(basename) {
             *count += 1;
@@ -1215,12 +1215,11 @@ pub(crate) fn decode_design_body_bindings(
 ) -> Result<Vec<DesignBodyBinding>, CodecError> {
     let active_basename = active_brep_entry.and_then(|entry| entry.rsplit('/').next());
     let mut out = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
-        let bytes = scan.entry_bytes(&entry.name)?;
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D Design stream entries")? {
+        if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
+            continue;
+        }
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let Some(metadata) =
             crate::design::decode::meta::metadata_for_bulk_stream(ctx, scan, &entry.name)?
         else {
@@ -1377,12 +1376,11 @@ pub(crate) fn decode_all_body_visibility(
     scan: &ContainerScan,
 ) -> Result<HashMap<(String, u64), DecodedBodyVisibility>, CodecError> {
     let mut out = HashMap::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
-        let bytes = scan.entry_bytes(&entry.name)?;
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D Design stream entries")? {
+        if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
+            continue;
+        }
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let Some(metadata) =
             crate::design::decode::meta::metadata_for_bulk_stream(ctx, scan, &entry.name)?
         else {

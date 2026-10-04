@@ -631,12 +631,11 @@ pub(crate) fn decode_with_body_bindings<'a>(
     let mut out = Vec::new();
     let mut notes = Vec::new();
     let mut untyped_distance_properties = 0usize;
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_asset_entry(entry, ContainerRole::ProteinAssets))
-    {
-        let protein = scan.entry_view(&entry.name).ok_or_else(|| {
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D Protein asset entries")? {
+        if !scan.is_design_asset_entry(ctx, entry, ContainerRole::ProteinAssets)? {
+            continue;
+        }
+        let protein = scan.entry_view(ctx, &entry.name)?.ok_or_else(|| {
             CodecError::Malformed("protein archive entry missing from scan".into())
         })?;
         let Some(instance) = instance_properties(ctx, protein)? else {
@@ -1012,12 +1011,11 @@ pub(crate) fn decode_design_assignments(
     scan: &ContainerScan,
 ) -> Result<Vec<DesignMaterialAssignment>, CodecError> {
     let mut out = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
-        let bytes = scan.entry_bytes(&entry.name)?;
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D Design stream entries")? {
+        if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
+            continue;
+        }
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let Some(metadata) =
             crate::design::decode::meta::metadata_for_bulk_stream(ctx, scan, &entry.name)?
         else {
@@ -1107,12 +1105,11 @@ fn decode_body_appearance_overrides(
     body_bindings: &[DesignBodyBinding],
 ) -> Result<Vec<BodyAppearanceOverride>, CodecError> {
     let mut out = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
-        let bytes = scan.entry_bytes(&entry.name)?;
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D Design stream entries")? {
+        if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
+            continue;
+        }
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let Some(metadata) =
             crate::design::decode::meta::metadata_for_bulk_stream(ctx, scan, &entry.name)?
         else {
@@ -1213,12 +1210,11 @@ fn decode_face_appearance_assignments(
     scan: &ContainerScan,
 ) -> Result<Vec<FaceAppearanceAssignment>, CodecError> {
     let mut out = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
-        let bytes = scan.entry_bytes(&entry.name)?;
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D Design stream entries")? {
+        if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
+            continue;
+        }
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let Some(metadata) =
             crate::design::decode::meta::metadata_for_bulk_stream(ctx, scan, &entry.name)?
         else {
@@ -1801,12 +1797,11 @@ fn decode_design_object_types(
     scan: &ContainerScan,
 ) -> Result<std::collections::HashMap<u64, String>, CodecError> {
     let mut out = std::collections::HashMap::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Metastream))
-    {
-        let bytes = scan.entry_bytes(&entry.name)?;
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D Design MetaStreams")? {
+        if !scan.is_design_stream(ctx, entry, ContainerRole::Metastream)? {
+            continue;
+        }
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let mut position = 0usize;
         while position + 8 <= bytes.len() {
             let Some((object_type, after_type)) = lp_ascii_printable_charged(ctx, bytes, position)?
@@ -1851,12 +1846,11 @@ fn decode_act_channels(
     scan: &ContainerScan,
 ) -> Result<std::collections::HashMap<u64, BTreeMap<String, String>>, CodecError> {
     let mut out = std::collections::HashMap::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_act_stream(entry))
-    {
-        let bytes = scan.entry_bytes(&entry.name)?;
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D ACT stream entries")? {
+        if !scan.is_act_stream(ctx, entry)? {
+            continue;
+        }
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let mut position = 0usize;
         while position + 4 <= bytes.len() {
             let Some((tag, after_tag)) = lp_ascii_printable_charged(ctx, bytes, position)? else {

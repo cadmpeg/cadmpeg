@@ -196,11 +196,11 @@ pub(crate) fn decode_edge_operands(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) = scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let records = cached_borrowed_record_offsets(ctx, &mut record_offset_index, stream, bytes)?;
         for (ordinal, record_index) in scope.reference_members().values().copied().enumerate() {
             if !member_indices.contains(&record_index) {
@@ -281,11 +281,11 @@ pub(crate) fn decode_edge_treatment_vertex_operands(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) = scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let records = cached_borrowed_record_offsets(ctx, &mut record_offset_index, stream, bytes)?;
         for (scope_reference_ordinal, record_index) in
             scope.reference_members().values().copied().enumerate()
@@ -409,11 +409,11 @@ pub(crate) fn bind_work_point_input_carriers(
         let (_stream_reservation, stream) = ctx
             .format_scoped(format_args!("{stream}"), "f3d scoped stream identity")
             .map(|(text, reservation)| (reservation, text))?;
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, &stream)
+        let Some(entry) = scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, &stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let records = cached_owned_record_offsets(ctx, &mut record_offset_index, &stream, bytes)?;
         let scope_record_index = scope.record_index;
         let Some(construction) = scope.work_point_construction_mut() else {
@@ -597,11 +597,11 @@ pub(crate) fn bind_work_plane_constructions(
         let (_stream_reservation, stream) = ctx
             .format_scoped(format_args!("{stream}"), "f3d scoped stream identity")
             .map(|(text, reservation)| (reservation, text))?;
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, &stream)
+        let Some(entry) = scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, &stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let records = cached_owned_record_offsets(ctx, &mut record_offset_index, &stream, bytes)?;
         let Some([placement_record_index, first, second, third, extra_offset]) =
             scope.reference_members().values_array()
@@ -766,11 +766,11 @@ pub(crate) fn decode_edge_identity_operands(
         }) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) = scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         for (ordinal, record_index) in group
             .members()
             .iter()
@@ -961,11 +961,11 @@ pub(crate) fn decode_face_operands(
         {
             continue;
         }
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) = scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let records = cached_borrowed_record_offsets(ctx, &mut record_offset_index, stream, bytes)?;
         for (group_member_index, record_index) in group
             .members()
@@ -1049,11 +1049,11 @@ pub(crate) fn decode_face_operands(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) = scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let records = cached_borrowed_record_offsets(ctx, &mut record_offset_index, stream, bytes)?;
         let legacy_as_built = scope.kind()
             == crate::records::feature::scope::DesignFeatureKind::AsBuilt
@@ -1145,11 +1145,11 @@ pub(crate) fn decode_face_source_groups(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) = scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let records = cached_borrowed_record_offsets(ctx, &mut record_offset_index, stream, bytes)?;
         let Ok(scope_start) = usize::try_from(scope.byte_offset()) else {
             continue;
@@ -1645,11 +1645,11 @@ pub(crate) fn bind_sketch_profiles(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) = scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let mut unique = None;
         let mut multiple = false;
         for (ordinal, record_index) in scope.reference_members().values().copied().enumerate() {
@@ -1712,11 +1712,11 @@ pub(crate) fn decode_extrude_selection_groups(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) = scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         for (ordinal, record_index) in scope.reference_members().values().copied().enumerate() {
             let Ok(ordinal) = u32::try_from(ordinal) else {
                 continue;
@@ -1820,11 +1820,11 @@ pub(crate) fn decode_construction_operand_groups(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) = scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let mut unclosed = Vec::new();
         for (ordinal, record_index) in scope.reference_members().values().copied().enumerate() {
             let (Ok(ordinal), Some(header)) =
@@ -1913,11 +1913,11 @@ pub(crate) fn decode_loft_legacy_body_carriers(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) = scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         for (ordinal, record_index) in scope.reference_members().values().copied().enumerate() {
             let Ok(ordinal) = u32::try_from(ordinal) else {
                 continue;
@@ -2913,11 +2913,11 @@ pub(crate) fn bind_construction_operand_trailing_records(
         let Some(stream) = native_stream(&group.id) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) = scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let mut trailing_transforms = Vec::new();
         let mut trailing_dual_transforms = Vec::new();
         let mut trailing_flags = Vec::new();
@@ -3005,11 +3005,11 @@ pub(crate) fn bind_construction_operand_paths(
         let Some(stream) = native_stream(&group.id) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) = scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let mut auxiliary_paths = Vec::new();
         for record in &group.frame.auxiliary_records {
             let Some(header) = headers.get(&(stream, record.value)) else {
@@ -3207,7 +3207,7 @@ pub(crate) fn decode_construction_operand_identities(
         let Some(stream) = native_stream(&group.id) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) = scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
@@ -3222,7 +3222,7 @@ pub(crate) fn decode_construction_operand_identities(
         let Some(wrapper_header) = headers.get(&(stream, *trailing_record_index)) else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         if let Some(mut identity) =
             parse_construction_operand_identity(ctx, bytes, group, wrapper_header).transpose()?
         {
@@ -3722,11 +3722,11 @@ pub(crate) fn decode_extrude_selection_members(
         let Some(stream) = native_stream(&group.id) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) = scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         for (ordinal, record_index) in group
             .members()
             .iter()
@@ -3777,11 +3777,11 @@ pub(crate) fn decode_entity_selection_operands(
         let Some(stream) = native_stream(&group.id) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) = scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         for (ordinal, record_index) in group
             .members()
             .iter()
@@ -4284,11 +4284,11 @@ pub(crate) fn decode_body_recipe_operands(
         }) {
             continue;
         }
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) = scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let records = cached_borrowed_record_offsets(ctx, &mut record_offset_index, stream, bytes)?;
         for (ordinal, record_index) in group
             .members()
@@ -4327,11 +4327,11 @@ pub(crate) fn decode_body_recipe_operands(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) = scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let records = cached_borrowed_record_offsets(ctx, &mut record_offset_index, stream, bytes)?;
         let operation = scope.combine_operation();
         let record_indexes = operation

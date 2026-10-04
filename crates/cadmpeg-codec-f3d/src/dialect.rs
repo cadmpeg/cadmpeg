@@ -221,7 +221,16 @@ pub(crate) fn classify_layers(
         }
         Ok(())
     };
-    let instance = if scan.breps.len() + crate::container::text_brep_names(scan).count() > 1 {
+    let text_brep_count = crate::container::text_brep_names(ctx, scan)?.try_fold(
+        0usize,
+        |count, name| {
+            name?;
+            count
+                .checked_add(1)
+                .ok_or_else(|| ctx.refuse_codec_limit("count F3D text BREP carriers", 0, u64::MAX))
+        },
+    )?;
+    let instance = if scan.breps.len() + text_brep_count > 1 {
         LayerInstance::Tagged
     } else {
         LayerInstance::Sole
@@ -235,7 +244,8 @@ pub(crate) fn classify_layers(
             ctx, header, &brep.name, instance,
         )?)?;
     }
-    for name in crate::container::text_brep_names(scan) {
+    for name in crate::container::text_brep_names(ctx, scan)? {
+        let name = name?;
         let matched = match scan.text_breps.get(name) {
             Some(crate::container::TextBrepFraming::Parsed(stream)) => {
                 let header = stream.header.as_kernel_header(ctx)?;

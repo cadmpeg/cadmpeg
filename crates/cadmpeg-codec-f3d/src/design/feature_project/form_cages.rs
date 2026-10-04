@@ -63,7 +63,7 @@ pub(crate) fn bind_form_cages(
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(stream)?;
+        let bytes = scan.entry_bytes(ctx, stream)?;
         let records = IndexedRecordOffsets::build(ctx, bytes)?;
         let (cage_lists, cage_counts) = form_cage_lists(
             ctx,

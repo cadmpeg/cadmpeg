@@ -548,7 +548,7 @@ pub(crate) fn resolve_design_folder<'a, 'n>(
     ctx: &DecodeContext<'_>,
     manifest: &TopLevelManifest,
     entry_names: impl IntoIterator<Item = &'n str>,
-    mut entry_bytes: impl FnMut(&str) -> Option<&'a [u8]>,
+    mut entry_bytes: impl FnMut(&str) -> Result<Option<&'a [u8]>, CodecError>,
 ) -> Result<String, CodecError> {
     let mut storage = ctx.reserve_scoped(0, "F3D manifest folder lookups")?;
     let mut names = Vec::new();
@@ -603,7 +603,7 @@ pub(crate) fn resolve_design_folder<'a, 'n>(
             format_args!("{folder}/Manifest.dat"),
             "name F3D asset manifest",
         )?;
-        let bytes = entry_bytes(&manifest_name).ok_or_else(|| {
+        let bytes = entry_bytes(&manifest_name)?.ok_or_else(|| {
             parse_malformed(
                 ctx,
                 "asset manifest",

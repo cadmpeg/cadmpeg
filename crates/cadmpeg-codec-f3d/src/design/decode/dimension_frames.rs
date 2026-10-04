@@ -154,11 +154,11 @@ pub(crate) fn decode_dimension_recipe_records(
         let Some(stream) = native_stream(companion.id()) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) = scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let Some(payload) = companion.payload() else {
             continue;
         };
@@ -995,12 +995,12 @@ pub(crate) fn decode_dimension_locus_pairs(
             .contains(&(scope, companion.record_index()))
             .then_some((companion, scope))
     }) {
-        let entry = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, scope);
+        let entry = scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, scope)?;
         let Some(entry) = entry else {
             continue;
         };
         let geometry_indices = dimension_geometry_indices(ctx, scope, points, curves)?;
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let Some((start, end)) = companion_owned_interval(
             ctx,
             companion,
@@ -1225,12 +1225,12 @@ pub(crate) fn decode_dimension_null_locus_pairs(
         (dimension_companions.contains(&key) && !typed_companions.contains(&key))
             .then_some((companion, scope))
     }) {
-        let entry = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, scope);
+        let entry = scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, scope)?;
         let Some(entry) = entry else {
             continue;
         };
         let geometry_indices = dimension_geometry_indices(ctx, scope, points, curves)?;
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let Some((start, end)) = companion_owned_interval(
             ctx,
             companion,
@@ -1415,7 +1415,7 @@ pub(crate) fn decode_dimension_annotation_frames(
         {
             continue;
         }
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) = scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
@@ -1448,7 +1448,7 @@ pub(crate) fn decode_dimension_annotation_frames(
             )?;
             governed_owners.insert(owner.record_index(), owner.companion_record_index());
         }
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let mut intervals = Vec::new();
         for companion in companions
             .iter()
@@ -1837,11 +1837,10 @@ pub(crate) fn decode_dimension_presentation_frames(
     }
     let types = decode_types(ctx, scan)?;
     let mut out = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D Design stream entries")? {
+        if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
+            continue;
+        }
         let (_stream_reservation, stream) =
             crate::design::decode::sketch::native_scope_scoped(ctx, &entry.name)?;
         let stream_types = stream_types_by_entity(ctx, &types, &entry.name)?;
@@ -1889,7 +1888,7 @@ pub(crate) fn decode_dimension_presentation_frames(
             )?;
             sketch_entities.insert(index);
         }
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         for header in indexed_record_offsets(bytes) {
             let start = header.offset;
             let Some(primary_type_guid) =
@@ -2082,7 +2081,7 @@ pub(crate) fn decode_dimension_locus_groups(
             .contains(&(scope, companion.record_index()))
             .then_some((companion, scope))
     }) {
-        let entry = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, scope);
+        let entry = scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, scope)?;
         let Some(entry) = entry else {
             continue;
         };
@@ -2103,7 +2102,7 @@ pub(crate) fn decode_dimension_locus_groups(
             )?;
             sketch_entities.insert(index);
         }
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let Some((start, end)) = companion_owned_interval(
             ctx,
             companion,

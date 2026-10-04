@@ -77,12 +77,11 @@ pub(crate) fn decode_parameter_scopes(
     let component_occurrences = &native.design_component_occurrences;
     let recipes = &native.construction_recipes;
     let mut out = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
-        let bytes = scan.entry_bytes(&entry.name)?;
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D Design stream entries")? {
+        if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
+            continue;
+        }
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let stream = native_scope_charged(ctx, &entry.name)?;
         let records = IndexedRecordOffsets::build(ctx, bytes)?;
         let stream_types =

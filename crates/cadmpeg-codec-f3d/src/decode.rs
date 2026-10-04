@@ -77,21 +77,43 @@ fn body_visibility_for<'m>(
     Ok(index.get(&(name, body_key)))
 }
 
+fn count_result_items<T>(
+    ctx: &DecodeContext<'_>,
+    mut values: impl Iterator<Item = Result<T, CodecError>>,
+    operation: &'static str,
+) -> Result<usize, CodecError> {
+    values.try_fold(0usize, |count, value| {
+        value?;
+        count
+            .checked_add(1)
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))
+    })
+}
+
 fn join_text_brep_names(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
 ) -> Result<String, CodecError> {
-    let count = container::text_brep_names(scan).count();
-    let length = container::text_brep_names(scan)
-        .try_fold(0usize, |length, name| length.checked_add(name.len()))
-        .and_then(|length| {
-            (if count == 0 { 0 } else { count - 1 })
-                .checked_mul("`, `".len())
-                .and_then(|separators| length.checked_add(separators))
-        })
+    let count = count_result_items(
+        ctx,
+        container::text_brep_names(ctx, scan)?,
+        "count F3D text BREP carriers",
+    )?;
+    let length = container::text_brep_names(ctx, scan)?.try_fold(0usize, |length, name| {
+        let name = name?;
+        length
+            .checked_add(name.len())
+            .ok_or_else(|| ctx.refuse_codec_limit("join F3D text B-rep names", 0, u64::MAX))
+    })?;
+    let separators = (if count == 0 { 0 } else { count - 1 })
+        .checked_mul("`, `".len())
+        .ok_or_else(|| ctx.refuse_codec_limit("join F3D text B-rep names", 0, u64::MAX))?;
+    let length = length
+        .checked_add(separators)
         .ok_or_else(|| ctx.refuse_codec_limit("join F3D text B-rep names", 0, u64::MAX))?;
     let mut joined = ctx.retained_string(length, "join F3D text B-rep names")?;
-    for (index, name) in container::text_brep_names(scan).enumerate() {
+    for (index, name) in container::text_brep_names(ctx, scan)?.enumerate() {
+        let name = name?;
         if index != 0 {
             joined.push_str("`, `");
         }
@@ -2162,14 +2184,17 @@ fn model_brep_candidates<'s>(
 ) -> Result<Vec<&'s BrepFacts>, CodecError> {
     let mut candidates = Vec::new();
     for blob_name in blob_names {
-        let mut matches = container::design_breps(scan)
-            .filter(|brep| brep.name.rsplit('/').next() == Some(blob_name.as_str()));
-        let Some(brep) = matches.next() else {
+        let mut matches = container::design_breps(ctx, scan)?.filter_map(|brep| match brep {
+            Err(error) => Some(Err(error)),
+            Ok(brep) if brep.name.rsplit('/').next() == Some(blob_name.as_str()) => Some(Ok(brep)),
+            Ok(_) => None,
+        });
+        let Some(brep) = matches.next().transpose()? else {
             return Err(CodecError::malformed(format_args!(
                 "Design body map references missing BREP entry {blob_name}"
             )));
         };
-        if matches.next().is_some() {
+        if matches.next().transpose()?.is_some() {
             return Err(CodecError::malformed(format_args!(
                 "Design body map BREP basename is ambiguous: {blob_name}"
             )));
@@ -2193,8 +2218,9 @@ fn try_decode_text_model(
     scan: &ContainerScan<'_>,
 ) -> Result<Option<(BrepFacts, Brep)>, CodecError> {
     let mut parts: Vec<(BrepFacts, Brep)> = Vec::new();
-    for name in container::text_brep_names(scan) {
-        let bytes = scan.entry_bytes(name)?;
+    for name in container::text_brep_names(ctx, scan)? {
+        let name = name?;
+        let bytes = scan.entry_bytes(ctx, name)?;
         let stream = match scan.text_breps.get(name) {
             Some(crate::container::TextBrepFraming::Parsed(stream)) => stream,
             Some(crate::container::TextBrepFraming::Unframed(error)) => {
@@ -2485,7 +2511,8 @@ impl<'a> F3dDecodeSession<'a> {
     fn decode_design_graph(&mut self, path: &SessionPath) -> Result<(), CodecError> {
         let scan = self.scan;
         let ctx = self.ctx;
-        for history_brep in container::history_breps(scan) {
+        for history_brep in container::history_breps(ctx, scan)? {
+            let history_brep = history_brep?;
             if let Some(history) = decode_asm_history(ctx, scan, history_brep)? {
                 ctx.push_vec(
                     &mut self.native.asm_histories,
@@ -3240,8 +3267,16 @@ impl<'a> F3dDecodeSession<'a> {
                     apply_bodyless_design_classification(
                         ctx,
                         &mut self.report,
-                        container::design_breps(scan).count(),
-                        container::text_brep_names(scan).count(),
+                        count_result_items(
+                            ctx,
+                            container::design_breps(ctx, scan)?,
+                            "count F3D Design BREP candidates",
+                        )?,
+                        count_result_items(
+                            ctx,
+                            container::text_brep_names(ctx, scan)?,
+                            "count F3D text BREP carriers",
+                        )?,
                         self.native.design_body_bindings.len()
                             + self.native.design_body_members.len(),
                         self.ir.model.sketch_entities.len()
@@ -3645,7 +3680,7 @@ fn mesh_texture_asset_bytes(
     entry_name: &str,
 ) -> Result<Vec<u8>, CodecError> {
     ctx.copy_retained(
-        scan.entry_bytes(entry_name)?,
+        scan.entry_bytes(ctx, entry_name)?,
         "retain F3D mesh texture bytes",
     )
 }
@@ -4283,7 +4318,7 @@ fn apply_mesh_body_classification(
     scan: &ContainerScan,
     bodies: usize,
 ) -> Result<(), CodecError> {
-    if container::design_breps(scan).next().is_some() {
+    if container::design_breps(ctx, scan)?.next().transpose()?.is_some() {
         return Ok(());
     }
     report.losses.retain(|loss| {
@@ -4794,11 +4829,13 @@ fn populate_annotations(
         }
     }
 
-    let appearance_stream = scan
-        .entries
-        .iter()
-        .find(|entry| scan.is_design_asset_entry(entry, ContainerRole::ProteinAssets))
-        .map(|entry| annotation_stream(ctx, &entry.name))
+    let appearance_stream_index = ctx.position_by(
+        &scan.entries,
+        |entry| scan.is_design_asset_entry(ctx, entry, ContainerRole::ProteinAssets),
+        "find F3D protein asset entry",
+    )?;
+    let appearance_stream = appearance_stream_index
+        .map(|index| annotation_stream(ctx, &scan.entries[index].name))
         .transpose()?;
     if let Some(stream) = appearance_stream {
         for appearance in &ir.model.appearances {
@@ -4821,7 +4858,7 @@ fn populate_annotations(
         )?;
     }
     if brep.is_none() {
-        if let Some(fallback) = container::select_fallback_brep(scan) {
+        if let Some(fallback) = container::select_fallback_brep(ctx, scan)? {
             let stream = annotation_stream(ctx, &fallback.name)?;
             for unknown in unknowns {
                 annotations.note(
@@ -4855,7 +4892,7 @@ fn decode_asm_history(
         .map_or(cadmpeg_asm::kernel_header::RefWidth::Eight, |header| {
             header.width
         });
-    let bytes = scan.entry_bytes(&history_brep.name)?;
+    let bytes = scan.entry_bytes(ctx, &history_brep.name)?;
     crate::history::decode(ctx, bytes, &history_brep.name, width, &ctx.policy().limits)
 }
 
@@ -5472,12 +5509,11 @@ fn extend_related_design_records(
         &native.design_entity_headers,
     )?;
     let mut stream_lengths = std::collections::HashMap::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
-        let bytes = scan.entry_bytes(&entry.name)?;
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D Design stream entries")? {
+        if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
+            continue;
+        }
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let stream = crate::ids::native_scope_charged(ctx, &entry.name)?;
         if !stream_lengths.contains_key(&stream) {
             ctx.reserve_map(&mut stream_lengths, 1, "index F3D design stream lengths")?;
@@ -5538,7 +5574,7 @@ fn try_decode_brep(
     };
     let width = header.width;
 
-    let bytes = scan.entry_bytes(&brep_entry.name)?;
+    let bytes = scan.entry_bytes(ctx, &brep_entry.name)?;
     let Some(start) = asm_header::record_stream_start(bytes) else {
         return Ok(None);
     };
@@ -5959,7 +5995,7 @@ fn build_metadata_ir(
         .map(|_| ())?;
     }
 
-    if let Some(brep) = container::select_fallback_brep(scan) {
+    if let Some(brep) = container::select_fallback_brep(ctx, scan)? {
         {
             let copy = ctx.copy_retained_text(&brep.name, "retain F3D source attribute value")?;
             ctx.insert_btree_map(
@@ -6053,9 +6089,17 @@ fn container_losses(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
-    let brep_count = container::design_breps(scan).count();
-    let selected = container::select_fallback_brep(scan);
-    let text_count = container::text_brep_names(scan).count();
+    let brep_count = count_result_items(
+        ctx,
+        container::design_breps(ctx, scan)?,
+        "count F3D Design BREP candidates",
+    )?;
+    let selected = container::select_fallback_brep(ctx, scan)?;
+    let text_count = count_result_items(
+        ctx,
+        container::text_brep_names(ctx, scan)?,
+        "count F3D text BREP carriers",
+    )?;
 
     let (geometry, topology) = match (brep_count, selected) {
         // The text carrier is present but its decode produced no geometry.

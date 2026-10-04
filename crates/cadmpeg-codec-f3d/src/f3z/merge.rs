@@ -169,7 +169,7 @@ impl MergeSession<'_, '_> {
                 continue;
             }
             let Some(member) = self.archive.members.get(reference.relative_path.as_str()) else {
-                if self.scan.entry_view(&reference.relative_path).is_some() {
+                if self.scan.entry_view(self.ctx, &reference.relative_path)?.is_some() {
                     super::push_loss(
                         self.ctx,
                         &mut parent_report.losses,

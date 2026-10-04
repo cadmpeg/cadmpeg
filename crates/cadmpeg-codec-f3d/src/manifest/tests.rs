@@ -70,7 +70,7 @@ fn manifest_entry_name_index_refuses_collection_limit() {
         asset_folder_bases: vec!["Design Base".to_owned()],
     };
     let error =
-        resolve_design_folder(&ctx, &manifest, ["Design Base/Manifest.dat"], |_| None).unwrap_err();
+        resolve_design_folder(&ctx, &manifest, ["Design Base/Manifest.dat"], |_| Ok(None)).unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D manifest entry names"));
 }
@@ -99,7 +99,7 @@ fn manifest_active_name_refuses_materialization_limit() {
         asset_folder_bases: vec!["Design".to_owned()],
     };
     let error =
-        resolve_design_folder(&ctx, &manifest, ["Design/Manifest.dat"], |_| None).unwrap_err();
+        resolve_design_folder(&ctx, &manifest, ["Design/Manifest.dat"], |_| Ok(None)).unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.operation == "name F3D active asset"));
 }
@@ -116,7 +116,7 @@ fn manifest_member_name_refuses_materialization_limit() {
         asset_folder_bases: vec!["Design".to_owned()],
     };
     let error =
-        resolve_design_folder(&ctx, &manifest, ["Design/Manifest.dat"], |_| None).unwrap_err();
+        resolve_design_folder(&ctx, &manifest, ["Design/Manifest.dat"], |_| Ok(None)).unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.operation == "name F3D asset manifest"));
 }
@@ -220,7 +220,7 @@ fn design_folder_uses_root_fusion_asset_not_active_guid_or_run_order() {
         &cadmpeg_test_support::service_decode_context(),
         &manifest,
         entries.keys().map(String::as_str),
-        |name| entries.get(name).map(Vec::as_slice),
+        |name| Ok(entries.get(name).map(Vec::as_slice)),
     )
     .unwrap();
     assert_eq!(folder, "Design Base[Active]");
@@ -254,7 +254,7 @@ fn active_guid_can_be_shared_by_a_non_design_asset() {
         &cadmpeg_test_support::service_decode_context(),
         &manifest,
         entries.keys().map(String::as_str),
-        |name| entries.get(name).map(Vec::as_slice),
+        |name| Ok(entries.get(name).map(Vec::as_slice)),
     )
     .unwrap();
     assert_eq!(folder, "Design Base");
@@ -594,4 +594,28 @@ fn failed_manifest_tail_preserves_scoped_refusal() {
             if failure.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
                 && failure.operation == "describe malformed F3D manifest"));
     });
+}
+
+#[test]
+fn manifest_entry_lookup_preserves_resource_refusal() {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let manifest = super::TopLevelManifest {
+        version: TOP_LEVEL_MANIFEST_VERSION.to_owned(),
+        asset_folder_bases: vec!["Design".to_owned()],
+    };
+    let error = resolve_design_folder(
+        &ctx,
+        &manifest,
+        ["Design/Manifest.dat"],
+        |_| Err(ctx.refuse_codec_limit("look up F3D asset manifest entry", 0, 1)),
+    )
+    .unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.operation == "look up F3D asset manifest entry"));
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("lookup must refuse");
+    };
+    assert_eq!(ctx.resource_refusal(), Some(limit));
 }

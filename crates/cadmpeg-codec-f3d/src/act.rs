@@ -159,12 +159,11 @@ pub(crate) fn decode(
     let mut root_components = Vec::new();
     let mut table_references = Vec::new();
     let mut non_root_component_links = 0usize;
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_act_stream(entry))
-    {
-        let bytes = scan.entry_bytes(&entry.name)?;
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D ACT stream entries")? {
+        if !scan.is_act_stream(ctx, entry)? {
+            continue;
+        }
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let meta_name = sibling_meta_name(ctx, &entry.name)?.ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "F3D ACT BulkStream has no sibling MetaStream name: {}",
@@ -184,7 +183,7 @@ pub(crate) fn decode(
                 ))
             })?;
         let meta =
-            crate::metastream::parse(ctx, scan.entry_bytes(&meta_entry.name)?, &meta_entry.name)?;
+            crate::metastream::parse(ctx, scan.entry_bytes(ctx, &meta_entry.name)?, &meta_entry.name)?;
         let frames = decode_record_frames(ctx, bytes, &meta, &entry.name)?;
         let table_frames = ctx.collect_vec(
             frames.iter().filter_map(|frame| {

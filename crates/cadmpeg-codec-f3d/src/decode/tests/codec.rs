@@ -491,27 +491,43 @@ fn generated_f3d_rewrites_fixed_delta_state_header() {
 
 #[test]
 fn classify_matches_spec_families() {
+    let ctx = service_decode_context();
     assert_eq!(
-        classify("a/Breps.BlobParts/x.smbh"),
+        classify(&ctx, "a/Breps.BlobParts/x.smbh").unwrap(),
         ContainerRole::BrepSmbh
     );
-    assert_eq!(classify("a/Breps.BlobParts/x.smb"), ContainerRole::BrepSmb);
     assert_eq!(
-        classify("a/ProteinAssets.BlobParts/y.protein"),
+        classify(&ctx, "a/Breps.BlobParts/x.smb").unwrap(),
+        ContainerRole::BrepSmb
+    );
+    assert_eq!(
+        classify(&ctx, "a/ProteinAssets.BlobParts/y.protein").unwrap(),
         ContainerRole::ProteinAssets
     );
     assert_eq!(
-        classify("a/Design1/BulkStream.dat"),
+        classify(&ctx, "a/Design1/BulkStream.dat").unwrap(),
         ContainerRole::Bulkstream
     );
     assert_eq!(
-        classify("a/Design1/MetaStream.dat"),
+        classify(&ctx, "a/Design1/MetaStream.dat").unwrap(),
         ContainerRole::Metastream
     );
-    assert_eq!(classify("Manifest.dat"), ContainerRole::Manifest);
-    assert_eq!(classify("a/Previews/thumb.png"), ContainerRole::Preview);
-    assert_eq!(classify("a/x.paramesh"), ContainerRole::Paramesh);
-    assert_eq!(classify("a/b/"), ContainerRole::Directory);
+    assert_eq!(
+        classify(&ctx, "Manifest.dat").unwrap(),
+        ContainerRole::Manifest
+    );
+    assert_eq!(
+        classify(&ctx, "a/Previews/thumb.png").unwrap(),
+        ContainerRole::Preview
+    );
+    assert_eq!(
+        classify(&ctx, "a/x.paramesh").unwrap(),
+        ContainerRole::Paramesh
+    );
+    assert_eq!(
+        classify(&ctx, "a/b/").unwrap(),
+        ContainerRole::Directory
+    );
 }
 
 use crate::container::classify;
@@ -729,12 +745,15 @@ fn decode_yields_metadata_and_honest_report() {
 fn smb_only_is_an_explicit_geometry_fallback_without_history() {
     let f3d = synthetic_f3d(false);
     with_scan(&f3d, |scan| {
-        let fallback = container::select_fallback_brep(scan).unwrap();
+        let ctx = service_decode_context();
+        let fallback = container::select_fallback_brep(&ctx, scan)
+            .unwrap()
+            .unwrap();
         assert_eq!(
             fallback.name,
             "FusionAssetName[Active]/Breps.BlobParts/Body1.smb"
         );
-        assert!(container::select_history_brep(scan).is_none());
+        assert!(container::select_history_brep(&ctx, scan).unwrap().is_none());
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::service();
         let (ctx, _) =
@@ -751,22 +770,34 @@ fn smb_only_is_an_explicit_geometry_fallback_without_history() {
 fn manifest_selects_design_asset_independently_of_brep_order() {
     let f3d = synthetic_multi_asset_f3d(true);
     with_scan(&f3d, |scan| {
+        let ctx = service_decode_context();
         assert_eq!(scan.design_asset_folder(), Some("DesignAsset[Active]"));
         assert_eq!(scan.breps.len(), 2);
-        let design_breps = container::design_breps(scan).collect::<Vec<_>>();
+        let design_breps = container::design_breps(&ctx, scan)
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
         assert_eq!(design_breps.len(), 1);
         assert!(design_breps[0].name.ends_with("BREP.design.smb"));
-        assert!(container::select_history_brep(scan).is_none());
+        assert!(container::select_history_brep(&ctx, scan).unwrap().is_none());
         assert_eq!(
-            container::select_fallback_brep(scan).map(|brep| brep.name.as_str()),
+            container::select_fallback_brep(&ctx, scan)
+                .unwrap()
+                .map(|brep| brep.name.as_str()),
             Some("DesignAsset[Active]/Breps.BlobParts/BREP.design.smb")
         );
-        let streams = scan
-            .entries
-            .iter()
-            .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-            .map(|entry| entry.name.as_str())
-            .collect::<Vec<_>>();
+        let mut streams = Vec::new();
+        for entry in ctx
+            .admit_iter(&scan.entries, "scan F3D Design stream entries")
+            .unwrap()
+        {
+            if scan
+                .is_design_stream(&ctx, entry, ContainerRole::Bulkstream)
+                .unwrap()
+            {
+                streams.push(entry.name.as_str());
+            }
+        }
         assert_eq!(
             streams,
             ["DesignAsset[Active]/FusionDesignSegmentType1/BulkStream.dat"]
@@ -778,11 +809,18 @@ fn manifest_selects_design_asset_independently_of_brep_order() {
 fn manifest_selects_brep_less_design_asset() {
     let f3d = synthetic_multi_asset_f3d(false);
     with_scan(&f3d, |scan| {
+        let ctx = service_decode_context();
         assert_eq!(scan.design_asset_folder(), Some("DesignAsset[Active]"));
         assert_eq!(scan.breps.len(), 1);
-        assert_eq!(container::design_breps(scan).count(), 0);
-        assert!(container::select_fallback_brep(scan).is_none());
-        assert!(container::select_history_brep(scan).is_none());
+        assert!(container::design_breps(&ctx, scan)
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap()
+            .is_empty());
+        assert!(container::select_fallback_brep(&ctx, scan)
+            .unwrap()
+            .is_none());
+        assert!(container::select_history_brep(&ctx, scan).unwrap().is_none());
     });
 }
 

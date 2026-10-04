@@ -23,12 +23,11 @@ pub(crate) fn decode_component_occurrences(
     scan: &ContainerScan,
 ) -> Result<Vec<DesignComponentOccurrence>, CodecError> {
     let mut occurrences = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
-        let bytes = scan.entry_bytes(&entry.name)?;
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D Design stream entries")? {
+        if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
+            continue;
+        }
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let scope = native_scope_charged(ctx, &entry.name)?;
         let mut at = 0;
         while let Some(start) = next_indexed_record_offset(bytes, at) {
