@@ -5,7 +5,10 @@
 import importlib.util
 import contextlib
 import io
+import json
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -229,6 +232,35 @@ class DenyCensusTests(unittest.TestCase):
         '''})
         self.assertEqual(status, 1, output)
         self.assertIn("Reader", output)
+
+    def test_attribute_gap_accepts_whitespace_and_complete_line_comments(self) -> None:
+        for gap in ("", " \t\r\n", "// plain\n", "/// docs\n//! inner\n",
+                    "// comment without newline", " // repeated // markers\n \t"):
+            with self.subTest(gap=gap):
+                body = "prefix" + gap + "suffix"
+                self.assertIsNotNone(census.ATTRIBUTE_GAP.match(body, 6, 6 + len(gap)))
+
+    def test_attribute_gap_refuses_field_text_and_other_tokens(self) -> None:
+        for gap in ("pub first: u32,", "/// docs\npub first: u32,\n",
+                    "/", "/* block comment */", " \nX", "// line\n/ tail"):
+            with self.subTest(gap=gap):
+                body = "prefix" + gap + "suffix"
+                self.assertIsNone(census.ATTRIBUTE_GAP.match(body, 6, 6 + len(gap)))
+
+    def test_field_attribute_runs_bounds_repeated_comment_marker_work(self) -> None:
+        body = ("#[serde(default)]\n" + "///" * 1000
+                + "\nfirst: u32,\n#[serde(default)]\nsecond: u32,")
+        # Isolate the match so a backtracking regression cannot hang the suite.
+        result = subprocess.run(
+            [sys.executable, "-c", """
+import json, runpy, sys
+census = runpy.run_path(sys.argv[1])
+runs = census['field_attribute_runs'](sys.stdin.read())
+print(json.dumps([(name, optional) for _, _, name, optional in runs]))
+""", str(Path(census.__file__).resolve())],
+            input=body, capture_output=True, text=True, timeout=5, check=True,
+        )
+        self.assertEqual(json.loads(result.stdout), [["second", False]])
 
     def test_missing_source_root_cannot_be_an_empty_success(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

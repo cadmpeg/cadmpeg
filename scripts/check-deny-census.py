@@ -1624,7 +1624,9 @@ def resolve_item(index, name, owner, ambiguities):
 
 
 ANY_ATTRIBUTE = re.compile(r"#\s*\[(?:[^\[\]]|\[(?:[^\[\]]|\[[^\[\]]*\])*\])*\]")
-ATTRIBUTE_GAP = re.compile(r"(?:\s|///[^\n]*|//![^\n]*|//[^\n]*)*\Z")
+# A line comment consumes its newline or reaches the end of the gap. Repeated
+# comment markers within that line cannot form separate matches.
+ATTRIBUTE_GAP = re.compile(r"(?:\s|//[^\n]*(?:\n|\Z))*\Z")
 OMITTED_OPTIONAL_KEY = re.compile(r'skip_serializing_if\s*=\s*"Option::is_none"')
 DESERIALIZE_WITH = re.compile(r'deserialize_with\s*=\s*"([\w:]+)"')
 SERDE_WITH = re.compile(r'(?<!\w)with\s*=\s*"([\w:]+)"')
