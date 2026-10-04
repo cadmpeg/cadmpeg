@@ -274,6 +274,24 @@ pub(crate) enum DirectoryDefect {
     UnpairedCard,
 }
 
+#[derive(Debug)]
+enum DirectoryParseError {
+    Defect(DirectoryDefect),
+    Refusal(CodecError),
+}
+
+impl From<DirectoryDefect> for DirectoryParseError {
+    fn from(defect: DirectoryDefect) -> Self {
+        Self::Defect(defect)
+    }
+}
+
+impl From<CodecError> for DirectoryParseError {
+    fn from(error: CodecError) -> Self {
+        Self::Refusal(error)
+    }
+}
+
 impl Serialize for DirectoryDefect {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(self.key())
@@ -375,15 +393,19 @@ fn fields(line: &PhysicalLine) -> [[u8; 8]; 9] {
     fields
 }
 
-fn integer(field: [u8; 8], name: &'static str) -> Result<i64, DirectoryDefect> {
+fn integer(
+    field: [u8; 8],
+    name: &'static str,
+    ctx: &DecodeContext<'_>,
+) -> Result<i64, DirectoryParseError> {
     let text = std::str::from_utf8(&field)
         .map_err(|_| DirectoryDefect::FieldNotAscii(name))?
         .trim();
     if text.is_empty() {
         return Ok(0);
     }
-    text.parse::<i64>()
-        .map_err(|_| DirectoryDefect::FieldNotAnInteger(name))
+    ctx.parse_text::<i64>(text, "iges directory integer value")?
+        .map_err(|_| DirectoryParseError::Defect(DirectoryDefect::FieldNotAnInteger(name)))
 }
 
 fn directory_integer(
@@ -391,14 +413,15 @@ fn directory_integer(
     name: &'static str,
     number: u8,
     global_table: GlobalTable,
-) -> Result<i64, DirectoryDefect> {
+    ctx: &DecodeContext<'_>,
+) -> Result<i64, DirectoryParseError> {
     if matches!(global_table, GlobalTable::V4_0)
         && matches!(number, 1 | 2 | 11 | 14)
         && field.iter().all(|byte| *byte == b' ')
     {
-        return Err(DirectoryDefect::FieldBlankNotAllowed(name));
+        return Err(DirectoryParseError::Defect(DirectoryDefect::FieldBlankNotAllowed(name)));
     }
-    integer(field, name)
+    integer(field, name, ctx)
 }
 
 fn status(field: [u8; 8], global_table: GlobalTable) -> Result<SourceStatus, DirectoryDefect> {
@@ -448,17 +471,23 @@ fn parse_pair(
     first: &PhysicalLine,
     second: &PhysicalLine,
     global_table: GlobalTable,
-) -> Result<DirectoryEntry, DirectoryDefect> {
+    ctx: &DecodeContext<'_>,
+) -> Result<DirectoryEntry, DirectoryParseError> {
     let first_fields = fields(first);
     let second_fields = fields(second);
-    let entity_type = directory_integer(first_fields[0], "entity type", 1, global_table)?;
-    let repeated_type =
-        directory_integer(second_fields[0], "repeated entity type", 11, global_table)?;
+    let entity_type = directory_integer(first_fields[0], "entity type", 1, global_table, ctx)?;
+    let repeated_type = directory_integer(
+        second_fields[0],
+        "repeated entity type",
+        11,
+        global_table,
+        ctx,
+    )?;
     if entity_type != repeated_type {
-        return Err(DirectoryDefect::RepeatedEntityTypeMismatch {
+        return Err(DirectoryParseError::Defect(DirectoryDefect::RepeatedEntityTypeMismatch {
             declared: entity_type,
             repeated: repeated_type,
-        });
+        }));
     }
     Ok(DirectoryEntry {
         source_offset: first.offset,
@@ -469,26 +498,28 @@ fn parse_pair(
             "Parameter Data start",
             2,
             global_table,
+            ctx,
         )?,
-        structure: directory_integer(first_fields[2], "structure", 3, global_table)?,
-        line_font: directory_integer(first_fields[3], "line font", 4, global_table)?,
-        level: directory_integer(first_fields[4], "level", 5, global_table)?,
-        view: directory_integer(first_fields[5], "view", 6, global_table)?,
-        transform: directory_integer(first_fields[6], "transformation", 7, global_table)?,
-        label_display: directory_integer(first_fields[7], "label display", 8, global_table)?,
+        structure: directory_integer(first_fields[2], "structure", 3, global_table, ctx)?,
+        line_font: directory_integer(first_fields[3], "line font", 4, global_table, ctx)?,
+        level: directory_integer(first_fields[4], "level", 5, global_table, ctx)?,
+        view: directory_integer(first_fields[5], "view", 6, global_table, ctx)?,
+        transform: directory_integer(first_fields[6], "transformation", 7, global_table, ctx)?,
+        label_display: directory_integer(first_fields[7], "label display", 8, global_table, ctx)?,
         status: status(first_fields[8], global_table)?,
-        line_weight: directory_integer(second_fields[1], "line weight", 12, global_table)?,
-        color: directory_integer(second_fields[2], "color", 13, global_table)?,
+        line_weight: directory_integer(second_fields[1], "line weight", 12, global_table, ctx)?,
+        color: directory_integer(second_fields[2], "color", 13, global_table, ctx)?,
         parameter_line_count: directory_integer(
             second_fields[3],
             "Parameter Data count",
             14,
             global_table,
+            ctx,
         )?,
-        form: directory_integer(second_fields[4], "form", 15, global_table)?,
+        form: directory_integer(second_fields[4], "form", 15, global_table, ctx)?,
         reserved: [second_fields[5], second_fields[6]],
         label: second_fields[7],
-        subscript: directory_integer(second_fields[8], "entity subscript", 19, global_table)?,
+        subscript: directory_integer(second_fields[8], "entity subscript", 19, global_table, ctx)?,
     })
 }
 
@@ -530,15 +561,16 @@ pub(crate) fn parse(
     let mut pairs = lines.chunks_exact(2);
     for pair in pairs.by_ref() {
         ctx.charge_entities(1, "iges_directory_entries")?;
-        match parse_pair(pair[0].0, pair[0].1, pair[1].1, global_table) {
+        match parse_pair(pair[0].0, pair[0].1, pair[1].1, global_table, ctx) {
             Ok(entry) => {
                 ctx.reserve_vec(&mut entries, 1, "iges directory entries")?;
                 entries.push(entry);
             }
-            Err(defect) => {
+            Err(DirectoryParseError::Defect(defect)) => {
                 ctx.reserve_vec(&mut quarantined, 1, "iges quarantined directory entries")?;
                 quarantined.push(quarantine(pair[0], &pair[1..], defect, ctx)?);
             }
+            Err(DirectoryParseError::Refusal(error)) => return Err(error),
         }
     }
     if let Some(unpaired) = pairs.remainder().first() {

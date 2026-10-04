@@ -233,11 +233,11 @@ fn patch_asm_geometry(
         let Some(color) = entity_colors.get(&id) else {
             continue;
         };
-        let carrier = attribute_chain_color_carrier(entity, records_by_index.len(), |index| {
+        let carrier = attribute_chain_color_carrier(ctx, entity, records_by_index.len(), |index| {
             usize::try_from(index)
                 .ok()
                 .and_then(|index| records_by_index.get(&index).copied())
-        });
+        })?;
         let Some((attribute, decoded)) = carrier else {
             return Err(CodecError::NotImplemented(format!(
                 "F3D entity color {id} has no writable exact direct-color attribute"

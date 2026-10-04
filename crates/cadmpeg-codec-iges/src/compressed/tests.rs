@@ -116,15 +116,24 @@ fn compressed_directory_field_number_refuses_utf8_work() {
 }
 
 #[test]
-fn compressed_directory_field_value_scan_refuses_work_before_value() {
+fn compressed_directory_field_parse_refuses_after_utf8_admission() {
+    // The specifier probe, two digit probes and UTF-8 byte total four prior work units.
     let error = with_work_limit(b"@1_116", 4, |ctx| parse_field_specs(b"@1_116", ctx).unwrap_err());
-    assert_work_limit(error, "iges compressed Directory field value", 1);
+    assert_work_limit_at(error, "iges compressed Directory field index", 4, 1);
+}
+
+#[test]
+fn compressed_directory_field_value_scan_refuses_work_before_value() {
+    // Five units admit the specifier, digit scan, UTF-8 check, and parsed index.
+    let error = with_work_limit(b"@1_116", 5, |ctx| parse_field_specs(b"@1_116", ctx).unwrap_err());
+    assert_work_limit_at(error, "iges compressed Directory field value", 5, 1);
 }
 
 #[test]
 fn compressed_directory_record_line_scan_refuses_work_after_sequence_admission() {
     let lines = [b"D1;".as_slice()];
-    let error = with_work_limit(b"D1;", 3, |ctx| {
+    // Two digit probes, UTF-8 validation and the sequence parse cost four units.
+    let error = with_work_limit(b"D1;", 4, |ctx| {
         parse_directory_record(&lines, 0, b';', ctx).unwrap_err()
     });
     assert_work_limit(error, "iges compressed Directory record lines", 1);
@@ -327,7 +336,7 @@ fn compressed_normalization_refuses_work_before_directory_loop() {
         .try_fold(0_usize, |work, count| work.checked_add(*count))
         .unwrap();
     // The cap admits line splitting and index moves, both section scans and stop probes, Global
-    // count UTF-8 checks, and both delimiter Hollerith scans with their repeated UTF-8 checks.
+    // count UTF-8 and parse checks, and both delimiter Hollerith scans, UTF-8 checks and parses.
     // source_lines retains an empty slice after this fixture's final CRLF; split_lines stops at EOF.
     let split_line_count = lines.iter().filter(|line| !line.is_empty()).count();
     let split_line_work = split_line_count
@@ -339,9 +348,10 @@ fn compressed_normalization_refuses_work_before_directory_loop() {
         .and_then(|work| work.checked_add(global_lines))
         .and_then(|work| work.checked_add(1))
         .and_then(|work| work.checked_add(logical_global_utf8_work))
+        .and_then(|work| work.checked_add(logical_global_utf8_work))
         .and_then(|work| {
             delimiter_count_bytes
-                .checked_mul(2)
+                .checked_mul(3)
                 .and_then(|delimiter_work| delimiter_work.checked_add(2))
                 .and_then(|delimiter_work| work.checked_add(delimiter_work))
         })
@@ -898,4 +908,57 @@ fn compressed_reserved_fields_use_fixed_directory_right_justification() {
         native.arenas()["entities"][0].fields()["reserved"],
         serde_json::json!([b"    LEFT", b"   RIGHT"])
     );
+}
+
+fn assert_work_limit_at(error: CodecError, operation: &str, used: u64, additional: u64) {
+    assert!(matches!(error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.used == used
+                && limit.additional == additional
+                && limit.operation == operation
+    ));
+}
+
+#[test]
+fn compressed_global_hollerith_parse_refuses_after_utf8_admission() {
+    let mut card = [b' '; 80];
+    card[..3].copy_from_slice(b"1H,");
+    // One count byte is validated before the one-byte parse.
+    let error = with_work_limit(&card, 1, |ctx| {
+        logical_global_stream(&[&card], ctx).unwrap_err()
+    });
+    assert_work_limit_at(error, "iges compressed Global Hollerith number", 1, 1);
+}
+
+#[test]
+fn compressed_hollerith_parse_refuses_after_utf8_admission() {
+    // Two digit probes and one UTF-8 byte precede the one-byte parse.
+    let error = with_work_limit(b"1H,", 3, |ctx| hollerith_at(b"1H,", 0, ctx).unwrap_err());
+    assert_work_limit_at(error, "iges compressed Global Hollerith number", 3, 1);
+}
+
+#[test]
+fn compressed_sequence_parse_refuses_after_utf8_admission() {
+    // Two digit probes and one UTF-8 byte precede the one-byte parse.
+    let error = with_work_limit(b"1", 3, |ctx| parse_sequence(b"1", 0, "test", ctx).unwrap_err());
+    assert_work_limit_at(error, "iges compressed sequence value", 3, 1);
+}
+
+#[test]
+fn compressed_directory_integer_parse_refuses_after_utf8_admission() {
+    let fields = DirectoryFields(std::array::from_fn(|_| {
+        std::rc::Rc::new(b"1".to_vec())
+    }));
+    // One UTF-8 byte is admitted before the one-byte integer parse.
+    let error = with_work_limit(b"1", 1, |ctx| {
+        field_i64(
+            &fields,
+            CompressedField::Shared(crate::directory::DirectoryFieldSlot::EntityType),
+            "entity type",
+            ctx,
+        )
+        .unwrap_err()
+    });
+    assert_work_limit_at(error, "iges compressed Directory field integer", 1, 1);
 }

@@ -5479,7 +5479,7 @@ pub(super) fn emit_faces(
         ..
     } = reach;
     let subshell_shells = subshell_ancestor_shells(ctx, records, by_index)?;
-    let attribute_color = |entity: &Record| attribute_chain_color(entity, by_index);
+    let attribute_color = |entity: &Record| attribute_chain_color(ctx, entity, by_index);
     let attribute_name = |entity: &Record| attribute_chain_name(ctx, entity, by_index);
     for r in records {
         let i = i64::try_from(r.index).map_err(|_| {
@@ -5525,7 +5525,7 @@ pub(super) fn emit_faces(
                     sense,
                     loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops),
                     name: attribute_name(r)?,
-                    color: attribute_color(r),
+                    color: attribute_color(r)?,
                     tolerance: None,
                 }
             );
@@ -5612,7 +5612,7 @@ pub(super) fn emit_containers(
         free_vertices_by_shell,
         saved_free_edges,
     } = wire;
-    let attribute_color = |entity: &Record| attribute_chain_color(entity, by_index);
+    let attribute_color = |entity: &Record| attribute_chain_color(ctx, entity, by_index);
     let attribute_name = |entity: &Record| attribute_chain_name(ctx, entity, by_index);
     for r in records {
         let i = i64::try_from(r.index).map_err(|_| {
@@ -5748,7 +5748,7 @@ pub(super) fn emit_containers(
                         transform: transform_record
                             .and_then(|transform| decode_transform(transform, header_scale)),
                         name: attribute_name(r)?,
-                        color: attribute_color(r),
+                        color: attribute_color(r)?,
                         visible: None,
                     }
                 );
