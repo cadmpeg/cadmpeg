@@ -2745,14 +2745,34 @@ mod tests {
                 ),
                 (ResourceDimension::RetainedBytes, "f3d visibility BREP name"),
                 (ResourceDimension::RetainedBytes, "f3d visibility stream"),
-                (
-                    ResourceDimension::MaterializedBytes,
-                    "f3d Design UTF-16 text",
-                ),
             ] {
                 assert_refuses_at(dimension, operation, |ctx| {
                     super::decode_all_body_visibility(ctx, scan)
                 });
+            }
+            // The blob name these decodes read ends the body-map frame. It is
+            // scoped storage: a zero materialized limit refuses it, and a zero
+            // retained limit does not.
+            let name = lp_utf16_bytes("BREP.synthetic.smbh").unwrap();
+            let name_at = browser_offset - name.len();
+            for (retained, materialized) in [(u64::MAX, 0), (0, u64::MAX)] {
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                policy.limits.max_retained_bytes = retained;
+                policy.limits.max_materialized_bytes = materialized;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let result = super::blob_name_at(&ctx, &bulk, name_at, browser_offset);
+                if materialized == 0 {
+                    assert!(
+                        matches!(&result, Err(CodecError::ResourceLimit(limit))
+                            if limit.dimension == ResourceDimension::MaterializedBytes
+                                && limit.operation == "f3d Design UTF-16 text"),
+                        "{result:?}"
+                    );
+                } else {
+                    let (at, text, _storage) = result.unwrap().expect("framed blob name");
+                    assert_eq!((at, text.as_str()), (name_at, "BREP.synthetic.smbh"));
+                }
             }
             for (dimension, operation) in [
                 (
