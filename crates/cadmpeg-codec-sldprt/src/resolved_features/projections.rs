@@ -1141,7 +1141,7 @@ fn variable_fillet_radius_groups<'a>(
         for name in &parameter_names {
             let Some(parameter) =
                 variable_fillet_dimension_index_for_feature(feature, name.as_str()).zip(
-                    feature.parameters.get(*name).and_then(|value| {
+                    ctx.get_btree_map(&feature.parameters, *name, OPERATION)?.and_then(|value| {
                         crate::history::literals::parse_positive_dimension_length_mm(value)
                     }),
                 )
@@ -1240,7 +1240,7 @@ fn variable_fillet_radius_groups<'a>(
                     ctx.try_reserve_retained_text(&mut retained_name, name.len(), OPERATION)?;
                     retained_name.push_str(&name);
                     control_names.insert(retained_name);
-                    let Some(radius) = feature.parameters.get(name.as_str()).and_then(|value| {
+                    let Some(radius) = ctx.get_btree_map(&feature.parameters, name.as_str(), OPERATION)?.and_then(|value| {
                         crate::history::literals::parse_positive_dimension_length_mm(value)
                     }) else {
                         return Ok(None);
@@ -1292,7 +1292,7 @@ fn variable_fillet_radius_groups<'a>(
         for name in &parameter_names {
             let Some(parameter) =
                 variable_fillet_dimension_index_for_feature(feature, name.as_str()).zip(
-                    feature.parameters.get(*name).and_then(|value| {
+                    ctx.get_btree_map(&feature.parameters, *name, OPERATION)?.and_then(|value| {
                         crate::history::literals::parse_positive_dimension_length_mm(value)
                     }),
                 )

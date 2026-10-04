@@ -211,37 +211,44 @@ pub(super) fn linear_pattern_display_directions(
 }
 
 pub(super) fn typed_linear_pattern_dimensions(
+    ctx: &DecodeContext<'_>,
     feature: &crate::records::Feature,
     lane: &FeatureInputLane,
     object_start: usize,
     object_end: usize,
-) -> Option<(PositiveLength, u32)> {
+) -> Result<Option<(PositiveLength, u32)>, CodecError> {
+    const OPERATION: &str = "look up SLDPRT linear pattern dimensions";
     let parameter = |class_name: &str| {
-        let mut classes = lane.classes.iter().filter(|class| {
-            class.name == class_name
-                && (u64_from_index(object_start)..u64_from_index(object_end))
-                    .contains(&class.offset)
-        });
-        let class = classes.next().filter(|_| classes.next().is_none())?;
-        let class_offset = usize::try_from(class.offset).ok()?;
-        let name_end = class_offset.checked_add(128)?.min(object_end);
-        let mut names = lane.names.iter().filter(|name| {
-            name.object_id == Some(ObjectId::Absent)
-                && (u64_from_index(class_offset)..u64_from_index(name_end)).contains(&name.offset)
-                && feature.parameters.contains_key(name.value.as_str())
-        });
-        let name = names.next().filter(|_| names.next().is_none())?;
-        feature.parameters.get(name.value.as_str())
+        let name = (|| {
+            let mut classes = lane.classes.iter().filter(|class| {
+                class.name == class_name
+                    && (u64_from_index(object_start)..u64_from_index(object_end))
+                        .contains(&class.offset)
+            });
+            let class = classes.next().filter(|_| classes.next().is_none())?;
+            let class_offset = usize::try_from(class.offset).ok()?;
+            let name_end = class_offset.checked_add(128)?.min(object_end);
+            let mut names = lane.names.iter().filter(|name| {
+                name.object_id == Some(ObjectId::Absent)
+                    && (u64_from_index(class_offset)..u64_from_index(name_end)).contains(&name.offset)
+                    && feature.parameters.contains_key(name.value.as_str())
+            });
+            names.next().filter(|_| names.next().is_none())
+        })();
+        match name {
+            Some(name) => ctx.get_btree_map(&feature.parameters, name.value.as_str(), OPERATION),
+            None => Ok(None),
+        }
     };
-    let count = parameter("moNumberDim_c")?
-        .trim()
-        .parse::<u32>()
-        .ok()
-        .filter(|count| *count > 0)?;
-    let spacing = crate::history::literals::parse_positive_dimension_length_mm(parameter(
-        "ParallelPlaneDistanceDim_c",
-    )?)?;
-    Some((spacing, count))
+    let Some(count) = parameter("moNumberDim_c")?
+        .and_then(|value| value.trim().parse::<u32>().ok())
+        .filter(|count| *count > 0)
+    else {
+        return Ok(None);
+    };
+    let spacing = parameter("ParallelPlaneDistanceDim_c")?
+        .and_then(|value| crate::history::literals::parse_positive_dimension_length_mm(value));
+    Ok(spacing.map(|spacing| (spacing, count)))
 }
 
 #[cfg(test)]

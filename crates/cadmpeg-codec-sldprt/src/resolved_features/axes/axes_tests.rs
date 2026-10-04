@@ -1433,3 +1433,64 @@ fn revolution_consumes_the_preceding_profile_object() {
         Some(&"29".into())
     );
 }
+
+#[test]
+fn linear_pattern_dimension_lookup_propagates_work_refusal() {
+    let mut histories = single_revolution_history();
+    let feature = &mut histories[0].features[0];
+    feature.parameters = BTreeMap::from([
+        (cadmpeg_core::nonblank_const!("D1"), "3".into()),
+        (cadmpeg_core::nonblank_const!("D2"), "25".into()),
+    ]);
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: [(0, "moNumberDim_c"), (200, "ParallelPlaneDistanceDim_c")]
+            .into_iter()
+            .enumerate()
+            .map(|(ordinal, (offset, name))| crate::records::FeatureInputClass {
+                id: format!("class#{ordinal}"),
+                parent: "lane".into(),
+                ordinal: u32::try_from(ordinal).unwrap(),
+                offset,
+                name: name.into(),
+            }).collect(),
+        names: [(50, "D1"), (250, "D2")]
+            .into_iter()
+            .enumerate()
+            .map(|(ordinal, (offset, value))| FeatureInputName {
+                id: format!("name#{ordinal}"),
+                parent: "lane".into(),
+                ordinal: u32::try_from(ordinal).unwrap(),
+                offset,
+                object_id: Some(ObjectId::Absent),
+                value: value.into(),
+            }).collect(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    assert!(matches!(
+        super::typed_linear_pattern_dimensions(&ctx, feature, &lane, 0, 400),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "look up SLDPRT linear pattern dimensions"
+    ));
+    let (spacing, count) = super::typed_linear_pattern_dimensions(
+        &cadmpeg_test_support::service_decode_context(), feature, &lane, 0, 400,
+    ).unwrap().expect("two typed dimensions");
+    assert_eq!(count, 3);
+    assert_eq!(spacing.get(), 25.0);
+}
