@@ -51,12 +51,10 @@ pub(crate) fn transfer(
                 ctx.collection_vec(source.len(), "fcstd annotation selected properties")
             })?;
             owned.extend_from_slice(source);
-            ctx.stable_sort_by(
+            ctx.stable_sort_by_key(
                 &mut owned,
-                |left, right| {
-                    (left.xml.start(), left.xml.end()).cmp(&(right.xml.start(), right.xml.end()))
-                },
-                |_| 0,
+                |value| (value.xml.start(), value.xml.end()),
+                Ord::cmp,
                 "fcstd annotation selected properties sort",
             )?;
             let mut references = BTreeMap::new();

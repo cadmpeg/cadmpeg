@@ -16,7 +16,7 @@ use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
-fn distinct_form_cage_ids<T: Eq + Hash>(
+fn distinct_form_cage_ids<T: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost>(
     ctx: &DecodeContext<'_>,
     ids: &[T],
 ) -> Result<bool, CodecError> {
@@ -1041,8 +1041,8 @@ fn form_cage_serializers(
     }
     ctx.sort_unstable_by(
         &mut offsets,
+        |value| value,
         Ord::cmp,
-        |_| 0,
         "f3d form serializer offset sort",
     )?;
     let mut ordered = Vec::new();

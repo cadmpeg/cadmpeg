@@ -42,9 +42,9 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         .map(|(index, entity)| (("stream", u32::try_from(index + 1).unwrap()), entity))
         .collect();
     let operand = |index, name: &str, role| cadmpeg_ir::sketches::SketchNativeOperand {
-        native_kind: cadmpeg_core::text::NonBlankString::new("record").unwrap(),
+        native_kind: cadmpeg_core::text::NonBlankString::try_from("record").unwrap(),
         field: Some(cadmpeg_ir::sketches::NativeOperandField {
-            name: cadmpeg_core::text::NonBlankString::new(name).unwrap(),
+            name: cadmpeg_core::text::NonBlankString::try_from(name).unwrap(),
             role,
         }),
         object_index: Some(index),

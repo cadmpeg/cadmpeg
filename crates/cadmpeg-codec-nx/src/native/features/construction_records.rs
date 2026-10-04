@@ -209,8 +209,8 @@ pub(in crate::native) fn feature_projected_curve_construction_payloads(
         }
         ctx.stable_sort_by(
             &mut field,
-            |first, second| first.ordinal.cmp(&second.ordinal),
-            |_| 0,
+            |value| &value.ordinal,
+            Ord::cmp,
             "sort NX projected curve references",
         )?;
         if field.len() != expected_len
@@ -780,8 +780,8 @@ pub(in crate::native) fn feature_surface_construction_payloads(
         );
         ctx.stable_sort_by(
             &mut graph,
-            |first, second| first.ordinal.cmp(&second.ordinal),
-            |_| 0,
+            |value| &value.ordinal,
+            Ord::cmp,
             "sort NX surface construction graph",
         )?;
         if graph
@@ -1671,8 +1671,8 @@ pub(in crate::native) fn feature_extrude_construction_profiles(
         }
         ctx.stable_sort_by(
             &mut operation_references,
-            |first, second| first.ordinal.cmp(&second.ordinal),
-            |_| 0,
+            |value| &value.ordinal,
+            Ord::cmp,
             "sort NX extrude profile references",
         )?;
         if operation_references
@@ -1878,8 +1878,8 @@ pub(in crate::native) fn feature_extrude_32_constructions(
         }
         ctx.stable_sort_by(
             &mut profile,
-            |first, second| first.ordinal.cmp(&second.ordinal),
-            |_| 0,
+            |value| &value.ordinal,
+            Ord::cmp,
             "sort NX extrude 32 profiles",
         )?;
         let Ok(profile) = crate::om::branch_items::BranchItems::new(profile) else {
@@ -2065,10 +2065,10 @@ pub(in crate::native) fn feature_block_constructions(
             )?;
             field.push(reference);
         }
-        ctx.stable_sort_by(
+        ctx.stable_sort_by_key(
             &mut field,
-            |first, second| first.position.ordinal().cmp(&second.position.ordinal()),
-            |_| 0,
+            |value| value.position.ordinal(),
+            Ord::cmp,
             "sort NX block construction field",
         )?;
         let Ok(field): Result<[_; 19], _> = field.try_into() else {
@@ -2320,10 +2320,10 @@ pub(in crate::native) fn feature_block_payload_named_records(
             )?;
             payload_names.push(name);
         }
-        ctx.stable_sort_by(
+        ctx.stable_sort_by_key(
             &mut payload_names,
-            |first, second| first.frame.offset().cmp(&second.frame.offset()),
-            |_| 0,
+            |value| value.frame.offset(),
+            Ord::cmp,
             "sort NX block payload names",
         )?;
         for (ordinal, name) in payload_names.iter().enumerate() {
@@ -2348,8 +2348,8 @@ pub(in crate::native) fn feature_block_payload_named_records(
             }
             ctx.stable_sort_by(
                 &mut scalar_fields,
-                |first, second| first.payload_offset.cmp(&second.payload_offset),
-                |_| 0,
+                |value| &value.payload_offset,
+                Ord::cmp,
                 "sort NX block payload scalars",
             )?;
             let id = ctx.format_retained(
@@ -2568,13 +2568,10 @@ pub(in crate::native) fn feature_block_dimensions(
         {
             continue;
         }
-        ctx.stable_sort_by(
+        ctx.stable_sort_by_key(
             &mut operation_bindings,
-            |first, second| {
-                (first.input_slot, first.reference_ordinal)
-                    .cmp(&(second.input_slot, second.reference_ordinal))
-            },
-            |_| 0,
+            |value| (value.input_slot, value.reference_ordinal),
+            Ord::cmp,
             "sort NX block dimension bindings",
         )?;
         let Some(start) = declarations

@@ -272,7 +272,7 @@ fn numerical_followup_sweep_quotient_retains_finite_derivatives() {
             operator: "DIV".into(),
             operands: vec![
                 LawExpression::Text {
-                    value: cadmpeg_core::text::NonBlankString::new("X").unwrap(),
+                    value: cadmpeg_core::text::NonBlankString::try_from("X").unwrap(),
                 },
                 LawExpression::Double { value: denominator },
             ],

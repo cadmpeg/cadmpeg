@@ -104,6 +104,16 @@ impl schemars::JsonSchema for Identity {
     }
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for Identity {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(self.as_str(), ctx, operation)
+    }
+}
+
 impl Identity {
     /// Copies an admitted identity within the decode budget.
     pub fn try_clone_for_decode(
@@ -445,6 +455,15 @@ impl StaticIdentityKey {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct IdentityKey(std::borrow::Cow<'static, str>);
 
+impl cadmpeg_core::decode::cost::DecodeCost for IdentityKey {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(self.as_str(), ctx, operation)
+    }
+}
 rewrite_scalar!(IdentityKey);
 
 impl IdentityKey {
@@ -990,6 +1009,13 @@ macro_rules! id_type {
         #[serde(transparent)]
         pub struct $name($crate::ids::Identity);
 
+        impl cadmpeg_core::decode::cost::DecodeCost for $name {
+            fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(self.as_str(), ctx, operation)
+            }
+        }
+
+
         impl $crate::schema::rewrite::typed::RewriteIdentities for $name {
             fn rewrite_native_value<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: &mut serde_json::Value, map: &mut $crate::schema::rewrite::typed::IdentityMap<'_, F>) -> Result<(), cadmpeg_core::CodecError> {
                 <$crate::ids::Identity as $crate::schema::rewrite::typed::RewriteIdentities>::rewrite_native_value(ctx, value, map)
@@ -1103,6 +1129,12 @@ macro_rules! local_id_type {
         )]
         #[serde(transparent)]
         pub struct $name(#[serde(deserialize_with = "crate::ids::deserialize_local_id")] String);
+
+        impl cadmpeg_core::decode::cost::DecodeCost for $name {
+            fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(self.as_str(), ctx, operation)
+            }
+        }
 
         rewrite_record!($name, []; (text));
 

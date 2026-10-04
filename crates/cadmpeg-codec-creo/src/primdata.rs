@@ -443,8 +443,8 @@ pub(crate) fn scalar_arrays(
     }
     ctx.stable_sort_by(
         &mut arrays,
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo primitive scalar array ordering",
     )?;
     Ok(arrays)
@@ -549,13 +549,21 @@ mod tests {
     fn primitive_scalar_ordering_refuses_work_and_index_scratch_before_sorting() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         let bytes: Vec<_> = (0..21).flat_map(|_| named("p1", &[], 0)).collect();
-        let scratch = u64::try_from(21 * 2 * std::mem::size_of::<usize>()).expect("scratch bytes");
+        let record_bytes =
+            u64::try_from(std::mem::size_of::<PrimitiveScalarArray>()).expect("record bytes");
+        let index_bytes = u64::try_from(std::mem::size_of::<usize>()).expect("index bytes");
+        let scratch = 21 * 2 * index_bytes;
+        // The result growth keeps sixteen old records live; stable ordering holds two index vectors.
+        let peak = (16 * record_bytes).max(scratch);
+        // Five scans, three result reallocations, two projected sorts and permutation visits own the work.
         let work = 5 * u64::try_from(bytes.len()).expect("scan work")
-            + 21
-            + 21 * u64::try_from(std::mem::size_of::<PrimitiveScalarArray>())
-                .expect("record bytes")
-                * 6
-                * 8;
+            + (4 + 8 + 16) * record_bytes
+            + 2 * 21
+            + 21 * (record_bytes + 2 * index_bytes) * 6 * 8
+            + 2 * 21
+            + 2 * 21
+            + 21 * (index_bytes + 4 * index_bytes) * 6 * 8
+            + 2 * 21;
         let run = |materialized, work_limit| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
@@ -571,26 +579,28 @@ mod tests {
             }
             result
         };
-        let admitted = run(scratch, work).expect("exact work and scratch admit ordering");
+        let admitted = run(peak, work).expect("exact work and scratch admit ordering");
         assert_eq!(admitted.len(), 21);
         assert!(admitted
             .windows(2)
             .all(|pair| pair[0].offset < pair[1].offset));
         for (dimension, materialized, work_limit, need) in [
-            (
-                ResourceDimension::MaterializedBytes,
-                scratch - 1,
-                work,
-                scratch,
-            ),
-            (ResourceDimension::WorkUnits, scratch, work - 1, work),
+            (ResourceDimension::MaterializedBytes, peak - 1, work, peak),
+            (ResourceDimension::WorkUnits, peak, work - 1, work),
         ] {
             let error = run(materialized, work_limit).expect_err("ordering needs admission");
             let cadmpeg_core::CodecError::ResourceLimit(resource) = error else {
                 panic!("ordering resource refusal expected");
             };
             assert_eq!(resource.dimension, dimension);
-            assert_eq!(resource.operation, "creo primitive scalar array ordering");
+            assert_eq!(
+                resource.operation,
+                if dimension == ResourceDimension::MaterializedBytes {
+                    "creo primitive scalar arrays"
+                } else {
+                    "creo primitive scalar array ordering"
+                }
+            );
             assert_eq!(resource.used + resource.additional, need);
             assert_eq!(resource.limit, need - 1);
         }

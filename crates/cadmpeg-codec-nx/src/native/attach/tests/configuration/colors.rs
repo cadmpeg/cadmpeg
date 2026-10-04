@@ -585,11 +585,17 @@ fn rm_face_colors_refuse_output_retained_limit() {
 
 #[test]
 fn rm_face_colors_refuse_definition_lookup_work_limit() {
-    let error = face_color_projection_result(
-        |policy| policy.limits.max_work_units = 1317,
-        FaceColorRoute::Colors,
-    )
-    .unwrap_err();
+    // Admit color index construction before refusing the definition lookup.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "NX RM face color definition lookup",
+        |cap| {
+            face_color_projection_result(
+                |policy| policy.limits.max_work_units = cap,
+                FaceColorRoute::Colors,
+            )
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits

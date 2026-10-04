@@ -67,20 +67,13 @@ pub(super) fn exact_assembly_alignment(
     let mut lanes = Vec::new();
     ctx.reserve_vec(&mut lanes, lane_count, "f3d assembly alignment lanes")?;
     lanes.extend(parameter_owners.iter().filter(matching));
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut lanes[..],
-        |left, right| {
-            let left_key = {
-                let owner = left;
-                owner.local_ordinal()
-            };
-            let right_key = {
-                let owner = right;
-                owner.local_ordinal()
-            };
-            left_key.cmp(&right_key)
+        |value| {
+            let owner = value;
+            owner.local_ordinal()
         },
-        |_| 0,
+        Ord::cmp,
         "sort f3d design assembly_alignment 1",
     )?;
     (|| -> Option<Result<DesignAssemblyAlignment, CodecError>> {

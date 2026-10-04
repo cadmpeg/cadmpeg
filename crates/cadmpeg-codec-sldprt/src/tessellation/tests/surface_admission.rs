@@ -62,6 +62,33 @@ fn assign(model: &mut Model, policy: &DecodePolicy) -> Result<Vec<String>, Codec
 #[test]
 fn geometric_nurbs_surface_route_refuses_scoped_limit() {
     let model = nurbs_display_model(false);
+    let surface = super::test_nurbs_surface();
+    let point = cadmpeg_ir::eval::decode::nurbs_surface_point(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &surface,
+        0.15,
+        0.2,
+    )
+    .unwrap()
+    .get();
+    // Two basis and two derivative vectors each reserve four f64 slots.
+    let bytes = 4 * 4 * std::mem::size_of::<f64>();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = u64::try_from(bytes - 1).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error =
+        crate::brep::evaluation::nurbs_surface_parameter_near_point(&ctx, &surface, point, None)
+            .unwrap_err();
+    assert!(matches!(&error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "IR B-spline derivative basis"));
+    policy.limits.max_materialized_bytes = u64::try_from(bytes).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(crate::brep::evaluation::nurbs_surface_parameter_near_point(
+        &ctx, &surface, point, None
+    )
+    .unwrap()
+    .is_some());
     for original_cap in [0, 3 * (3 + 3) * 8 - 1, 3 * (3 + 3) * 8] {
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = original_cap;

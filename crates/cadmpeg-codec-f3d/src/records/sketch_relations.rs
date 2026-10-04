@@ -10,6 +10,7 @@ use super::{
 use crate::records::admission::RecordAdmission;
 use crate::records::serde_column::SliceColumn;
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Serialize};
@@ -968,7 +969,7 @@ fn pad_resolved(
 ) -> Result<Vec<Option<SketchRelationOperand>>, SketchRelationWireError> {
     if values.is_empty() {
         admission
-            .alloc_filled(len, None, "pad sketch relation resolutions")
+            .collect_vec((0..len).map(|_| None), "pad sketch relation resolutions")
             .map_err(SketchRelationWireError::Resource)
     } else if values.len() == len {
         admission
@@ -988,7 +989,7 @@ fn pad_resolved(
 
 /// Wire form of [`SketchRelation`] with the historical flat field set.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(crate) struct SketchRelationSerde {
+pub(crate) struct SketchRelationSerde<T = String> {
     id: String,
     record_index: u32,
     class_tag: String,
@@ -996,7 +997,7 @@ pub(crate) struct SketchRelationSerde {
     state_offset: u32,
     owner_reference: u32,
     #[serde(default)]
-    owner_entity_id: String,
+    owner_entity_id: T,
     #[serde(default)]
     auxiliary_references: Vec<u32>,
     #[serde(default)]
@@ -1034,10 +1035,10 @@ pub(crate) struct SketchRelationSerde {
     raw_bytes: Vec<u8>,
 }
 
-impl TryFrom<SketchRelationSerde> for SketchRelation {
+impl<T: TryInto<NonBlankString>> TryFrom<SketchRelationSerde<T>> for SketchRelation {
     type Error = SketchRelationPayloadError;
 
-    fn try_from(wire: SketchRelationSerde) -> Result<Self, Self::Error> {
+    fn try_from(wire: SketchRelationSerde<T>) -> Result<Self, Self::Error> {
         Self::from_wire_with_admission(RecordAdmission::Admitted, wire).map_err(|error| match error
         {
             SketchRelationWireError::Payload(error) => error,
@@ -1053,6 +1054,33 @@ impl SketchRelation {
         ctx: &DecodeContext<'_>,
         wire: SketchRelationSerde,
     ) -> Result<Self, CodecError> {
+        let wire = SketchRelationSerde {
+            owner_entity_id: ctx
+                .validate_nonblank_text(wire.owner_entity_id, "validate sketch relation owner")?,
+            id: wire.id,
+            record_index: wire.record_index,
+            class_tag: wire.class_tag,
+            byte_offset: wire.byte_offset,
+            state_offset: wire.state_offset,
+            owner_reference: wire.owner_reference,
+            auxiliary_references: wire.auxiliary_references,
+            auxiliary_reference_offsets: wire.auxiliary_reference_offsets,
+            rectangular_counted_reference_count: wire.rectangular_counted_reference_count,
+            members: wire.members,
+            resolved_members: wire.resolved_members,
+            member_offsets: wire.member_offsets,
+            owner_reference_offset: wire.owner_reference_offset,
+            state: wire.state,
+            constraint_kinds: wire.constraint_kinds,
+            unknown_constraint_bits: wire.unknown_constraint_bits,
+            member_relation_ordinals: wire.member_relation_ordinals,
+            entity_genesis: wire.entity_genesis,
+            pattern: wire.pattern,
+            return_members: wire.return_members,
+            resolved_return_members: wire.resolved_return_members,
+            return_member_offsets: wire.return_member_offsets,
+            raw_bytes: wire.raw_bytes,
+        };
         Self::from_wire_with_admission(RecordAdmission::Charged(ctx), wire).map_err(|error| {
             match error {
                 SketchRelationWireError::Payload(error) => CodecError::Malformed(error.0),
@@ -1061,9 +1089,9 @@ impl SketchRelation {
         })
     }
 
-    fn from_wire_with_admission(
+    fn from_wire_with_admission<T: TryInto<cadmpeg_core::text::NonBlankString>>(
         admission: RecordAdmission<'_, '_>,
-        wire: SketchRelationSerde,
+        wire: SketchRelationSerde<T>,
     ) -> Result<Self, SketchRelationWireError> {
         let (derived_kinds, derived_unknown) = constraint_kinds_from_state(wire.state);
         if !wire.constraint_kinds.is_empty() && wire.constraint_kinds != derived_kinds {
@@ -1093,7 +1121,7 @@ impl SketchRelation {
             byte_offset: wire.byte_offset,
             state_offset: wire.state_offset,
             owner_reference: wire.owner_reference,
-            owner_entity_id: cadmpeg_core::text::NonBlankString::new(wire.owner_entity_id),
+            owner_entity_id: wire.owner_entity_id.try_into().ok(),
             auxiliary_references: ReferenceRun::located(
                 admission
                     .collect_vec(

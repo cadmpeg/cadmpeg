@@ -146,14 +146,14 @@ fn membership_constructors_preserve_refusals_and_release_scoped_indexes() {
                             vec![
                                 crate::features::BodyMember::new(
                                     body_id("first"),
-                                    cadmpeg_core::text::NonBlankString::new(
+                                    cadmpeg_core::text::NonBlankString::try_from(
                                         "native-first".to_owned(),
                                     )
                                     .unwrap(),
                                 ),
                                 crate::features::BodyMember::new(
                                     body_id("second"),
-                                    cadmpeg_core::text::NonBlankString::new(
+                                    cadmpeg_core::text::NonBlankString::try_from(
                                         "native-second".to_owned(),
                                     )
                                     .unwrap(),
@@ -791,12 +791,12 @@ fn historical_body_overlap_spans_direct_and_paired_member_selections() {
             vec![
                 crate::features::BodyMember::new(
                     HistoricalBodyId::mint("test:body:2").expect("valid identity"),
-                    cadmpeg_core::text::NonBlankString::new("tool-a")
+                    cadmpeg_core::text::NonBlankString::try_from("tool-a")
                         .expect("valid historical body selection row"),
                 ),
                 crate::features::BodyMember::new(
                     HistoricalBodyId::mint("test:body:4").expect("valid identity"),
-                    cadmpeg_core::text::NonBlankString::new("tool-b")
+                    cadmpeg_core::text::NonBlankString::try_from("tool-b")
                         .expect("valid historical body selection row"),
                 ),
             ],
@@ -810,7 +810,7 @@ fn historical_body_overlap_spans_direct_and_paired_member_selections() {
         members: BodyMembers::try_from_rows(
             vec![crate::features::BodyMember::new(
                 HistoricalBodyId::mint("test:body:5").expect("valid identity"),
-                cadmpeg_core::text::NonBlankString::new("tool")
+                cadmpeg_core::text::NonBlankString::try_from("tool")
                     .expect("valid historical body selection row"),
             )],
             &cadmpeg_test_support::service_decode_context(),

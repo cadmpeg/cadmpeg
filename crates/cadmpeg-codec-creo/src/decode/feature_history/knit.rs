@@ -592,7 +592,7 @@ pub(in super::super) fn feature_result_topology(
             format_args!("surface#{surface_id}"),
             "creo feature result face local IDs",
         )?;
-        let id = NonBlankString::new(text)
+        let id = NonBlankString::for_decode(ctx, text, "validate nonblank text")?
             .ok_or_else(|| CodecError::Malformed("constructed face local ID is blank".into()))?;
         ctx.reserve_vec(&mut faces, 1, "creo feature result face members")?;
         faces.push(id);
@@ -603,7 +603,7 @@ pub(in super::super) fn feature_result_topology(
             format_args!("curve#{curve_id}"),
             "creo feature result edge local IDs",
         )?;
-        let id = NonBlankString::new(text)
+        let id = NonBlankString::for_decode(ctx, text, "validate nonblank text")?
             .ok_or_else(|| CodecError::Malformed("constructed edge local ID is blank".into()))?;
         ctx.reserve_vec(&mut edges, 1, "creo feature result edge members")?;
         edges.push(id);

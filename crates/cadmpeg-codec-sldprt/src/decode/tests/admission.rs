@@ -95,32 +95,65 @@ fn collection_refusal_with_options(
 
 fn work_refusal_with_options(
     source: &[u8],
+    options: DecodeOptions,
+    operation: &str,
+) -> cadmpeg_core::decode::ResourceLimit {
+    work_refusal_with_request(source, options, operation, None)
+}
+
+fn work_refusal_with_request(
+    source: &[u8],
     mut options: DecodeOptions,
     operation: &str,
+    additional: Option<u64>,
 ) -> cadmpeg_core::decode::ResourceLimit {
     use cadmpeg_core::decode::ResourceDimension;
 
     options.policy.limits.max_work_units = 0;
-    for _ in 0..65_536 {
-        let error = SldprtCodec
-            .decode(&mut Cursor::new(source), &options)
-            .expect_err("work limit must refuse the decode");
+    // Randomized reader maps can change the preceding key-copy sum. Probe the
+    // exact named boundary twice; restart when a new ordering skips it.
+    let mut restarts = 0;
+    loop {
+        let error = SldprtCodec.decode(&mut Cursor::new(source), &options);
+        let Err(error) = error else {
+            restarts += 1;
+            assert!(
+                restarts <= 64,
+                "named work boundary was not reached: {operation}"
+            );
+            options.policy.limits.max_work_units = 0;
+            continue;
+        };
         let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) =
             error
         else {
             panic!("expected a work-unit refusal");
         };
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-        if limit.operation == operation {
+        if limit.operation == operation && additional.is_none_or(|count| limit.additional == count)
+        {
             options.policy.limits.max_work_units = limit.used + limit.additional - 1;
             let repeated = SldprtCodec
                 .decode(&mut Cursor::new(source), &options)
                 .expect_err("one work unit below the target must refuse");
+            if !matches!(
+                &repeated,
+                cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                    if refusal.dimension == ResourceDimension::WorkUnits && refusal.operation == operation && additional.is_none_or(|count| refusal.additional == count)
+            ) {
+                restarts += 1;
+                assert!(
+                    restarts <= 64,
+                    "named replay boundary was not reached: {operation}"
+                );
+                options.policy.limits.max_work_units = 0;
+                continue;
+            }
             assert!(matches!(
                 repeated,
                 cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
                     if refusal.dimension == ResourceDimension::WorkUnits
-                        && refusal.operation == operation
+                        && refusal.operation == operation && additional.is_none_or(|count| refusal.additional == count)
             ));
             return limit;
         }
@@ -128,7 +161,6 @@ fn work_refusal_with_options(
         assert!(next > options.policy.limits.max_work_units);
         options.policy.limits.max_work_units = next;
     }
-    panic!("target work charge was not reached");
 }
 
 fn custom_property_source() -> Vec<u8> {

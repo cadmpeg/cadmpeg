@@ -83,14 +83,14 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     };
     let parameter = |record_index: u32, source_kind: &str, unit: &str, evaluated_value: f64| {
         crate::records::parameters::DesignParameter::try_from(
-            crate::records::parameters::DesignParameterDraft {
+            crate::records::parameters::DesignParameterDraft::<String> {
                 id: format!("{stream}:design-parameter#{record_index}"),
                 byte_offset: 0,
                 class_tag: crate::records::references::DesignClassTag::try_from("000".to_owned())
                     .unwrap(),
                 record_index,
                 source_ordinal: 0,
-                source: crate::records::parameters::DesignParameterSource::new(
+                source: crate::records::parameters::DesignParameterSource::new::<String>(
                     source_kind.into(),
                     Some(0),
                     None,
@@ -238,7 +238,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     let mut offset_parameters = parameters.clone();
     offset_parameters[0]
         .try_set_source(
-            crate::records::parameters::DesignParameterSource::new(
+            crate::records::parameters::DesignParameterSource::new::<String>(
                 "EdgeOffset_1".into(),
                 offset_parameters[0].owner_record_index(),
                 offset_parameters[0].family_discriminator(),
@@ -249,7 +249,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     offset_parameters[0].try_set_evaluated_value(-3.0).unwrap();
     offset_parameters[1]
         .try_set_source(
-            crate::records::parameters::DesignParameterSource::new(
+            crate::records::parameters::DesignParameterSource::new::<String>(
                 "EdgeOffset_2".into(),
                 offset_parameters[1].owner_record_index(),
                 offset_parameters[1].family_discriminator(),
@@ -351,7 +351,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     let mut per_edge_parameters = parameters.clone();
     per_edge_parameters[0]
         .try_set_source(
-            crate::records::parameters::DesignParameterSource::new(
+            crate::records::parameters::DesignParameterSource::new::<String>(
                 "EdgeWidth".into(),
                 per_edge_parameters[0].owner_record_index(),
                 per_edge_parameters[0].family_discriminator(),
@@ -361,7 +361,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         .unwrap();
     per_edge_parameters[1]
         .try_set_source(
-            crate::records::parameters::DesignParameterSource::new(
+            crate::records::parameters::DesignParameterSource::new::<String>(
                 "EdgeWidth".into(),
                 per_edge_parameters[1].owner_record_index(),
                 per_edge_parameters[1].family_discriminator(),
@@ -616,14 +616,14 @@ fn edge_flange_to_object_fixture(
     };
     let parameter = |record_index: u32, source_kind: &str, unit: &str, evaluated_value: f64| {
         crate::records::parameters::DesignParameter::try_from(
-            crate::records::parameters::DesignParameterDraft {
+            crate::records::parameters::DesignParameterDraft::<String> {
                 id: format!("{stream}:design-parameter#{record_index}"),
                 byte_offset: 0,
                 class_tag: crate::records::references::DesignClassTag::try_from("000".to_owned())
                     .unwrap(),
                 record_index,
                 source_ordinal: 0,
-                source: crate::records::parameters::DesignParameterSource::new(
+                source: crate::records::parameters::DesignParameterSource::new::<String>(
                     source_kind.into(),
                     Some(0),
                     None,
@@ -1246,14 +1246,14 @@ fn hem_scope_projects_each_decoded_owner_layout() {
     };
     let parameter = |record_index: u32, source_kind: &str, unit: &str, value: f64| {
         crate::records::parameters::DesignParameter::try_from(
-            crate::records::parameters::DesignParameterDraft {
+            crate::records::parameters::DesignParameterDraft::<String> {
                 id: format!("{stream}:design-parameter#{record_index}"),
                 byte_offset: 0,
                 class_tag: crate::records::references::DesignClassTag::try_from("000".to_owned())
                     .unwrap(),
                 record_index,
                 source_ordinal: 0,
-                source: crate::records::parameters::DesignParameterSource::new(
+                source: crate::records::parameters::DesignParameterSource::new::<String>(
                     source_kind.into(),
                     Some(0),
                     None,

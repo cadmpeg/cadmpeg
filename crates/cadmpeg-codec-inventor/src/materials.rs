@@ -70,8 +70,8 @@ pub(crate) fn project_catalog(
     }
     ctx.stable_sort_by(
         &mut duplicate_guids,
+        |value| value,
         Ord::cmp,
-        std::string::String::len,
         "Inventor duplicate material GUID sort",
     )?;
 
@@ -140,12 +140,14 @@ pub(crate) fn project_catalog(
             }
             ctx.stable_sort_by(
                 &mut connected,
-                |left, right| {
-                    left.slot
-                        .cmp(&right.slot)
-                        .then_with(|| left.asset_guid.cmp(&right.asset_guid))
-                },
-                |item| item.slot.len() + item.asset_guid.len(),
+                |value| &value.asset_guid,
+                Ord::cmp,
+                "Inventor appearance texture sort",
+            )?;
+            ctx.stable_sort_by(
+                &mut connected,
+                |value| &value.slot,
+                Ord::cmp,
                 "Inventor appearance texture sort",
             )?;
             let base_color = [

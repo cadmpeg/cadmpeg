@@ -66,7 +66,7 @@ fn nx_block_dimensions_do_not_cross_expression_sections() {
         expression: index.to_string(),
         value: Some(cadmpeg_ir::scalar::FiniteReal::try_from(f64::from(index)).unwrap()),
         source_entry: source_entry.into(),
-        source_table: cadmpeg_core::text::NonBlankString::new(source_table).unwrap(),
+        source_table: cadmpeg_core::text::NonBlankString::try_from(source_table).unwrap(),
         source_offset: u64::from(index),
     };
     let mut expressions = [
@@ -99,7 +99,7 @@ fn nx_block_dimensions_do_not_cross_expression_sections() {
     .is_empty());
 
     expressions[2].source_entry = "section-a".into();
-    expressions[2].source_table = cadmpeg_core::text::NonBlankString::new("table-a").unwrap();
+    expressions[2].source_table = cadmpeg_core::text::NonBlankString::try_from("table-a").unwrap();
     assert_eq!(
         block_dimensions_for_test(
             std::slice::from_ref(&construction),
@@ -180,7 +180,7 @@ fn nx_block_dimensions_refuse_an_inch_length_that_overflows_millimeters() {
         expression: index.to_string(),
         value: Some(cadmpeg_ir::scalar::FiniteReal::try_from(f64::from(index)).unwrap()),
         source_entry: source_entry.into(),
-        source_table: cadmpeg_core::text::NonBlankString::new(source_table).unwrap(),
+        source_table: cadmpeg_core::text::NonBlankString::try_from(source_table).unwrap(),
         source_offset: u64::from(index),
     };
     let mut expressions = [
@@ -274,7 +274,8 @@ fn block_dimension_refusal(
                     .expect("finite expression value"),
             ),
             source_entry: "section".into(),
-            source_table: cadmpeg_core::text::NonBlankString::new("table").expect("source table"),
+            source_table: cadmpeg_core::text::NonBlankString::try_from("table")
+                .expect("source table"),
             source_offset: u64::from(index),
         }
     });

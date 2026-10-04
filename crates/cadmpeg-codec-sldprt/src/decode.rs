@@ -353,7 +353,7 @@ fn spatial_sketch_constraint_has_complete_neutral_semantics(
     }
 }
 
-fn count_keys<K: Ord>(
+fn count_keys<K: Ord + cadmpeg_core::decode::cost::DecodeCost>(
     ctx: &DecodeContext<'_>,
     keys: impl IntoIterator<Item = K>,
     operation: &'static str,
@@ -373,7 +373,7 @@ fn count_keys<K: Ord>(
     Ok(counts)
 }
 
-fn charged_map<K: Ord, V>(
+fn charged_map<K: Ord + cadmpeg_core::decode::cost::DecodeCost, V>(
     ctx: &DecodeContext<'_>,
     entries: impl IntoIterator<Item = (K, V)>,
     operation: &'static str,
@@ -386,7 +386,7 @@ fn charged_map<K: Ord, V>(
     Ok(map)
 }
 
-fn charged_btree_set<T: Ord>(
+fn charged_btree_set<T: Ord + cadmpeg_core::decode::cost::DecodeCost>(
     ctx: &DecodeContext<'_>,
     values: impl IntoIterator<Item = T>,
     operation: &'static str,
@@ -412,7 +412,7 @@ fn charged_vec<T>(
     Ok(result)
 }
 
-fn charged_set<'a, T: Eq + Hash + ?Sized + 'a>(
+fn charged_set<'a, T: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost + ?Sized + 'a>(
     ctx: &DecodeContext<'_>,
     values: impl IntoIterator<Item = &'a T>,
     operation: &'static str,
@@ -424,7 +424,7 @@ fn charged_set<'a, T: Eq + Hash + ?Sized + 'a>(
     Ok(set)
 }
 
-fn insert_charged_set<'a, T: Eq + Hash + ?Sized>(
+fn insert_charged_set<'a, T: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost + ?Sized>(
     ctx: &DecodeContext<'_>,
     set: &mut HashSet<&'a T>,
     value: &'a T,
@@ -435,7 +435,7 @@ fn insert_charged_set<'a, T: Eq + Hash + ?Sized>(
     Ok(())
 }
 
-fn charged_hash_map<K: Eq + Hash, V>(
+fn charged_hash_map<K: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost, V>(
     ctx: &DecodeContext<'_>,
     entries: impl IntoIterator<Item = (K, V)>,
     operation: &'static str,
@@ -448,7 +448,7 @@ fn charged_hash_map<K: Eq + Hash, V>(
     Ok(map)
 }
 
-fn has_incoherent_refs<T: Eq + Hash>(
+fn has_incoherent_refs<T: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost>(
     ctx: &DecodeContext<'_>,
     references: &[T],
     known: &HashSet<&T>,
@@ -2341,21 +2341,19 @@ fn active_body_streams<'a>(
     }
     ctx.stable_sort_by(
         &mut streams,
-        |left, right| {
-            let key = |stream: &ActiveParasolidSite<'_>| {
-                (
-                    !contains_ascii_case_insensitive(stream.source_stream().as_str(), "partition"),
-                    !contains_ascii_case_insensitive(&stream.header.description, "partition"),
-                )
-            };
-            key(left).cmp(&key(right))
+        |value| value.header.description.as_str(),
+        |left: &str, right: &str| {
+            (!contains_ascii_case_insensitive(left, "partition"))
+                .cmp(&(!contains_ascii_case_insensitive(right, "partition")))
         },
-        |stream| {
-            stream
-                .source_stream()
-                .as_str()
-                .len()
-                .max(stream.header.description.len())
+        "sort SLDPRT active body streams",
+    )?;
+    ctx.stable_sort_by(
+        &mut streams,
+        |value| value.source_stream().as_str(),
+        |left: &str, right: &str| {
+            (!contains_ascii_case_insensitive(left, "partition"))
+                .cmp(&(!contains_ascii_case_insensitive(right, "partition")))
         },
         "sort SLDPRT active body streams",
     )?;
@@ -3672,7 +3670,12 @@ fn build_geometry_ir(
             id.as_str(),
             &source_stream.path,
             0,
-            container::payload_family(&source_stream.payload).label(),
+            container::payload_family(
+                ctx,
+                &source_stream.payload,
+                "classify SLDPRT compound source payload",
+            )?
+            .label(),
             Exactness::ByteExact,
         )?;
         unknowns.push(UnknownRecord::retained(
@@ -3838,7 +3841,7 @@ fn add_preview_metadata(
     for section in scan.sections() {
         ctx.charge_work(1, "scan SLDPRT preview metadata")?;
         let payload = section.payload();
-        match container::payload_family(payload) {
+        match container::payload_family(ctx, payload, "classify SLDPRT preview payload")? {
             container::PayloadFamily::PngPreview => {
                 if payload.get(8..16) != Some(&[0, 0, 0, 13, b'I', b'H', b'D', b'R']) {
                     continue;
@@ -3853,16 +3856,16 @@ fn add_preview_metadata(
                     continue;
                 };
                 let key = |field: &str| {
-                    cadmpeg_core::nonblank_literal!("png_preview_{png_index}_{field}")
+                    cadmpeg_core::nonblank_literal!(ctx, "png_preview_{png_index}_{field}")
                 };
                 ctx.charge_collection_items(7, "collect SLDPRT PNG preview metadata")?;
-                attributes.insert(key("width"), width.to_string());
-                attributes.insert(key("height"), height.to_string());
-                attributes.insert(key("bit_depth"), fields[0].to_string());
-                attributes.insert(key("color_type"), fields[1].to_string());
-                attributes.insert(key("compression"), fields[2].to_string());
-                attributes.insert(key("filter"), fields[3].to_string());
-                attributes.insert(key("interlace"), fields[4].to_string());
+                attributes.insert(key("width")?, width.to_string());
+                attributes.insert(key("height")?, height.to_string());
+                attributes.insert(key("bit_depth")?, fields[0].to_string());
+                attributes.insert(key("color_type")?, fields[1].to_string());
+                attributes.insert(key("compression")?, fields[2].to_string());
+                attributes.insert(key("filter")?, fields[3].to_string());
+                attributes.insert(key("interlace")?, fields[4].to_string());
                 png_index += 1;
             }
             container::PayloadFamily::BmpThumbnail => {
@@ -3881,15 +3884,15 @@ fn add_preview_metadata(
                     continue;
                 };
                 let key = |field: &str| {
-                    cadmpeg_core::nonblank_literal!("bmp_thumbnail_{bmp_index}_{field}")
+                    cadmpeg_core::nonblank_literal!(ctx, "bmp_thumbnail_{bmp_index}_{field}")
                 };
                 ctx.charge_collection_items(6, "collect SLDPRT BMP preview metadata")?;
-                attributes.insert(key("width"), width.to_string());
-                attributes.insert(key("height"), height.to_string());
-                attributes.insert(key("planes"), planes.to_string());
-                attributes.insert(key("bit_count"), bits_per_pixel.to_string());
-                attributes.insert(key("compression"), compression.to_string());
-                attributes.insert(key("image_size"), image_size.to_string());
+                attributes.insert(key("width")?, width.to_string());
+                attributes.insert(key("height")?, height.to_string());
+                attributes.insert(key("planes")?, planes.to_string());
+                attributes.insert(key("bit_count")?, bits_per_pixel.to_string());
+                attributes.insert(key("compression")?, compression.to_string());
+                attributes.insert(key("image_size")?, image_size.to_string());
                 bmp_index += 1;
             }
             _ => {}
@@ -3947,8 +3950,12 @@ fn add_solidworks_xml_metadata(
         }
         for (key, value) in &envelope.configuration_attributes {
             let name = copy_retained_string(ctx, key, "retain SLDPRT configuration key")?;
-            let name = cadmpeg_core::text::NonBlankString::new(name)
-                .ok_or_else(|| CodecError::Malformed("invalid SLDPRT configuration key".into()))?;
+            let name = cadmpeg_core::text::NonBlankString::for_decode(
+                ctx,
+                name,
+                "validate nonblank text",
+            )?
+            .ok_or_else(|| CodecError::Malformed("invalid SLDPRT configuration key".into()))?;
             let value = copy_retained_string(ctx, value, "retain SLDPRT configuration value")?;
             ctx.insert_btree_map(
                 attributes,

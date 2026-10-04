@@ -204,6 +204,46 @@ pub enum AppearanceTarget {
     },
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for AppearanceTarget {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        let bytes = match self {
+            Self::Body(value) => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(value, ctx, operation)?
+            }
+            Self::Face(value) => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(value, ctx, operation)?
+            }
+            Self::Edge(value) => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(value, ctx, operation)?
+            }
+            Self::Vertex(value) => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(value, ctx, operation)?
+            }
+            Self::Surface(value) => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(value, ctx, operation)?
+            }
+            Self::Curve(value) => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(value, ctx, operation)?
+            }
+            Self::Point(value) => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(value, ctx, operation)?
+            }
+            Self::Tessellation(value) | Self::Source { source_id: value } => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(value, ctx, operation)?
+            }
+        };
+        bytes
+            .checked_add(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                usize,
+            >()))
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))
+    }
+}
+
 /// An explicit appearance assignment.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]

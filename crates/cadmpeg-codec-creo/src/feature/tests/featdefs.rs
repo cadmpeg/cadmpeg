@@ -508,7 +508,7 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
     else {
         panic!("point verhor must remain native");
     };
-    assert_eq!(native_kind, "creo:segtab:verhor");
+    assert_eq!(native_kind.as_str(), "creo:segtab:verhor");
     assert_eq!(native_properties["verhor"], "2");
     assert_eq!(
         entities,

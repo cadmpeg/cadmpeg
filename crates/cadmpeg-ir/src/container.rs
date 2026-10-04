@@ -188,7 +188,7 @@ mod tests {
     #[test]
     fn an_unclassified_summary_states_its_format_inside_the_identity() {
         let summary = ContainerSummary {
-            identity: cadmpeg_core::dialect::FormatIdentity::unclassified("rhino"),
+            identity: cadmpeg_core::dialect::FormatIdentity::unclassified("rhino".to_owned()),
             container_kind: ContainerKind::Flat,
             entries: Vec::new(),
             losses: Vec::new(),

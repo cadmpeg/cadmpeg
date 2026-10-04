@@ -725,8 +725,8 @@ pub(crate) fn operation_states(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo operation states result ordering",
     )?;
     let mut display_counts = BTreeMap::<u32, usize>::new();
@@ -885,8 +885,8 @@ pub(crate) fn operations(
     }
     ctx.stable_sort_by(
         current.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo operations current ordering",
     )?;
     Ok(current)

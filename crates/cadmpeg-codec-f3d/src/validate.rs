@@ -1231,19 +1231,15 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
         native.design_types.iter(),
         "order F3D feature timeline types",
     )?;
-    ctx.decode.stable_sort_by(
+    ctx.decode.stable_sort_by_key(
         &mut design_types,
-        |left, right| {
+        |value| {
             (
-                ids::native_stream(left.id()).unwrap_or_default(),
-                left.byte_offset,
+                ids::native_stream(value.id()).unwrap_or_default(),
+                value.byte_offset,
             )
-                .cmp(&(
-                    ids::native_stream(right.id()).unwrap_or_default(),
-                    right.byte_offset,
-                ))
         },
-        |design_type| design_type.id().len(),
+        Ord::cmp,
         "f3d feature timeline types sort",
     )?;
     for design_type in design_types {
@@ -1330,12 +1326,10 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
         native.design_feature_timelines.iter(),
         "order F3D feature timeline records",
     )?;
-    ctx.decode.stable_sort_by(
+    ctx.decode.stable_sort_by_key(
         &mut actual,
-        |left, right| {
-            (left.segment(), left.source_ordinal).cmp(&(right.segment(), right.source_ordinal))
-        },
-        |timeline| timeline.segment().len(),
+        |value| (value.segment(), value.source_ordinal),
+        Ord::cmp,
         "f3d feature timeline records sort",
     )?;
     let mut actual_records = HashSet::<(&str, u64)>::new();
@@ -1566,8 +1560,8 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(), 
         )?;
         ctx.decode.stable_sort_by(
             &mut resources,
-            |left, right| left.filename_ordinal.cmp(&right.filename_ordinal),
-            |_| 0,
+            |value| &value.filename_ordinal,
+            Ord::cmp,
             "f3d mesh texture resources sort",
         )?;
         let mut resources_valid = true;
@@ -1838,8 +1832,8 @@ fn validate_decal_images(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Resu
                     )?;
                     ctx.decode.stable_sort_by(
                         &mut faces,
-                        |left, right| left.as_str().cmp(right.as_str()),
-                        |face| face.as_str().len(),
+                        |value| value.as_str(),
+                        Ord::cmp,
                         "f3d decal projected faces sort",
                     )?;
                     faces.dedup();
@@ -1991,10 +1985,10 @@ fn validate_body_bindings(
         )?;
     }
     for bindings in binding_groups.values_mut() {
-        ctx.decode.stable_sort_by(
+        ctx.decode.stable_sort_by_key(
             bindings,
-            |left, right| left.pair_ordinal().cmp(&right.pair_ordinal()),
-            |_| 0,
+            |value| value.pair_ordinal(),
+            Ord::cmp,
             "f3d body binding pair run sort",
         )?;
         let complete = bindings
@@ -2037,10 +2031,10 @@ fn validate_body_bounds(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Resul
             }),
             "collect F3D expected body bounds bindings",
         )?;
-        ctx.decode.stable_sort_by(
+        ctx.decode.stable_sort_by_key(
             &mut expected_bindings,
-            |left, right| left.asm_body_key_offset().cmp(&right.asm_body_key_offset()),
-            |_| 0,
+            |value| value.asm_body_key_offset(),
+            Ord::cmp,
             "f3d body bounds binding sort",
         )?;
         let valid_frame = ctx
@@ -5610,11 +5604,8 @@ fn validate_extrude_parameter_operands(
                 }), "collect F3D Extrude face operand groups")?;
             ctx.decode.stable_sort_by(
                 &mut face_groups,
-                |left, right| {
-                    left.scope_reference_ordinal
-                        .cmp(&right.scope_reference_ordinal)
-                },
-                |_| 0,
+                |value| &value.scope_reference_ordinal,
+                Ord::cmp,
                 "f3d extrude face operand groups sort",
             )?;
             let expected_face_roles = match (extrude_start, extrude_extent) {
@@ -6462,8 +6453,8 @@ fn validate_operand_group_carriers<'a>(
         )?;
         ctx.decode.stable_sort_by(
             &mut identity_members,
-            |left, right| left.group_member_ordinal.cmp(&right.group_member_ordinal),
-            |_| 0,
+            |value| &value.group_member_ordinal,
+            Ord::cmp,
             "f3d operand group identity members sort",
         )?;
         let has_exact_identity_members = !group.members().is_empty()
@@ -6702,15 +6693,10 @@ fn validate_extrude_selection_members(
                 }),
             "collect F3D Extrude selection identities",
         )?;
-        ctx.decode.stable_sort_by(
+        ctx.decode.stable_sort_by_key(
             &mut expected_identities,
-            |left, right| {
-                left.wrappers()
-                    .first()
-                    .map(|wrapper| wrapper.byte_offset)
-                    .cmp(&right.wrappers().first().map(|wrapper| wrapper.byte_offset))
-            },
-            |_| 0,
+            |value| value.wrappers().first().map(|wrapper| wrapper.byte_offset),
+            Ord::cmp,
             "f3d extrude selection identities sort",
         )?;
         let expected_history = history::selection::historical_extrude_selection_identity_kind(
@@ -7314,8 +7300,8 @@ fn validate_face_operands<'a>(
         )?;
         ctx.decode.stable_sort_by(
             &mut expected_faces,
-            |left, right| left.as_str().cmp(right.as_str()),
-            |face| face.as_str().len(),
+            |value| value.as_str(),
+            Ord::cmp,
             "f3d face operand expected faces sort",
         )?;
         expected_faces.dedup();
@@ -7362,8 +7348,8 @@ fn validate_face_operands<'a>(
         )?;
         ctx.decode.stable_sort_by(
             &mut expected_alternate_selector_faces,
-            |left, right| left.as_str().cmp(right.as_str()),
-            |face| face.as_str().len(),
+            |value| value.as_str(),
+            Ord::cmp,
             "f3d face operand alternate selector faces sort",
         )?;
         expected_alternate_selector_faces.dedup();
@@ -8037,8 +8023,8 @@ fn validate_parameter_companions(
         )?;
         ctx.decode.stable_sort_by(
             &mut expected_recipes,
-            |left, right| left.byte_offset.cmp(&right.byte_offset),
-            |_| 0,
+            |value| &value.byte_offset,
+            Ord::cmp,
             "f3d parameter companion recipes sort",
         )?;
         let unique_index = ctx.decode.insert_hash_set(
@@ -8630,14 +8616,14 @@ fn validate_dimension_locus_groups<'a>(
         )?;
         decode.sort_unstable_by(
             &mut locus_members,
+            |value| value,
             Ord::cmp,
-            |_| 0,
             "f3d dimension locus members sort",
         )?;
         decode.sort_unstable_by(
             &mut return_members,
+            |value| value,
             Ord::cmp,
-            |_| 0,
             "f3d dimension return members sort",
         )?;
         let owner_is_sketch = entities_by_suffix
@@ -9370,8 +9356,8 @@ fn validate_body_links(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result
     for links in body_links.values_mut() {
         ctx.decode.stable_sort_by(
             links,
-            |left, right| left.ordinal.cmp(&right.ordinal),
-            |_| 0,
+            |value| &value.ordinal,
+            Ord::cmp,
             "f3d body links sort",
         )?;
         if links
@@ -9444,8 +9430,8 @@ fn validate_subentity_tags(
     for tags in subentity_tags.values_mut() {
         ctx.decode.stable_sort_by(
             tags,
-            |left, right| left.ordinal.cmp(&right.ordinal),
-            |_| 0,
+            |value| &value.ordinal,
+            Ord::cmp,
             "f3d subentity tags sort",
         )?;
         if tags

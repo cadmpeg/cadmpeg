@@ -1,0 +1,103 @@
+// SPDX-License-Identifier: Apache-2.0
+pub fn decode(_ctx: &cadmpeg_core::DecodeContext, text: &String, number: u32, bytes: &[u8]) {
+    let _length = cadmpeg_core::fixed(bytes);
+    let _minimum = cadmpeg_core::minimum(number, number);
+    cadmpeg_core::writer::writer(text);
+    let _callback = cadmpeg_core::with(|| bytes.len());
+    let _fixed = cadmpeg_core::copy(&number);
+    let _default = cadmpeg_core::Fixed::fixed(&number);
+    let _capacity = cadmpeg_core::capacity::<u8>();
+    let _constant_capacity = cadmpeg_core::constant_capacity::<u8, 4>();
+    let _array = cadmpeg_core::array_copy(&[0u8; 4]);
+    let _slice = cadmpeg_core::slice_copy(bytes); // finding: uncharged_decode_allocation, uncharged_decode_work
+    let _context = cadmpeg_core::context_copy(&cadmpeg_core::DecodeContext, text); // finding: uncharged_decode_allocation, uncharged_decode_work
+    let _text = cadmpeg_core::copy(text); // finding: uncharged_decode_allocation, uncharged_decode_work
+}
+
+pub fn grow(_ctx: &cadmpeg_core::DecodeContext, values: &mut Vec<u8>, value: u8) {
+    cadmpeg_core::grow(values, value);
+}
+
+pub fn unit_vectors(_ctx: &cadmpeg_core::DecodeContext, values: &Vec<()>) {
+    let _copy = cadmpeg_core::vector_copy(values);
+}
+pub fn byte_vectors(_ctx: &cadmpeg_core::DecodeContext, values: &Vec<u8>) {
+    let _copy = cadmpeg_core::vector_copy(values); // finding: uncharged_decode_allocation, uncharged_decode_work
+}
+
+pub fn moved_arrays(_ctx: &cadmpeg_core::DecodeContext, first: [String; 4], second: [String; 4]) {
+    let _first = cadmpeg_core::array_move(first);
+    let _second = cadmpeg_core::array_collect(second);
+}
+
+pub fn imported_charged(
+    ctx: &cadmpeg_core::DecodeContext,
+    small: &mut Vec<u8>,
+    large: &mut Vec<[u64; 8]>,
+    n: usize,
+) -> Result<(), ()> {
+    cadmpeg_core::reserve(ctx, small, n)?;
+    cadmpeg_core::reserve(ctx, large, n)?;
+    Ok(())
+}
+
+pub fn fixed_messages(_ctx: &cadmpeg_core::DecodeContext, input: &str) {
+    let _fixed = cadmpeg_core::text("fixed");
+    let fixed = "fixed".to_owned();
+    let _forward = cadmpeg_core::forward_text(fixed);
+    let _input = cadmpeg_core::text(input); // finding: uncharged_decode_allocation, uncharged_decode_work
+}
+
+pub fn imported_mutation(_ctx: &cadmpeg_core::DecodeContext, input: &str) {
+    let _text = cadmpeg_core::changed_text("fixed", input); // finding: uncharged_decode_allocation, uncharged_decode_work
+}
+
+pub fn imported_fills(
+    ctx: &cadmpeg_core::DecodeContext,
+    count: usize,
+    text: String,
+) -> Result<(), ()> {
+    let _fixed = cadmpeg_core::filled(ctx, count, 0u8)?;
+    let _owned = cadmpeg_core::filled(ctx, count, text)?; // finding: uncharged_decode_allocation, unproven_decode_charge
+    Ok(())
+}
+
+pub fn imported_conversion(
+    ctx: &cadmpeg_core::DecodeContext,
+    text: &str,
+    other: &str,
+) -> Result<(), ()> {
+    ctx.charge_retained(u64::try_from(text.len()).map_err(|_| ())?, "text")?;
+    let _paid = cadmpeg_core::forward_text(text);
+    ctx.charge_retained(u64::try_from(other.len()).map_err(|_| ())?, "wrong")?;
+    let _wrong = cadmpeg_core::forward_text(text); // finding: uncharged_decode_allocation, uncharged_decode_work
+    let _reuse = cadmpeg_core::forward_text(text); // finding: uncharged_decode_allocation, uncharged_decode_work
+    Ok(())
+}
+
+pub fn imported_key_proof(
+    ctx: &cadmpeg_core::DecodeContext,
+    values: &std::collections::BTreeMap<String, u8>,
+    key: &String,
+    other: &String,
+) -> Result<(), ()> {
+    let _paid = cadmpeg_core::admitted_lookup(ctx, values, key)?;
+    let _wrong = cadmpeg_core::wrong_lookup(ctx, values, key, other)?; // finding: uncharged_decode_work
+    Ok(())
+}
+
+pub fn imported_string_write_char(
+    _ctx: &cadmpeg_core::DecodeContext,
+    output: &mut String,
+    character: char,
+) -> std::fmt::Result {
+    cadmpeg_core::generic_write_char(output, character) // finding: uncharged_decode_allocation, uncharged_decode_work
+}
+
+pub fn imported_string_write_str(
+    _ctx: &cadmpeg_core::DecodeContext,
+    output: &mut String,
+    suffix: &str,
+) -> std::fmt::Result {
+    cadmpeg_core::generic_write_str(output, suffix) // finding: uncharged_decode_allocation
+}

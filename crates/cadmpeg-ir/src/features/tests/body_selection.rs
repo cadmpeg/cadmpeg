@@ -24,7 +24,7 @@ fn ordered_members_reject_empty_sets_and_duplicates() {
             .map(|(body, native)| {
                 BodyMember::new(
                     body,
-                    cadmpeg_core::text::NonBlankString::new(native.to_owned())
+                    cadmpeg_core::text::NonBlankString::try_from(native.to_owned())
                         .expect("non-blank native fixture"),
                 )
             })
@@ -55,7 +55,7 @@ fn historical_body_members_refuse_the_deleted_parallel_arrays() {
             .map(|(body, native)| {
                 BodyMember::new(
                     body,
-                    cadmpeg_core::text::NonBlankString::new(native.to_owned())
+                    cadmpeg_core::text::NonBlankString::try_from(native.to_owned())
                         .expect("non-blank native fixture"),
                 )
             })
@@ -66,17 +66,18 @@ fn historical_body_members_refuse_the_deleted_parallel_arrays() {
                 .is_err()
         );
     }
-    assert!(cadmpeg_core::text::NonBlankString::new(" ").is_none());
+    assert!(cadmpeg_core::text::NonBlankString::try_from(" ").is_err());
 
     let members = BodyMembers::try_from_rows(
         vec![
             BodyMember::new(
                 b.clone(),
-                cadmpeg_core::text::NonBlankString::new("native-first").expect("non-blank fixture"),
+                cadmpeg_core::text::NonBlankString::try_from("native-first")
+                    .expect("non-blank fixture"),
             ),
             BodyMember::new(
                 a.clone(),
-                cadmpeg_core::text::NonBlankString::new("native-second")
+                cadmpeg_core::text::NonBlankString::try_from("native-second")
                     .expect("non-blank fixture"),
             ),
         ],
@@ -127,7 +128,7 @@ fn body_member_constructor_charges_each_uniqueness_slot_once() {
     policy.limits.max_collection_items = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let body = crate::ids::BodyId::mint("test:model:body#member").unwrap();
-    let native = cadmpeg_core::text::NonBlankString::new("native").unwrap();
+    let native = cadmpeg_core::text::NonBlankString::try_from("native").unwrap();
     let rows =
         BodyMembers::try_from_rows(vec![crate::features::BodyMember::new(body, native)], &ctx)
             .unwrap()

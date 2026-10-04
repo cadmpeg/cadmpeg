@@ -658,22 +658,22 @@ pub(super) fn hole_sketch_construction(
     let diameters = &mut diameters[..diameter_count];
     let lengths = &mut lengths[..length_count];
     let angles = &mut angles[..angle_count];
-    ctx.sort_unstable_by(
+    ctx.sort_unstable_by_key(
         diameters,
-        |left, right| left.get().total_cmp(&right.get()),
-        |_| 0,
+        |value| value.get(),
+        f64::total_cmp,
         "sldprt hole profile diameters sort",
     )?;
-    ctx.sort_unstable_by(
+    ctx.sort_unstable_by_key(
         lengths,
-        |left, right| left.get().total_cmp(&right.get()),
-        |_| 0,
+        |value| value.get(),
+        f64::total_cmp,
         "sldprt hole profile lengths sort",
     )?;
-    ctx.sort_unstable_by(
+    ctx.sort_unstable_by_key(
         angles,
-        |left, right| left.get().total_cmp(&right.get()),
-        |_| 0,
+        |value| value.get(),
+        f64::total_cmp,
         "sldprt hole profile angles sort",
     )?;
     Ok(match (&*diameters, &*lengths, &*angles) {

@@ -75,7 +75,7 @@ pub(crate) fn open_root<'a>(
             ));
         }
     }
-    let root_entry = archive.entry(ROOT_NAME).ok_or_else(|| {
+    let root_entry = archive.entry(ctx, ROOT_NAME)?.ok_or_else(|| {
         CodecError::WrongFormat(format!("STEP ZIP has no required root {ROOT_NAME}"))
     })?;
     let data_start = root_entry.data_start;
@@ -203,7 +203,7 @@ pub(crate) fn root_reference_notes(
                 query,
                 fragment,
             } => {
-                if archive.entry(&member).is_none() {
+                if archive.entry(ctx, &member)?.is_none() {
                     return Err(CodecError::malformed(format_args!(
                         "STEP ZIP resource {uri:?} for {name} has no archive member {member:?}"
                     )));

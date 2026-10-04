@@ -172,6 +172,22 @@ pub(crate) enum FeatureSource {
     Id(FeatureSourceId),
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureSource {
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
+    }
+}
+
 impl Serialize for FeatureSource {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self {
@@ -1001,6 +1017,22 @@ pub(crate) enum FeatureInputRelationFamily {
     Angle,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureInputRelationFamily {
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
+    }
+}
+
 /// One native entity-reference cell in a feature-input stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct FeatureInputReference {
@@ -1245,6 +1277,22 @@ pub(crate) enum FeatureInputOperandKind {
     E1,
     /// Other two-byte reference-cell tag, stored as a little-endian u16.
     Native(operand_tag::NativeOperandTag),
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureInputOperandKind {
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
+    }
 }
 
 /// Function of a named scalar in its dimension record.

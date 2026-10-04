@@ -282,9 +282,11 @@ pub struct Grammar(String);
 
 impl Grammar {
     /// Names the format-local half of a registry dialect id.
-    #[must_use]
-    pub fn of(dialect: &DialectId) -> Self {
-        Self(dialect.local().to_owned())
+    pub fn of(ctx: &DecodeContext<'_>, dialect: &DialectId) -> Result<Self, CodecError> {
+        Ok(Self(ctx.copy_retained_text(
+            dialect.local(),
+            "copy dialect grammar",
+        )?))
     }
 
     /// Parses and validates a format-local grammar name.
@@ -454,9 +456,10 @@ impl DialectLayers {
     ) -> Result<Self, CodecError> {
         let primary = self.primary.try_clone_for_decode(ctx, operation)?;
         let mut extra = ctx.collection_vec(self.extra.len(), operation)?;
-        ctx.charge_work(crate::decode::u64_from_index(self.extra.len()), operation)?;
-        for layer in &self.extra {
-            extra.push(layer.try_clone_for_decode(ctx, operation)?);
+        for layer in ctx.admit_iter(&self.extra, operation)? {
+            let layer = layer.try_clone_for_decode(ctx, operation)?;
+            ctx.reserve_capacity(&mut extra, 1, operation)?;
+            extra.push(layer);
         }
         Ok(Self { primary, extra })
     }
@@ -492,18 +495,31 @@ impl DialectLayers {
         layer: DialectMatch,
         operation: &'static str,
     ) -> Result<(), DialectLayerError> {
-        ctx.charge_work_limit(
-            crate::decode::u64_from_index(self.extra.len()) + 1,
-            operation,
-        )
-        .map_err(DialectLayerError::ResourceLimit)?;
-        if Self::same_key(&self.primary, &layer)
-            || self
-                .extra
-                .iter()
-                .any(|existing| Self::same_key(existing, &layer))
-        {
-            return Err(DialectLayerError::Duplicate(layer));
+        let layer_format = layer.format();
+        for existing in std::iter::once(&self.primary).chain(&self.extra) {
+            ctx.charge_work_limit(1, operation)
+                .map_err(DialectLayerError::ResourceLimit)?;
+            let existing_format = existing.format();
+            ctx.charge_work_limit(
+                crate::decode::u64_from_index(existing_format.len()),
+                operation,
+            )
+            .map_err(DialectLayerError::ResourceLimit)?;
+            if existing_format != layer_format {
+                continue;
+            }
+            let same_instance = match (&existing.instance, &layer.instance) {
+                (Some(existing), Some(candidate)) => {
+                    ctx.charge_work_limit(crate::decode::u64_from_index(existing.len()), operation)
+                        .map_err(DialectLayerError::ResourceLimit)?;
+                    existing == candidate
+                }
+                (None, None) => true,
+                _ => false,
+            };
+            if same_instance {
+                return Err(DialectLayerError::Duplicate(layer));
+            }
         }
         ctx.reserve_vec_limit(&mut self.extra, 1, operation)
             .map_err(DialectLayerError::ResourceLimit)?;
@@ -526,10 +542,6 @@ impl DialectLayers {
     ) -> Result<Self, DialectLayerError> {
         self.insert_for_decode(ctx, layer, operation)?;
         Ok(self)
-    }
-
-    fn same_key(existing: &DialectMatch, layer: &DialectMatch) -> bool {
-        existing.format() == layer.format() && existing.instance == layer.instance
     }
 
     /// Returns the report's primary format layer.
@@ -612,10 +624,8 @@ impl<T: FormatIdentityPayload> FormatIdentity<T> {
 
     /// Constructs an identity for a known format without classification.
     #[must_use]
-    pub fn unclassified(format: impl Into<String>) -> Self {
-        Self::Unclassified {
-            format: format.into(),
-        }
+    pub fn unclassified(format: String) -> Self {
+        Self::Unclassified { format }
     }
 
     /// Returns the authoritative format id.
@@ -652,11 +662,10 @@ impl DialectMatch {
             namespace_len: self.dialect.namespace_len,
         };
         let mut declared = BTreeMap::new();
-        for (key, value) in &self.declared {
-            ctx.admit_retained_btree_record::<NonBlankString, String>(0, operation)?;
-            let key = NonBlankString::new(ctx.copy_retained_text(key.as_str(), operation)?)
-                .ok_or_else(|| crate::CodecError::malformed("dialect declaration key is blank"))?;
-            declared.insert(key, ctx.copy_retained_text(value, operation)?);
+        for (key, value) in ctx.admit_iter(&self.declared, operation)? {
+            let key = key.try_clone_for_decode(ctx, operation)?;
+            let value = ctx.copy_retained_text(value, operation)?;
+            ctx.insert_btree_map(&mut declared, key, value, operation)?;
         }
         let instance = self
             .instance
@@ -730,19 +739,16 @@ impl DialectMatch {
         value: &str,
         operation: &'static str,
     ) -> Result<Self, crate::CodecError> {
-        if !self.declared.contains_key(&key) {
-            ctx.admit_retained_btree_record::<NonBlankString, String>(0, operation)?;
-        }
         let value = ctx.copy_retained_text(value, operation)?;
-        let previous = self.declared.insert(key, value);
+        let previous = ctx.insert_btree_map(&mut self.declared, key, value, operation)?;
         drop(previous);
         Ok(self)
     }
 
     /// Attaches a report-local layer instance before the match enters a report.
     #[must_use]
-    pub fn with_instance(mut self, instance: impl Into<String>) -> Self {
-        self.instance = Some(instance.into());
+    pub fn with_instance(mut self, instance: String) -> Self {
+        self.instance = Some(instance);
         self
     }
 
@@ -778,22 +784,27 @@ impl DialectMatch {
 
     /// Returns the full registry id of the grammar applied, when this layer
     /// was parsed unverified with a declared grammar.
-    #[must_use]
-    pub fn using(&self) -> Option<DialectId> {
-        match &self.admission {
-            Admission::Unverified { using } => Some(self.grammar_id(using)),
+    pub fn using(&self, ctx: &DecodeContext<'_>) -> Result<Option<DialectId>, CodecError> {
+        Ok(match &self.admission {
+            Admission::Unverified { using } => Some(self.grammar_id(ctx, using)?),
             Admission::Admitted | Admission::Residual | Admission::Refused => None,
-        }
+        })
     }
 
     /// Return the full grammar identity in this match’s format namespace.
-    #[must_use]
-    pub fn grammar_id(&self, grammar: &Grammar) -> DialectId {
+    pub fn grammar_id(
+        &self,
+        ctx: &DecodeContext<'_>,
+        grammar: &Grammar,
+    ) -> Result<DialectId, CodecError> {
         let namespace = self.format();
-        DialectId {
-            value: Cow::Owned(format!("{namespace}:{}", grammar.as_str())),
+        Ok(DialectId {
+            value: Cow::Owned(ctx.format_retained(
+                format_args!("{namespace}:{}", grammar.as_str()),
+                "retain dialect grammar identity",
+            )?),
             namespace_len: namespace.len(),
-        }
+        })
     }
 }
 
@@ -808,6 +819,21 @@ mod tests {
 
     use super::{Admission, DialectId, DialectLayers, DialectMatch, Grammar, StaticDialectId};
 
+    #[test]
+    fn owned_identity_and_instance_constructors_transfer_the_existing_allocation() {
+        let format = "custom-format".to_owned();
+        let address = format.as_ptr();
+        let identity = super::FormatIdentity::<DialectLayers>::unclassified(format);
+        assert_eq!(identity.format(), "custom-format");
+        assert_eq!(identity.format().as_ptr(), address);
+        let instance = "embedded-body".to_owned();
+        let address = instance.as_ptr();
+        let matched =
+            DialectMatch::residual(crate::dialect_id!("parasolid:unknown")).with_instance(instance);
+        assert_eq!(matched.instance(), Some("embedded-body"));
+        assert_eq!(matched.instance().expect("instance").as_ptr(), address);
+    }
+
     #[derive(serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     struct DialectIdConformance {
@@ -820,6 +846,89 @@ mod tests {
     }
 
     #[test]
+    fn grammar_copy_and_identity_charge_text_before_copying() {
+        for dimension in [
+            ResourceDimension::WorkUnits,
+            ResourceDimension::RetainedBytes,
+        ] {
+            let arena = DecodeArena::new();
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+            let dialect = crate::dialect_id!("x:abc");
+            let grammar = Grammar::of(&ctx, &dialect).unwrap();
+            assert_eq!(grammar.as_str(), "abc");
+            let matched = DialectMatch::unverified(dialect.clone(), grammar);
+            assert_eq!(matched.using(&ctx).unwrap(), Some(dialect));
+            let error = match dimension {
+                ResourceDimension::WorkUnits => ctx.charge_work(u64::MAX, "probe"),
+                ResourceDimension::RetainedBytes => ctx.charge_retained(u64::MAX, "probe"),
+                _ => unreachable!(),
+            }
+            .unwrap_err();
+            let CodecError::ResourceLimit(limit) = error else {
+                panic!("refusal")
+            };
+            // Three copied grammar bytes; five identity bytes in both formatter passes.
+            assert_eq!(
+                limit.used,
+                if dimension == ResourceDimension::WorkUnits {
+                    13
+                } else {
+                    8
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn grammar_operations_propagate_the_original_refusal() {
+        for dimension in [
+            ResourceDimension::WorkUnits,
+            ResourceDimension::RetainedBytes,
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
+                _ => unreachable!(),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let residual = DialectMatch::residual(crate::dialect_id!("x:abc"));
+            assert_eq!(residual.using(&ctx).unwrap(), None);
+            let CodecError::ResourceLimit(first) =
+                Grammar::of(&ctx, residual.dialect()).unwrap_err()
+            else {
+                panic!("refusal")
+            };
+            assert_eq!(first.dimension, dimension);
+            assert_eq!(first.used, 0);
+            assert_eq!(first.additional, 3);
+            let grammar = Grammar::parse("abc").unwrap();
+            let CodecError::ResourceLimit(repeated) =
+                residual.grammar_id(&ctx, &grammar).unwrap_err()
+            else {
+                panic!("refusal")
+            };
+            assert_eq!(first, repeated);
+        }
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let matched =
+            DialectMatch::unverified(crate::dialect_id!("x:abc"), Grammar::parse("abc").unwrap());
+        let CodecError::ResourceLimit(first) = matched.using(&ctx).unwrap_err() else {
+            panic!("refusal")
+        };
+        assert_eq!(first.used, 0);
+        assert_eq!(first.additional, 1);
+        assert_eq!(first.operation, "retain dialect grammar identity");
+        assert_eq!(ctx.resource_refusal(), Some(first));
+    }
+
+    #[test]
     fn charged_layer_copy_preserves_declarations_and_refuses_retained_limit() {
         let primary = DialectMatch::admitted(crate::dialect_id!("sldprt:unknown")).with_declared(
             std::collections::BTreeMap::from([(
@@ -827,8 +936,8 @@ mod tests {
                 "12000".to_string(),
             )]),
         );
-        let extra =
-            DialectMatch::residual(crate::dialect_id!("parasolid:unknown")).with_instance("body-1");
+        let extra = DialectMatch::residual(crate::dialect_id!("parasolid:unknown"))
+            .with_instance("body-1".to_owned());
         let layers = DialectLayers::of(primary).with(extra).unwrap();
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
@@ -906,6 +1015,51 @@ mod tests {
     }
 
     #[test]
+    fn dialect_key_comparison_refuses_work_without_changing_layers() {
+        let primary = DialectMatch::admitted(crate::dialect_id!("nx:unknown"))
+            .with_instance("same-instance".to_owned());
+        let mut layers = DialectLayers::of(primary);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // One layer visit and the format comparison precede the instance scan.
+        policy.limits.max_work_units = 3;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let error = layers
+            .insert_for_decode(
+                &ctx,
+                DialectMatch::admitted(crate::dialect_id!("nx:unknown"))
+                    .with_instance("same-instance".to_owned()),
+                "compare layer keys",
+            )
+            .expect_err("instance comparison exceeds work");
+        let super::DialectLayerError::ResourceLimit(limit) = error else {
+            panic!("work refusal must remain a resource limit");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "compare layer keys");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+        assert_eq!(layers.iter().count(), 1);
+    }
+
+    #[test]
+    fn dialect_declaration_iteration_refuses_before_empty_value_copy() {
+        let layer = DialectMatch::admitted(crate::dialect_id!("nx:unknown")).with_declared(
+            BTreeMap::from([(crate::nonblank_literal!("version"), String::new())]),
+        );
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        assert!(
+            matches!(layer.try_clone_for_decode(&ctx, "declaration iteration"),
+            Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits)
+        );
+    }
+
+    #[test]
     fn dialect_insertion_refuses_storage_without_changing_layers() {
         let primary = DialectMatch::admitted(crate::dialect_id!("nx:unknown"));
         let mut layers = DialectLayers::of(primary);
@@ -934,7 +1088,7 @@ mod tests {
             + 2 * std::mem::align_of::<String>().max(std::mem::align_of::<usize>());
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        // One declaration record admits one backing node before its text copies.
+        // The first declaration allocates one root node; its key copy precedes node admission.
         let bytes = node_bytes;
         policy.limits.max_retained_bytes = crate::decode::u64_from_index(bytes) - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
@@ -943,6 +1097,80 @@ mod tests {
             Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.additional == crate::decode::u64_from_index(bytes))
         );
+    }
+
+    #[test]
+    fn dialect_declaration_replacement_keeps_one_collection_slot() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let layer = DialectMatch::admitted(crate::dialect_id!("nx:unknown"))
+            .with_declared_entry(
+                &ctx,
+                crate::nonblank_literal!("version"),
+                "first",
+                "declaration",
+            )
+            .unwrap()
+            .with_declared_entry(
+                &ctx,
+                crate::nonblank_literal!("version"),
+                "second",
+                "declaration",
+            )
+            .unwrap();
+        assert_eq!(layer.declared().len(), 1);
+        assert_eq!(
+            layer.declared().get("version").map(String::as_str),
+            Some("second")
+        );
+        let CodecError::ResourceLimit(limit) = ctx.charge_collection_items(1, "probe").unwrap_err()
+        else {
+            panic!("refusal")
+        };
+        assert_eq!(limit.used, 1);
+    }
+
+    #[test]
+    fn dialect_declaration_copy_charges_complete_key_comparisons() {
+        let layer = DialectMatch::admitted(crate::dialect_id!("nx:unknown")).with_declared(
+            BTreeMap::from([
+                (crate::nonblank_literal!("k"), String::from("v")),
+                (crate::nonblank_literal!("l"), String::from("w")),
+            ]),
+        );
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Visits, copies and key comparisons use 28 units; insertions move four passes through 1+2 bounded nodes.
+        let node_bytes = 22 * std::mem::size_of::<String>()
+            + 16 * std::mem::size_of::<usize>()
+            + 2 * std::mem::align_of::<String>();
+        let work = 28 + 4 * 3 * crate::decode::u64_from_index(node_bytes);
+        policy.limits.max_work_units = work;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert_eq!(
+            layer
+                .try_clone_for_decode(&ctx, "copy declaration")
+                .unwrap(),
+            layer
+        );
+        let CodecError::ResourceLimit(limit) = ctx.charge_work(1, "probe").unwrap_err() else {
+            panic!("refusal")
+        };
+        assert_eq!(limit.used, work);
+        policy.limits.max_work_units = work - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let CodecError::ResourceLimit(first) = layer
+            .try_clone_for_decode(&ctx, "copy declaration")
+            .unwrap_err()
+        else {
+            panic!("refusal")
+        };
+        let CodecError::ResourceLimit(second) = ctx.charge_work(0, "later").unwrap_err() else {
+            panic!("refusal")
+        };
+        assert_eq!(first, second);
     }
 
     #[test]
@@ -1046,10 +1274,13 @@ mod tests {
 
     #[test]
     fn residual_constructor_records_the_absence_of_a_declared_grammar() {
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         let residual = DialectMatch::residual(crate::dialect_id!("rhino:unknown"));
 
         assert_eq!(residual.admission(), &Admission::Residual);
-        assert_eq!(residual.using(), None);
+        assert_eq!(residual.using(&ctx).unwrap(), None);
         assert_eq!(
             serde_json::to_string(&residual).unwrap(),
             "{\"dialect\":\"rhino:unknown\",\"admission\":\"residual\"}"
@@ -1058,19 +1289,22 @@ mod tests {
 
     #[test]
     fn an_unverified_admission_names_the_grammar_in_use_by_full_id() {
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         let unverified = DialectMatch::unverified(
             crate::dialect_id!("acis:save-format-217"),
-            Grammar::of(&crate::dialect_id!("acis:save-format-218")),
+            Grammar::of(&ctx, &crate::dialect_id!("acis:save-format-218")).unwrap(),
         );
 
         assert_eq!(
             unverified.admission(),
             &Admission::Unverified {
-                using: Grammar::of(&crate::dialect_id!("acis:save-format-218")),
+                using: Grammar::of(&ctx, &crate::dialect_id!("acis:save-format-218")).unwrap(),
             }
         );
         assert_eq!(
-            unverified.using(),
+            unverified.using(&ctx).unwrap(),
             Some(crate::dialect_id!("acis:save-format-218"))
         );
         let serialized = serde_json::to_string(&unverified).unwrap();
@@ -1086,6 +1320,9 @@ mod tests {
 
     #[test]
     fn a_self_named_unverified_grammar_remains_opaque() {
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         let self_named = serde_json::json!({
             "dialect": "rhino:unknown",
             "admission": {
@@ -1097,7 +1334,7 @@ mod tests {
         assert_eq!(
             matched.admission(),
             &Admission::Unverified {
-                using: Grammar::of(&crate::dialect_id!("rhino:unknown")),
+                using: Grammar::of(&ctx, &crate::dialect_id!("rhino:unknown")).unwrap(),
             }
         );
     }
@@ -1122,6 +1359,9 @@ mod tests {
 
     #[test]
     fn grammar_parsing_rejects_a_name_outside_the_format_local_class() {
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         for name in [
             "",
             "rhino:archive-80",
@@ -1136,29 +1376,33 @@ mod tests {
         }
         assert_eq!(
             Grammar::parse("save-format-218").unwrap(),
-            Grammar::of(&crate::dialect_id!("acis:save-format-218"))
+            Grammar::of(&ctx, &crate::dialect_id!("acis:save-format-218")).unwrap()
         );
     }
 
     #[test]
     fn identity_does_not_encode_whether_an_unverified_path_used_a_grammar() {
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         let dialect = crate::dialect_id!("rhino:archive-80");
         let without_grammar = DialectMatch::residual(dialect.clone());
         assert_eq!(without_grammar.admission(), &Admission::Residual);
 
-        let self_named = DialectMatch::unverified(dialect.clone(), Grammar::of(&dialect));
+        let self_named =
+            DialectMatch::unverified(dialect.clone(), Grammar::of(&ctx, &dialect).unwrap());
         assert_eq!(
             self_named.admission(),
             &Admission::Unverified {
-                using: Grammar::of(&crate::dialect_id!("rhino:archive-80")),
+                using: Grammar::of(&ctx, &crate::dialect_id!("rhino:archive-80")).unwrap(),
             }
         );
-        assert_eq!(self_named.using(), Some(dialect));
+        assert_eq!(self_named.using(&ctx).unwrap(), Some(dialect));
     }
 
     #[test]
     fn dialect_layers_accept_a_same_format_extra_with_an_instance() {
-        let member = layer("rhino").with_instance("components/member.3dm");
+        let member = layer("rhino").with_instance("components/member.3dm".to_owned());
         let layers = DialectLayers::of(layer("rhino"))
             .with(member.clone())
             .expect("distinct dialect layer keys");
@@ -1173,9 +1417,9 @@ mod tests {
 
     #[test]
     fn dialect_layers_insert_keeps_the_first_extra_layer_for_a_key() {
-        let first = layer("acis").with_instance("body");
-        let replacement =
-            DialectMatch::residual(crate::dialect_id!("acis:other")).with_instance("body");
+        let first = layer("acis").with_instance("body".to_owned());
+        let replacement = DialectMatch::residual(crate::dialect_id!("acis:other"))
+            .with_instance("body".to_owned());
         let mut layers = DialectLayers::of(layer("rhino"))
             .with(first.clone())
             .expect("distinct dialect layer keys");
@@ -1204,9 +1448,9 @@ mod tests {
 
     #[test]
     fn dialect_layers_builder_returns_the_colliding_layer() {
-        let first = layer("acis").with_instance("body");
-        let replacement =
-            DialectMatch::residual(crate::dialect_id!("acis:other")).with_instance("body");
+        let first = layer("acis").with_instance("body".to_owned());
+        let replacement = DialectMatch::residual(crate::dialect_id!("acis:other"))
+            .with_instance("body".to_owned());
         let layers = DialectLayers::of(layer("rhino"))
             .with(first)
             .expect("distinct dialect layer keys");
@@ -1219,7 +1463,7 @@ mod tests {
     #[test]
     fn dialect_layers_keep_same_format_extras_with_distinct_instances() {
         let anonymous = layer("acis");
-        let named = layer("acis").with_instance("body");
+        let named = layer("acis").with_instance("body".to_owned());
         let mut layers = DialectLayers::of(layer("rhino"));
 
         assert_eq!(layers.insert(anonymous.clone()), Ok(()));

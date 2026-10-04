@@ -676,15 +676,10 @@ where
         )))
     })?;
     order.extend(0..converted.len());
-    ctx.sort_unstable_by(
+    ctx.sort_unstable_by_key(
         &mut order,
-        |left, right| {
-            converted[*left]
-                .id()
-                .cmp(converted[*right].id())
-                .then_with(|| left.cmp(right))
-        },
-        |index| converted[*index].id().len(),
+        |value| (converted[*value].id(), *value),
+        Ord::cmp,
         operation,
     )
     .map_err(|error| E::from(NativeConvertError::Resource(error)))?;
@@ -905,8 +900,8 @@ impl Native {
             for records in namespace.arenas.values_mut() {
                 ctx.stable_sort_by(
                     records,
-                    |left, right| left.id().cmp(right.id()),
-                    |record| record.id().len(),
+                    |record| record.id(),
+                    Ord::cmp,
                     "finalize native arena",
                 )?;
             }

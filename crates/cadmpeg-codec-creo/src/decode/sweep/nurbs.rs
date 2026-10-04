@@ -509,10 +509,10 @@ pub(in super::super) fn interpolation_spline_surface(
     let Some(v_control_count) = v_sample_count.checked_add(2) else {
         return Ok(None);
     };
-    let mut position_controls = ctx.alloc_filled(
+    let mut position_controls = ctx.collect_indexed_vec(
         u_control_count,
-        Vec::<[f64; 3]>::new(),
         "creo interpolation surface position controls",
+        |_| Ok(Vec::<[f64; 3]>::new()),
     )?;
     for row in &mut position_controls {
         *row = ctx.alloc_filled(
@@ -545,11 +545,10 @@ pub(in super::super) fn interpolation_spline_surface(
         }
     }
 
-    let mut v_derivative_controls = ctx.alloc_filled(
-        2,
-        Vec::<[f64; 3]>::new(),
-        "creo interpolation surface derivative controls",
-    )?;
+    let mut v_derivative_controls =
+        ctx.collect_indexed_vec(2, "creo interpolation surface derivative controls", |_| {
+            Ok(Vec::<[f64; 3]>::new())
+        })?;
     for row in &mut v_derivative_controls {
         *row = ctx.alloc_filled(
             u_control_count,

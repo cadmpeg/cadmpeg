@@ -19,6 +19,22 @@ pub(super) enum GridCoordinate {
     Invalid(u64),
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for GridCoordinate {
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
+    }
+}
+
 impl GridCoordinate {
     pub(super) fn new(value: f64, quantum: f64) -> Self {
         if !value.is_finite() || !quantum.is_finite() || quantum <= 0.0 {
@@ -49,6 +65,22 @@ impl GridCoordinate {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) struct GridPoint(GridCoordinate, GridCoordinate);
+
+impl cadmpeg_core::decode::cost::DecodeCost for GridPoint {
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
+    }
+}
 
 impl GridPoint {
     pub(super) fn cells(self) -> Option<(i64, i64)> {

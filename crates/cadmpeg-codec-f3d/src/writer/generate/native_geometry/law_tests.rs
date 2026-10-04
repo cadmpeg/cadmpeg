@@ -72,7 +72,7 @@ fn edit_layout(ir: &mut CadIr, edit: impl FnOnce(&mut SweepSurfaceLayout)) {
 
 fn text(value: &str) -> LawExpression {
     LawExpression::Text {
-        value: cadmpeg_core::text::NonBlankString::new(value).unwrap(),
+        value: cadmpeg_core::text::NonBlankString::try_from(value).unwrap(),
     }
 }
 

@@ -453,12 +453,12 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         *slot = Some(DesignThreadConstruction {
             form: DesignThreadForm::Standard,
             designation_offset: 0,
-            designation: cadmpeg_core::text::NonBlankString::new("M4x0.7").unwrap(),
+            designation: cadmpeg_core::text::NonBlankString::try_from("M4x0.7").unwrap(),
             nominal_size: crate::records::feature::thread::DesignThreadNominalSize::try_from(
                 "4.0".to_owned(),
             )
             .expect("nominal size"),
-            profile: cadmpeg_core::text::NonBlankString::new("ISO Metric profile").unwrap(),
+            profile: cadmpeg_core::text::NonBlankString::try_from("ISO Metric profile").unwrap(),
             pitch: cadmpeg_ir::scalar::PositiveReal::new(0.07).unwrap(),
             face_group_record_indices: vec![100],
             diameters: crate::records::feature::thread::DesignThreadDiameters::new(0.4, 0.2, 0.3)
@@ -1123,7 +1123,7 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
     else {
         panic!("Hole support face remains unresolved");
     };
-    assert_eq!(native, scope_id);
+    assert_eq!(native.as_str(), scope_id);
     assert_eq!(
         state,
         &crate::ids::feature_input_topology_id(&feature_id, 1)

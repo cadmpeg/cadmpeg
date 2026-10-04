@@ -685,7 +685,8 @@ fn copious_closed_path_intersection_refuses_work() {
         cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
     ];
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
+    // Five indexed point visits and one end probe precede pairwise intersection checks.
+    policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(points.len()) + 1;
     crate::test_support::with_policy_context(&[], &policy, |ctx| {
         assert!(matches!(has_form_63_self_intersection(&points, ctx),
             Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits

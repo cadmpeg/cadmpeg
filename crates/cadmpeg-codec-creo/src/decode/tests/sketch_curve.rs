@@ -272,7 +272,7 @@ fn segment_verhor_projection_is_closed_and_lossless() {
     };
     assert_eq!(native_properties["verhor"], "2");
     assert_eq!(entities, std::slice::from_ref(&entity));
-    assert_eq!(operands[0].native_kind, "segtab_ptr");
+    assert_eq!(operands[0].native_kind.as_str(), "segtab_ptr");
     assert_eq!(
         operands[0].field.as_ref().map(|field| field.name.as_str()),
         Some("ext_id")
@@ -465,7 +465,7 @@ fn dimension_identity_includes_its_feature_definition() {
     else {
         panic!("a missing circle entity must retain its native radius relation");
     };
-    assert_eq!(native_kind, "creo:segtab:radius");
+    assert_eq!(native_kind.as_str(), "creo:segtab:radius");
     assert_eq!(native_properties["dimension_ordinal"], "0");
     assert!(entities.is_empty());
     assert_eq!(
@@ -492,7 +492,7 @@ fn dimension_identity_includes_its_feature_definition() {
             native_kind,
             entities,
             ..
-        } if native_kind == "creo:segtab:radius" && entities == &[circle_entity]
+        } if native_kind.as_str() == "creo:segtab:radius" && entities == &[circle_entity]
     ));
     definition
         .dimensions
@@ -615,7 +615,7 @@ fn dimension_identity_includes_its_feature_definition() {
     else {
         panic!("secondary radius binding must remain native");
     };
-    assert_eq!(native_kind, "creo:segtab:radius2");
+    assert_eq!(native_kind.as_str(), "creo:segtab:radius2");
     assert_eq!(native_properties["dimension_ordinal"], "7");
     assert_eq!(
         entities,

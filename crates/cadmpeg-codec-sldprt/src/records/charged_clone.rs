@@ -98,7 +98,7 @@ fn clone_history_properties<K>(
     key: impl Fn(&DecodeContext<'_>, &K) -> Result<K, CodecError>,
 ) -> Result<BTreeMap<K, String>, CodecError>
 where
-    K: Ord,
+    K: Ord + cadmpeg_core::decode::cost::DecodeCost,
 {
     let mut copy = BTreeMap::new();
     for (name, value) in properties {
@@ -116,8 +116,12 @@ fn copy_history_key(
     ctx: &DecodeContext<'_>,
     key: &NonBlankString,
 ) -> Result<NonBlankString, CodecError> {
-    NonBlankString::new(copy_history_text(ctx, key.as_str())?)
-        .ok_or_else(|| CodecError::malformed("blank admitted SLDPRT history key"))
+    NonBlankString::for_decode(
+        ctx,
+        copy_history_text(ctx, key.as_str())?,
+        "validate nonblank text",
+    )?
+    .ok_or_else(|| CodecError::malformed("blank admitted SLDPRT history key"))
 }
 
 fn clone_feature_content(

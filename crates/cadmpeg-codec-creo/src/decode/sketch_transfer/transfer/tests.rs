@@ -163,7 +163,7 @@ fn fixture() -> SketchEntity {
     SketchEntity::new(
         entity,
         sketch,
-        SketchGeometry::native(NonBlankString::new("native").expect("kind")),
+        SketchGeometry::native(NonBlankString::try_from("native").expect("kind")),
     )
 }
 

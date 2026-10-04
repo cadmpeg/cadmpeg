@@ -28,6 +28,22 @@ const SYMMETRY_FRAME_EPS: f64 = 1.0e-9;
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct HalfEdgeId(usize);
 
+impl cadmpeg_core::decode::cost::DecodeCost for HalfEdgeId {
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
+    }
+}
+
 #[derive(Clone, Copy)]
 struct HalfEdge {
     next: HalfEdgeId,
@@ -733,7 +749,8 @@ fn build_secondary_layouts(
         grip_points,
     } = *context;
     let live_vertices = vertex_ir.iter().flatten().count();
-    let mut layouts = ctx.alloc_filled(live_vertices, None, "f3d subd secondary layouts")?;
+    let mut layouts =
+        ctx.collect_indexed_vec(live_vertices, "f3d subd secondary layouts", |_| Ok(None))?;
     let mut has_cg = ctx.alloc_filled(
         vertex_live.len(),
         false,
@@ -1915,9 +1932,11 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             scheme: SubdScheme::CatmullClark,
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::F3d,
-                object_id: cadmpeg_core::text::NonBlankString::new(
+                object_id: cadmpeg_core::text::NonBlankString::for_decode(
+                    ctx,
                     ctx.copy_retained_text(name, "retain T-spline source object ID")?,
-                )
+                    "validate nonblank text",
+                )?
                 .ok_or_else(|| malformed(ctx, name, "source object_id must not be empty"))?,
                 name: None,
                 color: None,

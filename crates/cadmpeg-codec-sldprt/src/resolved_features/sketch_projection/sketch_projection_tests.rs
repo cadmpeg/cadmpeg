@@ -30,8 +30,10 @@ fn indexed_arc_uses_its_consecutive_middle_point_as_center() {
             SketchEntityId::mint("synthetic:test:id#arc").unwrap(),
             sketch,
             SketchGeometry::try_from(SketchGeometryDefinition::Native {
-                native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-geometry:2")
-                    .expect("nonempty source identity"),
+                native_kind: cadmpeg_core::text::NonBlankString::try_from(
+                    "sldprt:marker-geometry:2",
+                )
+                .expect("nonempty source identity"),
             })
             .unwrap(),
         )
@@ -192,8 +194,10 @@ fn slot_cycle_fixture() -> (
         curve(
             "left",
             SketchGeometry::try_from(SketchGeometryDefinition::Native {
-                native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-geometry:2")
-                    .expect("nonempty source identity"),
+                native_kind: cadmpeg_core::text::NonBlankString::try_from(
+                    "sldprt:marker-geometry:2",
+                )
+                .expect("nonempty source identity"),
             })
             .unwrap(),
             &[],

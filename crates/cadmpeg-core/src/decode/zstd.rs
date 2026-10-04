@@ -16,12 +16,20 @@ const MAX_DECODER_WINDOW: u64 = 1_u64 << if usize::BITS == 32 { 30 } else { 31 }
 /// before the reservation that admits its allocation.
 pub struct ZstdDecoder<'ctx, 'input> {
     decoder: DCtx<'static>,
-    _workspace: ScopedReservation<'ctx>,
+    workspace: ScopedReservation<'ctx>,
     ctx: &'ctx DecodeContext<'input>,
     input: InBuffer<'input>,
     finished: bool,
     workspace_bytes: u64,
     window_bytes: u64,
+}
+
+/// The step borrows the admitted decoder and its workspace until the call ends.
+struct ZstdStepAdmission<'step, 'ctx, 'input> {
+    decoder: &'step mut DCtx<'static>,
+    input: &'step mut InBuffer<'input>,
+    output: OutBuffer<'step, [u8]>,
+    _workspace: &'step ScopedReservation<'ctx>,
 }
 
 impl<'input> DecodeContext<'input> {
@@ -31,14 +39,7 @@ impl<'input> DecodeContext<'input> {
         &'ctx self,
         source: View<'input>,
     ) -> Result<ZstdDecoder<'ctx, 'input>, CodecError> {
-        self.charge_work(
-            u64_from_index(source.window().len()),
-            "inspect Zstandard frames",
-        )?;
-        self.charge_work(
-            u64_from_index(source.window().len()),
-            "Zstandard compressed input",
-        )?;
+        self.charge_work(0, "inspect Zstandard frames")?;
         let mut offset = 0;
         let mut largest_window = 0_u64;
         let ceiling = self
@@ -66,6 +67,10 @@ impl<'input> DecodeContext<'input> {
                 ));
             }
             largest_window = largest_window.max(window);
+            self.charge_work(
+                u64_from_index(frame.window().len()),
+                "inspect Zstandard frame extent",
+            )?;
             let size = zstd_safe::find_frame_compressed_size(frame.window())
                 .map_err(|code| zstd_error(self, code, 0, window))?;
             if size == 0 || size > frame.window().len() {
@@ -103,7 +108,7 @@ impl<'input> DecodeContext<'input> {
             .map_err(|code| zstd_error(self, code, workspace_bytes, largest_window))?;
         Ok(ZstdDecoder {
             decoder,
-            _workspace: workspace,
+            workspace,
             ctx: self,
             input: InBuffer {
                 src: source.window(),
@@ -114,31 +119,59 @@ impl<'input> DecodeContext<'input> {
             window_bytes: largest_window,
         })
     }
+
+    fn zstd_step_admission<'step, 'ctx>(
+        &self,
+        decoder: &'step mut DCtx<'static>,
+        input: &'step mut InBuffer<'input>,
+        bytes: &'step mut [u8],
+        workspace: &'step ScopedReservation<'ctx>,
+    ) -> Result<ZstdStepAdmission<'step, 'ctx, 'input>, CodecError> {
+        let remaining = input.src.len().checked_sub(input.pos).ok_or_else(|| {
+            CodecError::Malformed("Zstandard input position escapes input".into())
+        })?;
+        self.charge_work(u64_from_index(remaining), "Zstandard compressed input step")?;
+        self.charge_work(u64_from_index(bytes.len()), "Zstandard output step")?;
+        Ok(ZstdStepAdmission {
+            decoder,
+            input,
+            output: OutBuffer::around(bytes),
+            _workspace: workspace,
+        })
+    }
 }
 
 impl ZstdDecoder<'_, '_> {
     /// Reads admitted output into caller-owned storage and charges step/copy work.
     pub fn read_chunk(&mut self, bytes: &mut [u8]) -> Result<usize, CodecError> {
+        self.ctx.charge_work(0, "Zstandard decode step")?;
         if self.finished || bytes.is_empty() {
             return Ok(0);
         }
         loop {
-            self.ctx
-                .charge_work(u64_from_index(bytes.len()), "Zstandard decode step")?;
-            let before = self.input.pos;
+            self.ctx.charge_work(1, "Zstandard decode iteration")?;
+            let before: usize = self.input.pos;
             let mut chunk = [0_u8; 16 * 1024];
             let capacity = bytes.len().min(chunk.len());
-            let mut output = OutBuffer::around(&mut chunk[..capacity]);
-            let remaining = self
-                .decoder
-                .decompress_stream(&mut output, &mut self.input)
-                .map_err(|code| {
-                    zstd_error(self.ctx, code, self.workspace_bytes, self.window_bytes)
-                })?;
-            let produced = output.pos();
+            let (remaining, produced) = {
+                let mut step = self.ctx.zstd_step_admission(
+                    &mut self.decoder,
+                    &mut self.input,
+                    &mut chunk[..capacity],
+                    &self.workspace,
+                )?;
+                let remaining = step
+                    .decoder
+                    .decompress_stream(&mut step.output, step.input)
+                    .map_err(|code| {
+                        zstd_error(self.ctx, code, self.workspace_bytes, self.window_bytes)
+                    })?;
+                (remaining, step.output.pos())
+            };
+            let copied = &chunk[..produced];
             self.ctx
-                .charge_work(u64_from_index(produced), "Zstandard output copy")?;
-            bytes[..produced].copy_from_slice(&chunk[..produced]);
+                .charge_work(u64_from_index(copied.len()), "Zstandard output copy")?;
+            bytes[..produced].copy_from_slice(copied);
             if remaining == 0 && self.input.pos == self.input.src.len() {
                 self.finished = true;
             }
@@ -278,6 +311,65 @@ mod tests {
             assert!(
                 matches!(ctx.open_zstd(root), Err(CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
             );
+        }
+    }
+
+    #[test]
+    fn zstd_step_admits_input_and_output_before_consuming_either() {
+        let bytes = zstd::bulk::compress(b"payload", 0).expect("frame");
+        let n = u64::try_from(bytes.len()).expect("length");
+        for (extra, operation) in [
+            (0, "Zstandard compressed input step"),
+            (n, "Zstandard output step"),
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            // One frame visit, its input extent, and one decode visit precede step admission.
+            policy.limits.max_work_units = n + 2 + extra;
+            let (ctx, root) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+            let mut decoder = ctx.open_zstd(root).expect("decoder");
+            let mut output = [0x55; 7];
+            let error = decoder.read_chunk(&mut output).expect_err("step refused");
+            assert!(
+                matches!(&error, CodecError::ResourceLimit(limit) if limit.operation == operation)
+            );
+            assert_eq!(decoder.input.pos, 0);
+            assert_eq!(output, [0x55; 7]);
+            let CodecError::ResourceLimit(limit) = error else {
+                panic!("resource refusal");
+            };
+            assert!(
+                matches!(decoder.read_chunk(&mut output), Err(CodecError::ResourceLimit(fused)) if fused == limit)
+            );
+            assert!(
+                matches!(decoder.read_chunk(&mut []), Err(CodecError::ResourceLimit(fused)) if fused == limit)
+            );
+        }
+    }
+
+    #[test]
+    fn zstd_step_work_counts_both_extents_and_the_output_copy() {
+        let bytes = zstd::bulk::compress(b"payload", 0).expect("frame");
+        let n = u64::try_from(bytes.len()).expect("length");
+        for missing in [0, 1] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            // Frame and step visits, two input extents, output capacity, and seven copied bytes.
+            policy.limits.max_work_units = 2 + 2 * n + 7 + 7 - missing;
+            let (ctx, root) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+            let mut decoder = ctx.open_zstd(root).expect("decoder");
+            let mut output = [0x55; 7];
+            if missing == 0 {
+                assert_eq!(decoder.read_chunk(&mut output).expect("read"), 7);
+                assert_eq!(&output, b"payload");
+            } else {
+                assert!(
+                    matches!(decoder.read_chunk(&mut output), Err(CodecError::ResourceLimit(limit)) if limit.operation == "Zstandard output copy")
+                );
+                assert_eq!(output, [0x55; 7]);
+            }
         }
     }
 }

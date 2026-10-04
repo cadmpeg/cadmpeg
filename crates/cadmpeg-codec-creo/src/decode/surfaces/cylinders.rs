@@ -142,10 +142,14 @@ pub(in super::super) fn transfer_active_datum_cylinders(
                 )),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
-                        format_args!("ActDatums:{}", datum.id),
-                        "creo active datum cylinder source IDs",
-                    )?)
+                    object_id: cadmpeg_core::text::NonBlankString::for_decode(
+                        ctx,
+                        ctx.format_retained(
+                            format_args!("ActDatums:{}", datum.id),
+                            "creo active datum cylinder source IDs",
+                        )?,
+                        "validate nonblank text",
+                    )?
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
@@ -277,10 +281,14 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
                 )),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
-                        format_args!("AllFeatur:{}:{}", feature_id, row.id),
-                        "creo constrained slot cylinder source IDs",
-                    )?)
+                    object_id: cadmpeg_core::text::NonBlankString::for_decode(
+                        ctx,
+                        ctx.format_retained(
+                            format_args!("AllFeatur:{}:{}", feature_id, row.id),
+                            "creo constrained slot cylinder source IDs",
+                        )?,
+                        "validate nonblank text",
+                    )?
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
@@ -369,10 +377,14 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
                 )),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
-                        format_args!("AllFeatur:{rowless_id}"),
-                        "creo rowless round cylinder source IDs",
-                    )?)
+                    object_id: cadmpeg_core::text::NonBlankString::for_decode(
+                        ctx,
+                        ctx.format_retained(
+                            format_args!("AllFeatur:{rowless_id}"),
+                            "creo rowless round cylinder source IDs",
+                        )?,
+                        "validate nonblank text",
+                    )?
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
@@ -455,10 +467,14 @@ pub(in super::super) fn transfer_hole_cylinders(
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(geometry)),
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
-                        object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
-                            format_args!("VisibGeom:{cylinder_id}"),
-                            "creo hole cylinder source IDs",
-                        )?)
+                        object_id: cadmpeg_core::text::NonBlankString::for_decode(
+                            ctx,
+                            ctx.format_retained(
+                                format_args!("VisibGeom:{cylinder_id}"),
+                                "creo hole cylinder source IDs",
+                            )?,
+                            "validate nonblank text",
+                        )?
                         .ok_or_else(|| {
                             cadmpeg_core::CodecError::malformed(
                                 "source object_id must not be empty",
@@ -609,10 +625,14 @@ pub(in super::super) fn transfer_split_outline_cylinders(
                     geometry: geometry.try_clone_for_decode(ctx, "creo split cylinder geometry")?,
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
-                        object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
-                            format_args!("VisibGeom:{cylinder_id}"),
-                            "creo split cylinder source object IDs",
-                        )?)
+                        object_id: cadmpeg_core::text::NonBlankString::for_decode(
+                            ctx,
+                            ctx.format_retained(
+                                format_args!("VisibGeom:{cylinder_id}"),
+                                "creo split cylinder source object IDs",
+                            )?,
+                            "validate nonblank text",
+                        )?
                         .ok_or_else(|| {
                             cadmpeg_core::CodecError::malformed(
                                 "source object_id must not be empty",
@@ -1389,10 +1409,14 @@ pub(in super::super) fn transfer_positional_cylinders(
                 )),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
-                        format_args!("VisibGeom:{}", record.surface_id),
-                        "creo positional cylinder source IDs",
-                    )?)
+                    object_id: cadmpeg_core::text::NonBlankString::for_decode(
+                        ctx,
+                        ctx.format_retained(
+                            format_args!("VisibGeom:{}", record.surface_id),
+                            "creo positional cylinder source IDs",
+                        )?,
+                        "validate nonblank text",
+                    )?
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
@@ -1638,10 +1662,14 @@ pub(in super::super) fn transfer_positional_cones(
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
-                        format_args!("VisibGeom:{}", record.surface_id),
-                        "creo positional cone source IDs",
-                    )?)
+                    object_id: cadmpeg_core::text::NonBlankString::for_decode(
+                        ctx,
+                        ctx.format_retained(
+                            format_args!("VisibGeom:{}", record.surface_id),
+                            "creo positional cone source IDs",
+                        )?,
+                        "validate nonblank text",
+                    )?
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
@@ -1725,10 +1753,14 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
                     )),
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
-                        object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
-                            format_args!("VisibGeom:{cylinder_id}"),
-                            "creo circular sweep cylinder source IDs",
-                        )?)
+                        object_id: cadmpeg_core::text::NonBlankString::for_decode(
+                            ctx,
+                            ctx.format_retained(
+                                format_args!("VisibGeom:{cylinder_id}"),
+                                "creo circular sweep cylinder source IDs",
+                            )?,
+                            "validate nonblank text",
+                        )?
                         .ok_or_else(|| {
                             cadmpeg_core::CodecError::malformed(
                                 "source object_id must not be empty",
@@ -1802,10 +1834,14 @@ pub(in super::super) fn transfer_cross_section_planes(
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
-                        format_args!("Xsections:{}", frame.surface_id),
-                        "creo cross-section local-system plane source IDs",
-                    )?)
+                    object_id: cadmpeg_core::text::NonBlankString::for_decode(
+                        ctx,
+                        ctx.format_retained(
+                            format_args!("Xsections:{}", frame.surface_id),
+                            "creo cross-section local-system plane source IDs",
+                        )?,
+                        "validate nonblank text",
+                    )?
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
@@ -1854,10 +1890,14 @@ pub(in super::super) fn transfer_cross_section_planes(
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
-                        format_args!("Xsections:{}", plane.surface_id),
-                        "creo cross-section outline plane source IDs",
-                    )?)
+                    object_id: cadmpeg_core::text::NonBlankString::for_decode(
+                        ctx,
+                        ctx.format_retained(
+                            format_args!("Xsections:{}", plane.surface_id),
+                            "creo cross-section outline plane source IDs",
+                        )?,
+                        "validate nonblank text",
+                    )?
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,

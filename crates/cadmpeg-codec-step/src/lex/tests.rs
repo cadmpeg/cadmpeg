@@ -33,14 +33,23 @@ fn lex_under_policy(
 ) -> Result<super::TokenKind, CodecError> {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(input, &arena, &policy)?;
-    let mut lexer = super::Lexer::new(input, &ctx);
+    // The caller owns all transient literal buffers in one scoped reservation.
+    let mut transient_storage = ctx.reserve_scoped(0, "test transient literal storage")?;
+    let read = || {
+        let mut lexer = super::Lexer::new(input, &ctx);
+        if transient {
+            lexer.set_transient_literals();
+        }
+        let token = lexer
+            .next_token()
+            .map_err(super::LexError::into_codec_error)?;
+        Ok(token.expect("nonempty token input").kind)
+    };
     if transient {
-        lexer.set_transient_literals();
+        transient_storage.with_storage(read)
+    } else {
+        read()
     }
-    let token = lexer
-        .next_token()
-        .map_err(super::LexError::into_codec_error)?;
-    Ok(token.expect("nonempty token input").kind)
 }
 
 #[test]
@@ -156,9 +165,9 @@ fn binary_lexeme_charges_packed_bytes_before_retention() {
     let service = DecodePolicy::service();
     assert!(lex_under_policy(input, service, false).is_ok());
     let mut limited = service;
-    limited.limits.max_retained_bytes = 1;
+    limited.limits.max_retained_bytes = 5 + 1;
     let error = lex_under_policy(input, limited, false)
-        .expect_err("two packed bytes exceed one retained byte");
+        .expect_err("five digit bytes leave only one byte for two packed bytes");
     assert!(
         matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "step_binary_lexeme_retained")
     );
@@ -199,9 +208,9 @@ fn transient_binary_lexeme_reserves_packed_bytes_without_retention() {
     service.limits.max_retained_bytes = 0;
     assert!(lex_under_policy(input, service, true).is_ok());
     let mut limited = service;
-    limited.limits.max_materialized_bytes = 6;
+    limited.limits.max_materialized_bytes = 5 + 5 + 1;
     let error = lex_under_policy(input, limited, true)
-        .expect_err("five digits plus two packed bytes exceed six temporary bytes");
+        .expect_err("five digit slots and their reservation leave one byte for two packed bytes");
     assert!(
         matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "step_binary_packed_temp")
     );

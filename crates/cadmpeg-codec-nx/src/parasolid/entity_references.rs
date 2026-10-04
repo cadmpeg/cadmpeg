@@ -10,6 +10,22 @@ const MAX_TRAILING_REFERENCE_COUNT: usize = 32;
 #[serde(try_from = "u32", into = "u32")]
 pub(crate) struct FieldPosition(u32);
 
+impl cadmpeg_core::decode::cost::DecodeCost for FieldPosition {
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
+    }
+}
+
 impl FieldPosition {
     pub(crate) fn reference_ordinal(self) -> u32 {
         self.0

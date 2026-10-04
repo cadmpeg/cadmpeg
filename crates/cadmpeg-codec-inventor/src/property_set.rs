@@ -251,8 +251,8 @@ pub(crate) fn parse_property_set_stream<'a>(
     let header_end = cursor.position();
     ctx.stable_sort_by(
         &mut directories,
-        |left, right| left.1.cmp(&right.1),
-        |_| 0,
+        |value| &value.1,
+        Ord::cmp,
         "OLE section directories sort",
     )?;
     let mut previous_end = header_end;
@@ -348,8 +348,8 @@ fn parse_section<'a>(
     let offsets_ordered = directory.windows(2).all(|pair| pair[0].0 < pair[1].0);
     ctx.sort_unstable_by(
         &mut directory,
+        |value| value,
         Ord::cmp,
-        |_| 0,
         "OLE property directory sort",
     )?;
     for pair in directory.windows(2) {
@@ -430,8 +430,8 @@ fn parse_section<'a>(
     }
     ctx.stable_sort_by(
         &mut properties,
-        |left, right| left.id.cmp(&right.id),
-        |_| 0,
+        |value| &value.id,
+        Ord::cmp,
         "OLE properties sort",
     )?;
     Ok(PropertySection {

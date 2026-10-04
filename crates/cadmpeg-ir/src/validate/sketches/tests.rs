@@ -555,7 +555,7 @@ fn midpoint_and_fixed_angle_constraints_refuse_an_entity_of_another_kind() {
     ir.model.sketch_entities.push(SketchEntity::new(
         entity("native"),
         sketch.clone(),
-        SketchGeometry::native(cadmpeg_core::text::NonBlankString::new("test").unwrap()),
+        SketchGeometry::native(cadmpeg_core::text::NonBlankString::try_from("test").unwrap()),
     ));
 
     let quarter = PositiveAngle::QUARTER_TURN;
@@ -677,7 +677,7 @@ fn sketch_constraint_native_ref_must_resolve() {
             sketch: crate::sketches::SketchId::mint("synthetic:test:sketch#missing").unwrap(),
             definition: crate::sketches::SketchConstraintDefinition::try_from(
                 crate::sketches::SketchConstraintDefinitionInput::Native {
-                    native_kind: cadmpeg_core::text::NonBlankString::new("test").unwrap(),
+                    native_kind: cadmpeg_core::text::NonBlankString::try_from("test").unwrap(),
                     native_state: None,
                     native_flags: Some(0x4000),
                     native_properties: std::collections::BTreeMap::from([(
@@ -687,7 +687,7 @@ fn sketch_constraint_native_ref_must_resolve() {
                     entities: Vec::new(),
                     parameter: None,
                     operands: vec![crate::sketches::SketchNativeOperand {
-                        native_kind: cadmpeg_core::text::NonBlankString::new("test")
+                        native_kind: cadmpeg_core::text::NonBlankString::try_from("test")
                             .expect("source operand kind is nonempty"),
                         field: None,
                         object_index: Some(0),

@@ -394,6 +394,7 @@ dependencies = [
  "roxmltree",
  "schemars",
  "serde",
+ "serde-value",
  "serde_json",
  "thiserror",
  "toml",

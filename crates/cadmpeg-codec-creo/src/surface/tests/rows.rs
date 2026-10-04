@@ -940,7 +940,11 @@ fn rejects_rows_without_the_fixed_discriminators() {
 fn decodes_named_prototype_scalars_without_promoting_them_to_instances() {
     let payload = b"srf_prim_ptr\0geom_type\0\x24radius\0\x2a\xf4\0\
                     srf_prim_ptr\0geom_type\0\x25half_angle\0\x74\x21\xfb\x54\x44\x2d\x23";
-    assert_eq!(prototype_count(payload), 2);
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| prototype_count(ctx, payload))
+            .expect("prototype search admitted"),
+        2
+    );
 }
 
 #[test]
@@ -1026,7 +1030,11 @@ fn summarizes_parenthesized_analytic_prototypes() {
     let payload =
         b"srf_prim_ptr(torus)\0\xe0\x01radius1\0\x18\xe0\x01radius2\0\x2e\x05\x33\xf1\xf7\x0e\xe3";
 
-    assert_eq!(prototype_count(payload), 1);
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| prototype_count(ctx, payload))
+            .expect("prototype search admitted"),
+        1
+    );
 }
 
 #[test]
@@ -1043,7 +1051,11 @@ fn distinguishes_spline_and_fillet_surface_families() {
         records[1].family,
         SurfacePrototypeFamily::Fillet(crate::surface::FilletLabel::FilletSrf)
     );
-    assert_eq!(prototype_count(payload), 2);
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| prototype_count(ctx, payload))
+            .expect("prototype search admitted"),
+        2
+    );
 }
 
 #[test]
@@ -1619,9 +1631,11 @@ fn tabulated_cylinder_frame_owns_compound_close_bytes_inside_scalars() {
     body.extend_from_slice(&[0x4a, 0x13, 0x1f, 0x1c, 0x0b, 0x00, 0x00]);
     body.extend_from_slice(&[0xe4, 0x0f, 0xf7, 0x23, 0xe3]);
 
-    let (frame, frame_end) =
-        decode_tabulated_cylinder_frame(&body, &scalar::ScalarCache::default())
-            .expect("complete tabulated-cylinder frame");
+    let (frame, frame_end) = crate::decode::with_test_decode_ctx(|ctx| {
+        decode_tabulated_cylinder_frame(ctx, &body, &scalar::ScalarCache::default())
+    })
+    .expect("frame search admitted")
+    .expect("complete tabulated-cylinder frame");
     assert_eq!(frame.prefixes(), [0x4a, 0xe4, 0x0f, 0x4a, 0xe4, 0x0f]);
     assert_eq!(frame_end, body.len() - 3);
 
@@ -1647,8 +1661,11 @@ fn tabulated_cylinder_zero_sweep_bound_does_not_consume_the_next_slot() {
         0x00, 0x18, 0x7b, 0x59, 0x2f, 0x66, 0xa2, 0x53, 0xc6,
     ];
 
-    let (frame, end) = decode_tabulated_cylinder_frame(&body, &scalar::ScalarCache::default())
-        .expect("complete zero-bound frame");
+    let (frame, end) = crate::decode::with_test_decode_ctx(|ctx| {
+        decode_tabulated_cylinder_frame(ctx, &body, &scalar::ScalarCache::default())
+    })
+    .expect("frame search admitted")
+    .expect("complete zero-bound frame");
 
     assert_eq!(frame.prefixes(), [0x46, 0x42, 0x78, 0x4a, 0x18, 0x7b]);
     assert_eq!(frame.values()[4], 0.0);

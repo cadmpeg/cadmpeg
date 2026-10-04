@@ -15,7 +15,7 @@ use crate::container::ContainerScan;
 
 use super::feature_history::link::surface_kind_for_geometry;
 
-fn charged_map_entry<'a, K: Ord, V: Default>(
+fn charged_map_entry<'a, K: Ord + cadmpeg_core::decode::cost::DecodeCost, V: Default>(
     ctx: &DecodeContext<'_>,
     map: &'a mut BTreeMap<K, V>,
     key: K,

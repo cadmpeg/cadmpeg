@@ -66,6 +66,22 @@ pub(crate) struct HalfEdgeId {
     pub(crate) side: Side,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for HalfEdgeId {
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
+    }
+}
+
 /// A native half-edge, its face, and its uniquely resolved successor.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct HalfEdge {
@@ -750,8 +766,8 @@ pub(crate) fn build(
     }
     ctx.stable_sort_by(
         edges.as_mut_slice(),
-        |left, right| left.id.cmp(&right.id),
-        |_| 0,
+        |value| &value.id,
+        Ord::cmp,
         "creo build edges ordering",
     )?;
     let by_id = |id: HalfEdgeId| {

@@ -7,7 +7,6 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::Path;
 
 use cadmpeg_container::ArchiveSnapshot;
-use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::{CodecError, ContainerEntry};
@@ -66,11 +65,10 @@ pub(crate) fn has_document_markers(
         }
         _ => return Ok(false),
     };
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(document.len()) * 2,
-        "scan FreeCAD probe XML",
-    )?;
-    Ok(contains(document, b"<Document") && contains(document, b"SchemaVersion"))
+    Ok(
+        ctx.contains_bytes(document, b"<Document", "scan FreeCAD probe XML")?
+            && ctx.contains_bytes(document, b"SchemaVersion", "scan FreeCAD probe XML")?,
+    )
 }
 
 /// Fully scanned container used by inspection and decode.
@@ -278,8 +276,12 @@ pub(crate) fn source_attributes(
             0,
             "FCStd source attribute records",
         )?;
-        let key = NonBlankString::new(ctx.copy_retained_text(key, "FCStd source attribute key")?)
-            .ok_or_else(|| CodecError::malformed("source attribute key is empty"))?;
+        let key = NonBlankString::for_decode(
+            ctx,
+            ctx.copy_retained_text(key, "FCStd source attribute key")?,
+            "validate nonblank text",
+        )?
+        .ok_or_else(|| CodecError::malformed("source attribute key is empty"))?;
         attributes.insert(key, value);
     }
     Ok(attributes)
@@ -290,7 +292,8 @@ pub(crate) fn summarize(
     ctx: &DecodeContext<'_>,
     scan: &Scan,
 ) -> Result<ContainerSummary, CodecError> {
-    let matched = crate::dialect::FcstdDialect::classify(&scan.document, &scan.schema_version);
+    let matched =
+        crate::dialect::FcstdDialect::classify(ctx, &scan.document, &scan.schema_version)?;
     let losses = crate::dialect::FcstdDialect::dialect_loss(&matched)
         .into_iter()
         .collect();
@@ -690,8 +693,8 @@ pub(crate) fn logical_ledger(
             }
             ctx.stable_sort_by(
                 &mut ranges,
-                |left, right| left.0.cmp(&right.0),
-                |_| 0,
+                |value| &value.0,
+                Ord::cmp,
                 "FCStd logical GUI range sort",
             )?;
             let mut cursor = 0_u64;
@@ -778,10 +781,10 @@ pub(crate) fn byte_coverage(
     let mut ordered_physical =
         ctx.collection_vec(physical.len(), "FCStd ordered physical spans")?;
     ordered_physical.extend(physical.iter());
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut ordered_physical,
-        |left, right| left.span.start().cmp(&right.span.start()),
-        |_| 0,
+        |value| value.span.start(),
+        Ord::cmp,
         "FCStd physical span sort",
     )?;
     let physical_exact = ordered_physical
@@ -803,10 +806,10 @@ pub(crate) fn byte_coverage(
                 ctx.reserve_vec(&mut spans, 1, "FCStd entry logical spans")?;
                 spans.push(span);
             }
-            ctx.stable_sort_by(
+            ctx.stable_sort_by_key(
                 &mut spans,
-                |left, right| left.span.start().cmp(&right.span.start()),
-                |_| 0,
+                |value| value.span.start(),
+                Ord::cmp,
                 "FCStd entry logical span sort",
             )?;
             let exact = if entry.byte_len() == 0 {

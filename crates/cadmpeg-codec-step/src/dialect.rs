@@ -304,7 +304,7 @@ impl StepDialect {
         )?;
 
         Ok(if dialect == Self::Unknown {
-            DialectMatch::unverified(dialect.id(), Grammar::of(&NEAREST_STRATEGY.id()))
+            DialectMatch::unverified(dialect.id(), Grammar::of(ctx, &NEAREST_STRATEGY.id())?)
         } else {
             DialectMatch::admitted(dialect.id())
         }

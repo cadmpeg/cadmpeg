@@ -3015,14 +3015,14 @@ impl<'a> F3dDecodeSession<'a> {
         )?;
         ctx.stable_sort_by(
             &mut self.ir.model.sketch_constraints,
-            |a, b| a.id.cmp(&b.id),
-            |constraint| constraint.id.as_str().len(),
+            |value| &value.id,
+            Ord::cmp,
             "sort F3D sketch constraints",
         )?;
         ctx.stable_sort_by(
             &mut self.ir.model.spatial_sketch_constraints,
-            |a, b| a.id.cmp(&b.id),
-            |constraint| constraint.id.as_str().len(),
+            |value| &value.id,
+            Ord::cmp,
             "sort F3D spatial sketch constraints",
         )?;
         crate::design::configurations::bind_configuration_suppressed_features(
@@ -3083,8 +3083,8 @@ impl<'a> F3dDecodeSession<'a> {
                 apply_appearance_base_colors(self.ctx, &mut self.ir)?;
                 self.ctx.stable_sort_by(
                     &mut self.ir.model.appearance_bindings,
-                    |a, b| a.id.cmp(&b.id),
-                    |binding| binding.id.as_str().len(),
+                    |value| &value.id,
+                    Ord::cmp,
                     "sort F3D appearance bindings",
                 )?;
                 reconcile_appearance_loss(
@@ -3515,9 +3515,12 @@ fn decode_scanned_document<'a>(
                             body: body
                                 .id
                                 .try_clone_for_decode(ctx, "retain F3D visible body ID")?,
-                            stream: ctx.copy_retained_text(
-                                &visibility.stream,
-                                "retain F3D body visibility stream",
+                            stream: ctx.validate_nonblank_text(
+                                ctx.copy_retained_text(
+                                    &visibility.stream,
+                                    "retain F3D body visibility stream",
+                                )?,
+                                "validate stream",
                             )?,
                             byte_offset: visibility.byte_offset,
                             asm_body_key_offset: visibility.asm_body_key_offset,
@@ -3756,6 +3759,7 @@ fn project_mesh_bodies(
             .map(str::to_owned);
         let asset =
             cadmpeg_ir::assets::Asset::try_new(
+                ctx,
                 texture
                     .asset
                     .try_clone_for_decode(ctx, "retain F3D mesh texture asset ID")?,
@@ -3776,8 +3780,7 @@ fn project_mesh_bodies(
                     ctx,
                     texture.file.archive_entry_name(),
                 )?),
-            )
-            .map_err(CodecError::Malformed)?;
+            )?;
         ctx.push_vec(
             &mut texture_assets,
             asset,
@@ -3930,7 +3933,9 @@ fn mesh_texture_assignments(
         ));
     }
     let mut triangles =
-        ctx.alloc_filled(textures.len(), Vec::new(), "f3d mesh texture assignments")?;
+        ctx.collect_indexed_vec(textures.len(), "f3d mesh texture assignments", |_| {
+            Ok(Vec::new())
+        })?;
     for (triangle, texture_id) in texture_ids.iter().enumerate() {
         ctx.charge_work(1, "resolve F3D mesh texture triangle")?;
         if *texture_id == 0 {
@@ -4896,8 +4901,8 @@ fn append_related_record_headers(
     )?;
     ctx.stable_sort_by(
         &mut native.design_record_headers,
-        |a, b| a.id.cmp(&b.id),
-        |record| record.id.len(),
+        |value| &value.id,
+        Ord::cmp,
         "sort F3D design record headers",
     )?;
     Ok(())
@@ -6293,8 +6298,8 @@ pub(crate) fn resolve_face_appearance_bindings(
     for faces in faces_by_guid.values_mut() {
         ctx.stable_sort_by(
             faces,
+            |value| value,
             Ord::cmp,
-            |face| face.as_str().len(),
             "sort F3D faces by material GUID",
         )?;
         faces.dedup();
@@ -6390,7 +6395,7 @@ pub(crate) fn resolve_face_appearance_bindings(
 
 /// Fill absent explicit topology colors from uniquely bound appearance assets.
 /// Native RGB/truecolor attributes remain authoritative on the same target.
-fn insert_appearance_color<'a, K: Eq + std::hash::Hash>(
+fn insert_appearance_color<'a, K: Eq + std::hash::Hash + cadmpeg_core::decode::cost::DecodeCost>(
     ctx: &DecodeContext<'_>,
     colors: &mut std::collections::HashMap<&'a K, Option<cadmpeg_ir::topology::Color>>,
     id: &'a K,

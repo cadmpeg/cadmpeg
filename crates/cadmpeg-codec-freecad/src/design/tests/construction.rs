@@ -1338,7 +1338,7 @@ fn transfers_shape_and_subshape_binder_construction() {
             .definition()
     };
     assert!(
-        matches!(definition("ShapeBind"), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Binder { sources, construction: cadmpeg_ir::features::BinderConstruction::Shape { trace_support: true } }) if sources.len() == 1 && sources[0].subelements == ["Face1", "Face2"])
+        matches!(definition("ShapeBind"), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Binder { sources, construction: cadmpeg_ir::features::BinderConstruction::Shape { trace_support: true } }) if sources.len() == 1 && sources[0].subelements.iter().map(cadmpeg_core::text::NonBlankString::as_str).collect::<Vec<_>>() == ["Face1", "Face2"])
     );
     let cadmpeg_ir::features::FeatureDefinition::PostProcess {
         operation,
@@ -1369,7 +1369,7 @@ fn transfers_shape_and_subshape_binder_construction() {
     };
     assert_eq!(sources.len(), 2);
     assert!(
-        matches!(sources[1].target, cadmpeg_ir::features::BinderTarget::External { ref document, ref object } if document == "library.FCStd" && object == "RemotePart")
+        matches!(sources[1].target, cadmpeg_ir::features::BinderTarget::External { ref document, ref object } if document.as_str() == "library.FCStd" && object.as_str() == "RemotePart")
     );
     assert_eq!(*lifecycle, cadmpeg_ir::features::BinderLifecycle::Frozen);
     assert_eq!(*placement, cadmpeg_ir::features::BinderPlacement::Global);

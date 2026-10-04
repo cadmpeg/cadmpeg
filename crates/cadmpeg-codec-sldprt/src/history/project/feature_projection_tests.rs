@@ -398,7 +398,7 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         profile.input_class = Some("moProfileFeature_c".into());
         for (name, expression) in roles {
             profile.parameters.insert(
-                cadmpeg_core::text::NonBlankString::new(*name).expect("named dimension"),
+                cadmpeg_core::text::NonBlankString::try_from(*name).expect("named dimension"),
                 (*expression).into(),
             );
             profile
@@ -1391,7 +1391,7 @@ fn hole_profile_rejects_more_than_supported_dimension_roles() {
         ("h", "7"),
     ] {
         profile.parameters.insert(
-            cadmpeg_core::text::NonBlankString::new(name).expect("named dimension"),
+            cadmpeg_core::text::NonBlankString::try_from(name).expect("named dimension"),
             expression.into(),
         );
         profile.content.push(FeatureContent::Dimension(name.into()));

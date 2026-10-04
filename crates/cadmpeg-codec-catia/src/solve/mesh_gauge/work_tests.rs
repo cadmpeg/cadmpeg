@@ -62,9 +62,10 @@ fn relation_row_sort_refuses_endpoint_signature_bytes() {
         vec![None; 2],
         vec![vec![MeshEndpointRelationSelection::Deferred; 128]],
     );
-    let result = crate::test_support::with_work_limit(30_000, |ctx| {
-        relation_row_gauge_mapping(ctx, &state, gauge, &[0, 1])
-    });
+    let result =
+        crate::test_support::with_work_refusal("catia_relation_ordered_rows_sort", |ctx| {
+            relation_row_gauge_mapping(ctx, &state, gauge, &[0, 1])
+        });
     assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "catia_relation_ordered_rows_sort"));
@@ -134,7 +135,7 @@ fn coordinate_permutation_search_refuses_caller_work_before_enumeration() {
 #[test]
 fn gauge_signature_lookup_refuses_repeated_long_equal_keys() {
     let signatures = vec![vec![0usize; 128]; 2];
-    let result = crate::test_support::with_work_limit(1_000, |ctx| {
+    let result = crate::test_support::with_work_refusal("catia_gauge_signature_compare", |ctx| {
         super::intern_gauge_signatures(ctx, signatures.clone(), |key| {
             std::mem::size_of_val(key.as_slice())
         })
@@ -222,7 +223,7 @@ fn mapped_pair_scan_refuses_before_duplicate_becomes_none() {
         edge_identity_evidence: &[],
         coordinate_gauge: None,
     };
-    let result = crate::test_support::with_work_limit(386, |ctx| {
+    let result = crate::test_support::with_work_refusal("catia_relation_mapped_pair_scan", |ctx| {
         map_endpoint_relation_state(ctx, &state, gauge, &[0, 1])
     });
     assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
@@ -283,9 +284,10 @@ fn partial_endpoint_candidate_comparison_refuses_long_equal_keys() {
         coordinate_gauge: Some(&coordinate),
     };
     let pairs = vec![None; 128];
-    let result = crate::test_support::with_work_limit(1_000, |ctx| {
-        super::canonicalize_partial_endpoint_pair_gauge(ctx, &pairs, gauge)
-    });
+    let result =
+        crate::test_support::with_work_refusal("catia_gauge_partial_pair_compare", |ctx| {
+            super::canonicalize_partial_endpoint_pair_gauge(ctx, &pairs, gauge)
+        });
     assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
         if limit.operation == "catia_gauge_partial_pair_compare"));
     assert_eq!(

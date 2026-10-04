@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Admission of parser-owned XML and JSON trees.
 
-use super::{u64_from_index, DecodeContext, ScopedReservation};
+use super::{u64_from_index, DecodeContext, DepthGuard, ScopedReservation};
 use crate::CodecError;
 
 /// Bounds roxmltree 0.21.1 `NodeData`, including `NodeKind`, four node IDs,
@@ -51,10 +51,23 @@ struct XmlBound {
     depth: u64,
 }
 
+/// Couples the exact XML input with its parser work and live storage admission.
+struct XmlParserAdmission<'input, 'ctx> {
+    text: &'input str,
+    nodes: u64,
+    nodes_limit: u32,
+    reservation: ScopedReservation<'ctx>,
+    _depth: (Vec<DepthGuard<'ctx>>, ScopedReservation<'ctx>),
+}
+
 /// Counts delimiters and element depth in one pass. Quoted values, comments,
 /// CDATA and processing instructions do not contribute element nesting.
 /// An unmatched closing tag stops depth counting; the parser rejects it.
-fn xml_bound(text: &str) -> XmlBound {
+fn xml_bound(
+    ctx: &DecodeContext<'_>,
+    text: &str,
+    operation: &'static str,
+) -> Result<XmlBound, CodecError> {
     let bytes = text.as_bytes();
     let mut markers = 0;
     let mut attributes = 0;
@@ -63,7 +76,7 @@ fn xml_bound(text: &str) -> XmlBound {
     let mut maximum = 0;
     let mut max_attributes = 0;
     let mut state = XmlScan::Text;
-    for (index, &byte) in bytes.iter().enumerate() {
+    for (index, &byte) in ctx.admit_iter(bytes, operation)?.enumerate() {
         markers += u64::from(byte == b'<');
         attributes += u64::from(byte == b'=');
         let tail = &bytes[index..];
@@ -137,43 +150,37 @@ fn xml_bound(text: &str) -> XmlBound {
             other => other,
         };
     }
-    XmlBound {
+    Ok(XmlBound {
         nodes: markers,
         attributes,
         namespaces,
         max_attributes,
         depth: maximum,
-    }
+    })
 }
 
-/// Holds nesting guards through the parser call without recursing in the
-/// admission code. Guard slots and their temporary storage are admitted first.
-fn at_depth<T>(
-    ctx: &DecodeContext<'_>,
+/// Holds all parser depth guards and their storage through the parser call.
+fn enter_tree_depth<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     depth: u64,
     operation: &'static str,
-    parse: impl FnOnce() -> Result<T, CodecError>,
-) -> Result<T, CodecError> {
+) -> Result<(Vec<DepthGuard<'ctx>>, ScopedReservation<'ctx>), CodecError> {
     if depth == 0 {
-        return parse();
+        return Ok((Vec::new(), ctx.reserve_scoped(0, operation)?));
     }
-    ctx.charge_work(depth, operation)?;
     ctx.charge_collection_items(depth, operation)?;
     let count =
         usize::try_from(depth).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, depth))?;
     let capacity = count
         .checked_add(4)
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, depth))?;
-    let (_reservation, mut guards) = {
-        let (guards, reservation) = ctx.scoped_vector_storage(capacity, operation)?;
-        (reservation, guards)
-    };
+    let mut scope = ctx.scoped_vector_storage(capacity, operation)?;
+    ctx.charge_work(u64_from_index(count), operation)?;
     for _ in 0..count {
-        guards.push(ctx.enter_nested(operation)?);
+        ctx.reserve_capacity(&mut scope.0, 1, operation)?;
+        scope.0.push(ctx.enter_nested(operation)?);
     }
-    let result = parse();
-    drop(guards);
-    result
+    Ok(scope)
 }
 
 impl DecodeContext<'_> {
@@ -207,9 +214,35 @@ impl DecodeContext<'_> {
         text: &'input str,
         operation: &'static str,
     ) -> Result<AdmittedXml<'input, '_>, CodecError> {
+        let admission = self.xml_parser_admission(text, operation)?;
+        let document = roxmltree::Document::parse_with_options(
+            admission.text,
+            roxmltree::ParsingOptions {
+                nodes_limit: admission.nodes_limit,
+                ..roxmltree::ParsingOptions::default()
+            },
+        )
+        .map_err(|error| match error {
+            roxmltree::Error::NodesLimitReached => self.refuse_codec_limit(
+                operation,
+                u64::from(admission.nodes_limit),
+                admission.nodes,
+            ),
+            other => self.tree_malformed(other, operation),
+        })?;
+        Ok(AdmittedXml {
+            document,
+            _reservation: admission.reservation,
+        })
+    }
+
+    fn xml_parser_admission<'input>(
+        &self,
+        text: &'input str,
+        operation: &'static str,
+    ) -> Result<XmlParserAdmission<'input, '_>, CodecError> {
         let length = u64_from_index(text.len());
-        self.charge_work(length, operation)?;
-        let bound = xml_bound(text);
+        let bound = xml_bound(self, text, operation)?;
         let nodes = bound
             .nodes
             .checked_mul(2)
@@ -263,24 +296,13 @@ impl DecodeContext<'_> {
         self.charge_work(work, operation)?;
         let reservation = self.reserve_scoped(bytes, operation)?;
         let nodes_limit = u32::try_from(nodes).map_err(|_| self.tree_overflow(operation))?;
-        let document = at_depth(self, bound.depth, operation, || {
-            roxmltree::Document::parse_with_options(
-                text,
-                roxmltree::ParsingOptions {
-                    nodes_limit,
-                    ..roxmltree::ParsingOptions::default()
-                },
-            )
-            .map_err(|error| match error {
-                roxmltree::Error::NodesLimitReached => {
-                    self.refuse_codec_limit(operation, u64::from(nodes_limit), nodes)
-                }
-                other => self.tree_malformed(other, operation),
-            })
-        })?;
-        Ok(AdmittedXml {
-            document,
-            _reservation: reservation,
+        let depth = enter_tree_depth(self, bound.depth, operation)?;
+        Ok(XmlParserAdmission {
+            text,
+            nodes,
+            nodes_limit,
+            reservation,
+            _depth: depth,
         })
     }
 }
@@ -354,60 +376,62 @@ impl JsonStringScan {
 /// Builds an ordinary JSON tree for derived typed conversion. The Value
 /// deserializer's private raw-value carrier is not part of derived JSON data;
 /// ignored extension members must remain ordinary objects during admission.
-struct PlainJson;
+struct PlainJson(serde_json::Value);
 
-impl<'de> serde::de::DeserializeSeed<'de> for PlainJson {
-    type Value = serde_json::Value;
-    fn deserialize<D: serde::Deserializer<'de>>(self, parser: D) -> Result<Self::Value, D::Error> {
-        parser.deserialize_any(self)
-    }
-}
-
-impl<'de> serde::de::Visitor<'de> for PlainJson {
-    type Value = serde_json::Value;
-    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("a JSON value")
-    }
-    fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> {
-        Ok(serde_json::Value::Null)
-    }
-    fn visit_bool<E: serde::de::Error>(self, value: bool) -> Result<Self::Value, E> {
-        Ok(serde_json::Value::Bool(value))
-    }
-    fn visit_i64<E: serde::de::Error>(self, value: i64) -> Result<Self::Value, E> {
-        Ok(serde_json::Value::Number(value.into()))
-    }
-    fn visit_u64<E: serde::de::Error>(self, value: u64) -> Result<Self::Value, E> {
-        Ok(serde_json::Value::Number(value.into()))
-    }
-    fn visit_f64<E: serde::de::Error>(self, value: f64) -> Result<Self::Value, E> {
-        serde_json::Number::from_f64(value)
-            .map(serde_json::Value::Number)
-            .ok_or_else(|| E::custom("JSON number is not finite"))
-    }
-    fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
-        Ok(serde_json::Value::String(value.to_owned()))
-    }
-    fn visit_string<E: serde::de::Error>(self, value: String) -> Result<Self::Value, E> {
-        Ok(serde_json::Value::String(value))
-    }
-    fn visit_seq<A: serde::de::SeqAccess<'de>>(
-        self,
-        mut sequence: A,
-    ) -> Result<Self::Value, A::Error> {
-        let mut values = Vec::new();
-        while let Some(value) = sequence.next_element_seed(PlainJson)? {
-            values.push(value);
+impl<'de> serde::Deserialize<'de> for PlainJson {
+    fn deserialize<D: serde::Deserializer<'de>>(parser: D) -> Result<Self, D::Error> {
+        struct JsonVisitor;
+        impl<'de> serde::de::Visitor<'de> for JsonVisitor {
+            type Value = serde_json::Value;
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a JSON value")
+            }
+            fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+                Ok(serde_json::Value::Null)
+            }
+            fn visit_bool<E: serde::de::Error>(self, value: bool) -> Result<Self::Value, E> {
+                Ok(serde_json::Value::Bool(value))
+            }
+            fn visit_i64<E: serde::de::Error>(self, value: i64) -> Result<Self::Value, E> {
+                Ok(serde_json::Value::Number(value.into()))
+            }
+            fn visit_u64<E: serde::de::Error>(self, value: u64) -> Result<Self::Value, E> {
+                Ok(serde_json::Value::Number(value.into()))
+            }
+            fn visit_f64<E: serde::de::Error>(self, value: f64) -> Result<Self::Value, E> {
+                serde_json::Number::from_f64(value)
+                    .map(serde_json::Value::Number)
+                    .ok_or_else(|| E::custom("JSON number is not finite"))
+            }
+            fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+                Ok(serde_json::Value::String(value.to_owned()))
+            }
+            fn visit_string<E: serde::de::Error>(self, value: String) -> Result<Self::Value, E> {
+                Ok(serde_json::Value::String(value))
+            }
+            fn visit_seq<A: serde::de::SeqAccess<'de>>(
+                self,
+                mut sequence: A,
+            ) -> Result<Self::Value, A::Error> {
+                let mut values = Vec::new();
+                while let Some(value) = sequence.next_element::<PlainJson>()? {
+                    values.push(value.0);
+                }
+                Ok(serde_json::Value::Array(values))
+            }
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> Result<Self::Value, A::Error> {
+                let mut values = serde_json::Map::new();
+                while let Some(key) = map.next_key::<String>()? {
+                    let value = map.next_value::<PlainJson>()?;
+                    drop(values.insert(key, value.0));
+                }
+                Ok(serde_json::Value::Object(values))
+            }
         }
-        Ok(serde_json::Value::Array(values))
-    }
-    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
-        let mut values = serde_json::Map::new();
-        while let Some(key) = map.next_key::<String>()? {
-            let value = map.next_value_seed(PlainJson)?;
-            drop(values.insert(key, value));
-        }
-        Ok(serde_json::Value::Object(values))
+        parser.deserialize_any(JsonVisitor).map(Self)
     }
 }
 
@@ -416,6 +440,29 @@ struct JsonBound {
     entries: u64,
     depth: u64,
     bytes: u64,
+}
+
+struct JsonParserAdmission<'input, 'ctx> {
+    text: &'input str,
+    bound: JsonBound,
+    reservation: ScopedReservation<'ctx>,
+    _depth: (Vec<DepthGuard<'ctx>>, ScopedReservation<'ctx>),
+}
+
+/// Keeps the parsed source, value and bound in the same storage lifetime.
+struct ParsedJson<'input, 'ctx> {
+    text: &'input str,
+    value: serde_json::Value,
+    bound: JsonBound,
+    reservation: ScopedReservation<'ctx>,
+}
+
+/// Binds a typed validation or conversion to its exact target and source.
+struct TypedJsonAdmission<'ctx, T, S> {
+    source: S,
+    _reservation: ScopedReservation<'ctx>,
+    _depth: (Vec<DepthGuard<'ctx>>, ScopedReservation<'ctx>),
+    _target: std::marker::PhantomData<fn() -> T>,
 }
 
 impl DecodeContext<'_> {
@@ -501,12 +548,11 @@ impl DecodeContext<'_> {
         })
     }
 
-    fn parse_json_tree(
+    fn json_parser_admission<'input>(
         &self,
-        text: &str,
+        text: &'input str,
         operation: &'static str,
-        interpret_raw: bool,
-    ) -> Result<(serde_json::Value, ScopedReservation<'_>, JsonBound), CodecError> {
+    ) -> Result<JsonParserAdmission<'input, '_>, CodecError> {
         let bound = self.json_bound(text, operation)?;
         self.charge_collection_items(bound.values, operation)?;
         let work = u64_from_index(text.len())
@@ -520,22 +566,88 @@ impl DecodeContext<'_> {
             .ok_or_else(|| self.tree_overflow(operation))?;
         self.charge_work(work, operation)?;
         let reservation = self.reserve_scoped(bound.bytes, operation)?;
-        let value = at_depth(self, bound.depth, operation, || {
-            if interpret_raw {
-                serde_json::from_str(text).map_err(|error| self.tree_malformed(error, operation))
-            } else {
-                use serde::de::DeserializeSeed;
-                let mut parser = serde_json::Deserializer::from_str(text);
-                PlainJson
-                    .deserialize(&mut parser)
-                    .and_then(|value| {
-                        parser.end()?;
-                        Ok(value)
-                    })
-                    .map_err(|error| self.tree_malformed(error, operation))
-            }
-        })?;
-        Ok((value, reservation, bound))
+        let depth = enter_tree_depth(self, bound.depth, operation)?;
+        Ok(JsonParserAdmission {
+            text,
+            bound,
+            reservation,
+            _depth: depth,
+        })
+    }
+
+    fn parse_json_tree<'input>(
+        &self,
+        text: &'input str,
+        operation: &'static str,
+        interpret_raw: bool,
+    ) -> Result<ParsedJson<'input, '_>, CodecError> {
+        let admission = self.json_parser_admission(text, operation)?;
+        let value = if interpret_raw {
+            serde_json::from_str::<serde_json::Value>(admission.text)
+                .map_err(|error| self.tree_malformed(error, operation))?
+        } else {
+            serde_json::from_str::<PlainJson>(admission.text)
+                .map_err(|error| self.tree_malformed(error, operation))?
+                .0
+        };
+        Ok(ParsedJson {
+            text: admission.text,
+            value,
+            reservation: admission.reservation,
+            bound: admission.bound,
+        })
+    }
+
+    fn typed_json_storage<T>(
+        &self,
+        bound: &JsonBound,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        bound
+            .bytes
+            .checked_mul(2)
+            .and_then(|n| n.checked_add(u64_from_index(std::mem::size_of::<T>())))
+            .ok_or_else(|| self.tree_overflow(operation))
+    }
+
+    fn json_validation_admission<'input, T>(
+        &self,
+        parsed: &ParsedJson<'input, '_>,
+        operation: &'static str,
+    ) -> Result<TypedJsonAdmission<'_, T, &'input str>, CodecError> {
+        let retained = self.typed_json_storage::<T>(&parsed.bound, operation)?;
+        let work = u64_from_index(parsed.text.len())
+            .checked_mul(parsed.bound.values)
+            .and_then(|n| n.checked_mul(parsed.bound.depth.checked_add(1)?))
+            .ok_or_else(|| self.tree_overflow(operation))?;
+        self.charge_work(work, operation)?;
+        self.charge_collection_items(parsed.bound.values, operation)?;
+        let reservation = self.reserve_scoped(retained, operation)?;
+        let depth = enter_tree_depth(self, parsed.bound.depth, operation)?;
+        Ok(TypedJsonAdmission {
+            source: parsed.text,
+            _reservation: reservation,
+            _depth: depth,
+            _target: std::marker::PhantomData,
+        })
+    }
+
+    fn json_conversion_admission<'ctx, T>(
+        &'ctx self,
+        parsed: ParsedJson<'_, 'ctx>,
+        operation: &'static str,
+    ) -> Result<TypedJsonAdmission<'ctx, T, serde_json::Value>, CodecError> {
+        let retained = self.typed_json_storage::<T>(&parsed.bound, operation)?;
+        self.charge_retained(retained, operation)?;
+        self.charge_collection_items(parsed.bound.values, operation)?;
+        self.charge_work(parsed.bound.values, operation)?;
+        let depth = enter_tree_depth(self, parsed.bound.depth, operation)?;
+        Ok(TypedJsonAdmission {
+            source: parsed.value,
+            _reservation: parsed.reservation,
+            _depth: depth,
+            _target: std::marker::PhantomData,
+        })
     }
 
     /// Parses a value tree under collection, work, scoped storage and depth
@@ -546,8 +658,8 @@ impl DecodeContext<'_> {
         text: &str,
         operation: &'static str,
     ) -> Result<(serde_json::Value, ScopedReservation<'_>), CodecError> {
-        let (value, reservation, _) = self.parse_json_tree(text, operation, true)?;
-        Ok((value, reservation))
+        let parsed = self.parse_json_tree(text, operation, true)?;
+        Ok((parsed.value, parsed.reservation))
     }
 
     /// Parses types with derived Deserialize: structs, enums, vectors, maps,
@@ -564,36 +676,16 @@ impl DecodeContext<'_> {
         text: &str,
         operation: &'static str,
     ) -> Result<T, CodecError> {
-        let (_reservation, value, bound) = {
-            let (value, reservation, bound) = self.parse_json_tree(text, operation, false)?;
-            (reservation, value, bound)
-        };
-        let retained = bound
-            .bytes
-            .checked_mul(2)
-            .and_then(|n| n.checked_add(u64_from_index(std::mem::size_of::<T>())))
-            .ok_or_else(|| self.tree_overflow(operation))?;
-        let validation_work = u64_from_index(text.len())
-            .checked_mul(bound.values)
-            .and_then(|n| n.checked_mul(bound.depth.checked_add(1)?))
-            .ok_or_else(|| self.tree_overflow(operation))?;
-        self.charge_work(validation_work, operation)?;
-        self.charge_collection_items(bound.values, operation)?;
+        let parsed = self.parse_json_tree(text, operation, false)?;
         {
-            let _validation = self.reserve_scoped(retained, operation)?;
-            at_depth(self, bound.depth, operation, || {
-                let validated: T = serde_json::from_str(text)
-                    .map_err(|error| self.tree_malformed(error, operation))?;
-                drop(validated);
-                Ok(())
-            })?;
+            let admission = self.json_validation_admission::<T>(&parsed, operation)?;
+            let validated = serde_json::from_str::<T>(admission.source)
+                .map_err(|error| self.tree_malformed(error, operation))?;
+            drop(validated);
         }
-        self.charge_retained(retained, operation)?;
-        self.charge_collection_items(bound.values, operation)?;
-        self.charge_work(bound.values, operation)?;
-        at_depth(self, bound.depth, operation, || {
-            serde_json::from_value(value).map_err(|error| self.tree_malformed(error, operation))
-        })
+        let admission = self.json_conversion_admission::<T>(parsed, operation)?;
+        serde_json::from_value::<T>(admission.source)
+            .map_err(|error| self.tree_malformed(error, operation))
     }
 }
 
@@ -644,7 +736,15 @@ mod tests {
                 .expect("fixture string write");
         }
         let text = format!("<r{attributes}");
-        assert_eq!(super::xml_bound(&text).max_attributes, 16);
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+        assert_eq!(
+            super::xml_bound(&ctx, &text, "XML bound")
+                .expect("bound")
+                .max_attributes,
+            16
+        );
     }
 
     #[test]

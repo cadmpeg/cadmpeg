@@ -233,7 +233,7 @@ fn candidate_validation_propagates_entity_limit() {
                         .expect("finite point"),
                     Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Rhino,
-                        object_id: cadmpeg_core::text::NonBlankString::new("point-limited")
+                        object_id: cadmpeg_core::text::NonBlankString::try_from("point-limited")
                             .expect("nonblank source id"),
                         name: None,
                         color: None,
@@ -1201,7 +1201,7 @@ fn cap_extrusion(caps: [bool; 2]) -> crate::extrusion::DecodedExtrusion {
 fn test_association() -> SourceObjectAssociation {
     SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Rhino,
-        object_id: cadmpeg_core::text::NonBlankString::new("extrusion".to_string())
+        object_id: cadmpeg_core::text::NonBlankString::try_from("extrusion".to_string())
             .expect("nonempty source identity"),
         name: Some("Extrusion".to_string()),
         color: None,
@@ -1386,7 +1386,7 @@ fn successful_candidate_keeps_preceding_arena_order_for_instance_checkpoints() {
                     .expect("a finite position is a point"),
                 Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Rhino,
-                    object_id: cadmpeg_core::text::NonBlankString::new(format!("point-{key}"))
+                    object_id: cadmpeg_core::text::NonBlankString::try_from(format!("point-{key}"))
                         .unwrap(),
                     name: None,
                     color: None,

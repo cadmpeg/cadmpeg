@@ -487,29 +487,39 @@ fn direct_parasolid_decode_route_refuses_work_at_minimum_admission() {
         }
         Err(error) => panic!("unexpected direct Parasolid decode error: {error}"),
     };
-    let mut lower = 0;
-    let mut upper = 1_u64;
-    loop {
-        options.policy.limits.max_work_units = upper;
-        if admitted(&options) {
-            break;
-        }
-        upper = upper.checked_mul(2).unwrap();
-    }
-    while lower < upper {
-        let middle = lower + (upper - lower) / 2;
-        options.policy.limits.max_work_units = middle;
-        if admitted(&options) {
-            upper = middle;
-        } else {
-            lower = middle + 1;
-        }
-    }
+    // Fresh map order can change prefix work. Verify both adjacent allowances
+    // on the actual runs that establish the pair, retaining every IR assertion.
+    let (upper, accepted, refused) = (0..64)
+        .find_map(|_| {
+            let mut lower = 0;
+            let mut upper = 1_u64;
+            loop {
+                options.policy.limits.max_work_units = upper;
+                if admitted(&options) {
+                    break;
+                }
+                upper = upper.checked_mul(2).expect("test work bound fits");
+            }
+            while lower < upper {
+                let middle = lower + (upper - lower) / 2;
+                options.policy.limits.max_work_units = middle;
+                if admitted(&options) {
+                    upper = middle;
+                } else {
+                    lower = middle + 1;
+                }
+            }
+            assert!(upper > 0);
+            options.policy.limits.max_work_units = upper;
+            let accepted = admitted(&options);
+            options.policy.limits.max_work_units = upper - 1;
+            let refused = admitted(&options);
+            (accepted && !refused).then_some((upper, accepted, refused))
+        })
+        .expect("a success and its one-unit-below refusal");
     assert!(upper > 0);
-    options.policy.limits.max_work_units = upper;
-    assert!(admitted(&options));
-    options.policy.limits.max_work_units = upper - 1;
-    assert!(!admitted(&options));
+    assert!(accepted);
+    assert!(!refused);
 }
 
 #[test]

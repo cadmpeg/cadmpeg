@@ -313,24 +313,26 @@ impl Serialize for PmDcFeatureLabelPayload {
 }
 
 #[derive(Serialize, Deserialize)]
-struct PmDcFeatureLabelPayloadWire {
+struct PmDcFeatureLabelPayloadWire<T = String> {
     save_version_major: u8,
     header: PmDcLinkedHeader,
     index: u32,
     participants: PmDcReferenceList,
-    name: String,
+    name: T,
     class_id: String,
 }
 
-impl TryFrom<PmDcFeatureLabelPayloadWire> for PmDcFeatureLabelPayload {
+impl<T: TryInto<NonBlankString>> TryFrom<PmDcFeatureLabelPayloadWire<T>>
+    for PmDcFeatureLabelPayload
+{
     type Error = String;
-    fn try_from(wire: PmDcFeatureLabelPayloadWire) -> Result<Self, Self::Error> {
+    fn try_from(wire: PmDcFeatureLabelPayloadWire<T>) -> Result<Self, Self::Error> {
         Ok(Self {
             save_version_major: wire.save_version_major,
             header: wire.header,
             index: wire.index,
             participants: wire.participants,
-            name: NonBlankString::new(wire.name).ok_or("name must not be empty")?,
+            name: wire.name.try_into().ok().ok_or("name must not be empty")?,
             class_id: ClassId::try_from(wire.class_id)?,
         })
     }
@@ -1000,7 +1002,7 @@ fn parse_label(
         header,
         index,
         participants,
-        name,
+        name: ctx.validate_nonblank_text(name, "validate name")?,
         class_id,
     })
     .map_err(CodecError::malformed)
@@ -1122,13 +1124,6 @@ pub(crate) fn project(
                 record,
             )
         }),
-        |key| {
-            cadmpeg_core::decode::u64_from_index(key.0.len())
-                .checked_add(5)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("index Inventor feature properties", 0, u64::MAX)
-                })
-        },
         "index Inventor feature properties",
     )?;
     let (unique_parameters, _parameters_storage) = ctx.unique_index(
@@ -1143,13 +1138,6 @@ pub(crate) fn project(
                 record,
             )
         }),
-        |key| {
-            cadmpeg_core::decode::u64_from_index(key.0.len())
-                .checked_add(5)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("index Inventor feature parameters", 0, u64::MAX)
-                })
-        },
         "index Inventor feature parameters",
     )?;
     let (unique_sketches, _sketches_storage) = ctx.unique_index(
@@ -1164,13 +1152,6 @@ pub(crate) fn project(
                 record,
             )
         }),
-        |key| {
-            cadmpeg_core::decode::u64_from_index(key.0.len())
-                .checked_add(5)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("index Inventor feature sketches", 0, u64::MAX)
-                })
-        },
         "index Inventor feature sketches",
     )?;
     let (unique_directions, _directions_storage) = ctx.unique_index(
@@ -1185,13 +1166,6 @@ pub(crate) fn project(
                 record,
             )
         }),
-        |key| {
-            cadmpeg_core::decode::u64_from_index(key.0.len())
-                .checked_add(5)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("index Inventor feature directions", 0, u64::MAX)
-                })
-        },
         "index Inventor feature directions",
     )?;
     let (unique_transforms, _transforms_storage) = ctx.unique_index(
@@ -1206,13 +1180,6 @@ pub(crate) fn project(
                 record,
             )
         }),
-        |key| {
-            cadmpeg_core::decode::u64_from_index(key.0.len())
-                .checked_add(5)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("index Inventor feature transforms", 0, u64::MAX)
-                })
-        },
         "index Inventor feature transforms",
     )?;
     let index = ProjectionIndex {
@@ -1279,11 +1246,6 @@ pub(crate) fn project(
                 label,
             )
         }),
-        |key| {
-            cadmpeg_core::decode::u64_from_index(key.0.len())
-                .checked_add(5)
-                .ok_or_else(|| ctx.refuse_codec_limit("index Inventor feature labels", 0, u64::MAX))
-        },
         "index Inventor feature labels",
     )?;
     let mut projected = Vec::new();
@@ -1336,8 +1298,8 @@ pub(crate) fn project(
     projected.retain(|(feature, _)| !duplicate_ordinals.contains(&feature.ordinal));
     ctx.sort_unstable_by(
         &mut projected,
-        |(left, _), (right, _)| left.ordinal.cmp(&right.ordinal),
-        |_| 0,
+        |value| &value.0.ordinal,
+        Ord::cmp,
         "Inventor projected features sort",
     )?;
     ctx.charge_collection_items(
@@ -1918,7 +1880,15 @@ fn feature_result(
         ) {
             return Some(Err(error));
         }
-        bodies.push(cadmpeg_core::text::NonBlankString::new(body.id())?);
+        let body = match cadmpeg_core::text::NonBlankString::for_decode(
+            ctx,
+            body.id(),
+            "validate nonblank text",
+        ) {
+            Ok(value) => value?,
+            Err(error) => return Some(Err(error.into())),
+        };
+        bodies.push(body);
     }
     if bodies.is_empty() {
         return None;
@@ -2151,25 +2121,12 @@ fn boolean_properties(
     for slot in slots {
         if let Some(value) = boolean(source, *slot, index) {
             ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(
-                    "property_".len()
-                        + usize::try_from(slot.max(&1).ilog10()).map_err(|_| {
-                            CodecError::Malformed(
-                                "Inventor numeric value exceeds target range".into(),
-                            )
-                        })?
-                        + 1
-                        + "_boolean".len(),
-                ),
-                "retain Inventor feature property name",
-            )?;
-            ctx.charge_retained(
                 if value { 4 } else { 5 },
                 "retain Inventor feature property value",
             )?;
             ctx.insert_btree_map(
                 &mut properties,
-                cadmpeg_core::nonblank_literal!("property_{slot}_boolean"),
+                cadmpeg_core::nonblank_literal!(ctx, "property_{slot}_boolean")?,
                 value.to_string(),
                 "project Inventor feature boolean property",
             )?;
@@ -2707,7 +2664,7 @@ mod tests {
         participants: &[u32],
     ) -> PmDcFeatureLabel {
         Located::new(
-            PmDcFeatureLabelPayload::try_from(PmDcFeatureLabelPayloadWire {
+            PmDcFeatureLabelPayload::try_from(PmDcFeatureLabelPayloadWire::<String> {
                 save_version_major: 16,
                 header: PmDcLinkedHeader {
                     header_value: 0,
@@ -3912,7 +3869,7 @@ mod tests {
         let parsed = parse(&label, |ctx, source| {
             parse_label(ctx, source, 16).expect("label")
         });
-        assert_eq!(parsed.name, "Extrude1");
+        assert_eq!(parsed.name.as_str(), "Extrude1");
         assert_eq!(parsed.participants.references().len(), 1);
         assert_eq!(parsed.class_id, ClassId([0xab; 16]));
     }
@@ -3959,7 +3916,7 @@ mod tests {
         }
         let reference =
             crate::pmdc::PmDcReference::new(1, false).expect("test reference index fits 31 bits");
-        let label = PmDcFeatureLabelPayload::try_from(PmDcFeatureLabelPayloadWire {
+        let label = PmDcFeatureLabelPayload::try_from(PmDcFeatureLabelPayloadWire::<String> {
             save_version_major: 16,
             header: PmDcLinkedHeader {
                 header_value: 0,

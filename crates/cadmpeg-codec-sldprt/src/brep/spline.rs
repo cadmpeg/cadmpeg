@@ -603,10 +603,10 @@ fn array_spans(
             "collect Parasolid patch array spans",
         )?;
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut spans,
-        |left, right| (left.start, left.count).cmp(&(right.start, right.count)),
-        |_| 0,
+        |value| (value.start, value.count),
+        Ord::cmp,
         "sldprt parasolid array spans sort",
     )?;
     ctx.charge_work(
@@ -750,21 +750,17 @@ fn unique_surface_knot_span(
             }
         }
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut pairs,
-        |(left_knots, left_multiplicities), (right_knots, right_multiplicities)| {
+        |value| {
+            let (left_knots, left_multiplicities) = value;
             (
                 left_knots.start,
                 left_knots.count,
                 left_multiplicities.start,
             )
-                .cmp(&(
-                    right_knots.start,
-                    right_knots.count,
-                    right_multiplicities.start,
-                ))
         },
-        |_| 0,
+        Ord::cmp,
         "sldprt parasolid surface knot span pairs sort",
     )?;
     ctx.charge_work(

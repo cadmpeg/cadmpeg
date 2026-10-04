@@ -300,33 +300,33 @@ cycle_collection_limit_test!(
     "f3d parameter cycle component"
 );
 
-fn assert_cycle_work_refusal(limit: u64, operation: &'static str) {
+fn assert_cycle_work_refusal(operation: &'static str) {
     use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
     let parameters = two_parameter_cycle();
     let unresolved = std::collections::HashSet::from([0, 1]);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_work_units = limit;
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(
-        matches!(cyclic_parameter_components(&ctx, &parameters, &unresolved),
-        Err(CodecError::ResourceLimit(failure))
-            if failure.operation == operation
-                && failure.dimension == ResourceDimension::WorkUnits)
+    // The allowance includes all initialized flags and key bytes before the selected cycle visit.
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| cyclic_parameter_components(ctx, &parameters, &unresolved),
     );
+    assert!(matches!(error,
+        CodecError::ResourceLimit(failure)
+            if failure.operation == operation
+                && failure.dimension == ResourceDimension::WorkUnits));
 }
 
 #[test]
 fn cycle_visit_refuses_work_limit() {
-    assert_cycle_work_refusal(0, "f3d parameter cycle visit");
+    assert_cycle_work_refusal("f3d parameter cycle visit");
 }
 
 #[test]
 fn cycle_reverse_visit_refuses_work_limit() {
-    assert_cycle_work_refusal(5, "f3d parameter cycle reverse visit");
+    assert_cycle_work_refusal("f3d parameter cycle reverse visit");
 }
 
 #[test]

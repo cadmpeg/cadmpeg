@@ -128,7 +128,7 @@ pub(crate) fn source_attribute(
     operation: &'static str,
 ) -> Result<(), CodecError> {
     let key = ctx.format_retained(key, operation)?;
-    let key = NonBlankString::new(key)
+    let key = NonBlankString::for_decode(ctx, key, "validate nonblank text")?
         .ok_or_else(|| CodecError::malformed("CATIA source attribute key is blank"))?;
     let value = ctx.format_retained(value, operation)?;
     ctx.insert_btree_map(attributes, key, value, operation)?;

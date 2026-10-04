@@ -247,7 +247,7 @@ fn presentation_layer_preserves_empty_label_and_visibility() {
     assert_eq!(layer.visible, Some(false));
     assert!(matches!(
         layer.items.as_slice(),
-        [PresentationItem::Source { source_id }] if source_id == "#1"
+        [PresentationItem::Source { source_id }] if source_id.as_str() == "#1"
     ));
 
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
@@ -1148,7 +1148,8 @@ fn presentation_records_retain_non_color_geometry_owners() {
             .source_object
             .as_ref()
             .expect("styled curve owner")
-            .object_id,
+            .object_id
+            .as_str(),
         "#6"
     );
     let surface = result
@@ -1163,7 +1164,8 @@ fn presentation_records_retain_non_color_geometry_owners() {
             .source_object
             .as_ref()
             .expect("annotation plane owner")
-            .object_id,
+            .object_id
+            .as_str(),
         "#10"
     );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
@@ -1197,7 +1199,8 @@ fn complex_styled_item_decodes_color_and_owns_its_curve() {
             .source_object
             .as_ref()
             .expect("complex styled curve owner")
-            .object_id,
+            .object_id
+            .as_str(),
         "#6"
     );
     assert!(result.ir().model.appearance_bindings.iter().any(|binding| {
@@ -1475,7 +1478,7 @@ pub(crate) fn presentation_reader_normalizes_invalid_layer_and_common_datum_inpu
     assert_eq!(result.ir().model.presentation_layers[0].name, "inspection");
     assert!(matches!(
         result.ir().model.presentation_layers[0].items.as_slice(),
-        [PresentationItem::Source { source_id }] if source_id == "#30"
+        [PresentationItem::Source { source_id }] if source_id.as_str() == "#30"
     ));
     assert!(result.ir().model.pmi.iter().any(|annotation| matches!(
         &annotation.definition,

@@ -982,7 +982,7 @@ fn resolve_feature_for_datum_target_relationships(
         push_target(
             basis,
             PmiTarget::ShapeAspect {
-                source_id: super::step_source_id(relating),
+                source_id: super::step_source_id(ctx, relating)?,
             },
             ctx,
             "step_pmi_datum_basis_targets",
@@ -1714,7 +1714,7 @@ fn targets(
 
         ctx.reserve_vec(&mut targets, 1, "step_pmi_target_items")?;
         targets.push(PmiTarget::ShapeAspect {
-            source_id: super::step_source_id(id),
+            source_id: super::step_source_id(ctx, id)?,
         });
     }
     Ok(targets)
@@ -1756,8 +1756,12 @@ fn copy_pmi_target(
         },
         PmiTarget::ShapeAspect { source_id } => {
             let copy = ctx.copy_retained_text(source_id.as_str(), operation)?;
-            let source_id = cadmpeg_core::text::NonBlankString::new(copy)
-                .ok_or_else(|| CodecError::malformed("STEP PMI target has a blank source ID"))?;
+            let source_id = cadmpeg_core::text::NonBlankString::for_decode(
+                ctx,
+                copy,
+                "validate nonblank text",
+            )?
+            .ok_or_else(|| CodecError::malformed("STEP PMI target has a blank source ID"))?;
             PmiTarget::ShapeAspect { source_id }
         }
     })

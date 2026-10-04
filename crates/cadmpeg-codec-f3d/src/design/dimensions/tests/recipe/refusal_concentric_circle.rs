@@ -8,14 +8,14 @@ use cadmpeg_core::decode::ResourceDimension;
 fn fixture(operation: &'static str, dimension: ResourceDimension) {
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let parameter = crate::records::parameters::DesignParameter::try_from(
-        crate::records::parameters::DesignParameterDraft {
+        crate::records::parameters::DesignParameterDraft::<String> {
             id: "f3d:A:design-parameter#1".into(),
             byte_offset: 0,
             class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
                 .unwrap(),
             record_index: 1,
             source_ordinal: 1,
-            source: crate::records::parameters::DesignParameterSource::new(
+            source: crate::records::parameters::DesignParameterSource::new::<String>(
                 "Linear Dimension-2".into(),
                 Some(2),
                 Some(crate::records::identity::Located {

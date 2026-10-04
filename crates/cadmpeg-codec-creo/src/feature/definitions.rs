@@ -11,7 +11,6 @@ use crate::psb;
 use crate::scalar;
 
 use super::entity::{generated_class_200_source_entity_ids, FeatureEntityTable};
-use super::helpers::find_bytes;
 use super::operations::{FeatureOperation, FeatureRecipeKind};
 use super::rows::{FeatureGeometryTable, FeatureRevolutionExtent};
 use super::segment_rows::{SegmentRow, SegmentRows};
@@ -151,6 +150,22 @@ pub(crate) enum VariableType {
     Result,
     Auxiliary,
     Unknown(UnknownVariableType),
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for VariableType {
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
+    }
 }
 
 /// Unclassified code, constructed only by normalizing the encoded integer.
@@ -1689,7 +1704,14 @@ fn variable_table(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<FeatureVariableTable>, CodecError> {
-    let Some(table) = find_bytes(payload, b"var_arr\0", start, end) else {
+    let Some(table) = ctx.find_bytes_in(
+        payload,
+        b"var_arr\0",
+        start,
+        end,
+        "find Creo feature definition field",
+    )?
+    else {
         return Ok(None);
     };
     let mut cursor = table + b"var_arr\0".len();
@@ -1705,20 +1727,66 @@ fn variable_table(
     } else {
         None
     };
-    let Some(close) = find_bytes(payload, &[0xf1, psb::token::ENTITY_REF], cursor, end) else {
+    let Some(close) = ctx.find_bytes_in(
+        payload,
+        &[0xf1, psb::token::ENTITY_REF],
+        cursor,
+        end,
+        "find Creo feature definition field",
+    )?
+    else {
         return Ok(None);
     };
-    let named_row = (|| {
-        let type_label = find_bytes(payload, b"type\0", cursor, close)?;
-        let variable_type = named_compact_int(payload, b"type\0", cursor, close)?;
-        let key = named_compact_int(payload, b"key\0", cursor, close)?;
-        let value_label = find_bytes(payload, b"value\0", cursor, close)? + b"value\0".len();
+    let named_row = (|| -> Result<Option<_>, CodecError> {
+        let Some(type_label) = ctx.find_bytes_in(
+            payload,
+            b"type\0",
+            cursor,
+            close,
+            "find Creo feature definition field",
+        )?
+        else {
+            return Ok(None);
+        };
+        let Some(variable_type) = named_compact_int(ctx, payload, b"type\0", cursor, close)? else {
+            return Ok(None);
+        };
+        let Some(key) = named_compact_int(ctx, payload, b"key\0", cursor, close)? else {
+            return Ok(None);
+        };
+        let Some(value_offset) = ctx.find_bytes_in(
+            payload,
+            b"value\0",
+            cursor,
+            close,
+            "find Creo feature definition field",
+        )?
+        else {
+            return Ok(None);
+        };
+        let value_label = value_offset + b"value\0".len();
         let (value, value_end) =
             decode_section_coordinate_scalar(payload, value_label, close, cache);
-        let guess_label = find_bytes(payload, b"guess\0", cursor, close)? + b"guess\0".len();
+        let Some(guess_offset) = ctx.find_bytes_in(
+            payload,
+            b"guess\0",
+            cursor,
+            close,
+            "find Creo feature definition field",
+        )?
+        else {
+            return Ok(None);
+        };
+        let guess_label = guess_offset + b"guess\0".len();
         let (guess, guess_end) =
             decode_section_coordinate_scalar(payload, guess_label, close, cache);
-        Some((
+        let known = named_compact_int(ctx, payload, b"known\0", cursor, close)?;
+        let homogeneity = named_compact_int(ctx, payload, b"homogeneity\0", cursor, close)?;
+        let uvar_id = named_compact_int(ctx, payload, b"uvar_id\0", cursor, close)?;
+        let Some(offset) = type_label.checked_sub(2) else {
+            return Ok(None);
+        };
+        Ok(Some((
             FeatureVariableRow {
                 variable_type: variable_type.into(),
                 key,
@@ -1726,19 +1794,19 @@ fn variable_table(
                 value_body: Vec::new(),
                 guess,
                 guess_body: Vec::new(),
-                known: named_compact_int(payload, b"known\0", cursor, close),
-                homogeneity: named_compact_int(payload, b"homogeneity\0", cursor, close),
-                uvar_id: named_compact_int(payload, b"uvar_id\0", cursor, close),
+                known,
+                homogeneity,
+                uvar_id,
                 // The row header is the two bytes before its type label. A label
                 // below offset 2 states a header outside the payload and refuses
                 // the row; the label sits at or after the table opener plus eight,
                 // so the bound holds for every table this scanner reaches.
-                offset: type_label.checked_sub(2)?,
+                offset,
             },
             (value_label, value_end),
             (guess_label, guess_end),
-        ))
-    })();
+        )))
+    })()?;
     let (_, after_close_ref) = psb::compact_int(payload, close + 2);
     cursor = after_close_ref;
     if payload.get(cursor) == Some(&0xe2) {
@@ -2097,7 +2165,14 @@ pub(crate) fn equation_table(
     if start > end || end > payload.len() {
         return Ok(None);
     }
-    let Some(table) = find_bytes(payload, b"eqtn_arr\0", start, end) else {
+    let Some(table) = ctx.find_bytes_in(
+        payload,
+        b"eqtn_arr\0",
+        start,
+        end,
+        "find Creo feature definition field",
+    )?
+    else {
         return Ok(None);
     };
     let mut cursor = table + b"eqtn_arr\0".len();
@@ -2124,23 +2199,31 @@ pub(crate) fn equation_table(
         return Ok(None);
     }
     cursor += 2;
-
-    let rows_end = [
+    let mut rows_end = end;
+    for label in [
         b"\xe0\x02scale\0".as_slice(),
         b"\xe0\x02scales\0",
         b"\xe0\x02guesses\0",
-    ]
-    .into_iter()
-    .filter_map(|label| find_bytes(payload, label, cursor, end))
-    .min()
-    .unwrap_or(end);
+    ] {
+        if let Some(offset) = ctx.find_bytes_in(
+            payload,
+            label,
+            cursor,
+            end,
+            "find Creo feature definition field",
+        )? {
+            rows_end = rows_end.min(offset);
+        }
+    }
     let prototype_start = cursor;
-    let Some(prototype_reference) = find_bytes(
+    let Some(prototype_reference) = ctx.find_bytes_in(
         payload,
         &[0xf1, psb::token::ENTITY_REF],
         prototype_start,
         rows_end,
-    ) else {
+        "find Creo feature definition field",
+    )?
+    else {
         return Ok(None);
     };
     let Ok((_, after_prototype_reference)) = psb::reference_id(payload, prototype_reference + 2)
@@ -2244,18 +2327,21 @@ pub(crate) fn equation_table(
 
 /// Decode instantiated placement-instruction rows from one bounded feature
 /// definition.
-pub(crate) fn placement_instructions(
-    definition: &FeatureDefinition,
-) -> impl Iterator<Item = FeaturePlacementInstruction> + '_ {
-    placement_instruction_rows(&definition.body, definition.offset)
+pub(crate) fn placement_instructions<'a>(
+    ctx: &DecodeContext<'_>,
+    definition: &'a FeatureDefinition,
+) -> Result<impl Iterator<Item = FeaturePlacementInstruction> + use<'a>, CodecError> {
+    placement_instruction_rows(ctx, &definition.body, definition.offset)
 }
 
-fn placement_instruction_rows(
-    payload: &[u8],
+fn placement_instruction_rows<'a>(
+    ctx: &DecodeContext<'_>,
+    payload: &'a [u8],
     definition_offset: usize,
-) -> impl Iterator<Item = FeaturePlacementInstruction> + '_ {
-    let table_class = named_array_class(payload, b"place_instruction_ptrs\0", 0, payload.len());
-    (0..payload.len()).filter_map(move |marker| {
+) -> Result<impl Iterator<Item = FeaturePlacementInstruction> + use<'a>, CodecError> {
+    let table_class =
+        named_array_class(ctx, payload, b"place_instruction_ptrs\0", 0, payload.len())?;
+    Ok((0..payload.len()).filter_map(move |marker| {
         let table_class = table_class?;
         if payload.get(marker..marker + 2) != Some(&[0xf1, psb::token::ENTITY_REF]) {
             return None;
@@ -2298,7 +2384,7 @@ fn placement_instruction_rows(
             member2,
             offset: definition_offset + marker,
         })
-    })
+    }))
 }
 
 fn segment_table(
@@ -2307,7 +2393,14 @@ fn segment_table(
     start: usize,
     end: usize,
 ) -> Result<Option<FeatureSegmentTable>, CodecError> {
-    let Some(table) = find_bytes(payload, b"segtab_ptr\0", start, end) else {
+    let Some(table) = ctx.find_bytes_in(
+        payload,
+        b"segtab_ptr\0",
+        start,
+        end,
+        "find Creo feature definition field",
+    )?
+    else {
         return Ok(None);
     };
     let mut cursor = table + b"segtab_ptr\0".len();
@@ -2330,7 +2423,14 @@ fn positional_segment_table(
     let name_search_end = start
         .checked_add(NAME_WINDOW)
         .map_or(end, |window_end| window_end.min(end));
-    let Some(name_end) = find_bytes(payload, b"S2D", start, name_search_end) else {
+    let Some(name_end) = ctx.find_bytes_in(
+        payload,
+        b"S2D",
+        start,
+        name_search_end,
+        "find Creo feature definition field",
+    )?
+    else {
         return Ok(None);
     };
     let Some(nul) = payload[name_end..end].iter().position(|&byte| byte == 0) else {
@@ -2379,32 +2479,67 @@ fn segment_table_body(
     }) else {
         return Ok(None);
     };
-    let named_values = |label: &[u8], count: usize| -> Option<(usize, [Option<u32>; 7])> {
-        let offset = find_bytes(payload, label, cursor, close)?;
-        let mut p = offset + label.len();
-        if payload.get(p) == Some(&psb::token::ARRAY_OPEN) {
-            let (declared, next) = psb::compact_int(payload, p + 1);
-            (usize::try_from(declared).ok()? == count).then_some(())?;
-            p = next;
-        }
-        if label == b"type\0" && payload.get(p..p + 2) == Some(&[0xc0, 0x80]) {
-            p += 2;
-        }
-        let values = segment_slots(payload, &mut p, count)?;
-        Some((offset, values))
+    let named_values = |label: &[u8], count: usize| -> Result<Option<_>, CodecError> {
+        let Some(offset) = ctx.find_bytes_in(
+            payload,
+            label,
+            cursor,
+            close,
+            "find Creo feature definition field",
+        )?
+        else {
+            return Ok(None);
+        };
+        Ok((|| {
+            let mut p = offset + label.len();
+            if payload.get(p) == Some(&psb::token::ARRAY_OPEN) {
+                let (declared, next) = psb::compact_int(payload, p + 1);
+                (usize::try_from(declared).ok()? == count).then_some(())?;
+                p = next;
+            }
+            if label == b"type\0" && payload.get(p..p + 2) == Some(&[0xc0, 0x80]) {
+                p += 2;
+            }
+            let values = segment_slots(payload, &mut p, count)?;
+            Some((offset, values))
+        })())
     };
-    let named_row = (|| {
-        let (offset, kind) = named_values(b"type\0", 1)?;
-        let (_, directions) = named_values(b"dir\0", 3)?;
-        let (_, point_ids) = named_values(b"pointid\0", 2)?;
-        let (_, center_id) = named_values(b"cntrid\0", 1)?;
-        let (_, arc_orientation) = named_values(b"arcorient\0", 1)?;
-        let (_, vertical_horizontal) = named_values(b"verhor\0", 1)?;
-        let (_, radius_ref) = named_values(b"radius\0", 1)?;
-        let (_, radius2_ref) = named_values(b"radius2\0", 1)?;
-        let (_, external_id) = named_values(b"ext_id\0", 1)?;
-        Some(FeatureOpaqueSegment {
-            kind: kind[0]?,
+    let named_row = (|| -> Result<Option<_>, CodecError> {
+        let Some((offset, kind)) = named_values(b"type\0", 1)? else {
+            return Ok(None);
+        };
+        let Some((_, directions)) = named_values(b"dir\0", 3)? else {
+            return Ok(None);
+        };
+        let Some((_, point_ids)) = named_values(b"pointid\0", 2)? else {
+            return Ok(None);
+        };
+        let Some((_, center_id)) = named_values(b"cntrid\0", 1)? else {
+            return Ok(None);
+        };
+        let Some((_, arc_orientation)) = named_values(b"arcorient\0", 1)? else {
+            return Ok(None);
+        };
+        let Some((_, vertical_horizontal)) = named_values(b"verhor\0", 1)? else {
+            return Ok(None);
+        };
+        let Some((_, radius_ref)) = named_values(b"radius\0", 1)? else {
+            return Ok(None);
+        };
+        let Some((_, radius2_ref)) = named_values(b"radius2\0", 1)? else {
+            return Ok(None);
+        };
+        let Some((_, external_id)) = named_values(b"ext_id\0", 1)? else {
+            return Ok(None);
+        };
+        let Some(kind) = kind[0] else {
+            return Ok(None);
+        };
+        let Some(external_id) = external_id[0] else {
+            return Ok(None);
+        };
+        Ok(Some(FeatureOpaqueSegment {
+            kind,
             directions: [directions[0], directions[1], directions[2]],
             point_ids: [point_ids[0], point_ids[1]],
             center_id: center_id[0],
@@ -2412,13 +2547,14 @@ fn segment_table_body(
             vertical_horizontal: vertical_horizontal[0],
             radius_ref: radius_ref[0],
             radius2_ref: radius2_ref[0],
-            external_id: external_id[0]?,
+            external_id,
             body: Vec::new(),
             offset,
-        })
-    })();
+        }))
+    })()?;
     cursor = after_close_ref + 1;
-    let region_end = [
+    let mut region_end = end;
+    for label in [
         b"order_table".as_slice(),
         b"dimtab_ptr\0",
         b"relat_ptr\0",
@@ -2427,11 +2563,17 @@ fn segment_table_body(
         b"order_ptr\0",
         b"p_saved_result\0",
         b"S2D",
-    ]
-    .into_iter()
-    .filter_map(|label| find_bytes(payload, label, cursor, end))
-    .min()
-    .unwrap_or(end);
+    ] {
+        if let Some(offset) = ctx.find_bytes_in(
+            payload,
+            label,
+            cursor,
+            end,
+            "find Creo feature definition field",
+        )? {
+            region_end = region_end.min(offset);
+        }
+    }
     let mut rows = Vec::new();
     if let Some(row) = named_row.and_then(typed_segment_row) {
         ctx.reserve_vec(&mut rows, 1, "creo segment rows")?;
@@ -2683,36 +2825,67 @@ fn trim_entity_table(
     start: usize,
     end: usize,
 ) -> Result<Option<FeatureTrimEntityTable>, CodecError> {
-    let Some(table) = find_bytes(payload, b"ent_tab\0", start, end) else {
-        return Ok(None);
-    };
-    let header = trim_table_header(payload, b"ent_tab\0", start, end);
-    let Some(prototype) = find_bytes(payload, b"entry_ptr(entity_entry)", table, end) else {
-        return Ok(None);
-    };
-    let Some(mut cursor) = header
-        .and_then(|header| {
-            (prototype..end).find_map(|offset| {
-                (payload.get(offset..offset + 3) == Some(&[0xf4, 0x04, psb::token::ENTITY_REF]))
-                    .then_some(())?;
-                let (class, after_reference) = psb::reference_id(payload, offset + 3).ok()?;
-                (class == header.classes.table && payload.get(after_reference) == Some(&0xe2))
-                    .then_some(after_reference + 1)
-            })
-        })
-        .or_else(|| {
-            let close = find_bytes(payload, &[0xf2, psb::token::ENTITY_REF], prototype, end)?;
-            let (_, after_reference) = psb::reference_id(payload, close + 2).ok()?;
-            Some(after_reference)
-        })
+    let Some(table) = ctx.find_bytes_in(
+        payload,
+        b"ent_tab\0",
+        start,
+        end,
+        "find Creo feature definition field",
+    )?
     else {
+        return Ok(None);
+    };
+    let header = trim_table_header(ctx, payload, b"ent_tab\0", start, end)?;
+    let Some(prototype) = ctx.find_bytes_in(
+        payload,
+        b"entry_ptr(entity_entry)",
+        table,
+        end,
+        "find Creo feature definition field",
+    )?
+    else {
+        return Ok(None);
+    };
+    let preferred_cursor = header.and_then(|header| {
+        (prototype..end).find_map(|offset| {
+            (payload.get(offset..offset + 3) == Some(&[0xf4, 0x04, psb::token::ENTITY_REF]))
+                .then_some(())?;
+            let (class, after_reference) = psb::reference_id(payload, offset + 3).ok()?;
+            (class == header.classes.table && payload.get(after_reference) == Some(&0xe2))
+                .then_some(after_reference + 1)
+        })
+    });
+    let cursor = match preferred_cursor {
+        Some(cursor) => Some(cursor),
+        None => match ctx.find_bytes_in(
+            payload,
+            &[0xf2, psb::token::ENTITY_REF],
+            prototype,
+            end,
+            "find Creo feature definition field",
+        )? {
+            Some(close) => psb::reference_id(payload, close + 2)
+                .ok()
+                .map(|(_, after_reference)| after_reference),
+            None => None,
+        },
+    };
+    let Some(mut cursor) = cursor else {
         return Ok(None);
     };
     if payload.get(cursor) == Some(&0xe3) {
         cursor += 1;
     }
     let first_row = cursor;
-    let region_end = find_bytes(payload, b"vert_tab", cursor, end).unwrap_or(end);
+    let region_end = ctx
+        .find_bytes_in(
+            payload,
+            b"vert_tab",
+            cursor,
+            end,
+            "find Creo feature definition field",
+        )?
+        .unwrap_or(end);
     let buckets = match header {
         Some(header) => trim_buckets(
             ctx,
@@ -2813,7 +2986,14 @@ fn trim_buckets(
     if header.declared_count == 0 {
         return Ok(Vec::new());
     }
-    let Some(label) = find_bytes(payload, b"bucket_index\0", table, end) else {
+    let Some(label) = ctx.find_bytes_in(
+        payload,
+        b"bucket_index\0",
+        table,
+        end,
+        "find Creo feature definition field",
+    )?
+    else {
         return Ok(Vec::new());
     };
     let first_offset = label + b"bucket_index\0".len();
@@ -2823,9 +3003,21 @@ fn trim_buckets(
     if first != 0 {
         return Ok(Vec::new());
     }
-    let Some((first_count, first_body)) =
-        named_trim_bucket_count(payload, cursor, end, header.classes.bucket)
+    let Some(bucket_label) = ctx.find_bytes_in(
+        payload,
+        b"bucket_xar\0",
+        cursor,
+        end,
+        "find Creo first trim bucket",
+    )?
     else {
+        return Ok(Vec::new());
+    };
+    let label_end = bucket_label + b"bucket_xar\0".len();
+    let Some((first_count, first_body)) = (|| {
+        let opener = (label_end..end).find(|&offset| payload[offset] == psb::token::ARRAY_OPEN)?;
+        trim_bucket_array_count(payload, opener, header.classes.bucket)
+    })() else {
         return Ok(Vec::new());
     };
     let mut starts = Vec::new();
@@ -2889,17 +3081,6 @@ fn trim_buckets(
     Ok(buckets)
 }
 
-fn named_trim_bucket_count(
-    payload: &[u8],
-    start: usize,
-    end: usize,
-    bucket_class: u32,
-) -> Option<(u32, usize)> {
-    let label = find_bytes(payload, b"bucket_xar\0", start, end)? + b"bucket_xar\0".len();
-    let opener = (label..end).find(|&offset| payload[offset] == psb::token::ARRAY_OPEN)?;
-    trim_bucket_array_count(payload, opener, bucket_class)
-}
-
 fn positional_trim_bucket_count(
     payload: &[u8],
     mut cursor: usize,
@@ -2960,7 +3141,8 @@ fn trim_bucket_entry_count(
                 }
             }
             let prototype = usize::from(
-                named_first && named_trim_entity_prototype_complete(payload, start, end, classes),
+                named_first
+                    && named_trim_entity_prototype_complete(ctx, payload, start, end, classes)?,
             );
             // Decoded rows counted over `start..end`, not a stated count. The
             // count is stated in the width the declared count is stored in,
@@ -2987,7 +3169,8 @@ fn trim_bucket_entry_count(
                 }
             }
             let prototype = usize::from(
-                named_first && named_trim_vertex_prototype_complete(payload, start, end, classes),
+                named_first
+                    && named_trim_vertex_prototype_complete(ctx, payload, start, end, classes)?,
             );
             // Decoded rows counted over `start..end`, not a stated count. The
             // count is stated in the width the declared count is stored in,
@@ -3089,18 +3272,26 @@ fn trim_entry_field(payload: &[u8], offset: usize, end: usize) -> Option<usize> 
 }
 
 fn named_trim_entity_prototype_complete(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     classes: TrimTableClasses,
-) -> bool {
+) -> Result<bool, CodecError> {
     let entry_label = b"entry_ptr(entity_entry)\0";
-    let Some(entry) = find_bytes(payload, entry_label, start, end) else {
-        return false;
+    let Some(entry) = ctx.find_bytes_in(
+        payload,
+        entry_label,
+        start,
+        end,
+        "find Creo feature definition field",
+    )?
+    else {
+        return Ok(false);
     };
     let mut cursor = entry + entry_label.len();
     if payload.get(cursor) != Some(&0xe3) {
-        return false;
+        return Ok(false);
     }
     cursor += 1;
     let labels = [
@@ -3112,110 +3303,161 @@ fn named_trim_entity_prototype_complete(
         b"pers_attribs\0",
     ];
     for label in labels {
-        let Some(offset) = find_bytes(payload, label, cursor, end) else {
-            return false;
+        let Some(offset) = ctx.find_bytes_in(
+            payload,
+            label,
+            cursor,
+            end,
+            "find Creo feature definition field",
+        )?
+        else {
+            return Ok(false);
         };
         let Some(next) = trim_entry_field(payload, offset + label.len(), end) else {
-            return false;
+            return Ok(false);
         };
         cursor = next;
     }
-    (cursor..end).any(|offset| {
+    Ok((cursor..end).any(|offset| {
         if payload.get(offset..offset + 3) != Some(&[0xf4, 0x04, psb::token::ENTITY_REF]) {
             return false;
         }
         psb::reference_id(payload, offset + 3)
             .is_ok_and(|(class, next)| class == classes.table && payload.get(next) == Some(&0xe2))
-    })
+    }))
 }
 
 fn named_trim_vertex_prototype_complete(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     classes: TrimTableClasses,
-) -> bool {
-    let Some(entity_ids) = find_bytes(payload, b"ent_ids\0", start, end) else {
-        return false;
+) -> Result<bool, CodecError> {
+    let Some(entity_ids) = ctx.find_bytes_in(
+        payload,
+        b"ent_ids\0",
+        start,
+        end,
+        "find Creo feature definition field",
+    )?
+    else {
+        return Ok(false);
     };
     let array = entity_ids + b"ent_ids\0".len();
     if payload.get(array) != Some(&psb::token::ARRAY_OPEN) {
-        return false;
+        return Ok(false);
     }
     let (count, mut cursor) = psb::compact_int(payload, array + 1);
     if count < 2 {
-        return false;
+        return Ok(false);
     }
     for _ in 0..count {
         let (value, next) = segment_int(payload, cursor);
         if value.is_none() || next > end {
-            return false;
+            return Ok(false);
         }
         cursor = next;
     }
-    let Some(vertex_id) = find_bytes(payload, b"vertex_id\0", cursor, end) else {
-        return false;
+    let Some(vertex_id) = ctx.find_bytes_in(
+        payload,
+        b"vertex_id\0",
+        cursor,
+        end,
+        "find Creo feature definition field",
+    )?
+    else {
+        return Ok(false);
     };
     let (vertex, next) = segment_int(payload, vertex_id + b"vertex_id\0".len());
     if vertex.is_none() || next > end {
-        return false;
+        return Ok(false);
     }
-    let Some(attributes) = find_bytes(payload, b"attribs\0", next, end) else {
-        return false;
+    let Some(attributes) = ctx.find_bytes_in(
+        payload,
+        b"attribs\0",
+        next,
+        end,
+        "find Creo feature definition field",
+    )?
+    else {
+        return Ok(false);
     };
     let Some(next) = trim_entry_field(payload, attributes + b"attribs\0".len(), end) else {
-        return false;
+        return Ok(false);
     };
-    (next..end).any(|offset| {
+    Ok((next..end).any(|offset| {
         if payload.get(offset..offset + 2) != Some(&[0xf3, psb::token::ENTITY_REF]) {
             return false;
         }
         psb::reference_id(payload, offset + 2)
             .is_ok_and(|(class, next)| class == classes.table && payload.get(next) == Some(&0xe2))
-    })
+    }))
 }
 
 fn trim_table_header(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     label: &[u8],
     start: usize,
     end: usize,
-) -> Option<TrimTableHeader> {
-    let table = find_bytes(payload, label, start, end)? + label.len();
-    let opener = (table..end).find(|&offset| payload[offset] == psb::token::ARRAY_OPEN)?;
-    let (declared_count, after_count) = psb::compact_int(payload, opener + 1);
-    (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
-    let (table_class, _) = psb::reference_id(payload, after_count + 1).ok()?;
-    let bucket_label = find_bytes(payload, b"bucket_xar\0", table, end)? + b"bucket_xar\0".len();
-    let bucket_opener =
-        (bucket_label..end).find(|&offset| payload[offset] == psb::token::ARRAY_OPEN)?;
-    let (_, after_bucket_count) = psb::compact_int(payload, bucket_opener + 1);
-    (payload.get(after_bucket_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
-    let (bucket_class, _) = psb::reference_id(payload, after_bucket_count + 1).ok()?;
-    let entry_class = (after_count..end).find_map(|offset| {
-        (payload.get(offset) == Some(&psb::token::ENTITY_REF)).then_some(())?;
-        let (class, after_reference) = psb::reference_id(payload, offset + 1).ok()?;
-        if label == b"vert_tab\0" {
-            let (first, next) = segment_int(payload, after_reference);
-            let (second, next) = segment_int(payload, next);
-            let (third, next) = segment_int(payload, next);
-            return (class != table_class
-                && first.is_some()
-                && second.is_some()
-                && third.is_some()
-                && payload.get(next) == Some(&0))
-            .then_some(class);
-        }
-        (payload.get(after_reference..after_reference + 2) == Some(&[0, 0xe3])).then_some(class)
-    })?;
-    Some(TrimTableHeader {
-        declared_count,
-        classes: TrimTableClasses {
-            table: table_class,
-            bucket: bucket_class,
-            entry: entry_class,
-        },
-    })
+) -> Result<Option<TrimTableHeader>, CodecError> {
+    let Some(offset) = ctx.find_bytes_in(payload, label, start, end, "find Creo trim table")?
+    else {
+        return Ok(None);
+    };
+    let table = offset + label.len();
+    let Some((declared_count, after_count, table_class)) = (|| {
+        let opener = (table..end).find(|&offset| payload[offset] == psb::token::ARRAY_OPEN)?;
+        let (declared_count, after_count) = psb::compact_int(payload, opener + 1);
+        (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+        let (table_class, _) = psb::reference_id(payload, after_count + 1).ok()?;
+        Some((declared_count, after_count, table_class))
+    })() else {
+        return Ok(None);
+    };
+    let Some(offset) = ctx.find_bytes_in(
+        payload,
+        b"bucket_xar\0",
+        table,
+        end,
+        "find Creo trim bucket class",
+    )?
+    else {
+        return Ok(None);
+    };
+    let bucket_label = offset + b"bucket_xar\0".len();
+    Ok((|| {
+        let bucket_opener =
+            (bucket_label..end).find(|&offset| payload[offset] == psb::token::ARRAY_OPEN)?;
+        let (_, after_bucket_count) = psb::compact_int(payload, bucket_opener + 1);
+        (payload.get(after_bucket_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+        let (bucket_class, _) = psb::reference_id(payload, after_bucket_count + 1).ok()?;
+        let entry_class = (after_count..end).find_map(|offset| {
+            (payload.get(offset) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+            let (class, after_reference) = psb::reference_id(payload, offset + 1).ok()?;
+            if label == b"vert_tab\0" {
+                let (first, next) = segment_int(payload, after_reference);
+                let (second, next) = segment_int(payload, next);
+                let (third, next) = segment_int(payload, next);
+                return (class != table_class
+                    && first.is_some()
+                    && second.is_some()
+                    && third.is_some()
+                    && payload.get(next) == Some(&0))
+                .then_some(class);
+            }
+            (payload.get(after_reference..after_reference + 2) == Some(&[0, 0xe3])).then_some(class)
+        })?;
+        Some(TrimTableHeader {
+            declared_count,
+            classes: TrimTableClasses {
+                table: table_class,
+                bucket: bucket_class,
+                entry: entry_class,
+            },
+        })
+    })())
 }
 
 fn positional_table_region(
@@ -3357,11 +3599,19 @@ fn trim_vertex_table(
     variables: Option<&FeatureVariableTable>,
 ) -> Result<Option<FeatureTrimVertexTable>, CodecError> {
     const CHAINS_WINDOW: usize = 120;
-    let Some(table) = find_bytes(payload, b"vert_tab\0", start, end) else {
+    let Some(table) = ctx.find_bytes_in(
+        payload,
+        b"vert_tab\0",
+        start,
+        end,
+        "find Creo feature definition field",
+    )?
+    else {
         return Ok(None);
     };
-    let header = trim_table_header(payload, b"vert_tab\0", start, end);
-    let region_end = [
+    let header = trim_table_header(ctx, payload, b"vert_tab\0", start, end)?;
+    let mut region_end = end;
+    for label in [
         b"skamp_ptr\0".as_slice(),
         b"triples_ptr\0",
         b"order_table\0",
@@ -3369,16 +3619,29 @@ fn trim_vertex_table(
         b"relat_ptr\0",
         b"p_saved_result\0",
         b"S2D",
-    ]
-    .into_iter()
-    .filter_map(|label| find_bytes(payload, label, table + b"vert_tab\0".len(), end))
-    .min()
-    .unwrap_or(end);
+    ] {
+        if let Some(offset) = ctx.find_bytes_in(
+            payload,
+            label,
+            table + b"vert_tab\0".len(),
+            end,
+            "find Creo feature definition field",
+        )? {
+            region_end = region_end.min(offset);
+        }
+    }
     let chains_end = table
         .checked_add(b"vert_tab\0".len())
         .and_then(|after_label| after_label.checked_add(CHAINS_WINDOW))
         .map_or(end, |window_end| window_end.min(end));
-    let Some(chains) = find_bytes(payload, b"chains\0", table, chains_end) else {
+    let Some(chains) = ctx.find_bytes_in(
+        payload,
+        b"chains\0",
+        table,
+        chains_end,
+        "find Creo feature definition field",
+    )?
+    else {
         return Ok(None);
     };
     let mut cursor = chains + b"chains\0".len();
@@ -3965,7 +4228,14 @@ fn order_table(
     start: usize,
     end: usize,
 ) -> Result<Option<FeatureOrderTable>, CodecError> {
-    let Some(table) = find_bytes(payload, b"order_table\0", start, end) else {
+    let Some(table) = ctx.find_bytes_in(
+        payload,
+        b"order_table\0",
+        start,
+        end,
+        "find Creo feature definition field",
+    )?
+    else {
         return Ok(None);
     };
     let mut cursor = table + b"order_table\0".len();
@@ -3983,19 +4253,37 @@ fn order_table(
     } else {
         None
     };
-    let Some(close) = find_bytes(payload, &[0xf1, psb::token::ENTITY_REF], cursor, end) else {
+    let Some(close) = ctx.find_bytes_in(
+        payload,
+        &[0xf1, psb::token::ENTITY_REF],
+        cursor,
+        end,
+        "find Creo feature definition field",
+    )?
+    else {
         return Ok(None);
     };
-    let prototype = (|| {
+    let prototype = (|| -> Result<Option<()>, CodecError> {
         let mut field = cursor;
         for label in [b"ext_id\0".as_slice(), b"int_id\0", b"bitmask\0"] {
-            let offset = find_bytes(payload, label, field, close)?;
+            let Some(offset) = ctx.find_bytes_in(
+                payload,
+                label,
+                field,
+                close,
+                "find Creo feature definition field",
+            )?
+            else {
+                return Ok(None);
+            };
             let (_, next) = segment_int(payload, offset + label.len());
-            (next > offset + label.len() && next <= close).then_some(())?;
+            if next <= offset + label.len() || next > close {
+                return Ok(None);
+            }
             field = next;
         }
-        Some(())
-    })();
+        Ok(Some(()))
+    })()?;
     let Ok((_, next)) = psb::reference_id(payload, close + 2) else {
         return Ok(None);
     };
@@ -4189,25 +4477,60 @@ fn positional_order_table(
     }))
 }
 
-fn named_compact_int(payload: &[u8], label: &[u8], start: usize, end: usize) -> Option<u32> {
-    let at = find_bytes(payload, label, start, end)? + label.len();
+fn named_compact_int(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    label: &[u8],
+    start: usize,
+    end: usize,
+) -> Result<Option<u32>, CodecError> {
+    let Some(offset) = ctx.find_bytes_in(payload, label, start, end, "find Creo named integer")?
+    else {
+        return Ok(None);
+    };
+    let at = offset + label.len();
     let (value, next) = segment_int(payload, at);
-    value.filter(|_| next <= end)
+    Ok(value.filter(|_| next <= end))
 }
 
-fn gsec3d_plane_id(payload: &[u8], start: usize, end: usize) -> Option<u32> {
+fn gsec3d_plane_id(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    start: usize,
+    end: usize,
+) -> Result<Option<u32>, CodecError> {
     let label = b"plane_id\0";
-    let reference_planes = find_bytes(payload, b"\xe0\x00ref_planes\0", start, end).unwrap_or(end);
+    let reference_planes = ctx
+        .find_bytes_in(
+            payload,
+            b"\xe0\x00ref_planes\0",
+            start,
+            end,
+            "find Creo feature definition field",
+        )?
+        .unwrap_or(end);
     let mut cursor = start;
-    while let Some(at) = find_bytes(payload, label, cursor, reference_planes) {
+    while let Some(at) = ctx.find_bytes_in(
+        payload,
+        label,
+        cursor,
+        reference_planes,
+        "find Creo feature definition field",
+    )? {
         cursor = at + label.len();
         let (value, next) = segment_int(payload, cursor);
         if next <= reference_planes && value.is_some() {
-            return value;
+            return Ok(value);
         }
     }
     cursor = reference_planes;
-    while let Some(at) = find_bytes(payload, label, cursor, end) {
+    while let Some(at) = ctx.find_bytes_in(
+        payload,
+        label,
+        cursor,
+        end,
+        "find Creo feature definition field",
+    )? {
         cursor = at + label.len();
         if at
             .checked_sub(2)
@@ -4218,10 +4541,10 @@ fn gsec3d_plane_id(payload: &[u8], start: usize, end: usize) -> Option<u32> {
         }
         let (value, next) = segment_int(payload, cursor);
         if next <= end && value.is_some() {
-            return value;
+            return Ok(value);
         }
     }
-    None
+    Ok(None)
 }
 
 fn section_3d(
@@ -4232,20 +4555,55 @@ fn section_3d(
 ) -> Result<Option<FeatureSection3d>, CodecError> {
     const GSEC3D: &[u8] = b"\xe0\x00gsec3d_ptr\0";
     const SAVED_RESULT: &[u8] = b"\xe0\x00p_saved_result\0";
-    let Some(section) = find_bytes(payload, GSEC3D, start, end) else {
+    let Some(section) = ctx.find_bytes_in(
+        payload,
+        GSEC3D,
+        start,
+        end,
+        "find Creo feature definition field",
+    )?
+    else {
         return Ok(None);
     };
-    let record_end = find_bytes(payload, GSEC3D, section + GSEC3D.len(), end).unwrap_or(end);
-    let placement_end =
-        find_bytes(payload, SAVED_RESULT, section, record_end).unwrap_or(record_end);
-    let sketch_plane_entity_id = gsec3d_plane_id(payload, section, placement_end);
-    let sketch_plane_flip = find_bytes(payload, b"plane_flip\0", section, placement_end)
+    let record_end = ctx
+        .find_bytes_in(
+            payload,
+            GSEC3D,
+            section + GSEC3D.len(),
+            end,
+            "find Creo feature definition field",
+        )?
+        .unwrap_or(end);
+    let placement_end = ctx
+        .find_bytes_in(
+            payload,
+            SAVED_RESULT,
+            section,
+            record_end,
+            "find Creo feature definition field",
+        )?
+        .unwrap_or(record_end);
+    let sketch_plane_entity_id = gsec3d_plane_id(ctx, payload, section, placement_end)?;
+    let sketch_plane_flip = ctx
+        .find_bytes_in(
+            payload,
+            b"plane_flip\0",
+            section,
+            placement_end,
+            "find Creo feature definition field",
+        )?
         .and_then(|at| payload.get(at + b"plane_flip\0".len()).copied())
         .and_then(BinaryFlag::decode);
 
     let mut reference_plane_entity_ids = Vec::new();
     let mut reference_plane_datum_geometry_id = None;
-    if let Some(references) = find_bytes(payload, b"\xe0\x00ref_planes\0", section, placement_end) {
+    if let Some(references) = ctx.find_bytes_in(
+        payload,
+        b"\xe0\x00ref_planes\0",
+        section,
+        placement_end,
+        "find Creo feature definition field",
+    )? {
         let mut cursor = references + b"\xe0\x00ref_planes\0".len();
         if payload.get(cursor) == Some(&psb::token::ARRAY_OPEN) {
             let (count, next) = psb::compact_int(payload, cursor + 1);
@@ -4267,24 +4625,43 @@ fn section_3d(
             }
             let nested_end = placement_end;
             reference_plane_datum_geometry_id =
-                named_compact_int(payload, b"\xe0\x01plane_id\0", cursor, nested_end);
+                named_compact_int(ctx, payload, b"\xe0\x01plane_id\0", cursor, nested_end)?;
         }
     }
 
-    let named_flag = |label: &[u8]| {
-        find_bytes(payload, label, section, placement_end)
+    let named_flag = |label: &[u8]| -> Result<Option<BinaryFlag>, CodecError> {
+        Ok(ctx
+            .find_bytes_in(
+                payload,
+                label,
+                section,
+                placement_end,
+                "find Creo feature definition field",
+            )?
             .and_then(|at| payload.get(at + label.len()).copied())
-            .and_then(BinaryFlag::decode)
+            .and_then(BinaryFlag::decode))
     };
     let orientation = FeatureSectionOrientation {
-        section_flip: named_flag(b"\xe0\x01flip\0"),
-        reference_type: named_compact_int(payload, b"\xe0\x01ref_type\0", section, placement_end),
-        segment_id: named_compact_int(payload, b"\xe0\x01seg_id\0", section, placement_end),
-        reference_flip: named_flag(b"\xe0\x01flip_flag\0"),
+        section_flip: named_flag(b"\xe0\x01flip\0")?,
+        reference_type: named_compact_int(
+            ctx,
+            payload,
+            b"\xe0\x01ref_type\0",
+            section,
+            placement_end,
+        )?,
+        segment_id: named_compact_int(ctx, payload, b"\xe0\x01seg_id\0", section, placement_end)?,
+        reference_flip: named_flag(b"\xe0\x01flip_flag\0")?,
     };
 
     let mut dimension_ids = Vec::new();
-    if let Some(table) = find_bytes(payload, b"dim_id_tab\0", section, end) {
+    if let Some(table) = ctx.find_bytes_in(
+        payload,
+        b"dim_id_tab\0",
+        section,
+        end,
+        "find Creo feature definition field",
+    )? {
         let mut cursor = table + b"dim_id_tab\0".len();
         while payload
             .get(cursor)
@@ -4467,33 +4844,67 @@ pub(super) fn dimension_unit(dimension_type: u32) -> DimensionUnit {
 }
 
 fn named_dimension_reference(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
-) -> Option<(FeatureDimensionReference, usize)> {
-    let item_label = find_bytes(payload, b"item_id\0", start, end)?;
+) -> Result<Option<(FeatureDimensionReference, usize)>, CodecError> {
+    let Some(item_label) = ctx.find_bytes_in(
+        payload,
+        b"item_id\0",
+        start,
+        end,
+        "find Creo dimension item",
+    )?
+    else {
+        return Ok(None);
+    };
     let mut cursor = item_label + b"item_id\0".len();
-    let item_id = next_nullable_segment_int(payload, &mut cursor).ok()?;
-    let sense_label = find_bytes(payload, b"sense\0", cursor, end)?;
-    cursor = sense_label + b"sense\0".len();
-    let sense = next_nullable_segment_int(payload, &mut cursor).ok()?;
-    let point_label = find_bytes(payload, b"point\0", cursor, end)?;
-    cursor = point_label + b"point\0".len();
-    (payload.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
-    let (declared_count, after_count) = psb::compact_int(payload, cursor + 1);
-    (declared_count == 2).then_some(())?;
-    cursor = after_count;
-    let point = segment_slots(payload, &mut cursor, 2)?;
-    let [first, second] = [point[0], point[1]];
-    Some((
-        FeatureDimensionReference {
-            item_id,
-            sense,
-            point: [first, second],
-            offset: item_label,
-        },
+    let Ok(item_id) = next_nullable_segment_int(payload, &mut cursor) else {
+        return Ok(None);
+    };
+    let Some(sense_label) = ctx.find_bytes_in(
+        payload,
+        b"sense\0",
         cursor,
-    ))
+        end,
+        "find Creo dimension sense",
+    )?
+    else {
+        return Ok(None);
+    };
+    cursor = sense_label + b"sense\0".len();
+    let Ok(sense) = next_nullable_segment_int(payload, &mut cursor) else {
+        return Ok(None);
+    };
+    let Some(point_label) = ctx.find_bytes_in(
+        payload,
+        b"point\0",
+        cursor,
+        end,
+        "find Creo dimension point",
+    )?
+    else {
+        return Ok(None);
+    };
+    cursor = point_label + b"point\0".len();
+    Ok((|| {
+        (payload.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
+        let (declared_count, after_count) = psb::compact_int(payload, cursor + 1);
+        (declared_count == 2).then_some(())?;
+        cursor = after_count;
+        let point = segment_slots(payload, &mut cursor, 2)?;
+        let [first, second] = [point[0], point[1]];
+        Some((
+            FeatureDimensionReference {
+                item_id,
+                sense,
+                point: [first, second],
+                offset: item_label,
+            },
+            cursor,
+        ))
+    })())
 }
 
 fn dimension_reference_table(
@@ -4502,7 +4913,14 @@ fn dimension_reference_table(
     start: usize,
     end: usize,
 ) -> Result<Option<FeatureDimensionReferenceTable>, CodecError> {
-    let Some(table) = find_bytes(payload, b"dim_ref\0", start, end) else {
+    let Some(table) = ctx.find_bytes_in(
+        payload,
+        b"dim_ref\0",
+        start,
+        end,
+        "find Creo feature definition field",
+    )?
+    else {
         return Ok(None);
     };
     let mut cursor = table + b"dim_ref\0".len();
@@ -4549,7 +4967,8 @@ fn dimension_reference_table(
     }
 
     let mut rows = Vec::new();
-    let Some((prototype, prototype_end)) = named_dimension_reference(payload, cursor, end) else {
+    let Some((prototype, prototype_end)) = named_dimension_reference(ctx, payload, cursor, end)?
+    else {
         return Ok(Some(FeatureDimensionReferenceTable {
             declared_count,
             entity_ref,
@@ -4626,14 +5045,28 @@ fn labeled_dimension(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<FeatureDimension>, CodecError> {
-    let Some(type_label) = find_bytes(payload, b"type\0", start, end) else {
+    let Some(type_label) = ctx.find_bytes_in(
+        payload,
+        b"type\0",
+        start,
+        end,
+        "find Creo feature definition field",
+    )?
+    else {
         return Ok(None);
     };
     let (dimension_type, after_type) = segment_int(payload, type_label + b"type\0".len());
     let Some(dimension_type) = dimension_type else {
         return Ok(None);
     };
-    let Some(value_label) = find_bytes(payload, b"value\0", after_type, end) else {
+    let Some(value_label) = ctx.find_bytes_in(
+        payload,
+        b"value\0",
+        after_type,
+        end,
+        "find Creo feature definition field",
+    )?
+    else {
         return Ok(None);
     };
     let value_start = value_label + b"value\0".len();
@@ -4643,13 +5076,27 @@ fn labeled_dimension(
     };
     let value_body = ctx.copy_retained(value_bytes, "creo dimension value body")?;
     let value = DimensionValue::decoded(ctx, value.value(), &value_body)?;
-    let Some(direction_label) = find_bytes(payload, b"direct\0", after_value, end) else {
+    let Some(direction_label) = ctx.find_bytes_in(
+        payload,
+        b"direct\0",
+        after_value,
+        end,
+        "find Creo feature definition field",
+    )?
+    else {
         return Ok(None);
     };
     let Some(&direction_byte) = payload.get(direction_label + b"direct\0".len()) else {
         return Ok(None);
     };
-    let Some(auxiliary_label) = find_bytes(payload, b"aux_value\0", direction_label, end) else {
+    let Some(auxiliary_label) = ctx.find_bytes_in(
+        payload,
+        b"aux_value\0",
+        direction_label,
+        end,
+        "find Creo feature definition field",
+    )?
+    else {
         return Ok(None);
     };
     let auxiliary_start = auxiliary_label + b"aux_value\0".len();
@@ -4659,7 +5106,14 @@ fn labeled_dimension(
         return Ok(None);
     };
     let auxiliary_body = ctx.copy_retained(auxiliary_bytes, "creo dimension auxiliary body")?;
-    let Some(external_label) = find_bytes(payload, b"ext_id\0", after_auxiliary, end) else {
+    let Some(external_label) = ctx.find_bytes_in(
+        payload,
+        b"ext_id\0",
+        after_auxiliary,
+        end,
+        "find Creo feature definition field",
+    )?
+    else {
         return Ok(None);
     };
     let (external_id, after_external) = segment_int(payload, external_label + b"ext_id\0".len());
@@ -4742,7 +5196,14 @@ fn dimension_table(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<FeatureDimensionTable>, CodecError> {
-    let Some(table) = find_bytes(payload, b"dimtab_ptr\0", start, end) else {
+    let Some(table) = ctx.find_bytes_in(
+        payload,
+        b"dimtab_ptr\0",
+        start,
+        end,
+        "find Creo feature definition field",
+    )?
+    else {
         return Ok(None);
     };
     let mut cursor = table + b"dimtab_ptr\0".len();
@@ -4769,7 +5230,15 @@ fn dimension_table(
     } else {
         None
     };
-    let region_end = find_bytes(payload, b"\xe0\x00relat_ptr\0", cursor, end).unwrap_or(end);
+    let region_end = ctx
+        .find_bytes_in(
+            payload,
+            b"\xe0\x00relat_ptr\0",
+            cursor,
+            end,
+            "find Creo feature definition field",
+        )?
+        .unwrap_or(end);
     let first_end = if let Some(class) = reference_bytes {
         find_class_close(payload, cursor, region_end, 0xf3, class).unwrap_or(region_end)
     } else {
@@ -4920,7 +5389,14 @@ fn feature_skamps(
     start: usize,
     end: usize,
 ) -> Result<Vec<FeatureSkamp>, CodecError> {
-    let Some(table) = find_bytes(payload, b"skamp_ptr\0", start, end) else {
+    let Some(table) = ctx.find_bytes_in(
+        payload,
+        b"skamp_ptr\0",
+        start,
+        end,
+        "find Creo feature definition field",
+    )?
+    else {
         return Ok(Vec::new());
     };
     let mut cursor = table + b"skamp_ptr\0".len();
@@ -4950,13 +5426,19 @@ fn feature_skamps(
     let Some(prototype_end) = find_class_close(payload, cursor, end, 0xf3, class_encoding) else {
         return Ok(Vec::new());
     };
-    let named_item = (|| {
-        Some(FeatureSkampItem {
-            entity_id: named_compact_int(payload, b"ent_id\0", cursor, prototype_end)?,
-            sense: named_compact_int(payload, b"sense\0", cursor, prototype_end)?,
-        })
-    })();
-    let Some(items_label) = find_bytes(payload, b"items\0", cursor, prototype_end) else {
+    let named_item = match named_compact_int(ctx, payload, b"ent_id\0", cursor, prototype_end)? {
+        Some(entity_id) => named_compact_int(ctx, payload, b"sense\0", cursor, prototype_end)?
+            .map(|sense| FeatureSkampItem { entity_id, sense }),
+        None => None,
+    };
+    let Some(items_label) = ctx.find_bytes_in(
+        payload,
+        b"items\0",
+        cursor,
+        prototype_end,
+        "find Creo feature definition field",
+    )?
+    else {
         return Ok(Vec::new());
     };
     let mut item_cursor = items_label + b"items\0".len();
@@ -5008,17 +5490,25 @@ fn feature_skamps(
     if item_cursor != prototype_end {
         return Ok(Vec::new());
     }
-    let Some(prototype) = (|| {
-        Some(FeatureSkamp {
-            id: named_compact_int(payload, b"id\0", cursor, prototype_end)?,
-            kind: named_compact_int(payload, b"type\0", cursor, prototype_end)?,
-            flags: named_compact_int(payload, b"flags\0", cursor, prototype_end)?,
-            status: named_compact_int(payload, b"status\0", cursor, prototype_end)?,
-            items: prototype_items,
-            offset: cursor,
-        })
-    })() else {
+    let Some(id) = named_compact_int(ctx, payload, b"id\0", cursor, prototype_end)? else {
         return Ok(Vec::new());
+    };
+    let Some(kind) = named_compact_int(ctx, payload, b"type\0", cursor, prototype_end)? else {
+        return Ok(Vec::new());
+    };
+    let Some(flags) = named_compact_int(ctx, payload, b"flags\0", cursor, prototype_end)? else {
+        return Ok(Vec::new());
+    };
+    let Some(status) = named_compact_int(ctx, payload, b"status\0", cursor, prototype_end)? else {
+        return Ok(Vec::new());
+    };
+    let prototype = FeatureSkamp {
+        id,
+        kind,
+        flags,
+        status,
+        items: prototype_items,
+        offset: cursor,
     };
     let mut rows = Vec::new();
     ctx.reserve_vec(&mut rows, 1, "creo skamp rows")?;
@@ -5103,45 +5593,63 @@ fn feature_skamps(
     Ok(rows)
 }
 
-fn named_array_class(payload: &[u8], label: &[u8], start: usize, end: usize) -> Option<u32> {
-    let label = find_bytes(payload, label, start, end)? + label.len();
-    let array =
-        (label..end).find(|offset| payload.get(*offset) == Some(&psb::token::ARRAY_OPEN))?;
-    let (_, after_count) = psb::compact_int(payload, array + 1);
-    (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
-    psb::reference_id(payload, after_count + 1)
-        .ok()
-        .map(|(class, _)| class)
-}
-
-fn named_solver_table_header(
+fn named_array_class(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     label: &[u8],
     start: usize,
     end: usize,
-) -> Option<FeatureSolverTableHeader> {
-    let offset = find_bytes(payload, label, start, end)?;
-    let mut cursor = offset + label.len();
-    if payload
-        .get(cursor)
-        .is_some_and(|byte| matches!(byte, 0xf1 | 0xf3))
-    {
-        cursor += 1;
-    } else if payload
-        .get(cursor..cursor + 2)
-        .is_some_and(|wrapper| matches!(wrapper, [0xf4, 0x04 | 0x05]))
-    {
-        cursor += 2;
-    }
-    (payload.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
-    let (declared_count, after_count) = psb::compact_int(payload, cursor + 1);
-    (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
-    let (entity_ref, _) = psb::reference_id(payload, after_count + 1).ok()?;
-    Some(FeatureSolverTableHeader {
-        declared_count,
-        entity_ref,
-        offset,
-    })
+) -> Result<Option<u32>, CodecError> {
+    let Some(offset) = ctx.find_bytes_in(payload, label, start, end, "find Creo array class")?
+    else {
+        return Ok(None);
+    };
+    let label = offset + label.len();
+    Ok((|| {
+        let array =
+            (label..end).find(|offset| payload.get(*offset) == Some(&psb::token::ARRAY_OPEN))?;
+        let (_, after_count) = psb::compact_int(payload, array + 1);
+        (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+        psb::reference_id(payload, after_count + 1)
+            .ok()
+            .map(|(class, _)| class)
+    })())
+}
+
+fn named_solver_table_header(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    label: &[u8],
+    start: usize,
+    end: usize,
+) -> Result<Option<FeatureSolverTableHeader>, CodecError> {
+    let Some(offset) = ctx.find_bytes_in(payload, label, start, end, "find Creo solver table")?
+    else {
+        return Ok(None);
+    };
+    Ok((|| {
+        let mut cursor = offset + label.len();
+        if payload
+            .get(cursor)
+            .is_some_and(|byte| matches!(byte, 0xf1 | 0xf3))
+        {
+            cursor += 1;
+        } else if payload
+            .get(cursor..cursor + 2)
+            .is_some_and(|wrapper| matches!(wrapper, [0xf4, 0x04 | 0x05]))
+        {
+            cursor += 2;
+        }
+        (payload.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
+        let (declared_count, after_count) = psb::compact_int(payload, cursor + 1);
+        (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+        let (entity_ref, _) = psb::reference_id(payload, after_count + 1).ok()?;
+        Some(FeatureSolverTableHeader {
+            declared_count,
+            entity_ref,
+            offset,
+        })
+    })())
 }
 
 fn positional_solver_table_header(
@@ -5494,7 +6002,14 @@ fn feature_relation_triples(
     start: usize,
     end: usize,
 ) -> Result<Vec<FeatureRelationTriple>, CodecError> {
-    let Some(table) = find_bytes(payload, b"triples_ptr\0", start, end) else {
+    let Some(table) = ctx.find_bytes_in(
+        payload,
+        b"triples_ptr\0",
+        start,
+        end,
+        "find Creo feature definition field",
+    )?
+    else {
         return Ok(Vec::new());
     };
     let mut cursor = table + b"triples_ptr\0".len();
@@ -5514,13 +6029,20 @@ fn feature_relation_triples(
         return Ok(Vec::new());
     }
     cursor += 2;
-    let Some(close) = find_bytes(payload, &[0xf1, psb::token::ENTITY_REF], cursor, end) else {
+    let Some(close) = ctx.find_bytes_in(
+        payload,
+        &[0xf1, psb::token::ENTITY_REF],
+        cursor,
+        end,
+        "find Creo feature definition field",
+    )?
+    else {
         return Ok(Vec::new());
     };
     let prototype = FeatureRelationTriple {
-        relation_id: named_compact_int(payload, b"rel_id\0", cursor, close),
-        equation_id: named_compact_int(payload, b"eqn_id\0", cursor, close),
-        skamp_id: named_compact_int(payload, b"skamp_id\0", cursor, close),
+        relation_id: named_compact_int(ctx, payload, b"rel_id\0", cursor, close)?,
+        equation_id: named_compact_int(ctx, payload, b"eqn_id\0", cursor, close)?,
+        skamp_id: named_compact_int(ctx, payload, b"skamp_id\0", cursor, close)?,
         offset: cursor,
     };
     let Ok((_, next)) = psb::reference_id(payload, close + 2) else {
@@ -5663,7 +6185,14 @@ fn relation_table(
     start: usize,
     end: usize,
 ) -> Result<Option<FeatureRelationTable>, CodecError> {
-    let Some(table) = find_bytes(payload, b"relat_ptr\0", start, end) else {
+    let Some(table) = ctx.find_bytes_in(
+        payload,
+        b"relat_ptr\0",
+        start,
+        end,
+        "find Creo feature definition field",
+    )?
+    else {
         return Ok(None);
     };
     let mut cursor = table + b"relat_ptr\0".len();
@@ -5690,16 +6219,30 @@ fn relation_table(
     if payload.get(cursor) == Some(&0xe2) {
         cursor += 1;
     }
-    let rows_end = [b"skamp_ptr\0".as_slice(), b"triples_ptr\0"]
-        .into_iter()
-        .filter_map(|label| find_bytes(payload, label, cursor, end))
-        .min()
-        .unwrap_or(end);
-    let rows_start = (|| {
-        let close = find_bytes(payload, &[0xf1, psb::token::ENTITY_REF], cursor, rows_end)?;
-        let (_, after_ref) = psb::reference_id(payload, close + 2).ok()?;
-        (payload.get(after_ref) == Some(&0xe2)).then_some(after_ref + 1)
-    })();
+    let mut rows_end = end;
+    for label in [b"skamp_ptr\0".as_slice(), b"triples_ptr\0"] {
+        if let Some(offset) = ctx.find_bytes_in(
+            payload,
+            label,
+            cursor,
+            end,
+            "find Creo feature definition field",
+        )? {
+            rows_end = rows_end.min(offset);
+        }
+    }
+    let rows_start = ctx
+        .find_bytes_in(
+            payload,
+            &[0xf1, psb::token::ENTITY_REF],
+            cursor,
+            rows_end,
+            "find Creo feature definition field",
+        )?
+        .and_then(|close| {
+            let (_, after_ref) = psb::reference_id(payload, close + 2).ok()?;
+            (payload.get(after_ref) == Some(&0xe2)).then_some(after_ref + 1)
+        });
     let rows = match rows_start {
         Some(rows_start) => positional_relation_rows(
             ctx,
@@ -5715,11 +6258,11 @@ fn relation_table(
         entity_ref,
         rows,
         skamps: SolverSubtable::from_parts(
-            named_solver_table_header(payload, b"skamp_ptr\0", start, end),
+            named_solver_table_header(ctx, payload, b"skamp_ptr\0", start, end)?,
             feature_skamps(ctx, payload, start, end)?,
         ),
         triples: SolverSubtable::from_parts(
-            named_solver_table_header(payload, b"triples_ptr\0", start, end),
+            named_solver_table_header(ctx, payload, b"triples_ptr\0", start, end)?,
             feature_relation_triples(ctx, payload, start, end)?,
         ),
         offset: table,
@@ -5979,12 +6522,14 @@ fn saved_line_block(
         }
         let point_label = b"\xe0\x00entity(point)\0";
         if payload.get(cursor..cursor + point_label.len()) == Some(point_label) {
-            let Some(close) = find_bytes(
+            let Some(close) = ctx.find_bytes_in(
                 payload,
                 &[0xf1, psb::token::ENTITY_REF],
                 cursor + point_label.len(),
                 segment_end,
-            ) else {
+                "find Creo feature definition field",
+            )?
+            else {
                 break;
             };
             let Ok((_, after_reference)) = psb::reference_id(payload, close + 2) else {
@@ -6172,17 +6717,30 @@ fn saved_line_entities(
     let label = b"\xe0\x00entity(line)\0";
     let mut entities = Vec::new();
     let mut search = start;
-    while let Some(label_offset) = find_bytes(payload, label, search, end) {
+    while let Some(label_offset) = ctx.find_bytes_in(
+        payload,
+        label,
+        search,
+        end,
+        "find Creo feature definition field",
+    )? {
         let body_start = label_offset + label.len();
-        let body_end = [
+        let mut body_end = end;
+        for next_label in [
             b"\xe0\x00entity(arc)\0".as_slice(),
             b"\xe0\x00entity(circle)\0".as_slice(),
             b"\xe0\x00entity(dummy_ent)\0".as_slice(),
-        ]
-        .into_iter()
-        .filter_map(|next_label| find_bytes(payload, next_label, body_start, end))
-        .min()
-        .unwrap_or(end);
+        ] {
+            if let Some(offset) = ctx.find_bytes_in(
+                payload,
+                next_label,
+                body_start,
+                end,
+                "find Creo feature definition field",
+            )? {
+                body_end = body_end.min(offset);
+            }
+        }
         let block = saved_line_block(ctx, payload, body_start, body_end, cache)?;
         ctx.reserve_vec(&mut entities, block.len(), "creo saved line entities")?;
         entities.extend(block);
@@ -6229,10 +6787,6 @@ fn saved_named_scalars<const N: usize>(
         cursor = next;
     }
     Some(values)
-}
-
-fn saved_entity_id(payload: &[u8], start: usize, end: usize) -> Option<u32> {
-    named_compact_int(payload, b"\xe0\x01id\0", start, end)
 }
 
 fn saved_arc_scalar(
@@ -6362,8 +6916,8 @@ fn saved_positional_generated_entities(
     }
     ctx.sort_unstable_by(
         &mut starts,
+        |value| value,
         Ord::cmp,
-        |_| 0,
         "creo saved generated row starts sort",
     )?;
     starts.dedup();
@@ -6534,10 +7088,26 @@ fn saved_circular_entities(
         ("circle", b"\xe0\x00entity(circle)\0".as_slice()),
     ] {
         let mut search = start;
-        while let Some(entity_offset) = find_bytes(payload, label, search, end) {
+        while let Some(entity_offset) = ctx.find_bytes_in(
+            payload,
+            label,
+            search,
+            end,
+            "find Creo feature definition field",
+        )? {
             let body_start = entity_offset + label.len();
-            let body_end = find_bytes(payload, b"\xe0\x00entity(", body_start, end).unwrap_or(end);
-            let Some(entity_id) = saved_entity_id(payload, body_start, body_end) else {
+            let body_end = ctx
+                .find_bytes_in(
+                    payload,
+                    b"\xe0\x00entity(",
+                    body_start,
+                    end,
+                    "find Creo feature definition field",
+                )?
+                .unwrap_or(end);
+            let Some(entity_id) =
+                named_compact_int(ctx, payload, b"\xe0\x01id\0", body_start, body_end)?
+            else {
                 search = body_end;
                 continue;
             };
@@ -6620,14 +7190,30 @@ fn saved_conic_entities(
     let local_system_label = b"\xe0\x02local_sys\0";
     let mut entities = Vec::new();
     let mut search = start;
-    while let Some(entity_offset) = find_bytes(payload, label, search, end) {
+    while let Some(entity_offset) = ctx.find_bytes_in(
+        payload,
+        label,
+        search,
+        end,
+        "find Creo feature definition field",
+    )? {
         let body_start = entity_offset + label.len();
-        let body_end = find_bytes(payload, b"\xe0\x00entity(", body_start, end).unwrap_or(end);
-        let Some(entity_id) = saved_entity_id(payload, body_start, body_end) else {
+        let body_end = ctx
+            .find_bytes_in(
+                payload,
+                b"\xe0\x00entity(",
+                body_start,
+                end,
+                "find Creo feature definition field",
+            )?
+            .unwrap_or(end);
+        let Some(entity_id) =
+            named_compact_int(ctx, payload, b"\xe0\x01id\0", body_start, body_end)?
+        else {
             search = body_end;
             continue;
         };
-        if named_compact_int(payload, b"\xe0\x01type\0", body_start, body_end) != Some(58) {
+        if named_compact_int(ctx, payload, b"\xe0\x01type\0", body_start, body_end)? != Some(58) {
             search = body_end;
             continue;
         }
@@ -6645,8 +7231,15 @@ fn saved_conic_entities(
         let second_coefficient =
             saved_named_scalars::<1>(payload, b"c2", body_start, body_end, cache).unwrap_or([None])
                 [0];
-        let local_system =
-            find_bytes(payload, local_system_label, body_start, body_end).and_then(|offset| {
+        let local_system = ctx
+            .find_bytes_in(
+                payload,
+                local_system_label,
+                body_start,
+                body_end,
+                "find Creo feature definition field",
+            )?
+            .and_then(|offset| {
                 let frame_start = offset + local_system_label.len();
                 scalar::decode_saved_conic_local_system_prefix(
                     &payload[frame_start..body_end],
@@ -6679,13 +7272,27 @@ fn saved_dummy_entities(
     let label = b"\xe0\x00entity(dummy_ent)\0";
     let mut entities = Vec::new();
     let mut search = start;
-    while let Some(entity_offset) = find_bytes(payload, label, search, end) {
+    while let Some(entity_offset) = ctx.find_bytes_in(
+        payload,
+        label,
+        search,
+        end,
+        "find Creo feature definition field",
+    )? {
         let body_start = entity_offset + label.len();
-        let body_end = find_bytes(payload, b"\xe0\x00entity(", body_start, end).unwrap_or(end);
+        let body_end = ctx
+            .find_bytes_in(
+                payload,
+                b"\xe0\x00entity(",
+                body_start,
+                end,
+                "find Creo feature definition field",
+            )?
+            .unwrap_or(end);
         let body = ctx.copy_retained(&payload[body_start..body_end], "creo saved dummy body")?;
         ctx.reserve_vec(&mut entities, 1, "creo saved dummy entities")?;
         entities.push(FeatureSavedEntity::Dummy(FeatureSavedDummy {
-            entity_id: saved_entity_id(payload, body_start, body_end),
+            entity_id: named_compact_int(ctx, payload, b"\xe0\x01id\0", body_start, body_end)?,
             body,
             offset: entity_offset,
         }));
@@ -6721,10 +7328,30 @@ fn saved_spline_entities(
     const TANGENTS: &[u8] = b"\xe0\x02end_tangts\0\xf9\x02\x03";
     let mut entities = Vec::new();
     let mut search = start;
-    while let Some(entity_offset) = find_bytes(payload, LABEL, search, end) {
+    while let Some(entity_offset) = ctx.find_bytes_in(
+        payload,
+        LABEL,
+        search,
+        end,
+        "find Creo feature definition field",
+    )? {
         let body_start = entity_offset + LABEL.len();
-        let body_end = find_bytes(payload, LABEL, body_start, end).unwrap_or(end);
-        let points_label = find_bytes(payload, POINTS, body_start, body_end);
+        let body_end = ctx
+            .find_bytes_in(
+                payload,
+                LABEL,
+                body_start,
+                end,
+                "find Creo feature definition field",
+            )?
+            .unwrap_or(end);
+        let points_label = ctx.find_bytes_in(
+            payload,
+            POINTS,
+            body_start,
+            body_end,
+            "find Creo feature definition field",
+        )?;
         let entity_id_end = points_label.unwrap_or(body_end);
         let mut declared_point_count = None;
         let mut point_count = None;
@@ -6777,8 +7404,15 @@ fn saved_spline_entities(
             )?,
             None => Vec::new(),
         };
-        let endpoint_tangents =
-            find_bytes(payload, TANGENTS, fields_start, body_end).and_then(|label| {
+        let endpoint_tangents = ctx
+            .find_bytes_in(
+                payload,
+                TANGENTS,
+                fields_start,
+                body_end,
+                "find Creo feature definition field",
+            )?
+            .and_then(|label| {
                 let value_start = label + TANGENTS_LABEL.len();
                 let mut at = label + TANGENTS.len();
                 let mut tangents = [[0.0; 3]; 2];
@@ -6811,7 +7445,7 @@ fn saved_spline_entities(
         };
         ctx.reserve_vec(&mut entities, 1, "creo saved spline entities")?;
         entities.push(FeatureSavedEntity::Spline(FeatureSavedSpline {
-            entity_id: saved_entity_id(payload, body_start, entity_id_end),
+            entity_id: named_compact_int(ctx, payload, b"\xe0\x01id\0", body_start, entity_id_end)?,
             declared_point_count,
             interpolation_points: points,
             interpolation_points_body,
@@ -6834,7 +7468,14 @@ fn saved_spline_parameters(
 ) -> Result<Option<DecodedField<Vec<f64>>>, CodecError> {
     const PARAMETERS_LABEL: &[u8] = b"\xe0\x02params\0";
     const PARAMETERS: &[u8] = b"\xe0\x02params\0\xf8";
-    let Some(label) = find_bytes(payload, PARAMETERS, start, end) else {
+    let Some(label) = ctx.find_bytes_in(
+        payload,
+        PARAMETERS,
+        start,
+        end,
+        "find Creo feature definition field",
+    )?
+    else {
         return Ok(None);
     };
     let value_start = label + PARAMETERS_LABEL.len();
@@ -6913,12 +7554,34 @@ fn saved_section(
     order_table: Option<&FeatureOrderTable>,
     segments: Option<&FeatureSegmentTable>,
 ) -> Result<Option<FeatureSavedSection>, CodecError> {
-    let Some(table) = find_bytes(payload, b"\xe0\x00p_saved_result\0", start, end) else {
+    let Some(table) = ctx.find_bytes_in(
+        payload,
+        b"\xe0\x00p_saved_result\0",
+        start,
+        end,
+        "find Creo feature definition field",
+    )?
+    else {
         return Ok(None);
     };
-    let table_end = find_bytes(payload, b"\xe0\x02local_sys\0", table, end)
-        .or_else(|| find_bytes(payload, b"\xe0\x00rigid_data\0", table, end))
-        .unwrap_or(end);
+    let table_end = match ctx.find_bytes_in(
+        payload,
+        b"\xe0\x02local_sys\0",
+        table,
+        end,
+        "find Creo feature definition field",
+    )? {
+        Some(offset) => offset,
+        None => ctx
+            .find_bytes_in(
+                payload,
+                b"\xe0\x00rigid_data\0",
+                table,
+                end,
+                "find Creo feature definition field",
+            )?
+            .unwrap_or(end),
+    };
     let mut entities = saved_line_entities(ctx, payload, table, table_end, cache)?;
     let circular =
         saved_circular_entities(ctx, payload, table, table_end, cache, order_table, segments)?;
@@ -6933,10 +7596,10 @@ fn saved_section(
     let spline = saved_spline_entities(ctx, payload, start, end, cache)?;
     ctx.reserve_vec(&mut entities, spline.len(), "creo saved section entities")?;
     entities.extend(spline);
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         entities.as_mut_slice(),
-        |left, right| saved_entity_offset(left).cmp(&saved_entity_offset(right)),
-        |_| 0,
+        saved_entity_offset,
+        Ord::cmp,
         "creo saved section entities ordering",
     )?;
     Ok(Some(FeatureSavedSection {
@@ -6970,10 +7633,10 @@ fn positional_saved_section(
         "creo positional saved section entities",
     )?;
     entities.extend(conic);
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         entities.as_mut_slice(),
-        |left, right| saved_entity_offset(left).cmp(&saved_entity_offset(right)),
-        |_| 0,
+        saved_entity_offset,
+        Ord::cmp,
         "creo positional saved section entities ordering",
     )?;
     let Some(offset) = entities.first().map(saved_entity_offset) else {
@@ -7021,8 +7684,8 @@ pub(crate) fn definition_revolution_extents(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo definition revolution extents result ordering",
     )?;
     Ok(result)
@@ -7096,13 +7759,25 @@ fn definitions_in_ranges(
         }
         ctx.stable_sort_by(
             parameter_frames.as_mut_slice(),
-            |left, right| left.offset.cmp(&right.offset),
-            |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
             "creo definitions in ranges parameter frames ordering",
         )?;
         let mut outlines = Vec::new();
-        if let Some(info) = find_bytes(payload, b"\xe0\x00feat_outl_info\0", start, end) {
-            if let Some(label) = find_bytes(payload, b"outline\0\xf9\x02\x03", info, end) {
+        if let Some(info) = ctx.find_bytes_in(
+            payload,
+            b"\xe0\x00feat_outl_info\0",
+            start,
+            end,
+            "find Creo feature definition field",
+        )? {
+            if let Some(label) = ctx.find_bytes_in(
+                payload,
+                b"outline\0\xf9\x02\x03",
+                info,
+                end,
+                "find Creo feature definition field",
+            )? {
                 let scalar_start = label + b"outline\0\xf9\x02\x03".len();
                 let local_scalars = outline_scalars(ctx, &payload[scalar_start..end], &cache)?;
                 ctx.reserve_vec(&mut outlines, 1, "creo feature outlines")?;
@@ -7119,7 +7794,14 @@ fn definitions_in_ranges(
                 ),
                 (b"\xe0\x00post_regen\0".as_slice(), OutlinePhase::PostRegen),
             ] {
-                let Some(label_offset) = find_bytes(payload, label, info, end) else {
+                let Some(label_offset) = ctx.find_bytes_in(
+                    payload,
+                    label,
+                    info,
+                    end,
+                    "find Creo feature definition field",
+                )?
+                else {
                     continue;
                 };
                 let framing = label_offset + label.len();
@@ -7145,8 +7827,8 @@ fn definitions_in_ranges(
         }
         ctx.stable_sort_by(
             outlines.as_mut_slice(),
-            |left, right| left.offset.cmp(&right.offset),
-            |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
             "creo definitions in ranges outlines ordering",
         )?;
         let variables = match variable_table(ctx, payload, start, end, &cache)? {
@@ -7183,8 +7865,8 @@ fn definitions_in_ranges(
             None => None,
         };
         if !positional {
-            replay_trim_entity_classes =
-                trim_table_header(payload, b"ent_tab\0", start, end).map(|header| header.classes);
+            replay_trim_entity_classes = trim_table_header(ctx, payload, b"ent_tab\0", start, end)?
+                .map(|header| header.classes);
         }
         let trim_vertices = match trim_vertex_table(
             ctx,
@@ -7211,7 +7893,8 @@ fn definitions_in_ranges(
         };
         if !positional {
             replay_trim_vertex_classes =
-                trim_table_header(payload, b"vert_tab\0", start, end).map(|header| header.classes);
+                trim_table_header(ctx, payload, b"vert_tab\0", start, end)?
+                    .map(|header| header.classes);
         }
         let order_table = match order_table(ctx, payload, start, end)? {
             Some(table) => Some(table),
@@ -7264,8 +7947,10 @@ fn definitions_in_ranges(
         };
         if !positional {
             replay_relation_class = relations.as_ref().and_then(|table| table.entity_ref);
-            replay_skamp_class = named_array_class(payload, b"skamp_ptr\0", start, schema_end);
-            replay_triples_class = named_array_class(payload, b"triples_ptr\0", start, schema_end);
+            replay_skamp_class =
+                named_array_class(ctx, payload, b"skamp_ptr\0", start, schema_end)?;
+            replay_triples_class =
+                named_array_class(ctx, payload, b"triples_ptr\0", start, schema_end)?;
         } else if let Some(table) = &mut relations {
             if table
                 .skamps
@@ -7273,7 +7958,8 @@ fn definitions_in_ranges(
                 .and_then(SolverSubtable::header)
                 .is_none()
             {
-                if let Some(header) = named_solver_table_header(payload, b"skamp_ptr\0", start, end)
+                if let Some(header) =
+                    named_solver_table_header(ctx, payload, b"skamp_ptr\0", start, end)?
                 {
                     table.skamps = Some(SolverSubtable::Declared {
                         header,
@@ -7296,7 +7982,7 @@ fn definitions_in_ranges(
                 .is_none()
             {
                 if let Some(header) =
-                    named_solver_table_header(payload, b"triples_ptr\0", start, end)
+                    named_solver_table_header(ctx, payload, b"triples_ptr\0", start, end)?
                 {
                     table.triples = Some(SolverSubtable::Declared {
                         header,
@@ -7441,8 +8127,8 @@ fn definition_starts(
     }
     ctx.sort_unstable_by(
         &mut starts,
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo feature definition starts sort",
     )?;
     let labeled_count = starts.len();
@@ -7467,8 +8153,8 @@ fn definition_starts(
     }
     ctx.sort_unstable_by(
         &mut starts,
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo feature definition starts sort",
     )?;
     starts.dedup_by_key(|entry| entry.offset);
@@ -7482,15 +8168,26 @@ fn depdb_gsec2d_starts(
     const GSEC: &[u8] = b"gsec2d_ptr\0";
     const NAME: &[u8] = b"name\0S2D";
     const NAME_WINDOW: usize = 128;
-    let candidates = payload
-        .windows(GSEC.len())
-        .enumerate()
-        .filter_map(|(start, window)| {
-            (window == GSEC).then_some(())?;
-            let search_end = start
-                .checked_add(NAME_WINDOW)
-                .map_or(payload.len(), |window_end| window_end.min(payload.len()));
-            let digits_start = find_bytes(payload, NAME, start, search_end)? + NAME.len();
+    let mut starts = Vec::new();
+    for (start, window) in payload.windows(GSEC.len()).enumerate() {
+        if window != GSEC {
+            continue;
+        }
+        let search_end = start
+            .checked_add(NAME_WINDOW)
+            .map_or(payload.len(), |window_end| window_end.min(payload.len()));
+        let Some(name_offset) = ctx.find_bytes_in(
+            payload,
+            NAME,
+            start,
+            search_end,
+            "find Creo feature definition field",
+        )?
+        else {
+            continue;
+        };
+        let digits_start = name_offset + NAME.len();
+        let Some(candidate) = (|| {
             let digits_end = payload[digits_start..search_end]
                 .iter()
                 .position(|byte| *byte == 0)?
@@ -7506,11 +8203,11 @@ fn depdb_gsec2d_starts(
                 owner_override: None,
                 positional: false,
             })
-        });
-    let mut starts = Vec::new();
-    for start in candidates {
+        })() else {
+            continue;
+        };
         ctx.reserve_vec(&mut starts, 1, "creo DEPDB section starts")?;
-        starts.push(start);
+        starts.push(candidate);
     }
     Ok(starts)
 }
@@ -7546,8 +8243,8 @@ pub(crate) fn definitions(
     }
     ctx.sort_unstable_by(
         &mut starts,
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo feature definition starts sort",
     )?;
     starts.dedup_by_key(|entry| entry.offset);
@@ -7587,8 +8284,8 @@ pub(crate) fn depdb_definitions(
     }
     ctx.sort_unstable_by(
         &mut starts,
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo feature definition starts sort",
     )?;
     starts.dedup_by_key(|entry| entry.offset);
@@ -7679,8 +8376,8 @@ pub(crate) fn positional_replay_definitions(
     }
     ctx.sort_unstable_by(
         &mut starts,
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo feature definition starts sort",
     )?;
     starts.dedup_by_key(|entry| entry.offset);
@@ -7704,14 +8401,24 @@ pub(crate) fn depdb_section_definition(
         .windows(GSEC.len())
         .enumerate()
         .filter_map(|(offset, window)| (window == GSEC).then_some(offset));
-    let Some((start, section_id, end)) = (|| {
-        let (Some(start), None) = (starts.next(), starts.next()) else {
-            return None;
-        };
-        let name_search_end = start
-            .checked_add(NAME_WINDOW)
-            .map_or(payload.len(), |window_end| window_end.min(payload.len()));
-        let name = find_bytes(payload, NAME, start, name_search_end)? + NAME.len();
+    let (Some(start), None) = (starts.next(), starts.next()) else {
+        return Ok(None);
+    };
+    let name_search_end = start
+        .checked_add(NAME_WINDOW)
+        .map_or(payload.len(), |window_end| window_end.min(payload.len()));
+    let Some(name_offset) = ctx.find_bytes_in(
+        payload,
+        NAME,
+        start,
+        name_search_end,
+        "find Creo feature definition field",
+    )?
+    else {
+        return Ok(None);
+    };
+    let name = name_offset + NAME.len();
+    let Some(section_id) = (|| {
         let name_end = payload[name..name_search_end]
             .iter()
             .position(|byte| *byte == 0)?
@@ -7721,12 +8428,19 @@ pub(crate) fn depdb_section_definition(
             return None;
         }
         let section_id = std::str::from_utf8(digits).ok()?.parse::<u32>().ok()?;
-        let end =
-            find_bytes(payload, PREFIX, start + GSEC.len(), payload.len()).unwrap_or(payload.len());
-        Some((start, section_id, end))
+        Some(section_id)
     })() else {
         return Ok(None);
     };
+    let end = ctx
+        .find_bytes_in(
+            payload,
+            PREFIX,
+            start + GSEC.len(),
+            payload.len(),
+            "find Creo feature definition field",
+        )?
+        .unwrap_or(payload.len());
     Ok(definitions_in_ranges(
         ctx,
         &payload[..end],
@@ -7986,8 +8700,8 @@ pub(crate) fn bind_section_owners(
         ctx.collect_vec(operations.iter(), "creo section ordered operations")?;
     ctx.stable_sort_by(
         ordered_operations.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| std::mem::size_of::<usize>(),
+        |value| &value.offset,
+        Ord::cmp,
         "creo bind section owners ordered operations ordering",
     )?;
     for definition in &mut definitions {

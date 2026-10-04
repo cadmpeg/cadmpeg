@@ -195,10 +195,10 @@ fn curve_expression_parameter_order(
     record: &crate::curve::CurveExpressionRecord,
     unique_assignment_indices: &BTreeMap<String, usize>,
 ) -> Result<Option<CurveExpressionParameterOrder>, CodecError> {
-    let mut dependencies = ctx.alloc_filled(
+    let mut dependencies = ctx.collect_indexed_vec(
         record.assignments.len(),
-        Vec::new(),
         "creo curve-expression dependency rows",
+        |_| Ok(Vec::new()),
     )?;
     for (row, assignment) in dependencies.iter_mut().zip(&record.assignments) {
         for name in &assignment.dependencies {
@@ -394,10 +394,10 @@ fn curve_expression_emitted_ordinals(
             indices.push(index);
         }
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         indices.as_mut_slice(),
-        |left, right| parameter_ordinals[*left].cmp(&parameter_ordinals[*right]),
-        |_| std::mem::size_of::<u32>(),
+        |value| parameter_ordinals[*value],
+        Ord::cmp,
         "creo curve expression emitted ordinals indices ordering",
     )?;
     let mut emitted = BTreeMap::new();
@@ -672,8 +672,8 @@ fn curve_expression_properties(
     }
     ctx.sort_unstable_by(
         &mut cyclic_dependencies,
+        |value| value,
         Ord::cmp,
-        |item| item.len(),
         "creo curve-expression cyclic dependency name sort",
     )?;
     cyclic_dependencies.dedup();
@@ -702,9 +702,11 @@ fn native_curve_expression_definition(
         format_args!("{assignment_count}"),
         "creo curve-expression native assignment count",
     )?;
-    let entity_key = cadmpeg_core::text::NonBlankString::new(
+    let entity_key = cadmpeg_core::text::NonBlankString::for_decode(
+        ctx,
         ctx.copy_retained_text("entity_id", "creo curve-expression native entity key")?,
-    )
+        "validate nonblank text",
+    )?
     .ok_or_else(|| CodecError::malformed("native entity key is blank"))?;
     ctx.insert_btree_map(
         &mut parameters,
@@ -712,10 +714,14 @@ fn native_curve_expression_definition(
         entity_value,
         "creo curve-expression native parameters",
     )?;
-    let assignment_key = cadmpeg_core::text::NonBlankString::new(ctx.copy_retained_text(
-        "assignment_count",
-        "creo curve-expression native assignment key",
-    )?)
+    let assignment_key = cadmpeg_core::text::NonBlankString::for_decode(
+        ctx,
+        ctx.copy_retained_text(
+            "assignment_count",
+            "creo curve-expression native assignment key",
+        )?,
+        "validate nonblank text",
+    )?
     .ok_or_else(|| CodecError::malformed("native assignment key is blank"))?;
     ctx.insert_btree_map(
         &mut parameters,
@@ -1081,10 +1087,15 @@ pub(super) fn transfer_curve_expression_features(
             Some(definition)
         } else if let Some(helix) = helix {
             let axis_id = curve_expression_record_id(ctx, record)?;
+            let axis_id = cadmpeg_core::text::NonBlankString::for_decode(
+                ctx,
+                axis_id,
+                "validate nonblank text",
+            )?;
             (|| {
                 Some(IrFeatureDefinition::Operation(
                     IrFeatureOperation::HelixNativeAxis {
-                        axis_native_ref: cadmpeg_core::text::NonBlankString::new(axis_id)?,
+                        axis_native_ref: axis_id?,
                         axial_rise: Length::new(helix.height.get())?,
                         pitch: Length::new(helix.height.get() / helix.revolutions.get())?,
                         revolutions: helix.revolutions,

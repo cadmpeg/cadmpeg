@@ -195,7 +195,7 @@ pub(crate) fn decode_at(
             }
             previous = Some(knot);
             reserved
-                .push(knot)
+                .push(expand.ctx(), knot, "Rhino cage knot values")
                 .map_err(|error| refused(body.position(), &error))?;
         }
         knots[axis] = reserved
@@ -250,7 +250,7 @@ pub(crate) fn decode_at(
                 ));
             };
             stored
-                .push(value)
+                .push(expand.ctx(), value, "Rhino cage coordinate tuple")
                 .map_err(|error| refused(body.position(), &error))?;
         }
         let stored = stored
@@ -289,7 +289,7 @@ pub(crate) fn decode_at(
             );
         }
         control_points
-            .push(point)
+            .push(expand.ctx(), point, "Rhino cage control points")
             .map_err(|error| refused(body.position(), &error))?;
     }
     let remaining = body.remaining();

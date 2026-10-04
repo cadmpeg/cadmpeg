@@ -32,6 +32,7 @@ impl RewriteIdentities for DesignBulkStreamPath {
         map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, RewriteMapFn>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let text = self.0.rewrite_identities(ctx, map)?;
-        Self::try_from(text.into_string()).map_err(cadmpeg_core::CodecError::malformed)
+        Self::try_new(text.into_string(ctx, "rewrite F3D bulk stream path")?)
+            .map_err(cadmpeg_core::CodecError::malformed)
     }
 }

@@ -2467,8 +2467,10 @@ mod tests {
             HoleConstruction::Form {
                 kind: HoleKind::Simple,
                 specification: Some(Box::new(HoleSpecification::Clearance {
-                    standard: cadmpeg_core::text::NonBlankString::new("test-standard".to_owned())
-                        .expect("standard"),
+                    standard: cadmpeg_core::text::NonBlankString::try_from(
+                        "test-standard".to_owned(),
+                    )
+                    .expect("standard"),
                     designation: Some("test-size".to_owned()),
                     fit: Some("test-fit".to_owned()),
                     modeled: false,

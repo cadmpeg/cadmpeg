@@ -826,6 +826,22 @@ pub(crate) enum TextShapeKind {
     Compound,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for TextShapeKind {
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
+    }
+}
+
 /// Orientation of one shape use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -2467,8 +2483,8 @@ pub(crate) fn carrier_census(
     }
     ctx.stable_sort_by(
         &mut census,
-        |left, right| left.id.cmp(&right.id),
-        |item| item.id.len(),
+        |value| &value.id,
+        Ord::cmp,
         "FreeCAD carrier census sort",
     )?;
     Ok(census)
@@ -6093,9 +6109,11 @@ pub(crate) fn transfer_text_curves(
             });
         let association = SourceObjectAssociation {
             format: cadmpeg_ir::CodecFormat::Fcstd,
-            object_id: cadmpeg_core::text::NonBlankString::new(
+            object_id: cadmpeg_core::text::NonBlankString::for_decode(
+                ctx,
                 ctx.copy_retained_text(object_id, "FreeCAD curve source object")?,
-            )
+                "validate nonblank text",
+            )?
             .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?,
             name: None,
             color: None,
@@ -6379,9 +6397,11 @@ pub(crate) fn transfer_text_surfaces(
             });
         let association = SourceObjectAssociation {
             format: cadmpeg_ir::CodecFormat::Fcstd,
-            object_id: cadmpeg_core::text::NonBlankString::new(
+            object_id: cadmpeg_core::text::NonBlankString::for_decode(
+                ctx,
                 ctx.copy_retained_text(object_id, "FreeCAD surface source object")?,
-            )
+                "validate nonblank text",
+            )?
             .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?,
             name: None,
             color: None,

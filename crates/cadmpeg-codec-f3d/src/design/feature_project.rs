@@ -244,24 +244,15 @@ fn authored_scope_ordinals_for_stream<'a>(
             "f3d authored stream timeline",
         )?;
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut stream_timelines[..],
-        |left, right| {
-            let left_key = {
-                let timeline = left;
-                {
-                    timeline.source_ordinal
-                }
-            };
-            let right_key = {
-                let timeline = right;
-                {
-                    timeline.source_ordinal
-                }
-            };
-            left_key.cmp(&right_key)
+        |value| {
+            let timeline = value;
+            {
+                timeline.source_ordinal
+            }
         },
-        |_| 0,
+        Ord::cmp,
         "sort f3d design feature_project 1",
     )?;
     if stream_timelines.is_empty() {
@@ -276,20 +267,13 @@ fn authored_scope_ordinals_for_stream<'a>(
         for &scope in scopes {
             ctx.push_vec(&mut ordered, scope, "f3d authored scope order")?;
         }
-        ctx.stable_sort_by(
+        ctx.stable_sort_by_key(
             &mut ordered[..],
-            |left, right| {
-                let left_key = {
-                    let scope = left;
-                    scope.feature_ordinal
-                };
-                let right_key = {
-                    let scope = right;
-                    scope.feature_ordinal
-                };
-                left_key.cmp(&right_key)
+            |value| {
+                let scope = value;
+                scope.feature_ordinal
             },
-            |_| 0,
+            Ord::cmp,
             "sort f3d design feature_project 2",
         )?;
         let complete_ordinals = ordered.iter().enumerate().all(|(ordinal, scope)| {
@@ -425,6 +409,22 @@ pub(crate) enum ScopeHistoryPredecessor<'a> {
 enum ComponentHistoryNamespace {
     Aggregate,
     Component(u64),
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for ComponentHistoryNamespace {
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
+    }
 }
 
 enum ScopeHistoryBinding {
@@ -1535,8 +1535,8 @@ face_operands,
     }
     ctx.stable_sort_by(
         &mut features[..],
-        |a, b| a.id.cmp(&b.id),
-        |value| value.id.as_str().len(),
+        |value| &value.id,
+        Ord::cmp,
         "sort f3d design feature_project 3",
     )?;
 
@@ -1858,8 +1858,8 @@ face_operands,
     ensure_feature_dependencies_precede(ctx, &features)?;
     ctx.stable_sort_by(
         &mut parameters[..],
-        |a, b| a.id.cmp(&b.id),
-        |value| value.id.as_str().len(),
+        |value| &value.id,
+        Ord::cmp,
         "sort f3d design feature_project 4",
     )?;
     Ok((features, parameters))
@@ -2224,7 +2224,8 @@ fn project_work_plane(
             let selection = match VertexSelection::historical(
                     crate::design::identity::feature_input_topology_id(ctx, &feature_id, state_id)?,
                     crate::design::identity::history_input_vertex_id(ctx, &prefix, resolution.vertex_slot(), "f3d historical vertex identifier")?,
-                    native, ctx,
+                    native,
+                    ctx,
                 )? {
                 Ok(selection) => selection,
                 Err(_) => VertexSelection::Unresolved,
@@ -2322,10 +2323,14 @@ fn scope_properties(
     for (ordinal, record_index) in scope.reference_members().values().enumerate() {
         ctx.insert_btree_map(
             &mut properties,
-            cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
-                format_args!("reference:{ordinal}"),
-                "f3d scope reference property key",
-            )?)
+            cadmpeg_core::text::NonBlankString::for_decode(
+                ctx,
+                ctx.format_retained(
+                    format_args!("reference:{ordinal}"),
+                    "f3d scope reference property key",
+                )?,
+                "validate nonblank text",
+            )?
             .ok_or_else(|| CodecError::malformed("reference property key is blank"))?,
             ctx.format_retained(
                 format_args!("{record_index}"),
@@ -2372,7 +2377,9 @@ fn native_scope_definition(
     let mut properties = std::collections::BTreeMap::new();
     for (_, parameter) in parameters {
         let name = ctx.copy_retained_text(parameter.name(), "f3d native parameter name")?;
-        let Some(name) = cadmpeg_core::text::NonBlankString::new(name) else {
+        let Some(name) =
+            cadmpeg_core::text::NonBlankString::for_decode(ctx, name, "validate nonblank text")?
+        else {
             return Err(cadmpeg_core::text::NamedEntryError::Blank {
                 record: ctx.copy_retained_text(&scope.id, "f3d native property error scope")?,
             }
@@ -2442,24 +2449,15 @@ fn project_fillet_arm(
             })?;
         }
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut assignments[..],
-        |left, right| {
-            let left_key = {
-                let assignment = left;
-                {
-                    assignment.group_ordinal
-                }
-            };
-            let right_key = {
-                let assignment = right;
-                {
-                    assignment.group_ordinal
-                }
-            };
-            left_key.cmp(&right_key)
+        |value| {
+            let assignment = value;
+            {
+                assignment.group_ordinal
+            }
         },
-        |_| 0,
+        Ord::cmp,
         "sort f3d design feature_project 5",
     )?;
     if !assignments.is_empty() {
@@ -2604,8 +2602,8 @@ fn resolved_fillet_assignments<'a>(
     }
     ctx.sort_unstable_by(
         &mut assigned,
+        |value| value,
         Ord::cmp,
-        |_| 0,
         "f3d Fillet assigned parameter sort",
     )?;
     if !assigned.iter().copied().eq(by_record.keys().copied()) {
@@ -4701,24 +4699,15 @@ pub(super) fn project_surface_stitch(
         scratch_storage
             .with_storage(|| ctx.push_vec(&mut matching, group, "f3d SurfaceStitch group"))?;
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut matching[..],
-        |left, right| {
-            let left_key = {
-                let group = left;
-                {
-                    group.scope_reference_ordinal
-                }
-            };
-            let right_key = {
-                let group = right;
-                {
-                    group.scope_reference_ordinal
-                }
-            };
-            left_key.cmp(&right_key)
+        |value| {
+            let group = value;
+            {
+                group.scope_reference_ordinal
+            }
         },
-        |_| 0,
+        Ord::cmp,
         "sort f3d design feature_project 6",
     )?;
     if or_none!(matching.len().checked_mul(2)) != input_end
@@ -5048,24 +5037,15 @@ pub(crate) fn direct_face_selection(
         scratch_storage
             .with_storage(|| ctx.push_vec(&mut matching, operand, "f3d direct face operand"))?;
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut matching[..],
-        |left, right| {
-            let left_key = {
-                let operand = left;
-                {
-                    operand.scope_reference_ordinal
-                }
-            };
-            let right_key = {
-                let operand = right;
-                {
-                    operand.scope_reference_ordinal
-                }
-            };
-            left_key.cmp(&right_key)
+        |value| {
+            let operand = value;
+            {
+                operand.scope_reference_ordinal
+            }
         },
-        |_| 0,
+        Ord::cmp,
         "sort f3d design feature_project 7",
     )?;
     if matching.is_empty() {
@@ -5191,8 +5171,8 @@ fn normalize_parameter_ordinals(
             }
             ctx.sort_unstable_by(
                 &mut ordinals,
+                |value| value,
                 Ord::cmp,
-                |_| 0,
                 "f3d parameter group ordinal sort",
             )?;
             let mut unresolved = HashSet::new();
@@ -5217,12 +5197,12 @@ fn normalize_parameter_ordinals(
                 }
                 ctx.stable_sort_by(
                     &mut ready[..],
+                    |value| value,
                     |a, b| {
                         let pa = &parameters[*a];
                         let pb = &parameters[*b];
                         pa.ordinal.cmp(&pb.ordinal).then_with(|| pa.id.cmp(&pb.id))
                     },
-                    |_| 0,
                     "sort f3d design feature_project 8",
                 )?;
                 if ready.is_empty() {
@@ -5582,36 +5562,22 @@ fn variable_fillet_law(
             _ => {}
         }
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut middle_radii[..],
-        |left, right| {
-            let left_key = {
-                let (ordinal, _) = left;
-                *ordinal
-            };
-            let right_key = {
-                let (ordinal, _) = right;
-                *ordinal
-            };
-            left_key.cmp(&right_key)
+        |value| {
+            let (ordinal, _) = value;
+            *ordinal
         },
-        |_| 0,
+        Ord::cmp,
         "sort f3d design feature_project 9",
     )?;
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut middle_parameters[..],
-        |left, right| {
-            let left_key = {
-                let (ordinal, _) = left;
-                *ordinal
-            };
-            let right_key = {
-                let (ordinal, _) = right;
-                *ordinal
-            };
-            left_key.cmp(&right_key)
+        |value| {
+            let (ordinal, _) = value;
+            *ordinal
         },
-        |_| 0,
+        Ord::cmp,
         "sort f3d design feature_project 10",
     )?;
     if middle_radii.len() != middle_parameters.len()
@@ -5753,24 +5719,15 @@ fn project_chamfer(
         scratch_storage
             .with_storage(|| ctx.push_vec(&mut edge_groups, group, "f3d chamfer edge groups"))?;
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut edge_groups[..],
-        |left, right| {
-            let left_key = {
-                let group = left;
-                {
-                    group.scope_reference_ordinal
-                }
-            };
-            let right_key = {
-                let group = right;
-                {
-                    group.scope_reference_ordinal
-                }
-            };
-            left_key.cmp(&right_key)
+        |value| {
+            let group = value;
+            {
+                group.scope_reference_ordinal
+            }
         },
-        |_| 0,
+        Ord::cmp,
         "sort f3d design feature_project 11",
     )?;
     let group_count = edge_groups.len();
@@ -5789,20 +5746,13 @@ fn project_chamfer(
                         "f3d chamfer ordered parameter entries",
                     )?;
                 }
-                ctx.stable_sort_by(
+                ctx.stable_sort_by_key(
                     &mut matches[..],
-                    |left, right| {
-                        let left_key = {
-                            let (ordinal, _) = left;
-                            *ordinal
-                        };
-                        let right_key = {
-                            let (ordinal, _) = right;
-                            *ordinal
-                        };
-                        left_key.cmp(&right_key)
+                    |value| {
+                        let (ordinal, _) = value;
+                        *ordinal
                     },
-                    |_| 0,
+                    Ord::cmp,
                     "sort f3d design feature_project 12",
                 )?;
                 let mut out = Vec::new();
@@ -6405,20 +6355,13 @@ pub(super) fn project_fixed_loft(
         scratch_storage
             .with_storage(|| ctx.push_vec(&mut groups, group, "f3d Loft scope group"))?;
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut groups[..],
-        |left, right| {
-            let left_key = {
-                let group = left;
-                group.scope_reference_ordinal
-            };
-            let right_key = {
-                let group = right;
-                group.scope_reference_ordinal
-            };
-            left_key.cmp(&right_key)
+        |value| {
+            let group = value;
+            group.scope_reference_ordinal
         },
-        |_| 0,
+        Ord::cmp,
         "sort f3d design feature_project 13",
     )?;
     let mut matching_legacy_carriers = legacy_body_carriers.iter().filter(|carrier| {
@@ -6569,7 +6512,11 @@ pub(super) fn project_fixed_loft(
                 let id = ctx.copy_retained_text(&group.id, "f3d Loft section group id")?;
                 let section = if ordinal == point_ordinal {
                     LoftSection::Point(LoftPointSection::Native(or_none!(
-                        cadmpeg_core::text::NonBlankString::new(id)
+                        cadmpeg_core::text::NonBlankString::for_decode(
+                            ctx,
+                            id,
+                            "validate nonblank text"
+                        )?
                     )))
                 } else {
                     LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::Native(id)))
@@ -6738,8 +6685,12 @@ fn resolved_surface_patch_path(
                 Ok(edges) => PathRef::HistoricalEdges {
                     state,
                     edges,
-                    native: cadmpeg_core::text::NonBlankString::new(native)
-                        .ok_or_else(|| CodecError::malformed("surface patch path is blank"))?,
+                    native: cadmpeg_core::text::NonBlankString::for_decode(
+                        ctx,
+                        native,
+                        "validate nonblank text",
+                    )?
+                    .ok_or_else(|| CodecError::malformed("surface patch path is blank"))?,
                 },
                 Err(_) => PathRef::Native(native),
             });
@@ -7237,24 +7188,15 @@ pub(super) fn project_fixed_sweep(
                     _ => {}
                 }
             }
-            ctx.stable_sort_by(
+            ctx.stable_sort_by_key(
                 &mut paths[..],
-                |left, right| {
-                    let left_key = {
-                        let group = left;
-                        {
-                            group.scope_reference_ordinal
-                        }
-                    };
-                    let right_key = {
-                        let group = right;
-                        {
-                            group.scope_reference_ordinal
-                        }
-                    };
-                    left_key.cmp(&right_key)
+                |value| {
+                    let group = value;
+                    {
+                        group.scope_reference_ordinal
+                    }
                 },
-                |_| 0,
+                Ord::cmp,
                 "sort f3d design feature_project 14",
             )?;
             let guide_surface_form = match guide_surfaces.as_slice() {
@@ -7693,20 +7635,13 @@ fn project_surface_patch(
         scratch_storage
             .with_storage(|| ctx.push_vec(&mut groups, group, "f3d surface-patch groups"))?;
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut groups[..],
-        |left, right| {
-            let left_key = {
-                let group = left;
-                group.scope_reference_ordinal
-            };
-            let right_key = {
-                let group = right;
-                group.scope_reference_ordinal
-            };
-            left_key.cmp(&right_key)
+        |value| {
+            let group = value;
+            group.scope_reference_ordinal
         },
-        |_| 0,
+        Ord::cmp,
         "sort f3d design feature_project 15",
     )?;
 
@@ -7922,20 +7857,13 @@ fn project_boundary_fill(
         scratch_storage
             .with_storage(|| ctx.push_vec(&mut groups, group, "f3d BoundaryFill group"))?;
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut groups[..],
-        |left, right| {
-            let left_key = {
-                let group = left;
-                group.scope_reference_ordinal
-            };
-            let right_key = {
-                let group = right;
-                group.scope_reference_ordinal
-            };
-            left_key.cmp(&right_key)
+        |value| {
+            let group = value;
+            group.scope_reference_ordinal
         },
-        |_| 0,
+        Ord::cmp,
         "sort f3d design feature_project 16",
     )?;
     let (tools, cells) = or_none!(groups.split_first());
@@ -8393,9 +8321,11 @@ pub(super) fn project_split(
                 }
                 FaceSelection::Historical { native, .. }
                 | FaceSelection::HistoricalPartial { native, .. } => {
-                    *native = or_none!(cadmpeg_core::text::NonBlankString::new(
-                        ctx.copy_retained_text(&tool.id, "f3d SplitBody historical face tool id")?
-                    ));
+                    *native = or_none!(cadmpeg_core::text::NonBlankString::for_decode(
+                        ctx,
+                        ctx.copy_retained_text(&tool.id, "f3d SplitBody historical face tool id")?,
+                        "validate nonblank text"
+                    )?);
                 }
                 _ => {}
             }
@@ -9443,8 +9373,8 @@ pub(super) fn closed_spatial_sketch_profiles(
     }
     ctx.stable_sort_by(
         &mut profiles[..],
-        |a, b| a.boundary()[0].entity.cmp(&b.boundary()[0].entity),
-        |_| 0,
+        |value| &value.boundary()[0].entity,
+        Ord::cmp,
         "sort f3d design feature_project 17",
     )?;
     Ok(profiles)

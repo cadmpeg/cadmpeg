@@ -179,8 +179,8 @@ pub(super) fn decode(
     }
     ctx.stable_sort_by(
         &mut candidates,
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "step_drawing_candidates_sort",
     )?;
 
@@ -303,7 +303,7 @@ pub(super) fn decode(
                 &format!("drawing parameter {index}"),
                 ctx,
             )? {
-                let key = parameter_key(name, index);
+                let key = parameter_key(ctx, name, index)?;
                 ctx.admit_btree_entry(&stored_parameters, &key, "step_drawing_stored_parameters")?;
                 stored_parameters.insert(key, value);
             }
@@ -584,8 +584,12 @@ fn source_parameters<'a>(record: &'a RawRecord, name: &str) -> DrawingParameters
     DrawingParameters::from_slice(direct.unwrap_or_default())
 }
 
-fn parameter_key(name: &str, index: usize) -> NonBlankString {
-    match (name, index) {
+fn parameter_key(
+    ctx: &DecodeContext<'_>,
+    name: &str,
+    index: usize,
+) -> Result<NonBlankString, CodecError> {
+    Ok(match (name, index) {
         ("DRAWING_DEFINITION", 0) => cadmpeg_core::nonblank_literal!("name"),
         ("DRAWING_DEFINITION", 1) => cadmpeg_core::nonblank_literal!("description"),
         ("DRAWING_REVISION", 0) => cadmpeg_core::nonblank_literal!("name"),
@@ -605,8 +609,8 @@ fn parameter_key(name: &str, index: usize) -> NonBlankString {
         ("DRAUGHTING_MODEL", 2) => cadmpeg_core::nonblank_literal!("presentation_context"),
         ("DRAUGHTING_CALLOUT", 0) => cadmpeg_core::nonblank_literal!("name"),
         ("DRAUGHTING_CALLOUT", 1) => cadmpeg_core::nonblank_literal!("contents"),
-        _ => cadmpeg_core::nonblank_literal!("parameter_{index}"),
-    }
+        _ => cadmpeg_core::nonblank_literal!(ctx, "parameter_{index}")?,
+    })
 }
 
 fn relationship_indices(name: &str) -> &'static [usize] {
@@ -631,7 +635,7 @@ fn add_reference_fields(
         let Some(value) = parameters.get(index) else {
             continue;
         };
-        let role = parameter_key(name, index);
+        let role = parameter_key(target_context.ctx, name, index)?;
         visit_drawing_references(value, target_context.ctx, &mut |target_id| {
             match target_context.resolve(target_id)? {
                 TargetResolution::Resolved(target) => {
@@ -743,7 +747,7 @@ fn add_sheet_revision_usages(
                 .transpose()?
                 .flatten()
             {
-                let key = cadmpeg_core::nonblank_literal!("usage_{usage_id}_sequence");
+                let key = cadmpeg_core::nonblank_literal!(ctx, "usage_{usage_id}_sequence")?;
                 target_context.ctx.admit_btree_entry(
                     &sheet.parameters,
                     &key,

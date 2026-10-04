@@ -184,18 +184,17 @@ fn formula_legacy_parameter_identity_refuses_retained_limit() {
 #[test]
 fn formula_legacy_selector_chain_refuses_work_limit() {
     let native = legacy_values();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root fits input limit");
-    let refused = crate::formula::transfer_parameters(
-        &ctx,
-        &mut CadIr::empty(),
-        &native,
-        &mut cadmpeg_ir::Annotations::default(),
-        &crate::decode::ModelingGraphScope::Unscoped,
-    );
+    // The allowance includes all copied identifiers and index insertions before the selector visit.
+    let refused =
+        crate::test_support::with_work_refusal("catia_legacy_type_selector_chain", |ctx| {
+            crate::formula::transfer_parameters(
+                ctx,
+                &mut CadIr::empty(),
+                &native,
+                &mut cadmpeg_ir::Annotations::default(),
+                &crate::decode::ModelingGraphScope::Unscoped,
+            )
+        });
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_legacy_type_selector_chain")

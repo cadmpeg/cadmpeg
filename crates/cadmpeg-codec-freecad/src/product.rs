@@ -321,8 +321,8 @@ pub(crate) fn transfer_neutral(
     }
     ctx.sort_unstable_by(
         &mut component_objects,
+        |value| value,
         Ord::cmp,
-        |item| item.len(),
         "fcstd product component name sort",
     )?;
     component_objects.dedup();
@@ -794,9 +794,9 @@ pub(crate) fn external_document_reference_charged(
     let value = ctx.copy_retained_text(value, "fcstd external document reference")?;
     Ok(
         if attribute.is_some_and(|name| name.eq_ignore_ascii_case("file")) {
-            ExternalDocument::path(value)
+            ExternalDocument::path(ctx, value)?
         } else {
-            ExternalDocument::document_id(value)
+            ExternalDocument::document_id(ctx, value)?
         },
     )
 }

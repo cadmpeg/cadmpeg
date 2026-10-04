@@ -42,6 +42,22 @@ impl CompoundStorageId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CompoundStreamId(u32);
 
+impl cadmpeg_core::decode::cost::DecodeCost for CompoundStreamId {
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
+    }
+}
+
 impl CompoundStreamId {
     /// Returns the CFB directory-entry index.
     pub const fn directory_id(self) -> u32 {
@@ -113,8 +129,14 @@ impl SectorChain {
         1 + self.rest.len()
     }
 
-    fn iter(&self) -> impl Iterator<Item = &u32> + Clone {
-        std::iter::once(&self.first).chain(&self.rest)
+    fn admitted<'sectors>(
+        &'sectors self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<impl Iterator<Item = &'sectors u32> + 'sectors, CodecError> {
+        ctx.charge_work(1, "visit CFB first chain sector")?;
+        Ok(Some(&self.first)
+            .into_iter()
+            .chain(ctx.admit_iter(&self.rest, "visit CFB chain sectors")?))
     }
 
     fn get(&self, index: usize) -> Option<&u32> {
@@ -169,14 +191,6 @@ impl CompoundStreamEntry {
             StreamData::Empty(_) => None,
             StreamData::Allocated { allocation, .. } => Some(*allocation),
         }
-    }
-
-    fn sectors(&self) -> impl Iterator<Item = &u32> {
-        let (first, rest): (Option<&u32>, &[u32]) = match &self.data {
-            StreamData::Empty(_) => (None, &[]),
-            StreamData::Allocated { chain, .. } => (Some(&chain.first), &chain.rest),
-        };
-        first.into_iter().chain(rest)
     }
 }
 
@@ -239,15 +253,19 @@ enum DirectoryColor {
 struct DirectoryName(String);
 
 impl DirectoryName {
-    fn new(name: String) -> Result<Self, CodecError> {
+    fn new(ctx: &DecodeContext<'_>, name: String) -> Result<Self, CodecError> {
         if name.is_empty() {
             return Err(CodecError::NotImplemented(
                 "CFB empty live directory names cannot be represented as paths".into(),
             ));
         }
-        if name.encode_utf16().count() > 31
-            || name
-                .chars()
+        if ctx
+            .admit_iter(name.as_str(), "check CFB directory name width")?
+            .encode_utf16()
+            .count()
+            > 31
+            || ctx
+                .admit_iter(name.as_str(), "check CFB directory name characters")?
                 .any(|character| matches!(character, '/' | '\\' | ':' | '!'))
         {
             return malformed(
@@ -340,28 +358,19 @@ impl<'a> CompoundSnapshot<'a> {
         parsed.validate_sector_ownership(ctx, &entries)?;
         let mut by_path = BTreeMap::new();
         let mut streams_by_id = BTreeMap::new();
-        for (index, entry) in entries.iter().enumerate() {
-            let component_count = entry.path().split('/').count();
-            let unit_count = entry.path().encode_utf16().count();
-            let key_bytes = component_count
-                .checked_mul(std::mem::size_of::<Vec<u16>>())
-                .and_then(|bytes| {
-                    unit_count
-                        .checked_mul(std::mem::size_of::<u16>())
-                        .and_then(|units| bytes.checked_add(units))
-                })
-                .and_then(|bytes| bytes.checked_add(std::mem::size_of::<(Vec<Vec<u16>>, usize)>()))
-                .ok_or_else(|| CodecError::Malformed("CFB path index size overflow".into()))?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(key_bytes),
-                "retain CFB path index",
-            )?;
-            let key = path_key(entry.path());
+        for (index, entry) in ctx
+            .admit_iter(&entries, "visit CFB indexed entries")?
+            .enumerate()
+        {
+            let key = path_key(ctx, entry.path())?;
             if ctx
                 .insert_btree_map(&mut by_path, key, index, "index CFB path")?
                 .is_some()
             {
-                return malformed(format!("duplicate CFB path {}", entry.path()));
+                return malformed(ctx.format_retained(
+                    format_args!("duplicate CFB path {}", entry.path()),
+                    "CFB duplicate path error",
+                )?);
             }
             if let CompoundEntry::Stream(stream) = entry {
                 ctx.charge_retained(
@@ -400,28 +409,46 @@ impl<'a> CompoundSnapshot<'a> {
     }
 
     /// Finds an entry by a case-insensitive CFB path key.
-    pub fn entry(&self, path: &str) -> Option<&CompoundEntry> {
-        self.by_path
-            .get(&path_key(path))
-            .map(|index| &self.entries[*index])
+    pub fn entry(
+        &self,
+        ctx: &DecodeContext<'_>,
+        path: &str,
+    ) -> Result<Option<&CompoundEntry>, CodecError> {
+        let (entry, storage) =
+            ctx.with_scoped_storage("CFB path lookup key", || -> Result<_, CodecError> {
+                let key = path_key(ctx, path)?;
+                Ok(ctx
+                    .get_btree_map(&self.by_path, &key, "CFB path lookup")?
+                    .map(|index| &self.entries[*index]))
+            })?;
+        drop(storage);
+        Ok(entry)
     }
 
     /// Finds a stream by a case-insensitive CFB path key.
-    pub fn stream(&self, path: &str) -> Option<&CompoundStreamEntry> {
-        match self.entry(path) {
+    pub fn stream(
+        &self,
+        ctx: &DecodeContext<'_>,
+        path: &str,
+    ) -> Result<Option<&CompoundStreamEntry>, CodecError> {
+        Ok(match self.entry(ctx, path)? {
             Some(CompoundEntry::Stream(entry)) => Some(entry),
             Some(CompoundEntry::Storage(_)) | None => None,
-        }
+        })
     }
 
     /// Finds a stream by stable directory identity.
-    pub fn stream_by_id(&self, id: CompoundStreamId) -> Option<&CompoundStreamEntry> {
-        self.streams_by_id
-            .get(&id)
+    pub fn stream_by_id(
+        &self,
+        ctx: &DecodeContext<'_>,
+        id: CompoundStreamId,
+    ) -> Result<Option<&CompoundStreamEntry>, CodecError> {
+        Ok(ctx
+            .get_btree_map(&self.streams_by_id, &id, "CFB stream id lookup")?
             .and_then(|index| match &self.entries[*index] {
                 CompoundEntry::Stream(entry) => Some(entry),
                 CompoundEntry::Storage(_) => None,
-            })
+            }))
     }
 
     /// Opens one stream as a borrowed contiguous run or a budgeted joined view.
@@ -448,14 +475,11 @@ impl<'a> CompoundSnapshot<'a> {
             CompoundAllocation::Regular => self.regular_sector_view(sector),
             CompoundAllocation::Mini => self.mini_sector_view(sector),
         };
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(chain.len()),
-            "scan CFB stream sector views",
-        )?;
+        ctx.charge_work(1, "scan CFB first stream sector view")?;
         let first = sector_view(chain.first)?;
         let mut end = first.end();
         let mut contiguous = true;
-        for &sector in &chain.rest {
+        for &sector in ctx.admit_iter(&chain.rest, "visit CFB stream sectors")? {
             let view = sector_view(sector)?;
             contiguous &= view.start() == end;
             end = view.end();
@@ -466,17 +490,15 @@ impl<'a> CompoundSnapshot<'a> {
             })?
         } else {
             let mut views = ctx.temporary_vec(chain.len(), "CFB stream sector views")?;
+            ctx.reserve_capacity(&mut views.0, 1, "CFB stream view slot")?;
             views.0.push(first);
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(chain.rest.len()),
-                "assemble CFB stream sector views",
-            )?;
             let mut copy_bytes = first.window().len();
-            for &sector in &chain.rest {
+            for &sector in ctx.admit_iter(&chain.rest, "visit CFB stream sectors")? {
                 let view = sector_view(sector)?;
                 copy_bytes = copy_bytes.checked_add(view.window().len()).ok_or_else(|| {
                     ctx.refuse_codec_limit("copy CFB stream sectors", u64::MAX, u64::MAX)
                 })?;
+                ctx.reserve_capacity(&mut views.0, 1, "CFB stream view slot")?;
                 views.0.push(view);
             }
             ctx.charge_work(
@@ -501,39 +523,53 @@ impl<'a> CompoundSnapshot<'a> {
     /// Builds generic hierarchy summaries using a codec-owned classifier.
     pub fn container_entries(
         &self,
+        ctx: &DecodeContext<'_>,
         classify: impl Fn(&CompoundEntry) -> ContainerRole,
-    ) -> Vec<ContainerEntry> {
-        self.entries
-            .iter()
-            .map(|entry| {
-                let mut attributes = BTreeMap::new();
-                attributes.insert("directory_id".into(), entry.directory_id().to_string());
-                match entry {
-                    CompoundEntry::Storage(_) => ContainerEntry {
-                        name: entry.path().into(),
-                        role: classify(entry),
-                        storage: EntryStorage::Directory,
-                        attributes,
-                    },
-                    CompoundEntry::Stream(stream) => {
-                        // An empty stream owns no sectors and has no allocation.
-                        if let Some(allocation) = stream.allocation() {
-                            attributes.insert("allocation".into(), allocation.label().into());
-                        }
-                        attributes.insert("start_sector".into(), stream.start_sector().to_string());
-                        ContainerEntry {
-                            name: stream.path.clone(),
-                            role: classify(entry),
-                            storage: EntryStorage::verbatim(
-                                VerbatimLabel::Stored,
-                                stream.logical_size(),
-                            ),
-                            attributes,
-                        }
+    ) -> Result<Vec<ContainerEntry>, CodecError> {
+        ctx.try_collect_retained_with(&self.entries, "CFB container summaries", |entry| {
+            let mut attributes = BTreeMap::new();
+            ctx.insert_btree_map(
+                &mut attributes,
+                ctx.copy_retained_text("directory_id", "CFB summary attribute key")?,
+                ctx.format_retained(
+                    format_args!("{}", entry.directory_id()),
+                    "CFB summary attribute value",
+                )?,
+                "CFB summary attributes",
+            )?;
+            let storage = match entry {
+                CompoundEntry::Storage(_) => EntryStorage::Directory,
+                CompoundEntry::Stream(stream) => {
+                    if let Some(allocation) = stream.allocation() {
+                        ctx.insert_btree_map(
+                            &mut attributes,
+                            ctx.copy_retained_text("allocation", "CFB summary attribute key")?,
+                            ctx.copy_retained_text(
+                                allocation.label(),
+                                "CFB summary attribute value",
+                            )?,
+                            "CFB summary attributes",
+                        )?;
                     }
+                    ctx.insert_btree_map(
+                        &mut attributes,
+                        ctx.copy_retained_text("start_sector", "CFB summary attribute key")?,
+                        ctx.format_retained(
+                            format_args!("{}", stream.start_sector()),
+                            "CFB summary attribute value",
+                        )?,
+                        "CFB summary attributes",
+                    )?;
+                    EntryStorage::verbatim(VerbatimLabel::Stored, stream.logical_size())
                 }
+            };
+            Ok(ContainerEntry {
+                name: ctx.copy_retained_text(entry.path(), "CFB summary entry name")?,
+                role: classify(entry),
+                storage,
+                attributes,
             })
-            .collect()
+        })
     }
 
     fn regular_sector_view(&self, sector: u32) -> Result<View<'a>, CodecError> {
@@ -623,7 +659,11 @@ impl CompoundState {
         {
             return malformed("CFB v3 file exceeds the 2 GiB size ceiling");
         }
-        if version == CompoundVersion::V4 && bytes[512..sector_size].iter().any(|byte| *byte != 0) {
+        if version == CompoundVersion::V4
+            && ctx
+                .admit_iter(&bytes[512..sector_size], "check CFB header padding")?
+                .any(|byte| *byte != 0)
+        {
             return malformed("CFB v4 header padding is not zero");
         }
         let directory_sector_count = usize::try_from(field(40, "directory sector count")?)
@@ -651,7 +691,7 @@ impl CompoundState {
             return malformed("invalid CFB header counts or reserved fields");
         }
         ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(fat_count + difat_count),
+            cadmpeg_core::decode::u64_from_index(fat_count),
             "parse CFB allocation tables",
         )?;
         let mut allocation_id_scratch =
@@ -671,6 +711,7 @@ impl CompoundState {
                 if fat_sectors.len() == fat_count {
                     return malformed("CFB FAT ids exceed the declared count");
                 }
+                ctx.reserve_capacity(&mut fat_sectors, 1, "CFB FAT sector slot")?;
                 fat_sectors.push(id);
             }
         }
@@ -678,25 +719,18 @@ impl CompoundState {
         let difat_entries = sector_size / 4 - 1;
         let mut seen_difat = BTreeSet::new();
         for _ in 0..difat_count {
+            ctx.charge_work(1, "visit CFB DIFAT sectors")?;
             if cadmpeg_core::decode::index_from_u32(next_difat) >= sector_count {
                 return malformed("CFB DIFAT chain is cyclic or out of range");
             }
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(seen_difat.len()),
-                "compare CFB DIFAT sectors",
-            )?;
-            if seen_difat.contains(&next_difat) {
+            if !ctx.insert_btree_set(&mut seen_difat, next_difat, "collect CFB DIFAT sector ids")? {
                 return malformed("CFB DIFAT chain is cyclic or out of range");
             }
-            ctx.admit_btree_node_storage::<u32, ()>(
-                seen_difat.len(),
-                "collect CFB allocation sector ids",
-            )?;
-            seen_difat.insert(next_difat);
             let data = sector(next_difat)
                 .ok_or_else(|| CodecError::Malformed("CFB DIFAT sector is absent".into()))?;
             let mut free_seen = false;
             for index in 0..difat_entries {
+                ctx.charge_work(1, "visit CFB DIFAT entries")?;
                 let id = le_u32(data, index * 4)
                     .ok_or_else(|| CodecError::Malformed("truncated CFB DIFAT sector".into()))?;
                 if id == FREE_SECTOR {
@@ -708,6 +742,7 @@ impl CompoundState {
                     if fat_sectors.len() == fat_count {
                         return malformed("CFB FAT ids exceed the declared count");
                     }
+                    ctx.reserve_capacity(&mut fat_sectors, 1, "CFB FAT sector slot")?;
                     fat_sectors.push(id);
                 }
             }
@@ -717,18 +752,25 @@ impl CompoundState {
         if (difat_count == 0 && difat_start != END_OF_CHAIN)
             || (difat_count != 0 && next_difat != END_OF_CHAIN)
             || fat_sectors.len() != fat_count
-            || fat_sectors
-                .iter()
+            || ctx
+                .admit_iter(&fat_sectors, "check CFB FAT sector bounds")?
                 .any(|id| cadmpeg_core::decode::index_from_u32(*id) >= sector_count)
         {
             return malformed("CFB DIFAT does not match its declared FAT count");
         }
-        let fat_sector_set =
-            ctx.collect_btree_set(fat_sectors.iter().copied(), "collect CFB FAT sector set")?;
+        let fat_sector_set = ctx.collect_btree_set(
+            ctx.admit_iter(&fat_sectors, "visit CFB FAT sector set")?
+                .copied(),
+            "collect CFB FAT sector set",
+        )?;
         if fat_sector_set.len() != fat_sectors.len() {
             return malformed("duplicate CFB FAT sector");
         }
-        if !fat_sector_set.is_disjoint(&seen_difat) {
+        if !ctx.is_disjoint_btree_set(
+            &fat_sector_set,
+            &seen_difat,
+            "check CFB table role overlap",
+        )? {
             return malformed("CFB sector has both FAT and DIFAT roles");
         }
         let fat_word_count = fat_count
@@ -739,7 +781,7 @@ impl CompoundState {
             "parse CFB FAT words",
         )?;
         let mut fat = ctx.vector_storage(fat_word_count, "retain CFB FAT")?;
-        for &id in &fat_sectors {
+        for &id in ctx.admit_iter(&fat_sectors, "visit CFB FAT sectors")? {
             let data = sector(id)
                 .ok_or_else(|| CodecError::Malformed("CFB FAT sector is absent".into()))?;
             if data.len() != sector_size {
@@ -747,23 +789,26 @@ impl CompoundState {
             }
             // `sector_size` is 512 or 4096, both exact multiples of four;
             // the length check above proves this sector has that width.
-            fat.extend(data.as_chunks::<4>().0.iter().copied().map(le_u32_array));
+            for &raw in ctx.admit_iter(data.as_chunks::<4>().0, "decode CFB FAT words")? {
+                ctx.reserve_capacity(&mut fat, 1, "CFB FAT word slots")?;
+                fat.push(le_u32_array(raw));
+            }
         }
         if fat.len() < sector_count {
             return malformed("CFB FAT does not address every physical sector");
         }
-        if fat
-            .iter()
+        if ctx
+            .admit_iter(&fat, "check CFB trailing FAT entries")?
             .skip(sector_count)
             .any(|entry| *entry != FREE_SECTOR)
         {
             return malformed("CFB FAT entries past end-of-file are not free");
         }
-        if fat_sectors
-            .iter()
+        if ctx
+            .admit_iter(&fat_sectors, "check CFB FAT role markers")?
             .any(|id| fat.get(cadmpeg_core::decode::index_from_u32(*id)) != Some(&FAT_SECTOR))
-            || seen_difat
-                .iter()
+            || ctx
+                .admit_iter(&seen_difat, "check CFB DIFAT role markers")?
                 .any(|id| fat.get(cadmpeg_core::decode::index_from_u32(*id)) != Some(&DIFAT_SECTOR))
         {
             return malformed("CFB allocation table sector has the wrong role marker");
@@ -798,13 +843,15 @@ impl CompoundState {
                 bytes,
                 sector_size,
                 sector_count,
-                directory_chain.iter().flat_map(SectorChain::iter),
+                directory_chain
+                    .as_ref()
+                    .map(|chain| (&chain.first, chain.rest.as_slice())),
             )
         })?;
         let directory = parse_directory(ctx, &directory_bytes, version)?;
         drop(directory_bytes);
         drop(directory_scratch);
-        validate_root(&directory)?;
+        validate_root(ctx, &directory)?;
         let mini_fat_chain = chain(
             ctx,
             &fat,
@@ -830,20 +877,21 @@ impl CompoundState {
                 bytes,
                 sector_size,
                 sector_count,
-                mini_fat_chain.iter().flat_map(SectorChain::iter),
+                mini_fat_chain
+                    .as_ref()
+                    .map(|chain| (&chain.first, chain.rest.as_slice())),
             )
         })?;
         // Every joined sector passed the same exact-width proof above, so the
         // joined mini FAT is an exact sequence of four-byte words.
         let mut mini_fat = ctx.vector_storage(mini_fat_word_count, "retain CFB mini FAT")?;
-        mini_fat.extend(
-            mini_fat_bytes
-                .as_chunks::<4>()
-                .0
-                .iter()
-                .copied()
-                .map(le_u32_array),
-        );
+        for &raw in ctx.admit_iter(
+            mini_fat_bytes.as_chunks::<4>().0,
+            "decode CFB mini FAT words",
+        )? {
+            ctx.reserve_capacity(&mut mini_fat, 1, "CFB mini FAT word slots")?;
+            mini_fat.push(le_u32_array(raw));
+        }
         drop(mini_fat_bytes);
         drop(mini_fat_scratch);
         let root = directory_root(&directory)?;
@@ -893,31 +941,22 @@ impl CompoundState {
             &mut reached,
             &mut output,
         )?;
-        let reachability_work = self
-            .directory
-            .len()
-            .checked_mul(reached.0.len())
-            .and_then(|count| count.checked_add(self.directory.len()))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("check CFB directory reachability", u64::MAX, u64::MAX)
-            })?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(reachability_work),
-            "check CFB directory reachability",
-        )?;
-        if self
-            .directory
-            .iter()
+        for (id, entry) in ctx
+            .admit_iter(&self.directory, "check CFB directory reachability")?
             .enumerate()
             .skip(1)
-            .any(|(id, entry)| {
-                matches!(entry, DirectorySlot::Live(_))
-                    && u32::try_from(id)
-                        .ok()
-                        .is_none_or(|id| !reached.0.contains(&id))
-            })
         {
-            return malformed("CFB directory contains an unreachable live entry");
+            if matches!(entry, DirectorySlot::Live(_)) {
+                let reachable = match u32::try_from(id) {
+                    Ok(id) => {
+                        ctx.contains_btree_set(&reached.0, &id, "check CFB reachable directory id")?
+                    }
+                    Err(_) => false,
+                };
+                if !reachable {
+                    return malformed("CFB directory contains an unreachable live entry");
+                }
+            }
         }
         Ok(output)
     }
@@ -937,8 +976,10 @@ impl CompoundState {
         let _depth = ctx.enter_nested("traverse CFB storage hierarchy")?;
         validate_sibling_tree(ctx, &self.directory, root)?;
         let mut pending = ctx.temporary_vec(1, "traverse CFB pending siblings")?;
+        ctx.reserve_capacity(&mut pending.0, 1, "CFB pending sibling slot")?;
         pending.0.push(root);
         while let Some(id) = pending.0.pop() {
+            ctx.charge_work(1, "traverse CFB directory")?;
             let entry = self
                 .directory
                 .get(cadmpeg_core::decode::index_from_u32(id))
@@ -955,7 +996,6 @@ impl CompoundState {
             )? {
                 return malformed("CFB directory entry belongs to more than one storage");
             }
-            ctx.charge_work(1, "traverse CFB directory")?;
             if entry.right != NO_STREAM {
                 ctx.push_scoped_vec(
                     &mut pending.1,
@@ -977,10 +1017,6 @@ impl CompoundState {
             match entry.kind {
                 DirectoryKind::Storage => {
                     let mut parent_scope = ctx.reserve_scoped(0, "hold CFB storage parent path")?;
-                    ctx.charge_work(
-                        cadmpeg_core::decode::u64_from_index(path.len()),
-                        "copy CFB storage parent path",
-                    )?;
                     let parent_path = ctx.copy_scoped_text(
                         &path,
                         &mut parent_scope,
@@ -1102,15 +1138,7 @@ impl CompoundState {
                 "validate CFB sector ownership",
             )?;
         }
-        for &sector in self
-            .fat_sectors
-            .iter()
-            .chain(&self.difat_sectors)
-            .chain(self.directory_chain.iter().flat_map(SectorChain::iter))
-            .chain(self.mini_fat_chain.iter().flat_map(SectorChain::iter))
-            .chain(self.root_mini_chain.iter().flat_map(SectorChain::iter))
-        {
-            ctx.charge_work(1, "validate CFB structural sector")?;
+        let mut claim_structural = |sector| -> Result<(), CodecError> {
             if !ctx.insert_scoped_btree_set(
                 &mut scratch,
                 &mut used,
@@ -1120,6 +1148,25 @@ impl CompoundState {
             )? {
                 return malformed("CFB regular sector has duplicate structural ownership");
             }
+            Ok(())
+        };
+        for &sector in ctx
+            .admit_iter(&self.fat_sectors, "visit CFB owned FAT sectors")?
+            .chain(ctx.admit_iter(&self.difat_sectors, "visit CFB owned DIFAT sectors")?)
+        {
+            claim_structural(sector)?;
+        }
+        for chain in [
+            &self.directory_chain,
+            &self.mini_fat_chain,
+            &self.root_mini_chain,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            for &sector in chain.admitted(ctx)? {
+                claim_structural(sector)?;
+            }
         }
         let mut mini_used = BTreeSet::new();
         let root_size = directory_root(&self.directory)?.size;
@@ -1128,30 +1175,22 @@ impl CompoundState {
                 CodecError::Malformed("CFB root mini-stream size does not fit memory".into())
             })?
             .div_ceil(MINI_SECTOR_SIZE);
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(entries.len()),
-            "scan CFB stream ownership",
-        )?;
-        for entry in entries {
+        for entry in ctx.admit_iter(entries, "visit CFB stream ownership")? {
             if let CompoundEntry::Stream(stream) = entry {
-                let Some(allocation) = stream.allocation() else {
+                let StreamData::Allocated {
+                    allocation, chain, ..
+                } = &stream.data
+                else {
                     continue;
                 };
+                let allocation = *allocation;
                 let target = if allocation == CompoundAllocation::Regular {
                     &mut used
                 } else {
                     &mut mini_used
                 };
                 let mut remaining = stream.logical_size();
-                let count = match &stream.data {
-                    StreamData::Allocated { chain, .. } => chain.len(),
-                    StreamData::Empty(_) => 0,
-                };
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(count),
-                    "scan CFB owned stream sectors",
-                )?;
-                for &sector in stream.sectors() {
+                for &sector in chain.admitted(ctx)? {
                     let payload =
                         remaining.min(cadmpeg_core::decode::u64_from_index(MINI_SECTOR_SIZE));
                     remaining -= payload;
@@ -1176,33 +1215,28 @@ impl CompoundState {
                 }
             }
         }
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(self.mini_fat.len()),
-            "scan CFB mini FAT ownership",
-        )?;
-        for (sector, marker) in self.mini_fat.iter().enumerate() {
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(mini_used.len()),
-                "compare CFB mini FAT ownership",
-            )?;
+        for (sector, marker) in ctx
+            .admit_iter(&self.mini_fat, "visit CFB mini FAT ownership")?
+            .enumerate()
+        {
             let sector = u32::try_from(sector)
                 .map_err(|_| CodecError::Malformed("CFB mini-sector id exceeds u32".into()))?;
-            if !mini_used.contains(&sector) && *marker != FREE_SECTOR {
+            if !ctx.contains_btree_set(&mini_used, &sector, "check CFB mini FAT ownership")?
+                && *marker != FREE_SECTOR
+            {
                 return malformed("unowned CFB mini sector is not marked free");
             }
         }
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(self.sector_count),
-            "scan CFB FAT ownership",
-        )?;
-        for (sector, marker) in self.fat.iter().take(self.sector_count).enumerate() {
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(used.len()),
-                "compare CFB FAT ownership",
-            )?;
+        for (sector, marker) in ctx
+            .admit_iter(&self.fat, "visit CFB FAT ownership")?
+            .take(self.sector_count)
+            .enumerate()
+        {
             let sector = u32::try_from(sector)
                 .map_err(|_| CodecError::Malformed("CFB sector id exceeds u32".into()))?;
-            if !used.contains(&sector) && *marker != FREE_SECTOR {
+            if !ctx.contains_btree_set(&used, &sector, "check CFB FAT ownership")?
+                && *marker != FREE_SECTOR
+            {
                 return malformed("unowned CFB sector is not marked free");
             }
         }
@@ -1261,7 +1295,9 @@ impl CompoundPrefixProbe {
                 return Ok(Self::Malformed("invalid CFB header".into()));
             }
             if version == CompoundVersion::V4
-                && prefix[512..sector_size].iter().any(|byte| *byte != 0)
+                && ctx
+                    .admit_iter(&prefix[512..sector_size], "check CFB probe header padding")?
+                    .any(|byte| *byte != 0)
             {
                 return Ok(Self::Malformed("CFB v4 header padding is not zero".into()));
             }
@@ -1311,6 +1347,7 @@ impl CompoundPrefixProbe {
                             "CFB FAT ids exceed the declared count".into(),
                         ));
                     }
+                    ctx.reserve_capacity(&mut fat_sectors, 1, "CFB FAT sector slot")?;
                     fat_sectors.push(id);
                 }
             }
@@ -1319,6 +1356,7 @@ impl CompoundPrefixProbe {
             let mut seen_difat_storage = ctx.reserve_scoped(0, "CFB probe visits")?;
             let mut seen_difat = BTreeSet::new();
             for _ in 0..difat_count {
+                ctx.charge_work(1, "visit CFB probe DIFAT sector")?;
                 ctx.charge_work(
                     cadmpeg_core::decode::u64_from_index(sector_size),
                     "CFB probe DIFAT step",
@@ -1340,6 +1378,7 @@ impl CompoundPrefixProbe {
                 };
                 let mut free_seen = false;
                 for index in 0..difat_entries {
+                    ctx.charge_work(1, "visit CFB DIFAT entries")?;
                     let Some(id) = le_u32(raw, index * 4) else {
                         return Ok(Self::Incomplete);
                     };
@@ -1356,6 +1395,7 @@ impl CompoundPrefixProbe {
                                 "CFB FAT ids exceed the declared count".into(),
                             ));
                         }
+                        ctx.reserve_capacity(&mut fat_sectors, 1, "CFB FAT sector slot")?;
                         fat_sectors.push(id);
                     }
                 }
@@ -1378,7 +1418,7 @@ impl CompoundPrefixProbe {
             }
             let mut fat = Vec::new();
             let mut loaded_fat_count = 0;
-            for &id in &fat_sectors {
+            for &id in ctx.admit_iter(&fat_sectors, "visit CFB FAT sectors")? {
                 if cadmpeg_core::decode::index_from_u32(id) >= available {
                     break;
                 }
@@ -1392,25 +1432,22 @@ impl CompoundPrefixProbe {
                     cadmpeg_core::decode::u64_from_index(raw.len()),
                     "CFB probe FAT words",
                 )?;
-                fat.extend(raw.as_chunks::<4>().0.iter().copied().map(le_u32_array));
+                for &word in ctx.admit_iter(raw.as_chunks::<4>().0, "decode CFB probe FAT words")? {
+                    ctx.reserve_capacity(&mut fat, 1, "CFB probe FAT word slot")?;
+                    fat.push(le_u32_array(word));
+                }
                 loaded_fat_count += 1;
             }
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(loaded_fat_count),
-                "CFB probe FAT roles",
-            )?;
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(seen_difat.len()),
-                "CFB probe DIFAT roles",
-            )?;
-            if fat_sectors
-                .iter()
+            if ctx
+                .admit_iter(&fat_sectors, "check CFB probe FAT roles")?
                 .take(loaded_fat_count)
                 .any(|id| fat.get(cadmpeg_core::decode::index_from_u32(*id)) != Some(&FAT_SECTOR))
-                || seen_difat.iter().any(|id| {
-                    fat.get(cadmpeg_core::decode::index_from_u32(*id))
-                        .is_some_and(|role| role != &DIFAT_SECTOR)
-                })
+                || ctx
+                    .admit_iter(&seen_difat, "check CFB probe DIFAT roles")?
+                    .any(|id| {
+                        fat.get(cadmpeg_core::decode::index_from_u32(*id))
+                            .is_some_and(|role| role != &DIFAT_SECTOR)
+                    })
             {
                 return Ok(Self::Malformed(
                     "CFB allocation sector has the wrong role marker".into(),
@@ -1430,10 +1467,7 @@ impl CompoundPrefixProbe {
             let mut seen_directory = BTreeSet::new();
             let mut current = directory_start;
             loop {
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(fat.len()),
-                    "CFB probe directory step",
-                )?;
+                ctx.charge_work(1, "visit CFB probe directory chain")?;
                 if cadmpeg_core::decode::index_from_u32(current) >= available {
                     return Ok(Self::Incomplete);
                 }
@@ -1473,36 +1507,54 @@ impl CompoundPrefixProbe {
                 cadmpeg_core::decode::u64_from_index(directory_chain.len() * sector_size),
                 "CFB probe joined directory",
             )?;
-            let directory_bytes =
-                join_sectors(ctx, prefix, sector_size, available, directory_chain.iter())?;
+            let directory_bytes = join_sectors(
+                ctx,
+                prefix,
+                sector_size,
+                available,
+                directory_chain.split_first(),
+            )?;
             let directory = match parse_directory(ctx, &directory_bytes, version) {
                 Ok(value) => value,
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-                Err(error) => return Ok(Self::Malformed(error.to_string())),
+                Err(error) => {
+                    return Ok(Self::Malformed(
+                        ctx.format_retained(format_args!("{error}"), "CFB probe error")?,
+                    ))
+                }
             };
             let root = match directory_root(&directory) {
                 Ok(root) => root,
-                Err(error) => return Ok(Self::Malformed(error.to_string())),
+                Err(error) => {
+                    return Ok(Self::Malformed(
+                        ctx.format_retained(format_args!("{error}"), "CFB probe error")?,
+                    ))
+                }
             };
-            if let Err(error) = validate_root(&directory) {
-                return Ok(Self::Malformed(error.to_string()));
+            if let Err(error) = validate_root(ctx, &directory) {
+                if matches!(error, CodecError::ResourceLimit(_)) {
+                    return Err(error);
+                }
+                return Ok(Self::Malformed(
+                    ctx.format_retained(format_args!("{error}"), "CFB probe error")?,
+                ));
             }
             if let Err(error) = validate_sibling_tree(ctx, &directory, root.child) {
                 if matches!(error, CodecError::ResourceLimit(_)) {
                     return Err(error);
                 }
-                return Ok(Self::Malformed(error.to_string()));
+                return Ok(Self::Malformed(
+                    ctx.format_retained(format_args!("{error}"), "CFB probe error")?,
+                ));
             }
             let mut names = Vec::new();
             let mut pending = ctx.collection_vec(1, "CFB probe pending links")?;
+            ctx.reserve_capacity(&mut pending, 1, "CFB probe pending slot")?;
             pending.push((root.child, String::new()));
             let mut seen_storage = ctx.reserve_scoped(0, "CFB probe visits")?;
             let mut seen = BTreeSet::new();
             while let Some((id, parent)) = pending.pop() {
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(directory.len()),
-                    "CFB probe path step",
-                )?;
+                ctx.charge_work(1, "visit CFB probe path")?;
                 if id == NO_STREAM {
                     continue;
                 }
@@ -1555,22 +1607,26 @@ impl CompoundPrefixProbe {
                         if matches!(error, CodecError::ResourceLimit(_)) {
                             return Err(error);
                         }
-                        return Ok(Self::Malformed(error.to_string()));
+                        return Ok(Self::Malformed(
+                            ctx.format_retained(format_args!("{error}"), "CFB probe error")?,
+                        ));
                     }
                     ctx.push_vec(&mut pending, (entry.child, path), "CFB probe pending links")?;
                 }
             }
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(directory.len()),
-                "CFB probe reachability scan",
-            )?;
-            for (id, entry) in directory.iter().enumerate().skip(1) {
+            for (id, entry) in ctx
+                .admit_iter(&directory, "visit CFB probe reachability")?
+                .enumerate()
+                .skip(1)
+            {
                 if matches!(entry, DirectorySlot::Live(_)) {
-                    ctx.charge_work(
-                        cadmpeg_core::decode::u64_from_index(seen.len()),
-                        "CFB probe reachability lookup",
-                    )?;
-                    if u32::try_from(id).ok().is_none_or(|id| !seen.contains(&id)) {
+                    let reachable = match u32::try_from(id) {
+                        Ok(id) => {
+                            ctx.contains_btree_set(&seen, &id, "check CFB probe reachable id")?
+                        }
+                        Err(_) => false,
+                    };
+                    if !reachable {
                         return Ok(Self::Malformed(
                             "CFB directory contains an unreachable live entry".into(),
                         ));
@@ -1592,9 +1648,9 @@ impl CompoundPrefixProbe {
 
 /// Reads the bounded detection prefix in the caller's session.
 /// CFB prefixes grow until the directory evidence settles or the input limit refuses.
-pub fn read_detection_prefix(
+pub fn read_detection_prefix<R: Read + ?Sized>(
     ctx: &DecodeContext<'_>,
-    source: &mut dyn Read,
+    source: &mut R,
     prefix_len: usize,
 ) -> Result<Vec<u8>, CodecError> {
     let max_bytes = ctx.policy().limits.max_input_bytes;
@@ -1604,6 +1660,7 @@ pub fn read_detection_prefix(
     };
     let mut bytes = ctx.read_input_prefix(source, phase_one_len)?;
     loop {
+        ctx.charge_work(1, "visit CFB detection prefix")?;
         let (probe, storage) =
             CompoundPrefixProbe::inspect_with_context(ctx, View::over_retained(&bytes))?;
         let incomplete = matches!(probe, CompoundPrefixProbe::Incomplete);
@@ -1613,8 +1670,7 @@ pub fn read_detection_prefix(
         }
         let used = cadmpeg_core::decode::u64_from_index(bytes.len());
         if used >= max_bytes {
-            ctx.charge_work(1, "CFB detection end probe")?;
-            if source.read(&mut [0_u8; 1])? != 0 {
+            if ctx.probe_input_end(source, "CFB detection end probe")? {
                 return Err(ctx.refuse_input_limit(1, "CFB detection input"));
             }
             return Ok(bytes);
@@ -1657,9 +1713,10 @@ fn parse_directory(
         "parse CFB directory entries",
     )?;
     let mut entries = ctx.vector_storage(entry_count, "parse CFB directory entries")?;
-    for raw in records {
+    for raw in ctx.admit_iter(records, "visit CFB directory records")? {
         let object_type = raw[66];
         if object_type == 0 {
+            ctx.reserve_capacity(&mut entries, 1, "CFB directory record slot")?;
             entries.push(DirectorySlot::Free);
             continue;
         }
@@ -1685,7 +1742,7 @@ fn parse_directory(
             )?;
             let name =
                 ctx.utf16le_text(raw, (name_len - 2) / 2, false, "decode CFB directory name")?;
-            DirectoryName::new(name)?
+            DirectoryName::new(ctx, name)?
         };
         let color = match raw[67] {
             0 => DirectoryColor::Red,
@@ -1696,7 +1753,7 @@ fn parse_directory(
         if version == CompoundVersion::V3 {
             size &= 0xffff_ffff;
         }
-        entries.push(DirectorySlot::Live(LiveEntry {
+        let entry = DirectorySlot::Live(LiveEntry {
             name,
             kind,
             color,
@@ -1705,7 +1762,9 @@ fn parse_directory(
             child: le_u32_array(raw.as_chunks::<4>().0[DIRECTORY_CHILD / 4]),
             start_sector: le_u32_array(raw.as_chunks::<4>().0[DIRECTORY_START_SECTOR / 4]),
             size,
-        }));
+        });
+        ctx.reserve_capacity(&mut entries, 1, "CFB directory record slot")?;
+        entries.push(entry);
     }
     Ok(entries)
 }
@@ -1718,7 +1777,7 @@ fn directory_root(directory: &[DirectorySlot]) -> Result<&LiveEntry, CodecError>
         .ok_or_else(|| CodecError::Malformed("invalid CFB root directory entry".into()))
 }
 
-fn validate_root(directory: &[DirectorySlot]) -> Result<(), CodecError> {
+fn validate_root(ctx: &DecodeContext<'_>, directory: &[DirectorySlot]) -> Result<(), CodecError> {
     let root = directory_root(directory)?;
     if root.kind != DirectoryKind::Root
         || root.name.as_str() != "Root Entry"
@@ -1727,11 +1786,15 @@ fn validate_root(directory: &[DirectorySlot]) -> Result<(), CodecError> {
     {
         return malformed("invalid CFB root directory entry");
     }
-    if directory.iter().skip(1).any(|entry| {
-        entry
-            .live()
-            .is_some_and(|entry| entry.kind == DirectoryKind::Root)
-    }) {
+    if ctx
+        .admit_iter(directory, "scan CFB root entries")?
+        .skip(1)
+        .any(|entry| {
+            entry
+                .live()
+                .is_some_and(|entry| entry.kind == DirectoryKind::Root)
+        })
+    {
         return malformed("CFB directory has more than one root entry");
     }
     Ok(())
@@ -1792,22 +1855,14 @@ fn visit_sibling_tree(
     {
         return malformed("CFB sibling tree contains an invalid node or cycle");
     }
-    let comparison_work = lower
-        .into_iter()
-        .chain(upper)
-        .try_fold(0usize, |total, name| {
-            total
-                .checked_add(name.len())?
-                .checked_add(entry.name.as_str().len())
-        })
-        .and_then(|bytes| bytes.checked_mul(2))
-        .ok_or_else(|| ctx.refuse_codec_limit("compare CFB sibling names", u64::MAX, u64::MAX))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(comparison_work),
-        "compare CFB sibling names",
-    )?;
-    if lower.is_some_and(|name| cfb_name_cmp(name, entry.name.as_str()) != Ordering::Less)
-        || upper.is_some_and(|name| cfb_name_cmp(entry.name.as_str(), name) != Ordering::Less)
+    if lower
+        .map(|name| cfb_name_cmp(ctx, name, entry.name.as_str()))
+        .transpose()?
+        .is_some_and(|order| order != Ordering::Less)
+        || upper
+            .map(|name| cfb_name_cmp(ctx, entry.name.as_str(), name))
+            .transpose()?
+            .is_some_and(|order| order != Ordering::Less)
     {
         return malformed("CFB sibling tree violates directory-name ordering");
     }
@@ -1835,20 +1890,58 @@ fn visit_sibling_tree(
     )
 }
 
-fn cfb_name_cmp(left: &str, right: &str) -> Ordering {
-    let left_len = left.encode_utf16().count();
-    let right_len = right.encode_utf16().count();
-    left_len.cmp(&right_len).then_with(|| {
-        left.encode_utf16()
-            .map(cfb_upper_unit)
-            .cmp(right.encode_utf16().map(cfb_upper_unit))
-    })
+fn cfb_name_cmp(ctx: &DecodeContext<'_>, left: &str, right: &str) -> Result<Ordering, CodecError> {
+    let left_len = ctx
+        .admit_iter(left, "compare CFB sibling names")?
+        .encode_utf16()
+        .count();
+    let right_len = ctx
+        .admit_iter(right, "compare CFB sibling names")?
+        .encode_utf16()
+        .count();
+    let length_order = left_len.cmp(&right_len);
+    if length_order != Ordering::Equal {
+        return Ok(length_order);
+    }
+    let left_units = ctx
+        .admit_iter(left, "compare CFB sibling names")?
+        .encode_utf16()
+        .map(cfb_upper_unit);
+    let right_units = ctx
+        .admit_iter(right, "compare CFB sibling names")?
+        .encode_utf16()
+        .map(cfb_upper_unit);
+    for (left, right) in left_units.zip(right_units) {
+        let order = left.cmp(&right);
+        if order != Ordering::Equal {
+            return Ok(order);
+        }
+    }
+    Ok(Ordering::Equal)
 }
 
-fn path_key(path: &str) -> Vec<Vec<u16>> {
-    path.split('/')
-        .map(|component| component.encode_utf16().map(cfb_upper_unit).collect())
-        .collect()
+fn path_key(ctx: &DecodeContext<'_>, path: &str) -> Result<Vec<Vec<u16>>, CodecError> {
+    let mut components = Vec::new();
+    let mut component = Vec::new();
+    for character in ctx.admit_iter(path, "scan CFB path key")? {
+        if character == '/' {
+            ctx.push_vec(
+                &mut components,
+                std::mem::take(&mut component),
+                "CFB path key components",
+            )?;
+        } else {
+            let mut encoded = [0_u16; 2];
+            for &unit in ctx.admit_iter(
+                character.encode_utf16(&mut encoded),
+                "encode CFB path units",
+            )? {
+                ctx.push_vec(&mut component, cfb_upper_unit(unit), "CFB path key units")?;
+            }
+        }
+    }
+    ctx.push_vec(&mut components, component, "CFB path key components")?;
+    Ok(components)
 }
 
 fn cfb_upper_unit(unit: u16) -> u16 {
@@ -1921,7 +2014,10 @@ fn chain(
             if start == END_OF_CHAIN || (accepts_free && start == FREE_SECTOR) {
                 return Ok(None);
             }
-            return malformed(format!("empty CFB {role} has an invalid start sector"));
+            return malformed(ctx.format_retained(
+                format_args!("empty CFB {role} has an invalid start sector"),
+                "CFB sector chain error",
+            )?);
         }
         Some(ChainLength::Declared(count)) => Some(count),
         Some(ChainLength::Unbounded) => None,
@@ -1936,11 +2032,14 @@ fn chain(
     let mut traversal_scratch = ctx.reserve_scoped(0, "walk CFB sector chain")?;
     if start == END_OF_CHAIN {
         return if expected.is_some() {
-            malformed(format!(
-                "CFB {role} chain length does not match its declaration"
-            ))
+            malformed(ctx.format_retained(
+                format_args!("CFB {role} chain length does not match its declaration"),
+                "CFB sector chain error",
+            )?)
         } else {
-            malformed(format!("empty CFB {role}"))
+            malformed(
+                ctx.format_retained(format_args!("empty CFB {role}"), "CFB sector chain error")?,
+            )
         };
     }
     let mut output = SectorChain {
@@ -1955,9 +2054,10 @@ fn chain(
     while current != END_OF_CHAIN {
         ctx.charge_work(1, "scan CFB sector chain")?;
         if cadmpeg_core::decode::index_from_u32(current) >= sector_count || seen.len() == limit {
-            return malformed(format!(
-                "CFB {role} chain is cyclic, overlong, or out of range"
-            ));
+            return malformed(ctx.format_retained(
+                format_args!("CFB {role} chain is cyclic, overlong, or out of range"),
+                "CFB sector chain error",
+            )?);
         }
         if !ctx.insert_scoped_btree_set(
             &mut traversal_scratch,
@@ -1966,9 +2066,10 @@ fn chain(
             "compare CFB visited sectors",
             "walk CFB sector chain",
         )? {
-            return malformed(format!(
-                "CFB {role} chain is cyclic, overlong, or out of range"
-            ));
+            return malformed(ctx.format_retained(
+                format_args!("CFB {role} chain is cyclic, overlong, or out of range"),
+                "CFB sector chain error",
+            )?);
         }
         if expected.is_none() {
             if current == start {
@@ -1977,50 +2078,60 @@ fn chain(
                 ctx.push_vec(&mut output.rest, current, "retain CFB sector chain")?;
             }
         } else if current != start {
+            ctx.reserve_capacity(&mut output.rest, 1, "CFB sector chain slot")?;
             output.rest.push(current);
         }
         current = *fat
             .get(cadmpeg_core::decode::index_from_u32(current))
             .ok_or_else(|| CodecError::malformed(format_args!("CFB {role} FAT link is absent")))?;
         if matches!(current, FREE_SECTOR | FAT_SECTOR | DIFAT_SECTOR) {
-            return malformed(format!("CFB {role} chain enters a reserved sector role"));
+            return malformed(ctx.format_retained(
+                format_args!("CFB {role} chain enters a reserved sector role"),
+                "CFB sector chain error",
+            )?);
         }
     }
     if expected.is_some_and(|count| output.len() != count.get()) {
-        return malformed(format!(
-            "CFB {role} chain length does not match its declaration"
-        ));
+        return malformed(ctx.format_retained(
+            format_args!("CFB {role} chain length does not match its declaration"),
+            "CFB sector chain error",
+        )?);
     }
     Ok(Some(output))
 }
 
-fn join_sectors<'a>(
+fn join_sectors(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     sector_size: usize,
     sector_count: usize,
-    sectors: impl Iterator<Item = &'a u32> + Clone,
+    sectors: Option<(&u32, &[u32])>,
 ) -> Result<Vec<u8>, CodecError> {
-    let length = sectors
-        .clone()
-        .count()
-        .checked_mul(sector_size)
-        .ok_or_else(|| CodecError::Malformed("CFB chain byte length overflow".into()))?;
+    let (first, rest) = sectors.map_or((None, &[][..]), |(first, rest)| (Some(first), rest));
+    let length = rest
+        .len()
+        .checked_add(usize::from(first.is_some()))
+        .and_then(|count| count.checked_mul(sector_size))
+        .ok_or_else(|| ctx.refuse_codec_limit("join CFB sectors", u64::MAX, u64::MAX))?;
     ctx.charge_collection_items(
         cadmpeg_core::decode::u64_from_index(length),
         "join CFB sectors",
     )?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(length),
-        "copy CFB sectors",
-    )?;
     let mut output = ctx.vector_storage(length, "join CFB sectors")?;
-    for &sector in sectors {
+    for &sector in first
+        .into_iter()
+        .chain(ctx.admit_iter(rest, "walk CFB joined sectors")?)
+    {
         let data = sector_slice(bytes, sector_size, sector_count, sector)
             .ok_or_else(|| CodecError::Malformed("CFB sector is absent".into()))?;
         if data.len() != sector_size {
             return malformed("CFB structural sector is truncated");
         }
+        ctx.reserve_capacity(&mut output, data.len(), "join CFB sector slots")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(data.len()),
+            "copy CFB sectors",
+        )?;
         output.extend_from_slice(data);
     }
     Ok(output)
@@ -2129,6 +2240,81 @@ mod tests {
             CompoundPrefixProbe::inspect_with_context(&ctx, root).expect("probe");
         drop(storage);
         probe
+    }
+
+    #[test]
+    fn sector_chain_error_refuses_before_formatting() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let CodecError::ResourceLimit(first) =
+            chain(&ctx, &[], 0, 0, None, ChainRole::Directory).expect_err("error format work")
+        else {
+            panic!("refusal")
+        };
+        assert_eq!(first.operation, "CFB sector chain error");
+        let CodecError::ResourceLimit(repeated) =
+            ctx.charge_work(1, "later").expect_err("fused refusal")
+        else {
+            panic!("refusal")
+        };
+        assert_eq!(first, repeated);
+    }
+
+    #[test]
+    fn directory_record_visits_refuse_before_decoding() {
+        let bytes = [0u8; 128];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
+        let CodecError::ResourceLimit(first) =
+            super::parse_directory(&ctx, &bytes, super::CompoundVersion::V3)
+                .expect_err("record visits")
+        else {
+            panic!("refusal")
+        };
+        assert_eq!(first.operation, "visit CFB directory records");
+        let CodecError::ResourceLimit(repeated) =
+            ctx.charge_work(1, "later").expect_err("fused refusal")
+        else {
+            panic!("refusal")
+        };
+        assert_eq!(first, repeated);
+    }
+
+    #[test]
+    fn joined_sectors_use_bounded_parts_and_refuse_before_copy() {
+        let bytes = [0xabu8; 1536];
+        let first = 1;
+        let rest = [0];
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("context");
+        assert_eq!(
+            super::join_sectors(&ctx, &bytes, 512, 2, Some((&first, &rest)))
+                .expect("joined sectors"),
+            [0xabu8; 1024]
+        );
+        assert!(super::join_sectors(&ctx, &bytes, 512, 2, None)
+            .expect("empty chain")
+            .is_empty());
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
+        let CodecError::ResourceLimit(first) =
+            super::join_sectors(&ctx, &bytes, 512, 2, Some((&first, &[]))).expect_err("copy work")
+        else {
+            panic!("refusal")
+        };
+        assert_eq!(first.operation, "copy CFB sectors");
+        let CodecError::ResourceLimit(repeated) =
+            ctx.charge_work(1, "later").expect_err("fused refusal")
+        else {
+            panic!("refusal")
+        };
+        assert_eq!(first, repeated);
     }
 
     #[test]
@@ -2288,7 +2474,10 @@ mod tests {
             let (ctx, root) =
                 DecodeContext::from_root_bytes(&file, &arena, &policy).expect("fixture root");
             let snapshot = CompoundSnapshot::new(&ctx, root).expect("valid allocation");
-            let stream = snapshot.stream("Store/Large").expect("large stream");
+            let stream = snapshot
+                .stream(&ctx, "Store/Large")
+                .expect("lookup admission")
+                .expect("large stream");
             let mut policy = DecodePolicy::service();
             policy.limits.max_materialized_bytes = 0;
             with_context(&[], &policy, |ctx| {
@@ -2439,7 +2628,13 @@ mod tests {
         assert_eq!(snapshot.major_version(), 3);
         assert_eq!(
             snapshot
-                .open(&ctx, snapshot.stream("small").expect("small stream exists"),)
+                .open(
+                    &ctx,
+                    snapshot
+                        .stream(&ctx, "small")
+                        .expect("lookup admission")
+                        .expect("small stream exists"),
+                )
                 .expect("small stream opens")
                 .window(),
             b"small"
@@ -2449,7 +2644,8 @@ mod tests {
                 .open(
                     &ctx,
                     snapshot
-                        .stream("Store/Large")
+                        .stream(&ctx, "Store/Large")
+                        .expect("lookup admission")
                         .expect("regular stream exists"),
                 )
                 .expect("regular stream opens")
@@ -2457,7 +2653,7 @@ mod tests {
             vec![0x5a; 4096]
         );
         assert!(matches!(
-            snapshot.entry("STORE"),
+            snapshot.entry(&ctx, "STORE").expect("lookup admission"),
             Some(CompoundEntry::Storage(_))
         ));
     }
@@ -2493,7 +2689,13 @@ mod tests {
                 let snapshot =
                     CompoundSnapshot::new(&ctx, cfb).expect("CFB parses within child view");
                 let small = snapshot
-                    .open(&ctx, snapshot.stream("Small").expect("small stream"))
+                    .open(
+                        &ctx,
+                        snapshot
+                            .stream(&ctx, "Small")
+                            .expect("lookup admission")
+                            .expect("small stream"),
+                    )
                     .expect("mini or empty stream opens within child view");
                 assert_eq!(small.window(), if empty { &b""[..] } else { &b"small"[..] });
                 assert_eq!(
@@ -2514,12 +2716,32 @@ mod tests {
                 let large = snapshot
                     .open(
                         &ctx,
-                        snapshot.stream("Store/Large").expect("regular stream"),
+                        snapshot
+                            .stream(&ctx, "Store/Large")
+                            .expect("lookup admission")
+                            .expect("regular stream"),
                     )
                     .expect("regular stream opens within child view");
                 assert_eq!(large.window(), &[0x5a; 4096]);
             }
         }
+    }
+
+    #[test]
+    fn compound_summary_refuses_before_classification() {
+        let file = fixture();
+        let arena = DecodeArena::new();
+        let (setup, root) =
+            DecodeContext::from_root_bytes(&file, &arena, &DecodePolicy::service()).expect("setup");
+        let snapshot = CompoundSnapshot::new(&setup, root).expect("snapshot");
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let called = std::cell::Cell::new(false);
+        assert!(
+            matches!(snapshot.container_entries(&ctx, |_| { called.set(true); ContainerRole::Stream }), Err(CodecError::ResourceLimit(limit)) if limit.operation == "CFB container summaries")
+        );
+        assert!(!called.get());
     }
 
     #[test]
@@ -2543,7 +2765,10 @@ mod tests {
             let (ctx, root) = DecodeContext::from_root_bytes(&file, &arena, &policy)
                 .expect("empty stream fixture fits policy");
             let snapshot = CompoundSnapshot::new(&ctx, root).expect("empty stream parses");
-            let stream = snapshot.stream("Small").expect("empty stream exists");
+            let stream = snapshot
+                .stream(&ctx, "Small")
+                .expect("lookup admission")
+                .expect("empty stream exists");
             assert_eq!(stream.start_sector(), marker);
             assert_eq!(stream.logical_size(), 0);
             assert!(snapshot
@@ -2551,7 +2776,9 @@ mod tests {
                 .expect("empty stream opens")
                 .window()
                 .is_empty());
-            let summary = snapshot.container_entries(|_| ContainerRole::Stream);
+            let summary = snapshot
+                .container_entries(&ctx, |_| ContainerRole::Stream)
+                .expect("summary admission");
             let entry = summary
                 .iter()
                 .find(|entry| entry.name == "Small")
@@ -2572,7 +2799,8 @@ mod tests {
             .open(
                 &ctx,
                 snapshot
-                    .stream("Store/Large")
+                    .stream(&ctx, "Store/Large")
+                    .expect("lookup admission")
                     .expect("regular stream exists"),
             )
             .expect("regular stream opens through the partial sector");
@@ -2590,7 +2818,8 @@ mod tests {
             .open(
                 &ctx,
                 snapshot
-                    .stream("Store/Large")
+                    .stream(&ctx, "Store/Large")
+                    .expect("lookup admission")
                     .expect("regular stream exists")
             )
             .is_err());
@@ -2612,10 +2841,17 @@ mod tests {
             .expect("synthetic CFB fits the decode policy");
         let first = CompoundSnapshot::new(&ctx, root).expect("first CFB snapshot parses");
         let second = CompoundSnapshot::new(&ctx, root).expect("second CFB snapshot parses");
-        let foreign = second.stream("Small").expect("foreign stream exists");
+        let foreign = second
+            .stream(&ctx, "Small")
+            .expect("lookup admission")
+            .expect("foreign stream exists");
         assert!(first.open(&ctx, foreign).is_err());
 
-        let owned = first.stream("Small").expect("owned stream exists").clone();
+        let owned = first
+            .stream(&ctx, "Small")
+            .expect("lookup admission")
+            .expect("owned stream exists")
+            .clone();
         assert_eq!(
             first
                 .open(&ctx, &owned)
@@ -2745,7 +2981,10 @@ mod tests {
             .expect("synthetic CFB fits the decode policy");
         let snapshot = CompoundSnapshot::new(&ctx, root)
             .expect("root color and black-height metadata do not govern traversal");
-        assert!(snapshot.stream("Store/Large").is_some());
+        assert!(snapshot
+            .stream(&ctx, "Store/Large")
+            .expect("lookup admission")
+            .is_some());
     }
 
     #[test]
@@ -2760,7 +2999,13 @@ mod tests {
         assert_eq!(snapshot.sector_size(), 4096);
         assert_eq!(
             snapshot
-                .open(&ctx, snapshot.stream("Wide").expect("stream exists"))
+                .open(
+                    &ctx,
+                    snapshot
+                        .stream(&ctx, "Wide")
+                        .expect("lookup admission")
+                        .expect("stream exists")
+                )
                 .expect("stream opens")
                 .window(),
             vec![0x6d; 4096]
@@ -2871,10 +3116,80 @@ mod tests {
     }
 
     #[test]
+    fn compound_path_lookup_refuses_before_key_work_or_storage() {
+        let bytes = fixture();
+        let arena = DecodeArena::new();
+        let (setup, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+                .expect("setup");
+        let snapshot = CompoundSnapshot::new(&setup, root).expect("snapshot");
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let CodecError::ResourceLimit(first) =
+            snapshot.entry(&ctx, "Store").expect_err("lookup work")
+        else {
+            panic!("resource refusal")
+        };
+        assert_eq!(first.operation, "scan CFB path key");
+        let CodecError::ResourceLimit(repeated) =
+            snapshot.stream(&ctx, "Small").expect_err("fused lookup")
+        else {
+            panic!("resource refusal")
+        };
+        assert_eq!(first, repeated);
+        policy.limits.max_work_units = DecodePolicy::service().limits.max_work_units;
+        policy.limits.max_materialized_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        assert!(
+            matches!(snapshot.entry(&ctx, "Store"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+        );
+    }
+
+    #[test]
+    fn directory_name_queries_refuse_before_scans() {
+        let file = fixture();
+        let arena = DecodeArena::new();
+        let (setup, _) =
+            DecodeContext::from_root_bytes(&file, &arena, &DecodePolicy::service()).expect("setup");
+        let directory =
+            parse_directory(&setup, &file[512..1024], CompoundVersion::V3).expect("directory");
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let CodecError::ResourceLimit(first) =
+            cfb_name_cmp(&ctx, "alpha", "ALPHA").expect_err("comparison work")
+        else {
+            panic!("refusal")
+        };
+        let CodecError::ResourceLimit(repeated) =
+            super::DirectoryName::new(&ctx, "alpha".into()).expect_err("fused name work")
+        else {
+            panic!("refusal")
+        };
+        assert_eq!(first, repeated);
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        assert!(
+            matches!(super::validate_root(&ctx, &directory), Err(CodecError::ResourceLimit(limit)) if limit.operation == "scan CFB root entries")
+        );
+    }
+
+    #[test]
     fn directory_keys_use_length_preserving_simple_uppercase_units() {
-        assert_eq!(cfb_name_cmp("alpha", "ALPHA"), Ordering::Equal);
-        assert_eq!(path_key("Store/alpha"), path_key("store/ALPHA"));
-        assert_ne!(path_key("ß"), path_key("SS"));
+        with_context(&[], &DecodePolicy::service(), |ctx| {
+            assert_eq!(
+                cfb_name_cmp(ctx, "alpha", "ALPHA").expect("comparison"),
+                Ordering::Equal
+            );
+            assert_eq!(
+                path_key(ctx, "Store/alpha").expect("key"),
+                path_key(ctx, "store/ALPHA").expect("key")
+            );
+            assert_ne!(
+                path_key(ctx, "ß").expect("key"),
+                path_key(ctx, "SS").expect("key")
+            );
+        });
         assert_eq!(cfb_upper_unit(0xd800), 0xd800);
     }
 
@@ -2973,11 +3288,16 @@ mod tests {
             assert!(matches!(error, CodecError::NotImplemented(message)
                 if message == "CFB empty live directory names cannot be represented as paths"));
         }
-        assert!(super::DirectoryName::new(String::new()).is_err());
+        assert!(with_context(&[], &DecodePolicy::service(), |ctx| {
+            super::DirectoryName::new(ctx, String::new())
+        })
+        .is_err());
         assert_eq!(
-            super::DirectoryName::new(" ".into())
-                .expect("a space is a valid live name")
-                .as_str(),
+            with_context(&[], &DecodePolicy::service(), |ctx| {
+                super::DirectoryName::new(ctx, " ".into())
+            })
+            .expect("a space is a valid live name")
+            .as_str(),
             " "
         );
     }
@@ -3050,7 +3370,8 @@ mod tests {
         let snapshot = CompoundSnapshot::new(&ctx, root).expect("v3 high word is ignored");
         assert_eq!(
             snapshot
-                .stream("Small")
+                .stream(&ctx, "Small")
+                .expect("lookup admission")
                 .expect("stream exists")
                 .logical_size(),
             5

@@ -675,7 +675,8 @@ fn decode_transfers_active_datum_cylinder_with_source_namespace() {
             .source_object
             .as_ref()
             .expect("source association")
-            .object_id,
+            .object_id
+            .as_str(),
         "ActDatums:8"
     );
     let cylinders = &result.ir().native.namespace("creo").unwrap().arenas()["datum_cylinders"];

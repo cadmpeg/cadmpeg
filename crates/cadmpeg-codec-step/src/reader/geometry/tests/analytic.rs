@@ -937,7 +937,7 @@ fn geometric_set_owns_catias_composite_trimmed_curve_chain() {
         .as_ref()
         .expect("geometric-set owner");
     assert_eq!(source.format, cadmpeg_ir::CodecFormat::Step);
-    assert_eq!(source.object_id, "#9");
+    assert_eq!(source.object_id.as_str(), "#9");
     assert_eq!(source.name, None);
 
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
@@ -1066,7 +1066,7 @@ fn apll_leader_points_transfer_coordinates_and_keep_source_records() {
                 point
                     .source_object
                     .as_ref()
-                    .is_some_and(|source| source.object_id == id)
+                    .is_some_and(|source| source.object_id.as_str() == id)
             })
             .unwrap_or_else(|| panic!("missing APLL point {id}"));
         assert!((point.position().get().x - expected.0).abs() < EPS_APLL_POINT);
@@ -1082,7 +1082,7 @@ fn apll_leader_points_transfer_coordinates_and_keep_source_records() {
             point
                 .source_object
                 .as_ref()
-                .is_some_and(|source| source.object_id == "#1")
+                .is_some_and(|source| source.object_id.as_str() == "#1")
         })
         .expect("named APLL point");
     assert_eq!(
@@ -1101,7 +1101,7 @@ fn apll_leader_points_transfer_coordinates_and_keep_source_records() {
             point
                 .source_object
                 .as_ref()
-                .is_some_and(|source| source.object_id == "#3")
+                .is_some_and(|source| source.object_id.as_str() == "#3")
         })
         .expect("complex APLL point");
     assert_eq!(
@@ -1231,7 +1231,7 @@ fn tessellated_curve_set_with_invalid_indices_stays_source_native() {
         curve
             .source_object
             .as_ref()
-            .is_some_and(|source| source.object_id == "#2")
+            .is_some_and(|source| source.object_id.as_str() == "#2")
     }));
     assert!(decoded
         .ir()

@@ -36,7 +36,3 @@ pub(super) fn decode_exact_scalars(
     }
     Ok((cursor.pos() == payload.len()).then_some(values))
 }
-
-pub(super) fn find_bytes(payload: &[u8], needle: &[u8], start: usize, end: usize) -> Option<usize> {
-    cadmpeg_core::bytes::find_in(payload, needle, start, end)
-}

@@ -164,6 +164,8 @@ pub(super) fn parse_thread_payload(
     else {
         return Ok(None);
     };
+    let designation = ctx.validate_nonblank_text(designation, "validate thread designation")?;
+    let profile = ctx.validate_nonblank_text(profile, "validate thread profile")?;
     Ok((|| {
         let (pitch_marker, trailer_kind) =
             match (expected_form, bytes.get(after_profile..after_profile + 5)?) {
@@ -224,9 +226,9 @@ pub(super) fn parse_thread_payload(
         Some(DesignThreadConstruction {
             form,
             designation_offset: u64::try_from(designation_at).ok()?,
-            designation: cadmpeg_core::text::NonBlankString::new(designation)?,
+            designation: cadmpeg_core::text::NonBlankString::try_from(designation).ok()?,
             nominal_size,
-            profile: cadmpeg_core::text::NonBlankString::new(profile)?,
+            profile: cadmpeg_core::text::NonBlankString::try_from(profile).ok()?,
             pitch: cadmpeg_ir::scalar::PositiveReal::new(pitch)?,
             face_group_record_indices,
             diameters: thread::DesignThreadDiameters::new(

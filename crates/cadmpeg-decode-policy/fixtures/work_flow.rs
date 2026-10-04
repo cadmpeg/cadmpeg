@@ -1,0 +1,116 @@
+// SPDX-License-Identifier: Apache-2.0
+pub struct DecodeContext;
+impl DecodeContext {
+    pub fn charge_work(&self, _n: u64, _operation: &str) -> Result<(), ()> {
+        Ok(())
+    }
+}
+pub fn decode(
+    ctx: &DecodeContext,
+    values: &mut Vec<u8>,
+    bytes: &[u8],
+    flag: bool,
+    count: usize,
+) -> Result<(), ()> {
+    let extent = bytes.len();
+    ctx.charge_work(extent as u64, "alias")?;
+    let _paid = bytes.iter().fold(0usize, |count, _| count + 1);
+    ctx.charge_work(values.len() as u64, "mutation")?;
+    values.push(0);
+    let _changed = values.iter().fold(0usize, |count, _| count + 1); // finding: uncharged_decode_work
+    ctx.charge_work(bytes.len() as u64, "child")?;
+    if flag {
+        let _child = bytes.iter().fold(0usize, |count, _| count + 1);
+    }
+    let _reused = bytes.iter().fold(0usize, |count, _| count + 1); // finding: uncharged_decode_work
+    ctx.charge_work(bytes.len() as u64, "before closure")?;
+    let _deferred = || bytes.iter().fold(0usize, |count, _| count + 1); // finding: uncharged_decode_work
+    let _parent_scan = bytes.iter().fold(0usize, |count, _| count + 1);
+    for _value in bytes.iter().filter(|b| **b > 0) {
+        // finding: uncharged_decode_work
+        ctx.charge_work(1, "yield")?;
+    }
+    let mut end = 0;
+    end += count;
+    for _index in 0..end {} // finding: uncharged_decode_work
+    for _value in bytes {
+        // finding: uncharged_decode_work
+        std::hint::black_box(0);
+        ctx.charge_work(1, "late")?;
+    }
+    Ok(())
+}
+
+pub fn ranges(ctx: &DecodeContext, bytes: &[u8], count: usize) -> Result<(), ()> {
+    ctx.charge_work(count as u64, "range")?;
+    for _index in 0..count {}
+    ctx.charge_work(bytes.len() as u64, "indexed range")?;
+    for _index in 0..bytes.len() {}
+    for _index in 0..=4 {}
+    let fixed = [1u8, 2, 3];
+    for _index in 0..fixed.len() {}
+    Ok(())
+}
+
+pub fn numeric_word(ctx: &DecodeContext, mut word: u64) {
+    let _ctx = ctx;
+    let mut digits = 1;
+    while word >= 10 {
+        digits += 1;
+        word /= 10;
+    }
+    while word != 0 {
+        word >>= 1;
+    }
+    std::hint::black_box(digits);
+}
+
+pub fn hash_bucket_retention(
+    ctx: &DecodeContext,
+    values: &mut std::collections::HashMap<String, Vec<String>>,
+    other: &std::collections::HashMap<String, Vec<String>>,
+) -> Result<(), ()> {
+    ctx.charge_work(u64::try_from(values.capacity()).map_err(|_| ())?, "scan")?;
+    values.retain(|_, _| true);
+    values.retain(|_, _| true); // finding: uncharged_decode_work
+    ctx.charge_work(u64::try_from(other.capacity()).map_err(|_| ())?, "other")?;
+    values.retain(|_, _| true); // finding: uncharged_decode_work
+    ctx.charge_work(u64::try_from(values.len()).map_err(|_| ())?, "length")?;
+    values.retain(|_, _| true); // finding: uncharged_decode_work
+    Ok(())
+}
+
+pub fn mapped_loop_refusals(
+    ctx: &DecodeContext,
+    bytes: &[u8],
+    flag: bool,
+) -> Result<(), &'static str> {
+    for byte in bytes {
+        ctx.charge_work(1, "first").map_err(|_| "refusal")?;
+        std::hint::black_box(byte);
+    }
+    for byte in bytes {
+        ctx.charge_work(1, "nested mappings")
+            .map_err(|_| "refusal")
+            .map_err(|error| error)?;
+        std::hint::black_box(byte);
+    }
+    for byte in bytes {
+        // finding: uncharged_decode_work
+        std::hint::black_box(byte);
+        ctx.charge_work(1, "late").map_err(|_| "refusal")?;
+    }
+    for byte in bytes {
+        // finding: uncharged_decode_work
+        if flag {
+            ctx.charge_work(1, "conditional").map_err(|_| "refusal")?;
+        }
+        std::hint::black_box(byte);
+    }
+    for byte in bytes {
+        // finding: uncharged_decode_work
+        ctx.charge_work(0, "zero").map_err(|_| "refusal")?;
+        std::hint::black_box(byte);
+    }
+    Ok(())
+}

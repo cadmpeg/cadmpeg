@@ -1236,6 +1236,7 @@ fn reference_images_require_valid_assets_and_plane_placements() {
     let mut ir = CadIr::empty();
     ir.model.assets.push(
         Asset::try_new(
+            &cadmpeg_test_support::service_decode_context(),
             asset_id.clone(),
             Some("reference.png".into()),
             Some("image/png".into()),
@@ -1310,6 +1311,7 @@ fn decals_require_valid_assets_faces_and_opacity() {
     let face_id = ir.model.faces[0].id.clone();
     ir.model.assets.push(
         Asset::try_new(
+            &cadmpeg_test_support::service_decode_context(),
             asset_id.clone(),
             Some("decal.png".into()),
             Some("image/png".into()),

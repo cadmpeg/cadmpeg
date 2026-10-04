@@ -506,7 +506,12 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
     )
     .unwrap()
     .expect("angular parameter")
-    .into_record("Design/BulkStream.dat", 100)
+    .into_record(
+        &cadmpeg_test_support::service_decode_context(),
+        "Design/BulkStream.dat",
+        100,
+    )
+    .unwrap()
     .expect("located parameter");
     let parameter_id =
         ParameterId::mint("synthetic:test:parameter#angle").expect("identity grammar");
@@ -680,7 +685,7 @@ fn radial_extension_annotations_require_a_point_on_the_line_carrier() {
     let mut linear = parameter;
     linear
         .try_set_source(
-            crate::records::parameters::DesignParameterSource::new(
+            crate::records::parameters::DesignParameterSource::new::<String>(
                 "Linear Dimension-2".into(),
                 linear.owner_record_index(),
                 linear.family_discriminator(),

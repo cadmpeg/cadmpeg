@@ -142,8 +142,9 @@ pub(super) fn native_section_segment_verhor_definition(
     verhor: u32,
 ) -> Result<SketchConstraintDefinitionInput, cadmpeg_core::CodecError> {
     let native_kind = ctx.copy_retained_text("creo:segtab:verhor", "creo verhor native kind")?;
-    let native_kind = cadmpeg_core::text::NonBlankString::new(native_kind)
-        .ok_or_else(|| cadmpeg_core::CodecError::malformed("native kind must not be empty"))?;
+    let native_kind =
+        cadmpeg_core::text::NonBlankString::for_decode(ctx, native_kind, "validate nonblank text")?
+            .ok_or_else(|| cadmpeg_core::CodecError::malformed("native kind must not be empty"))?;
     let key = ctx.copy_retained_text("verhor", "creo verhor property key")?;
     let value = ctx.format_retained(format_args!("{verhor}"), "creo verhor property value")?;
     let mut native_properties = BTreeMap::new();
@@ -162,10 +163,19 @@ pub(super) fn native_section_segment_verhor_definition(
     let mut operands = Vec::new();
     ctx.reserve_vec(&mut operands, 1, "creo verhor operands")?;
     operands.push(SketchNativeOperand {
-        native_kind: cadmpeg_core::text::NonBlankString::new(operand_kind)
-            .ok_or_else(|| cadmpeg_core::CodecError::malformed("operand kind must not be empty"))?,
+        native_kind: cadmpeg_core::text::NonBlankString::for_decode(
+            ctx,
+            operand_kind,
+            "validate nonblank text",
+        )?
+        .ok_or_else(|| cadmpeg_core::CodecError::malformed("operand kind must not be empty"))?,
         field: Some(NativeOperandField {
-            name: cadmpeg_core::text::NonBlankString::new(field).ok_or_else(|| {
+            name: cadmpeg_core::text::NonBlankString::for_decode(
+                ctx,
+                field,
+                "validate nonblank text",
+            )?
+            .ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed("operand field must not be empty")
             })?,
             role: None,
@@ -613,11 +623,21 @@ fn segment_radius_operand(
     let kind = ctx.copy_retained_text(kind, "creo radius operand kind")?;
     let field = ctx.copy_retained_text(field, "creo radius operand field")?;
     Ok(SketchNativeOperand {
-        native_kind: cadmpeg_core::text::NonBlankString::new(kind).ok_or_else(|| {
+        native_kind: cadmpeg_core::text::NonBlankString::for_decode(
+            ctx,
+            kind,
+            "validate nonblank text",
+        )?
+        .ok_or_else(|| {
             cadmpeg_core::CodecError::malformed("radius operand kind must not be empty")
         })?,
         field: Some(NativeOperandField {
-            name: cadmpeg_core::text::NonBlankString::new(field).ok_or_else(|| {
+            name: cadmpeg_core::text::NonBlankString::for_decode(
+                ctx,
+                field,
+                "validate nonblank text",
+            )?
+            .ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed("radius operand field must not be empty")
             })?,
             role: None,
@@ -639,9 +659,11 @@ fn native_section_segment_radius_definition(
         format_args!("creo:segtab:{field}"),
         "creo radius native kind",
     )?;
-    let native_kind = cadmpeg_core::text::NonBlankString::new(native_kind).ok_or_else(|| {
-        cadmpeg_core::CodecError::malformed("radius native kind must not be empty")
-    })?;
+    let native_kind =
+        cadmpeg_core::text::NonBlankString::for_decode(ctx, native_kind, "validate nonblank text")?
+            .ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("radius native kind must not be empty")
+            })?;
     let key = ctx.copy_retained_text("dimension_ordinal", "creo radius property key")?;
     let value = ctx.format_retained(
         format_args!("{dimension_ordinal}"),
@@ -1579,9 +1601,12 @@ fn native_equation_nonblank(
     value: std::fmt::Arguments<'_>,
     operation: &'static str,
 ) -> Result<cadmpeg_core::text::NonBlankString, cadmpeg_core::CodecError> {
-    cadmpeg_core::text::NonBlankString::new(ctx.format_retained(value, operation)?).ok_or_else(
-        || cadmpeg_core::CodecError::malformed("native equation text must not be blank"),
-    )
+    cadmpeg_core::text::NonBlankString::for_decode(
+        ctx,
+        ctx.format_retained(value, operation)?,
+        "validate nonblank text",
+    )?
+    .ok_or_else(|| cadmpeg_core::CodecError::malformed("native equation text must not be blank"))
 }
 
 fn native_equation_operands(
@@ -2095,7 +2120,7 @@ fn push_relation_operand(
         ctx.copy_retained_text(native_ref, "creo native relation operand reference")?;
     let field = field
         .map(|name| {
-            cadmpeg_core::text::NonBlankString::new(name)
+            cadmpeg_core::text::NonBlankString::for_decode(ctx, name, "validate nonblank text")?
                 .map(|name| NativeOperandField { name, role: None })
                 .ok_or_else(|| {
                     cadmpeg_core::CodecError::malformed("native operand field must not be empty")
@@ -2104,7 +2129,12 @@ fn push_relation_operand(
         .transpose()?;
     ctx.reserve_vec(operands, 1, "creo native relation operands")?;
     operands.push(SketchNativeOperand {
-        native_kind: cadmpeg_core::text::NonBlankString::new(kind).ok_or_else(|| {
+        native_kind: cadmpeg_core::text::NonBlankString::for_decode(
+            ctx,
+            kind,
+            "validate nonblank text",
+        )?
+        .ok_or_else(|| {
             cadmpeg_core::CodecError::malformed("native operand kind must not be empty")
         })?,
         field,
@@ -2124,9 +2154,11 @@ fn native_section_dimension_constraint_definition(
         format_args!("creo:relation:{}", relation.relation_type),
         "creo native relation kind",
     )?;
-    let native_kind = cadmpeg_core::text::NonBlankString::new(native_kind).ok_or_else(|| {
-        cadmpeg_core::CodecError::malformed("native relation kind must not be empty")
-    })?;
+    let native_kind =
+        cadmpeg_core::text::NonBlankString::for_decode(ctx, native_kind, "validate nonblank text")?
+            .ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("native relation kind must not be empty")
+            })?;
     let mut native_properties = BTreeMap::new();
     insert_relation_property(
         ctx,
@@ -3703,7 +3735,7 @@ mod tests {
                 native_kind,
                 entities,
                 ..
-            } if native_kind == "creo:relation:0" && entities.is_empty()
+            } if native_kind.as_str() == "creo:relation:0" && entities.is_empty()
         ));
 
         let emitted_entity = SketchEntityId::mint("synthetic:test:dimension-relation#emitted")
@@ -3730,7 +3762,7 @@ mod tests {
             SketchConstraintDefinitionInput::Native {
                 native_kind,
                 ..
-            } if native_kind == "creo:relation:0"
+            } if native_kind.as_str() == "creo:relation:0"
         ));
     }
 

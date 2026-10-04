@@ -3,7 +3,7 @@
 
 use crate::CodecError;
 
-use super::{u64_from_index, DecodeContext, ScopedReservation, View};
+use super::{DecodeContext, ScopedReservation, View};
 
 #[derive(Clone, Copy)]
 enum Surrogates {
@@ -23,7 +23,14 @@ impl DecodeContext<'_> {
         let (bytes, length) =
             admit_text(self, bytes, units, trim_nul, Surrogates::Reject, operation)?;
         let mut text = self.retained_string(length, operation)?;
-        write_text(&mut text, bytes, trim_nul, Surrogates::Reject)?;
+        write_text(
+            self,
+            &mut text,
+            bytes,
+            trim_nul,
+            Surrogates::Reject,
+            operation,
+        )?;
         Ok(text)
     }
 
@@ -38,7 +45,14 @@ impl DecodeContext<'_> {
         let (bytes, length) =
             admit_text(self, bytes, units, trim_nul, Surrogates::Reject, operation)?;
         let (mut text, reservation) = self.scoped_string(length, operation)?;
-        write_text(&mut text, bytes, trim_nul, Surrogates::Reject)?;
+        write_text(
+            self,
+            &mut text,
+            bytes,
+            trim_nul,
+            Surrogates::Reject,
+            operation,
+        )?;
         Ok((text, reservation))
     }
 
@@ -53,7 +67,14 @@ impl DecodeContext<'_> {
         let (bytes, length) =
             admit_text(self, bytes, units, trim_nul, Surrogates::Replace, operation)?;
         let mut text = self.retained_string(length, operation)?;
-        write_text(&mut text, bytes, trim_nul, Surrogates::Replace)?;
+        write_text(
+            self,
+            &mut text,
+            bytes,
+            trim_nul,
+            Surrogates::Replace,
+            operation,
+        )?;
         Ok(text)
     }
 
@@ -68,7 +89,14 @@ impl DecodeContext<'_> {
         let (bytes, length) =
             admit_text(self, bytes, units, trim_nul, Surrogates::Replace, operation)?;
         let (mut text, reservation) = self.scoped_string(length, operation)?;
-        write_text(&mut text, bytes, trim_nul, Surrogates::Replace)?;
+        write_text(
+            self,
+            &mut text,
+            bytes,
+            trim_nul,
+            Surrogates::Replace,
+            operation,
+        )?;
         Ok((text, reservation))
     }
 }
@@ -87,47 +115,54 @@ fn admit_text<'a>(
     let bytes = bytes
         .get(..byte_len)
         .ok_or_else(|| CodecError::malformed("truncated UTF-16LE text"))?;
-    ctx.charge_work(u64_from_index(units), operation)?;
     let mut length = 0_usize;
-    for character in characters(bytes, trim_nul, surrogates) {
+    for character in characters(ctx, bytes, trim_nul, surrogates, operation)? {
         let character =
             character.map_err(|_| CodecError::malformed("invalid UTF-16LE surrogate sequence"))?;
         length = length
             .checked_add(character.len_utf8())
             .ok_or_else(|| CodecError::malformed("UTF-16LE text length overflow"))?;
     }
-    ctx.charge_work(u64_from_index(units), operation)?;
-    ctx.charge_work(u64_from_index(length), operation)?;
     Ok((bytes, length))
 }
 
 fn write_text(
+    ctx: &DecodeContext<'_>,
     text: &mut String,
     bytes: &[u8],
     trim_nul: bool,
     surrogates: Surrogates,
+    operation: &'static str,
 ) -> Result<(), CodecError> {
-    for character in characters(bytes, trim_nul, surrogates) {
-        text.push(
-            character.map_err(|_| CodecError::malformed("invalid UTF-16LE surrogate sequence"))?,
-        );
+    for character in characters(ctx, bytes, trim_nul, surrogates, operation)? {
+        let character =
+            character.map_err(|_| CodecError::malformed("invalid UTF-16LE surrogate sequence"))?;
+        let mut encoded = [0_u8; 4];
+        ctx.append_retained(text, character.encode_utf8(&mut encoded), operation)?;
     }
     Ok(())
 }
 
-fn characters(
-    bytes: &[u8],
+fn characters<'bytes>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'bytes [u8],
     trim_nul: bool,
     surrogates: Surrogates,
-) -> impl Iterator<Item = Result<char, std::char::DecodeUtf16Error>> + '_ {
-    let mut view = View::over_retained(bytes);
-    char::decode_utf16(
-        std::iter::from_fn(move || view.u16_le()).take_while(move |unit| !trim_nul || *unit != 0),
+    operation: &'static str,
+) -> Result<impl Iterator<Item = Result<char, std::char::DecodeUtf16Error>> + 'bytes, CodecError> {
+    let width = std::num::NonZeroUsize::new(2)
+        .ok_or_else(|| CodecError::malformed("UTF-16LE unit width is zero"))?;
+    let units = ctx
+        .admit_iter(bytes, operation)?
+        .chunks(width)
+        .filter_map(|bytes| View::over_retained(bytes).u16_le())
+        .take_while(move |unit| !trim_nul || *unit != 0);
+    Ok(
+        char::decode_utf16(units).map(move |character| match (surrogates, character) {
+            (Surrogates::Replace, Err(_)) => Ok(char::REPLACEMENT_CHARACTER),
+            (_, character) => character,
+        }),
     )
-    .map(move |character| match (surrogates, character) {
-        (Surrogates::Replace, Err(_)) => Ok(char::REPLACEMENT_CHARACTER),
-        (_, character) => character,
-    })
 }
 
 #[cfg(test)]
@@ -141,7 +176,8 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = 11;
-        policy.limits.max_work_units = 21;
+        // Two ten-byte UTF-16 scans and eleven UTF-8 output bytes.
+        policy.limits.max_work_units = 31;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let text = ctx
             .utf16le_lossy_text(&bytes, 5, false, "replacement test")

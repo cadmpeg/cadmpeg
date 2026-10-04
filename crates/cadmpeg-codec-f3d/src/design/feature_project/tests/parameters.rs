@@ -723,14 +723,14 @@ fn parameter_expressions_project_feature_dependencies() {
 #[test]
 fn retains_parameter_when_owner_frame_has_no_scope_binding() {
     let parameter = crate::records::parameters::DesignParameter::try_from(
-        crate::records::parameters::DesignParameterDraft {
+        crate::records::parameters::DesignParameterDraft::<String> {
             id: "f3d:Design/BulkStream.dat:design-parameter#7".into(),
             byte_offset: 0,
             class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned())
                 .unwrap(),
             record_index: 7,
             source_ordinal: 0,
-            source: crate::records::parameters::DesignParameterSource::new(
+            source: crate::records::parameters::DesignParameterSource::new::<String>(
                 "AlongDistance".into(),
                 Some(8),
                 None,

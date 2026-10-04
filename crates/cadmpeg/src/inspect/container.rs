@@ -88,7 +88,7 @@ pub(super) fn extract(bytes: &[u8], limits: ResourceLimits, name: &str) -> Resul
         ContainerKind::Cfb => {
             let snapshot =
                 CompoundSnapshot::new(&ctx, root).context("reading the CFB directory")?;
-            let entry = snapshot.stream(name).ok_or_else(|| {
+            let entry = snapshot.stream(&ctx, name)?.ok_or_else(|| {
                 anyhow::anyhow!("{}", missing_compound_member_message(&snapshot, name))
             })?;
             let view = snapshot
@@ -100,7 +100,7 @@ pub(super) fn extract(bytes: &[u8], limits: ResourceLimits, name: &str) -> Resul
             let snapshot =
                 ArchiveSnapshot::new(&ctx, root).context("reading the ZIP central directory")?;
             let entry = snapshot
-                .entry(name)
+                .entry(&ctx, name)?
                 .ok_or_else(|| anyhow::anyhow!("{}", missing_member_message(&snapshot, name)))?;
             let view = snapshot
                 .open(&ctx, &entry.name)

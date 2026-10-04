@@ -325,7 +325,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
 
     distance_angle_parameters[0]
         .try_set_source(
-            DesignParameterSource::new(
+            DesignParameterSource::new::<String>(
                 "leftDistance".into(),
                 distance_angle_parameters[0].owner_record_index(),
                 distance_angle_parameters[0].family_discriminator(),
@@ -335,7 +335,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         .unwrap();
     distance_angle_parameters[1]
         .try_set_source(
-            DesignParameterSource::new(
+            DesignParameterSource::new::<String>(
                 "rotateAngle".into(),
                 distance_angle_parameters[1].owner_record_index(),
                 distance_angle_parameters[1].family_discriminator(),

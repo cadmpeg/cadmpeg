@@ -138,8 +138,8 @@ pub(crate) fn bind_pattern_inputs(
         )?;
         ctx.sort_unstable_by(
             &mut starts,
-            |(left, _), (right, _)| left.cmp(right),
-            |_| 0,
+            |value| &value.0,
+            Ord::cmp,
             "sort SLDPRT pattern input candidates",
         )?;
         for (start_index, (_, feature)) in starts.iter().enumerate() {
@@ -370,8 +370,8 @@ pub(crate) fn bind_pattern_inputs(
                         )?;
                         ctx.sort_unstable_by(
                             &mut seeds,
+                            |value| value,
                             Ord::cmp,
-                            |seed| seed.as_str().len(),
                             "sort SLDPRT pattern input seeds",
                         )?;
                         seeds.dedup();
@@ -1198,8 +1198,8 @@ pub(crate) fn bind_sweep_adjacent_profiles(
         )?;
         ctx.sort_unstable_by(
             &mut starts,
-            |(left, _), (right, _)| left.cmp(right),
-            |_| 0,
+            |value| &value.0,
+            Ord::cmp,
             "sort SLDPRT sweep adjacent features",
         )?;
         for (index, (_, feature)) in starts.iter().enumerate() {
@@ -1350,7 +1350,10 @@ fn copy_feature_binding_sketch_id(
     SketchId::mint(text).map_err(cadmpeg_core::CodecError::malformed)
 }
 
-fn reserve_feature_binding_map<K: Eq + std::hash::Hash, V>(
+fn reserve_feature_binding_map<
+    K: Eq + std::hash::Hash + cadmpeg_core::decode::cost::DecodeCost,
+    V,
+>(
     ctx: &DecodeContext<'_>,
     values: &mut HashMap<K, V>,
     operation: &'static str,
@@ -1401,8 +1404,8 @@ pub(crate) fn bind_scalar_operands(
         )?;
         ctx.sort_unstable_by(
             &mut starts,
-            |left, right| left.0.cmp(&right.0),
-            |_| 0,
+            |value| &value.0,
+            Ord::cmp,
             "sort SLDPRT scalar operand features",
         )?;
         for (index, &(start, feature_id)) in starts.iter().enumerate() {
@@ -1606,8 +1609,8 @@ fn represented_sketch_features(
         )?;
         ctx.sort_unstable_by(
             &mut objects,
-            |(left, _), (right, _)| left.cmp(right),
-            |_| 0,
+            |value| &value.0,
+            Ord::cmp,
             "sort SLDPRT represented sketch objects",
         )?;
         for (index, &(start, feature)) in objects.iter().enumerate() {
@@ -1733,8 +1736,8 @@ pub(super) fn bind_detached_legacy_sketch_objects(
     )?;
     ctx.sort_unstable_by(
         &mut owners,
-        |(left, _), (right, _)| left.cmp(right),
-        |_| 0,
+        |value| &value.0,
+        Ord::cmp,
         "sort SLDPRT detached sketch owners",
     )?;
     if starts.len() != owners.len() {
@@ -1800,8 +1803,8 @@ pub(super) fn spatial_relation_manager_ranges_charged(
     }
     ctx.sort_unstable_by(
         &mut ranges,
+        |value| value,
         Ord::cmp,
-        |_| 0,
         "sort SLDPRT spatial relation ranges",
     )?;
     ranges.dedup();

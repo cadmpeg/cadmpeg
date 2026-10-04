@@ -201,15 +201,10 @@ fn native_unknown_order<'ctx>(
             ctx.charge_work(1, "source product position scan")?;
             ctx.push_vec(&mut order, position, "source product identity slots")?;
         }
-        ctx.sort_unstable_by(
+        ctx.sort_unstable_by_key(
             &mut order,
-            |left, right| {
-                records[*left]
-                    .id()
-                    .as_str()
-                    .cmp(records[*right].id().as_str())
-            },
-            |position| records[*position].id().as_str().len(),
+            |position| records[*position].id().as_str(),
+            Ord::cmp,
             "source product identity order",
         )?;
         Ok::<_, CodecError>(order)

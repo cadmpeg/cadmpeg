@@ -400,14 +400,20 @@ pub(crate) fn transfer_native_sketch_constraints(
     )?;
     ctx.stable_sort_by(
         &mut candidates,
-        |left, right| {
-            left.target_record
-                .byte_offset
-                .cmp(&right.target_record.byte_offset)
-                .then(left.target_record.id.cmp(&right.target_record.id))
-                .then(left.sketch.cmp(&right.sketch))
-        },
-        |item| item.target_record.id.len() + item.sketch.as_str().len(),
+        |value| &value.sketch,
+        Ord::cmp,
+        "catia_sketch_constraint_candidates_sort",
+    )?;
+    ctx.stable_sort_by(
+        &mut candidates,
+        |value| value.target_record.id.as_str(),
+        Ord::cmp,
+        "catia_sketch_constraint_candidates_sort",
+    )?;
+    ctx.stable_sort_by_key(
+        &mut candidates,
+        |value| value.target_record.byte_offset,
+        Ord::cmp,
         "catia_sketch_constraint_candidates_sort",
     )?;
 
@@ -501,7 +507,12 @@ pub(crate) fn transfer_native_sketch_constraints(
             &candidate.target_record.id,
             "catia_sketch_constraint_field_name",
         )?;
-        let Some(field_name) = cadmpeg_core::text::NonBlankString::new(field_id) else {
+        let Some(field_name) = cadmpeg_core::text::NonBlankString::for_decode(
+            ctx,
+            field_id,
+            "validate nonblank text",
+        )?
+        else {
             continue;
         };
         let operand_ref = ctx.copy_retained_text(
@@ -827,7 +838,12 @@ pub(crate) fn transfer_constraint_ranges(
             )?;
         }
         let definition = cadmpeg_ir::sketches::SketchConstraintDefinition::native_with_operand(
-            cadmpeg_core::text::NonBlankString::new(constraint_kind).ok_or_else(|| {
+            cadmpeg_core::text::NonBlankString::for_decode(
+                ctx,
+                constraint_kind,
+                "validate nonblank text",
+            )?
+            .ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed("empty native sketch constraint kind")
             })?,
             constraint_properties(ctx, range)?,
@@ -1018,7 +1034,12 @@ fn constraint_binding(
     let native_kind = match source_record.class_name().filter(|class| !class.is_empty()) {
         Some(name) => {
             let name = ctx.copy_retained_text(name, "catia_sketch_range_operand_kind")?;
-            let Some(name) = cadmpeg_core::text::NonBlankString::new(name) else {
+            let Some(name) = cadmpeg_core::text::NonBlankString::for_decode(
+                ctx,
+                name,
+                "validate nonblank text",
+            )?
+            else {
                 return Ok(None);
             };
             name
@@ -1026,7 +1047,9 @@ fn constraint_binding(
         None => cadmpeg_core::nonblank_literal!("record"),
     };
     let field_id = ctx.copy_retained_text(&source_record.id, "catia_sketch_range_field_name")?;
-    let Some(field_name) = cadmpeg_core::text::NonBlankString::new(field_id) else {
+    let Some(field_name) =
+        cadmpeg_core::text::NonBlankString::for_decode(ctx, field_id, "validate nonblank text")?
+    else {
         return Ok(None);
     };
     let source_object_record =
@@ -1774,7 +1797,7 @@ mod tests {
         );
         assert!(entity.geometry_ref.is_none());
         assert!(matches!(entity.geometry.definition(),
-            cadmpeg_ir::sketches::SketchGeometryDefinition::Native { native_kind } if native_kind == "2DPoint"
+            cadmpeg_ir::sketches::SketchGeometryDefinition::Native { native_kind } if native_kind.as_str() == "2DPoint"
         ));
     }
 
@@ -1962,7 +1985,7 @@ mod tests {
         else {
             panic!("expected opaque native sketch constraint");
         };
-        assert_eq!(native_kind, "ConstraintDYS");
+        assert_eq!(native_kind.as_str(), "ConstraintDYS");
         assert_eq!(native_properties["catia_relation_source_class"], "2DPoint");
         assert_eq!(
             native_properties["catia_relation_target_class"],
@@ -2037,7 +2060,7 @@ mod tests {
         );
         assert!(parameter.is_none());
         assert_eq!(operands.len(), 1);
-        assert_eq!(operands[0].native_kind, "ConstraintDYS");
+        assert_eq!(operands[0].native_kind.as_str(), "ConstraintDYS");
         assert_eq!(
             operands[0].field.as_ref().map(|field| field.name.as_str()),
             Some("catia:outer:object-record#constraint-field")
@@ -2193,7 +2216,7 @@ mod tests {
         else {
             panic!("expected opaque native constraint");
         };
-        assert_eq!(native_kind, "CstAttr_Dimension");
+        assert_eq!(native_kind.as_str(), "CstAttr_Dimension");
         assert_eq!(native_properties["catia_range_value"], "Range");
         assert_eq!(
             native_properties["catia_constraint_value"],
@@ -2207,7 +2230,7 @@ mod tests {
         assert!(entities.is_empty());
         assert!(parameter.is_none());
         assert_eq!(operands.len(), 1);
-        assert_eq!(operands[0].native_kind, "ConstraintField");
+        assert_eq!(operands[0].native_kind.as_str(), "ConstraintField");
         assert_eq!(
             operands[0].field.as_ref().map(|field| field.name.as_str()),
             Some("source-record")
@@ -2303,7 +2326,7 @@ mod tests {
                 entity_id.clone(),
                 SketchId::mint("synthetic:test:sketch#0".to_string()).expect("valid test fixture"),
                 SketchGeometry::native(
-                    cadmpeg_core::text::NonBlankString::new("2DPoint")
+                    cadmpeg_core::text::NonBlankString::try_from("2DPoint")
                         .expect("nonempty source identity"),
                 ),
             )
@@ -2334,7 +2357,7 @@ mod tests {
                     SketchId::mint("synthetic:test:sketch#0".to_string())
                         .expect("valid test fixture"),
                     SketchGeometry::native(
-                        cadmpeg_core::text::NonBlankString::new("2DPoint")
+                        cadmpeg_core::text::NonBlankString::try_from("2DPoint")
                             .expect("nonempty source identity"),
                     ),
                 )
@@ -2365,7 +2388,7 @@ mod tests {
                 SketchId::mint("synthetic:test:other-sketch#0".to_string())
                     .expect("valid test fixture"),
                 SketchGeometry::native(
-                    cadmpeg_core::text::NonBlankString::new("2DPoint")
+                    cadmpeg_core::text::NonBlankString::try_from("2DPoint")
                         .expect("nonempty source identity"),
                 ),
             )

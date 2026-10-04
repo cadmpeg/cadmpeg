@@ -598,8 +598,8 @@ impl SourceFidelity {
         }
         ctx.stable_sort_by(
             &mut native_records,
-            |left, right| left.id().cmp(right.id()),
-            |record| record.id().len(),
+            |value| value.id(),
+            Ord::cmp,
             "native unknown arena records sort",
         )?;
         if let Some(pair) = native_records

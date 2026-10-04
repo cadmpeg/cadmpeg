@@ -203,7 +203,7 @@ fn walk_cycles(
     })?;
     let mut starts = graph_storage
         .with_storage(|| ctx.collect_vec(graph.identities(), "cycle start identities"))?;
-    ctx.stable_sort_by(&mut starts, Ord::cmp, |id| id.len(), "cycle start order")?;
+    ctx.stable_sort_by(&mut starts, |id| *id, Ord::cmp, "cycle start order")?;
     let mut stack = Vec::new();
     for start in starts {
         ctx.charge_work(1, "cycle start scan")?;

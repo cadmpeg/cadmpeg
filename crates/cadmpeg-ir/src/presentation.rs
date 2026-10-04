@@ -483,7 +483,12 @@ mod tests {
             description: None,
             visible: None,
             items: vec![PresentationItem::Source {
-                source_id: cadmpeg_core::nonblank_literal!("#{}", 42),
+                source_id: cadmpeg_core::nonblank_literal!(
+                    &cadmpeg_test_support::service_decode_context(),
+                    "#{}",
+                    42
+                )
+                .unwrap(),
             }],
         });
 
@@ -501,7 +506,12 @@ mod tests {
             description: None,
             visible: None,
             items: vec![PresentationItem::Source {
-                source_id: cadmpeg_core::nonblank_literal!("#{}", 42),
+                source_id: cadmpeg_core::nonblank_literal!(
+                    &cadmpeg_test_support::service_decode_context(),
+                    "#{}",
+                    42
+                )
+                .unwrap(),
             }],
         });
 
@@ -541,7 +551,7 @@ mod tests {
         )
         .expect_err("empty source_id");
         assert!(error.to_string().contains("source_id"));
-        assert!(cadmpeg_core::text::NonBlankString::new("").is_none());
+        assert!(cadmpeg_core::text::NonBlankString::try_from("").is_err());
     }
 
     #[test]

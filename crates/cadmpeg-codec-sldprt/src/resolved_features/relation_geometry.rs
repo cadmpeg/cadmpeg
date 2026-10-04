@@ -208,10 +208,13 @@ fn spatial_relation_point_line_entities(
         )?;
         point_markers.push(candidate);
     }
-    ctx.sort_unstable_by(
+    ctx.sort_unstable_by_key(
         &mut point_markers,
-        |(left, _), (right, _)| left.offset().cmp(&right.offset()),
-        |_| 0,
+        |value| {
+            let (left, _) = value;
+            left.offset()
+        },
+        Ord::cmp,
         "sort SLDPRT spatial point markers",
     )?;
     let Some(point_operand) = relation.operands.first() else {
@@ -251,10 +254,13 @@ fn spatial_relation_point_line_entities(
         ctx.reserve_vec(&mut line_markers, 1, "collect SLDPRT spatial line markers")?;
         line_markers.push(candidate);
     }
-    ctx.sort_unstable_by(
+    ctx.sort_unstable_by_key(
         &mut line_markers,
-        |(left, _), (right, _)| left.offset().cmp(&right.offset()),
-        |_| 0,
+        |value| {
+            let (left, _) = value;
+            left.offset()
+        },
+        Ord::cmp,
         "sort SLDPRT spatial line markers",
     )?;
     let mut line_matches = line_markers.chunks_exact(2).filter_map(|pair| {
@@ -446,7 +452,7 @@ pub(crate) fn project_spatial_relation_bindings(
                         .transpose()?;
                     ctx.reserve_vec(&mut operands, 1, "collect SLDPRT spatial relation operands")?;
                     operands.push(SketchNativeOperand {
-                        native_kind: operand_kind_name(operand.kind),
+                        native_kind: operand_kind_name(ctx, operand.kind)?,
                         field: None,
                         object_index: Some(u32::from(operand.entity_index)),
                         native_ref,
@@ -888,10 +894,10 @@ pub(crate) fn project_relation_point_geometry(
                     )?;
                     endpoints.push(endpoint);
                 }
-                ctx.sort_unstable_by(
+                ctx.sort_unstable_by_key(
                     &mut endpoints,
-                    |left, right| left.offset().cmp(&right.offset()),
-                    |_| 0,
+                    |value| value.offset(),
+                    Ord::cmp,
                     "sort SLDPRT relation-line fallback endpoints",
                 )?;
                 endpoints.dedup_by_key(|endpoint| endpoint.id());
@@ -1210,10 +1216,10 @@ pub(crate) fn project_relation_solved_line_geometry(
                     points.push(marker);
                 }
             }
-            ctx.stable_sort_by(
+            ctx.stable_sort_by_key(
                 &mut points,
-                |left, right| left.offset().cmp(&right.offset()),
-                |_| 0,
+                |value| value.offset(),
+                Ord::cmp,
                 "sort SLDPRT solved-line point markers",
             )?;
             let endpoint_line_markers = |operand_index: usize| -> Result<
@@ -1753,8 +1759,8 @@ fn unique_dynamic_line_pair<'a>(
                 let mut pair_key = [*first_key, *second_key];
                 ctx.sort_unstable_by(
                     &mut pair_key,
+                    |value| value,
                     Ord::cmp,
-                    |_| 0,
                     "sldprt dynamic line pair keys sort",
                 )?;
                 if let Some((previous, _)) = match_pair {
@@ -1856,8 +1862,8 @@ fn dynamic_line_geometry_key(
     let mut endpoints = [quantize(start.get(), quantum), quantize(end.get(), quantum)];
     ctx.sort_unstable_by(
         &mut endpoints,
+        |value| value,
         Ord::cmp,
-        |_| 0,
         "sldprt dynamic line endpoints sort",
     )?;
     Ok(Some(endpoints))
@@ -2180,10 +2186,10 @@ fn sort_handle_markers(
     ctx: &DecodeContext<'_>,
     markers: &mut [&SketchInputEntity],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    ctx.sort_unstable_by(
+    ctx.sort_unstable_by_key(
         markers,
-        |left, right| left.offset().cmp(&right.offset()),
-        |_| 0,
+        |value| value.offset(),
+        Ord::cmp,
         DIMENSIONED_HANDLE_OPERATION,
     )?;
     Ok(())
@@ -3040,13 +3046,13 @@ fn declared_entity_handle_pairs<'a>(
     charge_relation_parameter_work(ctx, extending, 4, DIMENSIONED_HANDLE_OPERATION)?;
     ctx.reserve_vec(&mut pairs, indexed.len(), DIMENSIONED_HANDLE_OPERATION)?;
     pairs.extend(indexed);
-    ctx.sort_unstable_by(
+    ctx.sort_unstable_by_key(
         &mut pairs,
-        |[left_center, left_radial], [right_center, right_radial]| {
+        |value| {
+            let [left_center, left_radial] = value;
             (left_center.offset(), left_radial.offset())
-                .cmp(&(right_center.offset(), right_radial.offset()))
         },
-        |_| 0,
+        Ord::cmp,
         "sldprt declared entity handle pairs sort",
     )?;
     for [center, radial] in &pairs {
@@ -3304,12 +3310,7 @@ pub(crate) fn project_relation_bindings(
                     entities.push(entity);
                 }
             }
-            ctx.sort_unstable_by(
-                &mut entities,
-                |left, right| left.as_str().cmp(right.as_str()),
-                |entity| entity.as_str().len(),
-                ENTITY_SORT,
-            )?;
+            ctx.sort_unstable_by(&mut entities, |value| value.as_str(), Ord::cmp, ENTITY_SORT)?;
             entities.dedup();
             let typed_definition = match relation.family {
                 FeatureInputRelationFamily::PointPointHorizontalDistance
@@ -3379,7 +3380,7 @@ pub(crate) fn project_relation_bindings(
                         .transpose()?;
                     ctx.reserve_vec(&mut operands, 1, "collect SLDPRT planar relation operands")?;
                     operands.push(SketchNativeOperand {
-                        native_kind: operand_kind_name(operand.kind),
+                        native_kind: operand_kind_name(ctx, operand.kind)?,
                         field: None,
                         object_index: Some(u32::from(operand.entity_index)),
                         native_ref,

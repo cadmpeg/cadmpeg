@@ -158,8 +158,8 @@ pub(crate) fn bind_history_classes(
     for classes in direct_classes_by_name.values_mut() {
         ctx.sort_unstable_by(
             classes,
+            |value| value,
             Ord::cmp,
-            |class| class.len(),
             "sort SLDPRT history class names",
         )?;
         classes.dedup();
@@ -206,8 +206,8 @@ pub(crate) fn bind_history_classes(
         })?;
         ctx.stable_sort_by(
             &mut declared,
+            |value| value,
             Ord::cmp,
-            |class| class.len(),
             "sort SLDPRT declared classes",
         )?;
         declared.dedup();
@@ -275,8 +275,8 @@ pub(crate) fn bind_history_classes(
     for classes in cosmetic_thread_classes.values_mut() {
         ctx.stable_sort_by(
             classes,
+            |value| value,
             Ord::cmp,
-            std::string::String::len,
             "sort SLDPRT bound classes",
         )?;
         classes.dedup();
@@ -326,12 +326,8 @@ pub(crate) fn bind_history_classes(
     }
     ctx.sort_unstable_by(
         &mut native_startups,
+        |value| value,
         Ord::cmp,
-        |startup| {
-            startup
-                .iter()
-                .fold(0usize, |bytes, class| bytes + class.len())
-        },
         "sort SLDPRT native startup classes",
     )?;
     native_startups.dedup();
@@ -370,8 +366,8 @@ pub(crate) fn bind_history_classes(
     for classes in classes_by_type.values_mut() {
         ctx.stable_sort_by(
             classes,
+            |value| value,
             Ord::cmp,
-            std::string::String::len,
             "sort SLDPRT bound classes",
         )?;
         classes.dedup();
@@ -445,8 +441,8 @@ pub(crate) fn bind_history_classes(
     for classes in classes_by_token.values_mut() {
         ctx.stable_sort_by(
             classes,
+            |value| value,
             Ord::cmp,
-            std::string::String::len,
             "sort SLDPRT bound classes",
         )?;
         classes.dedup();
@@ -496,8 +492,8 @@ pub(crate) fn bind_history_classes(
         }
         ctx.stable_sort_by(
             &mut candidates,
+            |value| value,
             Ord::cmp,
-            std::string::String::len,
             "sort SLDPRT class candidates",
         )?;
         candidates.dedup();
@@ -579,8 +575,8 @@ fn legacy_repeated_hole_wizard_classes(
         )?;
         ctx.sort_unstable_by(
             &mut declared,
+            |value| value,
             Ord::cmp,
-            |class| class.len(),
             "sort SLDPRT hole wizard classes",
         )?;
         declared.dedup();
@@ -644,7 +640,7 @@ fn copy_class_text(
     ctx.format_retained(format_args!("{text}"), "bind SLDPRT history classes")
 }
 
-fn collect_class_map<K: Eq + std::hash::Hash, V>(
+fn collect_class_map<K: Eq + std::hash::Hash + cadmpeg_core::decode::cost::DecodeCost, V>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     items: impl Iterator<Item = (K, V)>,
 ) -> Result<HashMap<K, V>, cadmpeg_core::CodecError> {
@@ -656,7 +652,7 @@ fn collect_class_map<K: Eq + std::hash::Hash, V>(
     Ok(map)
 }
 
-fn collect_class_set<T: Eq + std::hash::Hash>(
+fn collect_class_set<T: Eq + std::hash::Hash + cadmpeg_core::decode::cost::DecodeCost>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     items: impl Iterator<Item = T>,
 ) -> Result<HashSet<T>, cadmpeg_core::CodecError> {

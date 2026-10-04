@@ -13,7 +13,6 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_container::compound::{CompoundEntry, CompoundPrefixProbe, CompoundSnapshot};
 use cadmpeg_container::compression::{inflate_deflate_owned, inflate_zlib_member_owned};
-use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{
     index_from_u32, u64_from_index, DecodeContext, ExpandSpec, ScopedReservation, View,
 };
@@ -67,15 +66,20 @@ impl PayloadFamily {
 /// Classify a decompressed block payload by signature.
 ///
 /// Unknown signatures return [`PayloadFamily::Unknown`].
-pub(crate) fn payload_family(payload: &[u8]) -> PayloadFamily {
-    if payload.starts_with(&[0x89, 0x50, 0x4e, 0x47]) {
+pub(crate) fn payload_family(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    operation: &'static str,
+) -> Result<PayloadFamily, CodecError> {
+    ctx.charge_work(0, operation)?;
+    Ok(if payload.starts_with(&[0x89, 0x50, 0x4e, 0x47]) {
         PayloadFamily::PngPreview
     } else if is_bmp_thumbnail(payload) {
         PayloadFamily::BmpThumbnail
     } else if payload.starts_with(&[0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]) {
         PayloadFamily::Ole2
-    } else if contains(payload, b"uoTempBodyTessData_c")
-        || contains(payload, b"uoTempFaceTessData_c")
+    } else if ctx.contains_bytes(payload, b"uoTempBodyTessData_c", operation)?
+        || ctx.contains_bytes(payload, b"uoTempFaceTessData_c", operation)?
     {
         PayloadFamily::Tessellation
     } else if payload.starts_with(&[0xff, 0xff, 0x01, 0x00]) {
@@ -84,12 +88,13 @@ pub(crate) fn payload_family(payload: &[u8]) -> PayloadFamily {
         PayloadFamily::Unqlite
     } else if payload.starts_with(b"<?xml")
         || payload.starts_with(&[0xff, 0xfe])
-        || (payload.first() == Some(&0x86) && contains(&payload[..payload.len().min(64)], b"<"))
+        || (payload.first() == Some(&0x86)
+            && ctx.contains_bytes(&payload[..payload.len().min(64)], b"<", operation)?)
     {
         PayloadFamily::Xml
     } else {
         PayloadFamily::Unknown
-    }
+    })
 }
 
 fn is_bmp_thumbnail(payload: &[u8]) -> bool {
@@ -705,13 +710,7 @@ fn block_from_inflated(
     // family label.
     let ps_streams = crate::parasolid::extract_streams_with_offsets(&inflated, ctx)?;
     let family = if ps_streams.is_empty() {
-        let work = u64_from_index(inflated.len())
-            .checked_mul(2)
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("classify SLDPRT block payload", u64::MAX, u64::MAX)
-            })?;
-        ctx.charge_work(work, "classify SLDPRT block payload")?;
-        payload_family(&inflated)
+        payload_family(ctx, &inflated, "classify SLDPRT block payload")?
     } else {
         PayloadFamily::Parasolid
     };
@@ -1017,12 +1016,7 @@ pub(crate) fn summarize(
     }
 
     for stream in &scan.compound_streams {
-        let family_work = u64_from_index(stream.payload.len())
-            .checked_mul(2)
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("classify SLDPRT inventory payload", u64::MAX, u64::MAX)
-            })?;
-        ctx.charge_work(family_work, "classify SLDPRT inventory payload")?;
+        let family = payload_family(ctx, &stream.payload, "classify SLDPRT inventory payload")?;
         ctx.charge_work(
             u64_from_index(stream.payload.len()),
             "hash SLDPRT inventory payload",
@@ -1048,7 +1042,7 @@ pub(crate) fn summarize(
             &mut attributes,
             ctx.format_retained(format_args!("family"), "retain SLDPRT inventory key")?,
             ctx.format_retained(
-                format_args!("{}", payload_family(&stream.payload).label()),
+                format_args!("{}", family.label()),
                 "retain SLDPRT inventory value",
             )?,
             "collect SLDPRT inventory attributes",

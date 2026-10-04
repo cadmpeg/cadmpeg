@@ -65,7 +65,7 @@ fn attach_geometry_source(
         let name = name
             .map(|name| ctx.format_retained(format_args!("{name}"), operation))
             .transpose()?;
-        *source = Some(super::step_source_association(id, name));
+        *source = Some(super::step_source_association(ctx, id, name)?);
     }
     Ok(())
 }
@@ -685,7 +685,9 @@ pub(super) fn decode(
             Point::new(
                 PointId::from(ids::data(kind!("point"), id)),
                 position,
-                source_name.map(|name| super::step_source_association(id, name)),
+                source_name
+                    .map(|name| super::step_source_association(ctx, id, name))
+                    .transpose()?,
             ),
             "step_geometry_ir_points",
         )?;
@@ -2808,7 +2810,7 @@ fn decode_tessellated_curve_sets(
                 Curve {
                     id: CurveId::from(ids::data(kind!("curve"), curve_key)),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)),
-                    source_object: Some(super::step_source_association(id, source_name)),
+                    source_object: Some(super::step_source_association(ctx, id, source_name)?),
                 },
                 "step_geometry_ir_curves",
             )?;
@@ -3464,7 +3466,8 @@ pub(super) fn associate_topology_carriers(
     ir: &mut CadIr,
     index: &CarrierIndex,
     owned: &OwnedCarriers,
-) {
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
     for (edge_id, edge) in exchange.entities("EDGE_CURVE") {
         let Some(curve_step) = edge_curve_geometry_reference(edge)
             .and_then(|curve| curve_carrier_record(curve, exchange))
@@ -3479,7 +3482,7 @@ pub(super) fn associate_topology_carriers(
         }
         if ir.model.curves[index.0].source_object.is_none() {
             ir.model.curves[index.0].source_object =
-                Some(super::step_source_association(edge_id, None));
+                Some(super::step_source_association(ctx, edge_id, None)?);
         }
     }
     for (face_id, face) in exchange.entities_any(&["ADVANCED_FACE", "FACE_SURFACE"]) {
@@ -3494,7 +3497,7 @@ pub(super) fn associate_topology_carriers(
         }
         if ir.model.surfaces[index.0].source_object.is_none() {
             ir.model.surfaces[index.0].source_object =
-                Some(super::step_source_association(face_id, None));
+                Some(super::step_source_association(ctx, face_id, None)?);
         }
     }
     for (vertex_id, vertex) in exchange.entities("VERTEX_POINT") {
@@ -3509,9 +3512,10 @@ pub(super) fn associate_topology_carriers(
         }
         if ir.model.points[index.0].source_object.is_none() {
             ir.model.points[index.0].source_object =
-                Some(super::step_source_association(vertex_id, None));
+                Some(super::step_source_association(ctx, vertex_id, None)?);
         }
     }
+    Ok(())
 }
 
 /// Associate the basis carrier owned by each valid replica with that replica.
@@ -3520,7 +3524,12 @@ pub(super) fn associate_topology_carriers(
 /// separate IR geometry entry because the transformed geometry stores the
 /// basis inline. The basis is still a real STEP dependency and must not be
 /// reported as an unowned carrier by generic IR validation.
-pub(super) fn associate_replica_bases(exchange: &Exchange, ir: &mut CadIr, index: &CarrierIndex) {
+pub(super) fn associate_replica_bases(
+    exchange: &Exchange,
+    ir: &mut CadIr,
+    index: &CarrierIndex,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
     for (replica_id, record) in exchange.entities("CURVE_REPLICA") {
         let Some(parent_id) =
             named_parameter(record, "CURVE_REPLICA", 1).and_then(Value::reference)
@@ -3532,7 +3541,7 @@ pub(super) fn associate_replica_bases(exchange: &Exchange, ir: &mut CadIr, index
         };
         if ir.model.curves[parent_index.0].source_object.is_none() {
             ir.model.curves[parent_index.0].source_object =
-                Some(super::step_source_association(replica_id, None));
+                Some(super::step_source_association(ctx, replica_id, None)?);
         }
     }
     for (replica_id, record) in exchange.entities("SURFACE_REPLICA") {
@@ -3546,9 +3555,10 @@ pub(super) fn associate_replica_bases(exchange: &Exchange, ir: &mut CadIr, index
         };
         if ir.model.surfaces[parent_index.0].source_object.is_none() {
             ir.model.surfaces[parent_index.0].source_object =
-                Some(super::step_source_association(replica_id, None));
+                Some(super::step_source_association(ctx, replica_id, None)?);
         }
     }
+    Ok(())
 }
 
 /// Associate surfaces referenced only as PCURVE supports with their STEP
@@ -3607,7 +3617,7 @@ pub(super) fn associate_pcurve_supports(
         };
         if ir.model.surfaces[surface_index.0].source_object.is_none() {
             ir.model.surfaces[surface_index.0].source_object =
-                Some(super::step_source_association(pcurve_id, None));
+                Some(super::step_source_association(ctx, pcurve_id, None)?);
         }
     }
     Ok(())
@@ -3642,7 +3652,7 @@ pub(super) fn associate_surface_curve_supports(
         {
             if ir.model.curves[curve_index.0].source_object.is_none() {
                 ir.model.curves[curve_index.0].source_object =
-                    Some(super::step_source_association(surface_curve_id, None));
+                    Some(super::step_source_association(ctx, surface_curve_id, None)?);
             }
         }
         for surface_id in surface_curve_supports(record, exchange, index) {
@@ -3651,7 +3661,7 @@ pub(super) fn associate_surface_curve_supports(
             };
             if ir.model.surfaces[surface_index.0].source_object.is_none() {
                 ir.model.surfaces[surface_index.0].source_object =
-                    Some(super::step_source_association(surface_curve_id, None));
+                    Some(super::step_source_association(ctx, surface_curve_id, None)?);
             }
         }
     }
@@ -4447,10 +4457,10 @@ fn linear_uncertainty(
             }
         }
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut candidates,
-        |left, right| left.get().total_cmp(&right.get()),
-        |_| 0,
+        |value| value.get(),
+        f64::total_cmp,
         "step_uncertainty_candidate_sort",
     )?;
 

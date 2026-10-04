@@ -1435,16 +1435,15 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
         ctx.reserve_vec(&mut candidates, 1, "nx opposite chart candidates")?;
         candidates.push((priority, procedural.id.as_str(), procedural_index));
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut candidates,
-        |first, second| {
-            first
-                .0
-                .cmp(&second.0)
-                .then_with(|| first.1.cmp(second.1))
-                .then_with(|| first.2.cmp(&second.2))
+        |value| (value.0, value.1, value.2),
+        |left, right| {
+            left.0
+                .cmp(&right.0)
+                .then_with(|| left.1.cmp(right.1))
+                .then_with(|| left.2.cmp(&right.2))
         },
-        |(_, id, _)| id.len(),
         "sort NX opposite chart candidates",
     )?;
     let candidate_count = candidates.len();
@@ -2489,8 +2488,8 @@ fn exact_boundary_pcurve_matches_carrier_with_index(
         .charges
         .stable_sort_by(
             &mut breaks,
+            |value| value,
             f64::total_cmp,
-            |_| 0,
             "nx boundary pcurve breaks sort",
         )
         .is_err()
@@ -2589,8 +2588,8 @@ fn exact_boundary_curve_breaks<'a>(
         .charges
         .stable_sort_by(
             &mut breaks,
+            |value| value,
             f64::total_cmp,
-            |_| 0,
             "nx boundary curve breaks sort",
         )
         .is_err()
@@ -2937,8 +2936,8 @@ fn coincident_pcurve_pair_with_index(
             .charges
             .stable_sort_by(
                 &mut breaks,
+                |value| value,
                 f64::total_cmp,
-                |_| 0,
                 "nx coincident pcurve breaks sort",
             )
             .is_err()

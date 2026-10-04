@@ -687,10 +687,14 @@ pub(super) fn transfer_fc05_cap_circles(
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
-                        object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
-                            format_args!("VisibGeom:{}", circle.curve_id),
-                            "creo FC05 cap circle source object ID",
-                        )?)
+                        object_id: cadmpeg_core::text::NonBlankString::for_decode(
+                            ctx,
+                            ctx.format_retained(
+                                format_args!("VisibGeom:{}", circle.curve_id),
+                                "creo FC05 cap circle source object ID",
+                            )?,
+                            "validate nonblank text",
+                        )?
                         .ok_or_else(|| {
                             cadmpeg_core::CodecError::malformed(
                                 "source object_id must not be empty",
@@ -747,10 +751,14 @@ pub(super) fn transfer_fc05_cap_circles(
                 )),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
-                        format_args!("VisibGeom:{cylinder_id}"),
-                        "creo FC05 axis cylinder source object ID",
-                    )?)
+                    object_id: cadmpeg_core::text::NonBlankString::for_decode(
+                        ctx,
+                        ctx.format_retained(
+                            format_args!("VisibGeom:{cylinder_id}"),
+                            "creo FC05 axis cylinder source object ID",
+                        )?,
+                        "validate nonblank text",
+                    )?
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,

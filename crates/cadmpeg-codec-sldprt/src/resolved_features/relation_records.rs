@@ -64,8 +64,8 @@ pub(super) fn feature_intervals(
     }
     ctx.sort_unstable_by(
         &mut starts,
-        |(left, _), (right, _)| left.cmp(right),
-        |_| 0,
+        |value| &value.0,
+        Ord::cmp,
         "sort SLDPRT feature intervals",
     )?;
     starts.dedup_by_key(|(offset, _)| *offset);
@@ -577,10 +577,10 @@ pub(super) fn relation_instances(
             operands: copy_relation_operands(ctx, &scalar.operands)?,
         });
     }
-    ctx.sort_unstable_by(
+    ctx.sort_unstable_by_key(
         &mut instances,
-        |left, right| (left.offset, left.ordinal).cmp(&(right.offset, right.ordinal)),
-        |_| 0,
+        |value| (value.offset, value.ordinal),
+        Ord::cmp,
         "sort SLDPRT relation instances",
     )?;
     for (ordinal, relation) in instances.iter_mut().enumerate() {
@@ -770,8 +770,8 @@ pub(super) fn circle_dimension_handle_driver<'a>(
     let mut scalars = collect_relation_vec(ctx, lane.scalars.iter())?;
     ctx.sort_unstable_by(
         &mut scalars,
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "sort SLDPRT relation scalars",
     )?;
     let mut names = HashMap::new();
@@ -1114,10 +1114,10 @@ fn feature_entities<'a>(
             .iter()
             .filter(|entity| entity.feature_ref.as_deref() == Some(feature)),
     )?;
-    ctx.sort_unstable_by(
+    ctx.sort_unstable_by_key(
         &mut entities,
-        |left, right| (left.offset(), left.ordinal()).cmp(&(right.offset(), right.ordinal())),
-        |_| 0,
+        |value| (value.offset(), value.ordinal()),
+        Ord::cmp,
         "sort SLDPRT relation feature entities",
     )?;
     Ok(entities)
@@ -1192,8 +1192,8 @@ fn dynamic_point_candidates<'a>(
     }
     ctx.sort_unstable_by(
         &mut candidates,
-        |left, right| left.id().cmp(right.id()),
-        |entity| entity.id().len(),
+        |value| value.id(),
+        Ord::cmp,
         "sort SLDPRT dynamic point candidates",
     )?;
     Ok(candidates)
@@ -1421,8 +1421,8 @@ fn bind_dynamic_point_relation(
     }
     ctx.sort_unstable_by(
         &mut matches,
+        |value| value,
         Ord::cmp,
-        |(first, second)| first.len() + second.len(),
         "sort SLDPRT dynamic point matches",
     )?;
     matches.dedup();
@@ -1480,8 +1480,8 @@ fn bind_dynamic_point_line_relation(
     )?;
     ctx.sort_unstable_by(
         &mut matches,
+        |value| value,
         Ord::cmp,
-        |id| id.len(),
         "sort SLDPRT dynamic point-line matches",
     )?;
     matches.dedup();

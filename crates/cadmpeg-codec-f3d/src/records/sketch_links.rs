@@ -242,7 +242,8 @@ pub(crate) struct PersistentSubentityTag {
 fn deserialize_persistent_tag_token<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<cadmpeg_core::text::NonBlankString, D::Error> {
-    cadmpeg_core::text::NonBlankString::new(String::deserialize(deserializer)?)
+    cadmpeg_core::text::NonBlankString::try_from(String::deserialize(deserializer)?)
+        .ok()
         .ok_or_else(|| serde::de::Error::custom("token must not be empty"))
 }
 

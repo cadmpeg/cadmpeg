@@ -919,7 +919,7 @@ fn copy_selection_id<Id: TryFrom<String, Error = cadmpeg_ir::ids::IdentityError>
     Id::try_from(text).map_err(CodecError::malformed)
 }
 
-fn reserve_selection_map<K: Eq + std::hash::Hash, V>(
+fn reserve_selection_map<K: Eq + std::hash::Hash + cadmpeg_core::decode::cost::DecodeCost, V>(
     ctx: &DecodeContext<'_>,
     values: &mut HashMap<K, V>,
 ) -> Result<(), CodecError> {

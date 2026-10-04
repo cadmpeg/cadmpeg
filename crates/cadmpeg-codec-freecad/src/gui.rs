@@ -838,14 +838,16 @@ fn gui_named_entries<'a>(
     for (name, value) in entries {
         let name = ctx.copy_retained_text(name, "FCStd GUI presentation property name")?;
         let value = ctx.copy_retained_text(value, "FCStd GUI presentation property value")?;
-        match NonBlankString::new(name) {
+        match NonBlankString::for_decode(ctx, name, "validate nonblank text")? {
             Some(key) if kept.contains_key(&key) => {
                 ctx.reserve_vec(&mut refused, 1, "FCStd GUI refused property keys")?;
                 refused.push(NamedEntryError::Restated {
                     record: record()?,
-                    key: NonBlankString::new(
+                    key: NonBlankString::for_decode(
+                        ctx,
                         ctx.copy_retained_text(key.as_str(), "FCStd GUI restated property key")?,
-                    )
+                        "validate nonblank text",
+                    )?
                     .ok_or_else(|| {
                         CodecError::malformed("restated GUI property key became blank")
                     })?,
@@ -1550,9 +1552,11 @@ fn append_native_provider(
         id: ctx.copy_retained_text(&id, "FCStd GUI provider record identity")?,
         object: object
             .map(|object| {
-                cadmpeg_core::text::NonBlankString::new(
+                cadmpeg_core::text::NonBlankString::for_decode(
+                    ctx,
                     ctx.copy_retained_text(object, "FCStd GUI provider object identity")?,
-                )
+                    "validate nonblank text",
+                )?
                 .ok_or_else(|| {
                     CodecError::Malformed("GUI provider object must not be empty".into())
                 })

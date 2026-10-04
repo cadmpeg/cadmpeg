@@ -750,16 +750,20 @@ pub(super) fn source_meta(
         crate::coverage::DECODED_FEATURE_SECTION_TRANSFORM_COUNT,
         scan.features.section_transforms.len(),
     )?;
+    let mut placement_instruction_count = 0usize;
+    for definition in &scan.features.definitions {
+        let count = crate::feature::definitions::placement_instructions(ctx, definition)?.count();
+        placement_instruction_count =
+            placement_instruction_count
+                .checked_add(count)
+                .ok_or_else(|| {
+                    CodecError::Malformed("Creo placement instruction count overflow".into())
+                })?;
+    }
     coverage.record(
         ctx,
         crate::coverage::DECODED_FEATURE_PLACEMENT_INSTRUCTION_COUNT,
-        scan.features
-            .definitions
-            .iter()
-            .map(|definition| {
-                crate::feature::definitions::placement_instructions(definition).count()
-            })
-            .sum::<usize>(),
+        placement_instruction_count,
     )?;
     coverage.record(
         ctx,

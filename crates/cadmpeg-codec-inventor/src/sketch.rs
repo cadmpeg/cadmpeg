@@ -1063,11 +1063,6 @@ pub(crate) fn project(
                 record,
             )
         }),
-        |key| {
-            cadmpeg_core::decode::u64_from_index(key.0.len())
-                .checked_add(5)
-                .ok_or_else(|| ctx.refuse_codec_limit("index Inventor sketches", 0, u64::MAX))
-        },
         "index Inventor sketches",
     )?;
     let (raw_entities, _raw_entities_storage) = ctx.unique_index(
@@ -1082,13 +1077,6 @@ pub(crate) fn project(
                 record,
             )
         }),
-        |key| {
-            cadmpeg_core::decode::u64_from_index(key.0.len())
-                .checked_add(5)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("index Inventor sketch entities", 0, u64::MAX)
-                })
-        },
         "index Inventor sketch entities",
     )?;
     let (transforms, _transforms_storage) = ctx.unique_index(
@@ -1103,13 +1091,6 @@ pub(crate) fn project(
                 record,
             )
         }),
-        |key| {
-            cadmpeg_core::decode::u64_from_index(key.0.len())
-                .checked_add(5)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("index Inventor sketch transforms", 0, u64::MAX)
-                })
-        },
         "index Inventor sketch transforms",
     )?;
     let (directions, _directions_storage) = ctx.unique_index(
@@ -1124,13 +1105,6 @@ pub(crate) fn project(
                 record,
             )
         }),
-        |key| {
-            cadmpeg_core::decode::u64_from_index(key.0.len())
-                .checked_add(5)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("index Inventor sketch directions", 0, u64::MAX)
-                })
-        },
         "index Inventor sketch directions",
     )?;
     let (raw_constraints, _raw_constraints_storage) = ctx.unique_index(
@@ -1145,13 +1119,6 @@ pub(crate) fn project(
                 record,
             )
         }),
-        |key| {
-            cadmpeg_core::decode::u64_from_index(key.0.len())
-                .checked_add(5)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("index Inventor sketch constraints", 0, u64::MAX)
-                })
-        },
         "index Inventor sketch constraints",
     )?;
     let mut parameter_index = HashMap::new();
@@ -1874,16 +1841,15 @@ fn project_constraint(
         }
         PmDcSketchConstraintKind::CircleCenter { entity, center } => {
             let members = [resolve(entity)?, resolve(center)?];
-            admit!(ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index("circle_center_alignment".len()),
-                "retain Inventor circle center kind"
-            ));
             admit!(ctx.charge_collection_items(2, "collect Inventor circle center operands"));
             (
                 SketchConstraintDefinitionInput::Native {
-                    native_kind: cadmpeg_core::text::NonBlankString::new(
+                    native_kind: admitted_value!(cadmpeg_core::text::NonBlankString::for_decode(
+                        ctx,
                         "circle_center_alignment",
-                    )?,
+                        "validate nonblank text"
+                    )
+                    .map_err(CodecError::from))?,
                     native_state: Some(u64::from(constraint.header.state.cast_unsigned())),
                     native_flags: Some(u64::from(constraint.header.content.flags)),
                     native_properties: std::collections::BTreeMap::new(),
@@ -2455,6 +2421,7 @@ fn build_profiles(
     }
     ctx.sort_unstable_by(
         &mut profiles,
+        |value| value,
         |left, right| {
             let key = |profile: &Vec<SketchEntityUse>| {
                 let first = profile
@@ -2467,12 +2434,6 @@ fn build_profiles(
                 (first.is_none(), first)
             };
             key(left).cmp(&key(right))
-        },
-        |profile| {
-            profile
-                .iter()
-                .map(|entity| entity.entity.as_str().len())
-                .sum::<usize>()
         },
         "Inventor line profiles sort",
     )?;

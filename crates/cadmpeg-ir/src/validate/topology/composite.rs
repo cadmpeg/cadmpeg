@@ -51,8 +51,8 @@ pub(super) fn check(
     }
     ctx.stable_sort_by(
         &mut ordered,
+        |identity| *identity,
         Ord::cmp,
-        |identity| identity.len(),
         "sort composite curve roots",
     )?;
     let mut stack = Vec::new();

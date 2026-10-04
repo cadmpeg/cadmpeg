@@ -112,7 +112,6 @@ mod writer;
 mod xref;
 mod zip_write;
 
-use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
@@ -191,11 +190,7 @@ impl CodecBackend for F3dCodec {
             .iter()
             .chain(container::F3Z_DETECT_MARKERS)
         {
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(prefix.len()),
-                "detect Fusion marker",
-            )?;
-            if contains(prefix, marker) {
+            if ctx.contains_bytes(prefix, marker, "detect Fusion marker")? {
                 return Ok(Confidence::High);
             }
         }

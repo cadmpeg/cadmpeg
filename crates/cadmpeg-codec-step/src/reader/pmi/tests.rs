@@ -183,7 +183,7 @@ fn complex_datum_feature_remains_a_dimension_target() {
     assert_eq!(
         dimension.targets,
         vec![PmiTarget::ShapeAspect {
-            source_id: cadmpeg_core::text::NonBlankString::new("#6")
+            source_id: cadmpeg_core::text::NonBlankString::try_from("#6")
                 .expect("nonempty source identity")
         }]
     );
@@ -217,7 +217,7 @@ fn simple_shape_aspect_subtypes_remain_dimension_targets() {
         assert_eq!(
             dimension.targets,
             vec![PmiTarget::ShapeAspect {
-                source_id: cadmpeg_core::text::NonBlankString::new(source_id)
+                source_id: cadmpeg_core::text::NonBlankString::try_from(source_id)
                     .expect("nonempty source identity")
             }]
         );
@@ -251,7 +251,7 @@ fn datum_target_transfers_form_and_identification() {
         assert_eq!(
             target.targets,
             [PmiTarget::ShapeAspect {
-                source_id: cadmpeg_core::text::NonBlankString::new(source_id)
+                source_id: cadmpeg_core::text::NonBlankString::try_from(source_id)
                     .expect("nonempty source identity")
             }]
         );
@@ -297,7 +297,7 @@ fn complex_dimension_inherits_kind_targets_and_nominal_value() {
     assert_eq!(
         dimension.targets,
         vec![cadmpeg_ir::pmi::PmiTarget::ShapeAspect {
-            source_id: cadmpeg_core::text::NonBlankString::new("#6")
+            source_id: cadmpeg_core::text::NonBlankString::try_from("#6")
                 .expect("nonempty source identity")
         }]
     );
@@ -1428,7 +1428,7 @@ fn complex_datum_reads_identification_from_its_named_partial() {
     assert_eq!(
         datum.targets,
         vec![PmiTarget::ShapeAspect {
-            source_id: cadmpeg_core::text::NonBlankString::new("#7")
+            source_id: cadmpeg_core::text::NonBlankString::try_from("#7")
                 .expect("nonempty source identity")
         }]
     );
@@ -1478,7 +1478,7 @@ fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
         PmiDefinition::Dimension(ref relation) if matches!(relation.kind(), DimensionKind::Diameter)
     ));
     assert!(dimension.targets.contains(&PmiTarget::ShapeAspect {
-        source_id: cadmpeg_core::text::NonBlankString::new("#39")
+        source_id: cadmpeg_core::text::NonBlankString::try_from("#39")
             .expect("nonempty source identity")
     }));
     assert!(dimension.targets.contains(&PmiTarget::Face {
@@ -1526,7 +1526,7 @@ fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
         &datum_target.definition,
         PmiDefinition::DatumTarget { basis, .. }
             if basis.contains(&PmiTarget::ShapeAspect {
-                source_id: cadmpeg_core::text::NonBlankString::new("#47").expect("nonempty source identity")})
+                source_id: cadmpeg_core::text::NonBlankString::try_from("#47").expect("nonempty source identity")})
     ));
     let point_dimension = result
         .ir()
@@ -1659,7 +1659,7 @@ fn datum_target_writes_and_round_trips() {
     assert_eq!(
         target.targets,
         [PmiTarget::ShapeAspect {
-            source_id: cadmpeg_core::text::NonBlankString::new("#30")
+            source_id: cadmpeg_core::text::NonBlankString::try_from("#30")
                 .expect("nonempty source identity")
         }]
     );

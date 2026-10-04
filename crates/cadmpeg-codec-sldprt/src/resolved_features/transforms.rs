@@ -408,7 +408,7 @@ pub(super) fn dimensioned_circle_transform(
                 };
                 transformed.push((center.0, center.1, *radius));
             }
-            ctx.sort_unstable_by(&mut transformed, Ord::cmp, |_| 0, OPERATION)?;
+            ctx.sort_unstable_by(&mut transformed, |value| value, Ord::cmp, OPERATION)?;
             Ok(
                 (transformed.len() == circles.len() && !transformed.is_empty())
                     .then_some(transformed),
@@ -1207,7 +1207,7 @@ fn insert_marker_identity<'a, K>(
     operation: &'static str,
 ) -> Result<bool, cadmpeg_core::CodecError>
 where
-    K: ?Sized + Eq + std::hash::Hash,
+    K: ?Sized + Eq + std::hash::Hash + cadmpeg_core::decode::cost::DecodeCost,
 {
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(identities.len()),
@@ -1273,12 +1273,7 @@ pub(super) fn sort_marker_entity_ids(
     entities: &mut Vec<SketchEntityId>,
     operation: &'static str,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    ctx.sort_unstable_by(
-        entities,
-        Ord::cmp,
-        |entity| entity.as_str().len(),
-        operation,
-    )?;
+    ctx.sort_unstable_by(entities, |value| value, Ord::cmp, operation)?;
     entities.dedup();
     Ok(())
 }

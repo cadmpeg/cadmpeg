@@ -493,9 +493,9 @@ fn application_property_hash_refuses_work_and_digest_storage() {
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    // The owner's one-property sort takes its count plus eight bytes over two levels at eight
-    // units each; the property digest then needs more than the ten units left.
-    policy.limits.max_work_units = 1 + 8 * 2 * 8 + 10;
+    // The pointer sort reads two scalar range endpoints per key; ten units remain before XML hashing.
+    let index_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>());
+    policy.limits.max_work_units = 2 + (index_bytes + 4 * index_bytes) * 2 * 8 + 10;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("context");
     assert!(
@@ -566,9 +566,9 @@ fn application_repeated_payloads_borrow_the_cached_digest() {
     let entries = [entry];
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    // The owner's two-property sort takes its count plus sixteen bytes over three levels at
-    // eight units each; the remaining 22 units hash only the two property XML texts.
-    policy.limits.max_work_units = 2 + 16 * 3 * 8 + 22;
+    // Two pointer records, complete range keys, two stable-run visits and 22 XML bytes own all work.
+    let index_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>());
+    policy.limits.max_work_units = 4 + 2 * (index_bytes + 4 * index_bytes) * 3 * 8 + 2 + 22;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("context");
     let records = super::wire_records(&ctx, &objects, &properties, &entries)

@@ -273,7 +273,7 @@ fn a_decode_result_stamps_every_source_dialect_layer_onto_the_report() {
         "only".into(),
     )]));
     let layers = DialectLayers::of(primary.clone())
-        .with(dialect_layer("acis:save-format-217").with_instance("body.sab"))
+        .with(dialect_layer("acis:save-format-217").with_instance("body.sab".to_owned()))
         .expect("the test dialect layers have distinct keys");
     ir.source = Some(crate::SourceMeta::classified(
         layers.clone(),

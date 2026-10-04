@@ -1926,8 +1926,8 @@ fn registry_feature_edges(
     }
     ctx.sort_unstable_by(
         &mut feature_edges,
+        |value| value,
         Ord::cmp,
-        |_| 0,
         "f3d paramesh feature edges sort",
     )?;
     Ok(feature_edges)
@@ -2065,8 +2065,8 @@ pub(crate) fn decode_mesh_container(
     // The kind-4 chunks follow the name table in ascending stream-id order.
     ctx.stable_sort_by(
         &mut name_table,
-        |(_, left), (_, right)| left.cmp(right),
-        |_| 0,
+        |value| &value.1,
+        Ord::cmp,
         "sort paramesh name table",
     )?;
     let named = |name: &str| {

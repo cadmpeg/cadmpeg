@@ -1280,7 +1280,7 @@ fn validation_accepts_user_design_parameter_frame() {
         .expect("generated F3D decode");
     let (mut ir, _, _) = decoded.into_parts();
     let parameter = crate::records::parameters::DesignParameter::try_from(
-        crate::records::parameters::DesignParameterDraft {
+        crate::records::parameters::DesignParameterDraft::<String> {
             id: "f3d:generated:design-parameter#0".into(),
             byte_offset: 100,
             class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
@@ -1325,14 +1325,14 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
     const DESIGN_STREAM: &str = "Design/BulkStream.dat";
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let owned_parameter = crate::records::parameters::DesignParameter::try_from(
-        crate::records::parameters::DesignParameterDraft {
+        crate::records::parameters::DesignParameterDraft::<String> {
             id: crate::ids::native_design_parameter_id(DESIGN_STREAM, 101),
             byte_offset: 1_068,
             class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
                 .unwrap(),
             record_index: 101,
             source_ordinal: 0,
-            source: crate::records::parameters::DesignParameterSource::new(
+            source: crate::records::parameters::DesignParameterSource::new::<String>(
                 "Feature Input".into(),
                 Some(100),
                 None,
@@ -1389,14 +1389,14 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
         Vec::new(),
     ));
     let ownerless_parameter = crate::records::parameters::DesignParameter::try_from(
-        crate::records::parameters::DesignParameterDraft {
+        crate::records::parameters::DesignParameterDraft::<String> {
             id: crate::ids::native_design_parameter_id(DESIGN_STREAM, 201),
             byte_offset: 1_400,
             class_tag: crate::records::references::DesignClassTag::try_from("287".to_owned())
                 .unwrap(),
             record_index: 201,
             source_ordinal: 1,
-            source: crate::records::parameters::DesignParameterSource::new(
+            source: crate::records::parameters::DesignParameterSource::new::<String>(
                 "Feature Input".into(),
                 Some(200),
                 None,

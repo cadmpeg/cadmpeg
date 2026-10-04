@@ -1142,12 +1142,12 @@ fn ordered_two_edge_circle_loops<'a>(
     }
     ctx.stable_sort_by(
         order.as_mut_slice(),
+        |value| value,
         |first, second| {
             circle_loops[*second]
                 .radius
                 .total_cmp(&circle_loops[*first].radius)
         },
-        |_| std::mem::size_of::<f64>(),
         "creo ordered two edge circle loops order ordering",
     )?;
     let mut ordered = Vec::new();
@@ -2372,10 +2372,14 @@ pub(in super::super) fn transfer_native_brep(
         )?;
         let source_object = SourceObjectAssociation {
             format: cadmpeg_ir::CodecFormat::Creo,
-            object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
-                format_args!("topology:vertex#{vertex_id}"),
-                "creo B-rep point source object IDs",
-            )?)
+            object_id: cadmpeg_core::text::NonBlankString::for_decode(
+                ctx,
+                ctx.format_retained(
+                    format_args!("topology:vertex#{vertex_id}"),
+                    "creo B-rep point source object IDs",
+                )?,
+                "validate nonblank text",
+            )?
             .ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed("source object_id must not be empty")
             })?,
@@ -2598,10 +2602,14 @@ pub(in super::super) fn transfer_native_brep(
                     }),
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
-                        object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
-                            format_args!("VisibGeom:{curve_id}"),
-                            "creo B-rep curve source object IDs",
-                        )?)
+                        object_id: cadmpeg_core::text::NonBlankString::for_decode(
+                            ctx,
+                            ctx.format_retained(
+                                format_args!("VisibGeom:{curve_id}"),
+                                "creo B-rep curve source object IDs",
+                            )?,
+                            "validate nonblank text",
+                        )?
                         .ok_or_else(|| {
                             cadmpeg_core::CodecError::malformed(
                                 "source object_id must not be empty",
@@ -2833,12 +2841,14 @@ pub(in super::super) fn transfer_native_brep(
                         }),
                         source_object: Some(SourceObjectAssociation {
                             format: cadmpeg_ir::CodecFormat::Creo,
-                            object_id: cadmpeg_core::text::NonBlankString::new(
+                            object_id: cadmpeg_core::text::NonBlankString::for_decode(
+                                ctx,
                                 ctx.format_retained(
                                     format_args!("VisibGeom:{face_id}"),
                                     "creo B-rep surface source object IDs",
                                 )?,
-                            )
+                                "validate nonblank text",
+                            )?
                             .ok_or_else(|| {
                                 cadmpeg_core::CodecError::malformed(
                                     "source object_id must not be empty",

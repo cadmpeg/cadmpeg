@@ -325,7 +325,7 @@ fn transferred_curve_refuses_at_caller_limit() {
     };
     let association = cadmpeg_ir::SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Fcstd,
-        object_id: cadmpeg_core::text::NonBlankString::new("object").expect("nonblank object"),
+        object_id: cadmpeg_core::text::NonBlankString::try_from("object").expect("nonblank object"),
         name: None,
         color: None,
         visible: None,
@@ -358,7 +358,7 @@ fn transferred_surface_refuses_at_caller_limit() {
     };
     let association = cadmpeg_ir::SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Fcstd,
-        object_id: cadmpeg_core::text::NonBlankString::new("object").expect("nonblank object"),
+        object_id: cadmpeg_core::text::NonBlankString::try_from("object").expect("nonblank object"),
         name: None,
         color: None,
         visible: None,
@@ -1704,7 +1704,7 @@ fn transfers_zero_radius_brep_circles_as_degenerate_curves() {
     };
     let association = cadmpeg_ir::SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Fcstd,
-        object_id: cadmpeg_core::text::NonBlankString::new("object")
+        object_id: cadmpeg_core::text::NonBlankString::try_from("object")
             .expect("nonempty source identity"),
         name: None,
         color: None,
@@ -1825,7 +1825,7 @@ fn transfers_occt_revolution_surface_parameter_order() {
     };
     let association = cadmpeg_ir::SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Fcstd,
-        object_id: cadmpeg_core::text::NonBlankString::new("fcstd:native:object#Surface")
+        object_id: cadmpeg_core::text::NonBlankString::try_from("fcstd:native:object#Surface")
             .expect("nonempty source identity"),
         name: None,
         color: None,
@@ -1866,7 +1866,7 @@ fn transfers_a_signed_cone_half_angle_without_moving_the_frame() {
     };
     let association = cadmpeg_ir::SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Fcstd,
-        object_id: cadmpeg_core::text::NonBlankString::new("fcstd:native:object#Surface")
+        object_id: cadmpeg_core::text::NonBlankString::try_from("fcstd:native:object#Surface")
             .expect("nonempty source identity"),
         name: None,
         color: None,

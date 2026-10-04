@@ -390,9 +390,8 @@ fn cmnm_model_name_refuses_before_retained_copy() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) =
         DecodeContext::from_root_bytes(data, &arena, &policy).expect("CMNM input is admitted");
-    let error = super::super::cmnm_model_name(&ctx, data)
-        .transpose()
-        .expect_err("model name needs retained bytes");
+    let error =
+        super::super::cmnm_model_name(&ctx, data).expect_err("model name needs retained bytes");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo CMNM model name"));
@@ -412,7 +411,6 @@ fn native_model_name_refuses_before_retained_copy() {
     let (ctx, _) = DecodeContext::from_root_bytes(data, &arena, &policy)
         .expect("native name input is admitted");
     let error = super::super::native_model_name(&ctx, std::slice::from_ref(&section))
-        .transpose()
         .expect_err("native name needs retained bytes");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
@@ -429,7 +427,6 @@ fn native_model_name_succeeds_under_service_policy() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
         .expect("native name input is admitted");
     let name = super::super::native_model_name(&ctx, std::slice::from_ref(&section))
-        .transpose()
         .expect("native name is admitted")
         .expect("one native name");
     assert_eq!(name.0, "widget");

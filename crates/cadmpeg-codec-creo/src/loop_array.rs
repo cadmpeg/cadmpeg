@@ -7,7 +7,6 @@
 //! loops.
 #![deny(clippy::disallowed_methods)]
 
-use cadmpeg_core::bytes::find_from as find;
 use cadmpeg_core::decode::{bounded_len, DecodeContext};
 use cadmpeg_core::CodecError;
 
@@ -130,14 +129,6 @@ fn compact_at(data: &[u8], offset: usize, end: usize) -> Option<(u32, usize)> {
     }
 }
 
-fn frame_end(data: &[u8], start: usize, end: usize) -> usize {
-    ARRAY_BOUNDARY_LABELS
-        .iter()
-        .filter_map(|label| find(data, label, start).filter(|offset| *offset < end))
-        .min()
-        .unwrap_or(end)
-}
-
 fn prototype_close(data: &[u8], start: usize, end: usize, class_id: u32) -> Option<usize> {
     let close_end = end.checked_sub(4)?;
     for offset in start..=close_end {
@@ -247,17 +238,15 @@ fn parse_frame(
         return Ok(None);
     }
     let header_end = after_class + 2;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(data.len() - header_end)
-            .checked_mul(cadmpeg_core::decode::u64_from_index(
-                ARRAY_BOUNDARY_LABELS.len(),
-            ))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("creo loop frame boundaries", u64::MAX, u64::MAX)
-            })?,
-        "creo loop frame boundaries",
-    )?;
-    let end = frame_end(data, header_end, section_end);
+    let mut end = section_end;
+    for label in ARRAY_BOUNDARY_LABELS {
+        if let Some(offset) = ctx
+            .find_bytes_from(data, label, header_end, "creo loop frame boundaries")?
+            .filter(|offset| *offset < section_end)
+        {
+            end = end.min(offset);
+        }
+    }
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(end - header_end)
             .checked_mul(1 + cadmpeg_core::decode::u64_from_index(PROTOTYPE_FIELDS.len()))
@@ -342,14 +331,9 @@ fn parse_frame(
 pub(crate) fn scan(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<LoopArrayScan, CodecError> {
     let mut result = LoopArrayScan::default();
     let mut search = 0;
-    loop {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(data.len() - search),
-            "creo loop array discovery",
-        )?;
-        let Some(offset) = find(data, LO_ARRAY_LABEL, search) else {
-            break;
-        };
+    while let Some(offset) =
+        ctx.find_bytes_from(data, LO_ARRAY_LABEL, search, "creo loop array discovery")?
+    {
         let Some(next_search) = offset.checked_add(LO_ARRAY_LABEL.len()) else {
             break;
         };
@@ -369,14 +353,14 @@ pub(crate) fn scan(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<LoopArrayScan
     }
     ctx.stable_sort_by(
         result.frames.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo scan result frames ordering",
     )?;
     ctx.stable_sort_by(
         result.records.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo scan result records ordering",
     )?;
     Ok(result)

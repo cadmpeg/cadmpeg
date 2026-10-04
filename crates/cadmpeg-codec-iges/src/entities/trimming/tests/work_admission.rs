@@ -172,7 +172,8 @@ fn boundary_clustering_propagates_root_work_refusal() {
             .unwrap(),
     ];
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 2;
+    // Two parent initialization visits and one size fill precede the root read.
+    policy.limits.max_work_units = 2 + 1;
     crate::test_support::with_policy_context(&[], &policy, |ctx| {
         let result = super::super::cluster_boundary_positions(
             &points,

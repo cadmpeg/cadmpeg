@@ -895,8 +895,8 @@ pub(in crate::native) fn feature_draft_construction_graph_payloads(
         );
         ctx.stable_sort_by(
             &mut graph,
-            |left, right| left.ordinal.cmp(&right.ordinal),
-            |_| 0,
+            |value| &value.ordinal,
+            Ord::cmp,
             "sort NX draft construction graph",
         )?;
         if graph

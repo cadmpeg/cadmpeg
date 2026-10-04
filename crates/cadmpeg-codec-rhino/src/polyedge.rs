@@ -248,7 +248,7 @@ pub(crate) fn decode(
         }
         previous = Some(value);
         reserved
-            .push(value)
+            .push(expand.ctx(), value, "Rhino polyedge parameters")
             .map_err(|error| refused(body.position(), &error))?;
     }
     let parameters = reserved
@@ -278,12 +278,11 @@ pub(crate) fn decode(
             ));
         }
         segments
-            .push(segment(
-                expand.root(),
-                data,
-                class.class_data_range,
-                archive,
-            )?)
+            .push(
+                expand.ctx(),
+                segment(expand.root(), data, class.class_data_range, archive)?,
+                "Rhino polyedge segments",
+            )
             .map_err(|error| refused(body.position(), &error))?;
         body.skip(wrapper.next_offset() - start).ok_or_else(|| {
             FramingError::structural(body.position(), "polyedge segment overruns body")

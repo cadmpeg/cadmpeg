@@ -72,7 +72,7 @@ pub(crate) struct AssemblyPlacement<'a> {
 }
 
 /// Records one more occurrence of `cause` in a non-zero tally.
-pub(crate) fn count_unresolved<C: Ord>(
+pub(crate) fn count_unresolved<C: Ord + cadmpeg_core::decode::cost::DecodeCost>(
     ctx: &DecodeContext<'_>,
     counts: &mut BTreeMap<C, NonZeroUsize>,
     cause: C,
@@ -103,6 +103,22 @@ pub(crate) enum UnresolvedCause {
     DuplicateOccurrence,
     InvalidTransform,
     Placement,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for UnresolvedCause {
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
+    }
 }
 
 impl UnresolvedCause {
@@ -140,21 +156,18 @@ pub(crate) fn project_occurrences(
         external_references
             .iter()
             .map(|record| (record.reference_id, record)),
-        |_| Ok(4),
         "index Inventor external references",
     )?;
     let (occurrence_records, _occurrence_records_storage) = ctx.unique_index(
         assembly_occurrences
             .iter()
             .map(|record| (record.occurrence_id, record)),
-        |_| Ok(4),
         "index Inventor assembly occurrences",
     )?;
     let (placements, _placements_storage) = ctx.unique_index(
         assembly_placements
             .iter()
             .map(|record| (record.occurrence_id, record)),
-        |_| Ok(4),
         "index Inventor assembly placements",
     )?;
     let mut emitted_ids = HashSet::new();
@@ -1207,7 +1220,9 @@ mod tests {
         state: [u16; 2],
         document_id: &str,
     ) -> ExternalReferenceRecord {
-        ExternalReferenceRecord::try_from(crate::native::ufrx::ExternalReferenceRecordWire {
+        ExternalReferenceRecord::try_from(crate::native::ufrx::ExternalReferenceRecordWire::<
+            String,
+        > {
             id: format!("inventor:ufrx:external-reference#{reference_id}"),
             ordinal: reference_id,
             path: path.into(),
