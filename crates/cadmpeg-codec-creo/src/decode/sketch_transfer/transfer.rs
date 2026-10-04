@@ -77,7 +77,7 @@ fn expected_segment_rows(
     table: &crate::feature::definitions::FeatureSegmentTable,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let declared_count = usize::try_from(table.declared_count).or_else(|_| {
-        Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(
+        Err(cadmpeg_core::CodecError::Malformed(ctx.format_retained(
             format_args!(
                 "feature {definition_id} states segment table count {}, which exceeds the addressable row range {}",
                 table.declared_count,
@@ -88,7 +88,7 @@ fn expected_segment_rows(
     })?;
     let elided_prototype_rows = usize::from(table.has_elided_prototype);
     declared_count.checked_sub(elided_prototype_rows).map_or_else(
-        || Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(
+        || Err(cadmpeg_core::CodecError::Malformed(ctx.format_retained(
             format_args!(
                 "feature {definition_id} states segment table count {declared_count} and \
                  {elided_prototype_rows} elided prototype row(s), so the ordinary row count is below zero"

@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::super::saved_section_missing_line_geometry;
+use super::super::{
+    resolved_section_segment_geometry_with_missing_line, saved_section_missing_line_geometry,
+};
+use crate::feature::definitions::{FeatureSegment, FeatureSegmentKind};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
+use std::collections::BTreeMap;
 
 fn fixture() -> crate::feature::definitions::FeatureDefinition {
     use crate::feature::definitions::{
@@ -252,4 +256,81 @@ fn missing_line_keeps_service_geometry_and_offset() {
         })
         .expect("line geometry")
     );
+}
+
+#[test]
+fn missing_line_fallback_geometry_copy_refuses_work_and_retained_bytes() {
+    let mut definition = fixture();
+    definition.segments = None;
+    definition.saved_section = None;
+    let segment = FeatureSegment {
+        kind: FeatureSegmentKind::Line([7, 9]),
+        directions: [None; 3],
+        center_id: None,
+        arc_orientation: None,
+        vertical_horizontal: None,
+        radius_ref: None,
+        radius2_ref: None,
+        external_id: 90,
+        body: Vec::new(),
+        offset: 90,
+    };
+    let native_kind = cadmpeg_core::text::NonBlankString::try_from("fallback geometry")
+        .expect("nonblank native geometry kind");
+    let geometry = SketchGeometry::try_from(SketchGeometryDefinition::Native { native_kind })
+        .expect("native geometry");
+    let missing_line = (segment.offset, geometry);
+    let points = BTreeMap::new();
+    let arena = DecodeArena::new();
+
+    let mut work_policy = DecodePolicy::service();
+    work_policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &work_policy).expect("empty root");
+    let work_error = resolved_section_segment_geometry_with_missing_line(
+        &ctx,
+        &definition,
+        &points,
+        &segment,
+        Some(&missing_line),
+    )
+    .expect_err("the fallback copy requires work");
+    assert!(
+        matches!(work_error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo missing line fallback geometry"),
+        "{work_error:?}"
+    );
+
+    let mut retained_policy = DecodePolicy::service();
+    let native_bytes = u64::try_from("fallback geometry".len()).expect("short fixture length");
+    retained_policy.limits.max_retained_bytes = native_bytes - 1;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &retained_policy).expect("empty root");
+    let retained_error = resolved_section_segment_geometry_with_missing_line(
+        &ctx,
+        &definition,
+        &points,
+        &segment,
+        Some(&missing_line),
+    )
+    .expect_err("the fallback native kind exceeds the retained cap");
+    assert!(
+        matches!(retained_error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo missing line fallback geometry"),
+        "{retained_error:?}"
+    );
+
+    let result = crate::decode::with_test_decode_ctx(|ctx| {
+        resolved_section_segment_geometry_with_missing_line(
+            ctx,
+            &definition,
+            &points,
+            &segment,
+            Some(&missing_line),
+        )
+    })
+    .expect("service fallback copy")
+    .expect("matching missing-line geometry");
+    assert_eq!(result, missing_line.1);
 }

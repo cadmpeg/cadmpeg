@@ -674,16 +674,26 @@ pub(in super::super) fn feature_result_topology(
     else {
         return Ok(None);
     };
-    let id = FeatureResultTopologyId::mint(ctx.format_retained(
+    let id_text = ctx.format_retained(
         format_args!("creo:model:feature-result-topology#{feature_id}"),
         "creo feature result topology ID",
-    )?)
-    .map_err(|_| CodecError::Malformed("constructed result topology ID is invalid".into()))?;
-    let output_of = IrFeatureId::mint(ctx.format_retained(
+    )?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(id_text.len()),
+        "creo feature result topology identity validation",
+    )?;
+    let id = FeatureResultTopologyId::mint(id_text)
+        .map_err(|_| CodecError::Malformed("constructed result topology ID is invalid".into()))?;
+    let output_of_text = ctx.format_retained(
         format_args!("creo:model:feature#{feature_id}"),
         "creo feature result owner ID",
-    )?)
-    .map_err(|_| CodecError::Malformed("constructed result owner ID is invalid".into()))?;
+    )?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(output_of_text.len()),
+        "creo feature result owner identity validation",
+    )?;
+    let output_of = IrFeatureId::mint(output_of_text)
+        .map_err(|_| CodecError::Malformed("constructed result owner ID is invalid".into()))?;
     Ok(Some(FeatureResultTopology::new(
         id, output_of, members, None,
     )))
@@ -704,6 +714,10 @@ pub(in super::super) fn generated_surface_face_refs(
         let feature_text = ctx.format_retained(
             format_args!("creo:model:feature#{}", row.feature_id),
             "creo generated surface feature IDs",
+        )?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(feature_text.len()),
+            "creo generated surface feature identity validation",
         )?;
         let feature = IrFeatureId::mint(feature_text)
             .map_err(|_| CodecError::Malformed("constructed Creo feature ID is invalid".into()))?;

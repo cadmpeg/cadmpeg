@@ -1007,3 +1007,60 @@ fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
         .is_none()
     );
 }
+
+#[test]
+fn feature_result_identity_validation_refuses_at_work_boundaries() {
+    let (tables, rows) = one_result_surface();
+    let topology = crate::test_support::assert_work_boundaries(
+        &[
+            "creo feature result topology identity validation",
+            "creo feature result owner identity validation",
+        ],
+        |ctx| feature_result_topology(ctx, &tables, &rows, &[], 17),
+    )
+    .expect("one feature result topology");
+    assert_eq!(topology.id.as_str(), "creo:model:feature-result-topology#17");
+    assert_eq!(topology.output_of.as_str(), "creo:model:feature#17");
+    assert_eq!(
+        topology
+            .faces()
+            .iter()
+            .map(cadmpeg_core::text::NonBlankString::as_str)
+            .collect::<Vec<_>>(),
+        vec!["surface#201"],
+    );
+}
+
+#[test]
+fn generated_surface_feature_identity_validation_refuses_at_work_boundary() {
+    let row = crate::surface::SurfaceRow {
+        id: 201,
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 17,
+        reversed: false,
+        boundary_type: crate::surface::BoundaryType::Code00,
+        next_surface: 0,
+        offset: 0,
+    };
+    let available = std::collections::BTreeSet::from([
+        cadmpeg_ir::features::FeatureId::mint("creo:model:feature#17")
+            .expect("fixture feature ID"),
+    ]);
+    let results = std::collections::BTreeMap::from([(17, vec![201])]);
+    let generated = crate::test_support::assert_work_boundaries(
+        &["creo generated surface feature identity validation"],
+        |ctx| {
+            generated_surface_face_refs(
+                ctx,
+                &[201],
+                std::slice::from_ref(&row),
+                &results,
+                &available,
+            )
+        },
+    )
+    .expect("row has one matching generated face");
+    assert_eq!(generated.len(), 1);
+    assert_eq!(generated[0].feature.as_str(), "creo:model:feature#17");
+    assert_eq!(generated[0].local_id.as_str(), "surface#201");
+}

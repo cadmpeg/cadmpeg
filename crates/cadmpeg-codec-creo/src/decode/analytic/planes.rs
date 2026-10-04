@@ -1595,6 +1595,7 @@ fn select_stored_frame_branches(
 
     let mut filtered = domains;
     loop {
+        ctx.charge_work(1, "creo plane branch propagation rounds")?;
         let mut changed = false;
         for constraint in ctx.admit_iter(&constraints, "creo plane branch constraints")? {
             let Some(first) = filtered.get(&constraint.faces[0]) else {

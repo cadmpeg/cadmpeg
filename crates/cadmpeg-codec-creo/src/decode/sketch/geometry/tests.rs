@@ -63,6 +63,22 @@ fn saved_profile_collections_preserve_circle_and_line_order() {
 }
 
 #[test]
+fn saved_profile_scans_refuse_before_component_and_chain_visits() {
+    let (sketch, geometries) = saved_profile_fixture();
+    let profiles = crate::test_support::assert_work_boundaries(
+        &[
+            "creo saved profile components",
+            "creo saved profile seed candidates",
+            "creo saved profile seed comparisons",
+            "creo saved profile chain steps",
+        ],
+        |ctx| super::saved_profile_chains(ctx, &sketch, &geometries),
+    );
+    assert_eq!(profiles.len(), 2);
+    assert_eq!(profiles[1].len(), 4);
+}
+
+#[test]
 fn saved_profile_entity_identity_refuses_retained_limit() {
     let (sketch, geometries) = saved_profile_fixture();
     let arena = DecodeArena::new();

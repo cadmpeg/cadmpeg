@@ -1783,11 +1783,32 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
         if !compatible {
             continue;
         }
-        let offset = candidates
-            .iter()
-            .map(|(_, offset)| *offset)
-            .min()
-            .unwrap_or(*offset);
+        let mut offsets = ctx
+            .admit_iter(candidates, "creo analytic pcurve candidate minimum candidates")?
+            .map(|(_, offset)| *offset);
+        let mut minimum_offset = match offsets.next() {
+            Some(offset) => offset,
+            None => *offset,
+        };
+        for candidate_offset in offsets {
+            let comparison_work = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>())
+                .checked_mul(2)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "creo analytic pcurve candidate minimum comparisons",
+                        u64::MAX,
+                        u64::MAX,
+                    )
+                })?;
+            ctx.charge_work(
+                comparison_work,
+                "creo analytic pcurve candidate minimum comparisons",
+            )?;
+            if candidate_offset < minimum_offset {
+                minimum_offset = candidate_offset;
+            }
+        }
+        let offset = minimum_offset;
         let id = crate::identity::compose_checked::<CurveId>(
             ctx,
             &crate::identity::VISIBGEOM_CURVE,
@@ -2008,6 +2029,7 @@ pub(super) fn solve_pcurve_vertex_domains_with_authoritative_points(
             || (agree(first, points[1]) && agree(second, points[0]))
     };
     loop {
+        ctx.charge_work(1, "creo pcurve vertex propagation rounds")?;
         let mut changed = false;
         for (vertices, points) in ctx.admit_iter(constraints, "creo pcurve vertex propagation")? {
             if vertices[0] == vertices[1] {
@@ -2549,6 +2571,32 @@ mod tests {
     use std::collections::BTreeSet;
 
     #[test]
+    fn pcurve_vertex_propagation_round_refuses_work() {
+        let constraints: [super::PcurveVertexConstraint; 1] =
+            [([1, 2], [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])];
+        let fixed_points = BTreeMap::from([
+            (1, [0.0, 0.0, 0.0]),
+            (2, [1.0, 0.0, 0.0]),
+        ]);
+        let solved = crate::test_support::assert_work_boundaries(
+            &["creo pcurve vertex propagation rounds"],
+            |ctx| {
+                super::solve_pcurve_vertex_domains(
+                    ctx,
+                    &constraints,
+                    &fixed_points,
+                    &BTreeMap::new(),
+                    &BTreeMap::new(),
+                )
+            },
+        );
+        assert_eq!(
+            solved,
+            BTreeMap::from([(1, [0.0, 0.0, 0.0]), (2, [1.0, 0.0, 0.0])]),
+        );
+    }
+
+    #[test]
     fn legacy_spline_topology_filter_is_layout_scoped() {
         let rows = vec![
             crate::surface::SurfaceRow {
@@ -2971,6 +3019,26 @@ mod tests {
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "creo analytic pcurve curve identity copy")
         );
+    }
+
+    #[test]
+    fn analytic_pcurve_transfer_minimum_comparison_refuses_work() {
+        let transferred = crate::test_support::assert_work_boundaries(
+            &["creo analytic pcurve candidate minimum comparisons"],
+            |ctx| {
+                let (mut scan, mut ir) = one_plane_pcurve_fixture();
+                let duplicate = scan.curves.pcurves[0].clone();
+                scan.curves.pcurves.push(duplicate);
+                transfer_analytic_pcurve_carriers(
+                    ctx,
+                    &scan,
+                    &mut ir,
+                    &mut cadmpeg_ir::AnnotationBuilder::new(),
+                    &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+                )
+            },
+        );
+        assert_eq!(transferred.len(), 1);
     }
 
     #[test]

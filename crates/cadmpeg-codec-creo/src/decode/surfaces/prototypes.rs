@@ -224,7 +224,7 @@ pub(super) fn surface_prototype_frame_bounds(
         return Ok(Some((section.offset(), section_end)));
     }
     let Some(payload) = crate::container::section_region(&scan.framing.data, section) else {
-        return Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(
+        return Err(cadmpeg_core::CodecError::Malformed(ctx.format_retained(
             format_args!(
                 "creo section `{}` declares the region {}..{}, past the scanned file length {}",
                 section.name(),
@@ -261,7 +261,7 @@ fn frame_bound(
     relative: usize,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let Some(bound) = section.offset().checked_add(relative) else {
-        return Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(
+        return Err(cadmpeg_core::CodecError::Malformed(ctx.format_retained(
             format_args!(
             "section {} states offset {} and a surface array bound at {relative}, which do not \
              form an address",

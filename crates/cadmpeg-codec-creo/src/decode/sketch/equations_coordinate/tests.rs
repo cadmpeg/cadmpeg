@@ -5,6 +5,61 @@ use super::{SectionCoordinateVariable, SectionEqualLengthConstraint, SectionEqua
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use std::collections::BTreeMap;
 
+#[test]
+fn section_component_loops_refuse_before_traversal() {
+    let equations = [SectionEquationFixture::point_value(1, SectionAxis::U, 1.0)];
+    crate::test_support::assert_work_boundaries(
+        &[
+            "creo section coordinate graph visits",
+            "creo section coordinate components",
+        ],
+        |ctx| super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new()),
+    );
+}
+
+#[test]
+fn unsigned_component_loop_refuses_before_component_work() {
+    let equations = [SectionEquationFixture::point_value(1, SectionAxis::U, 1.0)];
+    let distances = [(1, 2, SectionAxis::U, 1.0)];
+    crate::test_support::assert_work_boundaries(
+        &["creo unsigned coordinate components"],
+        |ctx| {
+            super::solve_unsigned_dimension_coordinates(
+                ctx,
+                &equations,
+                &BTreeMap::new(),
+                &distances,
+            )
+        },
+    );
+}
+
+#[test]
+fn section_pivot_max_search_refuses_before_range_scan() {
+    let solution = crate::test_support::assert_work_boundaries(
+        &[
+            "creo section pivot candidate rows",
+            "creo section pivot selected coefficient lookup",
+            "creo section pivot candidate coefficient lookup",
+            "creo section pivot coefficient comparisons",
+        ],
+        |ctx| {
+            let mut matrix = vec![
+                super::SectionLinearRow {
+                    coefficients: BTreeMap::from([(0, 1.0)]),
+                    rhs: 1.0,
+                },
+                super::SectionLinearRow {
+                    coefficients: BTreeMap::from([(0, 2.0)]),
+                    rhs: 2.0,
+                },
+            ];
+            super::uniquely_solved_linear_variables(ctx, &mut matrix, 1)
+        },
+    );
+    assert_eq!(solution, Some(vec![(0, 1.0)]));
+}
+
 fn with_collection_limit<T>(limit: u64, run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();

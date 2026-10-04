@@ -675,6 +675,10 @@ pub(in super::super) fn model_feature_ids(
             format_args!("creo:model:feature#{feature_id}"),
             "creo model feature identity text",
         )?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(text.len()),
+            "creo model feature identity validation",
+        )?;
         let id = IrFeatureId::mint(text)
             .map_err(|_| CodecError::Malformed("constructed Creo feature ID is invalid".into()))?;
         ctx.insert_btree_set(&mut ids, id, "creo model feature identity nodes")?;
@@ -859,4 +863,21 @@ mod allocation_tests {
                 && resource.operation == "creo unresolved named profile identity")
         );
     }
+
+    #[test]
+    fn model_feature_identity_validation_refuses_at_work_boundary() {
+        let scan = generator_scan();
+        let ids = crate::test_support::assert_work_boundaries(
+            &["creo model feature identity validation"],
+            |ctx| model_feature_ids(ctx, &scan),
+        );
+        assert_eq!(
+            ids,
+            BTreeSet::from([cadmpeg_ir::features::FeatureId::mint(
+                "creo:model:feature#50",
+            )
+            .expect("fixture feature identity")]),
+        );
+    }
+
 }

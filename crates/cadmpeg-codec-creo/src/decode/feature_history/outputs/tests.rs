@@ -287,6 +287,21 @@ fn copied_output_body_id_refuses_before_retained_bytes() {
 }
 
 #[test]
+fn copied_unicode_output_body_id_charges_only_retained_copy_work() {
+    let arena = DecodeArena::new();
+    let body = BodyId::mint("creo:test:body#é").expect("identity grammar");
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units =
+        cadmpeg_core::decode::u64_from_index(body.as_str().len());
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+
+    assert_eq!(
+        copy_body_id(&ctx, &body).expect("typed identity copy fits its byte-work limit"),
+        body
+    );
+}
+
+#[test]
 fn generated_input_lookup_refuses_before_scoped_text() {
     let scan = crate::test_support::empty_container_scan();
     let arena = DecodeArena::new();
@@ -1240,5 +1255,41 @@ fn evaluated_sweep_body_scan_refuses_before_identity_comparison() {
     assert_eq!(
         outputs,
         vec![BodyId::mint("creo:feature:extrusion#40:body").expect("identity grammar")],
+    );
+}
+
+#[test]
+fn evaluated_sweep_body_identity_validation_refuses_at_work_boundary() {
+    let ir = sweep_output_ir();
+    let bodies = crate::test_support::assert_work_boundaries(
+        &["creo evaluated sweep body identity validation"],
+        |ctx| evaluated_sweep_output_bodies(ctx, &ir, 40),
+    );
+    assert_eq!(
+        bodies,
+        vec![BodyId::mint("creo:feature:extrusion#40:body").expect("fixture body ID")],
+    );
+}
+
+#[test]
+fn feature_parameter_collision_boundary_keeps_first_unused_suffix() {
+    let parameters = crate::test_support::assert_work_boundaries(
+        &["creo feature parameter collision candidate"],
+        |ctx| {
+            let mut parameters = BTreeMap::from([
+                ("choice.value".to_owned(), "a".to_owned()),
+                ("choice.value#2".to_owned(), "b".to_owned()),
+            ]);
+            insert_feature_parameter(ctx, &mut parameters, "choice.value", "c")?;
+            Ok::<_, cadmpeg_core::CodecError>(parameters)
+        },
+    );
+    assert_eq!(
+        parameters.into_iter().collect::<Vec<_>>(),
+        vec![
+            ("choice.value".to_owned(), "a".to_owned()),
+            ("choice.value#2".to_owned(), "b".to_owned()),
+            ("choice.value#3".to_owned(), "c".to_owned()),
+        ],
     );
 }

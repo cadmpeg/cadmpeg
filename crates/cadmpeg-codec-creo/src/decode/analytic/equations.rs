@@ -669,11 +669,14 @@ fn real_polynomial_roots(
         value: coefficient.value / scale,
         bound: coefficient.bound / scale,
     }));
-    while scaled.len() > 1
-        && scaled
+    while scaled.len() > 1 {
+        ctx.charge_work(1, "creo polynomial leading coefficient trim")?;
+        let should_trim = scaled
             .last()
-            .is_some_and(|coefficient| coefficient.value.abs() <= coefficient.bound)
-    {
+            .is_some_and(|coefficient| coefficient.value.abs() <= coefficient.bound);
+        if !should_trim {
+            break;
+        }
         scaled.pop();
     }
     let degree = scaled.len() - 1;
@@ -1993,6 +1996,21 @@ mod tests {
         assert!(matches!(super::real_polynomial_roots(&ctx, &coefficients),
             Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
                 if refusal.operation == "creo polynomial root recursion"));
+    }
+
+    #[test]
+    fn polynomial_leading_coefficient_trim_refuses_work() {
+        let coefficients = [
+            BoundedCoefficient { value: -1.0, bound: 0.0 },
+            BoundedCoefficient { value: 1.0, bound: 0.0 },
+            BoundedCoefficient { value: 0.0, bound: 0.0 },
+        ];
+        let roots = crate::test_support::assert_work_boundaries(
+            &["creo polynomial leading coefficient trim"],
+            |ctx| super::real_polynomial_roots(ctx, &coefficients),
+        );
+        assert_eq!(roots.len(), 1);
+        assert_eq!(roots[0].value, 1.0);
     }
 
     #[test]

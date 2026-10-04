@@ -373,11 +373,13 @@ pub(in crate::decode) fn resolved_section_radii(
     }
     let mut radii = BTreeMap::new();
     while let Some(seed) = remaining.first().copied() {
+        ctx.charge_work(1, "creo radius components")?;
         let mut component = BTreeSet::new();
         ctx.insert_btree_set(&mut component, seed, "creo radius component nodes")?;
         let mut pending = std::collections::VecDeque::new();
         ctx.push_back(&mut pending, seed, "creo pending radius nodes")?;
         while let Some(radius_id) = pending.pop_front() {
+            ctx.charge_work(1, "creo radius graph visits")?;
             if let Some(neighbors) = adjacency.get(&radius_id) {
                 for neighbor in ctx.admit_iter(neighbors, "creo radius neighbors")? {
                     if ctx.insert_btree_set(&mut component, *neighbor, "creo radius component nodes")? {
@@ -892,6 +894,16 @@ mod tests {
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
             .expect("test input admitted");
         run(&ctx)
+    }
+
+    #[test]
+    fn radius_component_scans_refuse_before_component_and_frontier_visits() {
+        let definition = arc_radius_definition([3.0, 3.0]);
+        let radii = crate::test_support::assert_work_boundaries(
+            &["creo radius components", "creo radius graph visits"],
+            |ctx| resolved_section_radii(ctx, &definition),
+        );
+        assert_eq!(radii.get(&42), Some(&3.0));
     }
 
     #[test]

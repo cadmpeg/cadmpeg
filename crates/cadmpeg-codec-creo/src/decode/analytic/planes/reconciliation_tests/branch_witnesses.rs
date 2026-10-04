@@ -469,6 +469,16 @@ fn plane_branch_constraint_work_refuses_work_limit() {
             && resource.operation == "creo plane branch constraints"));
 }
 
+#[test]
+fn plane_branch_propagation_round_refuses_work_limit() {
+    let scan = stored_frame_branch_scan(true);
+    let candidates = crate::test_support::assert_work_boundaries(
+        &["creo plane branch propagation rounds"],
+        |ctx| plane_candidates(ctx, &scan),
+    );
+    assert!(candidates.contains_key(&1));
+}
+
 fn carrier_pcurve_branch_scan() -> crate::container::ContainerScan<'static> {
     let mut scan = stored_frame_branch_scan(false);
     scan.surfaces.rows[1].kind = crate::surface::SurfaceKind::Cylinder;

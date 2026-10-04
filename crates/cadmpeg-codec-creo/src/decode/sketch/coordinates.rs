@@ -224,6 +224,7 @@ fn append_unique_auxiliary_coordinate_constraints(
     let mut appended = false;
     let mut index = previous_len;
     while index < equations.len() {
+        ctx.charge_work(1, "creo auxiliary coordinate dedup passes")?;
         if ctx
             .admit_iter(
                 &equations[..index],
@@ -236,6 +237,29 @@ fn append_unique_auxiliary_coordinate_constraints(
                     .is_some_and(|(first, second)| approximately_equal(first, second))
             })
         {
+            let shifted = index
+                .checked_add(1)
+                .and_then(|next| equations.len().checked_sub(next))
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "creo auxiliary coordinate tail shift extent",
+                        u64::MAX,
+                        u64::MAX,
+                    )
+                })?;
+            let shifted_bytes = shifted
+                .checked_mul(std::mem::size_of::<SectionCoordinateEquation>())
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "creo auxiliary coordinate tail shift byte extent",
+                        u64::MAX,
+                        u64::MAX,
+                    )
+                })?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(shifted_bytes),
+                "creo auxiliary coordinate tail shift bytes",
+            )?;
             equations.remove(index);
             continue;
         }
@@ -1271,6 +1295,8 @@ pub(in crate::decode) fn resolved_section_points(
 
 #[cfg(test)]
 mod tests {
+    mod auxiliary_work;
+
     use std::collections::{BTreeMap, BTreeSet};
 
     use super::super::equations_scalar::resolved_section_scalar_values;

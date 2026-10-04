@@ -130,6 +130,10 @@ pub(super) fn thicken_feature_definition(
                 format_args!("creo:visibgeom:face#{surface_id}"),
                 "creo thicken face IDs",
             )?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(text.len()),
+                "creo thicken face identity validation",
+            )?;
             let face = FaceId::mint(text).map_err(cadmpeg_core::CodecError::malformed)?;
             ctx.reserve_vec(&mut faces, 1, "creo thicken face identities")?;
             faces.push(face);
@@ -221,8 +225,12 @@ fn hole_face_selection(
         }
     }
     if resolved {
-        let face = FaceId::mint(ctx.copy_retained_text(&candidate_id, "creo hole face IDs")?)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        let text = ctx.copy_retained_text(&candidate_id, "creo hole face IDs")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(text.len()),
+            "creo hole face identity validation",
+        )?;
+        let face = FaceId::mint(text).map_err(cadmpeg_core::CodecError::malformed)?;
         drop(candidate_id);
         drop(candidate_reservation);
         let mut faces = Vec::new();

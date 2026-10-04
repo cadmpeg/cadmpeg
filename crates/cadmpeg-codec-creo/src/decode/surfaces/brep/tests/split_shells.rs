@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
-use super::super::split_neutral_component_shells;
+use super::super::{split_neutral_component_shells, NeutralShellSpec};
 
 fn split_error(limit: u64, connected: bool, wire: bool, attached: bool) -> CodecError {
     let faces: &[u32] = if connected { &[1, 2] } else { &[1] };
@@ -46,6 +46,30 @@ fn assert_refusal(error: &CodecError, operation: &'static str) {
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == operation),
         "{error:?}"
+    );
+}
+
+#[test]
+fn shell_component_face_traversal_refuses_before_pop() {
+    let shells = crate::test_support::assert_work_boundaries(
+        &["creo B-rep shell component face visits"],
+        |ctx| {
+            split_neutral_component_shells(
+                ctx,
+                &[1],
+                &BTreeSet::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+            )
+        },
+    );
+    assert_eq!(
+        shells,
+        vec![NeutralShellSpec {
+            faces: vec![1],
+            wire_curves: BTreeSet::new(),
+        }]
     );
 }
 
@@ -127,4 +151,26 @@ fn brep_unattached_wire_shell_record_refuses_collection_limit() {
         &split_error(6, false, true, false),
         "creo B-rep shell records",
     );
+}
+
+#[test]
+fn pending_shell_face_traversal_refuses_before_pop() {
+    let run = |limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        split_neutral_component_shells(&ctx, &[1], &BTreeSet::new(), &BTreeMap::new(), &BTreeMap::new(), &BTreeMap::new())
+    };
+    let limit = crate::test_support::allocation_limit_at(
+        ResourceDimension::WorkUnits,
+        Some("creo B-rep pending shell face traversal"),
+        run,
+    );
+    assert!(matches!(run(limit), Err(CodecError::ResourceLimit(resource))
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo B-rep pending shell face traversal"));
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx|
+        split_neutral_component_shells(ctx, &[1], &BTreeSet::new(), &BTreeMap::new(), &BTreeMap::new(), &BTreeMap::new())
+    ).expect("service shell partition"), vec![NeutralShellSpec { faces: vec![1], wire_curves: BTreeSet::new() }]);
 }
