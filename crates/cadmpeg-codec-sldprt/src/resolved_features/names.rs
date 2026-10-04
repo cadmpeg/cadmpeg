@@ -331,15 +331,21 @@ pub(super) fn configuration(
     ctx: &DecodeContext<'_>,
     section: &str,
 ) -> Result<Option<String>, cadmpeg_core::CodecError> {
-    let Some(start) = section.find("Config-") else {
+    let Some(start) = ctx.find_text(section, "Config-", "find SLDPRT configuration prefix")? else {
         return Ok(None);
     };
     let start = start + "Config-".len();
     let tail = &section[start..];
-    let end = tail
-        .find("-ResolvedFeatures")
-        .or_else(|| tail.find('/'))
-        .unwrap_or(tail.len());
+    let end = match ctx.find_text(
+        tail,
+        "-ResolvedFeatures",
+        "find SLDPRT configuration suffix",
+    )? {
+        Some(end) => end,
+        None => ctx
+            .find_text(tail, "/", "find SLDPRT configuration path separator")?
+            .unwrap_or(tail.len()),
+    };
     if tail[..end].is_empty() {
         return Ok(None);
     }
