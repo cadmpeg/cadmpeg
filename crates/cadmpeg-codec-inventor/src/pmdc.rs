@@ -33,8 +33,16 @@ pub(crate) fn push_hex(
     operation: &'static str,
 ) -> Result<(), CodecError> {
     for byte in ctx.admit_iter(bytes, operation)? {
-        ctx.push_retained_char(text, char::from(HEX_DIGITS[usize::from(byte >> 4)]), operation)?;
-        ctx.push_retained_char(text, char::from(HEX_DIGITS[usize::from(byte & 0x0f)]), operation)?;
+        ctx.push_retained_char(
+            text,
+            char::from(HEX_DIGITS[usize::from(byte >> 4)]),
+            operation,
+        )?;
+        ctx.push_retained_char(
+            text,
+            char::from(HEX_DIGITS[usize::from(byte & 0x0f)]),
+            operation,
+        )?;
     }
     Ok(())
 }
@@ -112,8 +120,8 @@ impl PmDcReference {
 
     pub(crate) fn zip(
         ctx: &DecodeContext<'_>,
-        indices: Vec<u32>,
-        qualifiers: Vec<bool>,
+        indices: &[u32],
+        qualifiers: &[bool],
     ) -> Result<Vec<Self>, CodecError> {
         if indices.len() != qualifiers.len() {
             return Err(CodecError::malformed(format_args!(
@@ -122,8 +130,8 @@ impl PmDcReference {
                 qualifiers.len()
             )));
         }
-        let indices = ctx.admit_iter(&indices, "visit Inventor PmDc reference indices")?;
-        let qualifiers = ctx.admit_iter(&qualifiers, "visit Inventor PmDc reference qualifiers")?;
+        let indices = ctx.admit_iter(indices, "visit Inventor PmDc reference indices")?;
+        let qualifiers = ctx.admit_iter(qualifiers, "visit Inventor PmDc reference qualifiers")?;
         ctx.try_collect_vec(
             indices
                 .copied()
@@ -585,11 +593,14 @@ pub(crate) fn reference_list(
     marker: u16,
     field: &str,
 ) -> Result<PmDcReferenceList, CodecError> {
-    let (count, metadata) =
-        list_preamble(cursor, marker, field)?;
+    let (count, metadata) = list_preamble(cursor, marker, field)?;
     let mut references = ctx.vector_storage(count, "admit Inventor PmDc references")?;
     for _ in ctx.admit_iter(&(0..count), "visit Inventor PmDc list entries")? {
-        ctx.push_vec(&mut references, cursor.reference("reference-list entry")?, "admit Inventor PmDc references")?;
+        ctx.push_vec(
+            &mut references,
+            cursor.reference("reference-list entry")?,
+            "admit Inventor PmDc references",
+        )?;
     }
     PmDcReferenceList::new(marker, metadata, references).ok_or_else(|| {
         CodecError::Malformed("Inventor PmDc reference list metadata disagrees with length".into())
@@ -637,11 +648,14 @@ pub(crate) fn u32_list(
     marker: u16,
     field: &str,
 ) -> Result<PmDcU32List, CodecError> {
-    let (count, metadata) =
-        list_preamble(cursor, marker, field)?;
+    let (count, metadata) = list_preamble(cursor, marker, field)?;
     let mut values = ctx.vector_storage(count, "admit Inventor PmDc integers")?;
     for _ in ctx.admit_iter(&(0..count), "visit Inventor PmDc list entries")? {
-        ctx.push_vec(&mut values, cursor.u32("integer-list value")?, "admit Inventor PmDc integers")?;
+        ctx.push_vec(
+            &mut values,
+            cursor.u32("integer-list value")?,
+            "admit Inventor PmDc integers",
+        )?;
     }
     PmDcU32List::new(marker, metadata, values).ok_or_else(|| {
         CodecError::Malformed("Inventor PmDc integer list metadata disagrees with length".into())
@@ -804,8 +818,8 @@ mod tests {
         assert!(super::PmDcReference::new(0x8000_0000, false).is_none());
         assert!(super::PmDcReference::zip(
             &cadmpeg_test_support::service_decode_context(),
-            vec![0x8000_0000],
-            vec![false],
+            &[0x8000_0000],
+            &[false],
         )
         .is_err());
         assert!(serde_json::from_value::<super::PmDcReference>(

@@ -147,11 +147,11 @@ fn metadata_projection_refuses_scoped_and_retained_limits_before_normalized_name
         match dimension {
             ResourceDimension::MaterializedBytes => {
                 policy.limits.max_materialized_bytes =
-                    u64::try_from(cap).expect("normalized name length fits")
+                    u64::try_from(cap).expect("normalized name length fits");
             }
             ResourceDimension::RetainedBytes => {
                 policy.limits.max_retained_bytes =
-                    u64::try_from(cap).expect("metadata value length fits")
+                    u64::try_from(cap).expect("metadata value length fits");
             }
             _ => panic!("test resource dimension"),
         }

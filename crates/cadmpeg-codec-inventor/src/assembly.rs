@@ -435,8 +435,15 @@ fn parse_occurrence<'a>(
     if related_count != 0 {
         cursor.u32("occurrence related-list metadata")?;
         cursor.u32("occurrence related-list metadata")?;
-        for _ in ctx.admit_iter(&(0..related_count), "visit Inventor occurrence related references")? {
-            ctx.push_vec(&mut related_references, cursor.u32("occurrence related reference")?, "admit Inventor occurrence related references")?;
+        for _ in ctx.admit_iter(
+            &(0..related_count),
+            "visit Inventor occurrence related references",
+        )? {
+            ctx.push_vec(
+                &mut related_references,
+                cursor.u32("occurrence related reference")?,
+                "admit Inventor occurrence related references",
+            )?;
         }
     }
     let child_reference = cursor.u32("occurrence child reference")?;

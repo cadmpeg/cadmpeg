@@ -209,13 +209,17 @@ pub(crate) fn parse_meta_tables<'a>(
     let mut sizes = section_1_payload;
     for ordinal in ctx.admit_iter(&(0..block_count), "visit Inventor RSe table entries")? {
         let encoded = crate::reader::u32(&mut sizes, "block-size entry")?;
-        ctx.push_vec(&mut blocks, BlockDescriptor {
-            ordinal: u32::try_from(ordinal).map_err(|_| {
-                CodecError::Malformed("Inventor numeric value exceeds target range".into())
-            })?,
-            stored: encoded & 0x8000_0000 != 0,
-            payload_len: encoded & 0x7fff_ffff,
-        }, "admit Inventor RSe block descriptors")?;
+        ctx.push_vec(
+            &mut blocks,
+            BlockDescriptor {
+                ordinal: u32::try_from(ordinal).map_err(|_| {
+                    CodecError::Malformed("Inventor numeric value exceeds target range".into())
+                })?,
+                stored: encoded & 0x8000_0000 != 0,
+                payload_len: encoded & 0x7fff_ffff,
+            },
+            "admit Inventor RSe block descriptors",
+        )?;
     }
     let section_1 = MetaSection {
         number: MetaSectionNumber::One,
@@ -262,22 +266,26 @@ pub(crate) fn parse_meta_tables<'a>(
             "type descriptor",
         )?;
         let mut entry = crate::pmdc::Cursor::new(entry);
-        ctx.push_vec(&mut types, TypeDescriptor {
-            index: u8::try_from(index).map_err(|_| {
-                CodecError::Malformed("Inventor numeric value exceeds target range".into())
-            })?,
-            id: entry.take_array("type descriptor id")?,
-            fields: [
-                (
-                    entry.u16("type descriptor field 0 key")?,
-                    entry.u32("type descriptor field 0 value")?,
-                ),
-                (
-                    entry.u16("type descriptor field 1 key")?,
-                    entry.u32("type descriptor field 1 value")?,
-                ),
-            ],
-        }, "admit Inventor RSe metadata tables")?;
+        ctx.push_vec(
+            &mut types,
+            TypeDescriptor {
+                index: u8::try_from(index).map_err(|_| {
+                    CodecError::Malformed("Inventor numeric value exceeds target range".into())
+                })?,
+                id: entry.take_array("type descriptor id")?,
+                fields: [
+                    (
+                        entry.u16("type descriptor field 0 key")?,
+                        entry.u32("type descriptor field 0 value")?,
+                    ),
+                    (
+                        entry.u16("type descriptor field 1 key")?,
+                        entry.u32("type descriptor field 1 value")?,
+                    ),
+                ],
+            },
+            "admit Inventor RSe metadata tables",
+        )?;
     }
 
     let section_4 = MetaSection {

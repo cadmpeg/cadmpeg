@@ -860,7 +860,7 @@ fn render_expression<'a>(
         }
         let expression = ctx
             .get_hash_map(
-                &expressions,
+                expressions,
                 &(token, ordinal),
                 "access Inventor design records",
             )?
@@ -880,22 +880,14 @@ fn render_expression<'a>(
                     CodecError::Malformed("Inventor measured expression scalar is missing".into())
                 })?;
                 if scalar.get() == 0.0 {
-                    ctx.push_retained_char(
-                        &mut text,
-                        '0',
-                        "render Inventor expression bytes",
-                    )?;
+                    ctx.push_retained_char(&mut text, '0', "render Inventor expression bytes")?;
                 } else {
                     write!(&mut text, "{}", scalar.get()).map_err(|_| {
                         CodecError::Malformed("Inventor scalar formatting failed".into())
                     })?;
                 }
                 if !unit.symbol.is_empty() {
-                    ctx.push_retained_char(
-                        &mut text,
-                        ' ',
-                        "render Inventor expression bytes",
-                    )?;
+                    ctx.push_retained_char(&mut text, ' ', "render Inventor expression bytes")?;
                     ctx.append_retained(
                         &mut text,
                         unit.symbol,
@@ -906,7 +898,7 @@ fn render_expression<'a>(
             PmDcExpressionKind::ParameterReference { operand } => {
                 let target = ctx
                     .get_hash_map(
-                        &parameters,
+                        parameters,
                         &(token, operand.index() - 1),
                         "access Inventor design records",
                     )?
@@ -923,22 +915,14 @@ fn render_expression<'a>(
                     &rendered[&(operand.index() - 1)],
                     "render Inventor expression bytes",
                 )?;
-                ctx.push_retained_char(
-                    &mut text,
-                    ')',
-                    "render Inventor expression bytes",
-                )?;
+                ctx.push_retained_char(&mut text, ')', "render Inventor expression bytes")?;
             }
             PmDcExpressionKind::Binary {
                 operation,
                 left,
                 right,
             } => {
-                ctx.push_retained_char(
-                    &mut text,
-                    '(',
-                    "render Inventor expression bytes",
-                )?;
+                ctx.push_retained_char(&mut text, '(', "render Inventor expression bytes")?;
                 ctx.append_retained(
                     &mut text,
                     &rendered[&(left.index() - 1)],
@@ -960,11 +944,7 @@ fn render_expression<'a>(
                     &rendered[&(right.index() - 1)],
                     "render Inventor expression bytes",
                 )?;
-                ctx.push_retained_char(
-                    &mut text,
-                    ')',
-                    "render Inventor expression bytes",
-                )?;
+                ctx.push_retained_char(&mut text, ')', "render Inventor expression bytes")?;
             }
         }
         reserved.with_storage(|| {
@@ -988,7 +968,7 @@ fn render_expression<'a>(
     )? {
         let target = ctx
             .get_hash_map(
-                &parameters,
+                parameters,
                 &(token, ordinal),
                 "access Inventor design records",
             )?
@@ -2615,14 +2595,15 @@ mod tests {
             native_ref: None,
         };
         let parameters = vec![make("c", Some("b")), make("b", Some("a")), make("a", None)];
-        let id_bytes = parameters[0].id.as_str().len() as u64;
+        let id_bytes =
+            u64::try_from(parameters[0].id.as_str().len()).expect("identity byte length fits u64");
         // Indexing, dependency visits, closure flags, and the first queue step use 174 units.
         let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = (3 + 4 + 6 * id_bytes) + 3 + 3
-            + (3 + 2 + 2 * id_bytes) + 3 + 1;
+        policy.limits.max_work_units =
+            (3 + 4 + 6 * id_bytes) + 3 + 3 + (3 + 2 + 2 * id_bytes) + 3 + 1;
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty fixture view");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty fixture view");
         let error = close_parameter_graph(&ctx, parameters).expect_err("reverse-edge work refusal");
         assert!(matches!(
             error,

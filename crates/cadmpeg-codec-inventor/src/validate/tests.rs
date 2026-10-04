@@ -7,14 +7,16 @@ use std::collections::HashSet;
 #[test]
 fn hash_set_equality_matches_contents_across_insertion_order() {
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("context");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
     let left = HashSet::from(["north", "south"]);
     let equal = HashSet::from(["south", "north"]);
     let different = HashSet::from(["north", "east"]);
 
     assert!(equal_hash_sets(&ctx, &left, &equal, "compare test sets").expect("equal sets"));
-    assert!(!equal_hash_sets(&ctx, &left, &different, "compare test sets").expect("different sets"));
+    assert!(
+        !equal_hash_sets(&ctx, &left, &different, "compare test sets").expect("different sets")
+    );
 }
 
 #[test]

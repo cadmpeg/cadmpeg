@@ -527,14 +527,11 @@ impl AssemblyPlacementRecordWire {
             self.transform_encoding[1],
             self.transform,
         )?;
-        let suffix_len = match std::num::NonZeroU64::new(self.suffix_len) {
-            Some(suffix_len) => suffix_len,
-            None => {
-                return Err(CodecError::Malformed(ctx.copy_retained_text(
-                    "suffix_len must not be zero",
-                    "retain Inventor placement conversion issue",
-                )?));
-            }
+        let Some(suffix_len) = std::num::NonZeroU64::new(self.suffix_len) else {
+            return Err(CodecError::Malformed(ctx.copy_retained_text(
+                "suffix_len must not be zero",
+                "retain Inventor placement conversion issue",
+            )?));
         };
         let suffix_sha256 =
             match cadmpeg_ir::hash::digest::Sha256Digest::try_from(self.suffix_sha256) {
@@ -900,7 +897,7 @@ impl PmGraphicsFaceRecordWire {
             state: self.state,
             edge_references: PmDcPairedReferenceList::new(
                 self.edge_list_metadata,
-                PmDcReference::zip(ctx, self.edge_references, self.edge_reference_qualifiers)?,
+                PmDcReference::zip(ctx, &self.edge_references, &self.edge_reference_qualifiers)?,
             )
             .ok_or_else(|| {
                 CodecError::malformed("edge_list_metadata disagrees with edge_references")
@@ -948,9 +945,7 @@ impl PmGraphicsStyleCollectionRecord {
                         segment_token.as_str(),
                         "compare Inventor graphics style collection token",
                     )?;
-                    let valid_ordinal = if !valid_token {
-                        false
-                    } else {
+                    let valid_ordinal = if valid_token {
                         let ordinal_is_zero = ctx.equal(
                             ordinal,
                             "0",
@@ -962,24 +957,26 @@ impl PmGraphicsStyleCollectionRecord {
                                 "0",
                                 "check Inventor graphics style collection ordinal",
                             )?;
-                        if !canonical {
-                            false
-                        } else {
+                        if canonical {
                             let digits = ctx
                                 .admit_iter(
                                     ordinal.as_bytes(),
                                     "scan Inventor graphics style collection ordinal",
                                 )?
-                                .all(|byte| byte.is_ascii_digit());
-                            if !digits {
-                                false
-                            } else {
+                                .all(u8::is_ascii_digit);
+                            if digits {
                                 ctx.parse_text::<u32>(
                                     ordinal,
                                     "parse Inventor graphics style collection ordinal",
                                 )? == Ok(record_ordinal)
+                            } else {
+                                false
                             }
+                        } else {
+                            false
                         }
+                    } else {
+                        false
                     };
                     (valid_token, valid_ordinal)
                 }
@@ -1060,7 +1057,11 @@ impl PmGraphicsStyleCollectionRecordWire {
             self.segment_version_major,
             PmDcPairedReferenceList::new(
                 self.list_metadata,
-                PmDcReference::zip(ctx, self.style_references, self.style_reference_qualifiers)?,
+                PmDcReference::zip(
+                    ctx,
+                    &self.style_references,
+                    &self.style_reference_qualifiers,
+                )?,
             )
             .ok_or_else(|| {
                 CodecError::Malformed("list_metadata disagrees with style_references".into())
@@ -2229,7 +2230,6 @@ mod tests {
         empty_suffix["suffix_len"] = serde_json::json!(0);
         assert!(assembly_placement(empty_suffix)
             .expect_err("empty placement suffix")
-            .to_string()
             .contains("suffix_len"));
         for len in [1, 48, 49] {
             let mut nonempty_suffix = wire.clone();
@@ -2247,7 +2247,6 @@ mod tests {
             invalid["suffix_sha256"] = serde_json::json!(digest);
             assert!(assembly_placement(invalid)
                 .expect_err("invalid digest")
-                .to_string()
                 .contains("suffix_sha256"));
         }
         let mut nonfinite = wire.clone();

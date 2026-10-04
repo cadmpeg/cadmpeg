@@ -261,7 +261,7 @@ impl Serialize for ClassId {
 }
 
 impl ClassId {
-    fn from_text(ctx: &DecodeContext<'_>, value: String) -> Result<Self, CodecError> {
+    fn from_text(ctx: &DecodeContext<'_>, value: &str) -> Result<Self, CodecError> {
         let valid = value.len() == 32
             && ctx
                 .admit_iter(value.as_bytes(), "validate Inventor feature class identity")?
@@ -351,16 +351,13 @@ impl PmDcFeatureLabelPayloadWire {
         ctx: &DecodeContext<'_>,
     ) -> Result<PmDcFeatureLabelPayload, CodecError> {
         let name = ctx.validate_nonblank_text(self.name, "validate Inventor feature label name")?;
-        let name = match NonBlankString::try_from(name) {
-            Ok(name) => name,
-            Err(_) => {
-                return Err(CodecError::Malformed(ctx.copy_retained_text(
-                    "name must not be empty",
-                    "retain Inventor invalid feature label name",
-                )?));
-            }
+        let Ok(name) = NonBlankString::try_from(name) else {
+            return Err(CodecError::Malformed(ctx.copy_retained_text(
+                "name must not be empty",
+                "retain Inventor invalid feature label name",
+            )?));
         };
-        let class_id = ClassId::from_text(ctx, self.class_id)?;
+        let class_id = ClassId::from_text(ctx, &self.class_id)?;
         Ok(PmDcFeatureLabelPayload {
             save_version_major: self.save_version_major,
             header: self.header,
@@ -1513,7 +1510,7 @@ fn project_extrusion(
         "resolve Inventor feature sketch",
     ))
     .and_then(Option::as_ref)?;
-    let (sketch_native_id, _sketch_native_id_storage) = option_result_value!(ctx
+    let (sketch_native_id, sketch_native_id_storage) = option_result_value!(ctx
         .with_scoped_storage("resolve Inventor extrusion sketch native id", || sketch
             .id(ctx),));
     let sketch_id = option_result_value!(ctx.get_hash_map(
@@ -1521,7 +1518,7 @@ fn project_extrusion(
         sketch_native_id.as_str(),
         "access Inventor feature records",
     ))?;
-    drop(_sketch_native_id_storage);
+    drop(sketch_native_id_storage);
     let sketch_id = match sketch_id.try_clone_for_decode(ctx, "retain Inventor extrusion sketch id")
     {
         Ok(value) => value,
@@ -2024,6 +2021,8 @@ fn feature_result(
     slot: usize,
     index: &ProjectionIndex<'_>,
 ) -> Option<Result<(FeatureId, FeatureResultTopology), CodecError>> {
+    const FEATURE_ID_PREFIX: &str = "inventor:design:feature#";
+    const RESULT_ID_PREFIX: &str = "inventor:design:feature-result#";
     let collection = option_result_value!(slot_property(ctx, source, slot, index))?;
     let PmDcFeaturePropertyKind::References {
         family: PmDcFeatureReferenceFamily::ObjectCollection,
@@ -2047,9 +2046,7 @@ fn feature_result(
         }
         let body_id = option_result_value!(body.id(ctx));
         // Located::id uses the fixed nonblank `inventor:pmdc:` prefix.
-        let Some(body) = NonBlankString::from_ascii_leading(body_id) else {
-            return None;
-        };
+        let body = NonBlankString::from_ascii_leading(body_id)?;
         option_result_value!(ctx.push_vec(&mut bodies, body, "collect Inventor feature items"));
     }
     if bodies.is_empty() {
@@ -2067,8 +2064,6 @@ fn feature_result(
         Ok(Err(_)) => return None,
         Err(limit) => return Some(Err(CodecError::ResourceLimit(limit))),
     };
-    const FEATURE_ID_PREFIX: &str = "inventor:design:feature#";
-    const RESULT_ID_PREFIX: &str = "inventor:design:feature-result#";
     let mut key_storage = match ctx.reserve_scoped(0, "compose Inventor feature result key") {
         Ok(storage) => storage,
         Err(error) => return Some(Err(error)),
@@ -2078,25 +2073,19 @@ fn feature_result(
         Err(error) => return Some(Err(error)),
     };
     let key_len = key.as_str().len();
-    let feature_id_len = match FEATURE_ID_PREFIX.len().checked_add(key_len) {
-        Some(length) => length,
-        None => {
-            return Some(Err(ctx.refuse_codec_limit(
-                "retain Inventor feature result identities",
-                u64::MAX,
-                u64::MAX,
-            )))
-        }
+    let Some(feature_id_len) = FEATURE_ID_PREFIX.len().checked_add(key_len) else {
+        return Some(Err(ctx.refuse_codec_limit(
+            "retain Inventor feature result identities",
+            u64::MAX,
+            u64::MAX,
+        )));
     };
-    let result_id_len = match RESULT_ID_PREFIX.len().checked_add(key_len) {
-        Some(length) => length,
-        None => {
-            return Some(Err(ctx.refuse_codec_limit(
-                "retain Inventor feature result identities",
-                u64::MAX,
-                u64::MAX,
-            )))
-        }
+    let Some(result_id_len) = RESULT_ID_PREFIX.len().checked_add(key_len) else {
+        return Some(Err(ctx.refuse_codec_limit(
+            "retain Inventor feature result identities",
+            u64::MAX,
+            u64::MAX,
+        )));
     };
     let feature_id_text = match ctx.format_retained(
         format_args!("{FEATURE_ID_PREFIX}{}", key.as_str()),
@@ -2114,39 +2103,30 @@ fn feature_result(
     };
     debug_assert_eq!(feature_id_text.len(), feature_id_len);
     debug_assert_eq!(result_id_text.len(), result_id_len);
-    let feature_id_scan = match cadmpeg_core::decode::u64_from_index(feature_id_len)
+    let Some(feature_id_scan) = cadmpeg_core::decode::u64_from_index(feature_id_len)
         .checked_add(cadmpeg_core::decode::u64_from_index(key_len))
-    {
-        Some(work) => work,
-        None => {
-            return Some(Err(ctx.refuse_codec_limit(
-                "validate Inventor feature result identity",
-                u64::MAX,
-                u64::MAX,
-            )));
-        }
+    else {
+        return Some(Err(ctx.refuse_codec_limit(
+            "validate Inventor feature result identity",
+            u64::MAX,
+            u64::MAX,
+        )));
     };
-    let result_id_scan = match cadmpeg_core::decode::u64_from_index(result_id_len)
+    let Some(result_id_scan) = cadmpeg_core::decode::u64_from_index(result_id_len)
         .checked_add(cadmpeg_core::decode::u64_from_index(key_len))
-    {
-        Some(work) => work,
-        None => {
-            return Some(Err(ctx.refuse_codec_limit(
-                "validate Inventor feature result identity",
-                u64::MAX,
-                u64::MAX,
-            )));
-        }
+    else {
+        return Some(Err(ctx.refuse_codec_limit(
+            "validate Inventor feature result identity",
+            u64::MAX,
+            u64::MAX,
+        )));
     };
-    let identity_scan_work = match feature_id_scan.checked_add(result_id_scan) {
-        Some(work) => work,
-        None => {
-            return Some(Err(ctx.refuse_codec_limit(
-                "validate Inventor feature result identity",
-                u64::MAX,
-                u64::MAX,
-            )));
-        }
+    let Some(identity_scan_work) = feature_id_scan.checked_add(result_id_scan) else {
+        return Some(Err(ctx.refuse_codec_limit(
+            "validate Inventor feature result identity",
+            u64::MAX,
+            u64::MAX,
+        )));
     };
     if let Err(error) = ctx.charge_work(
         identity_scan_work,
@@ -2154,21 +2134,15 @@ fn feature_result(
     ) {
         return Some(Err(error));
     }
-    let feature_id = match FeatureId::mint(feature_id_text) {
-        Ok(value) => value,
-        Err(_) => {
-            return Some(Err(CodecError::malformed(
-                "generated Inventor feature identity is invalid",
-            )))
-        }
+    let Ok(feature_id) = FeatureId::mint(feature_id_text) else {
+        return Some(Err(CodecError::malformed(
+            "generated Inventor feature identity is invalid",
+        )));
     };
-    let result_id = match FeatureResultTopologyId::mint(result_id_text) {
-        Ok(value) => value,
-        Err(_) => {
-            return Some(Err(CodecError::malformed(
-                "generated Inventor feature result identity is invalid",
-            )))
-        }
+    let Ok(result_id) = FeatureResultTopologyId::mint(result_id_text) else {
+        return Some(Err(CodecError::malformed(
+            "generated Inventor feature result identity is invalid",
+        )));
     };
     if let Err(error) = ctx.charge_collection_items(1, "project Inventor feature result topology") {
         return Some(Err(error));
@@ -4217,14 +4191,15 @@ mod tests {
     fn class_id_admits_only_the_canonical_lowercase_spelling() {
         let lower = "ab".repeat(16);
         let ctx = cadmpeg_test_support::service_decode_context();
-        let class_id = ClassId::from_text(&ctx, lower.clone()).expect("lowercase class id");
+        let class_id = ClassId::from_text(&ctx, &lower).expect("lowercase class id");
         assert_eq!(
             class_id
                 .into_text(&ctx, "retain Inventor class id test text")
                 .expect("service class id text"),
             lower
         );
-        assert!(ClassId::from_text(&ctx, "AB".repeat(16)).is_err());
+        let upper = "AB".repeat(16);
+        assert!(ClassId::from_text(&ctx, &upper).is_err());
     }
 
     #[test]

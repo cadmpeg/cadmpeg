@@ -135,11 +135,8 @@ fn member_insert_admits_only_the_comparisons_it_performs() {
 fn long_parameter_member_comparison_refuses_work_before_equality() {
     use crate::features::ParameterId;
 
-    let member = ParameterId::mint(format!(
-        "synthetic:test:parameter#{}",
-        "x".repeat(64)
-    ))
-    .expect("identity grammar");
+    let member = ParameterId::mint(format!("synthetic:test:parameter#{}", "x".repeat(64)))
+        .expect("identity grammar");
     let mut members = DistinctMembers(vec![member.clone()]);
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 1;
