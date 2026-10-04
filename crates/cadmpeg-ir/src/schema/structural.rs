@@ -107,13 +107,8 @@ impl<'s, 'ctx, 'arena> Projector<'s, 'ctx, 'arena> {
         self.ctx.charge_work(1, self.operation)?;
         Ok(self.ctx.enter_nested(self.operation)?)
     }
-    fn source_steps(self, count: usize) -> Result<(), Error> {
-        self.admit(self.ctx.charge_work(u64_from_index(count), self.operation))
-    }
     fn text(self, text: &str) -> Result<Value, Error> {
         let _depth = self.node()?;
-        self.ctx
-            .charge_work(u64_from_index(text.len()), self.operation)?;
         Ok(Value::String(self.admit(self.ctx.copy_scoped_text(
             text,
             &mut self.storage.borrow_mut(),
@@ -127,13 +122,8 @@ impl<'s, 'ctx, 'arena> Projector<'s, 'ctx, 'arena> {
             .grow(u64_from_index(size_of::<Value>()))?;
         Ok(Box::new(value))
     }
-    fn sequence(
-        self,
-        variant: Option<&'static str>,
-        source_steps: usize,
-    ) -> Result<Sequence<'s, 'ctx, 'arena>, Error> {
+    fn sequence(self, variant: Option<&'static str>) -> Result<Sequence<'s, 'ctx, 'arena>, Error> {
         let depth = self.node()?;
-        self.source_steps(source_steps)?;
         let variant_depth = variant.map(|_| self.node()).transpose()?;
         let variant = variant.map(|name| self.text(name)).transpose()?;
         Ok(Sequence {
@@ -144,19 +134,13 @@ impl<'s, 'ctx, 'arena> Projector<'s, 'ctx, 'arena> {
             _variant_depth: variant_depth,
         })
     }
-    fn map(
-        self,
-        variant: Option<&'static str>,
-        source_steps: usize,
-    ) -> Result<Object<'s, 'ctx, 'arena>, Error> {
+    fn map(self, variant: Option<&'static str>) -> Result<Object<'s, 'ctx, 'arena>, Error> {
         let depth = self.node()?;
-        self.source_steps(source_steps)?;
         let variant_depth = variant.map(|_| self.node()).transpose()?;
         let variant = variant.map(|name| self.text(name)).transpose()?;
         Ok(Object {
             values: BTreeMap::new(),
             key: None,
-            longest: 0,
             variant,
             projector: self,
             _depth: depth,
@@ -168,18 +152,10 @@ impl<'s, 'ctx, 'arena> Projector<'s, 'ctx, 'arena> {
         entries: &mut BTreeMap<Value, Value>,
         key: Value,
         value: Value,
-        longest: &mut u64,
     ) -> Result<(), Error> {
-        *longest = (*longest).max(key_work(self.ctx, &key, self.operation)?);
-        let comparisons = u64_from_index(entries.len())
-            .checked_add(1)
-            .and_then(|count| count.checked_mul(*longest))
-            .ok_or_else(|| {
-                self.ctx
-                    .refuse_codec_limit(self.operation, u64::MAX - 1, u64::MAX)
-            })?;
-        self.ctx.charge_work(comparisons, self.operation)?;
-        if let Some(previous) = entries.get_mut(&key) {
+        if let Some(previous) =
+            self.admit(self.ctx.get_mut_btree_map(entries, &key, self.operation))?
+        {
             *previous = value;
         } else if !self.admit(self.ctx.insert_scoped_btree_map_if_vacant(
             &mut self.storage.borrow_mut(),
@@ -200,56 +176,9 @@ impl<'s, 'ctx, 'arena> Projector<'s, 'ctx, 'arena> {
             return Ok(value);
         };
         let mut entries = BTreeMap::new();
-        self.entry(&mut entries, key, value, &mut 0)?;
+        self.entry(&mut entries, key, value)?;
         Ok(Value::Map(entries))
     }
-}
-
-fn key_work(
-    ctx: &DecodeContext<'_>,
-    value: &Value,
-    operation: &'static str,
-) -> Result<u64, CodecError> {
-    let _depth = ctx.enter_nested(operation)?;
-    ctx.charge_work(1, operation)?;
-    let mut count = 1_u64;
-    match value {
-        Value::String(text) => {
-            ctx.charge_work(u64_from_index(text.len()), operation)?;
-            count = count
-                .checked_add(u64_from_index(text.len()))
-                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-        }
-        Value::Bytes(bytes) => {
-            ctx.charge_work(u64_from_index(bytes.len()), operation)?;
-            count = count
-                .checked_add(u64_from_index(bytes.len()))
-                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-        }
-        Value::Map(entries) => {
-            for (key, value) in ctx.admit_iter(entries, operation)? {
-                for child in [key, value] {
-                    count = count
-                        .checked_add(key_work(ctx, child, operation)?)
-                        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-                }
-            }
-        }
-        Value::Seq(values) => {
-            for value in ctx.admit_iter(values, operation)? {
-                count = count
-                    .checked_add(key_work(ctx, value, operation)?)
-                    .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-            }
-        }
-        Value::Option(Some(value)) | Value::Newtype(value) => {
-            count = count
-                .checked_add(key_work(ctx, value, operation)?)
-                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-        }
-        _ => {}
-    }
-    Ok(count)
 }
 
 macro_rules! project_scalar {
@@ -336,46 +265,46 @@ impl<'s, 'ctx, 'arena> Serializer for Projector<'s, 'ctx, 'arena> {
         let value = value.serialize(self)?;
         self.variant(Some(key), value)
     }
-    fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq, Error> {
-        self.sequence(None, len.unwrap_or(0))
+    fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq, Error> {
+        self.sequence(None)
     }
-    fn serialize_tuple(self, len: usize) -> Result<Self::SerializeTuple, Error> {
-        self.sequence(None, len)
+    fn serialize_tuple(self, _len: usize) -> Result<Self::SerializeTuple, Error> {
+        self.sequence(None)
     }
     fn serialize_tuple_struct(
         self,
         _name: &'static str,
-        len: usize,
+        _len: usize,
     ) -> Result<Self::SerializeTupleStruct, Error> {
-        self.sequence(None, len)
+        self.sequence(None)
     }
     fn serialize_tuple_variant(
         self,
         _name: &'static str,
         _index: u32,
         variant: &'static str,
-        len: usize,
+        _len: usize,
     ) -> Result<Self::SerializeTupleVariant, Error> {
-        self.sequence(Some(variant), len)
+        self.sequence(Some(variant))
     }
-    fn serialize_map(self, len: Option<usize>) -> Result<Self::SerializeMap, Error> {
-        self.map(None, len.unwrap_or(0))
+    fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap, Error> {
+        self.map(None)
     }
     fn serialize_struct(
         self,
         _name: &'static str,
-        len: usize,
+        _len: usize,
     ) -> Result<Self::SerializeStruct, Error> {
-        self.map(None, len)
+        self.map(None)
     }
     fn serialize_struct_variant(
         self,
         _name: &'static str,
         _index: u32,
         variant: &'static str,
-        len: usize,
+        _len: usize,
     ) -> Result<Self::SerializeStructVariant, Error> {
-        self.map(Some(variant), len)
+        self.map(Some(variant))
     }
 }
 
@@ -424,7 +353,6 @@ sequence_impl!(SerializeTupleVariant, serialize_field);
 struct Object<'s, 'ctx, 'arena> {
     values: BTreeMap<Value, Value>,
     key: Option<Value>,
-    longest: u64,
     variant: Option<Value>,
     projector: Projector<'s, 'ctx, 'arena>,
     _depth: DepthGuard<'ctx>,
@@ -434,8 +362,7 @@ impl Object<'_, '_, '_> {
     fn field<T: Serialize + ?Sized>(&mut self, key: &'static str, value: &T) -> Result<(), Error> {
         let key = self.projector.text(key)?;
         let value = value.serialize(self.projector)?;
-        self.projector
-            .entry(&mut self.values, key, value, &mut self.longest)
+        self.projector.entry(&mut self.values, key, value)
     }
     fn finish(self) -> Result<Value, Error> {
         if self.key.is_some() {
@@ -460,8 +387,7 @@ impl SerializeMap for Object<'_, '_, '_> {
             <Error as serde::ser::Error>::custom("structural map value has no key")
         })?;
         let value = value.serialize(self.projector)?;
-        self.projector
-            .entry(&mut self.values, key, value, &mut self.longest)
+        self.projector.entry(&mut self.values, key, value)
     }
     fn end(self) -> Result<Value, Error> {
         self.finish()
