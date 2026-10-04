@@ -1584,7 +1584,7 @@ fn curve_expression_solve_program(
                 pending = Some(PendingCurveExpressionSolveBlock {
                     statements: Vec::new(),
                     offset: line.offset,
-                    valid: source.eq_ignore_ascii_case("solve"),
+                    valid: ctx.eq_ignore_ascii_case(source, "solve", "creo solve keyword comparison")?,
                 });
             } else if starts_relation_keyword(source, "for") {
                 ctx.insert_btree_set(

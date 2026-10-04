@@ -238,6 +238,20 @@ fn solve_line_index_nodes_refuse_before_insert() {
 }
 
 #[test]
+fn solve_keyword_comparison_refuses_work() {
+    let lines = expression_lines(&["SOLVE"]);
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "creo solve keyword comparison",
+        |ctx| super::super::curve_expression_solve_program(ctx, &lines),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "creo solve keyword comparison"));
+}
+
+#[test]
 fn pending_solve_statements_refuse_before_growth() {
     let lines = expression_lines(&["SOLVE", "x=1", "FOR x"]);
     let mut policy = DecodePolicy::service();
