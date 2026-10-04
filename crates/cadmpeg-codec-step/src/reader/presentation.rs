@@ -1596,7 +1596,7 @@ fn find_color(
                 else {
                     return Ok(None);
                 };
-                Ok(predefined(&name).map(|color| {
+                Ok(predefined(ctx, &name)?.map(|color| {
                     ColorResolution::Candidate(ColorCandidate {
                         rank: side_rank,
                         id,
@@ -1969,27 +1969,27 @@ fn contains_null_style(
     }
 }
 
-fn predefined(name: &str) -> Option<Color> {
-    let (r, g, b) = if name.eq_ignore_ascii_case("black") {
+fn predefined(ctx: &DecodeContext<'_>, name: &str) -> Result<Option<Color>, CodecError> {
+    let (r, g, b) = if ctx.eq_ignore_ascii_case(name, "black", "STEP predefined color name case equality")? {
         (0.0, 0.0, 0.0)
-    } else if name.eq_ignore_ascii_case("white") {
+    } else if ctx.eq_ignore_ascii_case(name, "white", "STEP predefined color name case equality")? {
         (1.0, 1.0, 1.0)
-    } else if name.eq_ignore_ascii_case("red") {
+    } else if ctx.eq_ignore_ascii_case(name, "red", "STEP predefined color name case equality")? {
         (1.0, 0.0, 0.0)
-    } else if name.eq_ignore_ascii_case("green") {
+    } else if ctx.eq_ignore_ascii_case(name, "green", "STEP predefined color name case equality")? {
         (0.0, 1.0, 0.0)
-    } else if name.eq_ignore_ascii_case("blue") {
+    } else if ctx.eq_ignore_ascii_case(name, "blue", "STEP predefined color name case equality")? {
         (0.0, 0.0, 1.0)
-    } else if name.eq_ignore_ascii_case("yellow") {
+    } else if ctx.eq_ignore_ascii_case(name, "yellow", "STEP predefined color name case equality")? {
         (1.0, 1.0, 0.0)
-    } else if name.eq_ignore_ascii_case("magenta") {
+    } else if ctx.eq_ignore_ascii_case(name, "magenta", "STEP predefined color name case equality")? {
         (1.0, 0.0, 1.0)
-    } else if name.eq_ignore_ascii_case("cyan") {
+    } else if ctx.eq_ignore_ascii_case(name, "cyan", "STEP predefined color name case equality")? {
         (0.0, 1.0, 1.0)
     } else {
-        return None;
+        return Ok(None);
     };
-    Color::new(r, g, b, 1.0)
+    Ok(Color::new(r, g, b, 1.0))
 }
 #[cfg(test)]
 pub(crate) mod tests;

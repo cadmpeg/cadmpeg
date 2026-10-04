@@ -3640,7 +3640,7 @@ fn build_one(
                         crate::dialect::FORMAT,
                         u64_from_index(sr.span.start),
                     )
-                    .with_tag(shell_type.to_ascii_lowercase()),
+                    .with_tag(ctx.to_ascii_lowercase(shell_type, "STEP shell type lowercase")?),
                 ),
                 "step_topology_losses",
             )?;

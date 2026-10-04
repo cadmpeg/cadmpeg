@@ -4310,7 +4310,7 @@ fn context_length_uncertainties(
                 .map(|value| string_value(value, exchange, ctx))
                 .transpose()?
                 .flatten()
-                .is_some_and(|name| name.eq_ignore_ascii_case("distance_accuracy_value"));
+                .map(|name| ctx.eq_ignore_ascii_case(name.as_str(), "distance_accuracy_value", "STEP distance accuracy name case equality")).transpose()?.unwrap_or(false);
             if named_distance_accuracy {
                 named_count += 1;
                 named_value = Some(result);

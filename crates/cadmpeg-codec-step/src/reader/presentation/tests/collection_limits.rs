@@ -455,8 +455,8 @@ fn presentation_null_style_walk_refuses_depth_limit() {
 #[test]
 fn presentation_predefined_color_matches_ascii_case_without_copy() {
     assert_eq!(
-        super::super::predefined("ReD"),
-        super::super::predefined("red")
+        super::super::predefined(&cadmpeg_test_support::service_decode_context(), "ReD").unwrap(),
+        super::super::predefined(&cadmpeg_test_support::service_decode_context(), "red").unwrap()
     );
 }
 
@@ -782,4 +782,16 @@ fn presentation_color_cache_copy_refuses_retained_limit() {
             if refusal.dimension == ResourceDimension::RetainedBytes
                 && refusal.operation == "step_presentation_color_cache_copy"
     ));
+}
+
+#[test]
+fn predefined_color_case_equality_preserves_refusal() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+    let error = super::super::predefined(&ctx, "ReD").unwrap_err();
+    let CodecError::ResourceLimit(refusal) = error else { panic!("color classification must return the refusal"); };
+    assert_eq!(refusal.operation, "STEP predefined color name case equality");
+    assert_eq!(ctx.resource_refusal(), Some(refusal));
 }

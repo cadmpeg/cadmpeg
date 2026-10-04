@@ -812,3 +812,20 @@ fn shared_representation_items_reject_conflicting_context_units() {
         .iter()
         .any(|loss| { loss.code == StepLossCode::ConflictingRepresentationUnits.kind() }));
 }
+
+#[test]
+fn distance_accuracy_name_case_equality_preserves_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));#2=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.2),#1,'distance_accuracy_value','');#3=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#2)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner).unwrap();
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "STEP distance accuracy name case equality", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(SOURCE, &arena, &policy).unwrap();
+        let result = super::super::context_length_uncertainties(exchange.records().get(&3).unwrap(), &exchange, &ctx).map(|_| ());
+        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}

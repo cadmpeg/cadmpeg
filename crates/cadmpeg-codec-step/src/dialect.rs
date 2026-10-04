@@ -205,28 +205,19 @@ impl StepDialect {
     ///   that matches nothing this codec declares is an unrecognized
     ///   declaration, unlike making no claim at all. Arcs that do not read as a
     ///   numeric object identifier reach the same place, through the same call.
-    fn from_schema_identifier(identifier: &str, object_identifier: Option<&[u64]>) -> Self {
-        let Some((name, object_identifier_text)) = split_schema_identifier(identifier) else {
-            return Self::Unknown;
-        };
+    fn from_schema_identifier(ctx: &DecodeContext<'_>, identifier: &str, object_identifier: Option<&[u64]>) -> Result<Self, CodecError> {
+        let Some((name, object_identifier_text)) = split_schema_identifier(identifier) else { return Ok(Self::Unknown); };
         let ap242_name = Part21Dialect::Ap242.schema_identifier();
-        if name.eq_ignore_ascii_case(ap242_name) {
-            if object_identifier_text.is_none() {
-                return Self::Part21(Part21Dialect::Ap242);
-            }
-            return Self::ap242_edition(object_identifier).map_or(Self::Unknown, Self::Part21);
+        if ctx.eq_ignore_ascii_case(name, ap242_name, "STEP schema identifier case equality")? {
+            if object_identifier_text.is_none() { return Ok(Self::Part21(Part21Dialect::Ap242)); }
+            return Ok(Self::ap242_edition(object_identifier).map_or(Self::Unknown, Self::Part21));
         }
-        [
-            Part21Dialect::Schema(StepSchema::Ap203Edition1),
-            Part21Dialect::Schema(StepSchema::Ap203Edition2),
-            Part21Dialect::Schema(StepSchema::Ap214),
-        ]
-        .into_iter()
-        .find(|row| {
-            split_schema_identifier(row.schema_identifier())
-                .is_some_and(|(candidate, _)| name.eq_ignore_ascii_case(candidate))
-        })
-        .map_or(Self::Unknown, Self::Part21)
+        for row in [Part21Dialect::Schema(StepSchema::Ap203Edition1), Part21Dialect::Schema(StepSchema::Ap203Edition2), Part21Dialect::Schema(StepSchema::Ap214)] {
+            if let Some((candidate, _)) = split_schema_identifier(row.schema_identifier()) {
+                if ctx.eq_ignore_ascii_case(name, candidate, "STEP schema identifier case equality")? { return Ok(Self::Part21(row)); }
+            }
+        }
+        Ok(Self::Unknown)
     }
 
     /// The AP242 edition row whose canonical object identifier the declaration
@@ -264,9 +255,10 @@ impl StepDialect {
     ) -> Result<DialectMatch, CodecError> {
         let first = exchange.schema_identifiers().next();
         let object_identifier = exchange.primary_schema_object_identifier(ctx)?;
-        let dialect = first.map_or(Self::Unknown, |identifier| {
-            Self::from_schema_identifier(identifier, object_identifier.as_deref())
-        });
+        let dialect = match first {
+            Some(identifier) => Self::from_schema_identifier(ctx, identifier, object_identifier.as_deref())?,
+            None => Self::Unknown,
+        };
 
         let mut declared = BTreeMap::new();
         if let Some(identifier) = first {
