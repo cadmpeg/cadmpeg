@@ -191,6 +191,15 @@ jobs:
         # A separate `cargo build` step would repeat that compilation.
         run: python3 scripts/ci_cargo.py test --bins --tests --no-fail-fast
 
+      - name: Inventor CLI evidence tests
+        if: contains(fromJSON(needs.changes.outputs.packages), 'cadmpeg')
+        # These two tooling tests need the default CLI built by the Rust gate.
+        # The lint job runs the remaining Python tests without a CLI build.
+        run: |
+          python3 -m unittest -q \
+            scripts.test_inventor_evidence.EvidenceTest.test_primary_carrier_parity_when_cli_is_built \
+            scripts.test_inventor_evidence.EvidenceTest.test_cli_sweep_is_per_profile_and_deterministic
+
       - name: Bounded IGES decode and round-trip gate
         if: needs.changes.outputs.iges == 'true'
         # Give every synthesized IGES fixture independent decode, validation,

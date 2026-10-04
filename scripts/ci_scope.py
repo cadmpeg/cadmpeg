@@ -22,7 +22,7 @@ PYTHON_ONLY = {
     'check-dialects.py', 'check-doc-anchors.py', 'check-fuzz-seeds.py',
     'check-golden-coverage-floors.py', 'check-source-policy.py',
     'census-panic-calls.py', 'dialect_support_data.py',
-    'render-format-support.py', 'inventor-evidence.py',
+    'render-format-support.py',
 }
 PYTHON_ONLY |= {'test_' + name.replace('-', '_') for name in PYTHON_ONLY}
 
@@ -56,6 +56,8 @@ def select(root: Path, paths: list[str], *, full: bool = False) -> dict:
             affected.add(members[owner]['package']['name'])
         elif path.startswith('crates/cadmpeg-fuzz/'):
             fuzz = True
+        elif path in {'scripts/inventor-evidence.py', 'scripts/test_inventor_evidence.py'}:
+            affected.add('cadmpeg-codec-inventor')
         elif path == 'scripts/verify-iges-bounded.py':
             affected.add('cadmpeg-codec-iges')
         elif path.startswith('scripts/') and Path(path).name in PYTHON_ONLY:

@@ -24,6 +24,14 @@ class ScopeTests(unittest.TestCase):
         self.assertIn('cadmpeg-codec-iges', scope['packages'])
         self.assertTrue(scope['iges'])
 
+    def test_inventor_tool_keeps_cli_evidence_coverage(self):
+        for path in ('scripts/inventor-evidence.py', 'scripts/test_inventor_evidence.py'):
+            scope = select(ROOT, [path])
+            self.assertIn('cadmpeg-codec-inventor', scope['packages'])
+            self.assertIn('cadmpeg', scope['packages'])
+            self.assertTrue(scope['rust'])
+            self.assertFalse(scope['iges'])
+
     def test_python_only_skips_rust(self):
         scope = select(ROOT, ['scripts/check-deny-census.py'])
         self.assertFalse(scope['rust'])
