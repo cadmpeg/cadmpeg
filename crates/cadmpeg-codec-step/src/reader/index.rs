@@ -81,14 +81,14 @@ pub(super) struct CarrierIndex {
 impl CarrierIndex {
     pub(super) fn from_ir(ir: &CadIr, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
         let mut curves = HashMap::new();
-        for (index, curve) in ir.model.curves.iter().enumerate() {
+        for (index, curve) in ctx.admit_iter(&(ir.model.curves)[..], "STEP from ir traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
             if let Some(id) = step_instance_id(curve.id.as_str()) {
                 ctx.reserve_map(&mut curves, 1, "step_carrier_curve_index")?;
                 curves.insert(id, CurveIndex(index));
             }
         }
         let mut points = HashMap::new();
-        for (index, point) in ir.model.points.iter().enumerate() {
+        for (index, point) in ctx.admit_iter(&(ir.model.points)[..], "STEP from ir traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
             if let Some(id) = step_instance_id(point.id.as_str()) {
                 ctx.reserve_map(&mut points, 1, "step_carrier_point_index")?;
                 points.insert(
@@ -101,7 +101,7 @@ impl CarrierIndex {
             }
         }
         let mut surfaces = HashMap::new();
-        for (index, surface) in ir.model.surfaces.iter().enumerate() {
+        for (index, surface) in ctx.admit_iter(&(ir.model.surfaces)[..], "STEP from ir traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
             if let Some(id) = step_instance_id(surface.id.as_str()) {
                 ctx.reserve_map(&mut surfaces, 1, "step_carrier_surface_index")?;
                 surfaces.insert(id, SurfaceIndex(index));

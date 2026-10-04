@@ -99,7 +99,7 @@ fn try_clone_value(
         Value::Derived => Value::Derived,
         Value::List(values) => {
             let mut copied = budget.collection_vec(values.len(), operation)?;
-            for value in values {
+            for value in budget.admit_iter(values.as_slice(), "STEP try clone value value traversal").map_err(cadmpeg_core::CodecError::from)? {
                 copied.push(try_clone_value(value, budget, operation)?);
             }
             Value::List(copied)
@@ -312,8 +312,8 @@ impl EntityIndex {
         budget: &DecodeContext<'_>,
     ) -> Result<Self, ParseError> {
         let mut index = HashMap::<String, Vec<u64>>::new();
-        for (&id, record) in records {
-            for partial in &record.partials {
+        for (&id, record) in budget.admit_iter(records, "STEP build traversal").map_err(cadmpeg_core::CodecError::from)? {
+            for partial in budget.admit_iter(&(record.partials)[..], "STEP build traversal").map_err(cadmpeg_core::CodecError::from)? {
                 if let Some(ids) = index.get_mut(partial.name.as_str()) {
                     budget.push_vec(ids, id, "step_entity_index_ids")?;
                 } else {
@@ -371,7 +371,7 @@ impl Exchange {
         ctx: &DecodeContext<'_>,
     ) -> Result<String, CodecError> {
         let operation = "step_schema_identifier_list";
-        let len = self.schema_identifiers.iter().enumerate().try_fold(
+        let len = ctx.admit_iter(&(self.schema_identifiers)[..], "STEP joined schema identifiers traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate().try_fold(
             0usize,
             |sum, (index, identifier)| {
                 sum.checked_add(identifier.text().len())
@@ -436,43 +436,42 @@ impl Exchange {
         self.entity_ids().contains_key(name)
     }
 
-    pub(crate) fn has_entity_matching(&self, matches: impl Fn(&str) -> bool) -> bool {
-        self.entity_ids().keys().any(|name| matches(name))
+    pub(crate) fn has_entity_matching(&self, ctx: &DecodeContext<'_>, matches: impl Fn(&str) -> bool) -> Result<bool, CodecError> {
+        Ok(ctx.admit_iter(self.entity_ids(), "STEP entity name index traversal")?.any(|(name, _)| matches(name)))
     }
 
     pub(crate) fn matching_entity_ids<'a>(
         &'a self,
+        ctx: &'a DecodeContext<'a>,
         matches: impl Fn(&str) -> bool + 'a,
-    ) -> impl Iterator<Item = u64> + 'a {
-        self.records.iter().filter_map(move |(&id, record)| {
-            record
-                .partials
-                .iter()
-                .any(|partial| matches(&partial.name))
-                .then_some(id)
-        })
+    ) -> Result<impl Iterator<Item = Result<u64, CodecError>> + 'a, CodecError> {
+        Ok(ctx.admit_iter(&self.records, "STEP matching entity record traversal")?
+            .map(move |(&id, record)| -> Result<Option<u64>, CodecError> {
+                let matched = ctx.admit_iter(&record.partials[..], "STEP matching entity partial traversal")?
+                    .any(|partial| matches(&partial.name));
+                Ok(matched.then_some(id))
+            }).filter_map(Result::transpose))
     }
 
-    pub(crate) fn entities(&self, name: &str) -> impl Iterator<Item = (u64, &RawRecord)> {
-        self.entity_ids()
-            .get(name)
-            .into_iter()
-            .flatten()
-            .map(|id| (*id, &self.records[id]))
+    pub(crate) fn entities<'a>(&'a self, ctx: &DecodeContext<'_>, name: &str) -> Result<impl Iterator<Item = (u64, &'a RawRecord)> + 'a, CodecError> {
+        let ids = self.entity_ids().get(name).map_or(&[][..], Vec::as_slice);
+        Ok(ctx.admit_iter(ids, "STEP indexed entity identifier traversal")?
+            .map(|id| (*id, &self.records[id])))
     }
 
     pub(crate) fn entities_any<'a>(
         &'a self,
+        ctx: &'a DecodeContext<'a>,
         names: &'a [&str],
-    ) -> impl Iterator<Item = (u64, &'a RawRecord)> + 'a {
-        self.records.iter().filter_map(move |(&id, record)| {
-            record
-                .partials
-                .iter()
-                .any(|partial| names.contains(&partial.name.as_str()))
-                .then_some((id, record))
-        })
+    ) -> Result<impl Iterator<Item = Result<(u64, &'a RawRecord), CodecError>> + 'a, CodecError> {
+        Ok(ctx.admit_iter(&self.records, "STEP entity union record traversal")?
+            .map(move |(&id, record)| -> Result<Option<(u64, &'a RawRecord)>, CodecError> {
+                let matched = ctx.admit_iter(&record.partials[..], "STEP entity union partial traversal")?
+                    .any(|partial| names.contains(&partial.name.as_str()));
+                Ok(matched.then_some((id, record)))
+            }).filter_map(Result::transpose))
     }
+
 }
 
 /// Structural or lexical exchange failure.
@@ -806,12 +805,12 @@ impl Parser<'_, '_, '_> {
                 let TokenKind::Resource(name) = self.next_kind()? else {
                     return self.err("expected anchor name");
                 };
-                if !valid_anchor_name(&name) {
+                if !valid_anchor_name(self.budget, &name)? {
                     return self.err("anchor name must contain a non-digit character");
                 }
                 self.punct(&TokenKind::Equals)?;
                 let value = self.value()?;
-                if !is_anchor_item(&value) {
+                if !is_anchor_item(self.budget, &value)? {
                     return self.err("invalid anchor item");
                 }
                 let mut tags = Vec::new();
@@ -822,7 +821,7 @@ impl Parser<'_, '_, '_> {
                     };
                     self.punct(&TokenKind::Colon)?;
                     let value = self.value()?;
-                    if !is_anchor_item(&value) {
+                    if !is_anchor_item(self.budget, &value)? {
                         return self.err("invalid anchor tag item");
                     }
                     self.punct(&TokenKind::RBrace)?;
@@ -979,10 +978,10 @@ impl Parser<'_, '_, '_> {
         {
             return self.err("an unnamed DATA section requires one FILE_SCHEMA identifier");
         }
-        if let Err(message) =
-            validate_header_data_references(&header_data_references, &data_section_names)
-        {
-            return self.err(message);
+        match validate_header_data_references(self.budget, &header_data_references, &data_section_names) {
+            Ok(()) => {},
+            Err(ValidationError::Invalid(message)) => return self.err(message),
+            Err(ValidationError::Resource(error)) => return Err(ParseError::Resource(error)),
         }
         self.name("END-ISO-10303-21")?;
         self.punct(&TokenKind::Semicolon)?;
@@ -1016,11 +1015,10 @@ impl Parser<'_, '_, '_> {
         if self.current.is_some() {
             return self.err("tokens after exchange terminator");
         }
-        if records.keys().any(|id| external_reference_ids.contains(id)) {
+        if self.budget.admit_iter(&(records), "STEP exchange map traversal").map_err(cadmpeg_core::CodecError::from)?.map(|(key, _)| key).any(|id| external_reference_ids.contains(id)) {
             return self.err("external reference instance collides with a DATA instance");
         }
-        if records
-            .keys()
+        if self.budget.admit_iter(&(records), "STEP exchange map traversal").map_err(cadmpeg_core::CodecError::from)?.map(|(key, _)| key)
             .any(|id| external_value_reference_ids.contains(id))
         {
             return self.err("external value instance collides with a DATA instance");
@@ -1030,7 +1028,7 @@ impl Parser<'_, '_, '_> {
                 .budget
                 .reserve_scoped(0, "step_anchor_binding_storage")?;
             let mut anchor_bindings = BTreeMap::new();
-            for anchor in &anchors {
+            for anchor in self.budget.admit_iter(&(anchors)[..], "STEP exchange traversal").map_err(cadmpeg_core::CodecError::from)? {
                 binding_storage.with_storage(|| {
                     let name = self
                         .budget
@@ -1076,26 +1074,30 @@ impl Parser<'_, '_, '_> {
         }
         // Validate the source occurrence class before local REFERENCES can
         // replace a forbidden token with an ordinary value.
-        let class3_restriction =
-            implementation_level
-                .class3_occurrence_restriction()
-                .filter(|_| {
-                    header
-                        .iter()
-                        .any(|record| record.parameters.iter().any(contains_class3_occurrence))
-                        || anchors.iter().any(|anchor| {
-                            contains_class3_occurrence(&anchor.value)
-                                || anchor
-                                    .tags
-                                    .iter()
-                                    .any(|tag| contains_class3_occurrence(&tag.value))
-                        })
-                        || records.values().any(|record| {
-                            record.partials.iter().any(|partial| {
-                                partial.parameters.iter().any(contains_class3_occurrence)
-                            })
-                        })
-                });
+        let class3_restriction = if let Some(restriction) = implementation_level.class3_occurrence_restriction() {
+            let contains = 'occurrence: {
+                for record in self.budget.admit_iter(header.as_slice(), "STEP class-3 header traversal").map_err(CodecError::from)? {
+                    for value in self.budget.admit_iter(record.parameters.as_slice(), "STEP class-3 header parameters").map_err(CodecError::from)? {
+                        if contains_class3_occurrence(self.budget, value)? { break 'occurrence true; }
+                    }
+                }
+                for anchor in self.budget.admit_iter(anchors.as_slice(), "STEP class-3 anchor traversal").map_err(CodecError::from)? {
+                    if contains_class3_occurrence(self.budget, &anchor.value)? { break 'occurrence true; }
+                    for tag in self.budget.admit_iter(anchor.tags.as_slice(), "STEP class-3 anchor tags").map_err(CodecError::from)? {
+                        if contains_class3_occurrence(self.budget, &tag.value)? { break 'occurrence true; }
+                    }
+                }
+                for (_, record) in self.budget.admit_iter(&records, "STEP class-3 record traversal").map_err(CodecError::from)? {
+                    for partial in self.budget.admit_iter(&record.partials[..], "STEP class-3 partial traversal").map_err(CodecError::from)? {
+                        for value in self.budget.admit_iter(partial.parameters.as_slice(), "STEP class-3 record parameters").map_err(CodecError::from)? {
+                            if contains_class3_occurrence(self.budget, value)? { break 'occurrence true; }
+                        }
+                    }
+                }
+                false
+            };
+            contains.then_some(restriction)
+        } else { None };
         resolve_local_references(&mut anchors, &mut records, &reference_entries, self.budget)
             .map_err(|error| error.into_parse_error(0))?;
         for record in records.values_mut() {
@@ -1121,62 +1123,56 @@ impl Parser<'_, '_, '_> {
         let mut reference_storage = self.budget.reserve_scoped(0, "step reference lookup")?;
         let mut refs = Vec::new();
         let mut value_refs = Vec::new();
-        for anchor in &anchors {
+        for anchor in self.budget.admit_iter(&(anchors)[..], "STEP exchange traversal").map_err(cadmpeg_core::CodecError::from)? {
             refs.clear();
             value_refs.clear();
             reference_storage.with_storage(|| {
                 references(&anchor.value, &mut refs, &mut value_refs, self.budget)
             })?;
-            if refs
-                .iter()
+            if self.budget.admit_iter(&(refs)[..], "STEP exchange traversal").map_err(cadmpeg_core::CodecError::from)?
                 .any(|id| !records.contains_key(id) && !external_reference_ids.contains(id))
             {
                 return self.err("unresolved instance reference in anchor binding");
             }
-            if value_refs
-                .iter()
+            if self.budget.admit_iter(&(value_refs)[..], "STEP exchange traversal").map_err(cadmpeg_core::CodecError::from)?
                 .any(|id| !external_value_reference_ids.contains(id))
             {
                 return self.err("unresolved value instance reference in anchor binding");
             }
-            for tag in &anchor.tags {
+            for tag in self.budget.admit_iter(&(anchor.tags)[..], "STEP exchange traversal").map_err(cadmpeg_core::CodecError::from)? {
                 refs.clear();
                 value_refs.clear();
                 reference_storage.with_storage(|| {
                     references(&tag.value, &mut refs, &mut value_refs, self.budget)
                 })?;
-                if refs
-                    .iter()
+                if self.budget.admit_iter(&(refs)[..], "STEP exchange traversal").map_err(cadmpeg_core::CodecError::from)?
                     .any(|id| !records.contains_key(id) && !external_reference_ids.contains(id))
                 {
                     return self.err("unresolved instance reference in anchor tag");
                 }
-                if value_refs
-                    .iter()
+                if self.budget.admit_iter(&(value_refs)[..], "STEP exchange traversal").map_err(cadmpeg_core::CodecError::from)?
                     .any(|id| !external_value_reference_ids.contains(id))
                 {
                     return self.err("unresolved value instance reference in anchor tag");
                 }
             }
         }
-        for record in records.values() {
+        for record in self.budget.admit_iter(&(records), "STEP exchange map traversal").map_err(cadmpeg_core::CodecError::from)?.map(|(_, value)| value) {
             refs.clear();
             value_refs.clear();
-            for partial in &record.partials {
-                for value in &partial.parameters {
+            for partial in self.budget.admit_iter(&(record.partials)[..], "STEP exchange traversal").map_err(cadmpeg_core::CodecError::from)? {
+                for value in self.budget.admit_iter(&(partial.parameters)[..], "STEP exchange traversal").map_err(cadmpeg_core::CodecError::from)? {
                     reference_storage.with_storage(|| {
                         references(value, &mut refs, &mut value_refs, self.budget)
                     })?;
                 }
             }
-            if refs
-                .iter()
+            if self.budget.admit_iter(&(refs)[..], "STEP exchange traversal").map_err(cadmpeg_core::CodecError::from)?
                 .any(|id| !records.contains_key(id) && !external_reference_ids.contains(id))
             {
                 return Self::err_at(self.budget, record.span.start, "unresolved instance reference");
             }
-            if value_refs
-                .iter()
+            if self.budget.admit_iter(&(value_refs)[..], "STEP exchange traversal").map_err(cadmpeg_core::CodecError::from)?
                 .any(|id| !external_value_reference_ids.contains(id))
             {
                 return Self::err_at(self.budget, record.span.start, "unresolved value instance reference");
@@ -1185,15 +1181,21 @@ impl Parser<'_, '_, '_> {
         if let Some(message) = class3_restriction {
             return self.err(message);
         }
-        let has_resource_value = header
-            .iter()
-            .any(|record| record.parameters.iter().any(contains_resource_value))
-            || records.values().any(|record| {
-                record
-                    .partials
-                    .iter()
-                    .any(|partial| partial.parameters.iter().any(contains_resource_value))
-            });
+        let has_resource_value = 'resource_value: {
+            for record in self.budget.admit_iter(header.as_slice(), "STEP resource header traversal").map_err(CodecError::from)? {
+                for value in self.budget.admit_iter(record.parameters.as_slice(), "STEP resource header parameters").map_err(CodecError::from)? {
+                    if contains_resource_value(self.budget, value)? { break 'resource_value true; }
+                }
+            }
+            for (_, record) in self.budget.admit_iter(&records, "STEP resource record traversal").map_err(CodecError::from)? {
+                for partial in self.budget.admit_iter(&record.partials[..], "STEP resource partial traversal").map_err(CodecError::from)? {
+                    for value in self.budget.admit_iter(partial.parameters.as_slice(), "STEP resource record parameters").map_err(CodecError::from)? {
+                        if contains_resource_value(self.budget, value)? { break 'resource_value true; }
+                    }
+                }
+            }
+            false
+        };
         if has_resource_value {
             return self.err("resource values are only valid in edition-3 anchor items");
         }
@@ -1250,7 +1252,7 @@ impl Parser<'_, '_, '_> {
             self.next_kind()?;
             let mut name_storage = self.budget.reserve_scoped(0, "step partial name lookup")?;
             let mut canonical_names = Vec::new();
-            for part in &parts {
+            for part in self.budget.admit_iter(&(parts)[..], "STEP record traversal").map_err(cadmpeg_core::CodecError::from)? {
                 name_storage.with_storage(|| {
                     self.budget.push_vec(
                         &mut canonical_names,
@@ -1525,11 +1527,11 @@ fn validate_header(
     {
         return invalid("HEADER must begin with FILE_DESCRIPTION, FILE_NAME, and FILE_SCHEMA");
     }
-    if REQUIRED
-        .iter()
-        .any(|name| header.iter().filter(|record| record.name == *name).count() != 1)
-    {
-        return invalid("HEADER contains a duplicate required entity");
+    for name in REQUIRED {
+        if budget.admit_iter(header, "STEP required header occurrence traversal").map_err(CodecError::from)?
+            .filter(|record| record.name == name).count() != 1 {
+            return invalid("HEADER contains a duplicate required entity");
+        }
     }
 
     let [description_strings, implementation_level_value @ Value::String(implementation_level_bytes)] =
@@ -1537,7 +1539,7 @@ fn validate_header(
     else {
         return invalid("FILE_DESCRIPTION has invalid parameters");
     };
-    if !is_string_list(Some(description_strings)) {
+    if !is_string_list(budget, Some(description_strings))? {
         return invalid("FILE_DESCRIPTION has invalid parameters");
     }
     let Some(implementation_level_text) = decoded_bytes(
@@ -1586,8 +1588,8 @@ fn validate_header(
     };
     if !matches!(file_name_value, Value::String(_))
         || !matches!(file_name_timestamp, Value::String(_))
-        || !is_string_list(Some(authors))
-        || !is_string_list(Some(organizations))
+        || !is_string_list(budget, Some(authors))?
+        || !is_string_list(budget, Some(organizations))?
         || !is_string_or_omitted(Some(preprocessor))
         || !is_string_or_omitted(Some(originating_system))
         || !is_string_or_omitted(Some(authorization))
@@ -1617,7 +1619,7 @@ fn validate_header(
     {
         return invalid("FILE_NAME contains a string longer than 256 characters");
     }
-    if !time_stamp.is_empty() && !valid_timestamp_text(&time_stamp) {
+    if !time_stamp.is_empty() && !valid_timestamp_text(budget, &time_stamp)? {
         return invalid("FILE_NAME has an invalid timestamp");
     }
 
@@ -1696,21 +1698,21 @@ fn validate_header_sections(
     schema_identifiers: &[String],
     budget: &DecodeContext<'_>,
 ) -> Result<Vec<HeaderDataReferences>, ValidationError> {
-    let has = |name: &str| header.iter().any(|record| record.name == name);
-    if implementation_level == ImplementationLevel::LegacyEdition1 && has("FILE_POPULATION") {
+    let has = |name: &str| -> Result<bool, CodecError> { Ok(budget.admit_iter(header, "STEP validate header sections traversal")?.any(|record| record.name == name)) };
+    if implementation_level == ImplementationLevel::LegacyEdition1 && has("FILE_POPULATION")? {
         return invalid("2;1 forbids FILE_POPULATION in HEADER");
     }
-    if implementation_level == ImplementationLevel::LegacyEdition1 && has("SECTION_LANGUAGE") {
+    if implementation_level == ImplementationLevel::LegacyEdition1 && has("SECTION_LANGUAGE")? {
         return invalid("2;1 forbids SECTION_LANGUAGE in HEADER");
     }
-    if implementation_level == ImplementationLevel::LegacyEdition1 && has("SECTION_CONTEXT") {
+    if implementation_level == ImplementationLevel::LegacyEdition1 && has("SECTION_CONTEXT")? {
         return invalid("2;1 forbids SECTION_CONTEXT in HEADER");
     }
     match implementation_level {
-        ImplementationLevel::LegacyEdition2 if has("SCHEMA_POPULATION") => {
+        ImplementationLevel::LegacyEdition2 if has("SCHEMA_POPULATION")? => {
             return invalid("3;1 forbids SCHEMA_POPULATION in HEADER");
         }
-        ImplementationLevel::Edition3Class1 if has("SCHEMA_POPULATION") => {
+        ImplementationLevel::Edition3Class1 if has("SCHEMA_POPULATION")? => {
             return invalid("4;1 forbids SCHEMA_POPULATION in HEADER");
         }
         _ => {}
@@ -1721,7 +1723,7 @@ fn validate_header_sections(
     let mut schema_population_seen = false;
     let mut language_sections = BTreeSet::new();
     let mut context_sections = BTreeSet::new();
-    for record in header.iter().skip(3) {
+    for record in budget.admit_iter(&(header)[..], "STEP validate header sections traversal").map_err(cadmpeg_core::CodecError::from)?.skip(3) {
         if record.name.starts_with('!') {
             user_defined = true;
             continue;
@@ -1860,7 +1862,7 @@ fn admit_file_population(
     let Some(schema) = decoded_bytes(schema, implementation_level, budget)? else {
         return invalid("FILE_POPULATION has invalid parameters");
     };
-    if !valid_schema_identifier(&schema)
+    if !valid_schema_identifier(budget, &schema)?
         || decoded_bytes(determination, implementation_level, budget)?.is_none()
         || !schema_identifier_matches(schema_identifiers, &schema, budget)?
     {
@@ -1895,7 +1897,7 @@ fn valid_section_language(
     let Some(language) = decoded_string(language, implementation_level, budget)? else {
         return invalid("SECTION_LANGUAGE has invalid parameters");
     };
-    if language.len() != 3 || !language.bytes().all(|byte| byte.is_ascii_alphabetic()) {
+    if language.len() != 3 || !budget.admit_iter(language.as_bytes(), "STEP section language validation").map_err(CodecError::from)?.all(|byte| byte.is_ascii_alphabetic()) {
         return invalid("SECTION_LANGUAGE has invalid parameters");
     }
     valid_optional_section_name(section, implementation_level, budget)
@@ -1977,8 +1979,10 @@ fn string_within_limit(
     limit: usize,
     budget: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    Ok(decoded_string(value, implementation_level, budget)?
-        .is_some_and(|value| value.chars().count() <= limit))
+    match decoded_string(value, implementation_level, budget)? {
+        Some(value) => Ok(budget.admit_iter(value.as_str(), "STEP string length traversal")?.count() <= limit),
+        None => Ok(false),
+    }
 }
 
 fn string_list_within_limit(
@@ -2020,13 +2024,15 @@ fn valid_optional_timestamp(
 ) -> Result<bool, CodecError> {
     match value {
         Value::Omitted => Ok(true),
-        Value::String(_) => Ok(decoded_string(value, implementation_level, budget)?
-            .is_some_and(|value| valid_timestamp_text(&value))),
+        Value::String(_) => match decoded_string(value, implementation_level, budget)? {
+            Some(value) => valid_timestamp_text(budget, &value),
+            None => Ok(false),
+        },
         _ => Ok(false),
     }
 }
 
-fn valid_timestamp_text(value: &str) -> bool {
+fn valid_timestamp_text(budget: &DecodeContext<'_>, value: &str) -> Result<bool, CodecError> {
     let bytes = value.as_bytes();
     if bytes.len() < 19
         || bytes.get(4) != Some(&b'-')
@@ -2034,23 +2040,23 @@ fn valid_timestamp_text(value: &str) -> bool {
         || bytes.get(10) != Some(&b'T')
         || bytes.get(13) != Some(&b':')
         || bytes.get(16) != Some(&b':')
-        || !all_ascii_digits(&bytes[0..4])
-        || !all_ascii_digits(&bytes[5..7])
-        || !all_ascii_digits(&bytes[8..10])
-        || !all_ascii_digits(&bytes[11..13])
-        || !all_ascii_digits(&bytes[14..16])
-        || !all_ascii_digits(&bytes[17..19])
+        || !all_ascii_digits(budget, &bytes[0..4])?
+        || !all_ascii_digits(budget, &bytes[5..7])?
+        || !all_ascii_digits(budget, &bytes[8..10])?
+        || !all_ascii_digits(budget, &bytes[11..13])?
+        || !all_ascii_digits(budget, &bytes[14..16])?
+        || !all_ascii_digits(budget, &bytes[17..19])?
     {
-        return false;
+        return Ok(false);
     }
-    let year = parse_ascii_digits(&bytes[0..4]);
-    let month = parse_ascii_digits(&bytes[5..7]);
-    let day = parse_ascii_digits(&bytes[8..10]);
-    let hour = parse_ascii_digits(&bytes[11..13]);
-    let minute = parse_ascii_digits(&bytes[14..16]);
-    let second = parse_ascii_digits(&bytes[17..19]);
+    let year = parse_ascii_digits(budget, &bytes[0..4])?;
+    let month = parse_ascii_digits(budget, &bytes[5..7])?;
+    let day = parse_ascii_digits(budget, &bytes[8..10])?;
+    let hour = parse_ascii_digits(budget, &bytes[11..13])?;
+    let minute = parse_ascii_digits(budget, &bytes[14..16])?;
+    let second = parse_ascii_digits(budget, &bytes[17..19])?;
     let Some(days) = days_in_month(year, month) else {
-        return false;
+        return Ok(false);
     };
     if day == 0
         || day > days
@@ -2059,7 +2065,7 @@ fn valid_timestamp_text(value: &str) -> bool {
         || hour > 24
         || (hour == 24 && (minute != 0 || second != 0))
     {
-        return false;
+        return Ok(false);
     }
 
     let mut at = 19;
@@ -2070,23 +2076,23 @@ fn valid_timestamp_text(value: &str) -> bool {
             at += 1;
         }
         if at == fraction_start {
-            return false;
+            return Ok(false);
         }
     }
-    match bytes.get(at).copied() {
+    Ok(match bytes.get(at).copied() {
         None => true,
         Some(b'Z') => at + 1 == bytes.len(),
         Some(b'+' | b'-') => {
             at += 1;
             at + 5 == bytes.len()
-                && all_ascii_digits(&bytes[at..at + 2])
+                && all_ascii_digits(budget, &bytes[at..at + 2])?
                 && bytes[at + 2] == b':'
-                && all_ascii_digits(&bytes[at + 3..at + 5])
-                && parse_ascii_digits(&bytes[at..at + 2]) <= 23
-                && parse_ascii_digits(&bytes[at + 3..at + 5]) <= 59
+                && all_ascii_digits(budget, &bytes[at + 3..at + 5])?
+                && parse_ascii_digits(budget, &bytes[at..at + 2])? <= 23
+                && parse_ascii_digits(budget, &bytes[at + 3..at + 5])? <= 59
         }
         Some(_) => false,
-    }
+    })
 }
 
 fn days_in_month(year: usize, month: usize) -> Option<usize> {
@@ -2102,14 +2108,15 @@ fn days_in_month(year: usize, month: usize) -> Option<usize> {
     Some(days)
 }
 
-fn all_ascii_digits(bytes: &[u8]) -> bool {
-    !bytes.is_empty() && bytes.iter().all(u8::is_ascii_digit)
+fn all_ascii_digits(budget: &DecodeContext<'_>, bytes: &[u8]) -> Result<bool, CodecError> {
+    Ok(!bytes.is_empty() && budget.admit_iter(bytes, "STEP decimal digit validation")?.all(u8::is_ascii_digit))
 }
 
-fn parse_ascii_digits(bytes: &[u8]) -> usize {
-    bytes
-        .iter()
-        .fold(0, |value, byte| value * 10 + usize::from(byte - b'0'))
+fn parse_ascii_digits(budget: &DecodeContext<'_>, bytes: &[u8]) -> Result<usize, CodecError> {
+    budget.admit_iter(bytes, "STEP decimal digit accumulation")?
+        .try_fold(0_usize, |value, byte| value.checked_mul(10)
+            .and_then(|value| value.checked_add(usize::from(byte - b'0')))
+            .ok_or_else(|| budget.refuse_codec_limit("STEP decimal digit accumulation", u64::MAX, u64::MAX)))
 }
 
 fn valid_optional_base64(
@@ -2119,34 +2126,36 @@ fn valid_optional_base64(
 ) -> Result<bool, CodecError> {
     match value {
         Value::Omitted => Ok(true),
-        Value::String(_) => Ok(decoded_string(value, implementation_level, budget)?
-            .is_some_and(|value| valid_base64_text(value.as_bytes()))),
+        Value::String(_) => match decoded_string(value, implementation_level, budget)? {
+            Some(value) => valid_base64_text(budget, value.as_bytes()),
+            None => Ok(false),
+        },
         _ => Ok(false),
     }
 }
 
-fn valid_base64_text(bytes: &[u8]) -> bool {
+fn valid_base64_text(budget: &DecodeContext<'_>, bytes: &[u8]) -> Result<bool, CodecError> {
     if bytes.is_empty() {
-        return false;
+        return Ok(false);
     }
     let mut quantum_len = 0;
     let mut padding = 0;
     let mut finished = false;
-    for &byte in bytes {
+    for &byte in budget.admit_iter(bytes, "STEP base64 validation traversal")? {
         let is_alphabet = byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/');
         if finished || (padding != 0 && is_alphabet) {
-            return false;
+            return Ok(false);
         }
         if is_alphabet {
             quantum_len += 1;
         } else if byte == b'=' {
             if quantum_len < 2 || padding == 2 {
-                return false;
+                return Ok(false);
             }
             padding += 1;
             quantum_len += 1;
         } else {
-            return false;
+            return Ok(false);
         }
         if quantum_len == 4 {
             finished = padding != 0;
@@ -2154,7 +2163,7 @@ fn valid_base64_text(bytes: &[u8]) -> bool {
             padding = 0;
         }
     }
-    quantum_len == 0
+    Ok(quantum_len == 0)
 }
 
 fn decoded_string(
@@ -2192,7 +2201,7 @@ fn schema_identifier_matches(
             budget.copy_retained_text(trimmed, "step_schema_name_matching")
         })?;
     schema_name.make_ascii_uppercase();
-    Ok(schema_identifiers.iter().any(|identifier| {
+    Ok(budget.admit_iter(&(schema_identifiers)[..], "STEP schema identifier matches traversal").map_err(cadmpeg_core::CodecError::from)?.any(|identifier| {
         let identifier = identifier.trim();
         identifier == schema_name
             || split_schema_identifier(identifier).is_some_and(|(name, _)| name == schema_name)
@@ -2200,22 +2209,22 @@ fn schema_identifier_matches(
 }
 
 fn validate_header_data_references(
+    budget: &DecodeContext<'_>,
     references: &[HeaderDataReferences],
     data_section_names: &BTreeSet<String>,
-) -> Result<(), &'static str> {
-    for reference in references {
+) -> Result<(), ValidationError> {
+    for reference in budget.admit_iter(references, "STEP header DATA reference traversal").map_err(CodecError::from)? {
         match reference {
             HeaderDataReferences::FilePopulation(sections) => {
-                if sections
-                    .iter()
+                if budget.admit_iter(sections, "STEP FILE_POPULATION section traversal").map_err(CodecError::from)?
                     .any(|section| !data_section_names.contains(section))
                 {
-                    return Err("FILE_POPULATION names an unknown DATA section");
+                    return invalid("FILE_POPULATION names an unknown DATA section");
                 }
             }
             HeaderDataReferences::Section(section) => {
                 if !data_section_names.contains(section) {
-                    return Err("header section reference names an unknown DATA section");
+                    return invalid("header section reference names an unknown DATA section");
                 }
             }
         }
@@ -2245,7 +2254,7 @@ fn valid_data_parameters(
     let Some(schema_name) = decoded_bytes(schema_name, implementation_level, budget)? else {
         return invalid("DATA section parameters contain an invalid string");
     };
-    if !valid_schema_identifier(&schema_name)
+    if !valid_schema_identifier(budget, &schema_name)?
         || !schema_identifier_matches(schema_identifiers, &schema_name, budget)?
     {
         return invalid("DATA section schema is not listed in FILE_SCHEMA");
@@ -2259,7 +2268,7 @@ fn schema_names_for_matching(
     budget: &DecodeContext<'_>,
 ) -> Result<Vec<String>, ParseError> {
     let mut names = Vec::new();
-    for identifier in admitted {
+    for identifier in budget.admit_iter(admitted, "STEP schema names for matching traversal").map_err(cadmpeg_core::CodecError::from)? {
         let source = identifier.text();
         let mut name = budget.copy_retained_text(source, "step_schema_matching_name")?;
         name.make_ascii_uppercase();
@@ -2268,37 +2277,35 @@ fn schema_names_for_matching(
     Ok(names)
 }
 
-fn is_string_list(value: Option<&Value>) -> bool {
-    matches!(
-        value,
-        Some(Value::List(values))
-            if !values.is_empty() && values.iter().all(|value| matches!(value, Value::String(_)))
-    )
+fn is_string_list(budget: &DecodeContext<'_>, value: Option<&Value>) -> Result<bool, CodecError> {
+    match value {
+        Some(Value::List(values)) if !values.is_empty() => Ok(budget.admit_iter(values.as_slice(), "STEP string list traversal")?.all(|value| matches!(value, Value::String(_)))),
+        _ => Ok(false),
+    }
 }
 
 fn is_string_or_omitted(value: Option<&Value>) -> bool {
     matches!(value, Some(Value::String(_) | Value::Omitted))
 }
 
-fn valid_anchor_name(name: &str) -> bool {
-    !name.is_empty() && name.bytes().any(|byte| !byte.is_ascii_digit())
+fn valid_anchor_name(budget: &DecodeContext<'_>, name: &str) -> Result<bool, CodecError> {
+    Ok(!name.is_empty() && budget.admit_iter(name.as_bytes(), "STEP anchor name traversal")?.any(|byte| !byte.is_ascii_digit()))
 }
 
-fn is_anchor_item(value: &Value) -> bool {
+fn is_anchor_item(budget: &DecodeContext<'_>, value: &Value) -> Result<bool, CodecError> {
+    let _depth = budget.enter_nested("STEP anchor item classification")?;
     match value {
-        Value::Reference(_)
-        | Value::ExternalReference(_)
-        | Value::ConstantEntity(_)
-        | Value::ExpressValueConstant(_)
-        | Value::Integer(_)
-        | Value::Real(_)
-        | Value::Enumeration(_)
-        | Value::String(_)
-        | Value::Binary(_)
-        | Value::Resource(_)
-        | Value::Omitted => true,
-        Value::List(values) => values.iter().all(is_anchor_item),
-        Value::Derived | Value::Typed(_, _) => false,
+        Value::Reference(_) | Value::ExternalReference(_) | Value::ConstantEntity(_)
+        | Value::ExpressValueConstant(_) | Value::Integer(_) | Value::Real(_)
+        | Value::Enumeration(_) | Value::String(_) | Value::Binary(_)
+        | Value::Resource(_) | Value::Omitted => Ok(true),
+        Value::List(values) => {
+            for value in budget.admit_iter(values.as_slice(), "STEP anchor item traversal")? {
+                if !is_anchor_item(budget, value)? { return Ok(false); }
+            }
+            Ok(true)
+        }
+        Value::Derived | Value::Typed(_, _) => Ok(false),
     }
 }
 
@@ -2509,7 +2516,7 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                     .budget
                     .collection_vec(values.len(), "step_anchor_list_items")
                     .map_err(ResolveError::Resource)?;
-                for value in values {
+                for value in self.budget.admit_iter(values.as_slice(), "STEP resolve value traversal").map_err(cadmpeg_core::CodecError::from)? {
                     let remaining = budget
                         .checked_sub(expanded_nodes)
                         .ok_or_else(|| self.node_limit_error())?;
@@ -2584,7 +2591,7 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
     ) -> Result<Self, ResolveError> {
         let mut storage = budget.reserve_scoped(0, "step_reference_binding_storage")?;
         let mut bindings = BTreeMap::new();
-        for reference in references {
+        for reference in budget.admit_iter(references, "STEP new traversal").map_err(cadmpeg_core::CodecError::from)? {
             storage.with_storage(|| {
                 budget.insert_btree_map(
                     &mut bindings,
@@ -2659,7 +2666,7 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
                     .budget
                     .collection_vec(values.len(), "step_reference_list_items")
                     .map_err(ResolveError::Resource)?;
-                for value in values {
+                for value in self.budget.admit_iter(values.as_slice(), "STEP resolve value value traversal").map_err(cadmpeg_core::CodecError::from)? {
                     resolved.push(self.resolve_value(value, depth + 1)?);
                 }
                 Ok(Value::List(resolved))
@@ -2704,7 +2711,7 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
             return self.clone_leaf(&Value::Omitted);
         }
         let Some(anchor) = self.anchors.get(fragment) else {
-            return if is_uuid_fragment(fragment) {
+            return if is_uuid_fragment(self.budget, fragment)? {
                 self.clone_leaf(original)
             } else {
                 self.clone_leaf(&Value::Omitted)
@@ -2761,7 +2768,7 @@ fn resolve_local_references(
     }
     let mut snapshot_storage = budget.reserve_scoped(0, "step_reference_anchor_copy_storage")?;
     let mut anchor_bindings = BTreeMap::new();
-    for anchor in anchors.iter() {
+    for anchor in budget.admit_iter(&(anchors)[..], "STEP resolve local references traversal").map_err(cadmpeg_core::CodecError::from)? {
         snapshot_storage.with_storage(|| {
             let name =
                 budget.copy_retained_text(&anchor.name, "step_reference_anchor_name_copy")?;
@@ -2802,13 +2809,13 @@ fn reference_target_matches(name: ReferenceName, value: &Value) -> bool {
     }
 }
 
-fn is_uuid_fragment(fragment: &str) -> bool {
-    fragment.len() == 36
-        && fragment.as_bytes().iter().enumerate().all(|(index, byte)| {
+fn is_uuid_fragment(budget: &DecodeContext<'_>, fragment: &str) -> Result<bool, CodecError> {
+    Ok(fragment.len() == 36
+        && budget.admit_iter(fragment.as_bytes(), "STEP UUID fragment traversal")?.enumerate().all(|(index, byte)| {
             matches!(index, 8 | 13 | 18 | 23)
                 .then_some(*byte == b'-')
                 .unwrap_or_else(|| byte.is_ascii_hexdigit())
-        })
+        }))
 }
 
 fn value_node_count(
@@ -2842,7 +2849,7 @@ fn value_node_count(
             .map_err(ResolveError::Resource)?;
         match value {
             Value::List(values) => {
-                for child in values {
+                for child in budget.admit_iter(values.as_slice(), "STEP visit value traversal").map_err(cadmpeg_core::CodecError::from)? {
                     visit(child, remaining, budget, depth + 1)?;
                 }
             }
@@ -2874,7 +2881,7 @@ fn references(
                 budget.push_vec(value_out, *id, "step_parse_value_reference_ids")?;
             }
             Value::List(values) => {
-                for child in values.iter().rev() {
+                for child in budget.admit_iter(&(values)[..], "STEP references traversal").map_err(cadmpeg_core::CodecError::from)?.rev() {
                     budget.push_vec(&mut pending, child, "step_parse_reference_pending")?;
                 }
             }
@@ -2887,23 +2894,33 @@ fn references(
     Ok(())
 }
 
-fn contains_class3_occurrence(value: &Value) -> bool {
+fn contains_class3_occurrence(budget: &DecodeContext<'_>, value: &Value) -> Result<bool, CodecError> {
+    let _depth = budget.enter_nested("STEP class-3 occurrence classification")?;
     match value {
-        Value::ExternalReference(_) | Value::ConstantEntity(_) | Value::ExpressValueConstant(_) => {
-            true
+        Value::ExternalReference(_) | Value::ConstantEntity(_) | Value::ExpressValueConstant(_) => Ok(true),
+        Value::List(values) => {
+            for value in budget.admit_iter(values.as_slice(), "STEP class-3 occurrence traversal")? {
+                if contains_class3_occurrence(budget, value)? { return Ok(true); }
+            }
+            Ok(false)
         }
-        Value::List(values) => values.iter().any(contains_class3_occurrence),
-        Value::Typed(_, value) => contains_class3_occurrence(value),
-        _ => false,
+        Value::Typed(_, value) => contains_class3_occurrence(budget, value),
+        _ => Ok(false),
     }
 }
 
-fn contains_resource_value(value: &Value) -> bool {
+fn contains_resource_value(budget: &DecodeContext<'_>, value: &Value) -> Result<bool, CodecError> {
+    let _depth = budget.enter_nested("STEP resource value classification")?;
     match value {
-        Value::Resource(_) => true,
-        Value::List(values) => values.iter().any(contains_resource_value),
-        Value::Typed(_, value) => contains_resource_value(value),
-        _ => false,
+        Value::Resource(_) => Ok(true),
+        Value::List(values) => {
+            for value in budget.admit_iter(values.as_slice(), "STEP resource value traversal")? {
+                if contains_resource_value(budget, value)? { return Ok(true); }
+            }
+            Ok(false)
+        }
+        Value::Typed(_, value) => contains_resource_value(budget, value),
+        _ => Ok(false),
     }
 }
 

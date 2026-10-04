@@ -225,13 +225,11 @@ pub(crate) fn parse_header(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Head
         });
     }
     let version = &bytes[start_offset + file_header::ARCHIVE_VERSION..header_end];
-    let first_digit = version
-        .iter()
+    let first_digit = ctx.admit_iter(&(version)[..], "Rhino parse header traversal").map_err(cadmpeg_core::CodecError::from)?
         .position(u8::is_ascii_digit)
         .ok_or(FramingError::InvalidHeader)?;
-    if version[..first_digit].iter().any(|byte| *byte != b' ')
-        || version[first_digit..]
-            .iter()
+    if ctx.admit_iter(&(version[..first_digit])[..], "Rhino parse header traversal").map_err(cadmpeg_core::CodecError::from)?.any(|byte| *byte != b' ')
+        || ctx.admit_iter(&(version[first_digit..])[..], "Rhino parse header traversal").map_err(cadmpeg_core::CodecError::from)?
             .any(|byte| !byte.is_ascii_digit())
     {
         return Err(FramingError::InvalidHeader);
@@ -649,9 +647,9 @@ pub(crate) enum ChecksumStatus {
 }
 
 /// Computes the augmented non-reflected V1 CRC-CCITT variant.
-pub(crate) fn crc16(seed: u16, bytes: &[u8]) -> u16 {
+pub(crate) fn crc16(ctx: &DecodeContext<'_>, seed: u16, bytes: &[u8]) -> Result<u16, cadmpeg_core::CodecError> {
     let mut crc = seed;
-    for byte in bytes {
+    for byte in ctx.admit_iter(bytes, "Rhino chunk checksum bytes")? {
         let mut table = crc & 0xff00;
         for _ in 0..8 {
             table = if table & 0x8000 != 0 {
@@ -662,7 +660,7 @@ pub(crate) fn crc16(seed: u16, bytes: &[u8]) -> u16 {
         }
         crc = (crc << 8) ^ u16::from(*byte) ^ table;
     }
-    crc
+    Ok(crc)
 }
 
 /// Checks a chunk and records an integrity diagnostic for a checksum mismatch.
@@ -750,11 +748,7 @@ where
                 let data = bytes.get(range.clone()).ok_or_else(|| {
                     FramingError::structural(range.start, "checksum range escapes input")
                 })?;
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(data.len()),
-                    "Rhino chunk checksum bytes",
-                )?;
-                crc = crc16(crc, data);
+                crc = crc16(ctx, crc, data)?;
             }
             let expected = u32::from(crc);
             Ok(if expected == actual {

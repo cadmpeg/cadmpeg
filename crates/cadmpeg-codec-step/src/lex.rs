@@ -833,7 +833,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             .alloc_filled(value_len, 0_u8, "step_uri_lexeme_bytes")
             .map_err(|error| Self::resource_error(start, error))?;
         let mut written = 0usize;
-        for &byte in &self.input[content..self.at] {
+        for &byte in self.budget.admit_iter(&(self.input[content..self.at])[..], "STEP resource traversal").map_err(cadmpeg_core::CodecError::from)? {
             if !byte.is_ascii_control() {
                 value[written] = byte;
                 written += 1;
@@ -864,8 +864,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         end: usize,
         storage: LiteralStorage,
     ) -> Result<(String, Option<ScopedReservation<'_>>), LexError> {
-        let byte_count = self.input[start..end]
-            .iter()
+        let byte_count = self.budget.admit_iter(&(self.input[start..end])[..], "STEP normalized traversal").map_err(cadmpeg_core::CodecError::from)?
             .filter(|byte| !byte.is_ascii_control())
             .map(|byte| char::from(*byte).len_utf8())
             .sum::<usize>();
@@ -892,7 +891,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                 (output, Some(reservation))
             }
         };
-        for &byte in &self.input[start..end] {
+        for &byte in self.budget.admit_iter(&(self.input[start..end])[..], "STEP normalized traversal").map_err(cadmpeg_core::CodecError::from)? {
             if !byte.is_ascii_control() {
                 output.push(char::from(byte));
             }

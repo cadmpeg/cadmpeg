@@ -1139,13 +1139,14 @@ fn scan_with_record_limit<'a>(
         let mut table_record_count = 0_usize;
         let mut object_typecodes = BTreeMap::new();
         let writer_version = if table_base(chunk.typecode) == TCODE_OBJECTS {
-            tables
-                .iter()
-                .rev()
-                .filter(|table| table_base(table.typecode) == TCODE_PROPERTIES)
-                .flat_map(|table| table.records.iter().rev())
-                .filter(|record| record.typecode == TCODE_WRITER_VERSION)
-                .find_map(Record::short_value)
+            {
+                let mut version = None;
+                for table in ctx.admit_iter(&tables[..], "Rhino writer version table traversal")?.rev().filter(|table| table_base(table.typecode) == TCODE_PROPERTIES) {
+                    version = ctx.admit_iter(table.records.as_slice(), "Rhino writer version record traversal")?.rev().filter(|record| record.typecode == TCODE_WRITER_VERSION).find_map(Record::short_value);
+                    if version.is_some() { break; }
+                }
+                version
+            }
         } else {
             None
         };
@@ -1386,7 +1387,7 @@ fn push_container_note(
 /// Build the format-neutral container summary.
 fn summarize(ctx: &DecodeContext<'_>, scan: &Scan<'_>) -> Result<ContainerSummary, CodecError> {
     let mut entries = Vec::new();
-    for table in &scan.tables {
+    for table in ctx.admit_iter(&(scan.tables)[..], "Rhino summarize traversal").map_err(cadmpeg_core::CodecError::from)? {
         let mut attributes = BTreeMap::new();
         insert_summary_attribute(
             ctx,
@@ -1412,7 +1413,7 @@ fn summarize(ctx: &DecodeContext<'_>, scan: &Scan<'_>) -> Result<ContainerSummar
             format_args!("record_count"),
             format_args!("{}", table.record_count),
         )?;
-        for (typecode, count) in &table.object_typecodes {
+        for (typecode, count) in ctx.admit_iter(&table.object_typecodes, "Rhino summarize traversal").map_err(cadmpeg_core::CodecError::from)? {
             insert_summary_attribute(
                 ctx,
                 &mut attributes,
@@ -1437,7 +1438,7 @@ fn summarize(ctx: &DecodeContext<'_>, scan: &Scan<'_>) -> Result<ContainerSummar
         });
     }
     let mut classes = BTreeMap::<Uuid, (usize, usize)>::new();
-    for object in &scan.objects {
+    for object in ctx.admit_iter(&(scan.objects)[..], "Rhino summarize traversal").map_err(cadmpeg_core::CodecError::from)? {
         // The container report groups degraded records under the nil class UUID.
         let class_uuid = object.class_uuid().unwrap_or_else(Uuid::nil);
         ctx.admit_btree_entry(&classes, &class_uuid, "Rhino container class groups")?;
@@ -1491,10 +1492,10 @@ fn summarize(ctx: &DecodeContext<'_>, scan: &Scan<'_>) -> Result<ContainerSummar
         &mut notes,
         format_args!("archive version {}", scan.archive.value()),
     )?;
-    for warning in scan.warnings.messages() {
+    for warning in scan.warnings.messages(ctx)? {
         push_container_note(ctx, &mut notes, format_args!("{warning}"))?;
     }
-    for diagnostic in scan.definitions.diagnostics() {
+    for diagnostic in ctx.admit_iter(scan.definitions.diagnostics(), "Rhino summarize view traversal").map_err(cadmpeg_core::CodecError::from)? {
         push_container_note(
             ctx,
             &mut notes,
@@ -1644,10 +1645,10 @@ pub(crate) fn container_only_result(
         &mut notes,
         format_args!("archive version {}", scan.archive.value()),
     )?;
-    for warning in scan.warnings.messages() {
+    for warning in scan.warnings.messages(ctx)? {
         push_container_note(ctx, &mut notes, format_args!("{warning}"))?;
     }
-    for diagnostic in scan.definitions.diagnostics() {
+    for diagnostic in ctx.admit_iter(scan.definitions.diagnostics(), "Rhino container only result view traversal").map_err(cadmpeg_core::CodecError::from)? {
         push_container_note(
             ctx,
             &mut notes,
@@ -1655,7 +1656,7 @@ pub(crate) fn container_only_result(
         )?;
     }
     let mut losses = Vec::new();
-    for diagnostic in &scan.warnings {
+    for diagnostic in ctx.admit_iter(&(scan.warnings)[..], "Rhino container only result traversal").map_err(cadmpeg_core::CodecError::from)? {
         ctx.reserve_vec(&mut losses, 1, "Rhino container-only losses")?;
         losses.push(
             diagnostic
@@ -1664,7 +1665,7 @@ pub(crate) fn container_only_result(
                 .note(ctx.format_retained(format_args!("{}", diagnostic.message), "Rhino container-only loss message")?),
         );
     }
-    for diagnostic in scan.definitions.diagnostics() {
+    for diagnostic in ctx.admit_iter(scan.definitions.diagnostics(), "Rhino container only result view traversal").map_err(cadmpeg_core::CodecError::from)? {
         ctx.reserve_vec(&mut losses, 1, "Rhino container-only losses")?;
         losses.push(diagnostic.to_loss(ctx)?);
     }

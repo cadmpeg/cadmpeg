@@ -21,8 +21,8 @@ pub(super) fn decode(
     let mut losses = Vec::new();
     let mut documents = BTreeMap::new();
     let mut sources = BTreeMap::new();
-    for (&id, record) in exchange.records() {
-        if let Some(parameters) = document_parameters(record) {
+    for (&id, record) in ctx.admit_iter(exchange.records(), "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
+        if let Some(parameters) = document_parameters(ctx, record)? {
             let identifier = parameters
                 .first()
                 .map(|value| {
@@ -66,7 +66,7 @@ pub(super) fn decode(
                 "step_dependency_documents",
             )?;
         }
-        if let Some(partial) = record.partial("EXTERNAL_SOURCE") {
+        if let Some(partial) = record.partial(ctx, "EXTERNAL_SOURCE")? {
             let parameters = partial.parameters.as_slice();
             if let Some(source) = parameters
                 .first()
@@ -81,8 +81,8 @@ pub(super) fn decode(
     let mut typed = HashSet::new();
     let mut notes = BTreeSet::new();
 
-    for (&id, record) in exchange.records() {
-        if let Some(parameters) = document_reference_parameters(record) {
+    for (&id, record) in ctx.admit_iter(exchange.records(), "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
+        if let Some(parameters) = document_reference_parameters(ctx, record)? {
             let Some(document_id) = parameters.first().and_then(ValueExt::reference) else {
                 continue;
             };
@@ -116,7 +116,7 @@ pub(super) fn decode(
                 ctx.insert_hash_set(&mut typed, *kind, "step_dependency_claims")?;
             }
         }
-        if let Some(partial) = record.partial("EXTERNALLY_DEFINED_ITEM") {
+        if let Some(partial) = record.partial(ctx, "EXTERNALLY_DEFINED_ITEM")? {
             let Some(source_id) = partial.parameters.get(1).and_then(ValueExt::reference) else {
                 continue;
             };
@@ -154,18 +154,16 @@ pub(super) fn decode(
     })
 }
 
-fn document_parameters(record: &RawRecord) -> Option<&[Value]> {
-    record
-        .partial("DOCUMENT")
-        .or_else(|| record.partial("DOCUMENT_FILE"))
-        .map(|partial| partial.parameters.as_slice())
+fn document_parameters<'a>(ctx: &DecodeContext<'_>, record: &'a RawRecord) -> Result<Option<&'a [Value]>, CodecError> {
+    let mut partial = ctx.admit_iter(&record.partials[..], "STEP document partial traversal")?.find(|partial| partial.name == "DOCUMENT");
+    if partial.is_none() { partial = ctx.admit_iter(&record.partials[..], "STEP document fallback partial traversal")?.find(|partial| partial.name == "DOCUMENT_FILE"); }
+    Ok(partial.map(|partial| partial.parameters.as_slice()))
 }
 
-fn document_reference_parameters(record: &RawRecord) -> Option<&[Value]> {
-    record
-        .partial("DOCUMENT_REFERENCE")
-        .or_else(|| record.partial("APPLIED_DOCUMENT_REFERENCE"))
-        .map(|partial| partial.parameters.as_slice())
+fn document_reference_parameters<'a>(ctx: &DecodeContext<'_>, record: &'a RawRecord) -> Result<Option<&'a [Value]>, CodecError> {
+    let mut partial = ctx.admit_iter(&record.partials[..], "STEP document partial traversal")?.find(|partial| partial.name == "DOCUMENT_REFERENCE");
+    if partial.is_none() { partial = ctx.admit_iter(&record.partials[..], "STEP document fallback partial traversal")?.find(|partial| partial.name == "APPLIED_DOCUMENT_REFERENCE"); }
+    Ok(partial.map(|partial| partial.parameters.as_slice()))
 }
 
 fn source_text(

@@ -361,7 +361,7 @@ pub(crate) fn hex(
         .checked_mul(2)
         .ok_or_else(|| cadmpeg_core::CodecError::malformed("hex digest length overflow"))?;
     let mut value = ctx.retained_string(byte_len, operation)?;
-    for byte in bytes {
+    for byte in ctx.admit_iter(bytes, "Rhino hex traversal").map_err(cadmpeg_core::CodecError::from)? {
         value.push(char::from(DIGITS[usize::from(byte >> 4)]));
         value.push(char::from(DIGITS[usize::from(byte & 0x0f)]));
     }
@@ -1172,8 +1172,7 @@ fn apply_idef_alternative_path(
     }
 
     let mut degraded = false;
-    for item in userdata
-        .iter()
+    for item in ctx.admit_iter(&(userdata)[..], "Rhino apply idef alternative path traversal").map_err(cadmpeg_core::CodecError::from)?
         .filter_map(UserdataDescriptor::known)
         .filter(|item| {
             item.class_uuid == IDEF_ALTERNATIVE_PATH_USERDATA
@@ -1274,7 +1273,7 @@ pub(crate) fn parse_definitions(
     let mut result = DefinitionParse::default();
     let mut seen = HashMap::new();
     let mut opaque_indices = BTreeSet::new();
-    for (source_order, record) in records.iter().enumerate() {
+    for (source_order, record) in ctx.admit_iter(&(records)[..], "Rhino parse definitions traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
         let mut warnings = Diagnostics::new();
         let parsed = (|| {
             let (class, userdata) = parse_class_wrapper_with_userdata(

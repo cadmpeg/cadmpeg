@@ -9,6 +9,7 @@ use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader
 use crate::objects::{parse_class_wrapper, UserdataDescriptor};
 use crate::settings::{plane, utf16_retained, CoordinateLane, MillimeterScale, Plane};
 use crate::wire::{scaled_coordinate, uuid, Uuid};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal, PositiveAngle, PositiveReal};
 use cadmpeg_ir::units::FiniteVector;
 
@@ -597,9 +598,8 @@ pub(crate) fn v2_annotation_direct(
     let kind = reader.i32()?;
     let plane_offset = reader.position();
     let raw_plane = plane(ctx, reader)?;
-    if raw_plane
-        .origin
-        .iter()
+    if ctx.admit_iter(&(raw_plane
+        .origin)[..], "Rhino v2 annotation direct traversal").map_err(cadmpeg_core::CodecError::from)?
         .any(|value| value.abs() > V2_REALLY_BIG_NUMBER)
     {
         return Err(FramingError::structural(
@@ -623,8 +623,7 @@ pub(crate) fn v2_annotation_direct(
     for _ in 0..point_bytes / 16 {
         let point_offset = reader.position();
         let raw_point = point2(reader)?;
-        if raw_point
-            .iter()
+        if ctx.admit_iter(&(raw_point)[..], "Rhino v2 annotation direct traversal").map_err(cadmpeg_core::CodecError::from)?
             .any(|value| value.abs() > V2_REALLY_BIG_NUMBER)
         {
             return Err(FramingError::structural(
@@ -1321,6 +1320,7 @@ pub(crate) fn decode(
 
 /// Applies the built-in V5 dimension extension carried as class userdata.
 pub(crate) fn apply_userdata(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     userdata: &[UserdataDescriptor],
     archive: ArchiveVersion,
@@ -1334,8 +1334,7 @@ pub(crate) fn apply_userdata(
     } = &mut dimension.definition
     {
         if let Some(extra) =
-            userdata
-                .iter()
+            ctx.admit_iter(userdata, "Rhino dimension extension traversal").map_err(cadmpeg_core::CodecError::from)?
                 .filter_map(UserdataDescriptor::known)
                 .find(|userdata| {
                     userdata.class_uuid == V5_ANGULAR_EXTRA
@@ -1364,8 +1363,7 @@ pub(crate) fn apply_userdata(
             reader.skip_remaining()?;
         }
     }
-    let Some(extra) = userdata
-        .iter()
+    let Some(extra) = ctx.admit_iter(userdata, "Rhino dimension extension traversal").map_err(cadmpeg_core::CodecError::from)?
         .filter_map(UserdataDescriptor::known)
         .find(|userdata| userdata.class_uuid == V5_DIM_EXTRA && userdata.item_uuid == V5_DIM_EXTRA)
     else {
@@ -2987,6 +2985,7 @@ pub(crate) mod tests {
         });
         let mut radial = radial;
         apply_userdata(
+            &cadmpeg_test_support::service_decode_context(),
             &extension,
             std::slice::from_ref(&descriptor),
             archive,
@@ -3017,6 +3016,7 @@ pub(crate) mod tests {
         )
         .expect("fresh radial baseline");
         apply_userdata(
+            &cadmpeg_test_support::service_decode_context(),
             &extension,
             std::slice::from_ref(&wrong_item_descriptor),
             archive,
@@ -3044,6 +3044,7 @@ pub(crate) mod tests {
         });
         let mut angular = angular;
         apply_userdata(
+            &cadmpeg_test_support::service_decode_context(),
             &angular_extension,
             std::slice::from_ref(&angular_descriptor),
             archive,
@@ -3075,6 +3076,7 @@ pub(crate) mod tests {
         )
         .expect("fresh angular baseline");
         apply_userdata(
+            &cadmpeg_test_support::service_decode_context(),
             &angular_extension,
             std::slice::from_ref(&wrong_item_descriptor),
             archive,
@@ -3109,6 +3111,7 @@ pub(crate) mod tests {
         *payload_range = second_start..combined.len();
         let mut duplicate_angular = angular;
         apply_userdata(
+            &cadmpeg_test_support::service_decode_context(),
             &combined,
             &[angular_descriptor, second_descriptor],
             archive,

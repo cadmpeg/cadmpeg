@@ -290,10 +290,12 @@ fn semantic_work_counts_nested_source_graph_nodes() {
         crate::test_support::with_service_context(nested, crate::parse::parse_inner)
             .expect("nested exchange");
 
+    crate::test_support::with_service_context(&[], |_, ctx| {
     assert!(
-        semantic_input_work(&nested_exchange).expect("nested work fits")
-            > semantic_input_work(&simple_exchange).expect("simple work fits")
+        semantic_input_work(&nested_exchange, ctx).expect("nested work fits")
+            > semantic_input_work(&simple_exchange, ctx).expect("simple work fits")
     );
+    });
 }
 
 #[test]
@@ -303,7 +305,9 @@ fn implicit_face_plane_work_scales_with_point_count() {
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
             .expect("polygon exchange");
 
-    assert_eq!(implicit_face_plane_work(&exchange).expect("work fits"), 4);
+    crate::test_support::with_service_context(&[], |_, ctx| {
+    assert_eq!(implicit_face_plane_work(&exchange, ctx).expect("work fits"), 4);
+    });
 }
 
 use std::fmt::Write as _;

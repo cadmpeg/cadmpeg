@@ -681,7 +681,7 @@ fn revolution_nurbs(
     for (theta, angular_weight) in angular {
         let radial_scale = 1.0 / angular_weight;
         for (profile_point, profile_weight) in
-            profile_points.iter().zip(profile_weights.iter().copied())
+            ctx.admit_iter(&(profile_points)[..], "Rhino revolution nurbs traversal").map_err(cadmpeg_core::CodecError::from)?.zip(ctx.admit_iter(&(profile_weights)[..], "Rhino revolution nurbs traversal").map_err(cadmpeg_core::CodecError::from)?.copied())
         {
             let relative = Vector3::new(
                 profile_point.x - axis_origin.x,
@@ -795,9 +795,9 @@ fn sum_nurbs(
     } else {
         None
     };
-    for (first_point, first_weight) in first_points.iter().zip(first_weights.iter().copied()) {
+    for (first_point, first_weight) in ctx.admit_iter(&(first_points)[..], "Rhino sum nurbs traversal").map_err(cadmpeg_core::CodecError::from)?.zip(ctx.admit_iter(&(first_weights)[..], "Rhino sum nurbs traversal").map_err(cadmpeg_core::CodecError::from)?.copied()) {
         for (second_point, second_weight) in
-            second_points.iter().zip(second_weights.iter().copied())
+            ctx.admit_iter(&(second_points)[..], "Rhino sum nurbs traversal").map_err(cadmpeg_core::CodecError::from)?.zip(ctx.admit_iter(&(second_weights)[..], "Rhino sum nurbs traversal").map_err(cadmpeg_core::CodecError::from)?.copied())
         {
             let Some(product) = NonZeroReal::new(first_weight * second_weight) else {
                 return Err(error(offset, "sum surface weight is invalid"));
@@ -880,7 +880,7 @@ pub(crate) fn extrusion_nurbs(
     if start.degree() != end.degree()
         || start.knots() != end.knots()
         || start.pole_count() != end.pole_count()
-        || !matching_pole_weights(start.pole_rows(), end.pole_rows())
+        || !matching_pole_weights(ctx, start.pole_rows(), end.pole_rows())?
         || start.periodic() != end.periodic()
         || path_domain[0] >= path_domain[1]
     {
@@ -930,18 +930,17 @@ pub(crate) fn extrusion_nurbs(
     Ok(surface)
 }
 
-fn matching_pole_weights(
+fn matching_pole_weights(ctx: &DecodeContext<'_>, 
     start: &NurbsPoles3<FinitePoint3>,
     end: &NurbsPoles3<FinitePoint3>,
-) -> bool {
-    match (start, end) {
+) -> Result<bool, CodecError> {
+    Ok(match (start, end) {
         (NurbsPoles3::Polynomial { .. }, NurbsPoles3::Polynomial { .. }) => true,
-        (NurbsPoles3::Rational { points: start }, NurbsPoles3::Rational { points: end }) => start
-            .iter()
-            .zip(end)
+        (NurbsPoles3::Rational { points: start }, NurbsPoles3::Rational { points: end }) => ctx.admit_iter(start.as_slice(), "Rhino extrusion start pole weights")?
+            .zip(ctx.admit_iter(end.as_slice(), "Rhino extrusion end pole weights")?)
             .all(|(first, second)| first.weight == second.weight),
         _ => false,
-    }
+    })
 }
 
 fn extrusion_rows<T: Copy>(
@@ -957,7 +956,7 @@ fn extrusion_rows<T: Copy>(
     ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(items), operation)?;
     let mut rows = Vec::new();
     ctx.reserve_capacity(&mut rows, row_count, operation)?;
-    for (first, second) in start.iter().copied().zip(end.iter().copied()) {
+    for (first, second) in ctx.admit_iter(&(start)[..], "Rhino extrusion rows traversal").map_err(cadmpeg_core::CodecError::from)?.copied().zip(ctx.admit_iter(&(end)[..], "Rhino extrusion rows traversal").map_err(cadmpeg_core::CodecError::from)?.copied()) {
         let mut row = Vec::new();
         ctx.reserve_capacity(&mut row, 2, operation)?;
         row.push(first);

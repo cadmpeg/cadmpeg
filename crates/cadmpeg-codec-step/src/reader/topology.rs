@@ -135,7 +135,7 @@ fn admitted_body_clone<'a>(
     let mut values = Vec::new();
 
     bytes.with_storage(|| ctx.reserve_capacity(&mut values, bodies.len(), operation))?;
-    for body in bodies {
+    for body in ctx.admit_iter(bodies, "STEP admitted body clone traversal").map_err(cadmpeg_core::CodecError::from)? {
         values.push(bytes.with_storage(|| body.try_clone_for_decode(ctx, operation))?);
     }
     Ok(AdmittedRepresentationBodies {
@@ -220,7 +220,7 @@ pub(super) fn representation_bodies<'a>(
     if let Some(items) = exchange
         .records()
         .get(&representation)
-        .and_then(representation_item_values)
+        .map(|record| representation_item_values(ctx, record)).transpose()?.flatten()
     {
         for item in items.iter().filter_map(ValueExt::reference) {
             let Some(record) = exchange.records().get(&item) else {
@@ -232,10 +232,10 @@ pub(super) fn representation_bodies<'a>(
                 }
                 continue;
             }
-            if record.partial("MAPPED_ITEM").is_none() {
+            if record.partial(ctx, "MAPPED_ITEM")?.is_none() {
                 continue;
             }
-            let Some(mapped_representation) = mapped_representation(record, exchange) else {
+            let Some(mapped_representation) = mapped_representation(ctx, record, exchange)? else {
                 continue;
             };
             let nested = representation_bodies(
@@ -246,7 +246,7 @@ pub(super) fn representation_bodies<'a>(
                 active,
                 ctx,
             )?;
-            for body in nested.iter() {
+            for body in ctx.admit_iter(&(nested)[..], "STEP representation bodies traversal").map_err(cadmpeg_core::CodecError::from)? {
                 insert_body_id(&mut body_ids, body, ctx, &mut body_ids_bytes)?;
             }
         }
@@ -259,7 +259,7 @@ pub(super) fn representation_bodies<'a>(
         .copied()
     {
         let nested = representation_bodies(related, exchange, topology, cache, active, ctx)?;
-        for body in nested.iter() {
+        for body in ctx.admit_iter(&(nested)[..], "STEP representation bodies traversal").map_err(cadmpeg_core::CodecError::from)? {
             insert_body_id(&mut body_ids, body, ctx, &mut body_ids_bytes)?;
         }
     }
@@ -291,8 +291,8 @@ fn shape_representation_relationships(
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeMap<u64, Vec<u64>>, CodecError> {
     let mut related = BTreeMap::<u64, Vec<u64>>::new();
-    for record in exchange.records().values() {
-        let Some(relationship) = record.partial("SHAPE_REPRESENTATION_RELATIONSHIP") else {
+    for record in ctx.admit_iter(exchange.records(), "STEP shape representation relationships map traversal").map_err(cadmpeg_core::CodecError::from)?.map(|(_, value)| value) {
+        let Some(relationship) = record.partial(ctx, "SHAPE_REPRESENTATION_RELATIONSHIP")? else {
             continue;
         };
         let mut references = relationship
@@ -302,7 +302,7 @@ fn shape_representation_relationships(
         let (first, second) = match (references.next(), references.next()) {
             (Some(first), Some(second)) => (first, second),
             _ => {
-                let Some(base) = record.partial("REPRESENTATION_RELATIONSHIP") else {
+                let Some(base) = record.partial(ctx, "REPRESENTATION_RELATIONSHIP")? else {
                     continue;
                 };
                 let mut references = base.parameters.iter().filter_map(ValueExt::reference);
@@ -342,51 +342,42 @@ fn shape_representation_relationships(
     Ok(related)
 }
 
-fn representation_item_values(record: &RawRecord) -> Option<&[Value]> {
+fn representation_item_values<'a>(ctx: &DecodeContext<'_>, record: &'a RawRecord) -> Result<Option<&'a [Value]>, CodecError> {
     if record.partials.len() == 1 {
-        return entity_parameter(record, "REPRESENTATION", 1)
-            .and_then(reference_values)
-            .or_else(|| {
-                record
-                    .simple_name()
-                    .and_then(|name| entity_parameter(record, name, 1))
-                    .and_then(reference_values)
-            });
+        if let Some(value) = entity_parameter(ctx, record, "REPRESENTATION", 1)? {
+            if let Some(items) = reference_values(ctx, value)? { return Ok(Some(items)); }
+        }
+        if let Some(name) = record.simple_name() {
+            if let Some(value) = entity_parameter(ctx, record, name, 1)? { return reference_values(ctx, value); }
+        }
+        return Ok(None);
     }
-    record
-        .partial("REPRESENTATION")?
-        .parameters
-        .iter()
-        .find_map(reference_values)
+    let Some(partial) = record.partial(ctx, "REPRESENTATION")? else { return Ok(None); };
+    for value in ctx.admit_iter(partial.parameters.as_slice(), "STEP representation reference parameter traversal")? {
+        if let Some(items) = reference_values(ctx, value)? { return Ok(Some(items)); }
+    }
+    Ok(None)
 }
 
-fn named_reference_values<'a>(
-    record: &'a RawRecord,
-    name: &str,
-    simple_index: usize,
-) -> Option<&'a [Value]> {
+fn named_reference_values<'a>(ctx: &DecodeContext<'_>, record: &'a RawRecord, name: &str, simple_index: usize) -> Result<Option<&'a [Value]>, CodecError> {
     if record.partials.len() == 1 {
-        return entity_parameter(record, name, simple_index).and_then(reference_values);
+        return if let Some(value) = entity_parameter(ctx, record, name, simple_index)? { reference_values(ctx, value) } else { Ok(None) };
     }
-    record
-        .partial(name)?
-        .parameters
-        .iter()
-        .find_map(reference_values)
+    let Some(partial) = record.partial(ctx, name)? else { return Ok(None); };
+    for value in ctx.admit_iter(partial.parameters.as_slice(), "STEP named reference parameter traversal")? {
+        if let Some(items) = reference_values(ctx, value)? { return Ok(Some(items)); }
+    }
+    Ok(None)
 }
 
-fn reference_values(value: &Value) -> Option<&[Value]> {
-    value
-        .list()
-        .filter(|items| items.iter().all(|item| item.reference().is_some()))
+fn reference_values<'a>(ctx: &DecodeContext<'_>, value: &'a Value) -> Result<Option<&'a [Value]>, CodecError> {
+    let Some(items) = value.list() else { return Ok(None); };
+    Ok(ctx.admit_iter(items, "STEP topology reference list validation")?.all(|item| item.reference().is_some()).then_some(items))
 }
 
-fn mapped_representation(record: &RawRecord, exchange: &Exchange) -> Option<u64> {
-    let map = named_reference(record, "MAPPED_ITEM", 1, 0)?;
-    exchange
-        .records()
-        .get(&map)
-        .and_then(|map| named_reference(map, "REPRESENTATION_MAP", 1, 1))
+fn mapped_representation(ctx: &DecodeContext<'_>, record: &RawRecord, exchange: &Exchange) -> Result<Option<u64>, CodecError> {
+    let Some(map) = named_reference(ctx, record, "MAPPED_ITEM", 1, 0)? else { return Ok(None); };
+    if let Some(map) = exchange.records().get(&map) { named_reference(ctx, map, "REPRESENTATION_MAP", 1, 1) } else { Ok(None) }
 }
 
 pub(super) fn decode(
@@ -410,8 +401,8 @@ pub(super) fn decode(
         notes: Vec::new(),
     };
     let mut losses: Vec<LossNote> = Vec::new();
-    for (&id, record) in exchange.records() {
-        let Some(name) = most_specific(record, &["ORIENTED_OPEN_SHELL", "ORIENTED_CLOSED_SHELL"])
+    for (&id, record) in ctx.admit_iter(exchange.records(), "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
+        let Some(name) = most_specific(ctx, record, &["ORIENTED_OPEN_SHELL", "ORIENTED_CLOSED_SHELL"])?
         else {
             continue;
         };
@@ -440,8 +431,8 @@ pub(super) fn decode(
     let oriented = oriented_defs(exchange, ctx)?;
     let shells = shell_defs(exchange, ctx)?;
     let point_positions = carrier_index;
-    for (vertex_id, vertex) in exchange.entities("VERTEX_POINT") {
-        let Some(point_id) = named_reference(vertex, "VERTEX_POINT", 1, 0) else {
+    for (vertex_id, vertex) in exchange.entities(ctx, "VERTEX_POINT")? {
+        let Some(point_id) = named_reference(ctx, vertex, "VERTEX_POINT", 1, 0)? else {
             ctx.push_vec(
                 &mut losses,
                 StepLossCode::DecodeWarning.note(format!(
@@ -462,15 +453,15 @@ pub(super) fn decode(
         }
     }
     let mut built_wire_models = BTreeSet::new();
-    for (&representation, record) in exchange.records() {
-        let Some(items) = representation_item_values(record) else {
+    for (&representation, record) in ctx.admit_iter(exchange.records(), "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
+        let Some(items) = representation_item_values(ctx, record)? else {
             continue;
         };
         for model in items.iter().filter_map(Value::reference) {
             if exchange
                 .records()
                 .get(&model)
-                .is_none_or(|record| record.partial("EDGE_BASED_WIREFRAME_MODEL").is_none())
+                .map(|record| record.partial(ctx, "EDGE_BASED_WIREFRAME_MODEL")).transpose()?.flatten().is_none()
             {
                 continue;
             }
@@ -552,10 +543,8 @@ pub(super) fn decode(
             }
         }
     }
-    for (model, record) in exchange.entities("SHELL_BASED_WIREFRAME_MODEL") {
-        let scope_root = named_reference_values(record, "SHELL_BASED_WIREFRAME_MODEL", 1)
-            .into_iter()
-            .flatten()
+    for (model, record) in exchange.entities(ctx, "SHELL_BASED_WIREFRAME_MODEL")? {
+        let scope_root = ctx.admit_iter(named_reference_values(ctx, record, "SHELL_BASED_WIREFRAME_MODEL", 1)?.unwrap_or_default(), "STEP shell wireframe reference traversal")?
             .filter_map(Value::reference)
             .any(|shell| result.body_by_shell.contains_key(&shell));
         let outcome = build_shell_wire(
@@ -582,7 +571,7 @@ pub(super) fn decode(
                 )?;
             } else {
                 committed += 1;
-                for shell in &built.shell_sources {
+                for shell in ctx.admit_iter(&built.shell_sources, "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
                     insert_topology_body_group(
                         &mut result.body_by_shell,
                         *shell,
@@ -625,7 +614,7 @@ pub(super) fn decode(
         }
     }
     let mut decoded_pcurves = BTreeSet::new();
-    for pcurve in &commit_session.document().model.pcurves {
+    for pcurve in ctx.admit_iter(&(commit_session.document().model.pcurves)[..], "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
         if let Some(id) = source_numeric_id(pcurve.id.as_str(), "pcurve") {
             ctx.insert_btree_set(&mut decoded_pcurves, id, "step_decoded_topology_pcurves")?;
         }
@@ -638,7 +627,8 @@ pub(super) fn decode(
         "BREP_WITH_VOIDS",
     ];
     let mut distinct_roots = BTreeSet::new();
-    for (_, record) in exchange.entities_any(&topology_root_types) {
+    for entity in exchange.entities_any(ctx, &topology_root_types)? {
+        let (_, record) = entity?;
         if let Some(key) = root_key(record, exchange, &shells, ctx)? {
             ctx.insert_btree_set(&mut distinct_roots, key, "step_distinct_topology_roots")?;
         }
@@ -648,7 +638,8 @@ pub(super) fn decode(
     let mut built_roots = BTreeMap::<RootKey, RootBuilt>::new();
     let mut representation_cache = BTreeMap::new();
     let mut admissions: Vec<PcurveAdmission> = Vec::new();
-    for (id, record) in exchange.entities_any(&topology_root_types) {
+    for entity in exchange.entities_any(ctx, &topology_root_types)? {
+        let (id, record) = entity?;
         let Some(key) = root_key(record, exchange, &shells, ctx)? else {
             ctx.push_vec(
                 &mut losses,
@@ -675,7 +666,7 @@ pub(super) fn decode(
                 copies,
                 "step_topology_root_groups",
             )?;
-            for (&shell, body_ids) in &root_built.body_by_shell {
+            for (&shell, body_ids) in ctx.admit_iter(&root_built.body_by_shell, "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
                 for body in body_ids {
                     insert_topology_body_group(
                         &mut result.body_by_shell,
@@ -732,7 +723,7 @@ pub(super) fn decode(
                     "step_topology_losses",
                 )?;
             } else {
-                for shell in &built.shell_sources {
+                for shell in ctx.admit_iter(&built.shell_sources, "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
                     insert_topology_body_group(
                         &mut result.body_by_shell,
                         *shell,
@@ -831,7 +822,7 @@ pub(super) fn decode(
     if let Some(note) = pcurve_admission_note(&admissions, ctx)? {
         ctx.push_vec(&mut result.losses, note, "step_topology_losses")?;
     }
-    for (id, record) in exchange.entities("GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION") {
+    for (id, record) in exchange.entities(ctx, "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION")? {
         let omitted = geometric_set_omissions(record, exchange, carrier_index, ctx)?;
         if !omitted.is_empty() {
             let note = geometric_set_omission_message(
@@ -888,19 +879,20 @@ pub(super) fn decode(
             }
         }
     }
-    for (id, record) in exchange.entities_any(&[
+    for entity in exchange.entities_any(ctx, &[
         "SHAPE_REPRESENTATION",
         "ADVANCED_BREP_SHAPE_REPRESENTATION",
         "GEOMETRICALLY_BOUNDED_WIREFRAME_SHAPE_REPRESENTATION",
-    ]) {
-        let Some(representation_type) = most_specific(
+    ])? {
+        let (id, record) = entity?;
+        let Some(representation_type) = most_specific(ctx, 
             record,
             &[
                 "ADVANCED_BREP_SHAPE_REPRESENTATION",
                 "GEOMETRICALLY_BOUNDED_WIREFRAME_SHAPE_REPRESENTATION",
                 "SHAPE_REPRESENTATION",
             ],
-        ) else {
+        )? else {
             continue;
         };
         let omitted = geometric_set_omissions(record, exchange, carrier_index, ctx)?;
@@ -921,13 +913,14 @@ pub(super) fn decode(
             ctx,
         )?;
     }
-    for (id, record) in exchange.entities_any(&[
+    for entity in exchange.entities_any(ctx, &[
         "MANIFOLD_SURFACE_SHAPE_REPRESENTATION",
         "ADVANCED_BREP_REPRESENTATION",
         "ADVANCED_BREP_SHAPE_REPRESENTATION",
         "SHAPE_REPRESENTATION",
-    ]) {
-        if most_specific(
+    ])? {
+        let (id, record) = entity?;
+        if most_specific(ctx, 
             record,
             &[
                 "MANIFOLD_SURFACE_SHAPE_REPRESENTATION",
@@ -935,7 +928,7 @@ pub(super) fn decode(
                 "ADVANCED_BREP_SHAPE_REPRESENTATION",
                 "SHAPE_REPRESENTATION",
             ],
-        )
+        )?
         .is_none()
         {
             continue;
@@ -953,7 +946,7 @@ pub(super) fn decode(
             ctx.insert_hash_set(&mut result.claims, id, "step_topology_claims")?;
         }
     }
-    for face in &commit_session.document().model.faces {
+    for face in ctx.admit_iter(&(commit_session.document().model.faces)[..], "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
         if let Some(source) = source_numeric_id(face.id.as_str(), "face") {
             ctx.push_btree_group(
                 &mut result.faces_by_source,
@@ -965,7 +958,7 @@ pub(super) fn decode(
             )?;
         }
     }
-    for edge in &commit_session.document().model.edges {
+    for edge in ctx.admit_iter(&(commit_session.document().model.edges)[..], "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
         if let Some(source) = source_numeric_id(edge.id.as_str(), "edge") {
             ctx.push_btree_group(
                 &mut result.edges_by_source,
@@ -977,7 +970,7 @@ pub(super) fn decode(
             )?;
         }
     }
-    for vertex in &commit_session.document().model.vertices {
+    for vertex in ctx.admit_iter(&(commit_session.document().model.vertices)[..], "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
         if let Some(source) = source_numeric_id(vertex.id.as_str(), "vertex") {
             ctx.push_btree_group(
                 &mut result.vertices_by_source,
@@ -1000,7 +993,7 @@ fn geometric_set_omissions(
     carrier_index: &CarrierIndex,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<u64>, CodecError> {
-    let Some(set_ids) = representation_item_values(representation) else {
+    let Some(set_ids) = representation_item_values(ctx, representation)? else {
         return Ok(Vec::new());
     };
     let mut omitted = Vec::new();
@@ -1008,10 +1001,10 @@ fn geometric_set_omissions(
         let Some(set) = exchange.records().get(&set_id) else {
             continue;
         };
-        let Some(set_type) = most_specific(set, &["GEOMETRIC_SET", "GEOMETRIC_CURVE_SET"]) else {
+        let Some(set_type) = most_specific(ctx, set, &["GEOMETRIC_SET", "GEOMETRIC_CURVE_SET"])? else {
             continue;
         };
-        let Some(members) = named_reference_values(set, set_type, 1) else {
+        let Some(members) = named_reference_values(ctx, set, set_type, 1)? else {
             continue;
         };
         for member in members.iter().filter_map(Value::reference) {
@@ -1246,7 +1239,7 @@ fn build_wire(
             },
         });
     };
-    let Some(sets) = named_reference_values(model, "EDGE_BASED_WIREFRAME_MODEL", 1) else {
+    let Some(sets) = named_reference_values(ctx, model, "EDGE_BASED_WIREFRAME_MODEL", 1)? else {
         return Ok(BuildOutcome::Partial {
             built: Vec::new(),
             failures: BuildFailures {
@@ -1309,11 +1302,11 @@ fn build_wire_set(
     let Some(set) = exchange.records().get(&set_id) else {
         return Ok(None);
     };
-    let Some(set_type) = most_specific(set, &["CONNECTED_EDGE_SUB_SET", "CONNECTED_EDGE_SET"])
+    let Some(set_type) = most_specific(ctx, set, &["CONNECTED_EDGE_SUB_SET", "CONNECTED_EDGE_SET"])?
     else {
         return Ok(None);
     };
-    let Some(used_edges) = connected_set_members(set, set_type) else {
+    let Some(used_edges) = connected_set_members(ctx, set, set_type)? else {
         return Ok(None);
     };
     let suffix = if scoped {
@@ -1499,7 +1492,7 @@ fn build_shell_wire(
             },
         });
     };
-    let Some(shell_ids) = named_reference_values(model, "SHELL_BASED_WIREFRAME_MODEL", 1) else {
+    let Some(shell_ids) = named_reference_values(ctx, model, "SHELL_BASED_WIREFRAME_MODEL", 1)? else {
         return Ok(BuildOutcome::Partial {
             built: Vec::new(),
             failures: BuildFailures {
@@ -1562,29 +1555,29 @@ fn build_shell_wire_set(
     let mut edge_uses = Vec::new();
     let mut used_vertices = BTreeSet::new();
     let mut free_vertices = BTreeSet::new();
-    if shell_record.partial("WIRE_SHELL").is_some() {
-        let Some(loop_ids) = named_reference_values(shell_record, "WIRE_SHELL", 1) else {
+    if shell_record.partial(ctx, "WIRE_SHELL")?.is_some() {
+        let Some(loop_ids) = named_reference_values(ctx, shell_record, "WIRE_SHELL", 1)? else {
             return Ok(None);
         };
         for loop_id in loop_ids.iter().filter_map(Value::reference) {
             let Some(loop_record) = exchange.records().get(&loop_id) else {
                 return Ok(None);
             };
-            if loop_record.partial("EDGE_LOOP").is_some() {
-                let Some(oriented_ids) = named_reference_values(loop_record, "EDGE_LOOP", 1) else {
+            if loop_record.partial(ctx, "EDGE_LOOP")?.is_some() {
+                let Some(oriented_ids) = named_reference_values(ctx, loop_record, "EDGE_LOOP", 1)? else {
                     return Ok(None);
                 };
                 for oriented_id in oriented_ids.iter().filter_map(Value::reference) {
                     let Some(oriented) = exchange.records().get(&oriented_id) else {
                         return Ok(None);
                     };
-                    let Some(edge_id) = oriented_edge_reference(oriented) else {
+                    let Some(edge_id) = oriented_edge_reference(ctx, oriented)? else {
                         return Ok(None);
                     };
                     let Some(edge) = edefs.get(&edge_id) else {
                         return Ok(None);
                     };
-                    let Some(forward) = oriented_edge_forward(oriented) else {
+                    let Some(forward) = oriented_edge_forward(ctx, oriented)? else {
                         return Ok(None);
                     };
                     ctx.push_vec(
@@ -1609,8 +1602,8 @@ fn build_shell_wire_set(
                         ctx.insert_hash_set(&mut typed, parent, "step_wire_typed")?;
                     }
                 }
-            } else if loop_record.partial("VERTEX_LOOP").is_some() {
-                let Some(vertex) = named_reference(loop_record, "VERTEX_LOOP", 1, 0) else {
+            } else if loop_record.partial(ctx, "VERTEX_LOOP")?.is_some() {
+                let Some(vertex) = named_reference(ctx, loop_record, "VERTEX_LOOP", 1, 0)? else {
                     return Ok(None);
                 };
                 ctx.insert_btree_set(&mut used_vertices, vertex, "step_wire_used_vertices")?;
@@ -1622,17 +1615,17 @@ fn build_shell_wire_set(
                 return Ok(None);
             }
         }
-    } else if shell_record.partial("VERTEX_SHELL").is_some() {
-        let Some(loop_id) = named_reference(shell_record, "VERTEX_SHELL", 1, 0) else {
+    } else if shell_record.partial(ctx, "VERTEX_SHELL")?.is_some() {
+        let Some(loop_id) = named_reference(ctx, shell_record, "VERTEX_SHELL", 1, 0)? else {
             return Ok(None);
         };
         let Some(loop_record) = exchange.records().get(&loop_id) else {
             return Ok(None);
         };
-        if loop_record.partial("VERTEX_LOOP").is_none() {
+        if loop_record.partial(ctx, "VERTEX_LOOP")?.is_none() {
             return Ok(None);
         }
-        let Some(vertex) = named_reference(loop_record, "VERTEX_LOOP", 1, 0) else {
+        let Some(vertex) = named_reference(ctx, loop_record, "VERTEX_LOOP", 1, 0)? else {
             return Ok(None);
         };
         ctx.insert_btree_set(&mut used_vertices, vertex, "step_wire_used_vertices")?;
@@ -1814,7 +1807,7 @@ fn mark_standalone_geometric_set(
     typed: &mut HashSet<u64>,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    let Some(set_ids) = representation_item_values(representation) else {
+    let Some(set_ids) = representation_item_values(ctx, representation)? else {
         return Ok(false);
     };
     let mut decoded = false;
@@ -1822,10 +1815,10 @@ fn mark_standalone_geometric_set(
         let Some(set) = exchange.records().get(&set_id) else {
             continue;
         };
-        let Some(set_type) = most_specific(set, &["GEOMETRIC_SET", "GEOMETRIC_CURVE_SET"]) else {
+        let Some(set_type) = most_specific(ctx, set, &["GEOMETRIC_SET", "GEOMETRIC_CURVE_SET"])? else {
             continue;
         };
-        let Some(items) = named_reference_values(set, set_type, 1) else {
+        let Some(items) = named_reference_values(ctx, set, set_type, 1)? else {
             continue;
         };
         let has_decoded_member = items.iter().filter_map(ValueExt::reference).any(|item| {
@@ -1852,7 +1845,7 @@ fn build_geometric_set(
     losses: &mut Vec<LossNote>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Built>, CodecError> {
-    let Some(set_ids) = representation_item_values(representation) else {
+    let Some(set_ids) = representation_item_values(ctx, representation)? else {
         ctx.push_vec(
             losses,
             StepLossCode::DecodeWarning.note(format!(
@@ -1879,13 +1872,13 @@ fn build_geometric_set(
             )), "step_topology_losses")?;
             continue;
         };
-        let Some(set_type) = most_specific(set, &["GEOMETRIC_SET", "GEOMETRIC_CURVE_SET"]) else {
+        let Some(set_type) = most_specific(ctx, set, &["GEOMETRIC_SET", "GEOMETRIC_CURVE_SET"])? else {
             ctx.push_vec(losses, StepLossCode::DecodeWarning.note(format!(
                 "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} skipped non-set member #{set_id}"
             )), "step_topology_losses")?;
             continue;
         };
-        let Some(items) = named_reference_values(set, set_type, 1) else {
+        let Some(items) = named_reference_values(ctx, set, set_type, 1)? else {
             ctx.push_vec(losses, StepLossCode::DecodeWarning.note(format!(
                 "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} skipped set #{set_id} with no member list"
             )), "step_topology_losses")?;
@@ -2082,8 +2075,8 @@ fn vertex_defs(
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeMap<u64, VertexDef>, CodecError> {
     let mut vertices = BTreeMap::new();
-    for (id, record) in exchange.entities("VERTEX_POINT") {
-        let Some(point) = named_reference(record, "VERTEX_POINT", 1, 0) else {
+    for (id, record) in exchange.entities(ctx, "VERTEX_POINT")? {
+        let Some(point) = named_reference(ctx, record, "VERTEX_POINT", 1, 0)? else {
             continue;
         };
         ctx.insert_btree_map(
@@ -2102,13 +2095,14 @@ fn edge_defs(
     let mut edges = BTreeMap::new();
     let mut cache = BTreeMap::new();
     let mut active = BTreeSet::new();
-    for (id, _) in exchange.entities_any(&[
+    for entity in exchange.entities_any(ctx, &[
         "EDGE_CURVE",
         "SEAM_EDGE",
         "ORIENTED_EDGE",
         "SUBEDGE",
         "EDGE",
-    ]) {
+    ])? {
+        let (id, _) = entity?;
         if let Some(edge) = edge_def_for(id, exchange, &mut active, &mut cache, ctx)? {
             ctx.insert_btree_map(&mut edges, id, edge, "step_edge_definitions")?;
         }
@@ -2132,7 +2126,7 @@ fn edge_def_for(
     }
     ctx.insert_btree_set(active, id, "step_edge_definition_active")?;
     let result = if let Some(record) = exchange.records().get(&id) {
-        match most_specific(
+        match most_specific(ctx, 
             record,
             &[
                 "EDGE_CURVE",
@@ -2141,20 +2135,20 @@ fn edge_def_for(
                 "SUBEDGE",
                 "EDGE",
             ],
-        ) {
-            Some("EDGE_CURVE") => edge_vertices(record)
-                .zip(edge_geometry(record))
-                .zip(edge_same_sense(record))
+        )? {
+            Some("EDGE_CURVE") => edge_vertices(ctx, record)?
+                .zip(edge_geometry(ctx, record)?)
+                .zip(edge_same_sense(ctx, record)?)
                 .map(|(((start, end), curve), same)| EdgeDef::Curve {
                     start,
                     end,
                     curve,
                     same,
                 }),
-            Some("EDGE") => edge_vertices(record).map(|(start, end)| EdgeDef::Bare { start, end }),
+            Some("EDGE") => edge_vertices(ctx, record)?.map(|(start, end)| EdgeDef::Bare { start, end }),
             Some("SUBEDGE") => {
                 if let Some(((start, end), parent)) =
-                    edge_vertices(record).zip(subedge_parent(record))
+                    edge_vertices(ctx, record)?.zip(subedge_parent(ctx, record)?)
                 {
                     edge_def_for(parent, exchange, active, cache, ctx)?.map(|basis| {
                         EdgeDef::Subedge {
@@ -2170,7 +2164,7 @@ fn edge_def_for(
             }
             Some("ORIENTED_EDGE" | "SEAM_EDGE") => {
                 if let Some((element, forward)) =
-                    oriented_edge_reference(record).zip(oriented_edge_forward(record))
+                    oriented_edge_reference(ctx, record)?.zip(oriented_edge_forward(ctx, record)?)
                 {
                     edge_def_for(element, exchange, active, cache, ctx)?.map(|basis| {
                         EdgeDef::Oriented {
@@ -2225,16 +2219,13 @@ fn edge_curve_id_reported(
         return Ok(None);
     };
     let curve = exchange.records().get(&curve_step);
-    let carrier = curve_carrier_record(curve_step, exchange);
-    if carrier.is_none()
-        && curve.is_some_and(|record| {
-            record.partials.iter().any(|partial| {
-                matches!(
-                    partial.name.as_str(),
-                    "SURFACE_CURVE" | "SEAM_CURVE" | "INTERSECTION_CURVE"
-                )
-            })
-        })
+    let carrier = curve_carrier_record(ctx, curve_step, exchange)?;
+    let unresolved_surface_curve = if carrier.is_none() {
+        if let Some(record) = curve {
+            ctx.admit_iter(&record.partials[..], "STEP unresolved edge carrier partial traversal")?.any(|partial| matches!(partial.name.as_str(), "SURFACE_CURVE" | "SEAM_CURVE" | "INTERSECTION_CURVE"))
+        } else { false }
+    } else { false };
+    if unresolved_surface_curve
     {
         ctx.push_vec(losses, StepLossCode::DecodeWarning.note(format!(
             "STEP edge curve #{edge_id}: surface-curve #{curve_step} has no resolvable basis; edge committed without a curve"
@@ -2247,22 +2238,17 @@ fn oriented_defs(
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeMap<u64, OrientedDef>, CodecError> {
     let mut oriented = BTreeMap::new();
-    for (id, record) in exchange.entities_any(&["ORIENTED_EDGE", "SEAM_EDGE"]) {
-        let Some(edge) = oriented_edge_reference(record) else {
+    for entity in exchange.entities_any(ctx, &["ORIENTED_EDGE", "SEAM_EDGE"])? {
+        let (id, record) = entity?;
+        let Some(edge) = oriented_edge_reference(ctx, record)? else {
             continue;
         };
-        let Some(forward) = oriented_edge_forward(record) else {
+        let Some(forward) = oriented_edge_forward(ctx, record)? else {
             continue;
         };
-        let kind = if most_specific(record, &["SEAM_EDGE"]).is_some() {
+        let kind = if most_specific(ctx, record, &["SEAM_EDGE"])?.is_some() {
             OrientedKind::Seam {
-                pcurve: record.partial("SEAM_EDGE").and_then(|partial| {
-                    partial
-                        .parameters
-                        .iter()
-                        .rev()
-                        .find_map(ValueExt::reference)
-                }),
+                pcurve: record.partial(ctx, "SEAM_EDGE")?.map(|partial| Ok::<_, CodecError>(ctx.admit_iter(partial.parameters.as_slice(), "STEP topology reference parameter traversal")?.rev().find_map(ValueExt::reference))).transpose()?.flatten(),
             }
         } else {
             OrientedKind::Plain
@@ -2281,153 +2267,82 @@ fn oriented_defs(
     Ok(oriented)
 }
 
-fn subedge_parent(record: &RawRecord) -> Option<u64> {
-    if record.partials.len() == 1 {
-        return entity_parameter(record, "SUBEDGE", 3).and_then(ValueExt::reference);
+fn subedge_parent(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<Option<u64>, CodecError> {
+    if record.partials.len() == 1 { return Ok(entity_parameter(ctx, record, "SUBEDGE", 3)?.and_then(ValueExt::reference)); }
+    if let Some(partial) = record.partial(ctx, "SUBEDGE")? {
+        if let Some(id) = ctx.admit_iter(partial.parameters.as_slice(), "STEP subedge parent reference traversal")?.rev().find_map(ValueExt::reference) { return Ok(Some(id)); }
     }
-    record
-        .partial("SUBEDGE")
-        .and_then(|partial| {
-            partial
-                .parameters
-                .iter()
-                .rev()
-                .find_map(ValueExt::reference)
-        })
-        .or_else(|| {
-            record
-                .partials
-                .iter()
-                .flat_map(|partial| partial.parameters.iter())
-                .filter_map(ValueExt::reference)
-                .next_back()
-        })
+    for partial in ctx.admit_iter(&record.partials[..], "STEP subedge parent partial traversal")?.rev() {
+        if let Some(id) = ctx.admit_iter(partial.parameters.as_slice(), "STEP subedge parent reference traversal")?.rev().find_map(ValueExt::reference) { return Ok(Some(id)); }
+    }
+    Ok(None)
 }
 
-fn named_reference(
-    record: &RawRecord,
-    name: &str,
-    simple_index: usize,
-    complex_index: usize,
-) -> Option<u64> {
-    if record.partials.len() == 1 {
-        return entity_parameter(record, name, simple_index)?.reference();
-    }
-    record
-        .partials
-        .iter()
-        .find(|partial| partial.name == name)
-        .and_then(|partial| {
-            partial
-                .parameters
-                .iter()
-                .filter_map(ValueExt::reference)
-                .nth(complex_index)
-        })
+fn named_reference(ctx: &DecodeContext<'_>, record: &RawRecord, name: &str, simple_index: usize, complex_index: usize) -> Result<Option<u64>, CodecError> {
+    if record.partials.len() == 1 { return Ok(entity_parameter(ctx, record, name, simple_index)?.and_then(ValueExt::reference)); }
+    let Some(partial) = ctx.admit_iter(&record.partials[..], "STEP named topology partial traversal")?.find(|partial| partial.name == name) else { return Ok(None); };
+    Ok(ctx.admit_iter(partial.parameters.as_slice(), "STEP named topology parameter traversal")?.filter_map(ValueExt::reference).nth(complex_index))
 }
 
-fn oriented_edge_reference(record: &RawRecord) -> Option<u64> {
-    if record.partials.len() == 1 {
-        return record.parameter(3).and_then(ValueExt::reference);
-    }
-    record
-        .partial("ORIENTED_EDGE")
-        .or_else(|| record.partial("SEAM_EDGE"))
-        .and_then(|partial| partial.parameters.iter().find_map(ValueExt::reference))
+fn oriented_edge_reference(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<Option<u64>, CodecError> {
+    if record.partials.len() == 1 { return Ok(record.parameter(3).and_then(ValueExt::reference)); }
+    let Some(partial) = record.partial(ctx, "ORIENTED_EDGE")?.map_or_else(|| record.partial(ctx, "SEAM_EDGE"), |partial| Ok(Some(partial)))? else { return Ok(None); };
+    Ok(ctx.admit_iter(partial.parameters.as_slice(), "STEP oriented edge reference parameter traversal")?.find_map(ValueExt::reference))
 }
 
-fn oriented_edge_forward(record: &RawRecord) -> Option<bool> {
-    if record.partials.len() == 1 {
-        return record.parameter(4).and_then(ValueExt::logical);
-    }
-    record
-        .partial("ORIENTED_EDGE")
-        .or_else(|| record.partial("SEAM_EDGE"))
-        .and_then(|partial| partial.parameters.iter().find_map(ValueExt::logical))
+fn oriented_edge_forward(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<Option<bool>, CodecError> {
+    if record.partials.len() == 1 { return Ok(record.parameter(4).and_then(ValueExt::logical)); }
+    let Some(partial) = record.partial(ctx, "ORIENTED_EDGE")?.map_or_else(|| record.partial(ctx, "SEAM_EDGE"), |partial| Ok(Some(partial)))? else { return Ok(None); };
+    Ok(ctx.admit_iter(partial.parameters.as_slice(), "STEP oriented edge forward parameter traversal")?.find_map(ValueExt::logical))
 }
 
-fn named_logical(
-    record: &RawRecord,
-    name: &str,
-    simple_index: usize,
-    _complex_index: usize,
-) -> Option<bool> {
-    if record.partials.len() == 1 {
-        return entity_parameter(record, name, simple_index)?.logical();
-    }
-    record
-        .partials
-        .iter()
-        .find(|partial| partial.name == name)
-        .and_then(|partial| partial.parameters.iter().find_map(ValueExt::logical))
+fn named_logical(ctx: &DecodeContext<'_>, record: &RawRecord, name: &str, simple_index: usize, _complex_index: usize) -> Result<Option<bool>, CodecError> {
+    if record.partials.len() == 1 { return Ok(entity_parameter(ctx, record, name, simple_index)?.and_then(ValueExt::logical)); }
+    let Some(partial) = ctx.admit_iter(&record.partials[..], "STEP named topology partial traversal")?.find(|partial| partial.name == name) else { return Ok(None); };
+    Ok(ctx.admit_iter(partial.parameters.as_slice(), "STEP named topology parameter traversal")?.find_map(ValueExt::logical))
 }
 
-fn surface_curve_pcurves(record: &RawRecord) -> impl Iterator<Item = u64> + '_ {
-    let values = if record.partials.len() == 1 {
-        record.parameter(2).and_then(Value::list)
-    } else {
-        record
-            .partial("SURFACE_CURVE")
-            .or_else(|| record.partial("SEAM_CURVE"))
-            .or_else(|| record.partial("INTERSECTION_CURVE"))
-            .and_then(|partial| {
-                partial.parameters.iter().find_map(|value| {
-                    value
-                        .list()
-                        .filter(|values| values.iter().all(|item| item.reference().is_some()))
-                })
-            })
-    };
-    values
-        .filter(|values| values.iter().all(|value| value.reference().is_some()))
-        .into_iter()
-        .flatten()
-        .filter_map(Value::reference)
+fn surface_curve_pcurves<'a>(ctx: &DecodeContext<'_>, record: &'a RawRecord) -> Result<impl Iterator<Item = u64> + 'a, CodecError> {
+    let mut values = if record.partials.len() == 1 { record.parameter(2).and_then(Value::list) } else { None };
+    if record.partials.len() != 1 {
+        if let Some(partial) = record.partial(ctx, "SURFACE_CURVE")?.map_or_else(|| record.partial(ctx, "SEAM_CURVE"), |partial| Ok(Some(partial)))?.map_or_else(|| record.partial(ctx, "INTERSECTION_CURVE"), |partial| Ok(Some(partial)))? {
+            for value in ctx.admit_iter(partial.parameters.as_slice(), "STEP surface curve pcurve parameter traversal")? {
+                if let Some(items) = reference_values(ctx, value)? { values = Some(items); break; }
+            }
+        }
+    }
+    let mut items = values.unwrap_or_default();
+    if values.is_some() && !ctx.admit_iter(items, "STEP surface curve pcurve reference validation")?.all(|value| value.reference().is_some()) { items = &[]; }
+    Ok(ctx.admit_iter(items, "STEP surface curve pcurve reference traversal")?.filter_map(Value::reference))
 }
 
-fn edge_vertices(record: &RawRecord) -> Option<(u64, u64)> {
+fn edge_vertices(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<Option<(u64, u64)>, CodecError> {
     if record.partials.len() == 1 {
-        return Some((
-            entity_parameter(record, record.simple_name()?, 1)?.reference()?,
-            entity_parameter(record, record.simple_name()?, 2)?.reference()?,
-        ));
+        let Some(name) = record.simple_name() else { return Ok(None); };
+        let start = entity_parameter(ctx, record, name, 1)?.and_then(ValueExt::reference);
+        if start.is_none() { return Ok(None); }
+        let end = entity_parameter(ctx, record, name, 2)?.and_then(ValueExt::reference);
+        return Ok(start.zip(end));
     }
-    record
-        .partials
-        .iter()
-        .find(|partial| partial.name == "EDGE")
-        .or_else(|| {
-            record
-                .partials
-                .iter()
-                .find(|partial| partial.name == "EDGE_CURVE")
-        })
-        .and_then(|partial| {
-            let mut references = partial.parameters.iter().filter_map(ValueExt::reference);
-            Some((references.next()?, references.next()?))
-        })
+    let mut partial = ctx.admit_iter(&record.partials[..], "STEP edge vertex partial traversal")?.find(|partial| partial.name == "EDGE");
+    if partial.is_none() { partial = ctx.admit_iter(&record.partials[..], "STEP edge curve vertex partial traversal")?.find(|partial| partial.name == "EDGE_CURVE"); }
+    let Some(partial) = partial else { return Ok(None); };
+    let mut references = ctx.admit_iter(partial.parameters.as_slice(), "STEP edge vertex reference traversal")?.filter_map(ValueExt::reference);
+    Ok(references.next().zip(references.next()))
 }
 
-fn edge_geometry(record: &RawRecord) -> Option<u64> {
-    if record.partials.len() == 1 {
-        return entity_parameter(record, record.simple_name()?, 3)?.reference();
-    }
-    record
-        .partials
-        .iter()
-        .find(|partial| partial.name == "EDGE_CURVE")
-        .and_then(|partial| partial.parameters.iter().find_map(ValueExt::reference))
+fn edge_geometry(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<Option<u64>, CodecError> {
+    if record.partials.len() == 1 { let Some(name) = record.simple_name() else { return Ok(None); };
+        return Ok(entity_parameter(ctx, record, name, 3)?.and_then(ValueExt::reference)); }
+    let Some(partial) = record.partial(ctx, "EDGE_CURVE")? else { return Ok(None); };
+    Ok(ctx.admit_iter(partial.parameters.as_slice(), "STEP edge geometry parameter traversal")?.find_map(ValueExt::reference))
 }
 
-fn edge_same_sense(record: &RawRecord) -> Option<bool> {
-    if record.partials.len() == 1 {
-        return entity_parameter(record, record.simple_name()?, 4)?.logical();
-    }
-    record
-        .partials
-        .iter()
-        .find(|partial| partial.name == "EDGE_CURVE")
-        .and_then(|partial| partial.parameters.iter().find_map(ValueExt::logical))
+fn edge_same_sense(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<Option<bool>, CodecError> {
+    if record.partials.len() == 1 { let Some(name) = record.simple_name() else { return Ok(None); };
+        return Ok(entity_parameter(ctx, record, name, 4)?.and_then(ValueExt::logical)); }
+    let Some(partial) = record.partial(ctx, "EDGE_CURVE")? else { return Ok(None); };
+    Ok(ctx.admit_iter(partial.parameters.as_slice(), "STEP edge same sense parameter traversal")?.find_map(ValueExt::logical))
 }
 
 struct Built {
@@ -2597,8 +2512,8 @@ fn root_shell_steps(
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<u64>>, CodecError> {
     let mut ids = Vec::new();
-    if root.partial("SHELL_BASED_SURFACE_MODEL").is_some() {
-        let Some(values) = named_reference_values(root, "SHELL_BASED_SURFACE_MODEL", 1) else {
+    if root.partial(ctx, "SHELL_BASED_SURFACE_MODEL")?.is_some() {
+        let Some(values) = named_reference_values(ctx, root, "SHELL_BASED_SURFACE_MODEL", 1)? else {
             return Ok(None);
         };
         for reference in values.iter().filter_map(ValueExt::reference) {
@@ -2606,40 +2521,40 @@ fn root_shell_steps(
         }
         return Ok(Some(ids));
     }
-    if root.partial("FACE_BASED_SURFACE_MODEL").is_some() {
-        let Some(values) = named_reference_values(root, "FACE_BASED_SURFACE_MODEL", 1) else {
+    if root.partial(ctx, "FACE_BASED_SURFACE_MODEL")?.is_some() {
+        let Some(values) = named_reference_values(ctx, root, "FACE_BASED_SURFACE_MODEL", 1)? else {
             return Ok(None);
         };
         for set_step in values.iter().filter_map(ValueExt::reference) {
             let Some(set) = exchange.records().get(&set_step) else {
                 return Ok(None);
             };
-            if connected_face_set_type(set).is_none() {
+            if connected_face_set_type(ctx, set)?.is_none() {
                 return Ok(None);
             }
             ctx.push_vec(&mut ids, set_step, "step_root_shell_steps")?;
         }
         return Ok(Some(ids));
     }
-    if (root.partial("MANIFOLD_SOLID_BREP").is_some() || root.partial("FACETED_BREP").is_some())
-        && root.partial("BREP_WITH_VOIDS").is_none()
+    if (root.partial(ctx, "MANIFOLD_SOLID_BREP")?.is_some() || root.partial(ctx, "FACETED_BREP")?.is_some())
+        && root.partial(ctx, "BREP_WITH_VOIDS")?.is_none()
     {
-        let root_type = if root.partial("MANIFOLD_SOLID_BREP").is_some() {
+        let root_type = if root.partial(ctx, "MANIFOLD_SOLID_BREP")?.is_some() {
             "MANIFOLD_SOLID_BREP"
         } else {
             "FACETED_BREP"
         };
-        let Some(shell) = named_reference(root, root_type, 1, 0) else {
+        let Some(shell) = named_reference(ctx, root, root_type, 1, 0)? else {
             return Ok(None);
         };
         ctx.push_vec(&mut ids, shell, "step_root_shell_steps")?;
         return Ok(Some(ids));
     }
-    if root.partial("BREP_WITH_VOIDS").is_some() {
-        let Some(outer) = named_reference(root, "MANIFOLD_SOLID_BREP", 1, 0) else {
+    if root.partial(ctx, "BREP_WITH_VOIDS")?.is_some() {
+        let Some(outer) = named_reference(ctx, root, "MANIFOLD_SOLID_BREP", 1, 0)? else {
             return Ok(None);
         };
-        let Some(values) = named_reference_values(root, "BREP_WITH_VOIDS", 2) else {
+        let Some(values) = named_reference_values(ctx, root, "BREP_WITH_VOIDS", 2)? else {
             return Ok(None);
         };
         ctx.push_vec(&mut ids, outer, "step_root_shell_steps")?;
@@ -2674,7 +2589,7 @@ fn root_key(
     shell_definitions: &BTreeMap<u64, ShellDef>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<RootKey>, CodecError> {
-    let Some(root_kind) = most_specific(
+    let Some(root_kind) = most_specific(ctx, 
         root,
         &[
             "BREP_WITH_VOIDS",
@@ -2683,7 +2598,7 @@ fn root_key(
             "FACE_BASED_SURFACE_MODEL",
             "SHELL_BASED_SURFACE_MODEL",
         ],
-    ) else {
+    )? else {
         return Ok(None);
     };
     let mut shell_keys = Vec::new();
@@ -2692,7 +2607,7 @@ fn root_key(
         return Ok(None);
     };
     for shell in shell_steps {
-        let key = if root.partial("FACE_BASED_SURFACE_MODEL").is_some() {
+        let key = if root.partial(ctx, "FACE_BASED_SURFACE_MODEL")?.is_some() {
             Some((shell, Some(true)))
         } else {
             shell_definitions
@@ -2774,9 +2689,9 @@ fn build(
             },
         });
     };
-    let solid = root.partial("MANIFOLD_SOLID_BREP").is_some()
-        || root.partial("BREP_WITH_VOIDS").is_some()
-        || root.partial("FACETED_BREP").is_some();
+    let solid = root.partial(ctx, "MANIFOLD_SOLID_BREP")?.is_some()
+        || root.partial(ctx, "BREP_WITH_VOIDS")?.is_some()
+        || root.partial(ctx, "FACETED_BREP")?.is_some();
     if solid {
         let body = BodyId::from(ids::data(kind!("body"), id));
         let region = RegionId::from(ids::data(kind!("region"), id));
@@ -2818,7 +2733,7 @@ fn build(
     let mut outcome = BuildOutcome::Built(Vec::new());
     for shell_reference in shell_steps {
         let mut failure = None;
-        let shell_step = if root.partial("FACE_BASED_SURFACE_MODEL").is_some() {
+        let shell_step = if root.partial(ctx, "FACE_BASED_SURFACE_MODEL")?.is_some() {
             shell_reference
         } else {
             match shell_definitions.get(&shell_reference) {
@@ -2913,9 +2828,9 @@ fn build_one(
         edges: scope_edges,
         root: scope_root,
     } = scope;
-    let solid = root.partial("MANIFOLD_SOLID_BREP").is_some()
-        || root.partial("BREP_WITH_VOIDS").is_some()
-        || root.partial("FACETED_BREP").is_some();
+    let solid = root.partial(ctx, "MANIFOLD_SOLID_BREP")?.is_some()
+        || root.partial(ctx, "BREP_WITH_VOIDS")?.is_some()
+        || root.partial(ctx, "FACETED_BREP")?.is_some();
     let mut typed = HashSet::new();
     ctx.insert_hash_set(&mut typed, id, "step_brep_typed")?;
     let mut vertices = Vec::new();
@@ -2957,8 +2872,8 @@ fn build_one(
         ctx.reserve_scoped(0, "STEP temporary implicit surface identities")?;
     let mut implicit_surface_ids = BTreeSet::new();
     let mut admissions = Vec::new();
-    for &shell_reference in shell_steps {
-        let (shell_step, shell_forward) = if root.partial("FACE_BASED_SURFACE_MODEL").is_some() {
+    for &shell_reference in ctx.admit_iter(shell_steps, "STEP body topology traversal").map_err(CodecError::from)? {
+        let (shell_step, shell_forward) = if root.partial(ctx, "FACE_BASED_SURFACE_MODEL")?.is_some() {
             ctx.insert_hash_set(&mut typed, shell_reference, "step_brep_typed")?;
             (shell_reference, true)
         } else {
@@ -2981,9 +2896,9 @@ fn build_one(
             CarrierKind::ShellRecord,
         )
         .ok_or(BuildError::Absent)?;
-        let (shell_type, face_steps) = if root.partial("FACE_BASED_SURFACE_MODEL").is_some() {
+        let (shell_type, face_steps) = if root.partial(ctx, "FACE_BASED_SURFACE_MODEL")?.is_some() {
             let set_type = require_carrier(
-                connected_face_set_type(sr),
+                connected_face_set_type(ctx, sr)?,
                 failure,
                 shell_step,
                 CarrierKind::ConnectedFaceSet,
@@ -2995,7 +2910,7 @@ fn build_one(
                 typed.remove(&shell_step);
             }
             let members = require_carrier(
-                connected_set_members(sr, set_type),
+                connected_set_members(ctx, sr, set_type)?,
                 failure,
                 shell_step,
                 CarrierKind::ConnectedFaceSetMemberList,
@@ -3004,14 +2919,14 @@ fn build_one(
             (set_type, members)
         } else {
             let shell_type = require_carrier(
-                most_specific(sr, &["OPEN_SHELL", "CLOSED_SHELL"]),
+                most_specific(ctx, sr, &["OPEN_SHELL", "CLOSED_SHELL"])?,
                 failure,
                 shell_step,
                 CarrierKind::ShellType,
             )
             .ok_or(BuildError::Absent)?;
             let members = require_carrier(
-                named_reference_values(sr, shell_type, 1),
+                named_reference_values(ctx, sr, shell_type, 1)?,
                 failure,
                 shell_step,
                 CarrierKind::ShellFaceList,
@@ -3025,7 +2940,7 @@ fn build_one(
         }
         let sid = shell_identity(id, shell_step, scope_root);
         let mut face_ids = vec![];
-        for face_step in face_steps.iter().filter_map(Value::reference) {
+        for face_step in ctx.admit_iter(&(face_steps)[..], "STEP body topology traversal").map_err(CodecError::from)?.filter_map(Value::reference) {
             if used_faces.contains(&(shell_step, face_step)) {
                 continue;
             }
@@ -3041,7 +2956,7 @@ fn build_one(
                 CarrierKind::FaceRecord,
             )
             .ok_or(BuildError::Absent)?;
-            if !is_face_record(fr) {
+            if !is_face_record(ctx, fr)? {
                 note_failure(failure, face_step, CarrierKind::FaceCarrier);
                 return Err(BuildError::Absent);
             }
@@ -3052,16 +2967,12 @@ fn build_one(
                 CarrierKind::FaceAttributes,
             )
             .ok_or(BuildError::Absent)?;
-            let outer_bound_count = face_info
-                .bounds
-                .iter()
-                .filter(|bound_step| {
-                    exchange
-                        .records()
-                        .get(bound_step)
-                        .is_some_and(|bound| bound.partial("FACE_OUTER_BOUND").is_some())
-                })
-                .count();
+            let mut outer_bound_count = 0usize;
+            for bound_step in ctx.admit_iter(&face_info.bounds[..], "STEP body topology traversal").map_err(CodecError::from)? {
+                if exchange.records().get(bound_step).map(|bound| bound.partial(ctx, "FACE_OUTER_BOUND")).transpose()?.flatten().is_some() {
+                    outer_bound_count = outer_bound_count.checked_add(1).ok_or_else(|| CodecError::malformed("face outer bound count overflow"))?;
+                }
+            }
             if outer_bound_count > 1 {
                 let note = StepLossCode::FaceMultipleOuterBounds.note(format!(
                     "face #{face_step} violates the STEP face-bound rule with {outer_bound_count} FACE_OUTER_BOUND loops; omitting the containing topology shell without assigning an outer role or deriving an implicit face carrier and retaining the source face, bounds, loops, and enclosing records as opaque"
@@ -3172,17 +3083,17 @@ fn build_one(
                     CarrierKind::FaceBound,
                 )
                 .ok_or(BuildError::Absent)?;
-                if br.partial("FACE_BOUND").is_none() && br.partial("FACE_OUTER_BOUND").is_none() {
+                if br.partial(ctx, "FACE_BOUND")?.is_none() && br.partial(ctx, "FACE_OUTER_BOUND")?.is_none() {
                     note_failure(failure, bound_step, CarrierKind::FaceBoundCarrier);
                     return Err(BuildError::Absent);
                 }
-                let is_outer_bound = br.partial("FACE_OUTER_BOUND").is_some();
-                let Some(bound_type) = face_bound_attribute_type(br) else {
+                let is_outer_bound = br.partial(ctx, "FACE_OUTER_BOUND")?.is_some();
+                let Some(bound_type) = face_bound_attribute_type(ctx, br)? else {
                     note_failure(failure, bound_step, CarrierKind::FaceBoundAttributes);
                     return Err(BuildError::Absent);
                 };
                 let loop_step = require_carrier(
-                    named_reference(br, bound_type, 1, 0),
+                    named_reference(ctx, br, bound_type, 1, 0)?,
                     failure,
                     bound_step,
                     CarrierKind::BoundLoopReference,
@@ -3202,9 +3113,9 @@ fn build_one(
                         .dash(face_step)
                         .with_tail(&face_suffix),
                 ));
-                if lr.partial("VERTEX_LOOP").is_some() {
+                if lr.partial(ctx, "VERTEX_LOOP")?.is_some() {
                     let vertex_step = require_carrier(
-                        named_reference(lr, "VERTEX_LOOP", 1, 0),
+                        named_reference(ctx, lr, "VERTEX_LOOP", 1, 0)?,
                         failure,
                         loop_step,
                         CarrierKind::VertexLoopReference,
@@ -3246,9 +3157,9 @@ fn build_one(
                     }
                     continue;
                 }
-                if lr.partial("POLY_LOOP").is_some() {
+                if lr.partial(ctx, "POLY_LOOP")?.is_some() {
                     let bound_forward = require_carrier(
-                        named_logical(br, bound_type, 2, 0),
+                        named_logical(ctx, br, bound_type, 2, 0)?,
                         failure,
                         bound_step,
                         CarrierKind::BoundOrientation,
@@ -3260,14 +3171,14 @@ fn build_one(
                         bound_forward
                     };
                     let point_values = require_carrier(
-                        named_reference_values(lr, "POLY_LOOP", 1),
+                        named_reference_values(ctx, lr, "POLY_LOOP", 1)?,
                         failure,
                         loop_step,
                         CarrierKind::PolyLoopPointList,
                     )
                     .ok_or(BuildError::Absent)?;
                     let mut points = Vec::new();
-                    for point in point_values.iter().filter_map(ValueExt::reference) {
+                    for point in ctx.admit_iter(&(point_values)[..], "STEP body topology traversal").map_err(CodecError::from)?.filter_map(ValueExt::reference) {
                         ctx.push_vec(&mut points, point, "step_brep_poly_loop_points")?;
                     }
                     if points.first() == points.last() {
@@ -3275,7 +3186,7 @@ fn build_one(
                     }
                     points.dedup();
                     let mut distinct_points = BTreeSet::new();
-                    for &point in &points {
+                    for &point in ctx.admit_iter(&points, "STEP body topology traversal").map_err(CodecError::from)? {
                         ctx.insert_btree_set(
                             &mut distinct_points,
                             point,
@@ -3284,8 +3195,7 @@ fn build_one(
                     }
                     if points.len() < 3
                         || distinct_points.len() != points.len()
-                        || points
-                            .iter()
+                        || ctx.admit_iter(&(points)[..], "STEP body topology traversal").map_err(CodecError::from)?
                             .any(|point| !point_positions.contains_key(*point))
                     {
                         note_failure(failure, loop_step, CarrierKind::PolyLoopPointCarrier);
@@ -3295,7 +3205,7 @@ fn build_one(
                         points.reverse();
                     }
                     let mut coedge_ids = Vec::new();
-                    for (index, &start_point) in points.iter().enumerate() {
+                    for (index, &start_point) in ctx.admit_iter(&(points)[..], "STEP body topology traversal").map_err(CodecError::from)?.enumerate() {
                         let end_point = points[(index + 1) % points.len()];
                         let (canonical_start, canonical_end) =
                             (start_point.min(end_point), start_point.max(end_point));
@@ -3394,12 +3304,12 @@ fn build_one(
                     ctx.insert_hash_set(&mut typed, bound_step, "step_brep_typed")?;
                     continue;
                 }
-                if lr.partial("EDGE_LOOP").is_none() {
+                if lr.partial(ctx, "EDGE_LOOP")?.is_none() {
                     note_failure(failure, loop_step, CarrierKind::EdgeLoopCarrier);
                     return Err(BuildError::Absent);
                 }
                 let bound_forward = require_carrier(
-                    named_logical(br, bound_type, 2, 0),
+                    named_logical(ctx, br, bound_type, 2, 0)?,
                     failure,
                     bound_step,
                     CarrierKind::BoundOrientation,
@@ -3411,14 +3321,14 @@ fn build_one(
                     bound_forward
                 };
                 let use_values = require_carrier(
-                    named_reference_values(lr, "EDGE_LOOP", 1),
+                    named_reference_values(ctx, lr, "EDGE_LOOP", 1)?,
                     failure,
                     loop_step,
                     CarrierKind::EdgeLoopMemberList,
                 )
                 .ok_or(BuildError::Absent)?;
                 let mut uses = Vec::new();
-                for use_step in use_values.iter().filter_map(ValueExt::reference) {
+                for use_step in ctx.admit_iter(&(use_values)[..], "STEP body topology traversal").map_err(CodecError::from)?.filter_map(ValueExt::reference) {
                     ctx.push_vec(&mut uses, use_step, "step_brep_edge_loop_uses")?;
                 }
                 if !bound_forward {
@@ -3455,26 +3365,22 @@ fn build_one(
                         pcurve,
                     } = o.kind
                     {
-                        let explicit_pcurve = surface_step.and_then(|surface_step| {
+                        let candidate = surface_step.and_then(|surface_step| {
                             let pcurve_step = pcurve?;
                             let pcurve = exchange.records().get(&pcurve_step)?;
                             let pcurve_id = PcurveId::from(ids::data(kind!("pcurve"), pcurve_step));
                             let edge_curve = edge.curve()?;
-                            let associated =
-                                exchange
-                                    .records()
-                                    .get(&edge_curve)
-                                    .is_some_and(|curve_record| {
-                                        surface_curve_pcurves(curve_record)
-                                            .any(|step| step == pcurve_step)
-                                    });
-                            (pcurve.partial("PCURVE").is_some()
-                                && entity_parameter(pcurve, "PCURVE", 1)?.reference()?
-                                    == surface_step
-                                && decoded_pcurves.contains(&pcurve_step)
-                                && associated)
-                                .then_some(pcurve_id)
+                            Some((surface_step, pcurve_step, pcurve, pcurve_id, edge_curve))
                         });
+                        let explicit_pcurve = if let Some((surface_step, pcurve_step, pcurve, pcurve_id, edge_curve)) = candidate {
+                            let associated = if let Some(curve_record) = exchange.records().get(&edge_curve) {
+                                surface_curve_pcurves(ctx, curve_record)?.any(|step| step == pcurve_step)
+                            } else { false };
+                            (pcurve.partial(ctx, "PCURVE")?.is_some()
+                                && entity_parameter(ctx, pcurve, "PCURVE", 1)?.and_then(ValueExt::reference) == Some(surface_step)
+                                && decoded_pcurves.contains(&pcurve_step)
+                                && associated).then_some(pcurve_id)
+                        } else { None };
                         if let Some(pcurve) = explicit_pcurve {
                             ctx.collect_vec([(pcurve, None)], "step_brep_pcurve_candidates")?
                         } else {
@@ -3697,7 +3603,7 @@ fn build_one(
         }
         let mut component_edge_text_storage = ctx.reserve_scoped(0, "STEP component edge identity")?;
         let mut component_edge_vertices = BTreeMap::new();
-        for (used_shell, edge_id) in &used_e {
+        for (used_shell, edge_id) in ctx.admit_iter(&used_e, "STEP body topology traversal").map_err(CodecError::from)? {
             if *used_shell != shell_step {
                 continue;
             }
@@ -3715,7 +3621,7 @@ fn build_one(
                 "step_brep_component_edges",
             )?;
         }
-        for ((used_shell, edge_id), (start, end)) in &poly_edges {
+        for ((used_shell, edge_id), (start, end)) in ctx.admit_iter(&poly_edges, "STEP body topology traversal").map_err(CodecError::from)? {
             if *used_shell != shell_step {
                 continue;
             }
@@ -3754,7 +3660,7 @@ fn build_one(
             )?;
         }
         for (component_index, component) in components.into_iter().enumerate() {
-            if root.partial("BREP_WITH_VOIDS").is_some()
+            if root.partial(ctx, "BREP_WITH_VOIDS")?.is_some()
                 && shell_steps.first().copied() == Some(shell_reference)
                 && component_index > 0
             {
@@ -3902,19 +3808,19 @@ fn build_one(
         )?;
         ctx.insert_hash_set(&mut typed, point_id, "step_brep_typed")?;
     }
-    for indices in radial.values() {
-        for (position, &index) in indices.iter().enumerate() {
+    for indices in ctx.admit_iter(&radial, "STEP body topology radial traversal").map_err(CodecError::from)?.map(|(_, value)| value) {
+        for (position, &index) in ctx.admit_iter(&(indices)[..], "STEP body topology traversal").map_err(CodecError::from)?.enumerate() {
             coedges[index].radial_next = coedges[indices[(position + 1) % indices.len()]]
                 .id
                 .try_clone_for_decode(ctx, "step_topology_identity_copy")?;
         }
     }
     let mut edge_by_id = BTreeMap::<&EdgeId, &Edge>::new();
-    for edge in &edges {
+    for edge in ctx.admit_iter(&edges, "STEP body topology traversal").map_err(CodecError::from)? {
         ctx.insert_btree_map(&mut edge_by_id, &edge.id, edge, "step_brep_edge_index")?;
     }
     let mut coedge_by_id = BTreeMap::<&CoedgeId, &Coedge>::new();
-    for coedge in &coedges {
+    for coedge in ctx.admit_iter(&coedges, "STEP body topology traversal").map_err(CodecError::from)? {
         ctx.insert_btree_map(
             &mut coedge_by_id,
             &coedge.id,
@@ -3922,12 +3828,12 @@ fn build_one(
             "step_brep_coedge_index",
         )?;
     }
-    for loop_ in &loops {
+    for loop_ in ctx.admit_iter(&loops, "STEP body topology traversal").map_err(CodecError::from)? {
         if loop_.coedges().is_empty() {
             continue;
         }
         let loop_source = source_numeric_id(loop_.id.as_str(), "loop").unwrap_or(0);
-        for (index, current_id) in loop_.coedges().iter().enumerate() {
+        for (index, current_id) in ctx.admit_iter(&(loop_.coedges())[..], "STEP body topology traversal").map_err(CodecError::from)?.enumerate() {
             let next_id = &loop_.coedges()[(index + 1) % loop_.coedges().len()];
             let current = require_carrier(
                 coedge_by_id.get(current_id),
@@ -3994,8 +3900,8 @@ fn build_one(
         Err(StageError::Resource(error)) => return Err(BuildError::Resource(error)),
     };
     built.pcurve_admissions = admissions;
-    for &shell_reference in shell_steps {
-        let shell_step = if root.partial("FACE_BASED_SURFACE_MODEL").is_some() {
+    for &shell_reference in ctx.admit_iter(shell_steps, "STEP body topology traversal").map_err(CodecError::from)? {
+        let shell_step = if root.partial(ctx, "FACE_BASED_SURFACE_MODEL")?.is_some() {
             shell_reference
         } else {
             require_carrier(
@@ -4037,7 +3943,7 @@ fn connected_face_components(
             Ok(BTreeSet::new())
         })?;
     let mut face_indices = BTreeMap::new();
-    for (index, face) in face_ids.iter().enumerate() {
+    for (index, face) in ctx.admit_iter(&(face_ids)[..], "STEP connected face components traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
         ctx.insert_btree_map(
             &mut face_indices,
             face.as_str(),
@@ -4046,7 +3952,7 @@ fn connected_face_components(
         )?;
     }
     let mut coedge_edges = BTreeMap::new();
-    for coedge in coedges {
+    for coedge in ctx.admit_iter(coedges, "STEP connected face components traversal").map_err(cadmpeg_core::CodecError::from)? {
         ctx.insert_btree_map(
             &mut coedge_edges,
             coedge.id.as_str(),
@@ -4056,11 +3962,11 @@ fn connected_face_components(
     }
     let mut faces_by_edge = BTreeMap::<&str, BTreeSet<usize>>::new();
     let mut faces_by_vertex = BTreeMap::<&str, BTreeSet<usize>>::new();
-    for loop_ in loops {
+    for loop_ in ctx.admit_iter(loops, "STEP connected face components traversal").map_err(cadmpeg_core::CodecError::from)? {
         let Some(&face_index) = face_indices.get(loop_.face.as_str()) else {
             continue;
         };
-        for coedge_id in loop_.coedges() {
+        for coedge_id in ctx.admit_iter(loop_.coedges(), "STEP connected face components view traversal").map_err(cadmpeg_core::CodecError::from)? {
             let Some(edge_id) = coedge_edges.get(coedge_id.as_str()) else {
                 continue;
             };
@@ -4070,12 +3976,12 @@ fn connected_face_components(
                 insert_connected_face_group(&mut faces_by_vertex, end, face_index, ctx)?;
             }
         }
-        for vertex in loop_.vertices() {
+        for vertex in loop_.singular_vertex().map(|(vertex, _)| vertex).into_iter().chain(ctx.admit_iter(loop_.anchored_vertex_uses(), "STEP connected face anchored vertex traversal")?.map(|use_| &use_.vertex)) {
             insert_connected_face_group(&mut faces_by_vertex, vertex.as_str(), face_index, ctx)?;
         }
     }
 
-    for group in faces_by_edge.values().chain(faces_by_vertex.values()) {
+    for group in ctx.admit_iter(&(faces_by_edge), "STEP connected face components map traversal").map_err(cadmpeg_core::CodecError::from)?.map(|(_, value)| value).chain(ctx.admit_iter(&faces_by_vertex, "STEP connected face components chain traversal")?.map(|(_, value)| value)) {
         for &face in group {
             for &other in group {
                 if other != face {
@@ -4096,7 +4002,7 @@ fn connected_face_components(
         ctx.push_vec(&mut pending, start, "STEP connected-face pending")?;
         while let Some(face) = pending.pop() {
             ctx.push_vec(&mut component, face, "STEP connected-face component")?;
-            for &neighbor in &neighbors[face] {
+            for &neighbor in ctx.admit_iter(&neighbors[face], "STEP connected face components traversal").map_err(cadmpeg_core::CodecError::from)? {
                 if !reached[neighbor] {
                     reached[neighbor] = true;
                     ctx.push_vec(&mut pending, neighbor, "STEP connected-face pending")?;
@@ -4282,26 +4188,26 @@ fn implicit_face_points(
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<Vec<Point3>>>, CodecError> {
     let mut loops = Vec::new();
-    for &bound_step in bounds {
+    for &bound_step in ctx.admit_iter(bounds, "STEP implicit face points traversal").map_err(cadmpeg_core::CodecError::from)? {
         let Some(bound) = exchange.records().get(&bound_step) else {
             return Ok(None);
         };
-        let Some(bound_type) = face_bound_attribute_type(bound) else {
+        let Some(bound_type) = face_bound_attribute_type(ctx, bound)? else {
             return Ok(None);
         };
-        let Some(loop_step) = named_reference(bound, bound_type, 1, 0) else {
+        let Some(loop_step) = named_reference(ctx, bound, bound_type, 1, 0)? else {
             return Ok(None);
         };
         let Some(loop_record) = exchange.records().get(&loop_step) else {
             return Ok(None);
         };
-        if loop_record.partial("POLY_LOOP").is_none() {
+        if loop_record.partial(ctx, "POLY_LOOP")?.is_none() {
             return Ok(None);
         }
-        let Some(bound_forward) = named_logical(bound, bound_type, 2, 0) else {
+        let Some(bound_forward) = named_logical(ctx, bound, bound_type, 2, 0)? else {
             return Ok(None);
         };
-        let Some(point_values) = named_reference_values(loop_record, "POLY_LOOP", 1) else {
+        let Some(point_values) = named_reference_values(ctx, loop_record, "POLY_LOOP", 1)? else {
             return Ok(None);
         };
         let mut point_steps = Vec::new();
@@ -4313,7 +4219,7 @@ fn implicit_face_points(
         }
         point_steps.dedup();
         let mut distinct = BTreeSet::new();
-        for &point in &point_steps {
+        for &point in ctx.admit_iter(&(point_steps)[..], "STEP implicit face points traversal").map_err(cadmpeg_core::CodecError::from)? {
             ctx.insert_btree_set(&mut distinct, point, "step_implicit_face_distinct_points")?;
         }
         if point_steps.len() < 3 || distinct.len() != point_steps.len() {
@@ -4360,8 +4266,10 @@ fn implicit_face_plane(
         return Ok(None);
     };
     let mut points = Vec::new();
-    for point in loops.iter().flatten().copied() {
-        ctx.push_vec(&mut points, point, "step_implicit_face_plane_points")?;
+    for loop_points in ctx.admit_iter(loops.as_slice(), "STEP implicit face plane loop traversal")? {
+        for point in ctx.admit_iter(loop_points.as_slice(), "STEP implicit face plane point traversal")?.copied() {
+            ctx.push_vec(&mut points, point, "step_implicit_face_plane_points")?;
+        }
     }
     ctx.stable_sort_by_key(
         &mut points,
@@ -4378,12 +4286,11 @@ fn implicit_face_plane(
         return Ok(None);
     };
     let origin = Point3::new(
-        points.iter().map(|point| point.x).sum::<f64>() / point_count,
-        points.iter().map(|point| point.y).sum::<f64>() / point_count,
-        points.iter().map(|point| point.z).sum::<f64>() / point_count,
+        ctx.admit_iter(&(points)[..], "STEP implicit face plane traversal").map_err(cadmpeg_core::CodecError::from)?.map(|point| point.x).sum::<f64>() / point_count,
+        ctx.admit_iter(&(points)[..], "STEP implicit face plane traversal").map_err(cadmpeg_core::CodecError::from)?.map(|point| point.y).sum::<f64>() / point_count,
+        ctx.admit_iter(&(points)[..], "STEP implicit face plane traversal").map_err(cadmpeg_core::CodecError::from)?.map(|point| point.z).sum::<f64>() / point_count,
     );
-    let scale = points
-        .iter()
+    let scale = ctx.admit_iter(&(points)[..], "STEP implicit face plane traversal").map_err(cadmpeg_core::CodecError::from)?
         .map(|point| point.vector_from(origin))
         .map(|vector| vector.norm())
         .fold(0.0, f64::max);
@@ -4396,14 +4303,13 @@ fn implicit_face_plane(
             return Ok(None);
         };
         let loop_origin = Point3::new(
-            loop_points.iter().map(|point| point.x).sum::<f64>() / loop_count,
-            loop_points.iter().map(|point| point.y).sum::<f64>() / loop_count,
-            loop_points.iter().map(|point| point.z).sum::<f64>() / loop_count,
+            ctx.admit_iter(&(loop_points)[..], "STEP implicit face plane traversal").map_err(cadmpeg_core::CodecError::from)?.map(|point| point.x).sum::<f64>() / loop_count,
+            ctx.admit_iter(&(loop_points)[..], "STEP implicit face plane traversal").map_err(cadmpeg_core::CodecError::from)?.map(|point| point.y).sum::<f64>() / loop_count,
+            ctx.admit_iter(&(loop_points)[..], "STEP implicit face plane traversal").map_err(cadmpeg_core::CodecError::from)?.map(|point| point.z).sum::<f64>() / loop_count,
         );
         let mut area_normal = Vector3::new(0.0, 0.0, 0.0);
-        for (current, next) in loop_points
-            .iter()
-            .zip(loop_points.iter().cycle().skip(1))
+        for (current, next) in ctx.admit_iter(&(loop_points)[..], "STEP implicit face plane traversal").map_err(cadmpeg_core::CodecError::from)?
+            .zip(ctx.admit_iter(&(loop_points)[..], "STEP implicit face plane next-point traversal").map_err(cadmpeg_core::CodecError::from)?.skip(1).chain(loop_points.first()))
             .take(loop_points.len())
         {
             area_normal = area_normal
@@ -4427,7 +4333,7 @@ fn implicit_face_plane(
     let Some((mut normal, mut largest_area)) = loop_normals.first().copied() else {
         return Ok(None);
     };
-    for (candidate, area) in loop_normals.iter().skip(1).copied() {
+    for (candidate, area) in ctx.admit_iter(&(loop_normals)[..], "STEP implicit face plane traversal").map_err(cadmpeg_core::CodecError::from)?.skip(1).copied() {
         let (candidate_raw, normal_raw) = (candidate.as_raw(), normal.as_raw());
         if area > largest_area
             || (area == largest_area
@@ -4438,7 +4344,7 @@ fn implicit_face_plane(
             largest_area = area;
         }
     }
-    for (candidate, _) in &loop_normals {
+    for (candidate, _) in ctx.admit_iter(&(loop_normals)[..], "STEP implicit face plane traversal").map_err(cadmpeg_core::CodecError::from)? {
         if candidate.as_raw().dot(*normal.as_raw()) < 1.0 - IMPLICIT_FACE_NORMAL_ALIGNMENT_TOLERANCE
         {
             return Ok(None);
@@ -4446,8 +4352,7 @@ fn implicit_face_plane(
     }
     let planarity_tolerance =
         COINCIDENCE_TOLERANCE.max(IMPLICIT_FACE_PLANAR_RELATIVE_TOLERANCE * scale);
-    if points
-        .iter()
+    if ctx.admit_iter(&(points)[..], "STEP implicit face plane traversal").map_err(cadmpeg_core::CodecError::from)?
         .map(|point| point.vector_from(origin))
         .map(|point| point.dot(*normal.as_raw()).abs())
         .fold(0.0, f64::max)
@@ -4493,7 +4398,7 @@ fn associated_pcurves(
     let Some(curve) = exchange.records().get(&curve_step) else {
         return Ok(Vec::new());
     };
-    if !curve.partials.iter().any(|partial| {
+    if !ctx.admit_iter(&(curve.partials)[..], "STEP associated pcurves traversal").map_err(cadmpeg_core::CodecError::from)?.any(|partial| {
         matches!(
             partial.name.as_str(),
             "SURFACE_CURVE" | "SEAM_CURVE" | "INTERSECTION_CURVE"
@@ -4502,12 +4407,12 @@ fn associated_pcurves(
         return Ok(Vec::new());
     }
     let mut associated = Vec::new();
-    for pcurve_step in surface_curve_pcurves(curve) {
+    for pcurve_step in surface_curve_pcurves(ctx, curve)? {
         let Some(pcurve) = exchange.records().get(&pcurve_step) else {
             continue;
         };
-        if pcurve.partial("PCURVE").is_some()
-            && entity_parameter(pcurve, "PCURVE", 1).and_then(Value::reference)
+        if pcurve.partial(ctx, "PCURVE")?.is_some()
+            && entity_parameter(ctx, pcurve, "PCURVE", 1)?.and_then(Value::reference)
                 == Some(surface_step)
             && decoded_pcurves.contains(&pcurve_step)
         {
@@ -4589,19 +4494,17 @@ fn select_associated_pcurve(
     };
     let candidate = candidate.try_clone_for_decode(ctx, "step_selected_pcurve_id")?;
     let surface_identity = ids::data(kind!("surface"), surface_step);
-    let surface = ir
+    let surface = ctx.admit_iter(&(ir
         .model
-        .surfaces
-        .iter()
+        .surfaces)[..], "STEP select associated pcurve traversal").map_err(cadmpeg_core::CodecError::from)?
         .find(|surface| surface.id.as_str() == surface_identity.as_str())
         .map(|surface| &surface.geometry)
         .ok_or(PcurveSelectionFailure::Carrier)?;
     let surface_id = SurfaceId::from(surface_identity);
     let index = ModelIndex::build(ir, ctx)?;
-    let pcurve = ir
+    let pcurve = ctx.admit_iter(&(ir
         .model
-        .pcurves
-        .iter()
+        .pcurves)[..], "STEP select associated pcurve traversal").map_err(cadmpeg_core::CodecError::from)?
         .find(|pcurve| pcurve.id == candidate)
         .ok_or(PcurveSelectionFailure::Carrier)?;
     let geometry = &pcurve.geometry;
@@ -4698,9 +4601,8 @@ fn pcurve_locus_witness(
         curve_end,
         bound,
     } = witness;
-    let Some(curve_step) = edge
-        .curve()
-        .and_then(|curve| curve_carrier_record(curve, exchange))
+    let Some(curve_step) = edge.curve()
+        .map(|curve| curve_carrier_record(ctx, curve, exchange)).transpose()?.flatten()
     else {
         return Ok(false);
     };
@@ -4822,7 +4724,7 @@ fn curve_parameter_near_point(
     tolerance: f64,
 ) -> Result<Option<f64>, CodecError> {
     let mut best: Option<(f64, f64)> = None;
-    for &seed in seeds.iter().filter(|seed| seed.is_finite()) {
+    for &seed in ctx.admit_iter(&(seeds)[..], "STEP curve parameter near point traversal").map_err(cadmpeg_core::CodecError::from)?.filter(|seed| seed.is_finite()) {
         let Some(parameter) = model_curve_parameter_near_point_in_index_with_tolerance(
             ctx, index, curve_id, point, seed, tolerance,
         )?
@@ -5208,12 +5110,12 @@ fn pcurve_parameter_break_fractions(
     let _depth = ctx.enter_nested("step_pcurve_break_recursion")?;
     match geometry {
         PcurveGeometry::Nurbs { nurbs } => {
-            for parameter in nurbs.knots().iter().copied() {
+            for parameter in ctx.admit_iter(&(nurbs.knots())[..], "STEP pcurve parameter break fractions traversal").map_err(cadmpeg_core::CodecError::from)?.copied() {
                 add_pcurve_break_fraction(parameter, parameters, fractions, ctx)?;
             }
         }
         PcurveGeometry::PolarNurbs { nurbs } => {
-            for parameter in nurbs.knots().iter().copied() {
+            for parameter in ctx.admit_iter(&(nurbs.knots())[..], "STEP pcurve parameter break fractions traversal").map_err(cadmpeg_core::CodecError::from)?.copied() {
                 add_pcurve_break_fraction(parameter, parameters, fractions, ctx)?;
             }
         }
@@ -5288,8 +5190,7 @@ fn pcurve_selection_seeds(
             "step_pcurve_selection_fractions_sort",
         )?;
         fractions.dedup_by(|left, right| *left == *right);
-        for seed in fractions
-            .iter()
+        for seed in ctx.admit_iter(&(fractions)[..], "STEP pcurve selection seeds traversal").map_err(cadmpeg_core::CodecError::from)?
             .filter_map(|fraction| at_fraction(*fraction))
         {
             ctx.push_vec(&mut seeds, seed, "step_pcurve_selection_seeds")?;
@@ -5456,11 +5357,10 @@ fn surface_selection_parameter_domains(
     ctx: &DecodeContext<'_>,
 ) -> Result<[Option<[f64; 2]>; 2], ResourceLimit> {
     let _depth = ctx.enter_nested_limit("STEP surface selection domain depth")?;
-    let definition = index
+    let definition = ctx.admit_iter(&(index
         .ir()
         .model
-        .procedural_surfaces
-        .iter()
+        .procedural_surfaces)[..], "STEP surface selection parameter domains traversal")?
         .find(|procedural| {
             index.ir().model.procedural_surface_owner(&procedural.id) == Some(surface_id)
         })
@@ -5588,12 +5488,13 @@ fn shell_defs(
 ) -> Result<BTreeMap<u64, ShellDef>, CodecError> {
     let mut cache = BTreeMap::<u64, Option<ShellDef>>::new();
     let mut active = BTreeSet::new();
-    for (id, _) in exchange.entities_any(&[
+    for entity in exchange.entities_any(ctx, &[
         "ORIENTED_OPEN_SHELL",
         "ORIENTED_CLOSED_SHELL",
         "OPEN_SHELL",
         "CLOSED_SHELL",
-    ]) {
+    ])? {
+        let (id, _) = entity?;
         shell_def_cached(id, exchange, &mut active, &mut cache, ctx)?;
     }
     let mut shells = BTreeMap::new();
@@ -5607,7 +5508,7 @@ fn shell_defs(
 
 fn copy_shell_def(definition: &ShellDef, ctx: &DecodeContext<'_>) -> Result<ShellDef, CodecError> {
     let mut typed = HashSet::new();
-    for &id in &definition.typed {
+    for &id in ctx.admit_iter(&definition.typed, "STEP copy shell def traversal").map_err(cadmpeg_core::CodecError::from)? {
         ctx.insert_hash_set(&mut typed, id, "step_shell_definition_typed_copy")?;
     }
     Ok(ShellDef {
@@ -5636,7 +5537,7 @@ fn shell_def_cached(
     }
     ctx.insert_btree_set(active, reference, "step_shell_definition_active")?;
     let result = if let Some(record) = exchange.records().get(&reference) {
-        match most_specific(
+        match most_specific(ctx, 
             record,
             &[
                 "ORIENTED_OPEN_SHELL",
@@ -5644,7 +5545,7 @@ fn shell_def_cached(
                 "OPEN_SHELL",
                 "CLOSED_SHELL",
             ],
-        ) {
+        )? {
             Some("OPEN_SHELL" | "CLOSED_SHELL") => Some(ShellDef {
                 base: reference,
                 forward: true,
@@ -5652,7 +5553,7 @@ fn shell_def_cached(
             }),
             Some("ORIENTED_OPEN_SHELL" | "ORIENTED_CLOSED_SHELL") => {
                 let shell_type =
-                    most_specific(record, &["ORIENTED_OPEN_SHELL", "ORIENTED_CLOSED_SHELL"]);
+                    most_specific(ctx, record, &["ORIENTED_OPEN_SHELL", "ORIENTED_CLOSED_SHELL"])?;
                 let (element, orientation) = if record.partials.len() == 1 {
                     match record.parameter(1) {
                         Some(Value::Derived) => (
@@ -5667,8 +5568,8 @@ fn shell_def_cached(
                     }
                 } else {
                     (
-                        shell_type.and_then(|shell_type| named_reference(record, shell_type, 1, 0)),
-                        shell_type.and_then(|shell_type| named_logical(record, shell_type, 2, 0)),
+                        shell_type.map(|shell_type| named_reference(ctx, record, shell_type, 1, 0)).transpose()?.flatten(),
+                        shell_type.map(|shell_type| named_logical(ctx, record, shell_type, 2, 0)).transpose()?.flatten(),
                     )
                 };
                 if let Some((element, orientation)) = element.zip(orientation) {
@@ -5712,7 +5613,7 @@ fn shell_def_for(
     let Some(definition) = shells.get(&reference) else {
         return Ok(None);
     };
-    for &id in &definition.typed {
+    for &id in ctx.admit_iter(&definition.typed, "STEP shell def for traversal").map_err(cadmpeg_core::CodecError::from)? {
         ctx.insert_hash_set(typed, id, "step_shell_definition_claims")?;
     }
     Ok(Some((definition.base, definition.forward)))
@@ -5728,12 +5629,13 @@ struct FaceInfo<'a> {
     typed: HashSet<u64>,
 }
 
-fn is_face_record(record: &RawRecord) -> bool {
-    record.partial("FACE").is_some()
-        || record.partial("ADVANCED_FACE").is_some()
-        || record.partial("FACE_SURFACE").is_some()
-        || record.partial("ORIENTED_FACE").is_some()
-        || record.partial("SUBFACE").is_some()
+fn is_face_record(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<bool, CodecError> {
+    for name in ["FACE", "ADVANCED_FACE", "FACE_SURFACE", "ORIENTED_FACE", "SUBFACE"] {
+        if ctx.admit_iter(&record.partials[..], "STEP face classification partial traversal")?.any(|partial| partial.name == name) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn face_attributes<'a>(
@@ -5760,7 +5662,7 @@ fn face_attributes_inner<'a>(
     active: &mut BTreeSet<u64>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<FaceInfo<'a>>, CodecError> {
-    let Some(kind) = most_specific(
+    let Some(kind) = most_specific(ctx, 
         record,
         &[
             "ORIENTED_FACE",
@@ -5769,12 +5671,12 @@ fn face_attributes_inner<'a>(
             "FACE_SURFACE",
             "FACE",
         ],
-    ) else {
+    )? else {
         return Ok(None);
     };
     let result = match kind {
         "ORIENTED_FACE" => {
-            let Some(face_element) = oriented_face_element(record) else {
+            let Some(face_element) = oriented_face_element(ctx, record)? else {
                 return Ok(None);
             };
             let Some(element_record) = exchange.records().get(&face_element) else {
@@ -5785,21 +5687,21 @@ fn face_attributes_inner<'a>(
             else {
                 return Ok(None);
             };
-            let Some(orientation) = oriented_face_orientation(record) else {
+            let Some(orientation) = oriented_face_orientation(ctx, record)? else {
                 return Ok(None);
             };
             if !orientation {
                 base.reverse_bound_orientation = !base.reverse_bound_orientation;
             }
             base.same_sense = base.same_sense == orientation;
-            if let Some(name) = face_name_value(record) {
+            if let Some(name) = face_name_value(ctx, record)? {
                 base.name = Some(name);
             }
             ctx.insert_hash_set(&mut base.typed, face_element, "step_face_attribute_typed")?;
             Some(base)
         }
         "SUBFACE" => {
-            let Some(parent) = subface_parent(record) else {
+            let Some(parent) = subface_parent(ctx, record)? else {
                 return Ok(None);
             };
             let Some(parent_record) = exchange.records().get(&parent) else {
@@ -5814,7 +5716,7 @@ fn face_attributes_inner<'a>(
                 return Ok(None);
             };
             ctx.insert_hash_set(&mut parent_info.typed, parent, "step_face_attribute_typed")?;
-            if let Some(name) = face_name_value(record) {
+            if let Some(name) = face_name_value(ctx, record)? {
                 parent_info.name = Some(name);
             }
             Some(FaceInfo {
@@ -5832,7 +5734,7 @@ fn face_attributes_inner<'a>(
             };
             Some(FaceInfo {
                 bounds,
-                name: face_name_value(record),
+                name: face_name_value(ctx, record)?,
                 surface: None,
                 same_sense: true,
                 reverse_bound_orientation: false,
@@ -5843,18 +5745,18 @@ fn face_attributes_inner<'a>(
             let Some(bounds) = direct_face_bounds(record, exchange, ctx)? else {
                 return Ok(None);
             };
-            let Some(governing) = most_specific(record, &["ADVANCED_FACE", "FACE_SURFACE"]) else {
+            let Some(governing) = most_specific(ctx, record, &["ADVANCED_FACE", "FACE_SURFACE"])? else {
                 return Ok(None);
             };
-            let Some(surface) = direct_face_surface(record, &bounds, governing) else {
+            let Some(surface) = direct_face_surface(ctx, record, &bounds, governing)? else {
                 return Ok(None);
             };
-            let Some(same_sense) = direct_face_same_sense(record, governing) else {
+            let Some(same_sense) = direct_face_same_sense(ctx, record, governing)? else {
                 return Ok(None);
             };
             Some(FaceInfo {
                 bounds,
-                name: face_name_value(record),
+                name: face_name_value(ctx, record)?,
                 surface: Some(surface),
                 same_sense,
                 reverse_bound_orientation: false,
@@ -5866,203 +5768,132 @@ fn face_attributes_inner<'a>(
     Ok(result)
 }
 
-fn face_name_value(record: &RawRecord) -> Option<&Value> {
-    let value = if record.partials.len() == 1 {
-        record.parameter(0)
-    } else {
-        record
-            .partial("REPRESENTATION_ITEM")
-            .and_then(|partial| partial.parameters.first())
-            .or_else(|| {
-                [
-                    "ORIENTED_FACE",
-                    "SUBFACE",
-                    "ADVANCED_FACE",
-                    "FACE_SURFACE",
-                    "FACE",
-                ]
-                .into_iter()
-                .find_map(|name| {
-                    record
-                        .partial(name)
-                        .and_then(|partial| partial.parameters.first())
-                })
-            })
-    };
-    value.filter(|value| !matches!(value, Value::String(bytes) if bytes.is_empty()))
+fn face_name_value<'a>(ctx: &DecodeContext<'_>, record: &'a RawRecord) -> Result<Option<&'a Value>, CodecError> {
+    let mut value = if record.partials.len() == 1 { record.parameter(0) } else { None };
+    if record.partials.len() != 1 {
+        for name in ["REPRESENTATION_ITEM", "ORIENTED_FACE", "SUBFACE", "ADVANCED_FACE", "FACE_SURFACE", "FACE"] {
+            value = ctx.admit_iter(&record.partials[..], "STEP face name partial traversal")?.find(|partial| partial.name == name).and_then(|partial| partial.parameters.first());
+            if value.is_some() { break; }
+        }
+    }
+    Ok(value.filter(|value| !matches!(value, Value::String(bytes) if bytes.is_empty())))
 }
 
-fn direct_face_bounds(
-    record: &RawRecord,
-    exchange: &Exchange,
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<Vec<u64>>, CodecError> {
+fn direct_face_bounds(record: &RawRecord, exchange: &Exchange, ctx: &DecodeContext<'_>) -> Result<Option<Vec<u64>>, CodecError> {
     let simple_value = if record.partials.len() == 1 {
-        let Some(name) = record.simple_name() else {
-            return Ok(None);
-        };
-        let Some(value) = entity_parameter(record, name, 1) else {
-            return Ok(None);
-        };
+        let Some(name) = record.simple_name() else { return Ok(None); };
+        let Some(value) = entity_parameter(ctx, record, name, 1)? else { return Ok(None); };
         Some(value)
-    } else {
-        None
-    };
-    let complex_values = record
-        .partials
-        .iter()
-        .filter(|_| record.partials.len() != 1)
-        .flat_map(|partial| partial.parameters.iter());
-    for value in simple_value.into_iter().chain(complex_values) {
-        let Some(items) = value.list() else {
-            continue;
-        };
-        if items.is_empty()
-            || !items.iter().all(|item| {
-                item.reference().is_some_and(|id| {
-                    exchange.records().get(&id).is_some_and(|bound| {
-                        bound.partial("FACE_BOUND").is_some()
-                            || bound.partial("FACE_OUTER_BOUND").is_some()
-                    })
-                })
-            })
-        {
-            continue;
+    } else { None };
+    let decode_bounds = |value: &Value| -> Result<Option<Vec<u64>>, CodecError> {
+        let Some(items) = value.list() else { return Ok(None); };
+        if items.is_empty() { return Ok(None); }
+        for item in ctx.admit_iter(items, "STEP face bound list validation")? {
+            let Some(id) = item.reference() else { return Ok(None); };
+            let Some(bound) = exchange.records().get(&id) else { return Ok(None); };
+            if bound.partial(ctx, "FACE_BOUND")?.is_none() && bound.partial(ctx, "FACE_OUTER_BOUND")?.is_none() { return Ok(None); }
         }
         let mut bounds = Vec::new();
-        for id in items.iter().filter_map(ValueExt::reference) {
+        for id in ctx.admit_iter(items, "STEP direct face bounds traversal")?.filter_map(ValueExt::reference) {
             ctx.push_vec(&mut bounds, id, "step_face_attribute_bounds")?;
         }
-        return Ok(Some(bounds));
+        Ok(Some(bounds))
+    };
+    if let Some(value) = simple_value {
+        if let Some(bounds) = decode_bounds(value)? { return Ok(Some(bounds)); }
+    }
+    for partial in ctx.admit_iter(&record.partials[..], "STEP face bound partial traversal")? {
+        if record.partials.len() == 1 { continue; }
+        for value in ctx.admit_iter(partial.parameters.as_slice(), "STEP face bound parameter traversal")? {
+            if let Some(bounds) = decode_bounds(value)? { return Ok(Some(bounds)); }
+        }
     }
     Ok(None)
 }
 
-fn direct_face_surface(record: &RawRecord, bounds: &[u64], governing: &str) -> Option<u64> {
+fn direct_face_surface(ctx: &DecodeContext<'_>, record: &RawRecord, bounds: &[u64], governing: &str) -> Result<Option<u64>, CodecError> {
     if record.partials.len() > 1 {
-        return named_reference(record, governing, 2, 0).or_else(|| {
-            (governing == "ADVANCED_FACE")
-                .then(|| named_reference(record, "FACE_SURFACE", 2, 0))
-                .flatten()
-        });
+        if let Some(value) = named_reference(ctx, record, governing, 2, 0)? { return Ok(Some(value)); }
+        return if governing == "ADVANCED_FACE" { named_reference(ctx, record, "FACE_SURFACE", 2, 0) } else { Ok(None) };
     }
-    record
-        .partials
-        .iter()
-        .flat_map(|partial| partial.parameters.iter())
-        .filter_map(ValueExt::reference)
-        .find(|reference| !bounds.contains(reference))
+    for partial in ctx.admit_iter(&record.partials[..], "STEP direct face partial traversal")? {
+        if let Some(value) = ctx.admit_iter(partial.parameters.as_slice(), "STEP direct face parameter traversal")?.filter_map(ValueExt::reference).find(|reference| !bounds.contains(reference)) { return Ok(Some(value)); }
+    }
+    Ok(None)
 }
 
-fn direct_face_same_sense(record: &RawRecord, governing: &str) -> Option<bool> {
+fn direct_face_same_sense(ctx: &DecodeContext<'_>, record: &RawRecord, governing: &str) -> Result<Option<bool>, CodecError> {
     if record.partials.len() > 1 {
-        return named_logical(record, governing, 3, 0).or_else(|| {
-            (governing == "ADVANCED_FACE")
-                .then(|| named_logical(record, "FACE_SURFACE", 3, 0))
-                .flatten()
-        });
+        if let Some(value) = named_logical(ctx, record, governing, 3, 0)? { return Ok(Some(value)); }
+        return if governing == "ADVANCED_FACE" { named_logical(ctx, record, "FACE_SURFACE", 3, 0) } else { Ok(None) };
     }
-    record
-        .partials
-        .iter()
-        .flat_map(|partial| partial.parameters.iter())
-        .find_map(ValueExt::logical)
-}
-
-fn oriented_face_element(record: &RawRecord) -> Option<u64> {
-    if let Some(partial) = record.partials.iter().find(|p| p.name == "ORIENTED_FACE") {
-        return partial
-            .parameters
-            .iter()
-            .filter_map(ValueExt::reference)
-            .next_back();
+    for partial in ctx.admit_iter(&record.partials[..], "STEP direct face partial traversal")? {
+        if let Some(value) = ctx.admit_iter(partial.parameters.as_slice(), "STEP direct face parameter traversal")?.find_map(ValueExt::logical) { return Ok(Some(value)); }
     }
-    record
-        .partials
-        .iter()
-        .flat_map(|partial| partial.parameters.iter())
-        .filter_map(ValueExt::reference)
-        .next_back()
+    Ok(None)
 }
 
-fn oriented_face_orientation(record: &RawRecord) -> Option<bool> {
-    record
-        .partials
-        .iter()
-        .find(|partial| partial.name == "ORIENTED_FACE")
-        .into_iter()
-        .flat_map(|partial| partial.parameters.iter())
-        .find_map(ValueExt::logical)
-        .or_else(|| direct_face_same_sense(record, "ORIENTED_FACE"))
+fn oriented_face_element(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<Option<u64>, CodecError> {
+    if let Some(partial) = ctx.admit_iter(&record.partials[..], "STEP oriented face partial traversal")?.find(|partial| partial.name == "ORIENTED_FACE") {
+        return Ok(ctx.admit_iter(partial.parameters.as_slice(), "STEP oriented face element traversal")?.rev().find_map(ValueExt::reference));
+    }
+    for partial in ctx.admit_iter(&record.partials[..], "STEP oriented face fallback partial traversal")?.rev() {
+        if let Some(element) = ctx.admit_iter(partial.parameters.as_slice(), "STEP oriented face fallback element traversal")?.rev().find_map(ValueExt::reference) { return Ok(Some(element)); }
+    }
+    Ok(None)
 }
 
-fn subface_parent(record: &RawRecord) -> Option<u64> {
-    record
-        .partials
-        .iter()
-        .find(|partial| partial.name == "SUBFACE")
-        .into_iter()
-        .flat_map(|partial| partial.parameters.iter())
-        .filter_map(ValueExt::reference)
-        .next_back()
-        .or_else(|| {
-            record
-                .partials
-                .iter()
-                .flat_map(|partial| partial.parameters.iter())
-                .filter_map(ValueExt::reference)
-                .next_back()
-        })
+fn oriented_face_orientation(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<Option<bool>, CodecError> {
+    if let Some(partial) = ctx.admit_iter(&record.partials[..], "STEP oriented face orientation partial traversal")?.find(|partial| partial.name == "ORIENTED_FACE") {
+        if let Some(forward) = ctx.admit_iter(partial.parameters.as_slice(), "STEP oriented face orientation parameter traversal")?.find_map(ValueExt::logical) { return Ok(Some(forward)); }
+    }
+    direct_face_same_sense(ctx, record, "ORIENTED_FACE")
+}
+
+fn subface_parent(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<Option<u64>, CodecError> {
+    if let Some(partial) = ctx.admit_iter(&record.partials[..], "STEP subface partial traversal")?.find(|partial| partial.name == "SUBFACE") {
+        if let Some(parent) = ctx.admit_iter(partial.parameters.as_slice(), "STEP subface parent traversal")?.rev().find_map(ValueExt::reference) { return Ok(Some(parent)); }
+    }
+    for partial in ctx.admit_iter(&record.partials[..], "STEP subface fallback partial traversal")?.rev() {
+        if let Some(parent) = ctx.admit_iter(partial.parameters.as_slice(), "STEP subface fallback parent traversal")?.rev().find_map(ValueExt::reference) { return Ok(Some(parent)); }
+    }
+    Ok(None)
 }
 
 /// Selects the partial that carries inherited `FACE_BOUND` attributes.
 /// `FACE_OUTER_BOUND` adds the outer role but may be empty in a complex
 /// instance, so subtype classification and attribute lookup are separate.
-fn face_bound_attribute_type(record: &RawRecord) -> Option<&'static str> {
-    if record
-        .partial("FACE_OUTER_BOUND")
-        .is_some_and(|partial| partial.parameters.len() >= 3)
-    {
-        return Some("FACE_OUTER_BOUND");
+fn face_bound_attribute_type(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<Option<&'static str>, CodecError> {
+    for (name, minimum_parameters) in [("FACE_OUTER_BOUND", 3), ("FACE_BOUND", 3), ("FACE_BOUND", 0), ("FACE_OUTER_BOUND", 0)] {
+        if ctx.admit_iter(&record.partials[..], "STEP face bound attribute partial traversal")?.find(|partial| partial.name == name).is_some_and(|partial| partial.parameters.len() >= minimum_parameters) { return Ok(Some(name)); }
     }
-    if record
-        .partial("FACE_BOUND")
-        .is_some_and(|partial| partial.parameters.len() >= 3)
-    {
-        return Some("FACE_BOUND");
-    }
-    record
-        .partial("FACE_BOUND")
-        .map(|_| "FACE_BOUND")
-        .or_else(|| {
-            record
-                .partial("FACE_OUTER_BOUND")
-                .map(|_| "FACE_OUTER_BOUND")
-        })
+    Ok(None)
 }
 
 /// Returns the first partial name present in a subtype-first dispatch chain.
 /// Complex STEP instances carry every inherited partial, so the first hit is
 /// the governing subtype and its attributes must drive decoding.
-fn most_specific<'a>(record: &RawRecord, chain: &[&'a str]) -> Option<&'a str> {
-    chain
-        .iter()
-        .copied()
-        .find(|name| record.partial(name).is_some())
+fn most_specific<'a>(ctx: &DecodeContext<'_>, record: &RawRecord, chain: &[&'a str]) -> Result<Option<&'a str>, CodecError> {
+    for name in ctx.admit_iter(chain, "STEP topology subtype dispatch traversal")? {
+        if ctx.admit_iter(&record.partials[..], "STEP topology subtype partial traversal")?.any(|partial| partial.name == *name) {
+            return Ok(Some(*name));
+        }
+    }
+    Ok(None)
 }
 
-fn connected_face_set_type(record: &RawRecord) -> Option<&'static str> {
-    most_specific(record, &["CONNECTED_FACE_SUB_SET", "CONNECTED_FACE_SET"])
+fn connected_face_set_type(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<Option<&'static str>, CodecError> {
+    most_specific(ctx, record, &["CONNECTED_FACE_SUB_SET", "CONNECTED_FACE_SET"])
 }
 
-fn connected_set_members<'a>(record: &'a RawRecord, set_type: &str) -> Option<&'a [Value]> {
+fn connected_set_members<'a>(ctx: &DecodeContext<'_>, record: &'a RawRecord, set_type: &str) -> Result<Option<&'a [Value]>, CodecError> {
     let base_type = match set_type {
         "CONNECTED_EDGE_SUB_SET" => "CONNECTED_EDGE_SET",
         "CONNECTED_FACE_SUB_SET" => "CONNECTED_FACE_SET",
         _ => set_type,
     };
-    named_reference_values(record, set_type, 1)
-        .or_else(|| named_reference_values(record, base_type, 1))
+    if let Some(members) = named_reference_values(ctx, record, set_type, 1)? { return Ok(Some(members)); }
+    named_reference_values(ctx, record, base_type, 1)
 }
 
 fn validate_subset_parent(
@@ -6079,11 +5910,9 @@ fn validate_subset_parent(
         _ => return Ok(true),
     };
     let parent = if record.partials.len() == 1 {
-        entity_parameter(record, subset_type, 2).and_then(ValueExt::reference)
+        entity_parameter(ctx, record, subset_type, 2)?.and_then(ValueExt::reference)
     } else {
-        record
-            .partial(subset_type)
-            .and_then(|partial| partial.parameters.iter().find_map(ValueExt::reference))
+        record.partial(ctx, subset_type)?.map(|partial| Ok::<_, CodecError>(ctx.admit_iter(partial.parameters.as_slice(), "STEP topology reference parameter traversal")?.find_map(ValueExt::reference))).transpose()?.flatten()
     };
     let Some(parent) = parent else {
         ctx.push_vec(
@@ -6095,11 +5924,12 @@ fn validate_subset_parent(
         )?;
         return Ok(false);
     };
-    if exchange
-        .records()
-        .get(&parent)
-        .is_some_and(|parent_record| most_specific(parent_record, &[base_type]) == Some(base_type))
-    {
+    let valid_parent = if let Some(parent_record) = exchange.records().get(&parent) {
+        most_specific(ctx, parent_record, &[base_type])? == Some(base_type)
+    } else {
+        false
+    };
+    if valid_parent {
         Ok(true)
     } else {
         ctx.push_vec(
@@ -6113,12 +5943,6 @@ fn validate_subset_parent(
     }
 }
 
-fn entity_parameter<'a>(record: &'a RawRecord, name: &str, index: usize) -> Option<&'a Value> {
-    record
-        .partials
-        .iter()
-        .find(|partial| partial.name == name)
-        .or_else(|| (record.partials.len() == 1).then(|| &record.partials[0]))?
-        .parameters
-        .get(index)
+fn entity_parameter<'a>(ctx: &DecodeContext<'_>, record: &'a RawRecord, name: &str, index: usize) -> Result<Option<&'a Value>, CodecError> {
+    Ok(ctx.admit_iter(&record.partials[..], "STEP topology entity parameter partial traversal")?.find(|partial| partial.name == name).or_else(|| (record.partials.len() == 1).then(|| &record.partials[0])).and_then(|partial| partial.parameters.get(index)))
 }

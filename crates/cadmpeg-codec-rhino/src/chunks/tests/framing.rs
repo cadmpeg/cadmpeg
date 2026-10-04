@@ -306,10 +306,26 @@ fn parses_widths_short_long_and_bounds() {
 }
 
 #[test]
+fn crc16_work_refusal_reaches_checksum_result() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"x", &arena, &policy)
+        .expect("one input byte admitted");
+    let error = crc16(&ctx, 0, b"x").expect_err("CRC scan exceeds zero work");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("CRC scan must preserve its resource refusal");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "Rhino chunk checksum bytes");
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+}
+
+#[test]
 fn verifies_crc_vectors_and_recoverable_mismatch() {
-    assert_eq!(crc16(0, b""), 0);
-    assert_eq!(crc16(1, b""), 1);
-    assert_eq!(crc16(0, b"123456789"), 0xbeef);
+    assert_eq!(crc16(&cadmpeg_test_support::service_decode_context(), 0, b"").expect("CRC bytes admitted"), 0);
+    assert_eq!(crc16(&cadmpeg_test_support::service_decode_context(), 1, b"").expect("CRC bytes admitted"), 1);
+    assert_eq!(crc16(&cadmpeg_test_support::service_decode_context(), 0, b"123456789").expect("CRC bytes admitted"), 0xbeef);
     assert_eq!(crc32fast::hash(b""), 0);
     assert_eq!(crc32fast::hash(b"123456789"), 0xcbf4_3926);
 

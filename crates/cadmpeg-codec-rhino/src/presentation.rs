@@ -969,7 +969,7 @@ fn displacement_record(
         displacement.sub_items.len(),
         "Rhino projected displacement sub-items",
     )?;
-    for item in &displacement.sub_items {
+    for item in ctx.admit_iter(&(displacement.sub_items)[..], "Rhino displacement record traversal").map_err(cadmpeg_core::CodecError::from)? {
         sub_items.push(DisplacementSubItemRecord {
             face_index: item.face_index,
             on: item.on,
@@ -1060,7 +1060,7 @@ fn shut_lining_record(
         shut_lining.curves.len(),
         "Rhino projected shut-lining curves",
     )?;
-    for curve in &shut_lining.curves {
+    for curve in ctx.admit_iter(&(shut_lining.curves)[..], "Rhino shut lining record traversal").map_err(cadmpeg_core::CodecError::from)? {
         curves.push(ShutLiningCurveRecord {
             uuid: curve
                 .uuid
@@ -1302,8 +1302,7 @@ fn first_user_string_records(
     source_offset: usize,
     losses: &mut Vec<LossNote>,
 ) -> Result<(Vec<UserStringRecord>, Vec<UserStringRecord>), CodecError> {
-    let geometry_range = class_userdata
-        .iter()
+    let geometry_range = ctx.admit_iter(&(class_userdata)[..], "Rhino first user string records traversal").map_err(cadmpeg_core::CodecError::from)?
         .filter_map(UserdataDescriptor::known)
         .find(|value| value.class_uuid == USER_STRING_LIST && value.item_uuid == USER_STRING_LIST)
         .map(|value| value.payload_range.clone());
@@ -1316,8 +1315,7 @@ fn first_user_string_records(
         "object user-string userdata",
         losses,
     )?;
-    let attributes_range = attribute_userdata
-        .iter()
+    let attributes_range = ctx.admit_iter(&(attribute_userdata)[..], "Rhino first user string records traversal").map_err(cadmpeg_core::CodecError::from)?
         .filter_map(AttributeUserdataDescriptor::known)
         .find(|value| value.class_uuid == USER_STRING_LIST && value.item_uuid == USER_STRING_LIST)
         .map(|value| value.payload_range.clone());
@@ -1330,8 +1328,7 @@ fn first_user_string_records(
         "object-attributes user-string userdata",
         losses,
     )?;
-    if let Some(index) = attributes
-        .iter()
+    if let Some(index) = ctx.admit_iter(&(attributes)[..], "Rhino first user string records traversal").map_err(cadmpeg_core::CodecError::from)?
         .position(|value| value.key.eq_ignore_ascii_case("$temp_object$"))
     {
         attributes.remove(index);
@@ -1394,7 +1391,7 @@ fn object_attributes_presentation(
         attributes.display_materials.len(),
         "Rhino projected display materials",
     )?;
-    for (viewport, material) in &attributes.display_materials {
+    for (viewport, material) in ctx.admit_iter(&(attributes.display_materials)[..], "Rhino object attributes presentation traversal").map_err(cadmpeg_core::CodecError::from)? {
         display_materials.push([
             ctx.format_retained(
                 format_args!("{viewport}"),
@@ -1418,7 +1415,7 @@ fn object_attributes_presentation(
         attributes.clipping_plane_ids.len(),
         "Rhino projected clipping plane UUIDs",
     )?;
-    for id in &attributes.clipping_plane_ids {
+    for id in ctx.admit_iter(&(attributes.clipping_plane_ids)[..], "Rhino object attributes presentation traversal").map_err(cadmpeg_core::CodecError::from)? {
         clipping_plane_uuids.push(ctx.format_retained(
             format_args!("{id}"),
             "Rhino projected clipping plane UUID text",
@@ -1661,11 +1658,11 @@ fn parse_physically_based_material(ctx: &cadmpeg_core::decode::DecodeContext<'_>
     })
 }
 
-fn parse_uuid_text(value: &str) -> Option<Uuid> {
+fn parse_uuid_text(ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: &str) -> Result<Option<Uuid>, CodecError> {
     let mut bytes = [0_u8; 16];
     let mut nibble = None;
     let mut index = 0;
-    for byte in value.bytes() {
+    for byte in ctx.admit_iter(value.as_bytes(), "Rhino UUID text traversal")?.copied() {
         if byte == b'-' {
             continue;
         }
@@ -1673,11 +1670,11 @@ fn parse_uuid_text(value: &str) -> Option<Uuid> {
             b'0'..=b'9' => byte - b'0',
             b'a'..=b'f' => byte - b'a' + 10,
             b'A'..=b'F' => byte - b'A' + 10,
-            _ => return None,
+            _ => return Ok(None),
         };
         if let Some(high) = nibble.take() {
             if index == bytes.len() {
-                return None;
+                return Ok(None);
             }
             bytes[index] = (high << 4) | value;
             index += 1;
@@ -1685,7 +1682,7 @@ fn parse_uuid_text(value: &str) -> Option<Uuid> {
             nibble = Some(value);
         }
     }
-    (index == bytes.len() && nibble.is_none()).then_some(Uuid::from_canonical(bytes))
+    Ok((index == bytes.len() && nibble.is_none()).then_some(Uuid::from_canonical(bytes)))
 }
 
 fn parse_legacy_rdk_material_instance_id(
@@ -1789,7 +1786,7 @@ fn classify_rdk_material_payload(
             "legacy RDK material has no instance-id attribute",
         )
     })?;
-    let instance_id = parse_uuid_text(instance_id).ok_or_else(|| {
+    let instance_id = parse_uuid_text(ctx, instance_id)?.ok_or_else(|| {
         FramingError::structural(
             payload_range.start,
             "legacy RDK material instance-id is not a UUID",
@@ -1805,7 +1802,7 @@ fn legacy_rdk_material_instance_id(
     data: &[u8],
     userdata: &[UserdataDescriptor],
 ) -> Result<Option<Uuid>, CodecError> {
-    for value in userdata.iter().filter_map(UserdataDescriptor::known).rev() {
+    for value in ctx.admit_iter(&(userdata)[..], "Rhino legacy rdk material instance id traversal").map_err(cadmpeg_core::CodecError::from)?.filter_map(UserdataDescriptor::known).rev() {
         if value.class_uuid != RDK_CLASS
             || value.item_uuid != RDK_USERDATA
             || (value.application_uuid.is_some() && value.application_uuid != Some(RDK_APPLICATION))
@@ -1826,7 +1823,7 @@ fn rdk_material_userdata_requires_opaque(
     data: &[u8],
     userdata: &[UserdataDescriptor],
 ) -> Result<bool, CodecError> {
-    for value in userdata.iter().filter_map(UserdataDescriptor::known) {
+    for value in ctx.admit_iter(&(userdata)[..], "Rhino rdk material userdata requires opaque traversal").map_err(cadmpeg_core::CodecError::from)?.filter_map(UserdataDescriptor::known) {
         if value.class_uuid != RDK_CLASS
             || value.item_uuid != RDK_USERDATA
             || (value.application_uuid.is_some() && value.application_uuid != Some(RDK_APPLICATION))
@@ -2010,7 +2007,7 @@ fn parse_light_record_attributes(
         .transpose()?
         .unwrap_or_default();
     let mut userdata_requires_opaque = false;
-    for descriptor in &attributes_userdata {
+    for descriptor in ctx.admit_iter(&(attributes_userdata)[..], "Rhino parse light record attributes traversal").map_err(cadmpeg_core::CodecError::from)? {
         let Some(descriptor) = descriptor.known() else {
             userdata_requires_opaque = true;
             break;
@@ -2820,7 +2817,7 @@ fn disambiguate_group_ids(
 ) -> Result<usize, CodecError> {
     let mut counts = HashMap::<&str, usize>::new();
     let mut workspace = ctx.reserve_scoped(0, "Rhino group identity workspace")?;
-    for group in groups.iter() {
+    for group in ctx.admit_iter(&(groups)[..], "Rhino disambiguate group ids traversal").map_err(cadmpeg_core::CodecError::from)? {
         if let Some(count) = counts.get_mut(group.id.as_str()) {
             *count += 1;
         } else {
@@ -2830,7 +2827,7 @@ fn disambiguate_group_ids(
         }
     }
     let mut duplicate_indices = Vec::new();
-    for (order, group) in groups.iter().enumerate() {
+    for (order, group) in ctx.admit_iter(&(groups)[..], "Rhino disambiguate group ids traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
         if counts.get(group.id.as_str()).copied() != Some(1) {
             workspace.with_storage(|| {
                 ctx.reserve_vec(&mut duplicate_indices, 1, "Rhino duplicate group indices")
@@ -2961,7 +2958,7 @@ fn push_light(
     indexes: &mut HashMap<Uuid, usize>,
     mut light: LightRecord,
 ) -> Result<(), CodecError> {
-    let source_id = parse_uuid_text(&light.source_uuid)
+    let source_id = parse_uuid_text(ctx, &light.source_uuid)?
         .ok_or_else(|| CodecError::malformed("light source UUID is invalid"))?;
     if !source_id.is_nil() {
         if indexes.contains_key(&source_id) {
@@ -3459,7 +3456,7 @@ fn dimension_style_controls(
         let mut bits = ctx
             .collection_vec(count, "Rhino dimension override bits")
             .map_err(crate::chunks::FramingError::from)?;
-        for bit in reader.take(count)? {
+        for bit in ctx.admit_iter(reader.take(count)?, "Rhino dimension style controls borrowed traversal").map_err(cadmpeg_core::CodecError::from)? {
             bits.push(serde_json::Value::from(*bit));
         }
         values.insert_with(ctx, "field_override_bits", || {
@@ -3680,7 +3677,7 @@ fn parse_v5_dimension_style_extra(
     let mut valid_fields = ctx
         .collection_vec(byte_count, "Rhino V5 dimension valid fields")
         .map_err(crate::chunks::FramingError::from)?;
-    for value in reader.take(byte_count)? {
+    for value in ctx.admit_iter(reader.take(byte_count)?, "Rhino parse v5 dimension style extra borrowed traversal").map_err(cadmpeg_core::CodecError::from)? {
         valid_fields.push(*value != 0);
     }
     let tolerance_style = reader.i32()?;
@@ -4365,8 +4362,7 @@ fn parse_texture_mapping(
         let (value, userdata) =
             parse_class_wrapper_with_userdata(ctx, data, object.range(), archive, &mut warnings)?;
         let cache_requires_opaque =
-            userdata
-                .iter()
+            ctx.admit_iter(&(userdata)[..], "Rhino parse texture mapping traversal").map_err(cadmpeg_core::CodecError::from)?
                 .filter_map(UserdataDescriptor::known)
                 .any(|value| {
                     value.class_uuid == MAPPING_CRC_CACHE
@@ -4967,7 +4963,7 @@ pub(crate) fn install(
     let mut object_count_workspace = ctx.reserve_scoped(0, "Rhino object identity workspace")?;
     let mut losses = Vec::new();
     let mut opaque_records = Vec::new();
-    for object in &scan.objects {
+    for object in ctx.admit_iter(&(scan.objects)[..], "Rhino install traversal").map_err(cadmpeg_core::CodecError::from)? {
         if let Some(identity) = object.identity() {
             if let Some(count) = object_id_counts.get_mut(&identity.object_id) {
                 *count += 1;
@@ -4980,9 +4976,9 @@ pub(crate) fn install(
             }
         }
     }
-    for table in &scan.tables {
+    for table in ctx.admit_iter(&(scan.tables)[..], "Rhino install traversal").map_err(cadmpeg_core::CodecError::from)? {
         let table_type = table.typecode & !0x0000_8000;
-        for record in &table.records {
+        for record in ctx.admit_iter(&(table.records)[..], "Rhino install traversal").map_err(cadmpeg_core::CodecError::from)? {
             let recognized = matches!(
                 table_type,
                 GROUP_TABLE
@@ -5464,12 +5460,12 @@ pub(crate) fn install(
     }
     let mut group_members = HashMap::<i32, Vec<String>>::new();
     let mut group_member_workspace = ctx.reserve_scoped(0, "Rhino group member workspace")?;
-    for (source_order, object) in scan.objects.iter().enumerate() {
+    for (source_order, object) in ctx.admit_iter(&(scan.objects)[..], "Rhino install traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
         let Some(object) = object.framed() else {
             continue;
         };
         if let Some(attributes) = object.attributes.parsed() {
-            for group in &attributes.groups {
+            for group in ctx.admit_iter(&(attributes.groups)[..], "Rhino install traversal").map_err(cadmpeg_core::CodecError::from)? {
                 if !group_members.contains_key(group) {
                     group_member_workspace.grow(cadmpeg_core::decode::u64_from_index(
                         std::mem::size_of::<(i32, Vec<String>)>(),
@@ -5571,7 +5567,7 @@ pub(crate) fn install(
     }
     let mut layer_id_counts = HashMap::<Uuid, usize>::new();
     let mut layer_count_workspace = ctx.reserve_scoped(0, "Rhino layer identity workspace")?;
-    for layer in &scan.metadata.layers {
+    for layer in ctx.admit_iter(&(scan.metadata.layers)[..], "Rhino install traversal").map_err(cadmpeg_core::CodecError::from)? {
         if let Some(id) = layer.id {
             if let Some(count) = layer_id_counts.get_mut(&id) {
                 *count += 1;
@@ -5584,7 +5580,7 @@ pub(crate) fn install(
             }
         }
     }
-    for layer in &scan.metadata.layers {
+    for layer in ctx.admit_iter(&(scan.metadata.layers)[..], "Rhino install traversal").map_err(cadmpeg_core::CodecError::from)? {
         let rendering = match rendering_attributes(
             ctx,
             scan.data,
@@ -5676,7 +5672,7 @@ pub(crate) fn install(
     }
     let mut group_index_counts = Vec::<(i32, usize)>::new();
     let mut group_index_workspace = ctx.reserve_scoped(0, "Rhino group index workspace")?;
-    for group in &groups {
+    for group in ctx.admit_iter(&(groups)[..], "Rhino install traversal").map_err(cadmpeg_core::CodecError::from)? {
         match group_index_counts.binary_search_by_key(&group.archive_index, |(index, _)| *index) {
             Ok(position) => group_index_counts[position].1 += 1,
             Err(position) => {
@@ -5688,7 +5684,7 @@ pub(crate) fn install(
             }
         }
     }
-    for (index, count) in &group_index_counts {
+    for (index, count) in ctx.admit_iter(&(group_index_counts)[..], "Rhino install traversal").map_err(cadmpeg_core::CodecError::from)? {
         if *count > 1 {
             push_presentation_loss(
                 ctx,

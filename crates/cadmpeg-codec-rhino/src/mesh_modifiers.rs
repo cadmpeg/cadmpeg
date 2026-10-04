@@ -284,15 +284,15 @@ pub(crate) fn parse_attribute_userdata(
     warnings: &mut Diagnostics,
 ) -> Result<Option<MeshModifiers>, FramingError> {
     let displacement_descriptor =
-        first_matching_descriptor(descriptors, DISPLACEMENT_CLASS, DISPLACEMENT_ITEM);
+        first_matching_descriptor(ctx, descriptors, DISPLACEMENT_CLASS, DISPLACEMENT_ITEM)?;
     let edge_softening_descriptor =
-        first_matching_descriptor(descriptors, EDGE_SOFTENING_CLASS, EDGE_SOFTENING_ITEM);
+        first_matching_descriptor(ctx, descriptors, EDGE_SOFTENING_CLASS, EDGE_SOFTENING_ITEM)?;
     let thickening_descriptor =
-        first_matching_descriptor(descriptors, THICKENING_CLASS, THICKENING_ITEM);
+        first_matching_descriptor(ctx, descriptors, THICKENING_CLASS, THICKENING_ITEM)?;
     let curve_piping_descriptor =
-        first_matching_descriptor(descriptors, CURVE_PIPING_CLASS, CURVE_PIPING_ITEM);
+        first_matching_descriptor(ctx, descriptors, CURVE_PIPING_CLASS, CURVE_PIPING_ITEM)?;
     let shut_lining_descriptor =
-        first_matching_descriptor(descriptors, SHUT_LINING_CLASS, SHUT_LINING_ITEM);
+        first_matching_descriptor(ctx, descriptors, SHUT_LINING_CLASS, SHUT_LINING_ITEM)?;
     if displacement_descriptor.is_none()
         && edge_softening_descriptor.is_none()
         && thickening_descriptor.is_none()
@@ -391,19 +391,18 @@ fn optional_modifier<T>(
     }
 }
 
-fn first_matching_descriptor(
-    descriptors: &[AttributeUserdataDescriptor],
+fn first_matching_descriptor<'a>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+    descriptors: &'a [AttributeUserdataDescriptor],
     class_uuid: Uuid,
     item_uuid: Uuid,
-) -> Option<&AttributeUserdata> {
-    descriptors
-        .iter()
+) -> Result<Option<&'a AttributeUserdata>, cadmpeg_core::CodecError> {
+    Ok(ctx.admit_iter(descriptors, "Rhino mesh modifier descriptor traversal")?
         .filter_map(AttributeUserdataDescriptor::known)
         .find(|descriptor| {
             descriptor.class_uuid == class_uuid
                 && descriptor.item_uuid == item_uuid
                 && descriptor.application_uuid == Some(MESH_MODIFIER_PLUGIN)
-        })
+        }))
 }
 
 fn parse_displacement(
@@ -1275,7 +1274,7 @@ mod tests {
             &mut warnings,
         );
         assert!(modifiers.is_none());
-        assert!(warnings.messages().any(|warning| warning.contains(field)));
+        assert!(crate::decode::with_expand_bytes(&[], |expand| warnings.messages(expand.ctx()).expect("diagnostic traversal fits")).any(|warning| warning.contains(field)));
     }
 
     #[test]

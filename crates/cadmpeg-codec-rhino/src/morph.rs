@@ -752,7 +752,7 @@ pub(crate) fn project(
             ("cage", properties)
         }
     };
-    for (index, localizer) in morph.localizers.iter().enumerate() {
+    for (index, localizer) in ctx.admit_iter(&(morph.localizers)[..], "Rhino project traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
         let prefix = ctx.format_retained(
             format_args!("localizer_{index}"),
             "Rhino morph localizer prefix",
@@ -835,7 +835,7 @@ pub(crate) fn project(
         format_args!("preserve_structure"),
         format_args!("{}", morph.preserve_structure),
     )?;
-    for (index, id) in morph.captive_ids.iter().enumerate() {
+    for (index, id) in ctx.admit_iter(&(morph.captive_ids)[..], "Rhino project traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
         if let Some(record) = resolve_captive(*id)? {
             let key = ctx.format_retained(
                 format_args!("captive_{index}_object"),

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Schema identifier grammar table.
 //!
-//! The classifier is a total pure function over the identifier text. This table
+//! The classifier produces an admission form or a resource refusal. This table
 //! states one form for each grammar rule. The `FILE_SCHEMA` diagnostic surface
 //! that reads the recoverable form is pinned in `parse/tests/envelope.rs`.
 
@@ -208,4 +208,33 @@ fn schema_identifier_copy_refusal_stays_error() {
     assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "STEP admit text copy"));
+}
+
+#[test]
+fn schema_identifier_iteration_refusal_stays_error() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let input = "AP242 { iso 39 }";
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let result = crate::test_support::with_policy_context(input.as_bytes(), &policy, |_, ctx| {
+        AdmittedSchemaIdentifier::admit(ctx, input.to_owned())
+    });
+    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "STEP schema identifier characters"));
+}
+
+#[test]
+fn schema_oid_words_preserve_unicode_whitespace_and_byte_slices() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    for value in ["", "iso 39", "\tiso\n39\r", "\u{2003}iso\u{a0}39\u{85}", "iso\0 39", "iso 39 é"] {
+        let expected: Vec<_> = value.split_whitespace().collect();
+        let actual: Vec<_> = super::schema_oid_components(&ctx, value)
+            .expect("word traversal fits service policy")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("byte offsets fit the input");
+        assert_eq!(actual, expected, "{value:?}");
+    }
 }
