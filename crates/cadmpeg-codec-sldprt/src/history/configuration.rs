@@ -95,9 +95,9 @@ fn copy_configuration_features(
         OPERATION,
     )?;
     let mut copied = Vec::new();
-    ctx.reserve_vec(&mut copied, features.len(), OPERATION)?;
+    ctx.reserve_capacity(&mut copied, features.len(), OPERATION)?;
     for feature in ctx.admit_iter(features, "scan SLDPRT copy_configuration_features values")? {
-        copied.push(feature.try_clone_for_decode(ctx, OPERATION)?);
+        ctx.push_vec(&mut (copied), feature.try_clone_for_decode(ctx, OPERATION)?, OPERATION)?;
     }
     Ok(copied)
 }
@@ -1494,9 +1494,9 @@ fn configuration_surface_carriers(
     let Some(body_ids) = configuration.bodies.as_deref() else {
         // Unresolved membership uses every neutral surface carrier.
         let mut surfaces = Vec::new();
-        ctx.reserve_vec(&mut surfaces, ir.model.surfaces.len(), OPERATION)?;
+        ctx.reserve_capacity(&mut surfaces, ir.model.surfaces.len(), OPERATION)?;
         for surface in ctx.admit_iter(&ir.model.surfaces, "scan SLDPRT configuration_surface_carriers values")? {
-            surfaces.push(surface.try_clone_for_decode(ctx, OPERATION)?);
+            ctx.push_vec(&mut (surfaces), surface.try_clone_for_decode(ctx, OPERATION)?, OPERATION)?;
         }
         return Ok(surfaces);
     };

@@ -823,17 +823,17 @@ fn read_objects(
         return Ok(None);
     };
     let mut references = Vec::new();
-    ctx.reserve_vec(&mut references, count, "collect SWIFT object references")?;
+    ctx.reserve_capacity(&mut references, count, "collect SWIFT object references")?;
     for _ in 0..count {
         ctx.charge_work(1, "parse SWIFT object references")?;
         let (Some(id), Some(class)) = (pstr(cursor), pstr(cursor)) else {
             return Ok(None);
         };
-        references.push(Reference {
+        ctx.push_vec(&mut (references), Reference {
             id: ctx.format_retained(format_args!("{id}"), "copy SWIFT object reference ID")?,
             class: ctx
                 .format_retained(format_args!("{class}"), "copy SWIFT object reference class")?,
-        });
+        }, "collect SWIFT object references")?;
     }
     let mut entities = Vec::new();
     loop {
@@ -879,17 +879,19 @@ fn read_related(
     else {
         return Ok(None);
     };
+    let mut descriptors_storage = ctx.reserve_scoped(0, "SLDPRT temporary vector storage")?;
     let mut descriptors = Vec::new();
-    ctx.reserve_vec(&mut descriptors, count, "collect SWIFT related descriptors")?;
+    descriptors_storage.with_storage(|| ctx.reserve_capacity(&mut descriptors, count, "collect SWIFT related descriptors"))?;
     for _ in 0..count {
         ctx.charge_work(1, "parse SWIFT related descriptors")?;
         let (Some(name), Some(class)) = (pstr(cursor), pstr(cursor)) else {
             return Ok(None);
         };
-        descriptors.push((
+        let descriptor = (
             ctx.format_retained(format_args!("{name}"), "copy SWIFT related name")?,
             ctx.format_retained(format_args!("{class}"), "copy SWIFT related class")?,
-        ));
+        );
+        descriptors_storage.with_storage(|| ctx.push_vec(&mut descriptors, descriptor, "collect SWIFT related descriptors"))?;
     }
     let mut related = Vec::new();
     for (name, class) in descriptors {
@@ -3091,7 +3093,7 @@ fn tolerance_modifiers(ctx: &cadmpeg_core::decode::DecodeContext<'_>, entity: &E
         ("IsTangentPlane", "tangent_plane"),
     ] {
         if ctx.get_btree_map(&(entity.integers), key, "look up SLDPRT ordered key")?.is_some_and(|value| *value != 0) {
-            values.push(name.into());
+            ctx.push_vec(&mut (values), name.into(), "collect SLDPRT decoded vector items")?;
         }
     }
     if entity
@@ -3104,9 +3106,9 @@ fn tolerance_modifiers(ctx: &cadmpeg_core::decode::DecodeContext<'_>, entity: &E
             .get("ProjectedZoneValue")
             .and_then(|v| NonNegativeReal::new(*v))
         {
-            values.push(format!("projected_zone:{}_mm", value.get()));
+            ctx.push_vec(&mut (values), format!("projected_zone:{}_mm", value.get()), "collect SLDPRT decoded vector items")?;
         } else {
-            values.push("projected_zone".into());
+            ctx.push_vec(&mut (values), "projected_zone".into(), "collect SLDPRT decoded vector items")?;
         }
     }
     if entity
@@ -3119,9 +3121,9 @@ fn tolerance_modifiers(ctx: &cadmpeg_core::decode::DecodeContext<'_>, entity: &E
             .get("MaxTolerance")
             .and_then(|v| NonNegativeReal::new(*v))
         {
-            values.push(format!("maximum_tolerance:{}_mm", value.get()));
+            ctx.push_vec(&mut (values), format!("maximum_tolerance:{}_mm", value.get()), "collect SLDPRT decoded vector items")?;
         } else {
-            values.push("maximum_tolerance".into());
+            ctx.push_vec(&mut (values), "maximum_tolerance".into(), "collect SLDPRT decoded vector items")?;
         }
     }
     Ok::<_, cadmpeg_core::CodecError>(values)

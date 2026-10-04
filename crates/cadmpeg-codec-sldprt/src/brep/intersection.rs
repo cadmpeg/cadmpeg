@@ -223,10 +223,10 @@ fn chart_candidates(
             continue;
         }
         let mut interior_points =
-            ctx.collection_vec(count - 2, "decode Parasolid chart interior points")?;
+            ctx.vector_storage(count - 2, "decode Parasolid chart interior points")?;
         for index in 1..count - 1 {
             if let Some(point) = finite_point(bytes, block + index * stride) {
-                interior_points.push(point);
+                ctx.push_vec(&mut (interior_points), point, "decode Parasolid chart interior points")?;
             }
         }
         if !extended && first == last && ctx.admit_iter(&interior_points[..], "scan SLDPRT chart_candidates values")?.all(|point| *point == first) {
@@ -349,10 +349,10 @@ fn uv_at(
     {
         return Ok(None);
     }
-    let mut values = ctx.collection_vec(count, "decode Parasolid support UV values")?;
+    let mut values = ctx.vector_storage(count, "decode Parasolid support UV values")?;
     for index in 0..count {
         if let Some(value) = View::f64_be_at(bytes, body + support_uv::LEN + index * 8) {
-            values.push(value);
+            ctx.push_vec(&mut (values), value, "decode Parasolid support UV values")?;
         }
     }
     Ok(ctx.admit_iter(&values[..], "scan SLDPRT uv_at values")?
@@ -412,20 +412,21 @@ fn solved_curve(
     let mut parameter = chart.base_parameter;
     let point_count = chart.interior_points.len() + 2;
     let mut parameters =
-        ctx.collection_vec(point_count, "construct intersection chart parameters")?;
-    parameters.push(parameter);
+        ctx.vector_storage(point_count, "construct intersection chart parameters")?;
+    ctx.push_vec(&mut (parameters), parameter, "construct intersection chart parameters")?;
     let mut previous = chart.endpoints[0];
     for &point in ctx.admit_iter(&chart.interior_points, "scan Parasolid intersection chart points")?
         .chain(std::iter::once(&chart.endpoints[1]))
     {
         parameter += distance(previous, point) * chart.base_scale;
-        parameters.push(parameter);
+        ctx.push_vec(&mut (parameters), parameter, "construct intersection chart parameters")?;
         previous = point;
     }
-    let mut points = ctx.collection_vec(point_count, "construct intersection chart points")?;
-    points.push(start);
+    let mut points = ctx.vector_storage(point_count, "construct intersection chart points")?;
+    ctx.push_vec(&mut (points), start, "construct intersection chart points")?;
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(chart.interior_points.len()), "construct intersection chart points")?;
     points.extend(chart.interior_points.iter().copied());
-    points.push(end);
+    ctx.push_vec(&mut (points), end, "construct intersection chart points")?;
     let reversed = if ctx.admit_iter(&parameters, "scan Parasolid intersection parameter order")?.windows(std::num::NonZeroUsize::new(2).ok_or_else(|| cadmpeg_core::CodecError::malformed("zero scan window width"))?).all(|pair| pair[0] < pair[1]) {
         false
     } else if ctx.admit_iter(&parameters, "scan Parasolid intersection parameter order")?.windows(std::num::NonZeroUsize::new(2).ok_or_else(|| cadmpeg_core::CodecError::malformed("zero scan window width"))?).all(|pair| pair[0] > pair[1]) {
@@ -440,10 +441,11 @@ fn solved_curve(
     } else {
         (chart.base_parameter, parameter)
     };
-    let mut knots = ctx.collection_vec(point_count + 2, "construct intersection chart knots")?;
-    knots.push(first);
+    let mut knots = ctx.vector_storage(point_count + 2, "construct intersection chart knots")?;
+    ctx.push_vec(&mut (knots), first, "construct intersection chart knots")?;
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(parameters.len()), "construct intersection chart knots")?;
     knots.extend(parameters.iter().copied());
-    knots.push(last);
+    ctx.push_vec(&mut (knots), last, "construct intersection chart knots")?;
     let mut controls = ctx.collection_vec(point_count, "construct intersection curve controls")?;
     controls.extend(
         points

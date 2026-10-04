@@ -309,7 +309,7 @@ pub(crate) fn order_features_for_regeneration(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    let Some(order) = regeneration_order(ctx, features, None)? else {
+    let Some((order, _order_storage)) = regeneration_order(ctx, features, None)? else {
         return Ok(false);
     };
     assign_regeneration_ordinals(ctx, features, order)?;
@@ -329,11 +329,11 @@ fn add_regeneration_predecessor<'a>(
     Ok(())
 }
 
-fn regeneration_order(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+fn regeneration_order<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     features: &[cadmpeg_ir::features::Feature],
     model: Option<&cadmpeg_ir::document::Model>,
-) -> Result<Option<Vec<usize>>, cadmpeg_core::CodecError> {
+) -> Result<Option<(Vec<usize>, cadmpeg_core::decode::ScopedReservation<'ctx>)>, cadmpeg_core::CodecError> {
     let mut outgoing = ctx.collect_indexed_vec(
         features.len(),
         "sldprt feature regeneration adjacency",
@@ -419,16 +419,17 @@ fn regeneration_order(
             )?;
         }
     }
+    let mut order_storage = ctx.reserve_scoped(0, "SLDPRT temporary vector storage")?;
     let mut order = Vec::new();
-    ctx.reserve_vec(
+    order_storage.with_storage(|| ctx.reserve_capacity(
         &mut order,
         features.len(),
         "collect SLDPRT feature regeneration order",
-    )?;
+    ))?;
     while let Some(item) = ready.pop_first() {
         ctx.charge_work(1, "sort SLDPRT feature regeneration order")?;
         let index = item.2;
-        order.push(index);
+        order_storage.with_storage(|| ctx.push_vec(&mut (order), index, "collect SLDPRT feature regeneration order"))?;
         for &consumer in ctx.admit_iter(&outgoing[index], "scan SLDPRT regeneration_order values")? {
             indegree[consumer] -= 1;
             if indegree[consumer] == 0 {
@@ -444,7 +445,7 @@ fn regeneration_order(
     if order.len() != features.len() {
         return Ok(None);
     }
-    Ok(Some(order))
+    Ok(Some((order, order_storage)))
 }
 
 fn assign_regeneration_ordinals(
@@ -470,7 +471,7 @@ pub(crate) fn order_model_features_for_regeneration(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut cadmpeg_ir::CadIr,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    let Some(order) = regeneration_order(ctx, &ir.model.features, Some(&ir.model))? else {
+    let Some((order, _order_storage)) = regeneration_order(ctx, &ir.model.features, Some(&ir.model))? else {
         return Ok(false);
     };
     assign_regeneration_ordinals(ctx, &mut ir.model.features, order)?;
@@ -567,7 +568,7 @@ pub(crate) fn derive_feature_outputs(
     let mut feature_ids_by_ordinal = HashMap::<u32, Option<&str>>::new();
     for history in ctx.admit_iter(histories, "scan SLDPRT derive_feature_outputs values")? {
         let mut ordinal = 0_u32;
-        for record in ctx.admit_iter(&history.features, "scan SLDPRT derive_feature_outputs values")? {
+        for record in ctx.admit_iter(&history.features, "classify SLDPRT body modifier ordinals")? {
             if is_history_metadata_record(ctx, record, &history.features)? {
                 continue;
             }
@@ -627,11 +628,11 @@ pub(crate) fn derive_feature_outputs(
                             u64::MAX,
                         )
                     })?;
-                ctx.reserve_vec(&mut outputs, count, "collect SLDPRT body modifier outputs")?;
+                ctx.reserve_capacity(&mut outputs, count, "collect SLDPRT body modifier outputs")?;
                 for output in ctx.admit_iter(feature.evaluation.outputs(), "scan SLDPRT topology members")? {
-                    outputs.push(copy_output_body_id(ctx, output.as_str())?);
+                    ctx.push_vec(&mut (outputs), copy_output_body_id(ctx, output.as_str())?, "collect SLDPRT body modifier outputs")?;
                 }
-                outputs.push(body);
+                ctx.push_vec(&mut (outputs), body, "collect SLDPRT body modifier outputs")?;
                 feature
                     .evaluation
                     .set_outputs(cadmpeg_ir::features::DistinctMembers::try_from(
@@ -677,9 +678,9 @@ pub(crate) fn derive_feature_outputs(
         };
         if let Some(bodies) = produced.get(&source_id) {
             let mut outputs = Vec::new();
-            ctx.reserve_vec(&mut outputs, bodies.len(), "collect SLDPRT feature outputs")?;
+            ctx.reserve_capacity(&mut outputs, bodies.len(), "collect SLDPRT feature outputs")?;
             for body in ctx.admit_iter(bodies, "scan SLDPRT bodies values")? {
-                outputs.push(copy_output_body_id(ctx, body.as_str())?);
+                ctx.push_vec(&mut (outputs), copy_output_body_id(ctx, body.as_str())?, "collect SLDPRT feature outputs")?;
             }
             feature
                 .evaluation
@@ -939,7 +940,8 @@ mod tests {
 
     #[test]
     fn feature_outputs_refuse_work_limit() {
-        let error = feature_output_error(|limits| limits.max_work_units = 0);
+        // One history visit precedes the record-classification admission.
+        let error = feature_output_error(|limits| limits.max_work_units = 1);
         assert!(matches!(
             error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1019,7 +1021,8 @@ mod tests {
 
     #[test]
     fn sketch_binding_refuses_work_limit() {
-        let error = sketch_binding_error(|limits| limits.max_work_units = 0);
+        // One history visit precedes native sketch record indexing.
+        let error = sketch_binding_error(|limits| limits.max_work_units = 1);
         assert!(matches!(
             error,
             cadmpeg_core::CodecError::ResourceLimit(limit)

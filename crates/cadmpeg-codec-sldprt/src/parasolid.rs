@@ -608,7 +608,7 @@ pub(crate) fn mesh_polyline_from_header(
             cadmpeg_core::decode::u64_from_index(values.len()),
             "decode Parasolid mesh coordinates",
         )?;
-        let mut points = ctx.collection_vec(point_count, "decode Parasolid mesh points")?;
+        let mut points = ctx.vector_storage(point_count, "decode Parasolid mesh points")?;
         for xyz in values.chunks_exact(24) {
             let (Some(x), Some(y), Some(z)) = (
                 View::f64_be_at(xyz, 0),
@@ -622,7 +622,7 @@ pub(crate) fn mesh_polyline_from_header(
                 points.clear();
                 break;
             }
-            points.push(point);
+            ctx.push_vec(&mut (points), point, "decode Parasolid mesh points")?;
         }
         if points.len() >= 2 {
             ctx.push_vec(

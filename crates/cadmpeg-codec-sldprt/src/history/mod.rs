@@ -265,7 +265,7 @@ pub(crate) fn histories(
                             })
                             .map(|attribute| (attribute.name(), attribute.value())),
                     )?;
-                    ctx.reserve_vec(&mut features, 1, "collect SLDPRT history features")?;
+                    ctx.reserve_capacity(&mut features, 1, "collect SLDPRT history features")?;
                     let content = node.children().try_fold(Vec::new(), |mut content, child| {
                         let item = if child.is_text() {
                             let value = child.text().unwrap_or_default().trim();
@@ -396,7 +396,7 @@ pub(crate) fn histories(
                             })
                             .transpose()?
                     };
-                    features.push(Feature {
+                    ctx.push_vec(&mut (features), Feature {
                         id,
                         parent: ctx.format_retained(
                             format_args!("{parent}"),
@@ -458,7 +458,7 @@ pub(crate) fn histories(
                         properties,
                         text,
                         content,
-                    });
+                    }, "collect SLDPRT history features")?;
                     Ok::<_, CodecError>(features)
                 },
             )?;

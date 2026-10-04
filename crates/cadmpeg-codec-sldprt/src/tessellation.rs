@@ -506,15 +506,15 @@ fn probe_table(
         };
         channels.push(channel);
         if index == 0 && item_size == 4 && kind == 8 {
-            ctx.reserve_vec(&mut strips, count, "decode display-list strips")?;
+            ctx.reserve_capacity(&mut strips, count, "decode display-list strips")?;
             for i in 0..count {
                 let Some(length) = View::u32_le_at(bytes, data + i * 4) else {
                     return Ok(None);
                 };
-                strips.push(cadmpeg_core::decode::index_from_u32(length));
+                ctx.push_vec(&mut (strips), cadmpeg_core::decode::index_from_u32(length), "decode display-list strips")?;
             }
         } else if index == 1 && item_size == 12 && kind == 100 {
-            ctx.reserve_vec(&mut vertices, count, "decode display-list vertices")?;
+            ctx.reserve_capacity(&mut vertices, count, "decode display-list vertices")?;
             for i in 0..count {
                 let p = data + i * 12;
                 let read = |at| {
@@ -525,10 +525,10 @@ fn probe_table(
                 let (Some(x), Some(y), Some(z)) = (read(p), read(p + 4), read(p + 8)) else {
                     return Ok(None);
                 };
-                vertices.push(Point3::new(x * 1000.0, y * 1000.0, z * 1000.0));
+                ctx.push_vec(&mut (vertices), Point3::new(x * 1000.0, y * 1000.0, z * 1000.0), "decode display-list vertices")?;
             }
         } else if index == 2 && item_size == 12 && kind == 100 {
-            ctx.reserve_vec(&mut normals, count, "decode display-list normals")?;
+            ctx.reserve_capacity(&mut normals, count, "decode display-list normals")?;
             for i in 0..count {
                 let p = data + i * 12;
                 let read = |at| {
@@ -539,7 +539,7 @@ fn probe_table(
                 let (Some(x), Some(y), Some(z)) = (read(p), read(p + 4), read(p + 8)) else {
                     return Ok(None);
                 };
-                normals.push(Vector3::new(x, y, z));
+                ctx.push_vec(&mut (normals), Vector3::new(x, y, z), "decode display-list normals")?;
             }
         }
         at = end;
@@ -2898,8 +2898,9 @@ fn polygon_contains_triangle(
             cadmpeg_core::decode::u64_from_index(boundary.len()),
             "intersect SLDPRT planar outer triangle",
         )?;
-        let (mut cuts, _reservation) =
-            ctx.temporary_vec(capacity, "collect SLDPRT triangle boundary cuts")?;
+        let (mut cuts, mut reservation) =
+            ctx.scoped_vector_storage(capacity, "collect SLDPRT triangle boundary cuts")?;
+        ctx.charge_collection_items(2, "collect SLDPRT triangle boundary cuts")?;
         cuts.extend([0.0_f64, 1.0]);
         for (index, point) in boundary.iter().enumerate() {
             let next = boundary[(index + 1) % boundary.len()];
@@ -2910,7 +2911,7 @@ fn polygon_contains_triangle(
                 return Ok(false);
             }
             if (0.0..=1.0).contains(&projected) {
-                cuts.push(projected);
+                reservation.with_storage(|| ctx.push_vec(&mut cuts, projected, "collect SLDPRT decoded vector items"))?;
             }
             let eu = next.u - point.u;
             let ev = next.v - point.v;
@@ -2927,7 +2928,7 @@ fn polygon_contains_triangle(
                 return Ok(false);
             }
             if (0.0..=1.0).contains(&along_triangle) && (0.0..=1.0).contains(&along_boundary) {
-                cuts.push(along_triangle);
+                reservation.with_storage(|| ctx.push_vec(&mut cuts, along_triangle, "collect SLDPRT decoded vector items"))?;
             }
         }
         ctx.stable_sort_by(

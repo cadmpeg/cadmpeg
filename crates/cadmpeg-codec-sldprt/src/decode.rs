@@ -2257,10 +2257,11 @@ fn try_decode_brep(
     let mut decoded_sites = Vec::new();
     for (site, indices) in ctx.admit_iter(&sites, "scan SLDPRT try_decode_brep values")? {
         let first = indices[0];
+        let mut bodies_storage = ctx.reserve_scoped(0, "SLDPRT temporary vector storage")?;
         let mut bodies = Vec::new();
-        ctx.reserve_vec(&mut bodies, indices.len(), "collect SLDPRT site bodies")?;
+        bodies_storage.with_storage(|| ctx.reserve_capacity(&mut bodies, indices.len(), "collect SLDPRT site bodies"))?;
         for index in ctx.admit_iter(indices, "scan SLDPRT indices values")? {
-            bodies.push((streams[*index].payload, streams[*index].header));
+            bodies_storage.with_storage(|| ctx.push_vec(&mut (bodies), (streams[*index].payload, streams[*index].header), "collect SLDPRT site bodies"))?;
         }
         let decoded = decode_bodies(ctx, &bodies, streams[first].source_stream())?;
         ctx.reserve_vec(&mut decoded_sites, 1, "collect decoded SLDPRT sites")?;
@@ -2397,12 +2398,12 @@ fn copy_body_ids(
     bodies: &[cadmpeg_ir::topology::Body],
 ) -> Result<Vec<cadmpeg_ir::ids::BodyId>, CodecError> {
     let mut ids = Vec::new();
-    ctx.reserve_vec(&mut ids, bodies.len(), "collect SLDPRT body IDs")?;
+    ctx.reserve_capacity(&mut ids, bodies.len(), "collect SLDPRT body IDs")?;
     for body in ctx.admit_iter(bodies, "scan SLDPRT copy_body_ids values")? {
         let value = copy_retained_string(ctx, body.id.as_str(), "retain SLDPRT body ID")?;
         let id = cadmpeg_ir::ids::BodyId::mint(value)
             .map_err(|_| CodecError::Malformed("invalid admitted SLDPRT body ID".into()))?;
-        ids.push(id);
+        ctx.push_vec(&mut (ids), id, "collect SLDPRT body IDs")?;
     }
     Ok(ids)
 }
@@ -2926,17 +2927,18 @@ fn build_geometry_ir(
     for atom in face_atoms {
         face_identities.push((atom.face, atom.identity));
     }
+    let mut face_producers_storage = ctx.reserve_scoped(0, "SLDPRT temporary vector storage")?;
     let mut face_producers = Vec::new();
-    ctx.reserve_vec(
+    face_producers_storage.with_storage(|| ctx.reserve_capacity(
         &mut face_producers,
         face_identities.len(),
         "collect SLDPRT face producers",
-    )?;
+    ))?;
     for (target, identity) in ctx.admit_iter(&face_identities, "scan SLDPRT build_geometry_ir values")? {
-        face_producers.push((
+        face_producers_storage.with_storage(|| ctx.push_vec(&mut (face_producers), (
             copy_retained_string(ctx, target.as_str(), "retain SLDPRT face producer ID")?,
             identity.feature_source_id.value(),
-        ));
+        ), "collect SLDPRT face producers"))?;
     }
     ctx.charge_work(
         u64::try_from(brep.body_modifiers.len()).map_err(|_| {
@@ -2947,16 +2949,17 @@ fn build_geometry_ir(
     let modifier_count = ctx.admit_iter(&brep.body_modifiers[..], "scan SLDPRT build_geometry_ir values")?
         .filter(|modifier| modifier.target.is_some())
         .count();
+    let mut body_modifiers_storage = ctx.reserve_scoped(0, "SLDPRT temporary vector storage")?;
     let mut body_modifiers = Vec::new();
-    ctx.reserve_vec(
+    body_modifiers_storage.with_storage(|| ctx.reserve_capacity(
         &mut body_modifiers,
         modifier_count,
         "collect SLDPRT body modifiers",
-    )?;
+    ))?;
     for modifier in std::mem::take(&mut brep.body_modifiers) {
         ctx.charge_work(1, "collect SLDPRT body modifiers")?;
         if let Some(target) = modifier.target {
-            body_modifiers.push((target, modifier.history_ordinal));
+            body_modifiers_storage.with_storage(|| ctx.push_vec(&mut (body_modifiers), (target, modifier.history_ordinal), "collect SLDPRT body modifiers"))?;
         }
     }
     crate::history::bind::derive_feature_outputs(
@@ -3517,12 +3520,12 @@ fn build_geometry_ir(
             source_block.family.label(),
             Exactness::ByteExact,
         )?;
-        unknowns.push(UnknownRecord::retained(
+        ctx.push_vec(&mut (unknowns), UnknownRecord::retained(
             id,
             0,
             std::mem::take(&mut source_block.payload),
             Vec::new(),
-        ));
+        ), "collect SLDPRT decoded vector items")?;
     }
     for source_stream in &mut scan.compound_streams {
         let id = UnknownId::compose(
@@ -3543,12 +3546,12 @@ fn build_geometry_ir(
             .label(),
             Exactness::ByteExact,
         )?;
-        unknowns.push(UnknownRecord::retained(
+        ctx.push_vec(&mut (unknowns), UnknownRecord::retained(
             id,
             0,
             std::mem::take(&mut source_stream.payload),
             Vec::new(),
-        ));
+        ), "collect SLDPRT decoded vector items")?;
     }
     let mut opaque_links = BTreeMap::<&str, Vec<String>>::new();
     for surface in ctx.admit_iter(&ir.model.surfaces, "scan SLDPRT build_geometry_ir values")? {
@@ -3843,22 +3846,23 @@ fn build_geometry_report(
     let mut losses = Vec::new();
 
     if s.unknown_surface_faces > 0 || s.unknown_procedural_supports > 0 {
+        let mut message_storage = ctx.reserve_scoped(0, "SLDPRT temporary vector storage")?;
         let mut message = Vec::new();
         if s.unknown_surface_faces > 0 {
-            message.push(format!(
+            message_storage.with_storage(|| ctx.push_vec(&mut (message), format!(
                 "{} face(s) rest on a support surface whose stored carrier this codec does not \
                  type; the face, its loops, and trims are emitted with an unknown-geometry \
                  surface linking to the preserved record bytes. Topology is transferred; the \
                  underlying surface shape is not.",
                 s.unknown_surface_faces
-            ));
+            ), "collect SLDPRT decoded vector items"))?;
         }
         if s.unknown_procedural_supports > 0 {
-            message.push(format!(
+            message_storage.with_storage(|| ctx.push_vec(&mut (message), format!(
                 "{} untyped surface carrier(s) are retained as opaque hidden supports of exact \
                  procedural constructions.",
                 s.unknown_procedural_supports
-            ));
+            ), "collect SLDPRT decoded vector items"))?;
         }
         ctx.reserve_vec(&mut losses, 1, "append SLDPRT geometry loss")?;
         losses.push(SldprtLossCode::GeometryFaceSupportSurfaceUntyped.note(message.join(" ")));

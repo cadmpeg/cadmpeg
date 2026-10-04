@@ -1131,12 +1131,8 @@ pub(crate) fn scan_curve_carriers(
             continue;
         }
         let mut points =
-            ctx.collection_vec(descriptor.control_count, "decode Parasolid curve poles")?;
-        let mut weights = ctx.optional_collection_vec(
-            descriptor.dimension == 4,
-            descriptor.control_count,
-            "decode Parasolid curve weights",
-        )?;
+            ctx.vector_storage(descriptor.control_count, "decode Parasolid curve poles")?;
+        let mut weights = if descriptor.dimension == 4 { Some(ctx.vector_storage(descriptor.control_count, "decode Parasolid curve weights")?) } else { None };
         let Some(dimension) = std::num::NonZeroUsize::new(descriptor.dimension) else {
             continue;
         };
@@ -1154,13 +1150,13 @@ pub(crate) fn scan_curve_carriers(
                 points.clear();
                 break;
             }
-            points.push(Point3::new(
+            ctx.push_vec(&mut (points), Point3::new(
                 pole[0] / weight * LEN_TO_MM,
                 pole[1] / weight * LEN_TO_MM,
                 pole[2] / weight * LEN_TO_MM,
-            ));
+            ), "decode Parasolid curve poles")?;
             if let Some(values) = &mut weights {
-                values.push(weight);
+                ctx.push_vec(&mut *values, weight, "decode Parasolid curve weights")?;
             }
         }
         if points.len() != descriptor.control_count {
@@ -1450,17 +1446,13 @@ pub(crate) fn scan_surface_carriers(
         {
             continue;
         }
-        let mut points = ctx.collection_vec(expected_poles, "decode Parasolid surface poles")?;
+        let mut points = ctx.vector_storage(expected_poles, "decode Parasolid surface poles")?;
         let dimension = if descriptor.rational {
             descriptor.dimension
         } else {
             3
         };
-        let mut weights = ctx.optional_collection_vec(
-            descriptor.rational,
-            expected_poles,
-            "decode Parasolid surface weights",
-        )?;
+        let mut weights = if descriptor.rational { Some(ctx.vector_storage(expected_poles, "decode Parasolid surface weights")?) } else { None };
         for pole in control.chunks_exact(dimension) {
             if ctx.admit_iter(pole, "check Parasolid curve pole coordinates")?.any(|value| !value.is_finite()) {
                 points.clear();
@@ -1471,13 +1463,13 @@ pub(crate) fn scan_surface_carriers(
                 points.clear();
                 break;
             }
-            points.push(Point3::new(
+            ctx.push_vec(&mut (points), Point3::new(
                 pole[0] / weight * LEN_TO_MM,
                 pole[1] / weight * LEN_TO_MM,
                 pole[2] / weight * LEN_TO_MM,
-            ));
+            ), "decode Parasolid surface poles")?;
             if let Some(values) = &mut weights {
-                values.push(weight);
+                ctx.push_vec(&mut *values, weight, "decode Parasolid surface weights")?;
             }
         }
         if points.len() != expected_poles {
@@ -1492,18 +1484,8 @@ pub(crate) fn scan_surface_carriers(
         if u_knots.len() != u_expected || v_knots.len() != v_expected {
             continue;
         }
-        charge_items(
-            ctx,
-            descriptor.u_count,
-            "partition Parasolid surface pole rows",
-        )?;
         charge_items(ctx, expected_poles, "partition Parasolid surface poles")?;
         if descriptor.rational {
-            charge_items(
-                ctx,
-                descriptor.u_count,
-                "partition Parasolid surface weight rows",
-            )?;
             charge_items(ctx, expected_poles, "partition Parasolid surface weights")?;
         }
         let mut pole_rows = Vec::new();
@@ -1516,7 +1498,7 @@ pub(crate) fn scan_surface_carriers(
             let mut copy = Vec::new();
             ctx.reserve_capacity(&mut copy, row.len(), "partition Parasolid surface poles")?;
             copy.extend_from_slice(row);
-            pole_rows.push(copy);
+            ctx.push_vec(&mut (pole_rows), copy, "partition Parasolid surface pole rows")?;
         }
         let weight_rows = if let Some(values) = weights {
             let mut rows = Vec::new();
@@ -1529,7 +1511,7 @@ pub(crate) fn scan_surface_carriers(
                 let mut copy = Vec::new();
                 ctx.reserve_capacity(&mut copy, row.len(), "partition Parasolid surface weights")?;
                 copy.extend_from_slice(row);
-                rows.push(copy);
+                ctx.push_vec(&mut (rows), copy, "partition Parasolid surface weight rows")?;
             }
             Some(rows)
         } else {
@@ -1675,12 +1657,17 @@ mod tests {
     #[test]
     fn parasolid_curve_weights_refuse_collection_limit_before_allocation() {
         let bytes = crate::test_support::parasolid::rational_linear_nurbs_curve_carrier(170, 171);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 18;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = scan_curve_carriers(&ctx, &bytes, &mut Vec::new())
-            .expect_err("two weights exceed the remaining items");
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            "decode Parasolid curve weights",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+                scan_curve_carriers(&ctx, &bytes, &mut Vec::new())
+            },
+        );
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::CollectionItems
@@ -1781,12 +1768,17 @@ mod tests {
     #[test]
     fn parasolid_surface_weights_refuse_collection_limit_before_allocation() {
         let bytes = crate::test_support::parasolid::rational_nurbs_surface_carrier(180, 181, 10);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 126;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = scan_surface_carriers(&ctx, &bytes, &mut Vec::new())
-            .expect_err("four surface weights exceed the remaining items");
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            "decode Parasolid surface weights",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+                scan_surface_carriers(&ctx, &bytes, &mut Vec::new())
+            },
+        );
         assert!(
             matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -2027,8 +2019,9 @@ mod knot_work_tests {
     fn parasolid_knot_expansion_refuses_scan_and_emission_work() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         for (cap, operation) in [
-            (0, "scan Parasolid knot multiplicities"),
-            (2, "emit Parasolid expanded knots"),
+            // Two value visits precede two multiplicity visits and knot emission.
+            (2, "scan Parasolid knot multiplicities"),
+            (4, "emit Parasolid expanded knots"),
         ] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
@@ -2043,7 +2036,8 @@ mod knot_work_tests {
         }
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 6;
+        // Two value visits, two multiplicity visits, and four knot emissions.
+        policy.limits.max_work_units = 8;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         assert_eq!(
             super::expanded_knots(&ctx, &[0.0, 1.0], &[2, 2], 4).expect("scan and emission"),
