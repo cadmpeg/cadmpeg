@@ -397,7 +397,7 @@ dependencies = [
  "serde_json",
  "thiserror",
  "toml",
- "zstd",
+ "zstd 0.14.0",
 ]
 
 [[package]]

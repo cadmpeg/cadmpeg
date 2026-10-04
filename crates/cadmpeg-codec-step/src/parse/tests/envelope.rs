@@ -39,15 +39,7 @@ fn parser_enforces_the_part21_header_contract() {
     let cases = [
         (
             "ISO-10303-21;HEADER;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;",
-            "HEADER must begin with FILE_DESCRIPTION, FILE_NAME, and FILE_SCHEMA",
-        ),
-        (
-            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_SCHEMA(('AP242'));FILE_NAME('','',(''),(''),'','','');ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;",
-            "HEADER must begin with FILE_DESCRIPTION, FILE_NAME, and FILE_SCHEMA",
-        ),
-        (
-            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','','','','','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;",
-            "FILE_NAME has invalid parameters",
+            "HEADER has no FILE_SCHEMA",
         ),
         (
             "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242','ap242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;",
@@ -111,11 +103,6 @@ fn parser_validates_header_string_bounds_timestamps_and_schema_identifiers() {
 
     let invalid = [
         source(
-            "'name','2026-02-30T23:59:59',('author'),('organization'),'preprocessor','',''",
-            "'AP242'",
-            "",
-        ),
-        source(
             "'name','2026-02-28T23:59:59',('author'),('organization'),'preprocessor','',''",
             "'AP242 { 1 invalid_ }'",
             "",
@@ -140,11 +127,6 @@ fn parser_validates_header_string_bounds_timestamps_and_schema_identifiers() {
             "'AP-242'",
             "",
         ),
-        source(
-            "'name','2026-02-28T23:59:59',('author'),('organization'),'preprocessor','',''",
-            "'AP242'",
-            "SCHEMA_POPULATION((('part.step','2026-02-28T00:00:00Z','not*base64')));",
-        ),
     ];
     for source in invalid {
         assert!(crate::test_support::with_service_context(
@@ -154,15 +136,34 @@ fn parser_validates_header_string_bounds_timestamps_and_schema_identifiers() {
         .is_err());
     }
 
+    for source in [
+        source(
+            "'name','2026-02-30T23:59:59',('author'),('organization'),'preprocessor','',''",
+            "'AP242'",
+            "",
+        ),
+        source(
+            "'name','2026-02-28T23:59:59',('author'),('organization'),'preprocessor','',''",
+            "'AP242'",
+            "SCHEMA_POPULATION((('part.step','2026-02-28T00:00:00Z','not*base64')));",
+        ),
+    ] {
+        let (_, diagnostics) =
+            crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+                .expect("recover header metadata");
+        assert!(!diagnostics.is_empty());
+    }
+
     let long_description = "x".repeat(257);
     let long_description_source = format!(
         "ISO-10303-21;HEADER;FILE_DESCRIPTION(('{long_description}'),'4;2');FILE_NAME('name','2026-02-28T23:59:59',('author'),('organization'),'preprocessor','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;"
     );
-    assert!(crate::test_support::with_service_context(
+    let (_, diagnostics) = crate::test_support::with_service_context(
         long_description_source.as_bytes(),
-        crate::parse::parse_inner
+        crate::parse::parse_inner,
     )
-    .is_err());
+    .expect("recover long description");
+    assert!(!diagnostics.is_empty());
 
     let long_schema = "A".repeat(1025);
     let long_schema_source = source(
@@ -347,17 +348,14 @@ fn parser_does_not_admit_a_recovered_object_identifier_as_an_identifier() {
         let population_by_identifier = format!(
             "{header}FILE_POPULATION('{identifier}','INCLUDE_ALL_COMPATIBLE',('main'));ENDSEC;DATA('main',('AUTOMOTIVE_DESIGN_CC2'));#1=ITEM();ENDSEC;END-ISO-10303-21;"
         );
-        let error = crate::test_support::with_service_context(
+        let (_, diagnostics) = crate::test_support::with_service_context(
             population_by_identifier.as_bytes(),
             crate::parse::parse_inner,
         )
-        .expect_err("the object identifier is not an admitted governing schema");
-        assert!(
-            error
-                .to_string()
-                .contains("FILE_POPULATION has invalid parameters"),
-            "{identifier}: unexpected error: {error}"
-        );
+        .expect("recover population metadata");
+        assert!(diagnostics.iter().any(|diagnostic| diagnostic
+            .message
+            .contains("FILE_POPULATION has invalid parameters")));
 
         let by_name = format!(
             "{header}FILE_POPULATION('AUTOMOTIVE_DESIGN_CC2','INCLUDE_ALL_COMPATIBLE',('main'));ENDSEC;DATA('main',('AUTOMOTIVE_DESIGN_CC2'));#1=ITEM();ENDSEC;END-ISO-10303-21;"
@@ -417,10 +415,6 @@ fn parser_enforces_legacy_implementation_level_restrictions() {
         (
             "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'3;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;",
             "3;1 forbids ANCHOR and REFERENCE sections",
-        ),
-        (
-            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'3;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));SCHEMA_POPULATION(('all'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;",
-            "3;1 forbids SCHEMA_POPULATION in HEADER",
         ),
         (
             "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'3;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;END-ISO-10303-21;",
@@ -490,10 +484,6 @@ fn parser_enforces_edition_three_conformance_classes() {
         (
             "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<item>=#1;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;",
             "4;1 forbids ANCHOR and REFERENCE sections",
-        ),
-        (
-            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));SCHEMA_POPULATION((('part.step',$,$)));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;",
-            "4;1 forbids SCHEMA_POPULATION in HEADER",
         ),
         (
             "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;SIGNATURE;YWJjZA==ENDSEC;",
@@ -570,12 +560,14 @@ fn parser_validates_optional_header_entities_and_data_section_targets() {
         let source = format!(
             "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));{extra}ENDSEC;DATA('main',('AP242'));#1=ITEM();ENDSEC;END-ISO-10303-21;"
         );
-        let error =
+        let (_, diagnostics) =
             crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
-                .expect_err("invalid header entity");
+                .expect("recover header metadata");
         assert!(
-            error.to_string().contains(message),
-            "expected {message:?}, got {error}"
+            diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.message.contains(message)),
+            "expected {message:?}, got {diagnostics:?}"
         );
     }
 

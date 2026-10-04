@@ -4,6 +4,7 @@ mod budget;
 mod complex_order;
 mod controls;
 mod envelope;
+mod header_recovery;
 mod index;
 mod omitted;
 mod resource_limits;

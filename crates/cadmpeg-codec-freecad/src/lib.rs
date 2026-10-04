@@ -1176,6 +1176,13 @@ impl CodecBackend for FcstdCodec {
             "FCStd topology loss output",
         )?;
         losses.extend(topology_losses);
+        ctx.reserve_vec(
+            &mut losses,
+            scan.losses.len(),
+            "FCStd container loss output",
+        )?;
+        let summary_notes = container::summary_notes(ctx, &scan)?;
+        losses.extend(scan.losses);
         let dialect_losses = dialect::FcstdDialect::dialect_loss(dialects.primary());
         ctx.reserve_vec(
             &mut losses,
@@ -1188,7 +1195,6 @@ impl CodecBackend for FcstdCodec {
             &mut admitted_entities,
             "admit FCStd entities",
         )?;
-        let summary_notes = container::summary_notes(ctx, &scan)?;
         Ok(Decoded {
             ir,
             body: DecodeBody {

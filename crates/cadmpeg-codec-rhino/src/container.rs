@@ -20,6 +20,7 @@ use crate::chunks::{
     checked_count_bytes, checksum_children_through_class_end, chunk_at, direct_checksum_ranges,
     parse_header, validate_eof, verify_checksum, verify_checksum_ranges, ArchiveVersion,
     BoundedReader, ChecksumStatus, FramingError, TCODE_CRC, TCODE_ENDOFFILE, TCODE_ENDOFTABLE,
+    TCODE_SHORT,
 };
 use crate::instances::{parse_definitions, DefinitionScan};
 use crate::layout::file_header;
@@ -253,8 +254,8 @@ pub(crate) struct Scan<'a> {
     pub(crate) data: &'a [u8],
     /// Parsed archive version.
     pub(crate) archive: ArchiveVersion,
-    /// Comment chunk descriptor.
-    comment: Record,
+    /// Introductory comment offset, if the source contains a comment.
+    pub(crate) comment_offset: Option<usize>,
     /// Tables in source order.
     pub(crate) tables: Vec<Table>,
     /// All object records in source order.
@@ -1036,31 +1037,44 @@ fn scan_with_record_limit<'a>(
     let archive = header.archive_version;
     let archive_start = header.start_offset;
     let comment_offset = archive_start + file_header::LEN;
-    let comment = Record::from_chunk(
+    let first = Record::from_chunk(
         &chunk_at(data, comment_offset, data.len(), archive, false).map_err(framing_error)?,
     );
-    if comment.typecode != TCODE_COMMENT || comment.is_short() {
-        return Err(CodecError::Malformed(
-            "first post-header chunk is not a long comment".to_string(),
-        ));
-    }
     let mut warnings = Diagnostics::new();
-    if let Some(note) = checksum_warning(
-        ctx,
-        data,
-        comment.typecode,
-        comment_offset,
-        data.len(),
-        archive,
-    )? {
-        warnings.push_coded_admitted(
+    let (comment_offset, mut offset) = if first.typecode & !TCODE_SHORT == TCODE_COMMENT {
+        if first.is_short() {
+            warnings.push_admitted(
+                ctx,
+                format_args!(
+                    "introductory comment uses short framing; comment text is unavailable"
+                ),
+            )?;
+        }
+        if let Some(note) = checksum_warning(
             ctx,
-            crate::loss::RhinoLossCode::IntegrityFailure,
-            format_args!("{note}"),
+            data,
+            first.typecode,
+            comment_offset,
+            data.len(),
+            archive,
+        )? {
+            warnings.push_coded_admitted(
+                ctx,
+                crate::loss::RhinoLossCode::IntegrityFailure,
+                format_args!("{note}"),
+            )?;
+        }
+        (Some(comment_offset), first.range.end)
+    } else {
+        warnings.push_admitted(
+            ctx,
+            format_args!(
+                "introductory comment is absent; reading tables from the first post-header chunk"
+            ),
         )?;
-    }
+        (None, comment_offset)
+    };
     let mut tables = Vec::new();
-    let mut offset = comment.range.end;
     let mut last_rank = 0_u8;
     let mut saw_user = false;
     let mut saw_properties = false;
@@ -1093,7 +1107,7 @@ fn scan_with_record_limit<'a>(
             return Ok(Scan {
                 data,
                 archive,
-                comment,
+                comment_offset,
                 tables,
                 objects: all_objects,
                 opaque_records,
@@ -1573,12 +1587,14 @@ pub(crate) fn source_meta(
         SourceMetaDetail::ContainerOnly(scan) => {
             let mut attributes = BTreeMap::new();
             chunked_source_attributes(ctx, scan, &mut attributes)?;
-            insert_source_meta_attribute(
-                ctx,
-                &mut attributes,
-                "comment_offset",
-                format_args!("{}", scan.comment.range.start),
-            )?;
+            if let Some(offset) = scan.comment_offset {
+                insert_source_meta_attribute(
+                    ctx,
+                    &mut attributes,
+                    "comment_offset",
+                    format_args!("{offset}"),
+                )?;
+            }
             insert_source_meta_attribute(
                 ctx,
                 &mut attributes,

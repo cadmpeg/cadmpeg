@@ -669,6 +669,15 @@ supplies one or more unique schema identifier strings. The first schema is the
 governing schema for schema-population conformance, EXPRESS constant entity
 names, and EXPRESS constant value names. Each parameterized DATA section can
 name any schema in the list.
+
+CADIR decision: the reader locates header records by name. Missing, duplicate,
+reordered, or invalid descriptive metadata produces a loss and does not prevent
+DATA admission. A unique, readable `FILE_SCHEMA` remains required. An
+unverified implementation-level declaration uses the edition-3 class-3 grammar
+and reports that choice. A header metadata loss, an unverified implementation
+level, or an out-of-range schema object identifier retains every header record
+as exact source-fidelity bytes under `step:file:header#<byte-offset>`.
+
 `FILE_DESCRIPTION` strings and every `FILE_NAME` string attribute have an
 effective length of at most 256 characters. A non-empty `FILE_NAME` timestamp
 uses the complete extended calendar-date and time-of-day form

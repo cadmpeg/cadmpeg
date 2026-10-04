@@ -204,7 +204,9 @@ pub(crate) struct HeaderRecord {
     /// Header record parameters.
     pub(crate) parameters: Vec<Value>,
     /// Byte offset of the record name in the source.
-    offset: usize,
+    pub(crate) offset: usize,
+    /// Byte offset after the terminating semicolon.
+    pub(crate) end: usize,
 }
 
 /// One DATA section and its ordered population.
@@ -481,6 +483,8 @@ pub(crate) enum ParseError {
 /// A recoverable deviation from canonical Part 21 source syntax.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ParseDiagnosticKind {
+    /// Descriptive header metadata is nonconforming but readable.
+    HeaderMetadataNoncanonical,
     /// Complex-entity partials are not in their canonical alphabetical order.
     ComplexPartialsNotAlphabetical,
     /// A simple named carrier omits its inherited `name` value.
@@ -731,31 +735,25 @@ impl Parser<'_, '_, '_> {
                     name,
                     parameters,
                     offset,
+                    end: self.previous_end(),
                 },
                 "step_parse_header_records",
             )?;
         }
         self.name("ENDSEC")?;
         self.punct(&TokenKind::Semicolon)?;
-        let (header_admission, header_diagnostic) = match validate_header(&header, self.budget) {
+        let (header_admission, header_diagnostics) = match validate_header(&header, self.budget) {
             Ok(admitted) => admitted,
             Err(ValidationError::Invalid(message)) => return self.err(message),
             Err(ValidationError::Resource(error)) => return Err(ParseError::Resource(error)),
         };
         let implementation_level = header_admission.implementation_level.level();
-        if let Some(diagnostic) = header_diagnostic {
-            self.budget
-                .push_vec(&mut self.diagnostics, diagnostic, "step_parse_diagnostics")?;
-        }
-        for diagnostic in schema_object_identifier_diagnostics(
-            &header_admission.schema_identifiers,
-            header[2].offset,
-            self.budget,
-        ) {
-            let diagnostic = diagnostic?;
-            self.budget
-                .push_vec(&mut self.diagnostics, diagnostic, "step_parse_diagnostics")?;
-        }
+        self.budget.reserve_vec(
+            &mut self.diagnostics,
+            header_diagnostics.len(),
+            "step_parse_diagnostics",
+        )?;
+        self.diagnostics.extend(header_diagnostics);
         let (schema_names_for_matching, _schema_names_storage) = self
             .budget
             .with_scoped_storage("step schema matching storage", || {
@@ -772,7 +770,19 @@ impl Parser<'_, '_, '_> {
                 )
             }) {
             Ok(references) => references,
-            Err(ValidationError::Invalid(message)) => return self.err(message),
+            Err(ValidationError::Invalid(message)) => {
+                push_header_metadata_diagnostic(
+                    &mut self.diagnostics,
+                    header.first().map_or(0, |record| record.offset),
+                    format_args!("{message}"),
+                    self.budget,
+                )?;
+                (
+                    Vec::new(),
+                    self.budget
+                        .reserve_scoped(0, "step header reference storage")?,
+                )
+            }
             Err(ValidationError::Resource(error)) => return Err(ParseError::Resource(error)),
         };
         let mut anchors = Vec::new();
@@ -965,7 +975,12 @@ impl Parser<'_, '_, '_> {
         if let Err(message) =
             validate_header_data_references(&header_data_references, &data_section_names)
         {
-            return self.err(message);
+            push_header_metadata_diagnostic(
+                &mut self.diagnostics,
+                header.first().map_or(0, |record| record.offset),
+                format_args!("{message}"),
+                self.budget,
+            )?;
         }
         self.name("END-ISO-10303-21")?;
         self.punct(&TokenKind::Semicolon)?;
@@ -1492,58 +1507,165 @@ fn invalid<T>(message: &'static str) -> Result<T, ValidationError> {
     Err(ValidationError::Invalid(message))
 }
 
+fn push_header_metadata_diagnostic(
+    diagnostics: &mut Vec<ParseDiagnostic>,
+    offset: usize,
+    message: std::fmt::Arguments<'_>,
+    budget: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    let message = budget.format_retained(message, "step_header_metadata_diagnostic_text")?;
+    budget.push_vec(
+        diagnostics,
+        ParseDiagnostic {
+            offset,
+            kind: ParseDiagnosticKind::HeaderMetadataNoncanonical,
+            message,
+        },
+        "step_parse_diagnostics",
+    )
+}
+
+/// Admit interpretation fields independently of header metadata conformance.
 fn validate_header(
     header: &[HeaderRecord],
     budget: &DecodeContext<'_>,
-) -> Result<(HeaderAdmission, Option<ParseDiagnostic>), ValidationError> {
+) -> Result<(HeaderAdmission, Vec<ParseDiagnostic>), ValidationError> {
     const REQUIRED: [&str; 3] = ["FILE_DESCRIPTION", "FILE_NAME", "FILE_SCHEMA"];
-    let [description_record, file_name_record, schema_record, ..] = header else {
-        return invalid("HEADER must begin with FILE_DESCRIPTION, FILE_NAME, and FILE_SCHEMA");
+    let mut diagnostics = Vec::new();
+    let offset = header.first().map_or(0, |record| record.offset);
+    let mut schemas = header.iter().filter(|record| record.name == "FILE_SCHEMA");
+    let Some(schema_record) = schemas.next() else {
+        return invalid("HEADER has no FILE_SCHEMA");
     };
-    if [description_record, file_name_record, schema_record]
-        .iter()
-        .zip(REQUIRED)
-        .any(|(record, expected)| record.name != expected)
-    {
-        return invalid("HEADER must begin with FILE_DESCRIPTION, FILE_NAME, and FILE_SCHEMA");
+    if schemas.next().is_some() {
+        return invalid("HEADER contains duplicate FILE_SCHEMA");
     }
-    if REQUIRED
-        .iter()
-        .any(|name| header.iter().filter(|record| record.name == *name).count() != 1)
+    if header.len() < REQUIRED.len()
+        || header
+            .iter()
+            .zip(REQUIRED)
+            .any(|(record, expected)| record.name != expected)
     {
-        return invalid("HEADER contains a duplicate required entity");
+        push_header_metadata_diagnostic(&mut diagnostics, offset, format_args!("HEADER does not begin with FILE_DESCRIPTION, FILE_NAME, and FILE_SCHEMA; records read by name"), budget)?;
     }
+    let mut descriptions = header
+        .iter()
+        .filter(|record| record.name == "FILE_DESCRIPTION");
+    let description = descriptions.next();
+    let text = match (description, descriptions.next()) {
+        (Some(record), None) => match record.parameters.get(1) {
+            Some(Value::String(bytes)) => {
+                decoded_bytes(bytes, ImplementationLevel::LegacyEdition1, budget)?
+                    .unwrap_or_default()
+            }
+            _ => String::new(),
+        },
+        _ => String::new(),
+    };
+    let declaration = DeclaredImplementationLevel::new(text);
+    if declaration.is_unverified() {
+        let message = budget.format_retained(format_args!("FILE_DESCRIPTION implementation level {:?} has no implemented grammar; parsed with the 4;3 grammar", declaration.text()), "step_implementation_level_diagnostic_text")?;
+        budget.push_vec(
+            &mut diagnostics,
+            ParseDiagnostic {
+                offset: description.map_or(offset, |record| record.offset),
+                kind: ParseDiagnosticKind::ImplementationLevelUnverified,
+                message,
+            },
+            "step_parse_diagnostics",
+        )?;
+    }
+    let implementation_level = declaration.level();
+    for name in ["FILE_DESCRIPTION", "FILE_NAME"] {
+        let count = header.iter().filter(|record| record.name == name).count();
+        if count != 1 {
+            push_header_metadata_diagnostic(
+                &mut diagnostics,
+                offset,
+                format_args!("HEADER contains {count} {name} records; expected one"),
+                budget,
+            )?;
+        }
+    }
+    for record in header {
+        let result = match record.name.as_str() {
+            "FILE_DESCRIPTION" => {
+                validate_file_description(&record.parameters, implementation_level, budget)
+            }
+            "FILE_NAME" => validate_file_name(&record.parameters, implementation_level, budget),
+            _ => continue,
+        };
+        match result {
+            Ok(()) => {}
+            Err(ValidationError::Invalid(message)) => push_header_metadata_diagnostic(
+                &mut diagnostics,
+                record.offset,
+                format_args!("{message}"),
+                budget,
+            )?,
+            Err(error @ ValidationError::Resource(_)) => return Err(error),
+        }
+    }
+    let schema = &schema_record.parameters;
+    let Some(Value::List(identifiers)) = schema.first() else {
+        return invalid("FILE_SCHEMA must contain one schema identifier list");
+    };
+    if schema.len() != 1 || identifiers.is_empty() {
+        return invalid("FILE_SCHEMA has invalid or duplicate schema identifiers");
+    }
+    let mut admitted = Vec::new();
+    let mut normalized_identifiers = BTreeSet::new();
+    for value in identifiers {
+        let Value::String(bytes) = value else {
+            return invalid("FILE_SCHEMA has invalid or duplicate schema identifiers");
+        };
+        let Some(identifier) = decoded_bytes(bytes, implementation_level, budget)? else {
+            return invalid("FILE_SCHEMA has invalid or duplicate schema identifiers");
+        };
+        let trimmed = identifier.trim();
+        budget.charge_retained(
+            u64_from_index(trimmed.len()),
+            "step_schema_identifier_normalized",
+        )?;
+        let normalized = trimmed.to_ascii_uppercase();
+        if !budget.insert_btree_set(
+            &mut normalized_identifiers,
+            normalized,
+            "step_schema_identifier_names",
+        )? {
+            return invalid("FILE_SCHEMA has invalid or duplicate schema identifiers");
+        }
+        let Some(identifier) = AdmittedSchemaIdentifier::admit(identifier) else {
+            return invalid("FILE_SCHEMA has invalid or duplicate schema identifiers");
+        };
+        budget
+            .push_vec(&mut admitted, identifier, "step_schema_identifiers")
+            .map_err(ValidationError::Resource)?;
+    }
+    for diagnostic in schema_object_identifier_diagnostics(&admitted, schema_record.offset, budget)
+    {
+        budget.push_vec(&mut diagnostics, diagnostic?, "step_parse_diagnostics")?;
+    }
+    Ok((
+        HeaderAdmission {
+            implementation_level: declaration,
+            schema_identifiers: admitted,
+        },
+        diagnostics,
+    ))
+}
 
-    let [description_strings, implementation_level_value @ Value::String(implementation_level_bytes)] =
-        description_record.parameters.as_slice()
-    else {
+fn validate_file_description(
+    description: &[Value],
+    implementation_level: ImplementationLevel,
+    budget: &DecodeContext<'_>,
+) -> Result<(), ValidationError> {
+    let [description_strings, implementation_level_value @ Value::String(_)] = description else {
         return invalid("FILE_DESCRIPTION has invalid parameters");
     };
     if !is_string_list(Some(description_strings)) {
         return invalid("FILE_DESCRIPTION has invalid parameters");
     }
-    let Some(implementation_level_text) = decoded_bytes(
-        implementation_level_bytes,
-        ImplementationLevel::LegacyEdition1,
-        budget,
-    )?
-    else {
-        return invalid("FILE_DESCRIPTION has an unsupported implementation level");
-    };
-    let declaration = DeclaredImplementationLevel::new(implementation_level_text);
-    let implementation_diagnostic = if declaration.is_unverified() {
-        Some(ParseDiagnostic {
-            offset: description_record.offset,
-            kind: ParseDiagnosticKind::ImplementationLevelUnverified,
-            message: budget.format_retained(format_args!(
-                    "FILE_DESCRIPTION implementation level {:?} has no implemented grammar; parsed with the 4;3 grammar",
-                    declaration.text()
-                ), "step_implementation_level_diagnostic_text")?,
-        })
-    } else {
-        None
-    };
-    let implementation_level = declaration.level();
     if !is_decodable_string_list(Some(description_strings), implementation_level, budget)?
         || !is_decodable_string(implementation_level_value, implementation_level, budget)?
     {
@@ -1560,9 +1682,17 @@ fn validate_header(
         return invalid("FILE_DESCRIPTION contains a string longer than 256 characters");
     }
 
+    Ok(())
+}
+
+fn validate_file_name(
+    file_name: &[Value],
+    implementation_level: ImplementationLevel,
+    budget: &DecodeContext<'_>,
+) -> Result<(), ValidationError> {
     // Producer metadata after the author and organization lists may be unset.
     let [file_name_value, file_name_timestamp, authors, organizations, preprocessor, originating_system, authorization] =
-        file_name_record.parameters.as_slice()
+        file_name
     else {
         return invalid("FILE_NAME has invalid parameters");
     };
@@ -1603,49 +1733,7 @@ fn validate_header(
         return invalid("FILE_NAME has an invalid timestamp");
     }
 
-    let schema = &schema_record.parameters;
-    let Some(Value::List(identifiers)) = schema.first() else {
-        return invalid("FILE_SCHEMA must contain one schema identifier list");
-    };
-    if schema.len() != 1 || identifiers.is_empty() {
-        return invalid("FILE_SCHEMA has invalid or duplicate schema identifiers");
-    }
-    let mut admitted = Vec::new();
-    let mut normalized_identifiers = BTreeSet::new();
-    for value in identifiers {
-        let Value::String(bytes) = value else {
-            return invalid("FILE_SCHEMA has invalid or duplicate schema identifiers");
-        };
-        let Some(identifier) = decoded_bytes(bytes, implementation_level, budget)? else {
-            return invalid("FILE_SCHEMA has invalid or duplicate schema identifiers");
-        };
-        let trimmed = identifier.trim();
-        budget.charge_retained(
-            u64_from_index(trimmed.len()),
-            "step_schema_identifier_normalized",
-        )?;
-        let normalized = trimmed.to_ascii_uppercase();
-        if !budget.insert_btree_set(
-            &mut normalized_identifiers,
-            normalized,
-            "step_schema_identifier_names",
-        )? {
-            return invalid("FILE_SCHEMA has invalid or duplicate schema identifiers");
-        }
-        let Some(identifier) = AdmittedSchemaIdentifier::admit(identifier) else {
-            return invalid("FILE_SCHEMA has invalid or duplicate schema identifiers");
-        };
-        budget
-            .push_vec(&mut admitted, identifier, "step_schema_identifiers")
-            .map_err(ValidationError::Resource)?;
-    }
-    Ok((
-        HeaderAdmission {
-            implementation_level: declaration,
-            schema_identifiers: admitted,
-        },
-        implementation_diagnostic,
-    ))
+    Ok(())
 }
 
 /// One diagnostic for each `FILE_SCHEMA` identifier that the header admits
@@ -1703,7 +1791,13 @@ fn validate_header_sections(
     let mut schema_population_seen = false;
     let mut language_sections = BTreeSet::new();
     let mut context_sections = BTreeSet::new();
-    for record in header.iter().skip(3) {
+    for record in header {
+        if matches!(
+            record.name.as_str(),
+            "FILE_DESCRIPTION" | "FILE_NAME" | "FILE_SCHEMA"
+        ) {
+            continue;
+        }
         if record.name.starts_with('!') {
             user_defined = true;
             continue;

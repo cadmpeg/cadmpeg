@@ -74,6 +74,12 @@ pub(crate) fn signature(index: usize) -> UnknownId {
     UnknownId::from(Identity::compose(&namespace, IdentityKey::from(index)))
 }
 
+/// Retained nonconforming header record, keyed by source byte offset.
+pub(crate) fn header(offset: usize) -> UnknownId {
+    let namespace = IdentityNamespace::from_components(&FORMAT, &SCOPE_FILE, kind!("header"));
+    UnknownId::from(Identity::compose(&namespace, IdentityKey::from(offset)))
+}
+
 /// DATA-section geometry or opaque kind: `step:data:{kind}#{key}`.
 #[must_use]
 pub(crate) fn data(kind: &IdentityKind, key: impl Into<IdentityKey>) -> Identity {

@@ -23,6 +23,32 @@ CADIR input parses directly into `CadIr`. The parser accepts exactly IR version 
 
 A successful dump is not a checked model.
 
+## Source recovery
+
+Default decoding attempts every readable part of the source. A format's
+conformance requirement is not, by itself, a reason to refuse the document.
+Absent, reordered, or invalid descriptive metadata produces a diagnostic.
+Retain nonconforming source content through the existing fidelity path. Do not
+invent a replacement author, date, or producer version.
+
+Distinguish descriptive metadata from fields used to interpret bytes or model
+values. A recovery must state which grammar, unit, or value it uses. If a field
+cannot be interpreted, omit the smallest dependent record or component whose
+boundary is known and continue with independent content. Stop when the parser
+cannot establish boundaries or identities needed for further decoding, or a
+resource limit is reached. Do not convert every parse error into a warning.
+
+Use codec-local diagnostics and loss codes. Keep conformance checks that provide
+useful diagnostics, but run them outside the fatal admission path when they do
+not control interpretation. No per-format strictness feature is needed. Existing
+explicit loss policies remain separate from default recovery.
+
+Header recovery uses this distinction in STEP, IGES, Rhino, and FreeCAD. STEP
+reads header records by name and retains nonconforming metadata; its schema
+admission remains separate. IGES resolves Global fields individually after it
+has read the delimiters. Rhino can start its table scan without a comment.
+FreeCAD producer-version metadata does not select the persistence schema.
+
 ## Decode session
 
 The safe consumer trait is `Codec` (`inspect` / `decode`). Format crates implement the raw hook trait `CodecBackend` (`inspect_impl` / `decode_impl`). The `Codec` blanket wrapper acquires the root input under `DecodePolicy` limits, records the container-only request, runs the backend, and finalizes a `DecodeContext`. Its strict gate evaluates full-decode reports only: a container-only report keeps its losses and is never refused by that gate.

@@ -549,13 +549,15 @@ fn parse_document_graph(document: &str) -> Result<super::Graph, cadmpeg_core::Co
     let policy = cadmpeg_core::decode::DecodePolicy::default();
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy)?;
-    let (_facts, schema_version) = crate::container::parse_document(&ctx, document.as_bytes())
-        .map_err(|error| match error {
-            cadmpeg_core::CodecError::WrongFormat(message) => {
-                cadmpeg_core::CodecError::Malformed(message)
-            }
-            error => error,
-        })?;
+    let (_facts, schema_version) =
+        crate::container::parse_document(&ctx, document.as_bytes(), &mut Vec::new()).map_err(
+            |error| match error {
+                cadmpeg_core::CodecError::WrongFormat(message) => {
+                    cadmpeg_core::CodecError::Malformed(message)
+                }
+                error => error,
+            },
+        )?;
     super::parse_with_context(document.as_bytes(), &schema_version, &ctx)
 }
 
