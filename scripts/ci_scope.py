@@ -70,6 +70,7 @@ def select(root: Path, paths: list[str], *, full: bool = False) -> dict:
     if full:
         affected = names.copy()
         fuzz = True
+    cli_changed = bool(affected & {'cadmpeg', 'cadmpeg-registry'})
     pending = list(affected)
     while pending:
         for dependent in reverse[pending.pop()]:
@@ -81,7 +82,7 @@ def select(root: Path, paths: list[str], *, full: bool = False) -> dict:
         'rust': bool(affected),
         'features': bool(affected) or fuzz,
         'schema': bool(affected & {'cadmpeg-core', 'cadmpeg-ir', 'cadmpeg-asm'}),
-        'iges': 'cadmpeg-codec-iges' in affected or 'cadmpeg' in affected,
+        'iges': 'cadmpeg-codec-iges' in affected or cli_changed,
         'full': full,
     }
 

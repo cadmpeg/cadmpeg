@@ -3,7 +3,7 @@ name: Install repository Rust toolchain
 description: Install the compiler declared in rust-toolchain.toml.
 inputs:
   components:
-    description: Additional rustup components
+    description: Additional rustup components (comma separated)
     default: ''
 runs:
   using: composite
@@ -11,11 +11,24 @@ runs:
     - name: Read pinned toolchain
       id: toolchain
       shell: bash
+      env:
+        EXTRA_COMPONENTS: ${{ inputs.components }}
       run: |
-        channel="$(python3 -c 'import tomllib; print(tomllib.load(open("rust-toolchain.toml", "rb"))["toolchain"]["channel"])')"
-        echo "channel=$channel" >> "$GITHUB_OUTPUT"
+        python3 - <<'PYTHON'
+        import os
+        import tomllib
+        toolchain = tomllib.load(open("rust-toolchain.toml", "rb"))["toolchain"]
+        components = list(toolchain.get("components", []))
+        for component in os.environ["EXTRA_COMPONENTS"].split(","):
+            component = component.strip()
+            if component and component not in components:
+                components.append(component)
+        with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+            output.write("channel=" + toolchain["channel"] + "\n")
+            output.write("components=" + ",".join(components) + "\n")
+        PYTHON
     - name: Install pinned toolchain
       uses: dtolnay/rust-toolchain@master
       with:
         toolchain: ${{ steps.toolchain.outputs.channel }}
-        components: ${{ inputs.components }}
+        components: ${{ steps.toolchain.outputs.components }}

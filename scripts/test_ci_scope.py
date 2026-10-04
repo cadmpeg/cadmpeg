@@ -38,6 +38,13 @@ class ScopeTests(unittest.TestCase):
         self.assertTrue(scope['iges'])
         self.assertTrue(scope['features'])
 
+    def test_other_codec_does_not_repeat_bounded_iges_gate(self):
+        scope = select(ROOT, ['crates/cadmpeg-codec-rhino/src/reader.rs'])
+        self.assertIn('cadmpeg', scope['packages'])
+        self.assertFalse(scope['iges'])
+        for owner in ('cadmpeg', 'cadmpeg-registry'):
+            self.assertTrue(select(ROOT, [f'crates/{owner}/src/main.rs'])['iges'])
+
     def test_core_selects_every_codec(self):
         scope = select(ROOT, ['crates/cadmpeg-core/src/decode/context.rs'])
         full = select(ROOT, [], full=True)

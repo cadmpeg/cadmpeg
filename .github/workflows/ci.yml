@@ -187,8 +187,8 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Unit and integration tests
-        # Builds the full workspace (libs, bins, test harnesses) before
-        # running, so a separate `cargo build` step would be redundant.
+        # Compile selected packages and their dependencies before running.
+        # A separate `cargo build` step would repeat that compilation.
         run: python3 scripts/ci_cargo.py test --lib --bins --tests --no-fail-fast
 
       - name: Bounded IGES decode and round-trip gate
@@ -244,10 +244,8 @@ jobs:
 
       - name: Schema feature
         if: needs.changes.outputs.schema == 'true'
-        # `schema` is off by default, so the other jobs never build the
-        # `JsonSchema` derives. This step is the only thing that compiles them
-        # and runs the schema assertions, so a derive that stops matching its
-        # type fails here rather than at release time.
+        # The CLI enables IR schemas. This gate also checks schema assertions
+        # and the core/assembly feature combinations without CLI defaults.
         run: |
           set -euo pipefail
           cargo test -q -p cadmpeg-ir -p cadmpeg-asm --features cadmpeg-ir/schema,cadmpeg-asm/schema --lib
@@ -262,7 +260,7 @@ jobs:
         # every harness and seed binary, and `--keep-going` reports all of them
         # rather than stopping at the first.
         run: |
-          cargo check --manifest-path crates/cadmpeg-fuzz/Cargo.toml \
+          cargo check -q --manifest-path crates/cadmpeg-fuzz/Cargo.toml \
             --all-targets --keep-going
 
       - name: Fuzz crate tests
