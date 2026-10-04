@@ -9,6 +9,36 @@ fn context(arena: &DecodeArena, max_collection_items: u64) -> DecodeContext<'_> 
 }
 
 #[test]
+fn unresolved_mesh_attribute_source_scan_refuses_work_after_valid_loss() {
+    let unresolved = std::collections::BTreeMap::from([(
+        crate::paramesh::MeshAttributeDomain::Vertex,
+        1,
+    )]);
+    crate::test_support::with_decode_context(|ctx| {
+        let mut report = cadmpeg_ir::codec::DecodeBody::new(
+            cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
+        );
+        super::super::report_unresolved_mesh_attributes(ctx, &mut report, &unresolved)
+            .expect("valid unresolved mesh attribute");
+        assert_eq!(report.losses.len(), 1);
+    });
+
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan F3D unresolved mesh attributes",
+        0,
+        |ctx| {
+            let mut report = cadmpeg_ir::codec::DecodeBody::new(
+                cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
+            );
+            super::super::report_unresolved_mesh_attributes(ctx, &mut report, &unresolved)
+        },
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "scan F3D unresolved mesh attributes"));
+}
+
+#[test]
 fn related_record_index_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let ctx = context(&arena, 0);

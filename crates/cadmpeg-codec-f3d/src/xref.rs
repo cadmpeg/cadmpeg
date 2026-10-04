@@ -908,7 +908,7 @@ fn select_component_insert_transforms(
         ctx.push_vec(
             &mut transforms,
             construction.transform().rows(),
-            "collect F3D component insert transforms",
+            "select F3D component insert transforms",
         )?;
     }
     Ok(transforms)
@@ -1338,7 +1338,11 @@ fn repeated_target_occurrence_placement_details(
         36..=256,
         "retain F3D UTF-16 string"
     )?);
-    if !final_role.eq_ignore_ascii_case(&role) {
+    if !decode.eq_ignore_ascii_case(
+        &final_role,
+        &role,
+        "compare F3D repeated-target placement roles",
+    )? {
         return Ok(None);
     }
     at = next;
@@ -1511,7 +1515,11 @@ fn grouped_component_insert_identity_with_layout<'a>(
         let (class_tag, after_tag) =
             admitted_option!(lp_ascii_filtered_view(ctx, bytes, carrier_at, 3..=3, u8::is_ascii_digit));
         let carrier_span = relation_at.checked_sub(carrier_at)?;
-        if class_tag != expected_class_tag
+        if !admitted_value!(ctx.equal(
+            class_tag,
+            expected_class_tag,
+            "compare F3D grouped component-insert class tag",
+        ))
             || after_tag != carrier_at + 7
             || View::u32_le_at(bytes, after_tag) != Some(carrier_record_index)
             || (expected_class_tag != "369"
@@ -1618,7 +1626,13 @@ fn grouped_component_insert_identity_with_layout<'a>(
         }
         at += 1;
         let (repeated_type_guid, next) = admitted_option!(lp_ascii_strict(ctx, bytes, at, 36..=36));
-        if !is_guid_relaxed(repeated_type_guid) || !repeated_type_guid.eq_ignore_ascii_case(type_guid) {
+        if !is_guid_relaxed(repeated_type_guid)
+            || !admitted_value!(ctx.eq_ignore_ascii_case(
+                repeated_type_guid,
+                type_guid,
+                "compare F3D repeated component-insert type GUID",
+            ))
+        {
             return None;
         }
         at = next;
@@ -1939,7 +1953,7 @@ fn occurrence_path(
     }
     at += 4;
     let mut link_names = Vec::new();
-    for _ in 0..count {
+    for _ in decode.admit_iter(&(0..count), "scan F3D xref occurrence links")? {
         let element = {
             let ctx = decode;
             take_reference_charged(ctx, body, &mut at)?
@@ -1987,7 +2001,14 @@ fn placement_tail(
             return None;
         }
         at += 4;
-        for _ in 0..count {
+        let references = match ctx.admit_iter(
+            &(0..count),
+            "scan F3D xref placement tail references",
+        ) {
+            Ok(references) => references,
+            Err(error) => return Some(Err(CodecError::ResourceLimit(error))),
+        };
+        for _ in references {
             match take_reference(ctx, body, &mut at) {
                 Ok(Some(_)) => {}
                 Ok(None) => return None,

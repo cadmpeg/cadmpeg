@@ -274,6 +274,22 @@ pub(crate) struct MeshTriangleGroup {
     pub(crate) triangles: Vec<u32>,
 }
 
+#[cfg(test)]
+pub(crate) fn triangle_domain_test_attribute(
+    ctx: &DecodeContext<'_>,
+) -> Result<MeshAttribute, CodecError> {
+    let values = ctx.copy_retained(&[0; 4], "build triangle-domain test values")?;
+    let elements = MeshElements::TriangleDelta(TriangleDeltaStream::new(ctx, values)?);
+    Ok(MeshAttribute {
+        role: 4,
+        resource_guid: None,
+        authored_name: None,
+        groups: UniqueFaceGroups::default(),
+        elements,
+        addressing: MeshAttributeAddressing::Triangle,
+    })
+}
+
 impl MeshAttribute {
     /// The encoded element width in bytes.
     pub(crate) fn item_size(&self) -> Option<u32> {

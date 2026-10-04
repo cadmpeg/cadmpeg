@@ -453,7 +453,7 @@ fn patch_instance_colors(
                     "GenericSchema" => {
                         position
                             + 112
-                            + generic_connection_delta(record, position).ok_or_else(|| {
+                            + generic_connection_delta(ctx, record, position)?.ok_or_else(|| {
                                 CodecError::Malformed(
                                     "Protein GenericSchema connection list is malformed".into(),
                                 )
@@ -514,7 +514,7 @@ fn patch_instance_colors(
                     ("GenericSchema", "reflectivity_at_0deg") => {
                         position
                             + 175
-                            + generic_connection_delta(record, position).ok_or_else(|| {
+                            + generic_connection_delta(ctx, record, position)?.ok_or_else(|| {
                                 CodecError::Malformed(
                                     "Protein GenericSchema connection list is malformed".into(),
                                 )
@@ -523,7 +523,7 @@ fn patch_instance_colors(
                     ("GenericSchema", "refraction_index") => {
                         position
                             + 201
-                            + generic_connection_delta(record, position).ok_or_else(|| {
+                            + generic_connection_delta(ctx, record, position)?.ok_or_else(|| {
                                 CodecError::Malformed(
                                     "Protein GenericSchema connection list is malformed".into(),
                                 )
@@ -2235,7 +2235,7 @@ fn decode_design_object_types<'ctx, 'a>(
                     position += 1;
                     continue;
                 }
-                for _ in 0..count {
+                for _ in ctx.admit_iter(&(0..count), "scan F3D Design object-type ids")? {
                     let Some(id) = view.u64_le() else {
                         break;
                     };
@@ -2295,7 +2295,7 @@ fn decode_act_channels<'ctx, 'a>(
                 let mut cursor = after_tag + 18;
                 let mut channels = BTreeMap::new();
                 let mut valid = true;
-                for _ in 0..count {
+                for _ in ctx.admit_iter(&(0..count), "scan F3D ACT channel-group rows")? {
                     let Some((name, after_name)) = lp_ascii_printable_charged(ctx, bytes, cursor)?
                     else {
                         valid = false;
@@ -2651,7 +2651,7 @@ fn consume_catalog_strings(
         .checked_sub(*position)
         .and_then(|left| bounded_len(u64::from(count), 4, left))
         .ok_or_else(|| malformed_definition_catalog_record("string count", *position))?;
-    for _ in 0..count {
+    for _ in ctx.admit_iter(&(0..count), "scan F3D catalog strings")? {
         take_lp_utf8_charged(ctx, record, position)?
             .ok_or_else(|| malformed_definition_catalog_record("string", *position))?;
     }
@@ -2723,7 +2723,7 @@ fn decode_fixed_record(
     };
     let color = match schema.as_str() {
         "GenericSchema" => {
-            let Some(delta) = generic_connection_delta(record, position) else {
+            let Some(delta) = generic_connection_delta(ctx, record, position)? else {
                 return Ok(None);
             };
             fixed_rgba(ctx, record, position + 112 + delta)?
@@ -2738,7 +2738,7 @@ fn decode_fixed_record(
     };
     let mut properties = BTreeMap::new();
     if schema == "GenericSchema" {
-        let Some(delta) = generic_connection_delta(record, position) else {
+        let Some(delta) = generic_connection_delta(ctx, record, position)? else {
             return Ok(None);
         };
         fixed_tagged_scalar(
@@ -2837,25 +2837,42 @@ fn fixed_rgba(
     decoded_color(ctx, values)
 }
 
-fn generic_connection_delta(record: &[u8], value_block: usize) -> Option<usize> {
-    let slot = value_block.checked_add(102)?;
+fn generic_connection_delta(
+    ctx: &DecodeContext<'_>,
+    record: &[u8],
+    value_block: usize,
+) -> Result<Option<usize>, CodecError> {
+    let Some(slot) = value_block.checked_add(102) else {
+        return Ok(None);
+    };
     match record.get(slot) {
-        Some(0) => Some(0),
-        Some(1) if slot + 6 <= record.len() => {
-            let count = index_from_u32(View::u32_le_at(record, slot + 2)?);
+        Some(0) => Ok(Some(0)),
+        Some(1) if slot.checked_add(6).is_some_and(|end| end <= record.len()) => {
+            let Some(count) = View::u32_le_at(record, slot + 2).map(index_from_u32) else {
+                return Ok(None);
+            };
             if count > 8 {
-                return None;
+                return Ok(None);
             }
             let mut position = slot + 6;
-            for _ in 0..count {
-                let length = index_from_u32(View::u32_le_at(record, position)?);
-                position += 4;
-                record.get(position..position + length)?;
-                position += length;
+            for _ in ctx.admit_iter(&(0..count), "scan F3D GenericSchema connections")? {
+                let Some(length) = View::u32_le_at(record, position).map(index_from_u32) else {
+                    return Ok(None);
+                };
+                let Some(start) = position.checked_add(4) else {
+                    return Ok(None);
+                };
+                let Some(end) = start.checked_add(length) else {
+                    return Ok(None);
+                };
+                if record.get(start..end).is_none() {
+                    return Ok(None);
+                }
+                position = end;
             }
-            position.checked_sub(slot + 1)
+            Ok(position.checked_sub(slot + 1))
         }
-        _ => None,
+        _ => Ok(None),
     }
 }
 

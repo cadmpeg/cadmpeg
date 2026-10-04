@@ -657,12 +657,28 @@ fn visual_preset_fallback_requires_one_record() {
 fn generic_connection_delta_rejects_unknown_and_truncated_forms() {
     let mut record = vec![0; 120];
     record[102] = 2;
-    assert_eq!(super::generic_connection_delta(&record, 0), None);
+    assert_eq!(
+        super::generic_connection_delta(
+            &cadmpeg_test_support::service_decode_context(),
+            &record,
+            0,
+        )
+        .unwrap(),
+        None
+    );
 
     record[102] = 1;
     record[104..108].copy_from_slice(&1u32.to_le_bytes());
     record[108..112].copy_from_slice(&16u32.to_le_bytes());
-    assert_eq!(super::generic_connection_delta(&record, 0), None);
+    assert_eq!(
+        super::generic_connection_delta(
+            &cadmpeg_test_support::service_decode_context(),
+            &record,
+            0,
+        )
+        .unwrap(),
+        None
+    );
 }
 
 #[test]
