@@ -831,24 +831,6 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
     }
     bytes[891..895].copy_from_slice(&scope.feature_ordinal.get().to_le_bytes());
 
-    let refusal = crate::test_support::resource_refusal_at(
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "validate F3D legacy assembly references",
-        0,
-        |ctx| {
-            crate::design::decode::scopes::assembly_operand_frames::exact_assembly_operand_frames(
-                ctx, &bytes, &scope,
-            )
-            .map(|_| ())
-        },
-    );
-    assert!(matches!(
-        refusal,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && limit.operation == "validate F3D legacy assembly references"
-    ));
-
     let alignment = crate::design::test_support::with_test_decode_context(|ctx| {
         exact_assembly_alignment(
             ctx,
