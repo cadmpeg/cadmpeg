@@ -2756,7 +2756,7 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
         self.stack.pop();
         let resolved = resolved?;
         if let Value::Resource(uri) = &resolved {
-            return if uri.contains('#') {
+            return if self.budget.contains_text(uri.as_str(), "#", "STEP resolved URI fragment containment").map_err(ResolveError::Resource)? {
                 self.clone_leaf(original)
             } else {
                 self.clone_leaf(&Value::Omitted)

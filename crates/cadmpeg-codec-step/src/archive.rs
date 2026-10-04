@@ -63,7 +63,7 @@ pub(crate) fn open_root<'a>(
 ) -> Result<OpenedRoot<'a>, CodecError> {
     let archive = ArchiveSnapshot::new(ctx, root)?;
     for entry in ctx.admit_iter(archive.entries(), "STEP open root borrowed traversal").map_err(cadmpeg_core::CodecError::from)? {
-        validate_entry_name(&entry.name)?;
+        validate_entry_name(ctx, &entry.name)?;
         if entry.uses_utf8_name_encoding() {
             return Err(CodecError::Malformed(
                 "STEP ZIP uses prohibited Unicode filename support".into(),
@@ -337,11 +337,11 @@ fn extension_is(ctx: &DecodeContext<'_>, name: &str, expected: &str) -> Result<b
         .map(|extension| ctx.eq_ignore_ascii_case(extension, expected, "STEP ZIP entry extension case equality")).transpose()?.unwrap_or(false))
 }
 
-fn validate_entry_name(name: &str) -> Result<(), CodecError> {
+fn validate_entry_name(ctx: &DecodeContext<'_>, name: &str) -> Result<(), CodecError> {
     if name.is_empty()
         || name.starts_with('/')
-        || name.contains('\\')
-        || name.contains('\0')
+        || ctx.contains_text(name, "\\", "STEP ZIP entry backslash containment")?
+        || ctx.contains_text(name, "\0", "STEP ZIP entry null containment")?
         || name.split('/').enumerate().any(|(index, component)| {
             component.is_empty() && !(index == name.split('/').count() - 1 && name.ends_with('/'))
                 || component == "."
