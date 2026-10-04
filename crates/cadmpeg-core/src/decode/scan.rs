@@ -1149,7 +1149,7 @@ mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
         let values = [(1, 0), (3, 1), (1, 2), (3, 3)];
-        assert_eq!(ctx.count(&values, "count").expect("count"), 4);
+        assert_eq!(ctx.count(values.as_slice(), "count").expect("count"), 4);
         assert_eq!(
             ctx.sum(
                 &[1_u64, 2, 3],

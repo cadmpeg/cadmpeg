@@ -17,9 +17,11 @@ fn vector_extension_accepts_owned_optional_array_and_borrowed_sources() {
     ctx.extend_vec(&mut values, [3, 4], "array").expect("array");
     ctx.extend_vec(&mut values, &[5, 6][..], "slice")
         .expect("slice");
-    ctx.extend_vec(&mut values, &[7], "borrowed array")
+    let borrowed_array: &[u8; 1] = &[7];
+    ctx.extend_vec(&mut values, borrowed_array, "borrowed array")
         .expect("array");
-    ctx.extend_vec(&mut values, &vec![8], "borrowed vector")
+    let borrowed_vector: &Vec<u8> = &vec![8];
+    ctx.extend_vec(&mut values, borrowed_vector, "borrowed vector")
         .expect("vector");
     assert_eq!(values, [0, 1, 2, 3, 4, 5, 6, 7, 8]);
     let child = String::from("owned child");
