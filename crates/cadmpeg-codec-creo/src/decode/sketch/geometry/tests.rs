@@ -7,6 +7,8 @@ use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition, SketchId};
 
+const EPS_TEST_ANGLE: f64 = 1.0e-12;
+
 mod missing_line;
 
 fn saved_profile_fixture() -> (SketchId, Vec<(u32, SketchGeometry)>) {
@@ -180,9 +182,77 @@ fn numerical_ranges_section_arc_radius_agreement_has_no_length_floor() {
         for (factor, accepted) in [(1.0, true), (5.0, false)] {
             let points =
                 BTreeMap::from([(1, [radius, 0.]), (2, [0., factor * radius]), (3, [0., 0.])]);
-            assert_eq!(section_arc_geometry(&points, &segment).is_some(), accepted);
+            assert_eq!(
+                crate::decode::with_test_decode_ctx(|ctx| {
+                    section_arc_geometry(ctx, &points, &segment).map(|geometry| geometry.is_some())
+                })
+                .expect("section arc fits service limits"),
+                accepted
+            );
         }
     }
+}
+
+#[test]
+fn section_arc_angle_normalization_refuses_work_and_preserves_service_geometry() {
+    let segment = FeatureSegment {
+        kind: FeatureSegmentKind::Arc([1, 2]),
+        directions: [None; 3],
+        center_id: Some(3),
+        arc_orientation: Some(0),
+        vertical_horizontal: None,
+        radius_ref: None,
+        radius2_ref: None,
+        external_id: 4,
+        body: Vec::new(),
+        offset: 9,
+    };
+    let points = BTreeMap::from([(1, [-1.0, -0.0]), (2, [-1.0, 0.0]), (3, [0.0, 0.0])]);
+    let geometry = crate::test_support::assert_work_boundaries(
+        &["creo section arc angle normalization"],
+        |ctx| section_arc_geometry(ctx, &points, &segment),
+    );
+    let Some(SketchGeometryDefinition::Arc {
+        start_angle,
+        end_angle,
+        ..
+    }) = geometry.map(SketchGeometry::into_definition)
+    else {
+        panic!("complete service arc");
+    };
+    assert!((start_angle.get() - std::f64::consts::PI).abs() < EPS_TEST_ANGLE);
+    assert!((end_angle.get() - 3.0 * std::f64::consts::PI).abs() < EPS_TEST_ANGLE);
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let no_normalization = BTreeMap::from([(1, [0.0, 1.0]), (2, [1.0, 0.0]), (3, [0.0, 0.0])]);
+    let no_normalization_geometry = section_arc_geometry(&ctx, &no_normalization, &segment)
+        .expect("zero-iteration arc uses no work")
+        .expect("valid zero-iteration arc");
+    let SketchGeometryDefinition::Arc {
+        start_angle,
+        end_angle,
+        ..
+    } = no_normalization_geometry.into_definition()
+    else {
+        panic!("zero-iteration service arc");
+    };
+    assert_eq!(start_angle.get(), 0.0);
+    assert_eq!(end_angle.get(), std::f64::consts::FRAC_PI_2);
+    let absent = BTreeMap::from([(3, [0.0, 0.0])]);
+    assert!(section_arc_geometry(&ctx, &absent, &segment)
+        .expect("absent arc uses no work")
+        .is_none());
+    let nonfinite = BTreeMap::from([
+        (1, [f64::INFINITY, 0.0]),
+        (2, [0.0, 1.0]),
+        (3, [0.0, 0.0]),
+    ]);
+    assert!(section_arc_geometry(&ctx, &nonfinite, &segment)
+        .expect("nonfinite arc uses no work")
+        .is_none());
 }
 
 #[test]
@@ -395,4 +465,66 @@ fn saved_arc_overflowing_endpoint_radius_is_not_geometry() {
     })
     .expect("saved arc geometry fits service limits")
     .is_none());
+}
+
+#[test]
+fn saved_section_arc_angle_normalization_refuses_work_and_preserves_service_geometry() {
+    use crate::feature::definitions::FeatureSavedEntity;
+
+    let (mut definition, segment) = saved_arc_carrier_definition([Some(0.0); 3], Some(1.0));
+    let Some(FeatureSavedEntity::Arc(arc)) = definition
+        .saved_section
+        .as_mut()
+        .and_then(|section| section.entities.first_mut())
+    else {
+        panic!("saved arc fixture");
+    };
+    arc.endpoints = [
+        [Some(-1.0), Some(-0.0), Some(0.0)],
+        [Some(-1.0), Some(0.0), Some(0.0)],
+    ];
+    let arc = crate::test_support::assert_work_boundaries(
+        &["creo saved section arc angle normalization"],
+        |ctx| saved_section_arc(ctx, &definition, &segment),
+    );
+    let Some(arc) = arc else {
+        panic!("saved service arc");
+    };
+    assert!((arc.start_angle.get() - std::f64::consts::PI).abs() < EPS_TEST_ANGLE);
+    assert!((arc.end_angle.get() - 3.0 * std::f64::consts::PI).abs() < EPS_TEST_ANGLE);
+}
+
+#[test]
+fn saved_section_entity_arc_angle_normalization_refuses_work_and_preserves_service_geometry() {
+    use crate::feature::definitions::{FeatureSavedArc, FeatureSavedEntity};
+
+    let entity = FeatureSavedEntity::Arc(FeatureSavedArc {
+        entity_id: 30,
+        center: [Some(0.0), Some(0.0), Some(0.0)],
+        radius: Some(1.0),
+        endpoints: [
+            [Some(-1.0), Some(-0.0), Some(0.0)],
+            [Some(-1.0), Some(0.0), Some(0.0)],
+        ],
+        parameters: [None; 2],
+        body: Vec::new(),
+        offset: 20,
+    });
+    let geometry = crate::test_support::assert_work_boundaries(
+        &["creo saved entity arc angle normalization"],
+        |ctx| super::saved_section_entity_geometry(ctx, &entity),
+    );
+    let Some((_, geometry, _)) = geometry else {
+        panic!("saved entity service arc");
+    };
+    let SketchGeometryDefinition::Arc {
+        start_angle,
+        end_angle,
+        ..
+    } = geometry.into_definition()
+    else {
+        panic!("saved entity is an arc");
+    };
+    assert!((start_angle.get() - std::f64::consts::PI).abs() < EPS_TEST_ANGLE);
+    assert!((end_angle.get() - 3.0 * std::f64::consts::PI).abs() < EPS_TEST_ANGLE);
 }
