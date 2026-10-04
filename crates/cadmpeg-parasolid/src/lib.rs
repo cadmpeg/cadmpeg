@@ -301,10 +301,13 @@ pub fn extra_layers(
 pub fn push_extras(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     layers: &mut DialectLayers,
-    extras: impl IntoIterator<Item = ClassifiedLayer>,
+    extras: Vec<ClassifiedLayer>,
 ) -> Result<Vec<String>, cadmpeg_core::CodecError> {
     let mut collisions = Vec::new();
-    for layer in extras {
+    let count = extras.len();
+    let mut extras = extras.into_iter();
+    for _ in ctx.admit_iter(&(0..count), "scan Parasolid extra layers")? {
+        let Some(layer) = extras.next() else { break; };
         let ClassifiedLayer { matched, carrier } = layer;
         match layers.insert_for_decode(ctx, matched, "collect Parasolid dialect layers") {
             Ok(()) => {}
@@ -491,7 +494,7 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let error = push_extras(&ctx, &mut layers, [later.clone()])
+        let error = push_extras(&ctx, &mut layers, vec![later.clone()])
             .expect_err("collision message needs bytes");
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "retain Parasolid collision message"));
@@ -637,7 +640,7 @@ mod tests {
         .expect("classification fits policy");
 
         let collisions =
-            push_extras(&ctx, &mut layers, [first.clone(), later]).expect("layers fit policy");
+            push_extras(&ctx, &mut layers, vec![first.clone(), later]).expect("layers fit policy");
 
         assert_eq!(layers.iter().skip(1).collect::<Vec<_>>(), [first.matched()]);
         assert_eq!(
