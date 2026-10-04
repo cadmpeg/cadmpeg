@@ -2,7 +2,7 @@
 //! The `acis:` kernel-layer dialect rows, and which of them this crate's
 //! record decoders are verified against.
 //!
-//! `docs/dialects.toml` declares the `acis:` namespace as the embedded kernel
+//! `crates/cadmpeg-registry/docs/dialects.toml` declares the `acis:` namespace as the embedded kernel
 //! layer. The rows belong here, with the decoders they describe, and the host
 //! codecs — `sat`, `inventor`, `f3d` — cite them. Keeping the band in one place
 //! is the point: two hosts reading the same stream must not disagree about

@@ -3,7 +3,7 @@
 #
 # This file describes formats, not cadmpeg. It changes when a vendor ships,
 # never when cadmpeg gains a decoder. Capability lives in
-# `docs/dialect-support.toml`. See
+# `crates/cadmpeg-registry/docs/dialect-support.toml`. See
 # “Dialects: the version dimension in cadmpeg,” sections 3 and 5, defines the model.
 # `scripts/check-dialects.py --write-generated` derives codec id constants from
 # these rows; the default check rejects any generated-code drift.
