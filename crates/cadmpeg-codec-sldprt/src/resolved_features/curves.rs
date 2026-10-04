@@ -1655,7 +1655,11 @@ pub(super) fn ordered_rectangle_corners(
     let [_, _, _, _] = points else {
         return Ok(None);
     };
-    let mut u = points.iter().map(|point| point.u).collect::<Vec<_>>();
+    let mut storage = ctx.reserve_scoped(0, "hold SLDPRT rectangle coordinates")?;
+    let mut u = storage.with_storage(|| ctx.collect_vec(
+        points.iter().map(|point| point.u),
+        "collect SLDPRT rectangle u coordinates",
+    ))?;
     ctx.stable_sort_by(
         &mut u,
         |value| value,
@@ -1663,7 +1667,10 @@ pub(super) fn ordered_rectangle_corners(
         "sldprt rectangle u sort",
     )?;
     u.dedup();
-    let mut v = points.iter().map(|point| point.v).collect::<Vec<_>>();
+    let mut v = storage.with_storage(|| ctx.collect_vec(
+        points.iter().map(|point| point.v),
+        "collect SLDPRT rectangle v coordinates",
+    ))?;
     ctx.stable_sort_by(
         &mut v,
         |value| value,
@@ -1693,7 +1700,11 @@ fn ordered_tolerant_rectangle_corners(
     let [_, _, _, _] = points else {
         return Ok(None);
     };
-    let mut u = points.iter().map(|point| point.u).collect::<Vec<_>>();
+    let mut storage = ctx.reserve_scoped(0, "hold SLDPRT tolerant rectangle coordinates")?;
+    let mut u = storage.with_storage(|| ctx.collect_vec(
+        points.iter().map(|point| point.u),
+        "collect SLDPRT tolerant rectangle u coordinates",
+    ))?;
     ctx.stable_sort_by(
         &mut u,
         |value| value,
@@ -1701,7 +1712,10 @@ fn ordered_tolerant_rectangle_corners(
         "sldprt tolerant rectangle u sort",
     )?;
     u.dedup_by(|left, right| same_dimension_length(*left, *right));
-    let mut v = points.iter().map(|point| point.v).collect::<Vec<_>>();
+    let mut v = storage.with_storage(|| ctx.collect_vec(
+        points.iter().map(|point| point.v),
+        "collect SLDPRT tolerant rectangle v coordinates",
+    ))?;
     ctx.stable_sort_by(
         &mut v,
         |value| value,

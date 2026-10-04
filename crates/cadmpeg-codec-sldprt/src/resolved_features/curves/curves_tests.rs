@@ -1941,3 +1941,5 @@ fn linked_semicircle_refuses_work_at_minimum_admission() {
     policy.limits.max_work_units = upper - 1;
     assert!(!admitted(&policy));
 }
+
+mod collection_storage;

@@ -1882,10 +1882,11 @@ fn profile_roster_principal_axis_endpoints(
     if maximum_incidence < 2 {
         return Ok(None);
     }
-    let selected = candidates
-        .iter()
-        .filter(|(count, _)| *count == maximum_incidence)
-        .collect::<Vec<_>>();
+    let mut selected_storage = ctx.reserve_scoped(0, "hold SLDPRT principal axis candidates")?;
+    let selected = selected_storage.with_storage(|| ctx.collect_vec(
+        candidates.iter().filter(|(count, _)| *count == maximum_incidence),
+        "collect SLDPRT principal axis candidates",
+    ))?;
     let [(_, axis)] = selected.as_slice() else {
         return Ok(None);
     };
@@ -1917,7 +1918,10 @@ fn profile_roster_implicit_axis_endpoints<'a>(
             && compact_bounded_curve_tangent(&lane.native_payload, offset).is_some();
         current_code_two || detailed_indexed_curve
     });
-    let curve_candidates = curve_candidates.take(2).collect::<Vec<_>>();
+    let mut curve_storage = ctx.reserve_scoped(0, "hold SLDPRT implicit axis curves")?;
+    let curve_candidates = curve_storage.with_storage(|| ctx.collect_vec(
+        curve_candidates.take(2), "collect SLDPRT implicit axis curves",
+    ))?;
     let curve_endpoints = profile_curve_endpoint_ids(ctx, lane, profile_native, markers, false)?;
     let candidates = markers.iter().copied().filter(|marker| {
         marker.feature_ref.as_deref() == Some(profile_native)
@@ -1943,16 +1947,14 @@ fn profile_roster_implicit_axis_endpoints<'a>(
             return Ok(Some(endpoints));
         }
     }
-    let selected_endpoints = unreferenced_points
-        .iter()
-        .copied()
-        .filter(|marker| {
+    let mut endpoint_storage = ctx.reserve_scoped(0, "hold SLDPRT implicit axis endpoints")?;
+    let selected_endpoints = endpoint_storage.with_storage(|| ctx.collect_vec(
+        unreferenced_points.iter().copied().filter(|marker| {
             index_from_u64(marker.offset()).is_some_and(|offset| {
                 lane.native_payload.get(offset + 76..offset + 80) == Some(&1u32.to_le_bytes())
             })
-        })
-        .take(3)
-        .collect::<Vec<_>>();
+        }).take(3), "collect SLDPRT implicit axis endpoints",
+    ))?;
     if let [start, end] = selected_endpoints.as_slice() {
         let endpoints = [*start, *end];
         if bounded_profile_axis_endpoints(profile_native, markers, &curve_endpoints, endpoints) {
