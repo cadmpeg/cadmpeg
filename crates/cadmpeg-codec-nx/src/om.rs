@@ -533,7 +533,7 @@ fn parse_positive_decimal_suffix(ctx: &DecodeContext<'_>, value: &str, prefix: &
     if suffix.is_empty() || !ctx.admit_iter(suffix, "NX point ordinal digits")?.all(|ch| ch.is_ascii_digit()) {
         return Ok(None);
     }
-    let Ok(ordinal) = suffix.parse::<u32>() else { return Ok(None); };
+    let Ok(ordinal) = ctx.parse_text::<u32>(suffix, "NX point ordinal decimal parse")? else { return Ok(None); };
     Ok((ordinal != 0).then_some(ordinal))
 }
 
