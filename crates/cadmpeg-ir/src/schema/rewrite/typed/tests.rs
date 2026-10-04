@@ -4,14 +4,33 @@ use crate::ids::PointId;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
+fn identity_cache_node_work() -> u64 {
+    let set_alignment = std::mem::align_of::<String>()
+        .max(std::mem::align_of::<()>())
+        .max(std::mem::align_of::<usize>());
+    let map_alignment = std::mem::align_of::<String>()
+        .max(std::mem::align_of::<crate::ids::Identity>())
+        .max(std::mem::align_of::<usize>());
+    let set_node_bytes = (std::mem::size_of::<String>() + std::mem::size_of::<()>()) * 11
+        + 16 * std::mem::size_of::<usize>()
+        + 2 * set_alignment;
+    let map_node_bytes =
+        (std::mem::size_of::<String>() + std::mem::size_of::<crate::ids::Identity>()) * 11
+            + 16 * std::mem::size_of::<usize>()
+            + 2 * map_alignment;
+    // First-node mutation work is four passes over each B-tree node byte bound.
+    cadmpeg_core::decode::u64_from_index(4 * (set_node_bytes + map_node_bytes))
+}
+
 #[test]
 fn typed_identity_cache_admits_copies_once_and_repeated_comparisons() {
     use cadmpeg_core::decode::u64_from_index;
     let source = "test:model:point#one";
-    // First mapping: one visit, callback copy, grammar scan, three cache
-    // copies and two admitted records. Repeat: visit, key comparison and copy.
-    let first_work = 5 * u64_from_index(source.len()) + 3;
-    let repeat_work = 2 * u64_from_index(source.len()) + 2;
+    // First admits four text copies, grammar visits, three visits/slots and both B-tree node mutations; repeat admits one visit, eleven comparisons and one copy.
+    let source_bytes = u64_from_index(source.len());
+    let first_work =
+        4 * source_bytes + u64_from_index(source.chars().count()) + 3 + identity_cache_node_work();
+    let repeat_work = 12 * source_bytes + 1;
     for allowance in 0..=first_work + repeat_work {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = allowance;
@@ -62,7 +81,10 @@ fn typed_identity_cache_comparison_refusal_cannot_return_a_cached_target() {
     use cadmpeg_core::decode::u64_from_index;
     let source = "test:model:point#one";
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 5 * u64_from_index(source.len()) + 4;
+    let source_bytes = u64_from_index(source.len());
+    let first_work =
+        4 * source_bytes + u64_from_index(source.chars().count()) + 3 + identity_cache_node_work();
+    policy.limits.max_work_units = first_work + 1;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut map = IdentityMap::new(&ctx, "refused identity comparison", |source: &str| {
@@ -74,7 +96,7 @@ fn typed_identity_cache_comparison_refusal_cannot_return_a_cached_target() {
         panic!("comparison must refuse");
     };
     assert_eq!(original.operation, "refused identity comparison");
-    assert_eq!(original.additional, 1);
+    assert_eq!(original.additional, 11 * source_bytes);
     assert!(
         matches!(map.identity(&ctx, "another identity"), Err(CodecError::ResourceLimit(limit)) if limit == original)
     );
@@ -289,8 +311,10 @@ fn typed_identity_rewrite_retains_its_grammar_proof_through_the_cache() {
     use cadmpeg_core::decode::u64_from_index;
     for source in ["a:b:c#one", "a:b:c#é:部"] {
         let bytes = u64_from_index(source.len());
-        let first_work = 4 * bytes + u64_from_index(source.chars().count()) + 3;
-        let repeat_work = 2 * bytes + 2;
+        // First admits four text copies, grammar visits, three visits/slots and both B-tree node mutations; repeat admits one visit, eleven comparisons and one copy.
+        let first_work =
+            4 * bytes + u64_from_index(source.chars().count()) + 3 + identity_cache_node_work();
+        let repeat_work = 12 * bytes + 1;
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = first_work + repeat_work;
         policy.limits.max_materialized_bytes = 4096;
