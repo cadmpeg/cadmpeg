@@ -528,7 +528,10 @@ pub(super) fn profile_owns_intervening_sketch_blocks<'a>(
         let mut children = HashSet::new();
         for value in encoded.split(',') {
             ctx.charge_work(1, "parse SLDPRT profile block children")?;
-            let Ok(source) = value.trim().parse::<u32>() else {
+            let Ok(source) = ctx.parse_text::<u32>(
+                value.trim(),
+                "parse SLDPRT profile child identity",
+            )? else {
                 return Ok(false);
             };
             if source == 0 || children.contains(&source) {
@@ -569,12 +572,14 @@ pub(super) fn profile_owns_intervening_sketch_blocks<'a>(
                         u64::MAX,
                     )
                 })?;
-                let Some(definition) = feature
-                    .properties
-                    .get("BlockDefinition")
-                    .and_then(|source| source.parse::<u32>().ok())
-                    .filter(|source| *source != 0)
-                else {
+                let definition = match feature.properties.get("BlockDefinition") {
+                    Some(source) => ctx
+                        .parse_text::<u32>(source, "parse SLDPRT sketch block definition identity")?
+                        .ok()
+                        .filter(|source| *source != 0),
+                    None => None,
+                };
+                let Some(definition) = definition else {
                     continue;
                 };
                 ctx.reserve_set(

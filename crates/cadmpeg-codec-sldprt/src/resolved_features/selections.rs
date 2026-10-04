@@ -3380,14 +3380,16 @@ pub(super) fn variable_fillet_control_references(
             .filter(|name| {
                 name.offset > u64_from_index(start) && name.offset < u64_from_index(marker)
             })
-            .filter(|name| {
-                variable_fillet_dimension_index_for_feature(feature, &name.value).is_some()
-            });
+            .map(|name| {
+                variable_fillet_dimension_index_for_feature(ctx, feature, &name.value)
+                    .map(|index| index.map(|_| name))
+            })
+            .filter_map(Result::transpose);
         ctx.charge_work(u64_from_index(lane.names.len()), OPERATION)?;
-        let Some(name) = names.next() else {
+        let Some(name) = names.next().transpose()? else {
             return Ok(None);
         };
-        if names.next().is_some() {
+        if names.next().transpose()?.is_some() {
             return Ok(None);
         }
         let mut name_text = String::new();
@@ -3401,21 +3403,24 @@ pub(super) fn variable_fillet_control_references(
 }
 
 pub(crate) fn variable_fillet_dimension_index_for_feature(
+    ctx: &DecodeContext<'_>,
     feature: &crate::records::Feature,
     name: &str,
-) -> Option<usize> {
+) -> Result<Option<usize>, CodecError> {
     if name == "D1" && !feature.parameters.contains_key("D01") {
         // SW2013-era lanes use D1 for the second variable-radius control.
-        return Some(1);
+        return Ok(Some(1));
     }
-    let suffix = name.strip_prefix("D0")?;
+    let Some(suffix) = name.strip_prefix("D0") else {
+        return Ok(None);
+    };
     if suffix.is_empty() {
-        return Some(0);
+        return Ok(Some(0));
     }
     if suffix.starts_with('0') || !suffix.bytes().all(|byte| byte.is_ascii_digit()) {
-        return None;
+        return Ok(None);
     }
-    suffix.parse().ok()
+    Ok(ctx.parse_text(suffix, "parse SLDPRT variable fillet dimension index")?.ok())
 }
 
 pub(super) fn compact_component_path_end_at(

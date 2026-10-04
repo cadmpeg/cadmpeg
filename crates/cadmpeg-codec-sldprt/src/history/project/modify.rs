@@ -166,20 +166,21 @@ pub(super) fn project_fillet(
 }
 
 pub(crate) fn fillet_radius_parameter_has_native_display(
+    ctx: &DecodeContext<'_>,
     feature: &Feature,
     name: &str,
     expression: &str,
-) -> bool {
-    is_fillet(feature)
+) -> Result<bool, CodecError> {
+    Ok(is_fillet(feature)
         && if variable_fillet(feature) {
             crate::resolved_features::selections::variable_fillet_dimension_index_for_feature(
-                feature, name,
-            )
+                ctx, feature, name,
+            )?
             .is_some()
         } else {
             name == "D1"
         }
-        && dimension_display(expression).is_some()
+        && dimension_display(expression).is_some())
 }
 
 fn variable_fillet(feature: &Feature) -> bool {

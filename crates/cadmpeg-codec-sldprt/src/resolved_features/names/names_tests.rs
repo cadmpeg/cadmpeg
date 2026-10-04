@@ -223,3 +223,20 @@ fn configuration_searches_propagate_work_refusal() {
     );
     assert_eq!(super::configuration(&ctx, "Other").unwrap(), None);
 }
+
+#[test]
+fn native_identity_decimal_parse_propagates_work_refusal() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    assert!(matches!(
+        super::decimal_matches(&ctx, "12", 12),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+    ));
+    let ctx = cadmpeg_test_support::service_decode_context();
+    assert!(super::decimal_matches(&ctx, "12", 12).unwrap());
+    assert!(!super::decimal_matches(&ctx, "012", 12).unwrap());
+}

@@ -1103,7 +1103,7 @@ fn variable_fillet_radius_groups<'a>(
     let mut parameter_names = HashSet::new();
     for name in feature.parameters.keys() {
         ctx.charge_work(1, OPERATION)?;
-        if variable_fillet_dimension_index_for_feature(feature, name.as_str()).is_some() {
+        if variable_fillet_dimension_index_for_feature(ctx, feature, name.as_str())?.is_some() {
             ctx.insert_hash_set(&mut parameter_names, name, OPERATION)?;
         }
     }
@@ -1140,7 +1140,7 @@ fn variable_fillet_radius_groups<'a>(
         ctx.reserve_vec(&mut ordered_parameters, parameter_names.len(), OPERATION)?;
         for name in &parameter_names {
             let Some(parameter) =
-                variable_fillet_dimension_index_for_feature(feature, name.as_str()).zip(
+                variable_fillet_dimension_index_for_feature(ctx, feature, name.as_str())?.zip(
                     ctx.get_btree_map(&feature.parameters, *name, OPERATION)?.and_then(|value| {
                         crate::history::literals::parse_positive_dimension_length_mm(value)
                     }),
@@ -1285,7 +1285,7 @@ fn variable_fillet_radius_groups<'a>(
         ctx.reserve_vec(&mut ordered_parameters, parameter_names.len(), OPERATION)?;
         for name in &parameter_names {
             let Some(parameter) =
-                variable_fillet_dimension_index_for_feature(feature, name.as_str()).zip(
+                variable_fillet_dimension_index_for_feature(ctx, feature, name.as_str())?.zip(
                     ctx.get_btree_map(&feature.parameters, *name, OPERATION)?.and_then(|value| {
                         crate::history::literals::parse_positive_dimension_length_mm(value)
                     }),

@@ -185,11 +185,11 @@ pub(crate) fn enrich_history_parameters<'a>(
                         value_only_scalar_offset(&lane.native_payload, name)
                             == usize::try_from(scalar.offset).ok()
                     });
-                    let unit = scalar_units
-                        .get(scalar.id.as_str())
-                        .copied()
-                        .or_else(|| scalar_unit_from_feature_parameter(feature, name))
-                        .unwrap_or(ScalarUnit::Native);
+                    let unit = match scalar_units.get(scalar.id.as_str()).copied() {
+                        Some(unit) => unit,
+                        None => scalar_unit_from_feature_parameter(ctx, feature, name)?
+                            .unwrap_or(ScalarUnit::Native),
+                    };
                     if value_only {
                         continue;
                     }
@@ -297,13 +297,14 @@ pub(crate) fn enrich_history_parameters<'a>(
 /// Move Face stores `D1` as distance. A standard fillet placeholder such as
 /// `R0` also identifies a radius; variable fillets use indexed radii instead.
 fn scalar_unit_from_feature_parameter(
+    ctx: &DecodeContext<'_>,
     feature: &crate::records::Feature,
     name: &str,
-) -> Option<ScalarUnit> {
+) -> Result<Option<ScalarUnit>, CodecError> {
     if matches!(name, "D5" | "D6" | "D7")
         && crate::history::classify::matches_alnum_ascii(&feature.kind, b"cutextrudethin")
     {
-        return Some(ScalarUnit::Length);
+        return Ok(Some(ScalarUnit::Length));
     }
     if name == "D1"
         && crate::classification::classify(feature)
@@ -312,28 +313,30 @@ fn scalar_unit_from_feature_parameter(
             mode.eq_ignore_ascii_case("Offset") || mode.eq_ignore_ascii_case("Translate")
         })
     {
-        return Some(ScalarUnit::Length);
+        return Ok(Some(ScalarUnit::Length));
     }
-    let expression = feature.parameters.get(name)?;
+    let Some(expression) = feature.parameters.get(name) else {
+        return Ok(None);
+    };
     let source_sketch_dimension = crate::classification::classify(feature)
         == Some(crate::classification::FeatureClass::Sketch)
         && feature.content.iter().any(|content| {
             matches!(content, crate::records::FeatureContent::Dimension(dimension) if dimension == name)
         });
     if source_sketch_dimension {
-        return if crate::history::literals::parse_angle_rad(expression).is_some() {
+        return Ok(if crate::history::literals::parse_angle_rad(expression).is_some() {
             Some(ScalarUnit::Angle)
         } else {
             crate::history::literals::parse_dimension_display_length(expression)
                 .map(|_| ScalarUnit::Length)
-        };
+        });
     }
     if crate::history::project::modify::fillet_radius_parameter_has_native_display(
-        feature, name, expression,
-    ) {
-        return Some(ScalarUnit::Length);
+        ctx, feature, name, expression,
+    )? {
+        return Ok(Some(ScalarUnit::Length));
     }
-    None
+    Ok(None)
 }
 
 pub(super) fn value_only_scalar_offset(payload: &[u8], name: &FeatureInputName) -> Option<usize> {
