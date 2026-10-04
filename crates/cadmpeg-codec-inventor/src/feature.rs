@@ -2065,7 +2065,7 @@ fn feature_result(
     ) {
         Ok(Ok(members)) => members,
         Ok(Err(_)) => return None,
-        Err(limit) => return Some(Err(limit.into())),
+        Err(limit) => return Some(Err(CodecError::ResourceLimit(limit))),
     };
     const FEATURE_ID_PREFIX: &str = "inventor:design:feature#";
     const RESULT_ID_PREFIX: &str = "inventor:design:feature-result#";

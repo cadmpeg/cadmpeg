@@ -2737,14 +2737,15 @@ fn line_component<'ctx>(
             if let Some(neighbours) =
                 ctx.get_hash_map(adjacency, point.as_str(), "access Inventor sketch records")?
             {
-                pending_storage.with_storage(|| {
-                    ctx.charge_collection_items(
-                        cadmpeg_core::decode::u64_from_index(neighbours.len()),
-                        "queue Inventor profile neighbours",
-                    )?;
-                    pending.extend(neighbours);
-                    Ok::<(), CodecError>(())
-                })?;
+                for &neighbour in ctx.admit_iter(neighbours, "queue Inventor profile neighbours")? {
+                    pending_storage.with_storage(|| {
+                        ctx.push_vec(
+                            &mut pending,
+                            neighbour,
+                            "queue Inventor profile neighbours",
+                        )
+                    })?;
+                }
             }
         }
     }
