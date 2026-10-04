@@ -57,10 +57,11 @@ fn ascii_at<'bytes>(
     })() else {
         return Ok(None);
     };
-    if !ctx
-        .admit_iter(raw, "scan F3D unit ASCII field")?
-        .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
-    {
+    if !ctx.all_by(
+        raw,
+        |byte| Ok(byte.is_ascii_graphic() || *byte == b' '),
+        "scan F3D unit ASCII field",
+    )? {
         return Ok(None);
     }
     Ok(ctx
@@ -594,7 +595,7 @@ pub(crate) mod tests {
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::WorkUnits
                     && limit.operation == "scan F3D unit ASCII field"
-                    && limit.additional == 6));
+                    && limit.additional == 1));
     }
 
     #[test]
@@ -610,7 +611,7 @@ pub(crate) mod tests {
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::WorkUnits
                     && limit.operation == "scan F3D unit ASCII field"
-                    && limit.additional == 6));
+                    && limit.additional == 1));
     }
 
     #[test]
@@ -626,7 +627,7 @@ pub(crate) mod tests {
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::WorkUnits
                     && limit.operation == "scan F3D unit ASCII field"
-                    && limit.additional == 14));
+                    && limit.additional == 1));
     }
 
     #[test]
