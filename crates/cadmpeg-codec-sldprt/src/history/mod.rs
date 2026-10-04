@@ -328,7 +328,7 @@ pub(crate) fn histories(
                         if properties.is_empty() {
                             continue;
                         }
-                        if let Some(previous) = dimension_properties.get_mut(name) {
+                        if let Some(previous) = ctx.get_mut_btree_map(&mut (dimension_properties), name, "look up mutable SLDPRT ordered key")? {
                             *previous = properties;
                         } else {
                             let name = ctx.format_retained(
@@ -354,7 +354,7 @@ pub(crate) fn histories(
                             continue;
                         }
                         let value = dimension.text().unwrap_or_default().trim();
-                        if let Some(previous) = parameters.get_mut(name) {
+                        if let Some(previous) = ctx.get_mut_btree_map(&mut (parameters), name, "look up mutable SLDPRT ordered key")? {
                             *previous = ctx.format_retained(
                                 format_args!("{value}"),
                                 "retain SLDPRT parameter value",

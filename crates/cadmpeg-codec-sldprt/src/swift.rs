@@ -500,7 +500,7 @@ pub(crate) fn pattern_hole_nominal_context(
             format_args!("Hole Pattern{suffix}"),
             "swift pattern semantic name",
         )?;
-        if let Some(value) = candidates.get_mut(&semantic_name) {
+        if let Some(value) = ctx.get_mut_btree_map(&mut (candidates), &semantic_name, "look up mutable SLDPRT ordered key")? {
             *value = None;
         } else {
             ctx.insert_btree_map(

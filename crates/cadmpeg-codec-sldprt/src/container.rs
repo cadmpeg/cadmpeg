@@ -1463,7 +1463,7 @@ fn scan_solidworks_envelopes<'a>(
                 let Some(index) = value.parse::<usize>().ok() else {
                     continue;
                 };
-                if let Some(indices) = scan.configuration_source_indices.get_mut(name) {
+                if let Some(indices) = ctx.get_mut_btree_map(&mut (scan.configuration_source_indices), name, "look up mutable SLDPRT ordered key")? {
                     ctx.reserve_vec(indices, 1, "collect SLDPRT configuration source indices")?;
                     indices.push(index);
                 } else {
