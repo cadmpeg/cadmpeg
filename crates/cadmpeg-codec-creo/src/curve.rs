@@ -2646,10 +2646,18 @@ impl RelationUnitParser<'_> {
         while self.source.get(self.cursor).is_some_and(u8::is_ascii_digit) {
             self.cursor += 1;
         }
-        let magnitude = { let Some(value) = { let Some(value) = std::str::from_utf8({ let Some(value) = self.source.get(start..self.cursor) else { return Ok(None); }; value })
-            .ok() else { return Ok(None); }; value }
-            .parse::<i16>()
-            .ok() else { return Ok(None); }; value };
+        let Some(digits) = self.source.get(start..self.cursor) else {
+            return Ok(None);
+        };
+        let Ok(digits) = std::str::from_utf8(digits) else {
+            return Ok(None);
+        };
+        let Ok(magnitude) = self.ctx.parse_text::<i16>(
+            digits,
+            "creo relation unit exponent parsing",
+        )? else {
+            return Ok(None);
+        };
         let exponent = if negative { -magnitude } else { magnitude };
         self.ctx.charge_work(1, "creo relation unit power")?;
         Ok(unit.power({ let Some(value) = i8::try_from(exponent).ok() else { return Ok(None); }; value }))
