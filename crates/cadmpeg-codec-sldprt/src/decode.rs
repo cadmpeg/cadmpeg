@@ -234,16 +234,15 @@ fn incomplete_pattern<C: cadmpeg_ir::features::patterns::CompositeStages>(
     })
 }
 
-fn incomplete_binder_target(
+fn incomplete_binder_target(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     target: &cadmpeg_ir::features::BinderTarget,
     feature_positions: &BTreeMap<&cadmpeg_ir::features::FeatureId, u64>,
     consumer_ordinal: u64,
     dependencies: &[cadmpeg_ir::features::FeatureId],
-) -> bool {
-    match target {
+) -> Result<bool, cadmpeg_core::CodecError> {
+    Ok::<_, cadmpeg_core::CodecError>(match target {
         cadmpeg_ir::features::BinderTarget::Feature { feature } => {
-            feature_positions
-                .get(feature)
+            ctx.get_btree_map(&(feature_positions), feature, "look up SLDPRT ordered key")?
                 .is_none_or(|ordinal| *ordinal >= consumer_ordinal)
                 || !dependencies.contains(feature)
         }
@@ -251,7 +250,7 @@ fn incomplete_binder_target(
             document.as_str().trim().is_empty() || object.as_str().trim().is_empty()
         }
         cadmpeg_ir::features::BinderTarget::Native { .. } => true,
-    }
+    })
 }
 
 fn sketch_constraint_has_complete_neutral_semantics(
@@ -762,25 +761,24 @@ fn append_design_losses(
         "index SLDPRT parameter positions",
     )?;
     let invalid_parameter_dependency_order = ctx.admit_iter(&ir.model.parameters[..], "scan SLDPRT append_design_losses values")?.try_fold(0_usize, |count, candidate| { let parameter = &candidate; Ok::<_, cadmpeg_core::CodecError>(count + usize::from( {
-            ctx.admit_iter(parameter.dependencies.as_slice(), "scan SLDPRT append_design_losses values")?.any(|dependency| {
-                let Some((owner, ordinal)) = parameter_positions.get(dependency) else {
-                    return true;
+            ctx.admit_iter(parameter.dependencies.as_slice(), "scan SLDPRT append_design_losses values")?.try_fold(false, |found, dependency| { Ok::<_, cadmpeg_core::CodecError>(found || ( {
+                let Some((owner, ordinal)) = ctx.get_btree_map(&(parameter_positions), dependency, "look up SLDPRT ordered key")? else {
+                    return Ok(true);
                 };
                 if *owner == &parameter.owner {
-                    return *ordinal >= parameter.ordinal;
+                    return Ok(*ordinal >= parameter.ordinal);
                 }
                 let (Some(owner), Some(parameter_owner)) =
                     (owner.as_ref(), parameter.owner.as_ref())
                 else {
-                    return true;
+                    return Ok(true);
                 };
-                feature_ordinals
-                    .get(owner)
-                    .zip(feature_ordinals.get(parameter_owner))
+                ctx.get_btree_map(&(feature_ordinals), owner, "look up SLDPRT ordered key")?
+                    .zip(ctx.get_btree_map(&(feature_ordinals), parameter_owner, "look up SLDPRT ordered key")?)
                     .is_none_or(|(dependency_owner, consumer_owner)| {
                         dependency_owner >= consumer_owner
                     })
-            })
+            } )) })?
         } )) })?;
     let incoherent_parameter_dependencies =
         crate::history::parameters::parameters_with_incoherent_dependencies(
@@ -893,22 +891,17 @@ fn append_design_losses(
     let evaluated_feature_states = if ctx.admit_iter(&ir.model.configurations[..], "scan SLDPRT append_design_losses values")?
         .any(|configuration| !configuration.feature_states.is_empty())
     {
-        charged_vec(
-            ctx,
-            ir.model.configurations.iter().flat_map(|configuration| {
-                ir.model.features.iter().filter_map(move |feature| {
-                    configuration.feature_states.get(&feature.id).map(|state| {
-                        EvaluatedFeatureState {
-                            feature,
-                            dependencies: &state.dependencies,
-                            outputs: state.evaluation.outputs(),
-                            definition: &state.definition,
-                        }
-                    })
-                })
-            }),
-            "collect SLDPRT configured feature states",
-        )?
+        let mut evaluated = Vec::new();
+        for configuration in ctx.admit_iter(&ir.model.configurations, "scan SLDPRT configured feature states")? {
+            for feature in ctx.admit_iter(&ir.model.features, "scan SLDPRT configuration feature candidates")? {
+                let Some(state) = ctx.get_btree_map(&configuration.feature_states, &feature.id, "look up SLDPRT ordered key")? else { continue; };
+                ctx.push_vec(&mut evaluated, EvaluatedFeatureState {
+                    feature, dependencies: &state.dependencies,
+                    outputs: state.evaluation.outputs(), definition: &state.definition,
+                }, "collect SLDPRT configured feature states")?;
+            }
+        }
+        evaluated
     } else {
         charged_vec(
             ctx,
@@ -926,17 +919,15 @@ fn append_design_losses(
     };
     let incoherent_feature_edges = ctx.admit_iter(&evaluated_feature_states[..], "scan SLDPRT append_design_losses values")?.try_fold(0_usize, |count, candidate| { let state = &candidate; Ok::<_, cadmpeg_core::CodecError>(count + usize::from( {
             let feature = state.feature;
-            let parent_incoherent = ir.model.feature_parent(&feature.id).is_some_and(|parent| {
-                feature_positions
-                    .get(parent)
+            let parent_incoherent = match ir.model.feature_parent(&feature.id) { Some(parent) => {
+                ctx.get_btree_map(&(feature_positions), parent, "look up SLDPRT ordered key")?
                     .is_none_or(|ordinal| *ordinal >= feature.ordinal)
-            });
+            }, None => false };
             parent_incoherent
-                || ctx.admit_iter(state.dependencies.as_slice(), "scan SLDPRT append_design_losses values")?.any(|dependency| {
-                    feature_positions
-                        .get(dependency)
+                || ctx.admit_iter(state.dependencies.as_slice(), "scan SLDPRT append_design_losses values")?.try_fold(false, |found, dependency| { Ok::<_, cadmpeg_core::CodecError>(found || ( {
+                    ctx.get_btree_map(&(feature_positions), dependency, "look up SLDPRT ordered key")?
                         .is_none_or(|ordinal| *ordinal >= feature.ordinal)
-                })
+                } )) })?
         } )) })?;
     let feature_ordinal_counts = count_keys(
         ctx,
@@ -969,18 +960,17 @@ fn append_design_losses(
         "index SLDPRT features by ID",
     )?;
     let incoherent_feature_content = ctx.admit_iter(&ir.model.features[..], "scan SLDPRT append_design_losses values")?.try_fold(0_usize, |count, candidate| { let feature = &candidate; Ok::<_, cadmpeg_core::CodecError>(count + usize::from( {
-            ctx.admit_iter(&feature.source_content[..], "scan SLDPRT append_design_losses values")?.any(|content| match content {
+            ctx.admit_iter(&feature.source_content[..], "scan SLDPRT append_design_losses values")?.try_fold(false, |found, content| { Ok::<_, cadmpeg_core::CodecError>(found || ( match content {
                 FeatureSourceContent::Text(_) => false,
-                FeatureSourceContent::Parameter(parameter) => parameter_owners
-                    .get(parameter)
+                FeatureSourceContent::Parameter(parameter) => ctx.get_btree_map(&(parameter_owners), parameter, "look up SLDPRT ordered key")?
                     .is_none_or(|owner| owner.as_ref() != Some(&feature.id)),
                 FeatureSourceContent::Feature(child) => {
-                    features_by_id.get(child).is_none_or(|child| {
+                    ctx.get_btree_map(&(features_by_id), child, "look up SLDPRT ordered key")?.is_none_or(|child| {
                         child.ordinal <= feature.ordinal
                             || ir.model.feature_parent(&child.id) != Some(&feature.id)
                     })
                 }
-            })
+            } )) })?
         } )) })?;
     if incoherent_feature_content > 0 {
         push_report_loss(ctx, report, SldprtLossCode::FeatureIncoherentContent.note(format!(
@@ -1229,8 +1219,7 @@ fn append_design_losses(
             FeatureOperation::StoredGeometry {} => state.outputs.is_empty(),
             FeatureOperation::ExtractBody { source } => incomplete_body_selection(source),
             FeatureOperation::DerivedGeometry { source } => {
-                feature_positions
-                    .get(source)
+                ctx.get_btree_map(&(feature_positions), source, "look up SLDPRT ordered key")?
                     .is_none_or(|ordinal| *ordinal >= state.feature.ordinal)
                     || !state.dependencies.contains(source)
             }
@@ -1391,12 +1380,12 @@ fn append_design_losses(
             } => {
                 sources.is_empty()
                     || ctx.admit_iter(&sources[..], "scan SLDPRT append_design_losses values")?.try_fold(false, |found, source| { Ok::<_, cadmpeg_core::CodecError>(found || ( {
-                        incomplete_binder_target(
+                        incomplete_binder_target(ctx, 
                             &source.target,
                             feature_positions,
                             state.feature.ordinal,
                             state.dependencies,
-                        ) || ctx.admit_iter(&source.subelements[..], "scan SLDPRT append_design_losses values")?
+                        )? || ctx.admit_iter(&source.subelements[..], "scan SLDPRT append_design_losses values")?
                             .any(|subelement| subelement.as_str().trim().is_empty())
                     } )) })?
                     || matches!(
@@ -1409,12 +1398,12 @@ fn append_design_losses(
                         cadmpeg_ir::features::BinderConstruction::SubShape {
                             context: Some(context),
                             ..
-                        } if incomplete_binder_target(
+                        } if incomplete_binder_target(ctx, 
                             context,
                             feature_positions,
                             state.feature.ordinal,
                             state.dependencies,
-                        )
+                        )?
                     )
             }
             FeatureOperation::Loft {
@@ -1861,7 +1850,7 @@ fn unbound_feature_input_operation_objects(
             let Some(name) = ctx.admit_iter(&lane.names, "find SLDPRT unbound operation object name")?.find(|name| name.offset == name_offset) else { continue; };
             let source_bound = match name.object_id.and_then(ObjectId::value) { Some(id) => {
                 source_counts.get(&id).copied() == Some(1)
-                    && (binding_counts.get(&(id, class.name.as_str())).copied() == Some(1)
+                    && (ctx.get_btree_map(&(binding_counts), &(id, class.name.as_str()), "look up SLDPRT ordered key")?.copied() == Some(1)
                         || match native_object_class(&class.name)
                             .feature() { Some(expected) => {
                                 ctx.admit_iter(&native.feature_histories, "scan SLDPRT unbound_feature_input_operation_objects values")?
@@ -1872,8 +1861,7 @@ fn unbound_feature_input_operation_objects(
                                     })?
                             }, None => false })
             }, None => false };
-            let name_bound = named_binding_counts
-                .get(&(lane.id.as_str(), name.id.as_str(), class.name.as_str()))
+            let name_bound = ctx.get_btree_map(&(named_binding_counts), &(lane.id.as_str(), name.id.as_str(), class.name.as_str()), "look up SLDPRT ordered key")?
                 .copied()
                 == Some(1);
             count += usize::from(!(source_bound || name_bound));

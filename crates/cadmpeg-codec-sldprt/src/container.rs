@@ -1174,7 +1174,7 @@ pub(crate) fn select_active_parasolid_site<'a>(
     ctx: &DecodeContext<'_>,
     scan: &'a ContainerScan<'_>,
 ) -> Result<Option<ActiveParasolidSite<'a>>, CodecError> {
-    let active_configuration = active_configuration_index(scan);
+    let active_configuration = active_configuration_index(ctx, scan)?;
     let mut selected = None;
     for section in scan.sections(ctx)? {
         let name = section.name().unwrap_or("");
@@ -1233,13 +1233,13 @@ pub(crate) fn configuration_index(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         .flatten())
 }
 
-pub(crate) fn active_configuration_index(scan: &ContainerScan) -> Option<usize> {
-    explicit_active_configuration_index(scan).or_else(|| {
+pub(crate) fn active_configuration_index(ctx: &cadmpeg_core::decode::DecodeContext<'_>, scan: &ContainerScan) -> Result<Option<usize>, cadmpeg_core::CodecError> {
+    Ok::<_, cadmpeg_core::CodecError>(explicit_active_configuration_index(ctx, scan)?.or_else(|| {
         scan.solidworks
             .manifest_active_configuration
             .unique_ref()
             .map(|(index, _)| index)
-    })
+    }))
 }
 
 /// Return the active configuration's unique manifest identity, when one
@@ -1285,10 +1285,10 @@ fn manifest_configuration_name(
     name.map(|value| ctx.copy_retained_text(value, "retain SLDPRT manifest configuration name")).transpose()
 }
 
-fn explicit_active_configuration_index(scan: &ContainerScan<'_>) -> Option<usize> {
-    let active = active_configuration_name_ref(scan)?;
-    let indices = scan.solidworks.configuration_source_indices.get(active)?;
-    (indices.len() == 1).then(|| indices[0])
+fn explicit_active_configuration_index(ctx: &cadmpeg_core::decode::DecodeContext<'_>, scan: &ContainerScan<'_>) -> Result<Option<usize>, cadmpeg_core::CodecError> {
+    let active = match active_configuration_name_ref(scan) { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) };
+    let indices = match ctx.get_btree_map(&(scan.solidworks.configuration_source_indices), active, "look up SLDPRT ordered key")? { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) };
+    Ok::<_, cadmpeg_core::CodecError>((indices.len() == 1).then(|| indices[0]))
 }
 
 pub(crate) fn active_configuration_name_ref<'a>(scan: &'a ContainerScan<'_>) -> Option<&'a str> {

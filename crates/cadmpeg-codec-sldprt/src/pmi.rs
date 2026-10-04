@@ -256,13 +256,13 @@ pub(crate) fn enrich_history_parameters_with_features(
         let Some((name, owner_name)) = record.cad_text.split_once('@') else {
             continue;
         };
-        let Some([(history_index, feature_index)]) = owners.get(owner_name).map(Vec::as_slice)
+        let Some([(history_index, feature_index)]) = ctx.get_btree_map(&(owners), owner_name, "look up SLDPRT ordered key")?.map(Vec::as_slice)
         else {
             continue;
         };
         let millimetres = record.value.get() * 1000.0;
         let feature = &histories[*history_index].features[*feature_index];
-        let empty_subtype_is_count = match feature.parameters.get(name) { Some(expression) => {
+        let empty_subtype_is_count = match ctx.get_btree_map(&(feature.parameters), name, "look up SLDPRT ordered key")? { Some(expression) => {
             matches!(
                 crate::history::parameters::parse_native_parameter_literal(ctx, 
                     feature, name, expression
@@ -492,7 +492,7 @@ pub(crate) fn apply_to_parameters(
         let Some((name, owner_name)) = record.cad_text.split_once('@') else {
             continue;
         };
-        let Some([owner]) = feature_names.get(owner_name).map(Vec::as_slice) else {
+        let Some([owner]) = ctx.get_btree_map(&(feature_names), owner_name, "look up SLDPRT ordered key")?.map(Vec::as_slice) else {
             continue;
         };
         let existing_parameter = ctx.admit_iter(&parameters[..], "scan SLDPRT apply_to_parameters values")?.position(|parameter| {
@@ -901,7 +901,7 @@ fn extract_dimension(
     if !has_cad_text || !has_dim_items {
         return Err("map is missing cadText or dimItems".into());
     }
-    let Some(cad_text) = string_field(&outer, "cadText") else {
+    let Some(cad_text) = string_field(ctx, &outer, "cadText")? else {
         return Err("cadText is not a string".into());
     };
     let Some(items_value) = outer.get("dimItems") else {
@@ -922,7 +922,7 @@ fn extract_dimension(
     let ValueKind::Map(item) = &item_value.kind else {
         return Err("first dimItems element is not a map".into());
     };
-    if string_field(item, "class") != Some("DimSemData") {
+    if string_field(ctx, item, "class")? != Some("DimSemData") {
         return Err("first dimItems element is not DimSemData".into());
     }
     let value_field = item
@@ -972,7 +972,7 @@ fn extract_dimension(
         item_count,
         subtype: copy_pmi_text(
             ctx,
-            string_field(item, "dimSubType").unwrap_or_default(),
+            string_field(ctx, item, "dimSubType")?.unwrap_or_default(),
             "retain SLDPRT PMI subtype",
         )?,
         value,
@@ -1401,11 +1401,11 @@ fn take_u64(bytes: &[u8], cursor: &mut usize) -> Option<u64> {
     Some(value)
 }
 
-fn string_field<'a>(map: &'a BTreeMap<&str, SpannedValue<'_>>, key: &str) -> Option<&'a str> {
-    match &map.get(key)?.kind {
+fn string_field<'a>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &'a BTreeMap<&str, SpannedValue<'_>>, key: &str) -> Result<Option<&'a str>, cadmpeg_core::CodecError> {
+    Ok::<_, cadmpeg_core::CodecError>(match &match ctx.get_btree_map(&(map), key, "look up SLDPRT ordered key")? { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) }.kind {
         ValueKind::String(value) => Some(value),
         _ => None,
-    }
+    })
 }
 
 fn bool_from(value: &SpannedValue) -> Option<bool> {
