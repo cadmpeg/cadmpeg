@@ -1756,7 +1756,7 @@ fn copy_pmi_target(
 }
 
 fn datum_target_form(value: &str, ctx: &DecodeContext<'_>) -> Result<DatumTargetForm, CodecError> {
-    let form = value.trim();
+    let form = ctx.trim_text(value, "STEP datum target form trim")?;
     if ctx.eq_ignore_ascii_case(form, "point", "STEP datum target form case equality")? {
         Ok(DatumTargetForm::Point)
     } else if ctx.eq_ignore_ascii_case(form, "line", "STEP datum target form case equality")? {

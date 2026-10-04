@@ -3085,11 +3085,10 @@ impl<'a> DecodeContext<'a> {
                 continue;
             }
             let warning = &diagnostic.message;
-            let (family, detail) = warning
-                .split_once(':')
-                .map_or(("rhino", warning.as_str()), |(family, detail)| {
-                    (family, detail.trim())
-                });
+            let (family, detail) = match warning.split_once(':') {
+                Some((family, detail)) => (family, ctx.trim_text(detail, "Rhino warning detail trim")?),
+                None => ("rhino", warning.as_str()),
+            };
             if !phase_families.contains_key(family) {
                 let family_key = ctx.copy_retained_text(family, "Rhino warning family key")?;
                 let first_detail = ctx.copy_retained_text(detail, "Rhino warning family detail")?;

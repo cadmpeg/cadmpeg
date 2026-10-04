@@ -279,3 +279,132 @@ fn typed_boolean_text_trim_preserves_work_refusal() {
         result
     });
 }
+
+#[test]
+fn xml_typed_integer_trim_preserves_refusal() {
+    let document = roxmltree::Document::parse(r#"<root><value type="int"> 1 </value></root>"#).unwrap();
+    let root = document.root_element();
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "Rhino field i32 optional text trim", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = super::super::field_i32_optional(&ctx, root, "value").map(|_| ()).map_err(|error| match error {
+            FramingError::Resource(refusal) => CodecError::ResourceLimit(refusal),
+            other => panic!("valid field returned {other:?}"),
+        });
+        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}
+
+#[test]
+fn xml_typed_real_trim_preserves_refusal() {
+    let document = roxmltree::Document::parse(r#"<root><value type="double"> 1.0 </value></root>"#).unwrap();
+    let root = document.root_element();
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "Rhino field f64 text trim", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = super::super::field_f64(&ctx, root, "value", 0.0).map(|_| ()).map_err(|error| match error {
+            FramingError::Resource(refusal) => CodecError::ResourceLimit(refusal),
+            other => panic!("valid field returned {other:?}"),
+        });
+        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}
+
+#[test]
+fn xml_typed_uuid_trim_preserves_refusal() {
+    let document = roxmltree::Document::parse(r#"<root><value type="uuid"> 12345678-1234-5678-90ab-cdef01234567 </value></root>"#).unwrap();
+    let root = document.root_element();
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "Rhino field uuid text trim", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = super::super::field_uuid(&ctx, root, "value").map(|_| ());
+        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}
+
+#[test]
+fn xml_untyped_uuid_trim_preserves_refusal() {
+    let document = roxmltree::Document::parse(r#"<root><value type="uuid"> 12345678-1234-5678-90ab-cdef01234567 </value></root>"#).unwrap();
+    let root = document.root_element();
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "Rhino field uuid untyped text trim", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = super::super::field_uuid_untyped(&ctx, root, "value").map(|_| ());
+        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}
+
+#[test]
+fn xml_untyped_boolean_trim_preserves_refusal() {
+    let document = roxmltree::Document::parse(r#"<root><value type="bool"> true </value></root>"#).unwrap();
+    let root = document.root_element();
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "Rhino field bool untyped text trim", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = super::super::field_bool_untyped(&ctx, root, "value", false).map(|_| ());
+        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}
+
+#[test]
+fn xml_untyped_integer_trim_preserves_refusal() {
+    let document = roxmltree::Document::parse(r#"<root><value type="int"> 1 </value></root>"#).unwrap();
+    let root = document.root_element();
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "Rhino field i32 untyped text trim", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = super::super::field_i32_untyped(&ctx, root, "value", 0).map(|_| ()).map_err(|error| match error {
+            FramingError::Resource(refusal) => CodecError::ResourceLimit(refusal),
+            other => panic!("valid field returned {other:?}"),
+        });
+        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}
+
+#[test]
+fn xml_untyped_real_trim_preserves_refusal() {
+    let document = roxmltree::Document::parse(r#"<root><value type="double"> 1.0 </value></root>"#).unwrap();
+    let root = document.root_element();
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "Rhino field f64 untyped text trim", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = super::super::field_f64_untyped(&ctx, root, "value", cadmpeg_ir::scalar::FiniteReal::ONE).map(|_| ());
+        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}
+
+#[test]
+fn xml_cap_type_trim_preserves_refusal() {
+    let document = roxmltree::Document::parse(r#"<root><value type="string"> flat </value></root>"#).unwrap();
+    let root = document.root_element();
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "Rhino field cap type text trim", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = super::super::field_cap_type(&ctx, root, "value").map(|_| ());
+        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}

@@ -1649,7 +1649,7 @@ fn validate_header(
         let Some(identifier) = decoded_bytes(bytes, implementation_level, budget)? else {
             return invalid("FILE_SCHEMA has invalid or duplicate schema identifiers");
         };
-        let trimmed = identifier.trim();
+        let trimmed = budget.trim_text(identifier.as_str(), "STEP declared schema identifier trim")?;
         budget.charge_retained(
             u64_from_index(trimmed.len()),
             "step_schema_identifier_normalized",
@@ -2212,18 +2212,18 @@ fn schema_identifier_matches(
     schema_name: &str,
     budget: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    let trimmed = schema_name.trim();
+    let trimmed = budget.trim_text(schema_name, "STEP schema name match trim")?;
     let (mut schema_name, _storage) = budget
         .with_scoped_storage("step_schema_name_matching", || {
             budget.copy_retained_text(trimmed, "step_schema_name_matching")
         })?;
     schema_name.make_ascii_uppercase();
     for identifier in budget.admit_iter(schema_identifiers, "STEP schema identifier matches traversal")? {
-        let identifier = identifier.trim();
+        let identifier = budget.trim_text(identifier.as_str(), "STEP matching schema identifier trim")?;
         if budget.equal(identifier, schema_name.as_str(), "STEP full schema identifier equality")? {
             return Ok(true);
         }
-        if let Some((name, _)) = split_schema_identifier(identifier) {
+        if let Some((name, _)) = split_schema_identifier(budget, identifier)? {
             if budget.equal(name, schema_name.as_str(), "STEP schema identifier prefix equality")? {
                 return Ok(true);
             }

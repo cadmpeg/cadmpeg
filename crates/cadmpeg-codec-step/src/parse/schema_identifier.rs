@@ -98,7 +98,7 @@ impl AdmittedSchemaIdentifier {
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<Option<Vec<u64>>, CodecError> {
-        let Some((_, Some(object_identifier))) = split_schema_identifier(self.text()) else {
+        let Some((_, Some(object_identifier))) = split_schema_identifier(ctx, self.text())? else {
             return Ok(None);
         };
         let mut components = schema_oid_components(ctx, object_identifier)?;
@@ -149,11 +149,11 @@ enum SchemaIdentifierForm<'a> {
 }
 
 fn schema_identifier_form<'a>(ctx: &'a DecodeContext<'_>, identifier: &'a str) -> Result<SchemaIdentifierForm<'a>, CodecError> {
-    let identifier = identifier.trim();
+    let identifier = ctx.trim_text(identifier, "STEP schema identifier trim")?;
     if identifier.is_empty() || ctx.admit_iter(identifier, "STEP schema identifier characters")?.count() > 1024 {
         return Ok(SchemaIdentifierForm::Invalid);
     }
-    let Some((name, object_identifier)) = split_schema_identifier(identifier) else {
+    let Some((name, object_identifier)) = split_schema_identifier(ctx, identifier)? else {
         return Ok(SchemaIdentifierForm::Invalid);
     };
     if !valid_schema_name(ctx, name)? {
@@ -178,13 +178,13 @@ fn schema_identifier_form<'a>(ctx: &'a DecodeContext<'_>, identifier: &'a str) -
 /// name is ignored. An identifier with no brace is a schema name alone. An
 /// identifier that opens an object identifier and does not close it at the end
 /// of the identifier has no schema name and no object identifier.
-pub(crate) fn split_schema_identifier(identifier: &str) -> Option<(&str, Option<&str>)> {
-    let identifier = identifier.trim();
+pub(crate) fn split_schema_identifier<'a>(ctx: &DecodeContext<'_>, identifier: &'a str) -> Result<Option<(&'a str, Option<&'a str>)>, CodecError> {
+    let identifier = ctx.trim_text(identifier, "STEP schema identifier trim")?;
     let Some((name, object_identifier)) = identifier.split_once('{') else {
-        return Some((identifier, None));
+        return Ok(Some((identifier, None)));
     };
-    let object_identifier = object_identifier.strip_suffix('}')?;
-    Some((name.trim_end(), Some(object_identifier)))
+    let Some(object_identifier) = object_identifier.strip_suffix('}') else { return Ok(None); };
+    Ok(Some((ctx.trim_end_text(name, "STEP schema identifier name trailing trim")?, Some(object_identifier))))
 }
 
 pub(super) fn valid_schema_identifier(ctx: &DecodeContext<'_>, identifier: &str) -> Result<bool, CodecError> {

@@ -396,3 +396,28 @@ fn file_reference_relative_path_refuses_retained_limit() {
         "Rhino file reference relative path",
     );
 }
+
+#[test]
+fn instance_alternative_path_trim_preserves_refusal_without_degradation() {
+    let archive = ArchiveVersion::V5;
+    let userdata = class_userdata(
+        archive,
+        crate::instances::IDEF_ALTERNATIVE_PATH_USERDATA.to_wire(),
+        crate::instances::OPENNURBS5_APPLICATION.to_wire(),
+        "  alternate-path  ",
+        true,
+    );
+    let payload = v5_definition_payload(archive, 6, [7; 16], &[], true);
+    let data = definition_record_with_userdata(archive, &payload, &userdata);
+    let chunk = chunk_at(&data, 0, data.len(), archive, false).unwrap();
+    let record = Record::long(chunk.typecode, chunk.range(), chunk.body());
+    cadmpeg_test_support::refusal::resource_limit_at(cadmpeg_core::decode::ResourceDimension::WorkUnits, "Rhino instance alternative path trim", |cap| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy).unwrap();
+        let result = crate::instances::parse_definitions(&ctx, &data, std::slice::from_ref(&record), archive, 0x1000_0021).map(|_| ());
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}
