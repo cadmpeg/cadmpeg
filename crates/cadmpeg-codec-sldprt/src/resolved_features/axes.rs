@@ -964,7 +964,7 @@ fn push_revolution_vote<T>(
     operation: &'static str,
 ) -> Result<(), CodecError> {
     ctx.charge_work(1, operation)?;
-    if let Some(values) = votes.get_mut(id) {
+    if let Some(values) = ctx.get_mut_hash_map(votes, id, operation)? {
         ctx.reserve_vec(values, 1, operation)?;
         values.push(value);
         return Ok(());

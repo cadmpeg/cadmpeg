@@ -1532,3 +1532,25 @@ fn line_reference_direction_propagates_slot_refusal() {
     ).unwrap().expect("declared direction");
     assert_eq!(*direction.as_raw(), Vector3::new(1.0, 0.0, 0.0));
 }
+
+#[test]
+fn existing_revolution_vote_lookup_propagates_work_refusal() {
+    let mut votes = std::collections::HashMap::from([(String::from("feature"), vec![1_u32])]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    // One visit precedes hashing the existing feature identity.
+    policy.limits.max_work_units = 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::push_revolution_vote(&ctx, &mut votes, "feature", 2, "lookup SLDPRT test revolution vote"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "lookup SLDPRT test revolution vote"
+    ));
+    assert_eq!(votes["feature"], [1]);
+    super::push_revolution_vote(
+        &cadmpeg_test_support::service_decode_context(), &mut votes, "feature", 2,
+        "lookup SLDPRT test revolution vote",
+    ).unwrap();
+    assert_eq!(votes["feature"], [1, 2]);
+}
