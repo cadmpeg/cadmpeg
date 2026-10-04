@@ -52,6 +52,84 @@ fn work_point_counted_inputs_refuse_collection_limit() {
     ));
 }
 
+#[test]
+fn work_point_scope_reference_scan_refuses_work_limit() {
+    let (bytes, scope, _) = work_point_stream("282", 2, false, None, [4.0, 5.0, 6.0], 5, 1);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan F3D WorkPoint scope references",
+        0,
+        |ctx| {
+            exact_work_point_construction_with_ctx(
+                ctx,
+                &bytes,
+                &records,
+                &scope,
+                &HashMap::from([(55, (POINT_DATA_TYPE_GUID, 2))]),
+            )
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "scan F3D WorkPoint scope references"
+    ));
+}
+
+#[test]
+fn work_point_indexed_frames_scan_refuses_work_limit() {
+    let (bytes, scope, _) = work_point_stream("282", 2, false, None, [4.0, 5.0, 6.0], 5, 1);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan F3D indexed record frames",
+        0,
+        |ctx| {
+            exact_work_point_construction_with_ctx(
+                ctx,
+                &bytes,
+                &records,
+                &scope,
+                &HashMap::from([(55, (POINT_DATA_TYPE_GUID, 2))]),
+            )
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "scan F3D indexed record frames"
+    ));
+}
+
+#[test]
+fn work_point_ascii_field_scan_refuses_work_limit() {
+    let (bytes, scope, _) = work_point_stream("282", 2, false, None, [4.0, 5.0, 6.0], 5, 1);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "validate F3D point-data ASCII field",
+        0,
+        |ctx| {
+            exact_work_point_construction_with_ctx(
+                ctx,
+                &bytes,
+                &records,
+                &scope,
+                &HashMap::from([(55, (POINT_DATA_TYPE_GUID, 2))]),
+            )
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "validate F3D point-data ASCII field"
+    ));
+}
+
 /// A `WorkPoint` scope record, its paired header, and one point-data record
 /// frame: the indexed header, the payload prologue with an optional property
 /// block, the class-level members of `version`, a base-level run of `inputs`

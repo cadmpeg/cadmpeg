@@ -46,6 +46,7 @@ impl Class397SymmetricFrame {
 }
 
 pub(super) fn exact_symmetric_extrude_prologue(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     paired_at: usize,
@@ -53,7 +54,8 @@ pub(super) fn exact_symmetric_extrude_prologue(
     paired_class_tag: &str,
     reference_count_at: usize,
     reference_members: &[u32],
-) -> Option<DesignExtrudePrologue> {
+) -> Result<Option<DesignExtrudePrologue>, cadmpeg_core::CodecError> {
+    (|| {
     const PROFILE_NORMAL_UNIT_EPS: f64 = 1.0e-12;
 
     let frame = Class397SymmetricFrame::new(
@@ -162,7 +164,10 @@ pub(super) fn exact_symmetric_extrude_prologue(
     }
 
     let guid_offset = start.checked_add(symmetric::GUID)?;
-    let guid_end = fixed_guid_end(bytes, guid_offset)?;
+    let guid_end = match fixed_guid_end(ctx, bytes, guid_offset) {
+        Ok(value) => value?,
+        Err(error) => return Some(Err(error)),
+    };
     let reference_count_offset = start.checked_add(symmetric::REFERENCE_COUNT)?;
     if guid_end != guid_offset.checked_add(76)?
         || bytes.get(guid_end..reference_count_offset)? != [0; 3]
@@ -171,7 +176,7 @@ pub(super) fn exact_symmetric_extrude_prologue(
         return None;
     }
 
-    Some(DesignExtrudePrologue::LegacyShifted {
+    Some(Ok(DesignExtrudePrologue::LegacyShifted {
         operation_prefix_marker_offset: None,
         operation,
         operation_offset: u64::try_from(operation_offset).ok()?,
@@ -192,5 +197,7 @@ pub(super) fn exact_symmetric_extrude_prologue(
         solid_operation_offset: u64::try_from(solid_operation_offset).ok()?,
         start: start_support,
         start_offset: u64::try_from(start_offset).ok()?,
-    })
+    }))
+    })()
+    .transpose()
 }

@@ -73,6 +73,26 @@ fn surface_trim_selection_and_cell_table() -> (Vec<u8>, DesignParameterScope) {
 }
 
 #[test]
+fn surface_trim_indexed_scanner_refuses_work_limit_through_optional_chain_parse() {
+    let (bytes, scope) = surface_trim_selection_and_cell_table();
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        "scan F3D indexed record headers",
+        6,
+        |ctx| {
+            let records = crate::design::decode::sketch::IndexedRecordOffsets::build(ctx, &bytes)?;
+            exact_surface_trim_operation(ctx, &bytes, &records, &scope).map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::WorkUnits
+                && refusal.operation == "scan F3D indexed record headers"
+    ));
+}
+
+#[test]
 fn surface_trim_output_refuses_identifier_and_collection_limits() {
     const ENTRY: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
     let (bytes, mut scope) = surface_trim_selection_and_cell_table();

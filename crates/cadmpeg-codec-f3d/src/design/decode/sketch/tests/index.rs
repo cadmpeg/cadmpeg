@@ -368,3 +368,75 @@ fn entity_header_output_refuses_collection_limit() {
     ));
     assert!(out.is_empty());
 }
+
+#[test]
+fn indexed_record_search_refuses_work_before_header_scanning() {
+    let bytes = indexed_header(7);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        crate::design::decode::sketch::next_indexed_record_offset(&ctx, &bytes, 0),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "scan F3D indexed record headers"
+                && limit.additional == 11
+    ));
+}
+
+#[test]
+fn indexed_record_frames_preserve_work_refusal() {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&indexed_header(7));
+    bytes.extend_from_slice(&indexed_header(7));
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(records.frames(&ctx, 7),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "scan F3D indexed record frames"
+                && limit.additional == 2));
+}
+
+#[test]
+fn indexed_record_groups_preserve_work_refusal() {
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&indexed_header(7));
+    // Hash traversal admits all allocated buckets.
+    let expected = u64_from_index(records.by_record_index.capacity());
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(records.records(&ctx),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "scan F3D indexed record groups"
+                && limit.additional == expected));
+}
+
+#[test]
+fn native_scope_encoder_preserves_each_iteration_work_refusal() {
+    let name = "A:B";
+    for (operation, additional) in [
+        ("measure F3D native stream key", 3),
+        ("scan F3D native stream key characters", 3),
+        ("scan F3D native stream key escaped bytes", 1),
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::WorkUnits, operation, 0,
+            |ctx| native_scope_scoped(ctx, name).map(|(_, text)| text),
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == operation
+                && limit.additional == additional));
+    }
+    let (_, text) = native_scope_scoped(
+        &cadmpeg_test_support::service_decode_context(), name,
+    ).unwrap();
+    assert_eq!(text, "f3d:A%3AB");
+}

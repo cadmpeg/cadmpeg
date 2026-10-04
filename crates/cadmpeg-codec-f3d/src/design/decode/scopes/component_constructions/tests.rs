@@ -1244,10 +1244,38 @@ fn class_414_component_insert_admits_shifted_identity_and_matrix_prologues() {
     identity[34..38].copy_from_slice(&relation_record_index.to_le_bytes());
     identity[44..46].copy_from_slice(&[1, 1]);
     identity[46..122].copy_from_slice(&null_guid);
-    assert_eq!(
-        super::exact_component_insert_identity_scope_shifted(&identity, 0, relation_record_index,),
-        Some(occurrence_identity)
+    crate::design::test_support::with_test_decode_context(|ctx| {
+        assert_eq!(
+            super::exact_component_insert_identity_scope_shifted(
+                ctx,
+                &identity,
+                0,
+                relation_record_index,
+            )
+            .unwrap(),
+            Some(occurrence_identity)
+        );
+    });
+    let identity_error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "match F3D UTF-16 ASCII field",
+        0,
+        |ctx| {
+            super::exact_component_insert_identity_scope_shifted(
+                ctx,
+                &identity,
+                0,
+                relation_record_index,
+            )
+        },
     );
+    assert!(matches!(
+        identity_error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "match F3D UTF-16 ASCII field"
+                && limit.additional == 72
+    ));
 
     let transform: [[f64; 4]; 4] = [
         [1.0, 0.0, 0.0, 4.0],
@@ -1266,10 +1294,38 @@ fn class_414_component_insert_admits_shifted_identity_and_matrix_prologues() {
         matrix[at..at + 8].copy_from_slice(&value.to_le_bytes());
     }
     matrix[178..254].copy_from_slice(&null_guid);
-    assert_eq!(
-        super::exact_component_insert_scope_414_264_389(&matrix, 0, relation_record_index,),
-        Some((transform.try_into().unwrap(), Some(50), occurrence_identity))
+    crate::design::test_support::with_test_decode_context(|ctx| {
+        assert_eq!(
+            super::exact_component_insert_scope_414_264_389(
+                ctx,
+                &matrix,
+                0,
+                relation_record_index,
+            )
+            .unwrap(),
+            Some((transform.try_into().unwrap(), Some(50), occurrence_identity))
+        );
+    });
+    let matrix_error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "match F3D UTF-16 ASCII field",
+        0,
+        |ctx| {
+            super::exact_component_insert_scope_414_264_389(
+                ctx,
+                &matrix,
+                0,
+                relation_record_index,
+            )
+        },
     );
+    assert!(matches!(
+        matrix_error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "match F3D UTF-16 ASCII field"
+                && limit.additional == 72
+    ));
 }
 
 #[test]
@@ -1340,6 +1396,37 @@ fn accepted_component_insert_roles_preserve_retained_refusals() {
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
                 && limit.operation == "f3d Design UTF-16 text")
         );
+    };
+    run_component_insert_scope_fixture(Some(probe));
+}
+
+#[test]
+fn legacy_component_insert_candidate_scan_refuses_work() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let probe = |bytes: &[u8], scope: &DesignParameterScope, stage: &'static str| {
+        if stage != "legacy" {
+            return;
+        }
+        let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
+        let relation_at = records.first_at_or_after(0, 20).expect("legacy relation header");
+        let carrier_at = *records.offsets(10).first().expect("legacy carrier header");
+        let expected = u64_from_index(
+            bytes.get(carrier_at + 11..relation_at).unwrap_or(&[]).len(),
+        );
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::WorkUnits,
+            "scan F3D legacy component insert candidate starts",
+            0,
+            |ctx| exact_component_insert_construction(ctx, bytes, &records, scope).map(|_| ()),
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "scan F3D legacy component insert candidate starts"
+                    && limit.additional == expected
+        ));
     };
     run_component_insert_scope_fixture(Some(probe));
 }

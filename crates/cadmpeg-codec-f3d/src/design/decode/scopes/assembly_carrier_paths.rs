@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode exact carrier-owned assembly operand paths.
 
-use cadmpeg_core::decode::index_from_u32;
-
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
@@ -39,9 +37,10 @@ pub(super) fn exact_variable_reference_operand_qualifiers(
 ) -> Result<Option<[DesignAssemblyOperandQualifier; 2]>, CodecError> {
     let mut qualifiers = [None, None];
     for (qualifier, frame) in qualifiers.iter_mut().zip(frames) {
-        *qualifier = exact_class_363_operand_path(ctx, bytes, records, scope, frame)?
-            .map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })
-            .or_else(|| exact_class_307_joint_origin(bytes, records, frame));
+        *qualifier = match exact_class_363_operand_path(ctx, bytes, records, scope, frame)? {
+            Some(path) => Some(DesignAssemblyOperandQualifier::OccurrencePath { path }),
+            None => exact_class_307_joint_origin(ctx, bytes, records, frame)?,
+        };
     }
     let [Some(first), Some(second)] = qualifiers else {
         return Ok(None);
@@ -57,13 +56,18 @@ fn exact_class_363_operand_path(
     frame: &DesignAssemblyOperandFrame,
 ) -> Result<Option<DesignAssemblyOperandPath>, CodecError> {
     (|| {
-        let (carrier_at, carrier_paired_at) = exact_class_264_record_frame(
+        let (carrier_at, carrier_paired_at) = match exact_class_264_record_frame(
+            ctx,
             bytes,
             records,
             frame.reference_record_index,
             "363",
             class_363_carrier::LEN,
-        )?;
+        ) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         let leading_record_index = marked_record_reference(
             bytes,
             carrier_at.checked_add(class_363_carrier::LEADING_REFERENCE)?,
@@ -72,14 +76,23 @@ fn exact_class_363_operand_path(
             bytes,
             carrier_at.checked_add(class_363_carrier::TERMINAL_REFERENCE)?,
         )?;
-        let leading = exact_class_363_node_frame(bytes, records, scope, leading_record_index)?;
-        let (terminal_at, terminal_paired_at) = exact_class_264_record_frame(
+        let leading = match exact_class_363_node_frame(ctx, bytes, records, scope, leading_record_index) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let (terminal_at, terminal_paired_at) = match exact_class_264_record_frame(
+            ctx,
             bytes,
             records,
             terminal_record_index,
             "386",
             class_363_terminal::LEN,
-        )?;
+        ) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         let leading_identity_record_index = marked_record_reference(
             bytes,
             leading
@@ -90,10 +103,26 @@ fn exact_class_363_operand_path(
             bytes,
             terminal_at.checked_add(class_363_terminal::IDENTITY_REFERENCE)?,
         )?;
-        let leading_identity =
-            exact_class_363_identity_frame(bytes, records, leading_identity_record_index)?;
-        let terminal_identity =
-            exact_class_363_identity_frame(bytes, records, terminal_identity_record_index)?;
+        let leading_identity = match exact_class_363_identity_frame(
+            ctx,
+            bytes,
+            records,
+            leading_identity_record_index,
+        ) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let terminal_identity = match exact_class_363_identity_frame(
+            ctx,
+            bytes,
+            records,
+            terminal_identity_record_index,
+        ) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         let scope_backlinks = [
             leading,
             CarrierFrame {
@@ -139,11 +168,15 @@ fn exact_class_363_operand_path(
                         .checked_add(ordinal * ASSEMBLY_MARKED_REFERENCE_LEN)?,
                 )?,
             )?;
-            if !scope
-                .reference_members()
-                .values()
-                .any(|value| value == &owner_record_index)
-            {
+            let contains_owner = match super::parameter_scope::reference_members(
+                ctx,
+                scope.reference_members(),
+                "scan F3D carrier placement owners",
+            ) {
+                Ok(mut members) => members.any(|value| value == owner_record_index),
+                Err(error) => return Some(Err(error)),
+            };
+            if !contains_owner {
                 return None;
             }
         }
@@ -208,70 +241,97 @@ fn exact_class_363_operand_path(
 }
 
 fn exact_class_307_joint_origin(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     frame: &DesignAssemblyOperandFrame,
-) -> Option<DesignAssemblyOperandQualifier> {
-    let (start, paired_at) = exact_class_264_record_frame(
-        bytes,
-        records,
-        frame.reference_record_index,
-        "307",
-        class_307_joint_origin::LEN,
-    )?;
-    let identity_end = fixed_guid_end(
-        bytes,
-        start.checked_add(class_307_joint_origin::IDENTITY_GUID)?,
-    )?;
-    let kind_end = fixed_utf16_ascii_eq(
-        bytes,
-        start.checked_add(class_307_joint_origin::KIND_CODE_UNIT_COUNT)?,
-        "JointOrigin",
-    )?;
-    if paired_at != start.checked_add(class_307_joint_origin::LEN)?
-        || marked_record_reference(
+) -> Result<Option<DesignAssemblyOperandQualifier>, CodecError> {
+    let parsed = (|| {
+        let (start, paired_at) = match exact_class_264_record_frame(
+            ctx,
             bytes,
-            start.checked_add(class_307_joint_origin::FIRST_REFERENCE)?,
-        )
-        .is_none()
-        || marked_record_reference(
+            records,
+            frame.reference_record_index,
+            "307",
+            class_307_joint_origin::LEN,
+        ) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let identity_end = match fixed_guid_end(
+            ctx,
             bytes,
-            start.checked_add(class_307_joint_origin::SECOND_REFERENCE)?,
-        )
-        .is_none()
-        || identity_end
-            != start
-                .checked_add(class_307_joint_origin::REFERENCE_COUNT)?
-                .checked_sub(3)?
-        || kind_end != start.checked_add(class_307_joint_origin::FEATURE_ORDINAL)?
-        || View::u32_le_at(
+            start.checked_add(class_307_joint_origin::IDENTITY_GUID)?,
+        ) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let kind_end = match fixed_utf16_ascii_eq(
+            ctx,
             bytes,
-            start.checked_add(class_307_joint_origin::REFERENCE_COUNT)?,
-        )? != class_307_joint_origin::REFERENCE_COUNT_VALUE
-        || bytes.get(
-            start.checked_add(class_307_joint_origin::REFERENCE_TRAILER)?
-                ..start
-                    .checked_add(class_307_joint_origin::REFERENCE_TRAILER)?
-                    .checked_add(class_307_joint_origin::REFERENCE_TRAILER_VALUE.len())?,
-        )? != class_307_joint_origin::REFERENCE_TRAILER_VALUE
-    {
-        return None;
-    }
-    for ordinal in 0..index_from_u32(class_307_joint_origin::REFERENCE_COUNT_VALUE) {
-        marked_record_reference(
-            bytes,
-            start
-                .checked_add(class_307_joint_origin::REFERENCE_ENTRIES)?
-                .checked_add(ordinal.checked_mul(ASSEMBLY_MARKED_REFERENCE_LEN)?)?,
-        )?;
-    }
-    Some(DesignAssemblyOperandQualifier::JointOrigin {
-        scope_record_index: frame.reference_record_index,
-        class_tag: "307".to_owned().try_into().ok()?,
-        byte_offset: u64::try_from(start).ok()?,
-        paired_class_tag: "264".to_owned().try_into().ok()?,
-        paired_byte_offset: u64::try_from(paired_at).ok()?,
-    })
+            start.checked_add(class_307_joint_origin::KIND_CODE_UNIT_COUNT)?,
+            "JointOrigin",
+        ) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        if paired_at != start.checked_add(class_307_joint_origin::LEN)?
+            || marked_record_reference(
+                bytes,
+                start.checked_add(class_307_joint_origin::FIRST_REFERENCE)?,
+            )
+            .is_none()
+            || marked_record_reference(
+                bytes,
+                start.checked_add(class_307_joint_origin::SECOND_REFERENCE)?,
+            )
+            .is_none()
+            || identity_end
+                != start
+                    .checked_add(class_307_joint_origin::REFERENCE_COUNT)?
+                    .checked_sub(3)?
+            || kind_end != start.checked_add(class_307_joint_origin::FEATURE_ORDINAL)?
+            || View::u32_le_at(
+                bytes,
+                start.checked_add(class_307_joint_origin::REFERENCE_COUNT)?,
+            )? != class_307_joint_origin::REFERENCE_COUNT_VALUE
+            || bytes.get(
+                start.checked_add(class_307_joint_origin::REFERENCE_TRAILER)?
+                    ..start
+                        .checked_add(class_307_joint_origin::REFERENCE_TRAILER)?
+                        .checked_add(class_307_joint_origin::REFERENCE_TRAILER_VALUE.len())?,
+            )? != class_307_joint_origin::REFERENCE_TRAILER_VALUE
+        {
+            return None;
+        }
+        let ordinals: [usize; 3] = [0, 1, 2];
+        let ordinals = match ctx.admit_iter(
+            &ordinals,
+            "validate F3D joint-origin reference entries",
+        ) {
+            Ok(ordinals) => ordinals,
+            Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+        };
+        for ordinal in ordinals.copied() {
+            marked_record_reference(
+                bytes,
+                start
+                    .checked_add(class_307_joint_origin::REFERENCE_ENTRIES)?
+                    .checked_add(ordinal.checked_mul(ASSEMBLY_MARKED_REFERENCE_LEN)?)?,
+            )?;
+        }
+        Some(Ok(DesignAssemblyOperandQualifier::JointOrigin {
+            scope_record_index: frame.reference_record_index,
+            class_tag: "307".to_owned().try_into().ok()?,
+            byte_offset: u64::try_from(start).ok()?,
+            paired_class_tag: "264".to_owned().try_into().ok()?,
+            paired_byte_offset: u64::try_from(paired_at).ok()?,
+        }))
+    })();
+    parsed.transpose()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -281,10 +341,11 @@ struct CarrierFrame {
 }
 
 fn exact_class_363_identity_frame(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     record_index: u32,
-) -> Option<CarrierFrame> {
+) -> Result<Option<CarrierFrame>, CodecError> {
     for (frame_length, scope_reference) in [
         (
             class_363_identity_reduced_490::LEN,
@@ -296,102 +357,144 @@ fn exact_class_363_identity_frame(
         ),
     ] {
         if let Some((start, _paired_at)) =
-            exact_class_264_record_frame(bytes, records, record_index, "388", frame_length)
+            exact_class_264_record_frame(ctx, bytes, records, record_index, "388", frame_length)?
         {
-            return Some(CarrierFrame {
+            return Ok(Some(CarrierFrame {
                 start,
                 scope_reference,
-            });
+            }));
         }
     }
     if let Some((start, _paired_at)) = exact_class_264_record_frame(
+        ctx,
         bytes,
         records,
         record_index,
         "388",
         class_363_identity_short::LEN,
-    ) {
-        return Some(CarrierFrame {
+    )? {
+        return Ok(Some(CarrierFrame {
             start,
             scope_reference: class_363_identity_short::SCOPE_REFERENCE,
-        });
+        }));
     }
     if let Some((start, _paired_at)) =
-        exact_class_264_record_frame(bytes, records, record_index, "388", class_363_identity::LEN)
+        exact_class_264_record_frame(ctx, bytes, records, record_index, "388", class_363_identity::LEN)?
     {
-        return Some(CarrierFrame {
+        return Ok(Some(CarrierFrame {
             start,
             scope_reference: class_363_identity::SCOPE_REFERENCE,
-        });
+        }));
     }
-    let (start, _paired_at) = exact_class_264_record_frame(
+    let Some((start, _paired_at)) = exact_class_264_record_frame(
+        ctx,
         bytes,
         records,
         record_index,
         "388",
         class_363_identity_extended::LEN,
-    )?;
-    Some(CarrierFrame {
+    )? else {
+        return Ok(None);
+    };
+    Ok(Some(CarrierFrame {
         start,
         scope_reference: class_363_identity_extended::SCOPE_REFERENCE,
-    })
+    }))
 }
 
 fn exact_class_363_node_frame(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     record_index: u32,
-) -> Option<CarrierFrame> {
-    if let Some((start, _paired_at)) =
-        exact_class_264_record_frame(bytes, records, record_index, "360", class_363_leading::LEN)
-    {
-        return Some(CarrierFrame {
+) -> Result<Option<CarrierFrame>, CodecError> {
+    let parsed = (|| {
+        let leading_frame = match exact_class_264_record_frame(
+            ctx,
+            bytes,
+            records,
+            record_index,
+            "360",
+            class_363_leading::LEN,
+        ) {
+            Ok(frame) => frame,
+            Err(error) => return Some(Err(error)),
+        };
+        if let Some((start, _paired_at)) = leading_frame {
+            return Some(Ok(CarrierFrame {
+                start,
+                scope_reference: class_363_leading::SCOPE_REFERENCE,
+            }));
+        }
+        let (start, _paired_at) = match exact_class_264_record_frame(
+            ctx,
+            bytes,
+            records,
+            record_index,
+            "360",
+            class_363_child::LEN,
+        ) {
+            Ok(Some(frame)) => frame,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let leading_record_index = marked_record_reference(
+            bytes,
+            start.checked_add(class_363_child::LEADING_REFERENCE)?,
+        )?;
+        let leading_frame = match exact_class_264_record_frame(
+            ctx,
+            bytes,
+            records,
+            leading_record_index,
+            "360",
+            class_363_leading::LEN,
+        ) {
+            Ok(frame) => frame,
+            Err(error) => return Some(Err(error)),
+        };
+        // The leading record's frame is checked before the child frame is accepted.
+        if leading_frame.is_none() {
+            return None;
+        }
+        let contains_leading = match super::parameter_scope::reference_members(
+            ctx,
+            scope.reference_members(),
+            "scan F3D carrier leading owner references",
+        ) {
+            Ok(mut members) => members.any(|value| value == leading_record_index),
+            Err(error) => return Some(Err(error)),
+        };
+        if !contains_leading {
+            return None;
+        }
+        Some(Ok(CarrierFrame {
             start,
-            scope_reference: class_363_leading::SCOPE_REFERENCE,
-        });
-    }
-    let (start, _paired_at) =
-        exact_class_264_record_frame(bytes, records, record_index, "360", class_363_child::LEN)?;
-    let leading_record_index = marked_record_reference(
-        bytes,
-        start.checked_add(class_363_child::LEADING_REFERENCE)?,
-    )?;
-    // discarded-value: the leading record's frame is checked, not read; ? states the refusal
-    let _ = exact_class_264_record_frame(
-        bytes,
-        records,
-        leading_record_index,
-        "360",
-        class_363_leading::LEN,
-    )?;
-    if !scope
-        .reference_members()
-        .values()
-        .any(|value| value == &leading_record_index)
-    {
-        return None;
-    }
-    Some(CarrierFrame {
-        start,
-        scope_reference: class_363_child::SCOPE_REFERENCE,
-    })
+            scope_reference: class_363_child::SCOPE_REFERENCE,
+        }))
+    })();
+    parsed.transpose()
 }
 
 fn exact_class_264_record_frame(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     record_index: u32,
     class_tag: &str,
     frame_length: usize,
-) -> Option<(usize, usize)> {
-    let mut candidates = records.frames(record_index).filter(|(start, paired_at)| {
+) -> Result<Option<(usize, usize)>, CodecError> {
+    let frames = records.frames(ctx, record_index)?;
+    let mut candidates = frames.filter(|(start, paired_at)| {
         Some(*paired_at) == start.checked_add(frame_length)
             && exact_indexed_header_at(bytes, *start, record_index).as_deref() == Some(class_tag)
             && exact_indexed_header_at(bytes, *paired_at, record_index).as_deref() == Some("264")
     });
-    let candidate = candidates.next()?;
-    candidates.next().is_none().then_some(candidate)
+    let Some(candidate) = candidates.next() else {
+        return Ok(None);
+    };
+    Ok(candidates.next().is_none().then_some(candidate))
 }
 
 fn exact_class_363_identity_guids(
@@ -524,16 +627,18 @@ mod tests {
             transform_offset: 20,
         };
 
-        assert_eq!(
+        let joint_origin_frame = crate::test_support::with_decode_context(|ctx| {
             exact_class_264_record_frame(
+                ctx,
                 &bytes,
                 &records,
                 record_index,
                 "307",
                 class_307_joint_origin::LEN,
-            ),
-            Some((0, class_307_joint_origin::LEN))
-        );
+            )
+        })
+        .unwrap();
+        assert_eq!(joint_origin_frame, Some((0, class_307_joint_origin::LEN)));
         assert_eq!(
             crate::test_support::with_decode_context(|ctx| lp_utf16_bounded_charged(
                 ctx,
@@ -548,8 +653,12 @@ mod tests {
                 class_307_joint_origin::FEATURE_ORDINAL
             ))
         );
+        let qualifier = crate::test_support::with_decode_context(|ctx| {
+            exact_class_307_joint_origin(ctx, &bytes, &records, &frame)
+        })
+        .unwrap();
         assert!(matches!(
-            exact_class_307_joint_origin(&bytes, &records, &frame),
+            qualifier,
             Some(DesignAssemblyOperandQualifier::JointOrigin {
                 scope_record_index: 17,
                 byte_offset: 0,
@@ -560,7 +669,13 @@ mod tests {
 
         bytes[class_307_joint_origin::REFERENCE_TRAILER] = 0;
         let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-        assert_eq!(exact_class_307_joint_origin(&bytes, &records, &frame), None);
+        assert_eq!(
+            crate::test_support::with_decode_context(|ctx| {
+                exact_class_307_joint_origin(ctx, &bytes, &records, &frame)
+            })
+            .unwrap(),
+            None
+        );
     }
 
     #[test]
@@ -603,7 +718,10 @@ mod tests {
             }
             let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
             assert_eq!(
-                exact_class_363_identity_frame(&bytes, &records, record_index),
+                crate::test_support::with_decode_context(|ctx| {
+                    exact_class_363_identity_frame(ctx, &bytes, &records, record_index)
+                })
+                .unwrap(),
                 Some(CarrierFrame {
                     start: 0,
                     scope_reference

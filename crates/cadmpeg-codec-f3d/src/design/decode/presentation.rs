@@ -78,9 +78,10 @@ pub(super) fn browser_node_records(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
-) -> Result<Vec<BrowserNodeRecord>, CodecError> {
+    ) -> Result<Vec<BrowserNodeRecord>, CodecError> {
     let mut out = Vec::new();
-    for frame in typed_primary_frames(ctx, bytes, meta, BROWSER_NODE_TYPE_GUID, "browser-node")? {
+    let frames = typed_primary_frames(ctx, bytes, meta, BROWSER_NODE_TYPE_GUID, "browser-node")?;
+    for frame in ctx.admit_iter(&frames, "scan F3D browser-node frames")? {
         if frame.design_type.version != BROWSER_NODE_TYPE_VERSION {
             continue;
         }
@@ -173,13 +174,14 @@ pub(crate) fn body_presentations(
     let entity_types = entity_types(ctx, meta)?;
 
     let mut out = Vec::new();
-    for frame in typed_primary_frames(
+    let frames = typed_primary_frames(
         ctx,
         bytes,
         meta,
         BODY_PRESENTATION_TYPE_GUID,
         "body-presentation",
-    )? {
+    )?;
+    for frame in ctx.admit_iter(&frames, "scan F3D body-presentation frames")? {
         if frame.design_type.version != BODY_PRESENTATION_TYPE_VERSION {
             continue;
         }
@@ -313,8 +315,22 @@ fn entity_types<'a>(
     meta: &'a crate::metastream::MetaStream,
 ) -> Result<HashMap<u64, (&'a str, u32)>, CodecError> {
     let mut out = HashMap::new();
-    for design_type in &meta.types {
-        for &entity_id in design_type.entities.values() {
+    for design_type in ctx.admit_iter(&meta.types, "scan F3D presentation entity types")? {
+        let entities = &design_type.entities;
+        for entity_id in ctx
+            .admit_iter(
+                entities.unlocated_values().unwrap_or(&[]),
+                "scan F3D unlocated presentation entities",
+            )?
+            .copied()
+            .chain(
+                ctx.admit_iter(
+                    entities.located_rows().unwrap_or(&[]),
+                    "scan F3D located presentation entities",
+                )?
+                .map(|entity| entity.value),
+            )
+        {
             if out.contains_key(&entity_id) {
                 return Err(crate::design::text::malformed_design(
                     ctx,
@@ -348,7 +364,14 @@ fn presentation_material(
     let modern_marker = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[0])?;
     let modern_trailer = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[1])?;
     let mut candidate = None;
-    for physical_at in find_all(bytes, start, end, &physical_marker) {
+    for physical_at in find_all(
+        ctx,
+        bytes,
+        start,
+        end,
+        &physical_marker,
+        "find F3D physical material marker",
+    )? {
         let Some((physical_guid_at, physical_guid)) =
             preceding_lp_utf16(ctx, bytes, start, physical_at)?
         else {
@@ -412,7 +435,7 @@ fn presentation_material(
         else {
             continue;
         };
-        let Some(visual_at) = record_tail_visual_offset(bytes, after_name, end) else {
+        let Some(visual_at) = record_tail_visual_offset(ctx, bytes, after_name, end)? else {
             continue;
         };
         let Some((visual_guid, after_visual)) =
@@ -495,7 +518,14 @@ fn bare_presentation_material(
     let modern_marker = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[0])?;
     let modern_trailer = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[1])?;
     let mut candidate = None;
-    for marker_at in find_all(bytes, start, end, &marker) {
+    for marker_at in find_all(
+        ctx,
+        bytes,
+        start,
+        end,
+        &marker,
+        "find F3D bare material marker",
+    )? {
         let Some(token_at) = skip_zeros(bytes, marker_at + marker.len(), end) else {
             continue;
         };
@@ -544,16 +574,28 @@ fn bare_presentation_material(
                 after_name = Some(end);
             }
         }
-        let mut visual_offsets = [Some(node_reference_at), after_name]
-            .into_iter()
-            .flatten()
-            .filter_map(|name_end| record_tail_visual_offset(bytes, name_end, end));
-        let Some(visual_at) = visual_offsets.next() else {
-            continue;
-        };
-        if visual_offsets.any(|offset| offset != visual_at) {
+        let possible_name_ends = [Some(node_reference_at), after_name];
+        let mut admitted_name_ends = ctx
+            .admit_iter(&possible_name_ends, "scan F3D candidate visual name ends")?
+            .filter_map(|name_end| *name_end);
+        let mut visual_at = None;
+        let mut ambiguous_visual_offset = false;
+        for name_end in admitted_name_ends.by_ref() {
+            let Some(offset) = record_tail_visual_offset(ctx, bytes, name_end, end)? else {
+                continue;
+            };
+            if visual_at.is_some_and(|previous| previous != offset) {
+                ambiguous_visual_offset = true;
+                break;
+            }
+            visual_at = Some(offset);
+        }
+        if ambiguous_visual_offset {
             continue;
         }
+        let Some(visual_at) = visual_at else {
+            continue;
+        };
         let Some((visual_guid, after_visual)) =
             lp_utf16_bounded_charged(ctx, bytes, visual_at, 1..=256, "f3d Design UTF-16 text")?
         else {
@@ -614,34 +656,93 @@ fn local_reference(bytes: &[u8], at: &mut usize) -> Option<u64> {
     }
 }
 
-fn record_tail_visual_offset(bytes: &[u8], name_end: usize, end: usize) -> Option<usize> {
+fn record_tail_visual_offset(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    name_end: usize,
+    end: usize,
+) -> Result<Option<usize>, CodecError> {
     const OPACITY_ONE: [u8; 4] = 1.0f32.to_le_bytes();
-    for marker_at in (name_end..end).take(40) {
+    let Some(markers) = bytes.get(name_end..end) else {
+        return Ok(None);
+    };
+    for (relative_marker_at, _) in
+        ctx.admit_iter(markers, "scan F3D presentation visual markers")?
+            .enumerate()
+            .take(40)
+    {
+        // The relative offset comes from bytes[name_end..end].
+        let marker_at = name_end + relative_marker_at;
         if bytes.get(marker_at..marker_at + 2) != Some(&[0x01, 0x01]) {
             continue;
         }
-        let gap = bytes.get(name_end..marker_at)?;
-        let zeros_only = gap.iter().all(|byte| *byte == 0);
+        let Some(gap) = bytes.get(name_end..marker_at) else {
+            return Ok(None);
+        };
+        let zeros_only = ctx
+            .admit_iter(gap, "scan F3D presentation visual marker padding")?
+            .all(|byte| *byte == 0);
         let opacity_tail = gap.len() >= OPACITY_ONE.len()
             && gap[gap.len() - OPACITY_ONE.len()..] == OPACITY_ONE
-            && gap[..gap.len() - OPACITY_ONE.len()]
-                .iter()
+            && ctx
+                .admit_iter(
+                    &gap[..gap.len() - OPACITY_ONE.len()],
+                    "scan F3D presentation opacity padding",
+                )?
                 .all(|byte| *byte == 0);
         if zeros_only || opacity_tail {
-            return skip_zeros_capped(bytes, marker_at + 2, end, 12);
+            return Ok(skip_zeros_capped(bytes, marker_at + 2, end, 12));
         }
     }
-    None
+    Ok(None)
 }
 
 fn find_all<'a>(
+    ctx: &'a DecodeContext<'_>,
     bytes: &'a [u8],
     start: usize,
     end: usize,
     needle: &'a [u8],
-) -> impl Iterator<Item = usize> + 'a {
+    operation: &'static str,
+) -> Result<impl Iterator<Item = usize> + 'a, CodecError> {
     let range = bytes.get(start..end).unwrap_or_default();
-    memchr::memmem::find_iter(range, needle).map(move |offset| start + offset)
+    static EMPTY_NEEDLE_TERMINAL: [(); 1] = [()];
+    let mut empty_needle_positions = if needle.is_empty() {
+        Some(
+            ctx.admit_iter(range, operation)?
+                .enumerate()
+                .map(|(offset, _)| offset)
+                .chain(
+                    ctx.admit_iter(&EMPTY_NEEDLE_TERMINAL, operation)?
+                        .map(move |_| range.len()),
+                ),
+        )
+    } else {
+        None
+    };
+    let mut windows = if let Some(width) = std::num::NonZeroUsize::new(needle.len()) {
+        Some(ctx.admit_iter(range, operation)?.windows(width).enumerate())
+    } else {
+        None
+    };
+    let mut next_accepted = 0usize;
+    Ok(std::iter::from_fn(move || {
+        if let Some(positions) = empty_needle_positions.as_mut() {
+            // A valid range ends at end; the invalid-range fallback has offset zero only.
+            return positions.next().map(|offset| start + offset);
+        }
+        let windows = windows.as_mut()?;
+        loop {
+            let (offset, window) = windows.next()?;
+            if offset < next_accepted || window != needle {
+                continue;
+            }
+            // The matching window bounds this sum by range.len().
+            next_accepted = offset + needle.len();
+            // This window offset is inside bytes[start..end].
+            return Some(start + offset);
+        }
+    }))
 }
 
 fn skip_zeros(bytes: &[u8], start: usize, end: usize) -> Option<usize> {
@@ -667,14 +768,30 @@ fn preceding_lp_utf16(
         let Some(end) = marker_at.checked_sub(gap) else {
             continue;
         };
-        if end < start
-            || bytes
-                .get(end..marker_at)
-                .is_none_or(|padding| padding.iter().any(|byte| *byte != 0))
+        if end < start {
+            continue;
+        }
+        let Some(padding) = bytes.get(end..marker_at) else {
+            continue;
+        };
+        if ctx
+            .admit_iter(padding, "scan F3D presentation marker padding")?
+            .any(|byte| *byte != 0)
         {
             continue;
         }
-        for at in (start..end).rev().take(4 + 256 * 2).rev() {
+        let Some(candidate_bytes) = bytes.get(start..end) else {
+            continue;
+        };
+        for (relative_at, _) in ctx
+            .admit_iter(candidate_bytes, "scan F3D presentation UTF-16 headers")?
+            .enumerate()
+            .rev()
+            .take(4 + 256 * 2)
+            .rev()
+        {
+            // The relative offset comes from bytes[start..end].
+            let at = start + relative_at;
             let Some(count) =
                 View::u32_le_at(bytes, at).and_then(|count| usize::try_from(count).ok())
             else {
@@ -710,7 +827,8 @@ mod tests {
     use super::{
         bare_presentation_material as bare_presentation_material_with_context,
         body_presentations as body_presentations_with_context,
-        browser_node_records as browser_node_records_with_context, BodyPresentationOwner,
+        browser_node_records as browser_node_records_with_context, find_all,
+        BodyPresentationOwner,
     };
     use crate::bytes::lp_utf16_bytes;
     use crate::design::presentation::{
@@ -753,6 +871,33 @@ mod tests {
         crate::design::test_support::with_test_decode_context(|ctx| {
             browser_node_records_with_context(ctx, bytes, meta)
         })
+    }
+
+    #[test]
+    fn find_all_preserves_empty_needle_offsets() {
+        crate::design::test_support::with_test_decode_context(|ctx| {
+            let offsets = find_all(ctx, b"abc", 1, 3, b"", "test empty F3D marker")
+                .expect("admit empty-needle search")
+                .collect::<Vec<_>>();
+            assert_eq!(offsets, [1, 2, 3]);
+        });
+    }
+
+    #[test]
+    fn find_all_preserves_ascending_nonoverlapping_matches() {
+        crate::design::test_support::with_test_decode_context(|ctx| {
+            let offsets = find_all(
+                ctx,
+                b"xababaabaY",
+                1,
+                9,
+                b"aba",
+                "test overlapping F3D marker",
+            )
+            .expect("admit overlapping-needle search")
+            .collect::<Vec<_>>();
+            assert_eq!(offsets, [1, 6]);
+        });
     }
 
     #[test]

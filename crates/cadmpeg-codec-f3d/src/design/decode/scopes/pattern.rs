@@ -169,8 +169,16 @@ fn exact_rectangular_pattern_instances(
         ) {
             return Some(Err(error));
         }
-        for record_index in scope.reference_members().values() {
-            reference_starts.push((*record_index, records.first_at_or_after(0, *record_index)?));
+        let references = match super::parameter_scope::reference_members(
+            ctx,
+            scope.reference_members(),
+            "scan F3D rectangular pattern scope references",
+        ) {
+            Ok(references) => references,
+        Err(error) => return Some(Err(error)),
+        };
+        for record_index in references {
+            reference_starts.push((record_index, records.first_at_or_after(0, record_index)?));
         }
 
         let mut candidates = Vec::new();
@@ -182,22 +190,29 @@ fn exact_rectangular_pattern_instances(
             return Some(Err(error));
         }
         let mut scanned_bytes = 0_usize;
-        for record_index in &record_indices {
-            let Some(range_work) = u64_from_index(reference_starts.len()).checked_mul(2) else {
-                return Some(Err(ctx.refuse_codec_limit(
-                    "index F3D rectangular pattern candidate range",
-                    0,
-                    u64::MAX,
-                )));
-            };
+        let admitted_record_indices = match ctx.admit_iter(
+            &record_indices,
+            "scan F3D rectangular pattern record indexes",
+        ) {
+            Ok(indices) => indices,
+            Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+        };
+        for record_index in admitted_record_indices.copied() {
+            let range_work = u64_from_index(reference_starts.len());
             if let Err(error) =
                 ctx.charge_work(range_work, "index F3D rectangular pattern candidate range")
             {
                 return Some(Err(error));
             }
-            let start = reference_starts
-                .iter()
-                .find_map(|(candidate, offset)| (candidate == record_index).then_some(*offset))?;
+            let mut start_candidates = match ctx.admit_iter(
+                &reference_starts,
+                "find F3D rectangular pattern start candidate",
+            ) {
+                Ok(candidates) => candidates,
+                Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+            };
+            let start = start_candidates
+                .find_map(|(candidate, offset)| (candidate == &record_index).then_some(*offset))?;
             let end = reference_starts
                 .iter()
                 .filter_map(|(_, offset)| (*offset > start).then_some(*offset))
@@ -235,7 +250,21 @@ fn exact_rectangular_pattern_instances(
         let first_candidates = candidates.first()?;
         let final_candidates = candidates.last()?;
         let mut runs = Vec::new();
+        let first_candidates = match ctx.admit_iter(
+            first_candidates,
+            "scan F3D rectangular pattern first candidates",
+        ) {
+            Ok(candidates) => candidates,
+            Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+        };
         for first in first_candidates {
+            let final_candidates = match ctx.admit_iter(
+                final_candidates,
+                "scan F3D rectangular pattern final candidates",
+            ) {
+                Ok(candidates) => candidates,
+                Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+            };
             for final_candidate in final_candidates {
                 if let Err(error) = ctx.charge_work(24, "match F3D rectangular pattern endpoints") {
                     return Some(Err(error));
@@ -259,9 +288,23 @@ fn exact_rectangular_pattern_instances(
                 }
                 run.push(*first);
                 let mut unique = true;
-                for (ordinal, record_candidates) in candidates[1..count - 1].iter().enumerate() {
+                let intermediate_records = match ctx.admit_iter(
+                    &candidates[1..count - 1],
+                    "scan F3D rectangular pattern intermediate records",
+                ) {
+                    Ok(records) => records,
+                    Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+                };
+                for (ordinal, record_candidates) in intermediate_records.enumerate() {
                     let fraction = f64_from_index(ordinal + 1)? / f64_from_index(count - 1)?;
                     let mut matched = None;
+                    let record_candidates = match ctx.admit_iter(
+                        record_candidates,
+                        "scan F3D rectangular pattern intermediate candidates",
+                    ) {
+                        Ok(candidates) => candidates,
+                        Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+                    };
                     for candidate in record_candidates {
                         if let Err(error) =
                             ctx.charge_work(24, "match F3D rectangular pattern intermediate")
@@ -328,7 +371,18 @@ fn exact_rectangular_pattern_instances(
         {
             return Some(Err(error));
         }
-        for (record_index, (value, offset)) in record_indices.into_iter().zip(run) {
+        let record_indices = match ctx.admit_iter(
+            &record_indices,
+            "scan F3D rectangular pattern instance indexes",
+        ) {
+            Ok(indices) => indices,
+            Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+        };
+        let run = match ctx.admit_iter(run, "scan F3D rectangular pattern instance transforms") {
+            Ok(run) => run,
+            Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+        };
+        for (record_index, (value, offset)) in record_indices.copied().zip(run) {
             instances.push(patterns::DesignPatternInstance {
                 record_index,
                 transform: crate::records::identity::Located {
@@ -365,13 +419,18 @@ fn exact_rigid_transform_candidates(
         // either sign at lanes twelve to fourteen. Locate the fixed `1.0` image
         // (it cannot overlap itself, so every occurrence surfaces) and read the
         // full sixteen-lane frame only at surviving offsets.
-        if let Err(error) = ctx.charge_work(
-            u64_from_index(end - start - 120),
-            "scan F3D rectangular pattern matrices",
+        let marker_width = std::num::NonZeroUsize::new(ONE_F64_LE.len())?;
+        let hits = match ctx.admit_iter(
+            &bytes[start + 120..end],
+            "scan F3D rectangular pattern matrix marker bytes",
         ) {
-            return Some(Err(error));
-        }
-        for hit in memchr::memmem::find_iter(&bytes[start + 120..end], &ONE_F64_LE) {
+            Ok(bytes) => bytes
+                .windows(marker_width)
+                .enumerate()
+                .filter_map(|(hit, window)| (window == ONE_F64_LE.as_slice()).then_some(hit)),
+            Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+        };
+        for hit in hits {
             if let Err(error) = ctx.charge_work(152, "validate F3D rectangular pattern matrix") {
                 return Some(Err(error));
             }
@@ -441,20 +500,43 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
             return None;
         }
         let mut axis_candidates = Vec::new();
-        for (record_index, selection_record_index) in scope
-            .reference_members()
-            .values()
-            .zip(scope.reference_members().values().skip(1))
+        let axis_record_indices = match super::parameter_scope::reference_members(
+            ctx,
+            scope.reference_members(),
+            "scan F3D circular pattern axis references",
+        ) {
+            Ok(references) => references,
+            Err(error) => return Some(Err(error)),
+        };
+        let selection_record_indices = match super::parameter_scope::reference_members(
+            ctx,
+            scope.reference_members(),
+            "scan F3D circular pattern selection references",
+        ) {
+            Ok(references) => references,
+            Err(error) => return Some(Err(error)),
+        };
+        for (record_index, selection_record_index) in axis_record_indices
+            .zip(selection_record_indices.skip(1))
         {
-            for (start, paired_at) in records.frames(*record_index) {
-                if let Some(axis) = exact_circular_pattern_axis(
+            let frames = match records.frames(ctx, record_index) {
+                Ok(frames) => frames,
+                Err(error) => return Some(Err(error)),
+            };
+            for (start, paired_at) in frames {
+                let axis = match exact_circular_pattern_axis(
+                    ctx,
                     bytes,
                     start,
                     paired_at,
-                    *record_index,
-                    *selection_record_index,
+                    record_index,
+                    selection_record_index,
                     scope.record_index,
                 ) {
+                    Ok(axis) => axis,
+                    Err(error) => return Some(Err(error)),
+                };
+                if let Some(axis) = axis {
                     if let Err(error) = ctx.reserve_vec(
                         &mut axis_candidates,
                         1,
@@ -464,21 +546,33 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
                     }
                     axis_candidates.push(CircularPatternAxisCandidate {
                         axis,
-                        axis_record_index: *record_index,
-                        selection_record_index: *selection_record_index,
+                        axis_record_index: record_index,
+                        selection_record_index,
                     });
                 }
             }
         }
-        for record_index in scope.reference_members().values() {
-            for (start, paired_at) in records.frames(*record_index) {
+        let record_indices = match super::parameter_scope::reference_members(
+            ctx,
+            scope.reference_members(),
+            "scan F3D circular pattern legacy axis references",
+        ) {
+            Ok(references) => references,
+            Err(error) => return Some(Err(error)),
+        };
+        for record_index in record_indices {
+            let frames = match records.frames(ctx, record_index) {
+                Ok(frames) => frames,
+                Err(error) => return Some(Err(error)),
+            };
+            for (start, paired_at) in frames {
                 let candidate = match exact_legacy_circular_pattern_axis(
                     ctx,
                     bytes,
                     records,
                     start,
                     paired_at,
-                    *record_index,
+                    record_index,
                     scope,
                 ) {
                     Ok(candidate) => candidate,
@@ -494,19 +588,33 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
                     }
                     axis_candidates.push(CircularPatternAxisCandidate {
                         axis,
-                        axis_record_index: *record_index,
+                        axis_record_index: record_index,
                         selection_record_index,
                     });
                 }
             }
         }
         let axis_index = select_circular_pattern_axis(&axis_candidates)?;
+        let axis_candidate_index = match ctx.admit_iter(
+            &axis_candidates,
+            "select F3D circular pattern axis candidate",
+        ) {
+            Ok(candidates) => candidates,
+            Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+        }
+        .enumerate()
+        .nth(axis_index)
+        .map(|(index, _)| index)?;
         let CircularPatternAxisCandidate {
             axis,
             axis_record_index,
             selection_record_index,
-        } = axis_candidates.into_iter().nth(axis_index)?;
-        let owner_count_candidates = parameter_owners.iter().filter_map(|owner| {
+        } = axis_candidates.swap_remove(axis_candidate_index);
+        let owner_count_candidates = match ctx.admit_iter(
+            parameter_owners,
+            "scan F3D circular pattern count owners",
+        ) {
+            Ok(owners) => owners.filter_map(|owner| {
             if native_stream(owner.id()) != native_stream(&scope.id)
                 || owner.scope_record_index() != scope.record_index
                 || owner.local_ordinal() != 0
@@ -521,7 +629,9 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
                 owner.record_index(),
                 owner.evaluated_value_offset(),
             ))
-        });
+            }),
+            Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+        };
         let mut count_candidates = Vec::new();
         for candidate in owner_count_candidates {
             if let Err(error) = ctx.reserve_vec(
@@ -534,10 +644,26 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
             count_candidates.push(candidate);
         }
         if count_candidates.is_empty() {
-            for record_index in scope.reference_members().values() {
-                if let Some((count, count_offset)) =
-                    exact_fixed_pattern_count(bytes, records, *record_index, scope.record_index)
-                {
+            let record_indices = match super::parameter_scope::reference_members(
+                ctx,
+                scope.reference_members(),
+                "scan F3D circular pattern count references",
+            ) {
+                Ok(references) => references,
+                Err(error) => return Some(Err(error)),
+            };
+            for record_index in record_indices {
+                let candidate = match exact_fixed_pattern_count(
+                    ctx,
+                    bytes,
+                    records,
+                    record_index,
+                    scope.record_index,
+                ) {
+                    Ok(candidate) => candidate,
+                    Err(error) => return Some(Err(error)),
+                };
+                if let Some((count, count_offset)) = candidate {
                     if let Err(error) = ctx.reserve_vec(
                         &mut count_candidates,
                         1,
@@ -545,7 +671,7 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
                     ) {
                         return Some(Err(error));
                     }
-                    count_candidates.push((count, *record_index, count_offset));
+                    count_candidates.push((count, record_index, count_offset));
                 }
             }
         }
@@ -561,7 +687,11 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
         let [(count, count_record_index, count_offset)] = count_candidates.as_slice() else {
             return None;
         };
-        let owner_angle_candidates = parameter_owners.iter().filter_map(|owner| {
+        let owner_angle_candidates = match ctx.admit_iter(
+            parameter_owners,
+            "scan F3D circular pattern angle owners",
+        ) {
+            Ok(owners) => owners.filter_map(|owner| {
             (native_stream(owner.id()) == native_stream(&scope.id)
                 && owner.scope_record_index() == scope.record_index
                 && owner.local_ordinal() == 1)
@@ -571,7 +701,9 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
                 owner.record_index(),
                 owner.evaluated_value_offset(),
             ))
-        });
+            }),
+            Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+        };
         let mut angle_candidates = Vec::new();
         for candidate in owner_angle_candidates {
             if let Err(error) = ctx.reserve_vec(
@@ -584,9 +716,19 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
             angle_candidates.push(candidate);
         }
         if angle_candidates.is_empty() {
-            for record_index in scope.reference_members().values() {
-                let Some(scalar) = exact_fixed_scalar(bytes, records, *record_index) else {
-                    continue;
+            let record_indices = match super::parameter_scope::reference_members(
+                ctx,
+                scope.reference_members(),
+                "scan F3D circular pattern angle references",
+            ) {
+                Ok(references) => references,
+                Err(error) => return Some(Err(error)),
+            };
+            for record_index in record_indices {
+                let scalar = match exact_fixed_scalar(ctx, bytes, records, record_index) {
+                    Ok(Some(scalar)) => scalar,
+                    Ok(None) => continue,
+                    Err(error) => return Some(Err(error)),
                 };
                 if scalar.owner_record_index != Some(scope.record_index) || scalar.ordinal != 1 {
                     continue;
@@ -602,7 +744,7 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
                 ) {
                     return Some(Err(error));
                 }
-                angle_candidates.push((angle, *record_index, scalar.value_offset));
+                angle_candidates.push((angle, record_index, scalar.value_offset));
             }
         }
         if let Err(error) = ctx.stable_sort_by_key(
@@ -676,8 +818,17 @@ fn exact_legacy_circular_pattern_axis(
 
         let (class_tag, after_tag) =
             lp_ascii_filtered_view(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
-        if class_tag.len() != 3
-            || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
+        if class_tag.len() != 3 {
+            return None;
+        }
+        let class_tag_is_numeric = match ctx.admit_iter(
+            class_tag.as_bytes(),
+            "validate F3D circular pattern axis class tag",
+        ) {
+            Ok(mut bytes) => bytes.all(|byte| byte.is_ascii_digit()),
+            Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+        };
+        if !class_tag_is_numeric
             || after_tag != start + 7
             || View::u32_le_at(bytes, after_tag) != Some(record_index)
             || bytes.get(start + 11..start + 21) != Some(&[0; 10])
@@ -731,12 +882,15 @@ fn exact_legacy_circular_pattern_axis(
             return None;
         }
         let selection_record_index = marked_record_reference(bytes, selection_at)?;
-        if !scope
-            .reference_members()
-            .values()
-            .any(|value| value == &selection_record_index)
-            || bytes.get(selection_at + 5..selection_at + 11) != Some(&[0; 6])
-        {
+        let selection_is_member = match super::parameter_scope::reference_members(
+            ctx,
+            scope.reference_members(),
+            "find F3D circular pattern selection reference",
+        ) {
+            Ok(mut references) => references.any(|value| value == selection_record_index),
+            Err(error) => return Some(Err(error)),
+        };
+        if !selection_is_member || bytes.get(selection_at + 5..selection_at + 11) != Some(&[0; 6]) {
             return None;
         }
         let opaque_index = View::u32_le_at(bytes, tail_at)?;
@@ -756,8 +910,17 @@ fn exact_legacy_circular_pattern_axis(
         }
         let (paired_class_tag, paired_after_tag) =
             lp_ascii_filtered_view(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
-        if paired_class_tag.len() != 3
-            || !paired_class_tag.bytes().all(|byte| byte.is_ascii_digit())
+        if paired_class_tag.len() != 3 {
+            return None;
+        }
+        let paired_class_tag_is_numeric = match ctx.admit_iter(
+            paired_class_tag.as_bytes(),
+            "validate F3D circular pattern axis paired class tag",
+        ) {
+            Ok(mut bytes) => bytes.all(|byte| byte.is_ascii_digit()),
+            Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+        };
+        if !paired_class_tag_is_numeric
             || paired_after_tag != paired_at + 7
             || View::u32_le_at(bytes, paired_after_tag) != Some(record_index)
         {
@@ -770,7 +933,11 @@ fn exact_legacy_circular_pattern_axis(
         {
             let record_index = View::u32_le_at(bytes, offset)?;
             let (identity, identity_offset) =
-                exact_pattern_identity_wrapper(bytes, records, record_index)?;
+                match exact_pattern_identity_wrapper(ctx, bytes, records, record_index) {
+                    Ok(Some(identity)) => identity,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                };
             *slot = Some((
                 identity,
                 patterns::DesignPatternAxisWrapper {
@@ -787,7 +954,13 @@ fn exact_legacy_circular_pattern_axis(
         {
             return None;
         }
-        let count = wrappers.iter().flatten().count();
+        let count = match ctx.admit_iter(
+            &wrappers,
+            "count F3D circular pattern historical axis wrappers",
+        ) {
+            Ok(wrappers) => wrappers.filter(|wrapper| wrapper.is_some()).count(),
+            Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+        };
 
         let mut retained_wrappers = Vec::new();
         if let Err(error) = ctx.reserve_vec(
@@ -812,134 +985,190 @@ fn exact_legacy_circular_pattern_axis(
     parsed.transpose()
 }
 fn exact_pattern_identity_wrapper(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     record_index: u32,
-) -> Option<(u64, u64)> {
-    let [start] = records.offsets(record_index) else {
-        return None;
-    };
-    let start = *start;
-    let (_, after_tag) = lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
-    if after_tag != start + 7
-        || View::u32_le_at(bytes, after_tag) != Some(record_index)
-        || bytes.get(start + 11..start + 21) != Some(&[0; 10])
-        || View::u64_le_at(bytes, start + 21)? == 0
-    {
-        return None;
-    }
-    let after_asset_id = relaxed_guid_end(bytes, start + 29)?;
-    let after_context_id = relaxed_guid_end(bytes, after_asset_id)?;
-    if View::u32_le_at(bytes, after_context_id) != Some(2)
-        || bytes.get(after_context_id + 4..after_context_id + 8) != Some(&[0; 4])
-        || marked_record_reference(bytes, after_context_id + 8) != record_index.checked_add(1)
-        || bytes.get(after_context_id + 13..after_context_id + 19) != Some(&[0; 6])
-    {
-        return None;
-    }
-    let nested_one_at = next_indexed_record_offset(bytes, after_context_id + 19)?;
-    let (_, nested_one_tag) =
-        lp_ascii_filtered_view(bytes, nested_one_at, 3..=3, u8::is_ascii_digit)?;
-    if View::u32_le_at(bytes, nested_one_tag) != record_index.checked_add(1)
-        || bytes.get(nested_one_at + 11..nested_one_at + 21) != Some(&[0; 10])
-        || marked_record_reference(bytes, nested_one_at + 21) != record_index.checked_add(2)
-        || bytes.get(nested_one_at + 26..nested_one_at + 32) != Some(&[0; 6])
-    {
-        return None;
-    }
-    let identity_at = next_indexed_record_offset(bytes, nested_one_at + 32)?;
-    let (_, identity_tag) = lp_ascii_filtered_view(bytes, identity_at, 3..=3, u8::is_ascii_digit)?;
-    let next_at = next_indexed_record_offset(bytes, identity_at + 29)?;
-    let (_, next_tag) = lp_ascii_filtered_view(bytes, next_at, 3..=3, u8::is_ascii_digit)?;
-    if View::u32_le_at(bytes, identity_tag) != record_index.checked_add(2)
-        || bytes.get(identity_at + 11..identity_at + 21) != Some(&[0; 10])
-        || identity_at.checked_add(29) != Some(next_at)
-        || View::u32_le_at(bytes, next_tag) != record_index.checked_add(3)
-    {
-        return None;
-    }
-    Some((
-        View::u64_le_at(bytes, identity_at + 21)?,
-        u64::try_from(identity_at + 21).ok()?,
-    ))
+) -> Result<Option<(u64, u64)>, CodecError> {
+    let parsed = (|| {
+        let [start] = records.offsets(record_index) else {
+            return None;
+        };
+        let start = *start;
+        let (_, after_tag) = lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
+        if after_tag != start + 7
+            || View::u32_le_at(bytes, after_tag) != Some(record_index)
+            || bytes.get(start + 11..start + 21) != Some(&[0; 10])
+            || View::u64_le_at(bytes, start + 21)? == 0
+        {
+            return None;
+        }
+        let after_asset_id = match relaxed_guid_end(ctx, bytes, start + 29) {
+            Ok(Some(at)) => at,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let after_context_id = match relaxed_guid_end(ctx, bytes, after_asset_id) {
+            Ok(Some(at)) => at,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        if View::u32_le_at(bytes, after_context_id) != Some(2)
+            || bytes.get(after_context_id + 4..after_context_id + 8) != Some(&[0; 4])
+            || marked_record_reference(bytes, after_context_id + 8) != record_index.checked_add(1)
+            || bytes.get(after_context_id + 13..after_context_id + 19) != Some(&[0; 6])
+        {
+            return None;
+        }
+        let nested_one_at = match next_indexed_record_offset(ctx, bytes, after_context_id + 19) {
+            Ok(Some(at)) => at,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let (_, nested_one_tag) =
+            lp_ascii_filtered_view(bytes, nested_one_at, 3..=3, u8::is_ascii_digit)?;
+        if View::u32_le_at(bytes, nested_one_tag) != record_index.checked_add(1)
+            || bytes.get(nested_one_at + 11..nested_one_at + 21) != Some(&[0; 10])
+            || marked_record_reference(bytes, nested_one_at + 21) != record_index.checked_add(2)
+            || bytes.get(nested_one_at + 26..nested_one_at + 32) != Some(&[0; 6])
+        {
+            return None;
+        }
+        let identity_at = match next_indexed_record_offset(ctx, bytes, nested_one_at + 32) {
+            Ok(Some(at)) => at,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let (_, identity_tag) =
+            lp_ascii_filtered_view(bytes, identity_at, 3..=3, u8::is_ascii_digit)?;
+        let next_at = match next_indexed_record_offset(ctx, bytes, identity_at + 29) {
+            Ok(Some(at)) => at,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let (_, next_tag) = lp_ascii_filtered_view(bytes, next_at, 3..=3, u8::is_ascii_digit)?;
+        if View::u32_le_at(bytes, identity_tag) != record_index.checked_add(2)
+            || bytes.get(identity_at + 11..identity_at + 21) != Some(&[0; 10])
+            || identity_at.checked_add(29) != Some(next_at)
+            || View::u32_le_at(bytes, next_tag) != record_index.checked_add(3)
+        {
+            return None;
+        }
+        Some(Ok((
+            View::u64_le_at(bytes, identity_at + 21)?,
+            u64::try_from(identity_at + 21).ok()?,
+        )))
+    })();
+    parsed.transpose()
 }
 
 fn exact_circular_pattern_axis(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     paired_at: usize,
     record_index: u32,
     selection_record_index: u32,
     scope_record_index: u32,
-) -> Option<patterns::DesignCircularPatternAxis> {
-    let (class_tag, after_tag) =
-        lp_ascii_filtered_view(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
-    if class_tag.len() != 3
-        || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
-        || after_tag != start + 7
-        || View::u32_le_at(bytes, after_tag) != Some(record_index)
-        || paired_at.checked_sub(start) != Some(195)
-        || bytes.get(start + 11..start + 21) != Some(&[0; 10])
-        || View::u32_le_at(bytes, start + 21) != Some(8)
-        || bytes.get(start + 73..start + 89) != Some(&[0; 16])
-        || View::u32_le_at(bytes, start + 89)? == 0
-        || View::u32_le_at(bytes, start + 93) != Some(1)
-        || marked_record_reference(bytes, start + 97) != Some(selection_record_index)
-        || bytes.get(start + 102..start + 108) != Some(&[0; 6])
-        || bytes.get(start + 108..start + 110) != Some(&[0; 2])
-        || View::u32_le_at(bytes, start + 110) != Some(1)
-        || marked_record_reference(bytes, start + 114).is_none()
-        || bytes.get(start + 119..start + 125) != Some(&[0; 6])
-        || View::u64_le_at(bytes, start + 125) != Some(0x0000_0004_0000_0000)
-        || bytes.get(start + 133..start + 143) != Some(&[0; 10])
-    {
-        return None;
-    }
-    let opaque_index = View::u32_le_at(bytes, start + 143)?;
-    if opaque_index == 0
-        || !View::f64_le_at(bytes, start + 147)?.is_finite()
-        || View::u32_le_at(bytes, start + 155) != Some(opaque_index)
-        || marked_record_reference(bytes, start + 159) != record_index.checked_add(2)
-        || bytes.get(start + 164..start + 172) != Some(&[0; 8])
-        || marked_record_reference(bytes, start + 172) != record_index.checked_add(1)
-        || bytes.get(start + 177..start + 184) != Some(&[0; 7])
-        || marked_record_reference(bytes, start + 184) != Some(scope_record_index)
-        || bytes.get(start + 189..start + 195) != Some(&[0; 6])
-    {
-        return None;
-    }
-    let (paired_class_tag, paired_after_tag) =
-        lp_ascii_filtered_view(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
-    if paired_class_tag.len() != 3
-        || !paired_class_tag.bytes().all(|byte| byte.is_ascii_digit())
-        || paired_after_tag != paired_at + 7
-        || View::u32_le_at(bytes, paired_after_tag) != Some(record_index)
-    {
-        return None;
-    }
-    let origin = finite_reals_at(bytes, start + 25)?;
-    let displacement = finite_reals_at(bytes, start + 49)?.map(FiniteReal::get);
-    patterns::DesignCircularPatternAxis::inline(
-        origin,
-        u64::try_from(start.checked_add(25)?).ok()?,
-        displacement,
-        u64::try_from(start.checked_add(49)?).ok()?,
-    )
+) -> Result<Option<patterns::DesignCircularPatternAxis>, CodecError> {
+    let parsed = (|| {
+        let (class_tag, after_tag) =
+            lp_ascii_filtered_view(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
+        if class_tag.len() != 3 {
+            return None;
+        }
+        let class_tag_is_numeric = match ctx.admit_iter(
+            class_tag.as_bytes(),
+            "validate F3D circular pattern class tag",
+        ) {
+            Ok(mut bytes) => bytes.all(|byte| byte.is_ascii_digit()),
+            Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+        };
+        if !class_tag_is_numeric
+            || after_tag != start + 7
+            || View::u32_le_at(bytes, after_tag) != Some(record_index)
+            || paired_at.checked_sub(start) != Some(195)
+            || bytes.get(start + 11..start + 21) != Some(&[0; 10])
+            || View::u32_le_at(bytes, start + 21) != Some(8)
+            || bytes.get(start + 73..start + 89) != Some(&[0; 16])
+            || View::u32_le_at(bytes, start + 89)? == 0
+            || View::u32_le_at(bytes, start + 93) != Some(1)
+            || marked_record_reference(bytes, start + 97) != Some(selection_record_index)
+            || bytes.get(start + 102..start + 108) != Some(&[0; 6])
+            || bytes.get(start + 108..start + 110) != Some(&[0; 2])
+            || View::u32_le_at(bytes, start + 110) != Some(1)
+            || marked_record_reference(bytes, start + 114).is_none()
+            || bytes.get(start + 119..start + 125) != Some(&[0; 6])
+            || View::u64_le_at(bytes, start + 125) != Some(0x0000_0004_0000_0000)
+            || bytes.get(start + 133..start + 143) != Some(&[0; 10])
+        {
+            return None;
+        }
+        let opaque_index = View::u32_le_at(bytes, start + 143)?;
+        if opaque_index == 0
+            || !View::f64_le_at(bytes, start + 147)?.is_finite()
+            || View::u32_le_at(bytes, start + 155) != Some(opaque_index)
+            || marked_record_reference(bytes, start + 159) != record_index.checked_add(2)
+            || bytes.get(start + 164..start + 172) != Some(&[0; 8])
+            || marked_record_reference(bytes, start + 172) != record_index.checked_add(1)
+            || bytes.get(start + 177..start + 184) != Some(&[0; 7])
+            || marked_record_reference(bytes, start + 184) != Some(scope_record_index)
+            || bytes.get(start + 189..start + 195) != Some(&[0; 6])
+        {
+            return None;
+        }
+        let (paired_class_tag, paired_after_tag) =
+            lp_ascii_filtered_view(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
+        if paired_class_tag.len() != 3 {
+            return None;
+        }
+        let paired_class_tag_is_numeric = match ctx.admit_iter(
+            paired_class_tag.as_bytes(),
+            "validate F3D circular pattern paired class tag",
+        ) {
+            Ok(mut bytes) => bytes.all(|byte| byte.is_ascii_digit()),
+            Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+        };
+        if !paired_class_tag_is_numeric
+            || paired_after_tag != paired_at + 7
+            || View::u32_le_at(bytes, paired_after_tag) != Some(record_index)
+        {
+            return None;
+        }
+        let origin = finite_reals_at(bytes, start + 25)?;
+        let displacement = finite_reals_at(bytes, start + 49)?.map(FiniteReal::get);
+        Some(Ok(patterns::DesignCircularPatternAxis::inline(
+            origin,
+            u64::try_from(start.checked_add(25)?).ok()?,
+            displacement,
+            u64::try_from(start.checked_add(49)?).ok()?,
+        )?))
+    })();
+    parsed.transpose()
 }
 
 fn exact_fixed_pattern_count(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     record_index: u32,
     scope_record_index: u32,
-) -> Option<(u32, u64)> {
-    let mut candidates = records
-        .frames(record_index)
-        .filter_map(|(start, paired_at)| {
+) -> Result<Option<(u32, u64)>, CodecError> {
+    let frames = records.frames(ctx, record_index)?;
+    let mut candidates = frames.filter_map(|(start, paired_at)| {
             let (class_tag, after_tag) =
                 lp_ascii_filtered_view(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
-            if class_tag.len() != 3
-                || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
+            if class_tag.len() != 3 {
+                return None;
+            }
+            let class_tag_is_numeric = match ctx.admit_iter(
+                class_tag.as_bytes(),
+                "validate F3D circular pattern count class tag",
+            ) {
+                Ok(mut bytes) => bytes.all(|byte| byte.is_ascii_digit()),
+                Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+            };
+            if !class_tag_is_numeric
                 || after_tag != start + 7
                 || View::u32_le_at(bytes, after_tag) != Some(record_index)
                 || paired_at.checked_sub(start) != Some(99)
@@ -962,10 +1191,17 @@ fn exact_fixed_pattern_count(
                 return None;
             }
             let count = View::u32_le_at(bytes, start + 40)?;
-            (count > 0).then_some((count, u64_from_index(start + 40)))
+            (count > 0).then_some(Ok((count, u64_from_index(start + 40))))
         });
-    let candidate = candidates.next()?;
-    candidates.next().is_none().then_some(candidate)
+    let Some(candidate) = candidates.next() else {
+        return Ok(None);
+    };
+    let candidate = candidate?;
+    match candidates.next() {
+        None => Ok(Some(candidate)),
+        Some(Ok(_)) => Ok(None),
+        Some(Err(error)) => Err(error),
+    }
 }
 
 #[cfg(test)]

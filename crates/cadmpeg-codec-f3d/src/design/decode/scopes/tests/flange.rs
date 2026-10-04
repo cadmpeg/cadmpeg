@@ -714,6 +714,96 @@ fn legacy_edge_flange_scope_reads_class286_extended_two_sided_per_edge_form() {
 }
 
 #[test]
+fn legacy_edge_flange_scope_refuses_wrapper_column_scan() {
+    let frame = legacy_edge_flange_frame();
+    let references = [201, 204, 207, 218, 240, 243, 251, 254];
+    let operation = "scan F3D legacy edge flange wrapper columns";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| {
+            crate::design::decode::scopes::sheet_metal::exact_edge_flange_operation(
+                ctx,
+                &frame.bytes,
+                0,
+                frame.paired_at,
+                "325",
+                "258",
+                &references,
+            )
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == operation
+                && limit.additional == 1
+    ));
+}
+
+#[test]
+fn legacy_edge_flange_scope_refuses_edge_group_column_scan() {
+    let frame = legacy_edge_flange_frame();
+    let references = [201, 204, 207, 218, 240, 243, 251, 254];
+    let operation = "scan F3D legacy edge flange group columns";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| {
+            crate::design::decode::scopes::sheet_metal::exact_edge_flange_operation(
+                ctx,
+                &frame.bytes,
+                0,
+                frame.paired_at,
+                "325",
+                "258",
+                &references,
+            )
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == operation
+                && limit.additional == 1
+    ));
+}
+
+#[test]
+fn legacy_edge_flange_scope_refuses_edge_operand_group_scan() {
+    let frame = legacy_edge_flange_frame();
+    let references = [201, 204, 207, 218, 240, 243, 251, 254];
+    let operation = "scan F3D legacy edge flange operand groups";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| {
+            crate::design::decode::scopes::sheet_metal::exact_edge_flange_operation(
+                ctx,
+                &frame.bytes,
+                0,
+                frame.paired_at,
+                "325",
+                "258",
+                &references,
+            )
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == operation
+                && limit.additional == 1
+    ));
+}
+
+#[test]
 fn edge_flange_scope_refuses_a_frame_whose_group_operand_is_absent() {
     let references = [201, 204, 207, 218, 240, 243, 251, 255];
     let frame = edge_flange_frame(&EdgeFlangeFixture {

@@ -177,6 +177,59 @@ fn design_scope_reference_vectors_refuse_each_limit() {
 }
 
 #[test]
+fn copy_paste_body_scans_propagate_work_refusals() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let (bytes, _) =
+        crate::test_support::streams_test::generated_design_copy_paste_bodies_bulkstream();
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let header = crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        &records,
+    )
+    .unwrap()
+    .into_iter()
+    .find(|header| header.record_index == 1_400)
+    .unwrap();
+    let scope = crate::design::decode::scopes::parameter_scope::parse_parameter_scope(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        &records,
+        header.record_index,
+        &header.class_tag,
+        header.byte_offset,
+    )
+    .unwrap()
+    .unwrap();
+
+    for (operation, additional) in [
+        ("scan F3D CopyPasteBodies located scope references", 2),
+        ("validate F3D copied-body reference padding", 10),
+        ("scan F3D CopyPasteBodies operands", 1),
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |ctx| {
+                crate::design::decode::scopes::copy_paste_bodies::exact_copy_paste_bodies_operation(
+                    ctx, &bytes, &records, &scope,
+                )
+                .map(|_| ())
+            },
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(refusal)
+                if refusal.dimension == ResourceDimension::WorkUnits
+                    && refusal.operation == operation
+                    && refusal.additional == additional
+        ));
+    }
+}
+
+#[test]
 fn design_scope_kind_scan_refuses_temporary_and_retained_limits() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 

@@ -33,13 +33,18 @@ pub(super) struct ScopePlacementFrame {
 }
 
 pub(super) fn exact_work_plane_frame(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-) -> Option<ScopePlacementFrame> {
+) -> Result<Option<ScopePlacementFrame>, cadmpeg_core::CodecError> {
+    (|| {
     let mut candidate = None;
-    for record_index in scope.reference_members().values() {
-        for (start, paired) in records.frames(*record_index) {
+    let reference_members = match super::parameter_scope::reference_members(
+        ctx, scope.reference_members(), "scan F3D work-plane reference members",
+    ) { Ok(members) => members, Err(error) => return Some(Err(error)) };
+    for record_index in reference_members {
+        for (start, paired) in match records.frames(ctx, record_index) { Ok(frames) => frames, Err(error) => return Some(Err(error)) } {
             let frame_length = paired.checked_sub(start)?;
             let (matrix_at, reference) = match frame_length {
                 work_plane_legacy::LEN
@@ -217,29 +222,35 @@ pub(super) fn exact_work_plane_frame(
             }
         }
     }
-    candidate
+    candidate.map(Ok)
+    })().transpose()
 }
 
 pub(super) fn exact_work_axis_construction(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-) -> Option<DesignWorkAxisConstruction> {
+) -> Result<Option<DesignWorkAxisConstruction>, cadmpeg_core::CodecError> {
     if scope.kind() != scope::DesignFeatureKind::WorkAxis {
-        return None;
+        return Ok(None);
     }
-    exact_two_point_work_axis_construction(bytes, records, scope)
-        .or_else(|| exact_direct_work_axis_construction(bytes, records, scope))
+    match exact_two_point_work_axis_construction(ctx, bytes, records, scope)? {
+        Some(axis) => Ok(Some(axis)),
+        None => exact_direct_work_axis_construction(ctx, bytes, records, scope),
+    }
 }
 
 fn exact_two_point_work_axis_construction(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-) -> Option<DesignWorkAxisConstruction> {
+) -> Result<Option<DesignWorkAxisConstruction>, cadmpeg_core::CodecError> {
+    (|| {
     let [axis_record_index, _, first_point_record_index, _, second_point_record_index] =
         scope.reference_members().values_array()?;
-    let mut axis_frames = records.frames(*axis_record_index);
+    let mut axis_frames = match records.frames(ctx, *axis_record_index) { Ok(frames) => frames, Err(error) => return Some(Err(error)) };
     let (Some((axis_start, axis_paired)), None) = (axis_frames.next(), axis_frames.next()) else {
         return None;
     };
@@ -276,7 +287,7 @@ fn exact_two_point_work_axis_construction(
     let mut points = [[0.0; 3]; 2];
     let mut point_offsets = [0; 2];
     for (ordinal, record_index) in point_record_indices.iter().enumerate() {
-        let mut point_frames = records.frames(*record_index);
+        let mut point_frames = match records.frames(ctx, *record_index) { Ok(frames) => frames, Err(error) => return Some(Err(error)) };
         let (Some((start, paired)), None) = (point_frames.next(), point_frames.next()) else {
             return None;
         };
@@ -295,7 +306,7 @@ fn exact_two_point_work_axis_construction(
     if points != [origin.map(FiniteReal::get), endpoint] {
         return None;
     }
-    Some(DesignWorkAxisConstruction {
+    Some(Ok(DesignWorkAxisConstruction {
         origin,
         displacement,
         origin_offset: u64::try_from(axis_start + 25).ok()?,
@@ -304,14 +315,17 @@ fn exact_two_point_work_axis_construction(
             point_record_indices,
             point_offsets,
         }),
-    })
+    }))
+    })().transpose()
 }
 
 fn exact_direct_work_axis_construction(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-) -> Option<DesignWorkAxisConstruction> {
+) -> Result<Option<DesignWorkAxisConstruction>, cadmpeg_core::CodecError> {
+    (|| {
     let [carrier_record_index, support_record_index] = scope.reference_members().values_array()?;
     let (
         carrier_class,
@@ -352,7 +366,7 @@ fn exact_direct_work_axis_construction(
         ),
         _ => return None,
     };
-    let mut carrier_frames = records.frames(*carrier_record_index);
+    let mut carrier_frames = match records.frames(ctx, *carrier_record_index) { Ok(frames) => frames, Err(error) => return Some(Err(error)) };
     let (Some((carrier_start, carrier_paired)), None) =
         (carrier_frames.next(), carrier_frames.next())
     else {
@@ -368,7 +382,7 @@ fn exact_direct_work_axis_construction(
     {
         return None;
     }
-    let mut support_frames = records.frames(*support_record_index);
+    let mut support_frames = match records.frames(ctx, *support_record_index) { Ok(frames) => frames, Err(error) => return Some(Err(error)) };
     let (Some((support_start, support_paired)), None) =
         (support_frames.next(), support_frames.next())
     else {
@@ -405,7 +419,7 @@ fn exact_direct_work_axis_construction(
     if displacement_length <= f64::EPSILON {
         return None;
     }
-    Some(DesignWorkAxisConstruction {
+    Some(Ok(DesignWorkAxisConstruction {
         origin,
         displacement,
         origin_offset: u64::try_from(carrier_start.checked_add(axis_values_offset)?).ok()?,
@@ -415,22 +429,28 @@ fn exact_direct_work_axis_construction(
             carrier_record_index: *carrier_record_index,
             support_record_index: *support_record_index,
         }),
-    })
+    }))
+    })().transpose()
 }
 
 pub(super) fn exact_joint_origin_frame(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-) -> Option<ScopePlacementFrame> {
+) -> Result<Option<ScopePlacementFrame>, cadmpeg_core::CodecError> {
+    (|| {
     if scope.kind() != scope::DesignFeatureKind::JointOrigin
         || matches!(scope.frame_length(), 300 | 322 | 344)
     {
         return None;
     }
     let mut candidate = None;
-    for record_index in scope.reference_members().values() {
-        for (start, paired) in records.frames(*record_index) {
+    let reference_members = match super::parameter_scope::reference_members(
+        ctx, scope.reference_members(), "scan F3D joint-origin reference members",
+    ) { Ok(members) => members, Err(error) => return Some(Err(error)) };
+    for record_index in reference_members {
+        for (start, paired) in match records.frames(ctx, record_index) { Ok(frames) => frames, Err(error) => return Some(Err(error)) } {
             if paired.checked_sub(start)? == joint_origin_class_337_266::LEN
                 && bytes.get(start + 4..start + 7) == Some(b"337")
                 && bytes.get(paired + 4..paired + 7) == Some(b"266")
@@ -520,5 +540,6 @@ pub(super) fn exact_joint_origin_frame(
             }
         }
     }
-    candidate
+    candidate.map(Ok)
+    })().transpose()
 }

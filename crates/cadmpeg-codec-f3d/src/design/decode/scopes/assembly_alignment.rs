@@ -9,6 +9,7 @@ use super::legacy_operand_paths::exact_legacy_class_388_operand_paths;
 use super::legacy_operand_paths::exact_legacy_class_388_scope;
 use super::legacy_operand_paths::CLASS_383_OWNER_REFERENCE_ORDINALS;
 use super::legacy_operand_paths::CLASS_388_OWNER_REFERENCE_ORDINALS;
+use super::parameter_scope::reference_members;
 use crate::design::decode::assembly::exact_legacy_as_built_421_alignment;
 use crate::design::decode::assembly::exact_legacy_as_built_421_solved_frame;
 use crate::design::decode::sketch::IndexedRecordOffsets;
@@ -29,6 +30,27 @@ use cadmpeg_core::CodecError;
 struct AsBuiltAlignmentDraft {
     paths: [DesignAssemblyOperandPath; 2],
     frames: Option<[DesignAssemblyOperandFrame; 2]>,
+}
+
+fn scope_references_match_owner_ordinals<const N: usize>(
+    ctx: &DecodeContext<'_>,
+    scope: &DesignParameterScope,
+    ordinals: &[usize; N],
+    lane_owners: &[&DesignParameterOwner],
+    operation: &'static str,
+) -> Result<bool, CodecError> {
+    for (ordinal, owner) in ordinals
+        .iter()
+        .copied()
+        .zip(ctx.admit_iter(lane_owners, operation)?)
+    {
+        if reference_members(ctx, scope.reference_members(), operation)?.nth(ordinal)
+            != Some(owner.record_index())
+        {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 impl TryFrom<AsBuiltAlignmentDraft> for assembly::DesignAssemblyAlignmentForm {
@@ -62,7 +84,10 @@ pub(super) fn exact_assembly_alignment(
         native_stream(owner.id()) == Some(stream)
             && owner.scope_record_index() == scope.record_index
     };
-    let lane_count = parameter_owners.iter().filter(matching).count();
+    let lane_count = ctx
+        .admit_iter(parameter_owners, "count F3D assembly alignment owners")?
+        .filter(matching)
+        .count();
 
     let mut lanes = Vec::new();
     ctx.reserve_vec(&mut lanes, lane_count, "f3d assembly alignment lanes")?;
@@ -105,11 +130,19 @@ pub(super) fn exact_assembly_alignment(
             Some(crate::design::assembly::AssemblyOperandFrameVariant::LegacyClass388)
         );
         if legacy_class_388 {
-            exact_legacy_class_388_scope(bytes, scope)?;
+            match exact_legacy_class_388_scope(ctx, bytes, scope) {
+                Ok(Some(())) => {},
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            }
         }
 
         if as_built_421 {
-            let exact = exact_legacy_as_built_421_alignment(bytes, scope, &lanes)?;
+            let exact = match exact_legacy_as_built_421_alignment(ctx, bytes, scope, &lanes) {
+                Ok(Some(exact)) => exact,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
             let form = match exact_legacy_as_built_421_solved_frame(bytes, records, scope) {
                 Some(solved_frame) => DesignAssemblyAlignmentForm::SolvedOnly {
                     solved_frame,
@@ -156,23 +189,37 @@ pub(super) fn exact_assembly_alignment(
                 Ok(values) => values,
                 Err(error) => return Some(Err(error)),
             };
-            for owner in alignment_lanes {
+            let admitted_owners = match ctx.admit_iter(
+                alignment_lanes,
+                "scan F3D assembly alignment owner lanes",
+            ) {
+                Ok(owners) => owners,
+                Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+            };
+            for owner in admitted_owners {
                 owners.push(crate::records::identity::Located {
                     value: owner.record_index(),
                     offset: owner.evaluated_value_offset(),
                 });
             }
             if legacy_class_388 {
-                let owner_reference_order_matches = CLASS_388_OWNER_REFERENCE_ORDINALS
-                    .into_iter()
-                    .zip(lanes.iter())
-                    .all(|(scope_ordinal, owner)| {
-                        scope.reference_members().values().nth(scope_ordinal)
-                            == Some(&owner.record_index())
-                    });
-                if lanes
-                    .iter()
-                    .any(|owner| owner.class_tag().as_str() != "282" || owner.frame_length() != 103)
+                let owner_reference_order_matches =
+                    match scope_references_match_owner_ordinals(
+                        ctx,
+                        scope,
+                        &CLASS_388_OWNER_REFERENCE_ORDINALS,
+                        &lanes,
+                        "match F3D class-388 owner reference order",
+                    ) {
+                        Ok(matches) => matches,
+                        Err(error) => return Some(Err(error)),
+                    };
+                let class_matches = match ctx.admit_iter(&lanes, "scan F3D class-388 alignment lanes") {
+                    Ok(mut owners) => owners
+                        .any(|owner| owner.class_tag().as_str() != "282" || owner.frame_length() != 103),
+                    Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+                };
+                if class_matches
                     || !owner_reference_order_matches
                     || !scope
                         .reference_members()
@@ -184,16 +231,23 @@ pub(super) fn exact_assembly_alignment(
                     return None;
                 }
             } else if legacy_class_383 {
-                let owner_reference_order_matches = CLASS_383_OWNER_REFERENCE_ORDINALS
-                    .into_iter()
-                    .zip(lanes.iter())
-                    .all(|(scope_ordinal, owner)| {
-                        scope.reference_members().values().nth(scope_ordinal)
-                            == Some(&owner.record_index())
-                    });
-                if lanes
-                    .iter()
-                    .any(|owner| owner.class_tag().as_str() != "284" || owner.frame_length() != 103)
+                let owner_reference_order_matches =
+                    match scope_references_match_owner_ordinals(
+                        ctx,
+                        scope,
+                        &CLASS_383_OWNER_REFERENCE_ORDINALS,
+                        &lanes,
+                        "match F3D class-383 owner reference order",
+                    ) {
+                        Ok(matches) => matches,
+                        Err(error) => return Some(Err(error)),
+                    };
+                let class_matches = match ctx.admit_iter(&lanes, "scan F3D class-383 alignment lanes") {
+                    Ok(mut owners) => owners
+                        .any(|owner| owner.class_tag().as_str() != "284" || owner.frame_length() != 103),
+                    Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+                };
+                if class_matches
                     || !owner_reference_order_matches
                     || !scope
                         .reference_members()
@@ -208,10 +262,20 @@ pub(super) fn exact_assembly_alignment(
                 scope.class_tag.as_str(),
                 scope.paired_class_tag.as_str(),
             ) {
-                if lanes
-                    .iter()
-                    .any(|owner| owner.class_tag().as_str() != "289" || owner.frame_length() != 103)
-                    || (0..scope.reference_members().len())
+                let class_matches = match ctx.admit_iter(&lanes, "scan F3D variable alignment lanes") {
+                    Ok(mut owners) => owners
+                        .any(|owner| owner.class_tag().as_str() != "289" || owner.frame_length() != 103),
+                    Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+                };
+                if class_matches
+                    || (match reference_members(
+                        ctx, scope.reference_members(), "scan F3D alignment reference positions",
+                    ) {
+                        Ok(members) => members,
+                        Err(error) => return Some(Err(error)),
+                    })
+                        .enumerate()
+                        .map(|(start, _)| start)
                         .filter(|&start| {
                             scope
                                 .reference_members()
@@ -250,7 +314,10 @@ pub(super) fn exact_assembly_alignment(
                 })
                 .transpose()
                 .ok()?
-        } else if let Some(frames) = exact_assembly_operand_frames(bytes, scope) {
+        } else if let Some(frames) = match exact_assembly_operand_frames(ctx, bytes, scope) {
+            Ok(frames) => frames,
+            Err(error) => return Some(Err(error)),
+        } {
             let qualifiers = if legacy_class_383 {
                 let paths = match exact_legacy_class_383_operand_paths(ctx, bytes, records, scope, &frames) {
                     Ok(paths) => paths,
@@ -280,7 +347,7 @@ pub(super) fn exact_assembly_alignment(
                 } else {
                     let paths = match exact_assembly_operand_paths(ctx, bytes, records, scope) {
                         Ok(paths) => paths,
-                        Err(error) => return Some(Err(error)),
+                    Err(error) => return Some(Err(error)),
                     };
                     paths.map(|paths| {
                         paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })
@@ -289,7 +356,7 @@ pub(super) fn exact_assembly_alignment(
             } else {
                 let paths = match exact_assembly_operand_paths(ctx, bytes, records, scope) {
                     Ok(paths) => paths,
-                    Err(error) => return Some(Err(error)),
+                        Err(error) => return Some(Err(error)),
                 };
                 paths.map(|paths| {
                     paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })

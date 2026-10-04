@@ -60,17 +60,43 @@ fn edge_recipe_structure_refuses_recursion_limit() {
 
 #[test]
 fn edge_recipe_structure_refuses_candidate_work_limit() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_work_units = 0;
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        "f3d recipe payload candidates",
+        0,
+        |ctx| edge_recipe_structure_with_context(ctx, &EDGE_RECIPE),
+    );
     assert!(matches!(
-        edge_recipe_structure_with_context(&ctx, &EDGE_RECIPE),
-        Err(CodecError::ResourceLimit(failure))
+        error,
+        CodecError::ResourceLimit(failure)
             if failure.dimension == ResourceDimension::WorkUnits
                 && failure.operation == "f3d recipe payload candidates"
     ));
+}
+
+#[test]
+fn edge_recipe_payload_prefix_scans_refuse_work_limits() {
+    let program = [
+        0, 0, 0, 0, 0, 0, 0, 1, 0, 2, 0, 0, 5, 0, 1, -1, 0, 0, -1, 1, 1, 4, 1, 1,
+        1, 4, 4, 4,
+    ];
+    for operation in [
+        "scan F3D recipe payload prefix delimiters",
+        "validate F3D recipe payload prefix words",
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |ctx| edge_recipe_structure_with_context(ctx, &program),
+        );
+        assert!(matches!(
+            error,
+            CodecError::ResourceLimit(failure)
+                if failure.dimension == ResourceDimension::WorkUnits
+                    && failure.operation == operation
+        ));
+    }
 }
 
 #[test]
@@ -94,6 +120,54 @@ fn edge_recipe_topology_references_refuse_collection_limit() {
 }
 
 #[test]
+fn edge_recipe_topology_reference_scans_refuse_work_limit() {
+    let structure = crate::records::topology::edge_recipe::DesignEdgeRecipeStructure {
+        root: 1,
+        sides: vec![crate::records::topology::edge_recipe::DesignTopologyRecipeSide {
+            header_value: 0,
+            scalars: vec![1],
+            payload_prefix: Vec::new(),
+            entries: Vec::new(),
+        }],
+    };
+    let result = crate::test_support::with_decode_context(|ctx| {
+        edge_recipe_local_topology_references_with_context(ctx, &structure, 1)
+    })
+    .expect("valid topology reference");
+    assert_eq!(
+        result,
+        Some(vec![std::num::NonZeroU32::new(1).expect("non-zero ordinal")])
+    );
+
+    for operation in [
+        "scan F3D edge recipe topology sides",
+        "scan F3D edge recipe side scalars",
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |ctx| edge_recipe_local_topology_references_with_context(ctx, &structure, 1),
+        );
+        assert!(matches!(
+            error,
+            CodecError::ResourceLimit(failure)
+                if failure.dimension == ResourceDimension::WorkUnits
+                    && failure.operation == operation
+                    && failure.additional == 1
+        ));
+    }
+    let mut invalid_header = structure;
+    invalid_header.sides[0].header_value = -1;
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 1;
+    let result = crate::test_support::with_decode_policy(&policy, |ctx| {
+        edge_recipe_local_topology_references_with_context(ctx, &invalid_header, 1)
+    });
+    assert_eq!(result.unwrap(), None);
+}
+
+#[test]
 fn edge_recipe_entries_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
@@ -106,6 +180,25 @@ fn edge_recipe_entries_refuse_collection_limit() {
             if failure.dimension == ResourceDimension::CollectionItems
                 && failure.operation == "f3d recipe topology entry"
     ));
+}
+
+#[test]
+fn edge_recipe_entries_preserve_tail_and_work_refusal() {
+    let words = [1, 4, 1, 1, 1, 4, 4, 4, -1];
+    let operation = "scan F3D topology recipe entry words";
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits, operation, 0,
+        |ctx| edge_recipe_entries_with_context(ctx, &words),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == operation
+            && limit.additional == 9));
+    let parsed = edge_recipe_entries_with_context(
+        &cadmpeg_test_support::service_decode_context(), &words,
+    ).unwrap().expect("one complete topology entry");
+    assert_eq!(parsed.len(), 1);
+    assert_eq!(parsed[0].selector, 1);
 }
 
 #[test]
@@ -145,6 +238,56 @@ fn surface_patch_recipe_entries_refuse_collection_limit() {
             if failure.dimension == ResourceDimension::CollectionItems
                 && failure.operation == "f3d recipe topology entry"
     ));
+}
+
+#[test]
+fn surface_patch_recipe_scans_refuse_work_limits() {
+    let program = [
+        0, -1, 1, 1, -1, 2, -1, 2, 2, -1, 1, -1, 2, 0, -1, 0, 0, -1, 2, -1, 0, 0,
+        -1, 1, 0, 2, 1, 1, 1, 2, 1, 2, -1, 2, 3, -1, 1, -1, 2, 0, -1, 0, 0, -1, 3,
+        -1, 0, 0, -1, 0, -1,
+    ];
+    for operation in [
+        "scan F3D SurfacePatch field delimiters",
+        "validate F3D SurfacePatch field words",
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |ctx| surface_patch_recipe_structure_with_context(ctx, &program, 4),
+        );
+        assert!(matches!(
+            error,
+            CodecError::ResourceLimit(failure)
+                if failure.dimension == ResourceDimension::WorkUnits
+                    && failure.operation == operation
+        ));
+    }
+}
+
+#[test]
+fn face_recipe_nodes_refuse_work_limits() {
+    let program = [0, -1, 4, -1, -1, 2, 7];
+    let kind = FaceRecipeProgramKind::Counted { header_value: 4 };
+    for operation in [
+        "scan F3D face recipe marker windows",
+        "scan F3D face recipe node range starts",
+        "scan F3D face recipe node range ends",
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |ctx| face_recipe_nodes_with_context(ctx, &program, 0, kind),
+        );
+        assert!(matches!(
+            error,
+            CodecError::ResourceLimit(failure)
+                if failure.dimension == ResourceDimension::WorkUnits
+                    && failure.operation == operation
+        ));
+    }
 }
 
 #[test]

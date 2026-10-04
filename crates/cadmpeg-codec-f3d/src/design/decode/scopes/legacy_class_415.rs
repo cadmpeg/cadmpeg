@@ -66,6 +66,7 @@ pub(crate) fn is_one_sided_layout(
 }
 
 pub(super) fn exact_one_sided_extrude_prologue(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     paired_at: usize,
@@ -73,7 +74,8 @@ pub(super) fn exact_one_sided_extrude_prologue(
     paired_class_tag: &str,
     reference_count_at: usize,
     reference_members: &[u32],
-) -> Option<DesignExtrudePrologue> {
+) -> Result<Option<DesignExtrudePrologue>, cadmpeg_core::CodecError> {
+    (|| {
     const PROFILE_NORMAL_UNIT_EPS: f64 = 1.0e-12;
     let frame_length = paired_at.checked_sub(start)?;
     let reference_count_delta = reference_count_at.checked_sub(start)?;
@@ -205,13 +207,13 @@ pub(super) fn exact_one_sided_extrude_prologue(
         return None;
     }
     let first_reference_marker = reference_count_at.checked_add(4)?;
-    for (ordinal, record_index) in reference_members.iter().enumerate() {
+    for (ordinal, record_index) in (match ctx.admit_iter(reference_members, "scan F3D legacy extrude reference members") { Ok(members) => members, Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))) }).enumerate() {
         let marker = first_reference_marker.checked_add(ordinal.checked_mul(11)?)?;
         if super::shared_frames::marked_record_reference(bytes, marker)? != *record_index {
             return None;
         }
     }
-    Some(DesignExtrudePrologue::ReferenceAware {
+    Some(Ok(DesignExtrudePrologue::ReferenceAware {
         reference: None,
         operation,
         operation_offset: u64::try_from(operation_offset).ok()?,
@@ -233,5 +235,6 @@ pub(super) fn exact_one_sided_extrude_prologue(
         solid_operation_offset: u64::try_from(solid_operation_offset).ok()?,
         start: start_support,
         start_offset: u64::try_from(start_offset).ok()?,
-    })
+    }))
+    })().transpose()
 }

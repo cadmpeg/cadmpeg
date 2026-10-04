@@ -42,8 +42,30 @@ fn exact_surface_trim_operation(
         {
             return None;
         }
-        let selection_record_index = *scope.reference_members().values().nth(3)?;
-        let (selection_byte_offset, _) = records.frames(selection_record_index).next()?;
+        let reference_members = scope.reference_members();
+        let unlocated_members = match ctx.admit_iter(
+            reference_members.unlocated_values().unwrap_or(&[]),
+            "find F3D SurfaceTrim selection reference",
+        ) {
+            Ok(members) => members,
+            Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+        };
+        let located_members = match ctx.admit_iter(
+            reference_members.located_rows().unwrap_or(&[]),
+            "find F3D SurfaceTrim selection reference",
+        ) {
+            Ok(members) => members,
+            Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+        };
+        let selection_record_index = *unlocated_members
+            .chain(located_members.map(|member| &member.value))
+            .nth(3)?;
+        let (selection_byte_offset, _) = match records
+            .frames(ctx, selection_record_index)
+        {
+            Ok(mut frames) => frames.next()?,
+            Err(error) => return Some(Err(error)),
+        };
         let selection_class_tag =
             exact_indexed_header_at(bytes, selection_byte_offset, selection_record_index)?;
         let selection = match parse_entity_selection_frame(
@@ -58,9 +80,13 @@ fn exact_surface_trim_operation(
         };
 
         let mut chain_start = usize::try_from(selection.next_byte_offset).ok()?;
-        let mut next_chain_record = || {
+        let mut next_chain_record = || -> Option<Result<DesignSurfaceTrimChainRecord, CodecError>> {
             let parsed = indexed_record_header_at(bytes, chain_start)?;
-            let frame_end = next_indexed_record_offset(bytes, chain_start.checked_add(11)?)?;
+            let frame_end = match next_indexed_record_offset(ctx, bytes, chain_start.checked_add(11)?) {
+                Ok(Some(frame_end)) => frame_end,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
             let frame_length = u64::try_from(frame_end.checked_sub(chain_start)?).ok()?;
             let record = DesignSurfaceTrimChainRecord {
                 record_index: parsed.record_index,
@@ -69,9 +95,17 @@ fn exact_surface_trim_operation(
                 frame_length,
             };
             chain_start = frame_end;
-            Some(record)
+            Some(Ok(record))
         };
-        let chain_records = [next_chain_record()?, next_chain_record()?];
+        let first_chain_record = match next_chain_record()? {
+            Ok(record) => record,
+            Err(error) => return Some(Err(error)),
+        };
+        let second_chain_record = match next_chain_record()? {
+            Ok(record) => record,
+            Err(error) => return Some(Err(error)),
+        };
+        let chain_records = [first_chain_record, second_chain_record];
 
         let cell_table_byte_offset = chain_start;
         let cell_table = indexed_record_header_at(bytes, cell_table_byte_offset)?;
@@ -80,9 +114,10 @@ fn exact_surface_trim_operation(
         if !matches!(cell_table_class_tag.as_str(), "287" | "325") {
             return None;
         }
-        let (primary, paired) = records
-            .frames(cell_table_record_index)
-            .find(|(primary, _)| *primary == cell_table_byte_offset)?;
+        let (primary, paired) = match records.frames(ctx, cell_table_record_index) {
+            Ok(mut frames) => frames.find(|(primary, _)| *primary == cell_table_byte_offset)?,
+            Err(error) => return Some(Err(error)),
+        };
         let cell_table_paired_class_tag =
             exact_indexed_header_at(bytes, paired, cell_table_record_index)?;
         if bytes.get(cell_table_byte_offset + 11..cell_table_byte_offset + 21)? != [0; 10] {
@@ -226,7 +261,7 @@ pub(crate) fn decode_surface_trim_operations(
 ) -> Result<Vec<DesignSurfaceTrimOperation>, CodecError> {
     let mut record_offsets = HashMap::<String, IndexedRecordOffsets>::new();
     let mut out = Vec::new();
-    for scope in scopes.iter().filter(|scope| {
+    for scope in ctx.admit_iter(scopes, "scan F3D SurfaceTrim scopes")?.filter(|scope| {
         scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfaceTrim
     }) {
         let Some(stream) = native_stream(&scope.id) else {

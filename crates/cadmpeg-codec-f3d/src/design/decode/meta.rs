@@ -63,11 +63,8 @@ fn paired_bulk_entry_name<'a>(
     scan: &'a ContainerScan<'_>,
     prefix: &str,
 ) -> Result<&'a str, CodecError> {
-    if let Some(entry) = scan
-        .entries
-        .iter()
-        .find(|entry| entry.name.strip_prefix(prefix) == Some("BulkStream.dat"))
-    {
+    let mut entries = ctx.admit_iter(&scan.entries, "find F3D paired Design BulkStream")?;
+    if let Some(entry) = entries.find(|entry| entry.name.strip_prefix(prefix) == Some("BulkStream.dat")) {
         return Ok(&entry.name);
     }
     let length = "entry "
@@ -89,13 +86,12 @@ pub(crate) fn decode_types(
     scan: &ContainerScan,
 ) -> Result<Vec<SegmentType>, CodecError> {
     let mut out = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
+    for entry in ctx
+        .admit_iter(&scan.entries, "scan F3D Design MetaStream entries")?
         .filter_map(|entry| MetaStreamEntry::from_design_entry(scan, entry))
     {
         let meta = scan.parsed_metastream(ctx, &entry.entry.name)?;
-        for design_type in &meta.types {
+        for design_type in ctx.admit_iter(&meta.types, "copy F3D Design type table")? {
             ctx.reserve_vec(&mut out, 1, "f3d design type table")?;
             out.push(copy_design_type(ctx, design_type, &entry.entry.name)?);
         }
@@ -207,14 +203,13 @@ pub(crate) fn decode_component_naming_spaces(
     scan: &ContainerScan,
 ) -> Result<Vec<DesignComponentNamingSpace>, CodecError> {
     let mut out = Vec::new();
-    for meta_entry in scan
-        .entries
-        .iter()
+    for meta_entry in ctx
+        .admit_iter(&scan.entries, "scan F3D component naming MetaStream entries")?
         .filter_map(|entry| MetaStreamEntry::from_design_entry(scan, entry))
     {
         let meta = scan.parsed_metastream(ctx, &meta_entry.entry.name)?;
         let mut component_entities = HashSet::new();
-        for design_type in meta.types.iter().filter(|design_type| {
+        for design_type in ctx.admit_iter(&meta.types, "scan F3D component naming types")?.filter(|design_type| {
             design_type.module == COMPONENT_MODULE
                 && design_type
                     .base_type_guid
@@ -224,7 +219,21 @@ pub(crate) fn decode_component_naming_spaces(
                         base.eq_ignore_ascii_case(COMPONENT_NAMING_SPACE_BASE_TYPE_GUID)
                     })
         }) {
-            for &entity_id in design_type.entities.values() {
+            let entities = &design_type.entities;
+            for entity_id in ctx
+                .admit_iter(
+                    entities.unlocated_values().unwrap_or(&[]),
+                    "scan F3D unlocated component naming entities",
+                )?
+                .copied()
+                .chain(
+                    ctx.admit_iter(
+                        entities.located_rows().unwrap_or(&[]),
+                        "scan F3D located component naming entities",
+                    )?
+                    .map(|entity| entity.value),
+                )
+            {
                 ctx.insert_hash_set(
                     &mut component_entities,
                     entity_id,
@@ -240,16 +249,28 @@ pub(crate) fn decode_component_naming_spaces(
         let mut by_component = HashMap::<u64, DesignComponentNamingSpace>::new();
         for reserved_len in COMPONENT_UUID_RESERVED_LENGTHS {
             let prefix_len = 1 + 8 + reserved_len;
-            for uuid_offset in bytes
-                .len()
-                .checked_sub(4)
-                .into_iter()
-                .flat_map(|last| prefix_len..last)
+            let Some(last) = bytes.len().checked_sub(4) else {
+                continue;
+            };
+            let Some(offsets) = bytes.get(prefix_len..last) else {
+                continue;
+            };
+            for (relative_offset, _) in ctx
+                .admit_iter(offsets, "scan F3D component naming UUID offsets")?
+                .enumerate()
             {
+                let uuid_offset = prefix_len.checked_add(relative_offset).ok_or_else(|| {
+                    ctx.refuse_codec_limit("scan F3D component naming UUID offsets", 0, 1)
+                })?;
                 let marker = uuid_offset - prefix_len;
                 if bytes[marker] != 1
                     || (marker > 0 && bytes[marker - 1] == 1)
-                    || !bytes[marker + 9..uuid_offset].iter().all(|byte| *byte == 0)
+                    || !ctx
+                        .admit_iter(
+                            &bytes[marker + 9..uuid_offset],
+                            "scan F3D component naming UUID reserved bytes",
+                        )?
+                        .all(|byte| *byte == 0)
                 {
                     continue;
                 }
@@ -285,7 +306,10 @@ pub(crate) fn decode_component_naming_spaces(
                 )?;
             }
         }
-        for marker in 0..bytes.len() {
+        for (marker, _) in ctx
+            .admit_iter(bytes, "scan F3D component naming references")?
+            .enumerate()
+        {
             let mut uuid_offset = marker;
             let Some(reference) = take_reference(bytes, &mut uuid_offset) else {
                 continue;
@@ -293,24 +317,41 @@ pub(crate) fn decode_component_naming_spaces(
             let Some((component_record_index, Some(inline_type_guid))) = reference.local() else {
                 continue;
             };
-            if !meta.types.iter().any(|design_type| {
-                design_type.module == COMPONENT_MODULE
-                    && design_type
+            let mut registered = false;
+            for design_type in ctx.admit_iter(&meta.types, "find F3D component reference type")? {
+                if design_type.module != COMPONENT_MODULE
+                    || design_type
                         .base_type_guid
                         .value()
                         .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
-                        .is_some_and(|base| {
-                            base.eq_ignore_ascii_case(COMPONENT_NAMING_SPACE_BASE_TYPE_GUID)
+                        .is_none_or(|base| {
+                            !base.eq_ignore_ascii_case(COMPONENT_NAMING_SPACE_BASE_TYPE_GUID)
                         })
-                    && design_type
-                        .type_guid
-                        .as_str()
-                        .eq_ignore_ascii_case(inline_type_guid)
-                    && design_type
-                        .entities
-                        .values()
-                        .any(|registered| *registered == component_record_index)
-            }) {
+                    || !design_type.type_guid.as_str().eq_ignore_ascii_case(inline_type_guid)
+                {
+                    continue;
+                }
+                let entities = &design_type.entities;
+                if ctx
+                    .admit_iter(
+                        entities.unlocated_values().unwrap_or(&[]),
+                        "find F3D unlocated component reference entity",
+                    )?
+                    .copied()
+                    .chain(
+                        ctx.admit_iter(
+                            entities.located_rows().unwrap_or(&[]),
+                            "find F3D located component reference entity",
+                        )?
+                        .map(|entity| entity.value),
+                    )
+                    .any(|registered_entity| registered_entity == component_record_index)
+                {
+                    registered = true;
+                    break;
+                }
+            }
+            if !registered {
                 continue;
             }
             let Some((context_uuid, _)) = lp_utf16_bounded_charged(
@@ -374,9 +415,8 @@ pub(crate) fn metadata_for_bulk_stream(
     let prefix = bulk_entry_name
         .strip_suffix("BulkStream.dat")
         .ok_or_else(|| CodecError::Malformed("Design stream has no BulkStream suffix".into()))?;
-    let Some(meta_entry) = scan
-        .entries
-        .iter()
+    let mut entries = ctx.admit_iter(&scan.entries, "find paired F3D MetaStream")?;
+    let Some(meta_entry) = entries
         .find(|entry| entry.name.strip_prefix(prefix) == Some("MetaStream.dat"))
     else {
         return Ok(None);
@@ -404,12 +444,17 @@ fn dynamic_type<'a>(
 }
 
 fn record_header_class_tag(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     at: usize,
     end: usize,
     expected_entity_id: u64,
-) -> Option<crate::records::references::DesignClassTag> {
-    let (class_tag, after_tag) = lp_ascii_filtered_view(bytes, at, 3..=3, u8::is_ascii_digit)?;
+) -> Result<Option<crate::records::references::DesignClassTag>, CodecError> {
+    let Some((class_tag, after_tag)) =
+        lp_ascii_filtered_view(bytes, at, 3..=3, u8::is_ascii_digit)
+    else {
+        return Ok(None);
+    };
     let indexed_matches = after_tag
         .checked_add(4)
         .filter(|entity_end| *entity_end <= end)
@@ -421,9 +466,12 @@ fn record_header_class_tag(
         .and_then(|_| View::u64_le_at(bytes, after_tag))
         == Some(expected_entity_id);
     if !indexed_matches && !named_matches {
-        return None;
+        return Ok(None);
     }
-    crate::design::decode::text::class_tag_from_view(class_tag).ok()
+    match crate::design::decode::text::class_tag_from_view(ctx, class_tag)? {
+        Ok(class_tag) => Ok(Some(class_tag)),
+        Err(_) => Ok(None),
+    }
 }
 
 /// Resolve every live sibling record from the primary index. The primary
@@ -438,8 +486,22 @@ pub(super) fn design_primary_frames<'a>(
 ) -> Result<Vec<DesignPrimaryFrame<'a>>, CodecError> {
     let indexed = crate::metastream::primary_record_frames(ctx, meta, bytes.len())?;
     let mut registered_entities = HashSet::new();
-    for (ordinal, design_type) in meta.types.iter().enumerate() {
-        for &entity_id in design_type.entities.values() {
+    for (ordinal, design_type) in ctx.admit_iter(&meta.types, "scan F3D primary record types")?.enumerate() {
+        let entities = &design_type.entities;
+        for entity_id in ctx
+            .admit_iter(
+                entities.unlocated_values().unwrap_or(&[]),
+                "scan F3D unlocated primary entity registrations",
+            )?
+            .copied()
+            .chain(
+                ctx.admit_iter(
+                    entities.located_rows().unwrap_or(&[]),
+                    "scan F3D located primary entity registrations",
+                )?
+                .map(|entity| entity.value),
+            )
+        {
             ctx.insert_hash_set(
                 &mut registered_entities,
                 (ordinal, entity_id),
@@ -449,9 +511,9 @@ pub(super) fn design_primary_frames<'a>(
     }
     let mut frames = Vec::new();
     ctx.reserve_vec(&mut frames, indexed.len(), "f3d design primary frames")?;
-    for frame in indexed {
+    for frame in ctx.admit_iter(&indexed, "scan F3D indexed primary record frames")? {
         let entity_id = frame.entity_id;
-        let Some(class_tag) = record_header_class_tag(bytes, frame.start, frame.end, entity_id)
+        let Some(class_tag) = record_header_class_tag(ctx, bytes, frame.start, frame.end, entity_id)?
         else {
             return Err(CodecError::Malformed(
                 "F3D primary record index points to an invalid record header".into(),
@@ -469,7 +531,7 @@ pub(super) fn design_primary_frames<'a>(
         }
         if frame.member_end < frame.end {
             let Some(nested_class_tag) =
-                record_header_class_tag(bytes, frame.member_end, frame.end, entity_id)
+                record_header_class_tag(ctx, bytes, frame.member_end, frame.end, entity_id)?
             else {
                 return Err(CodecError::Malformed(
                     "F3D secondary record index points to an invalid nested header".into(),
@@ -511,7 +573,7 @@ pub(super) fn typed_primary_frames<'a>(
     record_kind: &str,
 ) -> Result<Vec<TypedPrimaryFrame<'a>>, CodecError> {
     let mut typed_entities = HashSet::new();
-    for design_type in &meta.types {
+    for design_type in ctx.admit_iter(&meta.types, "scan F3D typed primary record types")? {
         if !design_type
             .type_guid
             .as_str()
@@ -519,7 +581,21 @@ pub(super) fn typed_primary_frames<'a>(
         {
             continue;
         }
-        for &entity_id in design_type.entities.values() {
+        let entities = &design_type.entities;
+        for entity_id in ctx
+            .admit_iter(
+                entities.unlocated_values().unwrap_or(&[]),
+                "scan F3D unlocated typed primary entities",
+            )?
+            .copied()
+            .chain(
+                ctx.admit_iter(
+                    entities.located_rows().unwrap_or(&[]),
+                    "scan F3D located typed primary entities",
+                )?
+                .map(|entity| entity.value),
+            )
+        {
             if typed_entities.contains(&entity_id) {
                 return Err(crate::design::text::malformed_design(
                     ctx,
@@ -536,7 +612,8 @@ pub(super) fn typed_primary_frames<'a>(
 
     let mut resolved_entities = HashSet::new();
     let mut frames = Vec::new();
-    for primary_frame in design_primary_frames(ctx, bytes, meta)? {
+    let primary_frames = design_primary_frames(ctx, bytes, meta)?;
+    for primary_frame in ctx.admit_iter(&primary_frames, "scan F3D resolved primary frames")? {
         if !primary_frame
             .design_type
             .type_guid
@@ -574,11 +651,28 @@ pub(super) fn stream_types_by_entity<'a>(
     bulk_entry_name: &str,
 ) -> Result<HashMap<u64, (&'a str, u32)>, CodecError> {
     let mut by_entity = HashMap::new();
-    for design_type in types.iter().filter(|design_type| {
-        native_stream(design_type.id())
-            .is_some_and(|scope| meta_scope_matches_bulk(scope, bulk_entry_name))
-    }) {
-        for &entity_id in design_type.entities.values() {
+    for design_type in ctx.admit_iter(types, "scan F3D types by stream entity")? {
+        let Some(scope) = native_stream(design_type.id()) else {
+            continue;
+        };
+        if !meta_scope_matches_bulk(ctx, scope, bulk_entry_name)? {
+            continue;
+        }
+        let entities = &design_type.entities;
+        for entity_id in ctx
+            .admit_iter(
+                entities.unlocated_values().unwrap_or(&[]),
+                "scan F3D unlocated stream type entities",
+            )?
+            .copied()
+            .chain(
+                ctx.admit_iter(
+                    entities.located_rows().unwrap_or(&[]),
+                    "scan F3D located stream type entities",
+                )?
+                .map(|entity| entity.value),
+            )
+        {
             if !by_entity.contains_key(&entity_id) {
                 ctx.reserve_map(&mut by_entity, 1, "f3d stream types by entity")?;
             }
@@ -598,15 +692,19 @@ pub(super) fn stream_types_by_class_tag<'a>(
     bulk_entry_name: &str,
 ) -> Result<HashMap<u32, &'a SegmentType>, CodecError> {
     let mut by_class_tag = HashMap::new();
-    for (ordinal, design_type) in types
-        .iter()
-        .filter(|design_type| {
-            native_stream(design_type.id())
-                .is_some_and(|scope| meta_scope_matches_bulk(scope, bulk_entry_name))
-        })
-        .enumerate()
-    {
-        let Some(class_tag) = u32::try_from(ordinal)
+    let mut ordinal = 0usize;
+    for design_type in ctx.admit_iter(types, "scan F3D types by class tag")? {
+        let Some(scope) = native_stream(design_type.id()) else {
+            continue;
+        };
+        if !meta_scope_matches_bulk(ctx, scope, bulk_entry_name)? {
+            continue;
+        }
+        let this_ordinal = ordinal;
+        ordinal = ordinal.checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit("F3D type class-tag ordinal", u64::MAX - 1, u64::MAX)
+        })?;
+        let Some(class_tag) = u32::try_from(this_ordinal)
             .ok()
             .and_then(|ordinal| ordinal.checked_add(256))
         else {
@@ -621,52 +719,64 @@ pub(super) fn stream_types_by_class_tag<'a>(
 
 /// Compare an encoded native `MetaStream` scope with the `BulkStream`'s sibling
 /// name without materializing either name.
-fn meta_scope_matches_bulk(scope: &str, bulk_entry_name: &str) -> bool {
+fn meta_scope_matches_bulk(
+    ctx: &DecodeContext<'_>,
+    scope: &str,
+    bulk_entry_name: &str,
+) -> Result<bool, CodecError> {
     let Some(prefix) = bulk_entry_name.strip_suffix("BulkStream.dat") else {
-        return false;
+        return Ok(false);
     };
     let Some(encoded) = scope
         .strip_prefix("f3d:")
         .and_then(|scope| scope.strip_suffix("MetaStream.dat"))
     else {
-        return false;
+        return Ok(false);
     };
     let mut observed = encoded.bytes();
-    for character in prefix.chars() {
+    for character in ctx.admit_iter(prefix, "scan F3D BulkStream scope prefix")? {
         let mut buffer = [0; 4];
         let bytes = character.encode_utf8(&mut buffer).as_bytes();
         if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
             const HEX: &[u8; 16] = b"0123456789ABCDEF";
-            for byte in bytes {
+            for byte in ctx.admit_iter(bytes, "scan F3D escaped BulkStream prefix")?.copied() {
                 if observed.next() != Some(b'%')
                     || observed.next() != Some(HEX[usize::from(byte >> 4)])
                     || observed.next() != Some(HEX[usize::from(byte & 0x0f)])
                 {
-                    return false;
+                    return Ok(false);
                 }
             }
-        } else if !bytes.iter().all(|byte| observed.next() == Some(*byte)) {
-            return false;
+        } else if !ctx
+            .admit_iter(bytes, "scan F3D unescaped BulkStream prefix")?
+            .all(|byte| observed.next() == Some(*byte))
+        {
+            return Ok(false);
         }
     }
-    observed.next().is_none()
+    Ok(observed.next().is_none())
 }
 
 fn local_reference(
+    ctx: &DecodeContext<'_>,
     reference: &Reference<&str, crate::bytes::utf16::Utf16View<'_>>,
     type_guids_by_entity: &HashMap<u64, Vec<&str>>,
-) -> Option<u64> {
-    let (target, inline_type_guid) = reference.local()?;
+) -> Result<Option<u64>, CodecError> {
+    let Some((target, inline_type_guid)) = reference.local() else {
+        return Ok(None);
+    };
     if let Some(inline_type_guid) = inline_type_guid {
-        let registered_type_guids = type_guids_by_entity.get(&target)?;
-        if !registered_type_guids
-            .iter()
+        let Some(registered_type_guids) = type_guids_by_entity.get(&target) else {
+            return Ok(None);
+        };
+        if !ctx
+            .admit_iter(registered_type_guids, "match F3D registered timeline types")?
             .any(|registered| registered.eq_ignore_ascii_case(inline_type_guid))
         {
-            return None;
+            return Ok(None);
         }
     }
-    Some(target)
+    Ok(Some(target))
 }
 
 fn parse_feature_timeline_record(
@@ -679,15 +789,8 @@ fn parse_feature_timeline_record(
     type_guids_by_entity: &HashMap<u64, Vec<&str>>,
 ) -> Result<Option<DesignFeatureTimeline>, CodecError> {
     let (expected_class_tag, expected_entity_id) = expected;
-    let Some((
-        class_tag,
-        mut at,
-        context_reference_offset,
-        context_record_index,
-        item_count_offset,
-        count,
-    )) = (|| {
-        let (start, end) = (frame.start, frame.end);
+    let Some((class_tag, mut at, context_reference_offset, context_reference)) = (|| {
+        let start = frame.start;
         let (class_tag, after_tag) =
             lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
         if class_tag != expected_class_tag
@@ -706,28 +809,33 @@ fn parse_feature_timeline_record(
         }
         let mut at = payload.checked_add(2)?;
         let context_reference_offset = at.checked_add(1)?;
-        let context_record_index = std::num::NonZeroU64::new(local_reference(
-            &take_reference(bytes, &mut at)?,
-            type_guids_by_entity,
-        )?)?;
-        let item_count_offset = at;
-        let count = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
-        at = at.checked_add(4)?;
-        if count > end.checked_sub(at)? / 11 {
-            return None;
-        }
-        Some((
-            class_tag,
-            at,
-            context_reference_offset,
-            context_record_index,
-            item_count_offset,
-            count,
-        ))
+        let reference = take_reference(bytes, &mut at)?;
+        Some((class_tag, at, context_reference_offset, reference))
     })()
     else {
         return Ok(None);
     };
+    let Some(context_record_index) =
+        local_reference(ctx, &context_reference, type_guids_by_entity)?
+            .and_then(std::num::NonZeroU64::new)
+    else {
+        return Ok(None);
+    };
+    let item_count_offset = at;
+    let Some(count) = View::u32_le_at(bytes, at).and_then(|count| usize::try_from(count).ok())
+    else {
+        return Ok(None);
+    };
+    let Some(next_at) = at.checked_add(4) else {
+        return Ok(None);
+    };
+    at = next_at;
+    let Some(remaining) = frame.end.checked_sub(at) else {
+        return Ok(None);
+    };
+    if count > remaining / 11 {
+        return Ok(None);
+    }
 
     let work = count
         .checked_next_power_of_two()
@@ -745,7 +853,7 @@ fn parse_feature_timeline_record(
         let Some(reference) = take_reference(bytes, &mut at) else {
             return Ok(None);
         };
-        let Some(target) = local_reference(&reference, type_guids_by_entity) else {
+        let Some(target) = local_reference(ctx, &reference, type_guids_by_entity)? else {
             return Ok(None);
         };
         let Some(target_offset) = u64::try_from(target_offset).ok() else {
@@ -793,8 +901,9 @@ fn parse_feature_timeline_record(
             return Ok(None);
         }
     };
-    let Some(class_tag) = crate::design::decode::text::class_tag_from_view(class_tag).ok() else {
-        return Ok(None);
+    let class_tag = match crate::design::decode::text::class_tag_from_view(ctx, class_tag)? {
+        Ok(class_tag) => class_tag,
+        Err(_) => return Ok(None),
     };
     let Some(record_index) = std::num::NonZeroU64::new(expected_entity_id) else {
         return Ok(None);
@@ -823,9 +932,8 @@ pub(crate) fn decode_feature_timelines(
     scan: &ContainerScan,
 ) -> Result<Vec<DesignFeatureTimeline>, CodecError> {
     let mut out = Vec::new();
-    for meta_entry in scan
-        .entries
-        .iter()
+    for meta_entry in ctx
+        .admit_iter(&scan.entries, "scan F3D feature-timeline MetaStreams")?
         .filter_map(|entry| MetaStreamEntry::from_design_entry(scan, entry))
     {
         let meta = crate::metastream::parse(
@@ -839,12 +947,14 @@ pub(crate) fn decode_feature_timelines(
                 .as_str()
                 .eq_ignore_ascii_case(FEATURE_TIMELINE_TYPE_GUID)
         };
-        if !meta.types.iter().any(is_timeline_type) {
+        if !ctx
+            .admit_iter(&meta.types, "find F3D feature-timeline types")?
+            .any(is_timeline_type)
+        {
             continue;
         }
-        if meta
-            .types
-            .iter()
+        if ctx
+            .admit_iter(&meta.types, "validate F3D feature-timeline versions")?
             .filter(|design_type| is_timeline_type(design_type))
             .any(|design_type| !FEATURE_TIMELINE_TYPE_VERSIONS.contains(&design_type.version))
         {
@@ -852,9 +962,8 @@ pub(crate) fn decode_feature_timelines(
                 "unsupported Design feature-timeline record version".into(),
             ));
         }
-        if meta
-            .types
-            .iter()
+        if ctx
+            .admit_iter(&meta.types, "validate F3D feature-timeline registrations")?
             .filter(|design_type| is_timeline_type(design_type))
             .any(|design_type| !is_supported_feature_timeline_type(design_type))
         {
@@ -862,9 +971,12 @@ pub(crate) fn decode_feature_timelines(
                 "Design feature-timeline type has incompatible registration metadata".into(),
             ));
         }
-        if meta
-            .records
-            .windows(2)
+        let Some(record_pair_width) = std::num::NonZeroUsize::new(2) else {
+            return Err(CodecError::malformed("F3D MetaStream record pair width is zero"));
+        };
+        if ctx
+            .admit_iter(&meta.records, "validate F3D MetaStream record offsets")?
+            .windows(record_pair_width)
             .any(|pair| pair[0].bulk_offset >= pair[1].bulk_offset)
         {
             return Err(CodecError::Malformed(
@@ -874,11 +986,25 @@ pub(crate) fn decode_feature_timelines(
         let bulk_name = paired_bulk_entry_name(ctx, scan, meta_entry.prefix)?;
         let bytes = scan.entry_bytes(bulk_name)?;
         let mut type_guids_by_entity = HashMap::<u64, Vec<&str>>::new();
-        for design_type in &meta.types {
-            for entity_id in design_type.entities.values() {
+        for design_type in ctx.admit_iter(&meta.types, "index F3D timeline types")? {
+            let entities = &design_type.entities;
+            for entity_id in ctx
+                .admit_iter(
+                    entities.unlocated_values().unwrap_or(&[]),
+                    "index F3D unlocated timeline entities",
+                )?
+                .copied()
+                .chain(
+                    ctx.admit_iter(
+                        entities.located_rows().unwrap_or(&[]),
+                        "index F3D located timeline entities",
+                    )?
+                    .map(|entity| entity.value),
+                )
+            {
                 ctx.push_hash_group(
                     &mut type_guids_by_entity,
-                    *entity_id,
+                    entity_id,
                     design_type.type_guid.as_str(),
                     "index F3D timeline entity",
                     "index F3D timeline type GUID",
@@ -886,9 +1012,8 @@ pub(crate) fn decode_feature_timelines(
             }
         }
         let mut source_ordinal = 0_u32;
-        for (type_ordinal, design_type) in meta
-            .types
-            .iter()
+        for (type_ordinal, design_type) in ctx
+            .admit_iter(&meta.types, "scan F3D feature-timeline entities")?
             .enumerate()
             .filter(|(_, design_type)| is_timeline_type(design_type))
         {
@@ -903,7 +1028,21 @@ pub(crate) fn decode_feature_timelines(
                     )
                 })?
                 .to_string();
-            for entity_id in design_type.entities.values() {
+            let entities = &design_type.entities;
+            for entity_id in ctx
+                .admit_iter(
+                    entities.unlocated_values().unwrap_or(&[]),
+                    "scan F3D unlocated feature-timeline entities",
+                )?
+                .copied()
+                .chain(
+                    ctx.admit_iter(
+                        entities.located_rows().unwrap_or(&[]),
+                        "scan F3D located feature-timeline entities",
+                    )?
+                    .map(|entity| entity.value),
+                )
+            {
                 let entity_source_ordinal = source_ordinal;
                 source_ordinal = source_ordinal.checked_add(1).ok_or_else(|| {
                     CodecError::Malformed("Design feature-timeline ordinal exceeds u32".into())
@@ -918,7 +1057,7 @@ pub(crate) fn decode_feature_timelines(
                     .records
                     .iter()
                     .enumerate()
-                    .filter(|(_, record)| record.entity_id == *entity_id);
+                    .filter(|(_, record)| record.entity_id == entity_id);
                 let Some((record_ordinal, record)) = matches.next() else {
                     return Err(CodecError::Malformed(
                         "Design feature timeline has no unique primary record-index entry".into(),
@@ -952,7 +1091,7 @@ pub(crate) fn decode_feature_timelines(
                     bytes,
                     bulk_name,
                     start..end,
-                    (&expected_class_tag, *entity_id),
+                    (&expected_class_tag, entity_id),
                     entity_source_ordinal,
                     &type_guids_by_entity,
                 )?

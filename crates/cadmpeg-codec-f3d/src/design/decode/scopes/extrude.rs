@@ -58,6 +58,7 @@ fn extrude_start_at(bytes: &[u8], offset: usize) -> Option<DesignExtrudeStart> {
 }
 
 pub(super) fn exact_extrude_prologue(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     paired_at: usize,
@@ -65,7 +66,7 @@ pub(super) fn exact_extrude_prologue(
     paired_class_tag: &str,
     reference_count_at: usize,
     reference_members: &[u32],
-) -> Option<DesignExtrudePrologue> {
+) -> Result<Option<DesignExtrudePrologue>, cadmpeg_core::CodecError> {
     let legacy_class_415 = paired_at
         .checked_sub(start)
         .zip(reference_count_at.checked_sub(start))
@@ -81,7 +82,7 @@ pub(super) fn exact_extrude_prologue(
         .unwrap_or(false);
     if class_tag == "415" && paired_class_tag == "265" {
         if legacy_class_415 {
-            return exact_current_extrude_prologue(
+            return exact_current_extrude_prologue(ctx,
                 bytes,
                 start,
                 reference_count_at,
@@ -89,7 +90,7 @@ pub(super) fn exact_extrude_prologue(
                 true,
             );
         }
-        return legacy_class_415::exact_one_sided_extrude_prologue(
+        return legacy_class_415::exact_one_sided_extrude_prologue(ctx,
             bytes,
             start,
             paired_at,
@@ -99,34 +100,23 @@ pub(super) fn exact_extrude_prologue(
             reference_members,
         );
     }
-    exact_current_extrude_prologue(
+    exact_current_extrude_prologue(ctx,
         bytes,
         start,
         reference_count_at,
         reference_members,
         legacy_class_415,
-    )
+    ).transpose()
     .or_else(|| {
-        exact_shifted_reference_aware_extrude_prologue(
+        exact_shifted_reference_aware_extrude_prologue(ctx,
             bytes,
             start,
             reference_count_at,
             reference_members,
-        )
+        ).transpose()
     })
     .or_else(|| {
-        legacy_class_397::exact_symmetric_extrude_prologue(
-            bytes,
-            start,
-            paired_at,
-            class_tag,
-            paired_class_tag,
-            reference_count_at,
-            reference_members,
-        )
-    })
-    .or_else(|| {
-        exact_class_338_two_sided_distance_extrude_prologue(
+        legacy_class_397::exact_symmetric_extrude_prologue(ctx,
             bytes,
             start,
             paired_at,
@@ -134,19 +124,30 @@ pub(super) fn exact_extrude_prologue(
             paired_class_tag,
             reference_count_at,
             reference_members,
-        )
+        ).transpose()
     })
     .or_else(|| {
-        exact_legacy_shifted_extrude_prologue(bytes, start, reference_count_at, reference_members)
+        exact_class_338_two_sided_distance_extrude_prologue(ctx,
+            bytes,
+            start,
+            paired_at,
+            class_tag,
+            paired_class_tag,
+            reference_count_at,
+            reference_members,
+        ).transpose()
     })
-    .or_else(|| exact_compact_shifted_extrude_prologue(bytes, start, reference_count_at))
+    .or_else(|| {
+        exact_legacy_shifted_extrude_prologue(bytes, start, reference_count_at, reference_members).map(Ok)
+    })
+    .or_else(|| exact_compact_shifted_extrude_prologue(bytes, start, reference_count_at).map(Ok))
     .or_else(|| {
         exact_compact_shifted_extrude_mixed_prologue(
             bytes,
             start,
             reference_count_at,
             reference_members,
-        )
+        ).map(Ok)
     })
     .or_else(|| {
         exact_class_296_one_sided_to_face_extrude_prologue(
@@ -157,7 +158,7 @@ pub(super) fn exact_extrude_prologue(
             paired_class_tag,
             reference_count_at,
             reference_members,
-        )
+        ).map(Ok)
     })
     .or_else(|| {
         exact_class_296_symmetric_distance_extrude_prologue(
@@ -168,7 +169,7 @@ pub(super) fn exact_extrude_prologue(
             paired_class_tag,
             reference_count_at,
             reference_members,
-        )
+        ).map(Ok)
     })
     .or_else(|| {
         exact_class_296_two_sided_to_faces_extrude_prologue(
@@ -179,7 +180,7 @@ pub(super) fn exact_extrude_prologue(
             paired_class_tag,
             reference_count_at,
             reference_members,
-        )
+        ).map(Ok)
     })
     .or_else(|| {
         exact_class_296_legacy_one_sided_extrude_prologue(
@@ -190,9 +191,9 @@ pub(super) fn exact_extrude_prologue(
             paired_class_tag,
             reference_count_at,
             reference_members,
-        )
+        ).map(Ok)
     })
-    .or_else(|| exact_legacy_distance_extrude_prologue(bytes, start, reference_count_at))
+    .or_else(|| exact_legacy_distance_extrude_prologue(bytes, start, reference_count_at).map(Ok)).transpose()
 }
 
 pub(crate) fn is_class_296_one_sided_to_face_layout(
@@ -943,12 +944,14 @@ fn exact_legacy_distance_extrude_prologue(
 }
 
 fn exact_current_extrude_prologue(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     reference_count_at: usize,
     reference_members: &[u32],
     legacy_class_415_symmetric_distance: bool,
-) -> Option<DesignExtrudePrologue> {
+) -> Result<Option<DesignExtrudePrologue>, cadmpeg_core::CodecError> {
+    (|| {
     const PROFILE_NORMAL_UNIT_EPS: f64 = 1.0e-12;
 
     if legacy_class_415_symmetric_distance
@@ -972,14 +975,18 @@ fn exact_current_extrude_prologue(
             (start.checked_add(38)?, Some(start.checked_add(37)?)),
         ]
         .into_iter()
-        .filter(|(operation_offset, marker_offset)| {
-            let padding_end = marker_offset.unwrap_or(*operation_offset);
-            bytes
-                .get(prefix_tail..padding_end)
-                .is_some_and(|padding| padding.iter().all(|byte| *byte == 0))
+        .filter_map(|(operation_offset, marker_offset)| {
+            let padding_end = marker_offset.unwrap_or(operation_offset);
+            ((match bytes.get(prefix_tail..padding_end) {
+                Some(padding) => match ctx.admit_iter(padding, "scan F3D extrude candidate padding") {
+                    Ok(mut padding) => padding.all(|byte| *byte == 0),
+                    Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+                },
+                None => false,
+            })
                 && marker_offset.is_none_or(|offset| bytes.get(offset) == Some(&1))
                 && reference_members.contains(&record_index)
-                && matches!(View::u32_le_at(bytes, *operation_offset), Some(1..=4))
+                && matches!(View::u32_le_at(bytes, operation_offset), Some(1..=4))
                 && matches!(
                     operation_offset
                         .checked_add(4)
@@ -1008,9 +1015,10 @@ fn exact_current_extrude_prologue(
                         .and_then(|at| bytes.get(at)),
                     Some(0..=2)
                 )
+            ).then_some(Ok((operation_offset, marker_offset)))
         });
-        let (operation_offset, operation_marker_offset) = candidates.next()?;
-        if candidates.next().is_some() {
+        let (operation_offset, operation_marker_offset) = (match candidates.next().transpose() { Ok(value) => value, Err(error) => return Some(Err(error)) })?;
+        if (match candidates.next().transpose() { Ok(value) => value, Err(error) => return Some(Err(error)) }).is_some() {
             return None;
         }
         let padding_end = operation_marker_offset.unwrap_or(operation_offset);
@@ -1152,7 +1160,7 @@ fn exact_current_extrude_prologue(
                 && side_extent_discriminators == [1, 1])
             .then_some(DesignExtrudeExtent::SymmetricDistance)
         })?;
-    Some(DesignExtrudePrologue::ReferenceAware {
+    Some(Ok(DesignExtrudePrologue::ReferenceAware {
         reference,
         operation,
         operation_offset: u64_from_index(operation_offset),
@@ -1174,7 +1182,8 @@ fn exact_current_extrude_prologue(
         solid_operation_offset: u64_from_index(solid_operation_offset),
         start: start_support,
         start_offset: u64_from_index(start_offset),
-    })
+    }))
+    })().transpose()
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1199,11 +1208,13 @@ struct ShiftedReferenceAwareLayout {
 }
 
 fn exact_shifted_reference_aware_extrude_prologue(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     reference_count_at: usize,
     reference_members: &[u32],
-) -> Option<DesignExtrudePrologue> {
+) -> Result<Option<DesignExtrudePrologue>, cadmpeg_core::CodecError> {
+    (|| {
     const PROFILE_NORMAL_UNIT_EPS: f64 = 1.0e-12;
     const CLASS_TAG_OFFSET: usize = 4;
     const CLASS_TAG_LENGTH: usize = 3;
@@ -1443,35 +1454,34 @@ fn exact_shifted_reference_aware_extrude_prologue(
             reference_members.contains(&trailing_reference)
         }
     };
-    let zero_range = |range_start: usize, range_end: usize| {
-        bytes
-            .get(start + range_start..start + range_end)
-            .is_some_and(|value| value.iter().all(|byte| *byte == 0))
+    let zero_range = |range_start: usize, range_end: usize| -> Result<bool, cadmpeg_core::CodecError> {
+        let Some(value) = bytes.get(start + range_start..start + range_end) else { return Ok(false); };
+        Ok(ctx.admit_iter(value, "scan F3D shifted extrude tail padding")?.all(|byte| *byte == 0))
     };
     let tail_fixed_valid = if tail_form == TailForm::SymmetricThroughAll {
-        zero_range(
+        (match zero_range(
             shifted_reference_aware_323_symmetric::FIRST_SIDE_PADDING,
             shifted_reference_aware_323_symmetric::SECOND_SIDE_EXTENT,
-        ) && View::u32_le_at(
+        ) { Ok(value) => value, Err(error) => return Some(Err(error)) }) && View::u32_le_at(
             bytes,
             start + shifted_reference_aware_323_symmetric::FIRST_SIDE_EXTENT,
         ) == Some(shifted_reference_aware_323_symmetric::FIRST_SIDE_EXTENT_VALUE)
-            && zero_range(
+            && (match zero_range(
                 shifted_reference_aware_323_symmetric::SECOND_SIDE_PADDING,
                 shifted_reference_aware_323_symmetric::SYMMETRIC_EXTENT_REFERENCE,
-            )
-            && zero_range(
+            ) { Ok(value) => value, Err(error) => return Some(Err(error)) })
+            && (match zero_range(
                 shifted_reference_aware_323_symmetric::SYMMETRIC_EXTENT_PADDING,
                 shifted_reference_aware_323_symmetric::PROFILE_GROUP_COUNT,
-            )
+            ) { Ok(value) => value, Err(error) => return Some(Err(error)) })
             && View::u32_le_at(
                 bytes,
                 start + shifted_reference_aware_323_symmetric::PROFILE_GROUP_COUNT,
             ) == Some(shifted_reference_aware_323_symmetric::PROFILE_GROUP_COUNT_VALUE)
-            && zero_range(
+            && (match zero_range(
                 shifted_reference_aware_323_symmetric::PROFILE_GROUP_PADDING,
                 shifted_reference_aware_323_symmetric::TRAILING_REFERENCE_COUNT,
-            )
+            ) { Ok(value) => value, Err(error) => return Some(Err(error)) })
             && View::u32_le_at(
                 bytes,
                 start + shifted_reference_aware_323_symmetric::TRAILING_REFERENCE_COUNT,
@@ -1504,20 +1514,20 @@ fn exact_shifted_reference_aware_extrude_prologue(
                 .is_some_and(|value| value == [0; 5])
             && View::u32_le_at(bytes, start + shifted_reference_aware::PROFILE_GROUP_COUNT)
                 == Some(1)
-            && zero_range(
+            && (match zero_range(
                 shifted_reference_aware::PROFILE_GROUP_PADDING,
                 trailing_reference_count_offset,
-            )
+            ) { Ok(value) => value, Err(error) => return Some(Err(error)) })
             && View::u32_le_at(bytes, start + trailing_reference_count_offset) == Some(1)
-            && zero_range(
+            && (match zero_range(
                 trailing_reference_padding_offset,
                 shifted_reference_aware::BODY_GROUP_GUID_PREFIX,
-            )
+            ) { Ok(value) => value, Err(error) => return Some(Err(error)) })
     };
     if !ordered_tail_references_valid || !trailing_reference_valid || !tail_fixed_valid {
         return None;
     }
-    let guid_end = fixed_guid_end(bytes, start.checked_add(guid_prefix_offset)?)?;
+    let guid_end = (match fixed_guid_end(ctx, bytes, start.checked_add(guid_prefix_offset)?) { Ok(value) => value, Err(error) => return Some(Err(error)) })?;
     let expected_guid_end = if tail_form == TailForm::SymmetricThroughAll {
         start.checked_add(guid_prefix_offset)?.checked_add(76)?
     } else {
@@ -1526,7 +1536,7 @@ fn exact_shifted_reference_aware_extrude_prologue(
     if guid_end != expected_guid_end || bytes.get(guid_end..reference_count_at)? != [0; 3] {
         return None;
     }
-    Some(DesignExtrudePrologue::ShiftedReferenceAware {
+    Some(Ok(DesignExtrudePrologue::ShiftedReferenceAware {
         operation,
         operation_offset: u64::try_from(operation_offset).ok()?,
         direction_face_extend_values,
@@ -1546,7 +1556,8 @@ fn exact_shifted_reference_aware_extrude_prologue(
         solid_operation_offset: u64::try_from(solid_operation_offset).ok()?,
         start: start_support,
         start_offset: u64::try_from(start_offset).ok()?,
-    })
+    }))
+    })().transpose()
 }
 
 pub(super) fn exact_extrude_extent(
@@ -1748,6 +1759,7 @@ fn exact_legacy_shifted_extrude_prologue(
 }
 
 fn exact_class_338_two_sided_distance_extrude_prologue(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     paired_at: usize,
@@ -1755,7 +1767,8 @@ fn exact_class_338_two_sided_distance_extrude_prologue(
     paired_class_tag: &str,
     reference_count_at: usize,
     reference_members: &[u32],
-) -> Option<DesignExtrudePrologue> {
+) -> Result<Option<DesignExtrudePrologue>, cadmpeg_core::CodecError> {
+    (|| {
     const PROFILE_NORMAL_UNIT_EPS: f64 = 1.0e-12;
 
     if class_tag != "338"
@@ -1842,12 +1855,12 @@ fn exact_class_338_two_sided_distance_extrude_prologue(
     {
         return None;
     }
-    let guid_end = fixed_guid_end(bytes, start.checked_add(class_338_legacy::GUID)?)?;
+    let guid_end = (match fixed_guid_end(ctx, bytes, start.checked_add(class_338_legacy::GUID)?) { Ok(value) => value, Err(error) => return Some(Err(error)) })?;
     let expected_guid_end = start.checked_add(279)?;
     if guid_end != expected_guid_end || bytes.get(guid_end..reference_count_at)? != [0; 3] {
         return None;
     }
-    Some(DesignExtrudePrologue::LegacyShifted {
+    Some(Ok(DesignExtrudePrologue::LegacyShifted {
         operation_prefix_marker_offset: None,
         operation,
         operation_offset: u64::try_from(operation_offset).ok()?,
@@ -1871,7 +1884,8 @@ fn exact_class_338_two_sided_distance_extrude_prologue(
         solid_operation_offset: u64::try_from(solid_operation_offset).ok()?,
         start: start_support,
         start_offset: u64::try_from(start_offset).ok()?,
-    })
+    }))
+    })().transpose()
 }
 
 #[cfg(test)]

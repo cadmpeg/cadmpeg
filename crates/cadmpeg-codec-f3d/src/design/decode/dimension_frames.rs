@@ -35,7 +35,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroUsize};
 
 /// Record slices every dimension-record decode pass reads: the container scan
 /// plus the parameter, owner, companion, scope, record-header, and sketch
@@ -58,7 +58,7 @@ fn dimension_parameter_index<'a>(
     operation: &'static str,
 ) -> Result<HashMap<(&'a str, u32), &'a DesignParameter>, CodecError> {
     let mut index = HashMap::new();
-    for parameter in parameters {
+    for parameter in ctx.admit_iter(parameters, operation)? {
         let Some(stream) = native_stream(&parameter.id) else {
             continue;
         };
@@ -76,7 +76,7 @@ fn dimension_companion_keys<'a>(
     operation: &'static str,
 ) -> Result<HashSet<(&'a str, u32)>, CodecError> {
     let mut keys = HashSet::new();
-    for owner in owners {
+    for owner in ctx.admit_iter(owners, operation)? {
         let Some(stream) = native_stream(owner.id()) else {
             continue;
         };
@@ -98,19 +98,19 @@ fn dimension_geometry_indices(
     curves: &[SketchCurveIdentity],
 ) -> Result<HashSet<u32>, CodecError> {
     let mut indices = HashSet::new();
-    for index in points
-        .iter()
+    for point in ctx
+        .admit_iter(points, "scan F3D dimension sketch points")?
         .filter(|point| native_stream(&point.id) == Some(stream))
-        .map(|point| point.record_index)
-        .chain(
-            curves
-                .iter()
-                .filter(|curve| native_stream(&curve.id) == Some(stream))
-                .map(|curve| curve.record_index),
-        )
     {
         ctx.reserve_set(&mut indices, 1, "f3d dimension geometry indices")?;
-        indices.insert(index);
+        indices.insert(point.record_index);
+    }
+    for curve in ctx
+        .admit_iter(curves, "scan F3D dimension sketch curves")?
+        .filter(|curve| native_stream(&curve.id) == Some(stream))
+    {
+        ctx.reserve_set(&mut indices, 1, "f3d dimension geometry indices")?;
+        indices.insert(curve.record_index);
     }
     Ok(indices)
 }
@@ -128,7 +128,7 @@ pub(crate) fn decode_dimension_recipe_records(
     let parameter_index =
         dimension_parameter_index(ctx, parameters, "f3d dimension recipe parameter index")?;
     let mut dimension_owners = HashSet::new();
-    for owner in owners {
+    for owner in ctx.admit_iter(owners, "scan F3D dimension recipe owners")? {
         let Some(stream) = native_stream(owner.id()) else {
             continue;
         };
@@ -141,12 +141,12 @@ pub(crate) fn decode_dimension_recipe_records(
         }
     }
     let mut recipe_index = HashMap::new();
-    for recipe in recipes {
+    for recipe in ctx.admit_iter(recipes, "index F3D dimension recipes")? {
         ctx.reserve_map(&mut recipe_index, 1, "f3d dimension recipe index")?;
         recipe_index.insert(recipe.id.as_str(), recipe);
     }
     let mut out = Vec::new();
-    for companion in companions.iter().filter(|companion| {
+    for companion in ctx.admit_iter(companions, "scan F3D dimension recipe companions")?.filter(|companion| {
         native_stream(companion.id()).is_some_and(|stream| {
             dimension_owners.contains(&(stream, companion.owner_record_index()))
         })
@@ -172,7 +172,10 @@ pub(crate) fn decode_dimension_recipe_records(
         else {
             continue;
         };
-        for (recipe_ordinal, recipe_id) in payload.owned_recipe_ids().iter().enumerate() {
+        for (recipe_ordinal, recipe_id) in ctx
+            .admit_iter(payload.owned_recipe_ids(), "scan F3D owned dimension recipes")?
+            .enumerate()
+        {
             let Some(recipe) = recipe_index.get(recipe_id.as_str()).copied() else {
                 continue;
             };
@@ -180,7 +183,7 @@ pub(crate) fn decode_dimension_recipe_records(
                 continue;
             };
             let Some((at, class_tag, record_index, record_end)) =
-                indexed_record_containing(bytes, start, end, recipe_offset)
+                indexed_record_containing(ctx, bytes, start, end, recipe_offset)?
             else {
                 continue;
             };
@@ -264,9 +267,12 @@ pub(crate) fn decode_recipe_references_charged(
     prefix: &[u8],
     prefix_offset: u64,
 ) -> Result<Vec<crate::records::dimensions::DesignRecipeReference>, CodecError> {
-    if prefix
-        .get(..10)
-        .is_none_or(|bytes| bytes.iter().any(|byte| *byte != 0))
+    let Some(header_padding) = prefix.get(..10) else {
+        return Ok(Vec::new());
+    };
+    if ctx
+        .admit_iter(header_padding, "validate F3D recipe prefix")?
+        .any(|byte| *byte != 0)
         || View::u32_le_at(prefix, 10) != Some(1)
         || View::u32_le_at(prefix, 18).is_none_or(|value| value == 0)
     {
@@ -298,7 +304,7 @@ fn decode_standard_recipe_references(
         .checked_sub(at)
         .is_some_and(|remaining| remaining > 4)
     {
-        if recipe_reference_suffix(&prefix[at..]) {
+        if recipe_reference_suffix(ctx, &prefix[at..])? {
             return Ok(references);
         }
         let Some(parsed) = decode_recipe_reference_operand(
@@ -381,16 +387,31 @@ fn decode_paired_recipe_references(
         ctx.push_vec(&mut operands, length_prefixed, "f3d recipe paired operands")?;
         at = next;
     }
-    if at != prefix.len()
-        || operands.chunks_exact(2).any(|pair| {
-            pair[0].first().map(|reference| reference.selector)
+    let mut mismatched = at != prefix.len();
+    if !mismatched {
+        let pair_width = NonZeroUsize::new(2)
+            .ok_or_else(|| CodecError::malformed("paired recipe operand chunk size is zero"))?;
+        for pair in ctx
+            .admit_iter(&operands, "compare F3D paired recipe operands")?
+            .chunks(pair_width)
+            .filter(|pair| pair.len() == pair_width.get())
+        {
+            if pair[0].first().map(|reference| reference.selector)
                 != pair[1].first().map(|reference| reference.selector)
-                || pair[0]
-                    .iter()
+                || ctx
+                    .admit_iter(&pair[0], "compare F3D paired recipe references")?
                     .map(|reference| reference.design_reference)
-                    .ne(pair[1].iter().map(|reference| reference.design_reference))
-        })
-    {
+                    .ne(
+                        ctx.admit_iter(&pair[1], "compare F3D paired recipe references")?
+                            .map(|reference| reference.design_reference),
+                    )
+            {
+                mismatched = true;
+                break;
+            }
+        }
+    }
+    if mismatched {
         return Ok(Vec::new());
     }
     let mut references = Vec::new();
@@ -470,14 +491,17 @@ fn decode_grouped_recipe_references(
     }
 }
 
-pub(in crate::design) fn is_paired_recipe_reference_frame(prefix: &[u8]) -> bool {
-    if !recipe_reference_header(prefix)
+pub(in crate::design) fn is_paired_recipe_reference_frame(
+    ctx: &DecodeContext<'_>,
+    prefix: &[u8],
+) -> Result<bool, CodecError> {
+    if !recipe_reference_header(ctx, prefix)?
         || View::u32_le_at(prefix, grouped_recipe::GROUP_COUNT) != Some(2)
     {
-        return false;
+        return Ok(false);
     }
     let Some(pair_count) = View::u32_le_at(prefix, 18).map(index_from_u32) else {
-        return false;
+        return Ok(false);
     };
     if pair_count == 0
         || prefix
@@ -485,21 +509,26 @@ pub(in crate::design) fn is_paired_recipe_reference_frame(prefix: &[u8]) -> bool
             .checked_sub(22)
             .is_none_or(|remaining| pair_count > remaining / 42)
     {
-        return false;
+        return Ok(false);
     }
     let mut at = 22usize;
     for _ in 0..pair_count {
-        let Some(packed) =
-            scan_recipe_reference_operand(prefix, at, RecipeReferenceTokenFrame::Packed)
+        let Some(packed) = scan_recipe_reference_operand(
+            ctx,
+            prefix,
+            at,
+            RecipeReferenceTokenFrame::Packed,
+        )?
         else {
-            return false;
+            return Ok(false);
         };
         let Some(length_prefixed) = scan_recipe_reference_operand(
+            ctx,
             prefix,
             packed.next,
             RecipeReferenceTokenFrame::LengthPrefixed,
-        ) else {
-            return false;
+        )? else {
+            return Ok(false);
         };
         if packed.selector != length_prefixed.selector
             || packed.reference_count != length_prefixed.reference_count
@@ -509,39 +538,42 @@ pub(in crate::design) fn is_paired_recipe_reference_frame(prefix: &[u8]) -> bool
                     != View::u32_le_at(prefix, length_prefixed.references_at + offset)
             })
         {
-            return false;
+            return Ok(false);
         }
         at = length_prefixed.next;
     }
-    at == prefix.len()
+    Ok(at == prefix.len())
 }
 
-pub(crate) fn is_grouped_recipe_reference_frame(prefix: &[u8]) -> bool {
-    if !recipe_reference_header(prefix) {
-        return false;
+pub(crate) fn is_grouped_recipe_reference_frame(
+    ctx: &DecodeContext<'_>,
+    prefix: &[u8],
+) -> Result<bool, CodecError> {
+    if !recipe_reference_header(ctx, prefix)? {
+        return Ok(false);
     }
     let Some(group_count) = View::u32_le_at(prefix, grouped_recipe::GROUP_COUNT)
         .filter(|count| *count >= 4)
         .map(index_from_u32)
     else {
-        return false;
+        return Ok(false);
     };
     let Some(available) = prefix.len().checked_sub(grouped_recipe::LEN) else {
-        return false;
+        return Ok(false);
     };
     let Some(required) = group_count.checked_mul(21) else {
-        return false;
+        return Ok(false);
     };
     if required > available {
-        return false;
+        return Ok(false);
     }
     let mut at = grouped_recipe::LEN;
     for _ in 0..group_count {
         let Some(operand_count) = View::u32_le_at(prefix, at).map(index_from_u32) else {
-            return false;
+            return Ok(false);
         };
         let Some(next) = at.checked_add(4) else {
-            return false;
+            return Ok(false);
         };
         at = next;
         if operand_count == 0
@@ -550,26 +582,36 @@ pub(crate) fn is_grouped_recipe_reference_frame(prefix: &[u8]) -> bool {
                 .checked_sub(at)
                 .is_none_or(|remaining| operand_count > remaining / 17)
         {
-            return false;
+            return Ok(false);
         }
         for _ in 0..operand_count {
-            let Some(operand) =
-                scan_recipe_reference_operand(prefix, at, RecipeReferenceTokenFrame::Packed)
+            let Some(operand) = scan_recipe_reference_operand(
+                ctx,
+                prefix,
+                at,
+                RecipeReferenceTokenFrame::Packed,
+            )?
             else {
-                return false;
+                return Ok(false);
             };
             at = operand.next;
         }
     }
-    prefix.get(at..) == Some(&[0, 0, 0, 0])
+    Ok(prefix.get(at..) == Some(&[0, 0, 0, 0]))
 }
 
-fn recipe_reference_header(prefix: &[u8]) -> bool {
-    prefix
-        .get(..10)
-        .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
+fn recipe_reference_header(
+    ctx: &DecodeContext<'_>,
+    prefix: &[u8],
+) -> Result<bool, CodecError> {
+    let Some(bytes) = prefix.get(..10) else {
+        return Ok(false);
+    };
+    Ok(ctx
+        .admit_iter(bytes, "validate F3D recipe reference header")?
+        .all(|byte| *byte == 0)
         && View::u32_le_at(prefix, 10) == Some(1)
-        && View::u32_le_at(prefix, 18).is_some_and(|value| value != 0)
+        && View::u32_le_at(prefix, 18).is_some_and(|value| value != 0))
 }
 
 #[derive(Clone, Copy)]
@@ -588,67 +630,108 @@ struct ScannedRecipeReferenceOperand<'a> {
     next: usize,
 }
 
-fn scan_recipe_reference_operand(
-    prefix: &[u8],
+fn scan_recipe_reference_operand<'prefix>(
+    ctx: &DecodeContext<'_>,
+    prefix: &'prefix [u8],
     at: usize,
     token_frame: RecipeReferenceTokenFrame,
-) -> Option<ScannedRecipeReferenceOperand<'_>> {
-    let selector = View::u32_le_at(prefix, at).filter(|value| *value != 0)?;
-    let token_encoding_at = at.checked_add(4)?;
-    let length_prefixed = (!matches!(token_frame, RecipeReferenceTokenFrame::Packed))
-        .then(|| {
-            lp_ascii_filtered_view(prefix, token_encoding_at, 0..=2000, u8::is_ascii_graphic)
-                .and_then(|(token, marker_at)| {
-                    (is_decimal_integer_token(token.as_bytes())
-                        && View::u32_le_at(prefix, marker_at) == Some(0))
-                    .then_some((token, token_encoding_at + 4, marker_at + 4))
-                })
-        })
-        .flatten();
-    let packed = (!matches!(token_frame, RecipeReferenceTokenFrame::LengthPrefixed))
-        .then(|| {
-            (1usize..=8).find_map(|length| {
-                let token =
-                    prefix.get(token_encoding_at..token_encoding_at.checked_add(length)?)?;
-                let zero_at = token_encoding_at.checked_add(length)?;
-                (is_decimal_integer_token(token)
-                    && prefix.get(zero_at..zero_at + 4) == Some(&[0; 4]))
-                .then(|| std::str::from_utf8(token).ok())
-                .flatten()
-                .map(|token| (token, token_encoding_at, zero_at + 4))
-            })
-        })
-        .flatten();
-    let (token, token_at, marker_at) = length_prefixed.or(packed)?;
-    let reference_count =
-        usize::try_from(View::u32_le_at(prefix, marker_at).filter(|value| *value != 0)?).ok()?;
-    let reference_bytes = reference_count.checked_mul(4)?;
-    let references_at = marker_at.checked_add(4)?;
-    if reference_bytes > prefix.len().checked_sub(references_at)? {
-        return None;
+) -> Result<Option<ScannedRecipeReferenceOperand<'prefix>>, CodecError> {
+    let Some(selector) = View::u32_le_at(prefix, at).filter(|value| *value != 0) else {
+        return Ok(None);
+    };
+    let Some(token_encoding_at) = at.checked_add(4) else {
+        return Ok(None);
+    };
+    let length_prefixed = if matches!(token_frame, RecipeReferenceTokenFrame::Packed) {
+        None
+    } else if let Some((token, marker_at)) =
+        lp_ascii_filtered_view(prefix, token_encoding_at, 0..=2000, u8::is_ascii_graphic)
+    {
+        if is_decimal_integer_token(ctx, token.as_bytes())?
+            && View::u32_le_at(prefix, marker_at) == Some(0)
+        {
+            Some((token, token_encoding_at + 4, marker_at + 4))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    let mut packed = None;
+    if !matches!(token_frame, RecipeReferenceTokenFrame::LengthPrefixed) {
+        for length in 1usize..=8 {
+            let Some(token_end) = token_encoding_at.checked_add(length) else {
+                continue;
+            };
+            let Some(token) = prefix.get(token_encoding_at..token_end) else {
+                continue;
+            };
+            let zero_at = token_end;
+            if !is_decimal_integer_token(ctx, token)?
+                || prefix.get(zero_at..zero_at + 4) != Some(&[0; 4])
+            {
+                continue;
+            }
+            if let Ok(token) = std::str::from_utf8(token) {
+                packed = Some((token, token_encoding_at, zero_at + 4));
+                break;
+            }
+        }
     }
-    let references_end = references_at.checked_add(reference_bytes)?;
+    let Some((token, token_at, marker_at)) = length_prefixed.or(packed) else {
+        return Ok(None);
+    };
+    let Some(reference_count) =
+        View::u32_le_at(prefix, marker_at).filter(|value| *value != 0).and_then(|value| usize::try_from(value).ok())
+    else {
+        return Ok(None);
+    };
+    let Some(reference_bytes) = reference_count.checked_mul(4) else {
+        return Ok(None);
+    };
+    let Some(references_at) = marker_at.checked_add(4) else {
+        return Ok(None);
+    };
+    let Some(remaining) = prefix.len().checked_sub(references_at) else {
+        return Ok(None);
+    };
+    if reference_bytes > remaining {
+        return Ok(None);
+    }
+    let Some(references_end) = references_at.checked_add(reference_bytes) else {
+        return Ok(None);
+    };
     let next = match token_frame {
         RecipeReferenceTokenFrame::Packed => references_end,
         RecipeReferenceTokenFrame::Either | RecipeReferenceTokenFrame::LengthPrefixed => {
             if View::u32_le_at(prefix, references_end) != Some(0) {
-                return None;
+                return Ok(None);
             }
-            references_end.checked_add(4)?
+            let Some(next) = references_end.checked_add(4) else {
+                return Ok(None);
+            };
+            next
         }
     };
     for reference_ordinal in 0..reference_count {
-        let design_reference_at = references_at.checked_add(reference_ordinal.checked_mul(4)?)?;
-        View::u32_le_at(prefix, design_reference_at).filter(|value| *value != 0)?;
+        let Some(design_reference_at) = reference_ordinal
+            .checked_mul(4)
+            .and_then(|offset| references_at.checked_add(offset))
+        else {
+            return Ok(None);
+        };
+        if View::u32_le_at(prefix, design_reference_at).filter(|value| *value != 0).is_none() {
+            return Ok(None);
+        }
     }
-    Some(ScannedRecipeReferenceOperand {
+    Ok(Some(ScannedRecipeReferenceOperand {
         selector,
         token,
         token_at,
         references_at,
         reference_count,
         next,
-    })
+    }))
 }
 
 struct DecodedRecipeReferenceOperand {
@@ -663,7 +746,11 @@ fn decode_recipe_reference_operand(
     at: usize,
     token_frame: RecipeReferenceTokenFrame,
 ) -> Option<Result<DecodedRecipeReferenceOperand, CodecError>> {
-    let scanned = scan_recipe_reference_operand(prefix, at, token_frame)?;
+    let scanned = match scan_recipe_reference_operand(ctx, prefix, at, token_frame) {
+        Ok(Some(scanned)) => scanned,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     let selector_offset = prefix_offset.checked_add(u64::try_from(at).ok()?)?;
     let token_offset = prefix_offset.checked_add(u64::try_from(scanned.token_at).ok()?)?;
     let mut references = Vec::new();
@@ -703,39 +790,53 @@ fn decode_recipe_reference_operand(
     }))
 }
 
-fn is_decimal_integer_token(token: &[u8]) -> bool {
+fn is_decimal_integer_token(
+    ctx: &DecodeContext<'_>,
+    token: &[u8],
+) -> Result<bool, CodecError> {
     let digits = token.strip_prefix(b"-").unwrap_or(token);
-    !digits.is_empty() && digits.iter().all(u8::is_ascii_digit)
+    if digits.is_empty() {
+        return Ok(false);
+    }
+    Ok(ctx
+        .admit_iter(digits, "validate F3D recipe reference token")?
+        .all(u8::is_ascii_digit))
 }
 
-fn recipe_reference_suffix(bytes: &[u8]) -> bool {
+fn recipe_reference_suffix(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<bool, CodecError> {
     if bytes == [0; 4] {
-        return true;
+        return Ok(true);
     }
     if View::u32_le_at(bytes, 0) != Some(1)
         || View::u32_le_at(bytes, 4) != Some(1)
         || View::u32_le_at(bytes, 8) != Some(0)
         || View::u32_le_at(bytes, 12) != Some(0)
     {
-        return false;
+        return Ok(false);
     }
     let Some(reference_count) = View::u32_le_at(bytes, 16).filter(|count| *count != 0) else {
-        return false;
+        return Ok(false);
     };
     let Some(reference_bytes) = usize::try_from(reference_count)
         .ok()
         .and_then(|count| count.checked_mul(4))
     else {
-        return false;
+        return Ok(false);
     };
     let Some(terminator_at) = 20usize.checked_add(reference_bytes) else {
-        return false;
+        return Ok(false);
     };
-    matches!(bytes.len().checked_sub(terminator_at), Some(4 | 6))
-        && (0..index_from_u32(reference_count)).all(|ordinal| {
-            View::u32_le_at(bytes, 20 + 4 * ordinal).is_some_and(|reference| reference != 0)
-        })
-        && bytes[terminator_at..].iter().all(|byte| *byte == 0)
+    if !matches!(bytes.len().checked_sub(terminator_at), Some(4 | 6)) {
+        return Ok(false);
+    }
+    if !(0..index_from_u32(reference_count)).all(|ordinal| {
+        View::u32_le_at(bytes, 20 + 4 * ordinal).is_some_and(|reference| reference != 0)
+    }) {
+        return Ok(false);
+    }
+    Ok(ctx
+        .admit_iter(&bytes[terminator_at..], "validate F3D recipe suffix terminator")?
+        .all(|byte| *byte == 0))
 }
 
 /// Join dimension-recipe selector/reference pairs to active solved subentities.
@@ -764,7 +865,7 @@ pub(crate) fn bind_recipe_reference_candidates_charged(
     reference.candidate_edges.clear();
     reference.alternate_selector_faces.clear();
     reference.alternate_selector_edges.clear();
-    for tag in tags.iter().filter(|tag| {
+    for tag in ctx.admit_iter(tags, "scan F3D recipe-reference tags")?.filter(|tag| {
         tag.token.as_str() == reference.token
             && tag.design_references.contains(&reference.design_reference)
             && owner_id.is_none_or(|owner_id| crate::ids::same_native_occurrence(&tag.id, owner_id))
@@ -833,10 +934,10 @@ pub(crate) fn bind_dimension_recipe_edge_operands(
 ) -> Result<(), CodecError> {
     for record in records {
         let mut ids = Vec::new();
-        for operand in operands
-            .iter()
-            .filter(|operand| dimension_recipe_edge_matches(record, operand))
-        {
+        for operand in ctx.admit_iter(operands, "scan F3D dimension recipe edge operands")? {
+            if !dimension_recipe_edge_matches(ctx, record, operand)? {
+                continue;
+            }
             ctx.push_formatted_retained(
                 &mut ids,
                 format_args!("{}", operand.id),
@@ -862,10 +963,10 @@ pub(crate) fn dimension_recipe_matching_edge_operand_ids(
     operands: &[DesignEdgeOperand],
 ) -> Result<Vec<String>, CodecError> {
     let mut ids = Vec::new();
-    for operand in operands
-        .iter()
-        .filter(|operand| dimension_recipe_edge_matches(record, operand))
-    {
+    for operand in ctx.admit_iter(operands, "scan F3D dimension recipe edge operands")? {
+        if !dimension_recipe_edge_matches(ctx, record, operand)? {
+            continue;
+        }
         ctx.push_formatted_retained(
             &mut ids,
             format_args!("{}", operand.id),
@@ -884,23 +985,27 @@ pub(crate) fn dimension_recipe_matching_edge_operand_ids(
 }
 
 fn dimension_recipe_edge_matches(
+    ctx: &DecodeContext<'_>,
     record: &DesignDimensionRecipeRecord,
     operand: &DesignEdgeOperand,
-) -> bool {
+) -> Result<bool, CodecError> {
     if native_stream(&operand.id) != native_stream(&record.id) {
-        return false;
+        return Ok(false);
     }
     let Some(tail) = operand
         .recipe_program
         .get(7..)
         .filter(|tail| !tail.is_empty())
     else {
-        return false;
+        return Ok(false);
     };
-    record
-        .program
-        .windows(tail.len())
-        .any(|window| window == tail)
+    let Some(width) = std::num::NonZeroUsize::new(tail.len()) else {
+        return Ok(false);
+    };
+    Ok(ctx
+        .admit_iter(&record.program, "scan F3D dimension recipe program")?
+        .windows(width)
+        .any(|window| window == tail))
 }
 
 pub(super) fn recipe_record_prefix(
@@ -918,31 +1023,38 @@ pub(super) fn recipe_record_prefix(
     Some((prefix_offset, prefix))
 }
 
-fn indexed_record_containing(
-    bytes: &[u8],
+fn indexed_record_containing<'bytes>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'bytes [u8],
     start: usize,
     end: usize,
     member_offset: usize,
-) -> Option<(usize, &str, u32, usize)> {
+) -> Result<Option<(usize, &'bytes str, u32, usize)>, CodecError> {
     if start > member_offset || member_offset >= end || end > bytes.len() {
-        return None;
+        return Ok(None);
     }
     let mut cursor = start;
     let mut containing = None;
-    while let Some(at) = next_indexed_record_offset(bytes, cursor) {
+    while let Some(at) = next_indexed_record_offset(ctx, bytes, cursor)? {
         if at >= end {
             break;
         }
         if at > member_offset {
-            return containing
-                .map(|(offset, class_tag, record_index)| (offset, class_tag, record_index, at));
+            return Ok(containing
+                .map(|(offset, class_tag, record_index)| (offset, class_tag, record_index, at)));
         }
-        let (class_tag, after_tag) =
-            lp_ascii_filtered_view(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
-        containing = Some((at, class_tag, View::u32_le_at(bytes, after_tag)?));
+        let Some((class_tag, after_tag)) =
+            lp_ascii_filtered_view(bytes, at, 0..=2000, u8::is_ascii_graphic)
+        else {
+            return Ok(None);
+        };
+        let Some(record_index) = View::u32_le_at(bytes, after_tag) else {
+            return Ok(None);
+        };
+        containing = Some((at, class_tag, record_index));
         cursor = at + 11;
     }
-    containing.map(|(offset, class_tag, record_index)| (offset, class_tag, record_index, end))
+    Ok(containing.map(|(offset, class_tag, record_index)| (offset, class_tag, record_index, end)))
 }
 
 pub(super) fn contiguous_i32_program(
@@ -989,7 +1101,9 @@ pub(crate) fn decode_dimension_locus_pairs(
     let dimension_companions =
         dimension_companion_keys(ctx, owners, &parameters, "f3d dimension locus companions")?;
     let mut out = Vec::new();
-    for (companion, scope) in companions.iter().filter_map(|companion| {
+    for (companion, scope) in ctx
+        .admit_iter(companions, "scan F3D dimension locus companions")?
+        .filter_map(|companion| {
         let scope = native_stream(companion.id())?;
         dimension_companions
             .contains(&(scope, companion.record_index()))
@@ -1013,7 +1127,8 @@ pub(crate) fn decode_dimension_locus_pairs(
         else {
             continue;
         };
-        let Some(mut pair) = find_dimension_locus_pair(
+        let Some(pair) = find_dimension_locus_pair(
+            ctx,
             bytes,
             start,
             end,
@@ -1022,6 +1137,7 @@ pub(crate) fn decode_dimension_locus_pairs(
         ) else {
             continue;
         };
+        let mut pair = pair?;
         pair.id = design_record_id_charged(
             ctx,
             &entry.name,
@@ -1083,23 +1199,44 @@ where
 }
 
 fn find_dimension_locus_pair(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     end: usize,
     companion_record_index: u32,
     geometry_indices: &HashSet<u32>,
-) -> Option<DesignDimensionLocusPair> {
-    let parse = |at| {
-        parse_dimension_locus_pair(bytes, at, companion_record_index, geometry_indices)
-            .filter(|pair| pair.paired_byte_offset() < u64_from_index(end))
+) -> Option<Result<DesignDimensionLocusPair, CodecError>> {
+    let parse = |at| match parse_dimension_locus_pair(
+        ctx,
+        bytes,
+        at,
+        companion_record_index,
+        geometry_indices,
+    ) {
+        Some(Ok(pair)) if pair.paired_byte_offset() < u64_from_index(end) => Some(Ok(pair)),
+        Some(Ok(_)) | None => None,
+        Some(Err(error)) => Some(Err(error)),
     };
-    let mut candidate = parse(start);
+    let mut candidate = match parse(start) {
+        Some(Ok(pair)) => Some(pair),
+        Some(Err(error)) => return Some(Err(error)),
+        None => None,
+    };
     let mut position = start.checked_add(1);
-    while let Some(at) = position.and_then(|position| next_indexed_record_offset(bytes, position)) {
+    while let Some(search_at) = position {
+        let at = match next_indexed_record_offset(ctx, bytes, search_at) {
+            Ok(Some(at)) => at,
+            Ok(None) => break,
+            Err(error) => return Some(Err(error)),
+        };
         if at >= end {
             break;
         }
-        if let Some(pair) = parse(at) {
+        if let Some(parsed) = parse(at) {
+            let pair = match parsed {
+                Ok(pair) => pair,
+                Err(error) => return Some(Err(error)),
+            };
             if candidate.is_some() {
                 return None;
             }
@@ -1107,15 +1244,16 @@ fn find_dimension_locus_pair(
         }
         position = at.checked_add(1);
     }
-    candidate
+    candidate.map(Ok)
 }
 
 fn parse_dimension_locus_pair(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     companion_record_index: u32,
     geometry_indices: &HashSet<u32>,
-) -> Option<DesignDimensionLocusPair> {
+) -> Option<Result<DesignDimensionLocusPair, CodecError>> {
     let (class_tag, after_tag) =
         lp_ascii_filtered_view(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
     let record_index = View::u32_le_at(bytes, after_tag)?;
@@ -1142,7 +1280,11 @@ fn parse_dimension_locus_pair(
     }
     let mut position = start.checked_add(69)?;
     let (paired_byte_offset, paired_class_tag) = loop {
-        let at = next_indexed_record_offset(bytes, position)?;
+        let at = match next_indexed_record_offset(ctx, bytes, position) {
+            Ok(Some(at)) => at,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         let (candidate_tag, candidate_after_tag) =
             lp_ascii_filtered_view(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
         if View::u32_le_at(bytes, candidate_after_tag) == Some(record_index) {
@@ -1150,12 +1292,23 @@ fn parse_dimension_locus_pair(
         }
         position = at.checked_add(1)?;
     };
-    DesignDimensionLocusPair::try_new(crate::records::dimensions::DesignDimensionLocusPairDraft {
+    let class_tag = match crate::design::decode::text::class_tag_from_view(ctx, class_tag) {
+        Ok(Ok(class_tag)) => class_tag,
+        Ok(Err(_)) => return None,
+        Err(error) => return Some(Err(error)),
+    };
+    let paired_class_tag = match crate::design::decode::text::class_tag_from_view(ctx, paired_class_tag)
+    {
+        Ok(Ok(class_tag)) => class_tag,
+        Ok(Err(_)) => return None,
+        Err(error) => return Some(Err(error)),
+    };
+    let pair = DesignDimensionLocusPair::try_new(crate::records::dimensions::DesignDimensionLocusPairDraft {
         id: String::new(),
         companion_record_index,
         governing_companion_record_index: companion_record_index,
         byte_offset: u64_from_index(start),
-        class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
+        class_tag,
         record_index,
         frame_length: u64::try_from(paired_byte_offset.checked_sub(start)?).ok()?,
         opaque_index: Some(crate::records::identity::Located {
@@ -1176,11 +1329,11 @@ fn parse_dimension_locus_pair(
                 role_offset: u64_from_index(start + 65),
             },
         ],
-        paired_class_tag: crate::design::decode::text::class_tag_from_view(paired_class_tag)
-            .ok()?,
+        paired_class_tag,
         paired_byte_offset: u64_from_index(paired_byte_offset),
     })
-    .ok()
+    .ok()?;
+    Some(Ok(pair))
 }
 
 /// Decode dimension frames whose ordered operand run contains a null record
@@ -1207,19 +1360,24 @@ pub(crate) fn decode_dimension_null_locus_pairs(
     let dimension_companions =
         dimension_companion_keys(ctx, owners, &parameters, "f3d dimension locus companions")?;
     let mut typed_companions = HashSet::new();
-    for key in
-        pairs
-            .iter()
-            .filter_map(|pair| Some((native_stream(&pair.id)?, pair.companion_record_index)))
-            .chain(groups.iter().filter_map(|group| {
-                Some((native_stream(&group.id)?, group.companion_record_index))
-            }))
-    {
-        ctx.reserve_set(&mut typed_companions, 1, "f3d typed dimension companions")?;
-        typed_companions.insert(key);
+    for pair in ctx.admit_iter(pairs, "scan F3D typed dimension locus pairs")? {
+        if let Some(scope) = native_stream(&pair.id) {
+            let key = (scope, pair.companion_record_index);
+            ctx.reserve_set(&mut typed_companions, 1, "f3d typed dimension companions")?;
+            typed_companions.insert(key);
+        }
+    }
+    for group in ctx.admit_iter(groups, "scan F3D typed dimension locus groups")? {
+        if let Some(scope) = native_stream(&group.id) {
+            let key = (scope, group.companion_record_index);
+            ctx.reserve_set(&mut typed_companions, 1, "f3d typed dimension companions")?;
+            typed_companions.insert(key);
+        }
     }
     let mut out = Vec::new();
-    for (companion, scope) in companions.iter().filter_map(|companion| {
+    for (companion, scope) in ctx
+        .admit_iter(companions, "scan F3D null-locus companions")?
+        .filter_map(|companion| {
         let scope = native_stream(companion.id())?;
         let key = (scope, companion.record_index());
         (dimension_companions.contains(&key) && !typed_companions.contains(&key))
@@ -1243,7 +1401,8 @@ pub(crate) fn decode_dimension_null_locus_pairs(
         else {
             continue;
         };
-        let Some(mut pair) = find_dimension_null_locus_pair(
+        let Some(pair) = find_dimension_null_locus_pair(
+            ctx,
             bytes,
             start,
             end,
@@ -1252,6 +1411,7 @@ pub(crate) fn decode_dimension_null_locus_pairs(
         ) else {
             continue;
         };
+        let mut pair = pair?;
         pair.id = design_record_id_charged(
             ctx,
             &entry.name,
@@ -1282,23 +1442,44 @@ pub(crate) fn decode_dimension_null_locus_pairs(
 }
 
 fn find_dimension_null_locus_pair(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     end: usize,
     companion_record_index: u32,
     geometry_indices: &HashSet<u32>,
-) -> Option<DesignDimensionLocusPair> {
-    let parse = |at| {
-        parse_dimension_null_locus_pair(bytes, at, companion_record_index, geometry_indices)
-            .filter(|pair| pair.paired_byte_offset() < u64_from_index(end))
+) -> Option<Result<DesignDimensionLocusPair, CodecError>> {
+    let parse = |at| match parse_dimension_null_locus_pair(
+        ctx,
+        bytes,
+        at,
+        companion_record_index,
+        geometry_indices,
+    ) {
+        Some(Ok(pair)) if pair.paired_byte_offset() < u64_from_index(end) => Some(Ok(pair)),
+        Some(Ok(_)) | None => None,
+        Some(Err(error)) => Some(Err(error)),
     };
-    let mut candidate = parse(start);
+    let mut candidate = match parse(start) {
+        Some(Ok(pair)) => Some(pair),
+        Some(Err(error)) => return Some(Err(error)),
+        None => None,
+    };
     let mut position = start.checked_add(1);
-    while let Some(at) = position.and_then(|position| next_indexed_record_offset(bytes, position)) {
+    while let Some(search_at) = position {
+        let at = match next_indexed_record_offset(ctx, bytes, search_at) {
+            Ok(Some(at)) => at,
+            Ok(None) => break,
+            Err(error) => return Some(Err(error)),
+        };
         if at >= end {
             break;
         }
-        if let Some(pair) = parse(at) {
+        if let Some(parsed) = parse(at) {
+            let pair = match parsed {
+                Ok(pair) => pair,
+                Err(error) => return Some(Err(error)),
+            };
             if candidate.is_some() {
                 return None;
             }
@@ -1306,15 +1487,16 @@ fn find_dimension_null_locus_pair(
         }
         position = at.checked_add(1);
     }
-    candidate
+    candidate.map(Ok)
 }
 
 fn parse_dimension_null_locus_pair(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     companion_record_index: u32,
     geometry_indices: &HashSet<u32>,
-) -> Option<DesignDimensionLocusPair> {
+) -> Option<Result<DesignDimensionLocusPair, CodecError>> {
     let (class_tag, after_tag) =
         lp_ascii_filtered_view(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
     let record_index = View::u32_le_at(bytes, after_tag)?;
@@ -1336,7 +1518,11 @@ fn parse_dimension_null_locus_pair(
     }
     let mut position = start.checked_add(54)?;
     let (paired_byte_offset, paired_class_tag) = loop {
-        let at = next_indexed_record_offset(bytes, position)?;
+        let at = match next_indexed_record_offset(ctx, bytes, position) {
+            Ok(Some(at)) => at,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         let (candidate_tag, candidate_after_tag) =
             lp_ascii_filtered_view(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
         if View::u32_le_at(bytes, candidate_after_tag) == Some(record_index) {
@@ -1344,12 +1530,23 @@ fn parse_dimension_null_locus_pair(
         }
         position = at.checked_add(1)?;
     };
-    DesignDimensionLocusPair::try_new(crate::records::dimensions::DesignDimensionLocusPairDraft {
+    let class_tag = match crate::design::decode::text::class_tag_from_view(ctx, class_tag) {
+        Ok(Ok(class_tag)) => class_tag,
+        Ok(Err(_)) => return None,
+        Err(error) => return Some(Err(error)),
+    };
+    let paired_class_tag = match crate::design::decode::text::class_tag_from_view(ctx, paired_class_tag)
+    {
+        Ok(Ok(class_tag)) => class_tag,
+        Ok(Err(_)) => return None,
+        Err(error) => return Some(Err(error)),
+    };
+    let pair = DesignDimensionLocusPair::try_new(crate::records::dimensions::DesignDimensionLocusPairDraft {
         id: String::new(),
         companion_record_index,
         governing_companion_record_index: companion_record_index,
         byte_offset: u64_from_index(start),
-        class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
+        class_tag,
         record_index,
         frame_length: u64::try_from(paired_byte_offset.checked_sub(start)?).ok()?,
         opaque_index: None,
@@ -1367,11 +1564,11 @@ fn parse_dimension_null_locus_pair(
                 role_offset: u64_from_index(start + 50),
             },
         ],
-        paired_class_tag: crate::design::decode::text::class_tag_from_view(paired_class_tag)
-            .ok()?,
+        paired_class_tag,
         paired_byte_offset: u64_from_index(paired_byte_offset),
     })
-    .ok()
+    .ok()?;
+    Some(Ok(pair))
 }
 
 /// Decode paired `EntityGenesis` dimensional frames carrying annotation data
@@ -1402,15 +1599,18 @@ pub(crate) fn decode_dimension_annotation_frames(
     )?;
     let mut out = Vec::new();
     let mut decoded_offsets = HashSet::new();
-    for (companion_ordinal, companion) in companions.iter().enumerate() {
+    for (companion_ordinal, companion) in ctx
+        .admit_iter(companions, "scan F3D dimension annotation companions")?
+        .enumerate()
+    {
         let Some(stream) = native_stream(companion.id()) else {
             continue;
         };
-        let comparisons = u64::try_from(companion_ordinal)
-            .map_err(|_| ctx.refuse_codec_limit("f3d dimension annotation stream scan", 0, 1))?;
-        ctx.charge_work(comparisons, "f3d dimension annotation stream scan")?;
-        if companions[..companion_ordinal]
-            .iter()
+        if ctx
+            .admit_iter(
+                &companions[..companion_ordinal],
+                "deduplicate F3D dimension annotation streams",
+            )?
             .any(|previous| native_stream(previous.id()) == Some(stream))
         {
             continue;
@@ -1421,8 +1621,8 @@ pub(crate) fn decode_dimension_annotation_frames(
         };
         let geometry_indices = dimension_geometry_indices(ctx, stream, points, curves)?;
         let mut sketch_entities = HashSet::new();
-        for entity in entities
-            .iter()
+        for entity in ctx
+            .admit_iter(entities, "scan F3D dimension annotation entities")?
             .filter(|entity| native_stream(&entity.id) == Some(stream) && entity.in_sketch_module())
         {
             let Ok(index) = u32::try_from(entity.entity_id.suffix()) else {
@@ -1437,7 +1637,7 @@ pub(crate) fn decode_dimension_annotation_frames(
             sketch_entities.insert(index);
         }
         let mut governed_owners = HashMap::new();
-        for owner in owners.iter().filter(|owner| {
+        for owner in ctx.admit_iter(owners, "scan F3D dimension annotation owners")?.filter(|owner| {
             native_stream(owner.id()) == Some(stream)
                 && dimension_companions.contains(&(stream, owner.companion_record_index()))
         }) {
@@ -1450,8 +1650,8 @@ pub(crate) fn decode_dimension_annotation_frames(
         }
         let bytes = scan.entry_bytes(&entry.name)?;
         let mut intervals = Vec::new();
-        for companion in companions
-            .iter()
+        for companion in ctx
+            .admit_iter(companions, "scan F3D annotation owner companions")?
             .filter(|companion| native_stream(companion.id()) == Some(stream))
         {
             let Some((start, end)) = companion_owned_interval(
@@ -1470,36 +1670,55 @@ pub(crate) fn decode_dimension_annotation_frames(
             ctx.reserve_vec(&mut intervals, 1, "f3d dimension annotation intervals")?;
             intervals.push((start, end, Some(companion.record_index())));
         }
-        for interval in scopes.iter().filter_map(|scope| {
+        for scope in ctx.admit_iter(
+            scopes,
+            "scan F3D dimension annotation interval scopes",
+        )? {
             if native_stream(&scope.id) != Some(stream) {
-                return None;
+                continue;
             }
-            let end = owners
-                .iter()
-                .filter(|owner| {
-                    native_stream(owner.id()) == Some(stream)
-                        && owner.scope_record_index() == scope.record_index
-                })
-                .filter_map(|owner| {
-                    companions
-                        .iter()
-                        .find(|companion| {
-                            native_stream(companion.id()) == Some(stream)
-                                && companion.record_index() == owner.companion_record_index()
-                        })
-                        .and_then(|companion| usize::try_from(companion.byte_offset()).ok())
-                })
-                .min()?;
-            let start = usize::try_from(scope.byte_offset()).ok()?;
-            (start < end).then_some((start, end, None))
-        }) {
-            ctx.reserve_vec(&mut intervals, 1, "f3d dimension annotation intervals")?;
-            intervals.push(interval);
+            let mut end = None;
+            for owner in ctx.admit_iter(
+                owners,
+                "scan F3D dimension annotation interval owners",
+            )? {
+                if native_stream(owner.id()) != Some(stream)
+                    || owner.scope_record_index() != scope.record_index
+                {
+                    continue;
+                }
+                if let Some(companion) = ctx
+                    .admit_iter(
+                        companions,
+                        "find F3D dimension annotation interval companion",
+                    )?
+                    .find(|companion| {
+                        native_stream(companion.id()) == Some(stream)
+                            && companion.record_index() == owner.companion_record_index()
+                    })
+                {
+                    if let Ok(offset) = usize::try_from(companion.byte_offset()) {
+                        end = Some(end.map_or(offset, |current: usize| current.min(offset)));
+                    }
+                }
+            }
+            let Some(end) = end else {
+                continue;
+            };
+            let Ok(start) = usize::try_from(scope.byte_offset()) else {
+                continue;
+            };
+            if start < end {
+                ctx.reserve_vec(&mut intervals, 1, "f3d dimension annotation intervals")?;
+                intervals.push((start, end, None));
+            }
         }
-        for (start, end, containing_companion_record_index) in intervals {
+        for &(start, end, containing_companion_record_index) in
+            ctx.admit_iter(&intervals, "scan F3D dimension annotation intervals")?
+        {
             let mut position = start;
             while position < end {
-                let at = next_indexed_record_offset(bytes, position);
+                let at = next_indexed_record_offset(ctx, bytes, position)?;
                 let Some(at) = at.filter(|at| *at < end) else {
                     break;
                 };
@@ -1618,7 +1837,11 @@ fn parse_dimension_annotation_frame(
     let annotation_byte_offset = after_type.checked_add(8)?;
     let mut paired_search = annotation_byte_offset;
     let (paired_byte_offset, paired_class_tag) = loop {
-        let at = next_indexed_record_offset(bytes, paired_search)?;
+        let at = match next_indexed_record_offset(ctx, bytes, paired_search) {
+            Ok(Some(at)) => at,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         let (tag, after) = lp_ascii_filtered_view(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
         if View::u32_le_at(bytes, after) == Some(record_index) {
             break (at, tag);
@@ -1626,114 +1849,147 @@ fn parse_dimension_annotation_frame(
         paired_search = at.checked_add(1)?;
     };
     let mut matched_tail = None;
-    for tail in paired_byte_offset
-        .checked_sub(15)
-        .into_iter()
-        .flat_map(|last| annotation_byte_offset..last)
-    {
-        if let Err(error) = ctx.charge_work(1, "f3d dimension annotation tail scan") {
-            return Some(Err(error));
-        }
-        if bytes.get(tail) != Some(&1) || bytes.get(tail + 5..tail + 11) != Some(&[0; 6]) {
-            continue;
-        }
-        let Some(governing_owner_record_index) = View::u32_le_at(bytes, tail + 1) else {
-            continue;
-        };
-        let Some(governing_companion_record_index) =
-            governed_owners.get(&governing_owner_record_index).copied()
-        else {
-            continue;
-        };
-        let Some(return_count) =
-            View::u32_le_at(bytes, tail + 11).and_then(|count| usize::try_from(count).ok())
-        else {
-            continue;
-        };
-        if return_count > 64 {
-            continue;
-        }
-        let mut cursor = tail + 15;
-
-        let mut return_members = Vec::new();
-        if let Err(error) = ctx.reserve_vec(
-            &mut return_members,
-            return_count,
-            "f3d dimension annotation return members",
-        ) {
-            return Some(Err(error));
-        }
-        let mut valid = true;
-        for _ in 0..return_count {
-            if bytes.get(cursor) != Some(&1) || bytes.get(cursor + 5..cursor + 11) != Some(&[0; 6])
-            {
-                valid = false;
-                break;
-            }
-            let Some(reference) =
-                View::u32_le_at(bytes, cursor + 1).and_then(std::num::NonZeroU32::new)
-            else {
-                valid = false;
-                break;
+    if let Some(last) = paired_byte_offset.checked_sub(15) {
+        if annotation_byte_offset <= last {
+            let Some(tail_bytes) = bytes.get(annotation_byte_offset..last) else {
+                return None;
             };
-            if !geometry_indices.contains(&reference.get()) {
-                valid = false;
-                break;
+            let tail_bytes = match ctx.admit_iter(
+                tail_bytes,
+                "f3d dimension annotation tail scan",
+            ) {
+                Ok(tail_bytes) => tail_bytes,
+                Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+            };
+            for (tail_offset, _) in tail_bytes.enumerate() {
+                let tail = annotation_byte_offset + tail_offset;
+                if bytes.get(tail) != Some(&1)
+                    || bytes.get(tail + 5..tail + 11) != Some(&[0; 6])
+                {
+                    continue;
+                }
+                let Some(governing_owner_record_index) = View::u32_le_at(bytes, tail + 1) else {
+                    continue;
+                };
+                let Some(governing_companion_record_index) =
+                    governed_owners.get(&governing_owner_record_index).copied()
+                else {
+                    continue;
+                };
+                let Some(return_count) = View::u32_le_at(bytes, tail + 11)
+                    .and_then(|count| usize::try_from(count).ok())
+                else {
+                    continue;
+                };
+                if return_count > 64 {
+                    continue;
+                }
+                let mut cursor = tail + 15;
+
+                let mut return_members = Vec::new();
+                if let Err(error) = ctx.reserve_vec(
+                    &mut return_members,
+                    return_count,
+                    "f3d dimension annotation return members",
+                ) {
+                    return Some(Err(error));
+                }
+                let mut valid = true;
+                for _ in 0..return_count {
+                    if bytes.get(cursor) != Some(&1)
+                        || bytes.get(cursor + 5..cursor + 11) != Some(&[0; 6])
+                    {
+                        valid = false;
+                        break;
+                    }
+                    let Some(reference) =
+                        View::u32_le_at(bytes, cursor + 1).and_then(std::num::NonZeroU32::new)
+                    else {
+                        valid = false;
+                        break;
+                    };
+                    if !geometry_indices.contains(&reference.get()) {
+                        valid = false;
+                        break;
+                    }
+                    return_members.push(crate::records::identity::Located {
+                        value: reference,
+                        offset: u64_from_index(cursor + 1),
+                    });
+                    cursor += 11;
+                }
+                if !valid {
+                    continue;
+                }
+                let Some(padding) = bytes.get(cursor..paired_byte_offset) else {
+                    return None;
+                };
+                let padding_has_nonzero = match ctx.admit_iter(
+                    padding,
+                    "validate F3D dimension annotation padding",
+                ) {
+                    Ok(mut padding) => padding.any(|byte| *byte != 0),
+                    Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+                };
+                if padding_has_nonzero {
+                    continue;
+                }
+                let operands = match ctx.admit_iter(
+                    &operands,
+                    "scan F3D dimension annotation operands",
+                ) {
+                    Ok(operands) => operands,
+                    Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+                };
+                let mut operand_members = [0u32; 64];
+                let mut operand_count = 0usize;
+                for operand in operands {
+                    if let Some(index) = operand.geometry_record_index {
+                        operand_members[operand_count] = index.get();
+                        operand_count += 1;
+                    }
+                }
+                let return_members_admitted = match ctx.admit_iter(
+                    &return_members,
+                    "scan F3D dimension annotation return members",
+                ) {
+                    Ok(return_members) => return_members,
+                    Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+                };
+                let mut returned = [0u32; 64];
+                for (index, member) in return_members_admitted.enumerate() {
+                    returned[index] = member.value.get();
+                }
+                if let Err(error) = ctx.sort_unstable_by(
+                    &mut operand_members[..operand_count],
+                    |value| value,
+                    Ord::cmp,
+                    "sort F3D dimension frame operand members",
+                ) {
+                    return Some(Err(error));
+                }
+                if let Err(error) = ctx.sort_unstable_by(
+                    &mut returned[..return_members.len()],
+                    |value| value,
+                    Ord::cmp,
+                    "sort F3D dimension frame returned members",
+                ) {
+                    return Some(Err(error));
+                }
+                if operand_members[..operand_count] != returned[..return_members.len()] {
+                    continue;
+                }
+                if matched_tail.is_some() {
+                    return None;
+                }
+                matched_tail = Some((
+                    tail,
+                    governing_owner_record_index,
+                    governing_companion_record_index,
+                    return_members,
+                ));
             }
-            return_members.push(crate::records::identity::Located {
-                value: reference,
-                offset: u64_from_index(cursor + 1),
-            });
-            cursor += 11;
         }
-        if !valid
-            || bytes
-                .get(cursor..paired_byte_offset)?
-                .iter()
-                .any(|byte| *byte != 0)
-        {
-            continue;
-        }
-        let mut operand_members = [0u32; 64];
-        let mut operand_count = 0usize;
-        for operand in &operands {
-            if let Some(index) = operand.geometry_record_index {
-                operand_members[operand_count] = index.get();
-                operand_count += 1;
-            }
-        }
-        let mut returned = [0u32; 64];
-        for (slot, member) in returned.iter_mut().zip(&return_members) {
-            *slot = member.value.get();
-        }
-        if let Err(error) = ctx.sort_unstable_by(
-            &mut operand_members[..operand_count],
-            |value| value,
-            Ord::cmp,
-            "sort F3D dimension frame operand members",
-        ) {
-            return Some(Err(error));
-        }
-        if let Err(error) = ctx.sort_unstable_by(
-            &mut returned[..return_members.len()],
-            |value| value,
-            Ord::cmp,
-            "sort F3D dimension frame returned members",
-        ) {
-            return Some(Err(error));
-        }
-        if operand_members[..operand_count] != returned[..return_members.len()] {
-            continue;
-        }
-        if matched_tail.is_some() {
-            return None;
-        }
-        matched_tail = Some((
-            tail,
-            governing_owner_record_index,
-            governing_companion_record_index,
-            return_members,
-        ));
     }
     let (tail, governing_owner_record_index, governing_companion_record_index, return_members) =
         matched_tail?;
@@ -1754,12 +2010,23 @@ fn parse_dimension_annotation_frame(
         Ok(bytes) => bytes,
         Err(error) => return Some(Err(error)),
     };
+    let class_tag = match crate::design::decode::text::class_tag_from_view(ctx, class_tag) {
+        Ok(Ok(class_tag)) => class_tag,
+        Ok(Err(_)) => return None,
+        Err(error) => return Some(Err(error)),
+    };
+    let paired_class_tag =
+        match crate::design::decode::text::class_tag_from_view(ctx, paired_class_tag) {
+            Ok(Ok(class_tag)) => class_tag,
+            Ok(Err(_)) => return None,
+            Err(error) => return Some(Err(error)),
+        };
     let draft = crate::records::dimensions::DesignDimensionAnnotationFrameDraft {
         id: String::new(),
         companion_record_index,
         governing_companion_record_index,
         byte_offset: u64_from_index(start),
-        class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
+        class_tag,
         record_index,
         frame_length: u64::try_from(paired_byte_offset.checked_sub(start)?).ok()?,
         operands,
@@ -1769,8 +2036,7 @@ fn parse_dimension_annotation_frame(
         governing_owner_record_index,
         governing_owner_reference_offset: u64_from_index(tail + 1),
         return_members,
-        paired_class_tag: crate::design::decode::text::class_tag_from_view(paired_class_tag)
-            .ok()?,
+        paired_class_tag,
         paired_byte_offset: u64_from_index(paired_byte_offset),
         owner_reference,
         owner_reference_offset: u64_from_index(paired_byte_offset + 20),
@@ -1820,7 +2086,7 @@ pub(crate) fn decode_dimension_presentation_frames(
         "f3d dimension presentation parameter index",
     )?;
     let mut sketch_scope_by_entity = HashMap::new();
-    for placement in placements {
+    for placement in ctx.admit_iter(placements, "index F3D dimension sketch placements")? {
         let Some(stream) = native_stream(&placement.id) else {
             continue;
         };
@@ -1837,16 +2103,17 @@ pub(crate) fn decode_dimension_presentation_frames(
     }
     let types = decode_types(ctx, scan)?;
     let mut out = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
+    for entry in ctx
+        .admit_iter(&scan.entries, "scan F3D dimension presentation streams")?
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let (_stream_reservation, stream) =
             crate::design::decode::sketch::native_scope_scoped(ctx, &entry.name)?;
         let stream_types = stream_types_by_entity(ctx, &types, &entry.name)?;
         let mut presentation_classes = HashMap::new();
-        for (class_tag, (type_guid, _version)) in &stream_types {
+        for (class_tag, (type_guid, _version)) in
+            ctx.admit_iter(&stream_types, "index F3D dimension presentation types")?
+        {
             if is_dimension_presentation_type(type_guid) {
                 ctx.reserve_map(
                     &mut presentation_classes,
@@ -1860,7 +2127,9 @@ pub(crate) fn decode_dimension_presentation_frames(
             continue;
         }
         let mut paired_classes = HashSet::new();
-        for (class_tag, (type_guid, _version)) in &stream_types {
+        for (class_tag, (type_guid, _version)) in
+            ctx.admit_iter(&stream_types, "index F3D dimension presentation pair types")?
+        {
             if type_guid.eq_ignore_ascii_case(DIMENSION_PRESENTATION_PAIR_TYPE_GUID) {
                 ctx.reserve_set(
                     &mut paired_classes,
@@ -1875,7 +2144,7 @@ pub(crate) fn decode_dimension_presentation_frames(
         }
         let geometry_indices = dimension_geometry_indices(ctx, &stream, points, curves)?;
         let mut sketch_entities = HashSet::new();
-        for entity in entities.iter().filter(|entity| {
+        for entity in ctx.admit_iter(entities, "scan F3D dimension presentation entities")?.filter(|entity| {
             native_stream(&entity.id) == Some(stream.as_str()) && entity.in_sketch_module()
         }) {
             let Ok(index) = u32::try_from(entity.entity_id.suffix()) else {
@@ -1890,7 +2159,7 @@ pub(crate) fn decode_dimension_presentation_frames(
             sketch_entities.insert(index);
         }
         let bytes = scan.entry_bytes(&entry.name)?;
-        for header in indexed_record_offsets(bytes) {
+        for header in indexed_record_offsets(ctx, bytes)? {
             let start = header.offset;
             let Some(primary_type_guid) =
                 presentation_classes.get(&u64::from(header.class_tag.code()))
@@ -2006,7 +2275,11 @@ fn parse_dimension_presentation_frame(
     let presentation_byte_offset = position;
     let mut paired_search = position;
     let (paired_byte_offset, paired_class_tag) = loop {
-        let at = next_indexed_record_offset(bytes, paired_search)?;
+        let at = match next_indexed_record_offset(ctx, bytes, paired_search) {
+            Ok(Some(at)) => at,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         let (tag, after) = lp_ascii_filtered_view(bytes, at, 3..=3, u8::is_ascii_digit)?;
         if View::u32_le_at(bytes, after) == Some(record_index)
             && !tag.starts_with('0')
@@ -2033,17 +2306,27 @@ fn parse_dimension_presentation_frame(
         Ok(bytes) => bytes,
         Err(error) => return Some(Err(error)),
     };
+    let class_tag = match crate::design::decode::text::class_tag_from_view(ctx, class_tag) {
+        Ok(Ok(class_tag)) => class_tag,
+        Ok(Err(_)) => return None,
+        Err(error) => return Some(Err(error)),
+    };
+    let paired_class_tag =
+        match crate::design::decode::text::class_tag_from_view(ctx, paired_class_tag) {
+            Ok(Ok(class_tag)) => class_tag,
+            Ok(Err(_)) => return None,
+            Err(error) => return Some(Err(error)),
+        };
     Some(Ok(DesignDimensionPresentationFrame {
         id: String::new(),
         byte_offset: u64::try_from(start).ok()?,
-        class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
+        class_tag,
         record_index,
         frame_length: u64::try_from(paired_byte_offset.checked_sub(start)?).ok()?,
         operands,
         presentation_bytes,
         presentation_byte_offset: u64::try_from(presentation_byte_offset).ok()?,
-        paired_class_tag: crate::design::decode::text::class_tag_from_view(paired_class_tag)
-            .ok()?,
+        paired_class_tag,
         paired_byte_offset: u64::try_from(paired_byte_offset).ok()?,
         owner_reference,
         owner_reference_offset: u64::try_from(paired_byte_offset + 20).ok()?,
@@ -2076,7 +2359,9 @@ pub(crate) fn decode_dimension_locus_groups(
     let dimension_companions =
         dimension_companion_keys(ctx, owners, &parameters, "f3d dimension locus companions")?;
     let mut out = Vec::new();
-    for (companion, scope) in companions.iter().filter_map(|companion| {
+    for (companion, scope) in ctx
+        .admit_iter(companions, "scan F3D dimension locus-group companions")?
+        .filter_map(|companion| {
         let scope = native_stream(companion.id())?;
         dimension_companions
             .contains(&(scope, companion.record_index()))
@@ -2088,8 +2373,8 @@ pub(crate) fn decode_dimension_locus_groups(
         };
         let geometry_indices = dimension_geometry_indices(ctx, scope, points, curves)?;
         let mut sketch_entities = HashSet::new();
-        for entity in entities
-            .iter()
+        for entity in ctx
+            .admit_iter(entities, "scan F3D dimension locus-group entities")?
             .filter(|entity| native_stream(&entity.id) == Some(scope) && entity.in_sketch_module())
         {
             let Ok(index) = u32::try_from(entity.entity_id.suffix()) else {
@@ -2176,7 +2461,10 @@ fn find_dimension_locus_groups(
         candidates.push(group);
     }
     let mut position = start.checked_add(1);
-    while let Some(at) = position.and_then(|position| next_indexed_record_offset(bytes, position)) {
+    while let Some(search_position) = position {
+        let Some(at) = next_indexed_record_offset(ctx, bytes, search_position)? else {
+            break;
+        };
         if at >= end {
             break;
         }
@@ -2213,29 +2501,41 @@ pub(super) fn companion_owned_interval<'a>(
     let Some(native_scope) = native_stream(companion.id()) else {
         return Ok(None);
     };
-    let owning_scope_record_index = owners
-        .iter()
-        .find(|owner| {
-            native_stream(owner.id()) == Some(native_scope)
-                && owner.record_index() == companion.owner_record_index()
-        })
-        .map(crate::records::parameters::DesignParameterOwner::scope_record_index);
+    let mut owning_scope_record_index = None;
+    for owner in ctx.admit_iter(owners, "find F3D dimension companion owner")? {
+        if native_stream(owner.id()) == Some(native_scope)
+            && owner.record_index() == companion.owner_record_index()
+        {
+            owning_scope_record_index = Some(owner.scope_record_index());
+            break;
+        }
+    }
     let mut foreign_scope_members = HashSet::new();
-    for member in scopes
-        .iter()
+    for scope in ctx
+        .admit_iter(scopes, "scan F3D companion scopes")?
         .filter(|scope| {
             native_stream(&scope.id) == Some(native_scope)
                 && Some(scope.record_index) != owning_scope_record_index
         })
-        .flat_map(|scope| scope.reference_members().values().copied())
     {
-        if !foreign_scope_members.contains(&member) {
-            ctx.reserve_set(
-                &mut foreign_scope_members,
-                1,
-                "f3d companion foreign scope members",
-            )?;
-            foreign_scope_members.insert(member);
+        let reference_members = scope.reference_members();
+        let unlocated_members = ctx.admit_iter(
+            reference_members.unlocated_values().unwrap_or(&[]),
+            "scan F3D companion scope references",
+        )?;
+        let located_members = ctx.admit_iter(
+            reference_members.located_rows().unwrap_or(&[]),
+            "scan F3D companion scope references",
+        )?;
+        for member in unlocated_members.chain(located_members.map(|member| &member.value)) {
+            if !foreign_scope_members.contains(member) {
+                ctx.reserve_set(
+                    &mut foreign_scope_members,
+                    1,
+                    "f3d companion foreign scope members",
+                )?;
+                foreign_scope_members.insert(*member);
+            }
         }
     }
     let Some(start) = usize::try_from(companion.byte_offset())
@@ -2359,7 +2659,11 @@ fn parse_dimension_locus_group(
     ) {
         return Some(Err(error));
     }
-    for (geometry_record_index, geometry_reference_offset, role, role_offset) in geometry {
+    let geometry = match ctx.admit_iter(&geometry, "scan F3D dimension locus geometry") {
+        Ok(geometry) => geometry,
+        Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+    };
+    for &(geometry_record_index, geometry_reference_offset, role, role_offset) in geometry {
         if bytes.get(position) != Some(&1)
             || bytes.get(position + 5..position + 11) != Some(&[0; 6])
         {
@@ -2390,11 +2694,22 @@ fn parse_dimension_locus_group(
     if next_after_tag != next_byte_offset.checked_add(7)? {
         return None;
     }
+    let class_tag = match crate::design::decode::text::class_tag_from_view(ctx, class_tag) {
+        Ok(Ok(class_tag)) => class_tag,
+        Ok(Err(_)) => return None,
+        Err(error) => return Some(Err(error)),
+    };
+    let next_class_tag =
+        match crate::design::decode::text::class_tag_from_view(ctx, next_class_tag) {
+            Ok(Ok(class_tag)) => class_tag,
+            Ok(Err(_)) => return None,
+            Err(error) => return Some(Err(error)),
+        };
     Some(Ok(DesignDimensionLocusGroup {
         id: String::new(),
         companion_record_index,
         byte_offset: u64_from_index(start),
-        class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
+        class_tag,
         record_index,
         frame_length: u64::try_from(next_byte_offset.checked_sub(start)?).ok()?,
         loci,
@@ -2404,7 +2719,7 @@ fn parse_dimension_locus_group(
         owner_role_offset,
         state,
         state_offset,
-        next_class_tag: crate::design::decode::text::class_tag_from_view(next_class_tag).ok()?,
+        next_class_tag,
         next_record_index: View::u32_le_at(bytes, next_after_tag)?,
         next_byte_offset: u64_from_index(next_byte_offset),
     }))

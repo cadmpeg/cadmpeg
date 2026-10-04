@@ -14,6 +14,78 @@ use crate::records::sketch_placement::SketchPlacementMatrix;
 use crate::test_support::indexed_header;
 
 #[test]
+fn legacy_as_built_421_alignment_reference_scan_refusal_propagates() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let scope_record_index = 10;
+    let reference_members = [20, 21, 22, 23, 100, 101, 102, 103, 200, 105, 106];
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#0",
+        DesignFeatureKind::AsBuilt,
+        scope_record_index,
+    );
+    scope.class_tag = DesignClassTag::try_from("364".to_owned()).unwrap();
+    scope.paired_class_tag = DesignClassTag::try_from("272".to_owned()).unwrap();
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 421;
+            draft.paired_byte_offset = 421;
+            draft.reference_count_offset = 185;
+            draft.reference_members = ReferenceRun::from_columns(
+                reference_members.to_vec(),
+                (0..11)
+                    .map(|ordinal| u64::try_from(190 + ordinal * 11).unwrap())
+                    .collect(),
+                "reference_members",
+            )
+            .unwrap();
+            draft.feature_ordinal_offset = 334;
+            draft.layout_fixture_references();
+        })
+        .unwrap();
+    let mut bytes = vec![0_u8; 421];
+    bytes[185..189].copy_from_slice(&11_u32.to_le_bytes());
+    bytes[314..318].copy_from_slice(&8_u32.to_le_bytes());
+
+    let owner = |record_index, local_ordinal| {
+        DesignParameterOwner::try_from(DesignParameterOwnerWire {
+            id: format!("f3d:Design/BulkStream.dat:parameter-owner#{record_index}"),
+            byte_offset: 960 + u64::from(local_ordinal),
+            frame_length: 103,
+            class_tag: DesignClassTag::try_from("293".to_owned()).unwrap(),
+            record_index,
+            scope_record_index,
+            local_ordinal,
+            evaluated_value: f64::from(local_ordinal),
+            evaluated_value_offset: 1_000 + u64::from(local_ordinal),
+            parameter_record_index: record_index + 1,
+            owned_ordinal: local_ordinal,
+            variant: None,
+            companion_record_index: record_index + 2,
+        })
+        .unwrap()
+    };
+    let owners: [DesignParameterOwner; 6] =
+        std::array::from_fn(|ordinal| owner(100 + ordinal as u32, ordinal as u32));
+    let lanes = owners.each_ref();
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    assert!(matches!(
+        crate::design::decode::assembly::exact_legacy_as_built_421_alignment(
+            &ctx, &bytes, &scope, &lanes,
+        ),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "scan F3D legacy AsBuilt alignment references"
+                && limit.additional == 11
+    ));
+}
+
+#[test]
 fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projection() {
     let owner = |scope_record_index: u32,
                  record_index: u32,

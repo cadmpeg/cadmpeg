@@ -23,15 +23,14 @@ pub(crate) fn decode_component_occurrences(
     scan: &ContainerScan,
 ) -> Result<Vec<DesignComponentOccurrence>, CodecError> {
     let mut occurrences = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
+    for entry in ctx
+        .admit_iter(&scan.entries, "scan F3D component occurrence streams")?
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let scope = native_scope_charged(ctx, &entry.name)?;
         let mut at = 0;
-        while let Some(start) = next_indexed_record_offset(bytes, at) {
+        while let Some(start) = next_indexed_record_offset(ctx, bytes, at)? {
             if let Some(occurrence) = exact_component_occurrence(ctx, bytes, start, &scope)? {
                 ctx.push_vec(
                     &mut occurrences,
@@ -65,14 +64,18 @@ fn exact_component_occurrence(
 ) -> Result<Option<DesignComponentOccurrence>, CodecError> {
     const SUFFIX: &str = ":design-component-occurrence#";
 
-    let parsed = (|| {
+    let parsed = (|| -> Option<Result<_, CodecError>> {
         let (class_tag, after_tag) =
             lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
         if after_tag != start.checked_add(7)? {
             return None;
         }
         let record_index = View::u32_le_at(bytes, after_tag)?;
-        let end = next_indexed_record_offset(bytes, start.checked_add(1)?)?;
+        let end = match next_indexed_record_offset(ctx, bytes, start.checked_add(1)?) {
+            Ok(Some(end)) => end,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         let frame_length = end.checked_sub(start)?;
         if !matches!(frame_length, BASE_FRAME_LENGTH | PLACED_FRAME_LENGTH)
             || bytes.get(start + 11..start + 19)? != [0; 8]
@@ -125,20 +128,24 @@ fn exact_component_occurrence(
             }
             _ => return None,
         };
-        let class_tag = crate::design::decode::text::class_tag_from_view(class_tag).ok()?;
+        let class_tag = match crate::design::decode::text::class_tag_from_view(ctx, class_tag) {
+            Ok(Ok(class_tag)) => class_tag,
+            Ok(Err(_)) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         let byte_offset = u64::try_from(start).ok()?;
-        Some((
+        Some(Ok((
             class_tag,
             record_index,
             byte_offset,
             component_record_index,
             placement,
-        ))
+        )))
     })();
-    let Some((class_tag, record_index, byte_offset, component_record_index, placement)) = parsed
-    else {
+    let Some(parsed) = parsed else {
         return Ok(None);
     };
+    let (class_tag, record_index, byte_offset, component_record_index, placement) = parsed?;
     let Some((component_guid, after_component)) =
         lp_utf16_bounded_charged(ctx, bytes, start + 44, 36..=36, "f3d Design UTF-16 text")?
     else {
@@ -372,6 +379,29 @@ mod tests {
                     && refusal.operation == "f3d Design UTF-16 text")
             );
         }
+    }
+
+    #[test]
+    fn component_indexed_scanner_refuses_work_limit_through_optional_parse() {
+        let mut seed = common(229, 1);
+        seed[208] = 1;
+        seed[218] = 1;
+        indexed_header(&mut seed, *b"333", 21);
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::WorkUnits,
+            "scan F3D indexed record headers",
+            0,
+            |ctx| {
+                exact_component_occurrence(ctx, &seed, 0, "f3d:Design/BulkStream.dat")
+                    .map(|_| ())
+            },
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(refusal)
+                if refusal.dimension == ResourceDimension::WorkUnits
+                    && refusal.operation == "scan F3D indexed record headers"
+        ));
     }
 
     #[test]

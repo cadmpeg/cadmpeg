@@ -100,7 +100,11 @@ pub(super) fn exact_derived_instance_construction(
             lp_ascii_filtered_view(bytes, relation_at, 3..=3, u8::is_ascii_graphic)?;
         if relation_at >= start
             || relation_kind != "310"
-            || next_indexed_record_offset(bytes, relation_at + 1)?
+            || (match next_indexed_record_offset(ctx, bytes, relation_at + 1) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        })
                 != relation_at + derived_instance_relation_310::LEN
             || bytes.get(
                 relation_at + derived_instance_relation_310::INDEXED_HEADER + 11
@@ -256,52 +260,92 @@ pub(super) fn exact_component_insert_construction(
                 (261, "263") if scope.class_tag.as_str() == "296" => (
                     crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
                     None,
-                    exact_component_insert_identity_scope(bytes, start, relation_record_index)?,
+                    (match exact_component_insert_identity_scope(ctx, bytes, start, relation_record_index) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        }),
                 ),
                 (261, "261") if scope.class_tag.as_str() == "410" => (
                     crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
                     None,
-                    exact_component_insert_identity_scope(bytes, start, relation_record_index)?,
+                    (match exact_component_insert_identity_scope(ctx, bytes, start, relation_record_index) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        }),
                 ),
                 (261, "258") if scope.class_tag.as_str() == "426" => (
                     crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
                     None,
-                    exact_component_insert_identity_scope(bytes, start, relation_record_index)?,
+                    (match exact_component_insert_identity_scope(ctx, bytes, start, relation_record_index) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        }),
                 ),
                 (261, "266") if scope.class_tag.as_str() == "434" => (
                     crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
                     None,
-                    exact_component_insert_identity_scope(bytes, start, relation_record_index)?,
+                    (match exact_component_insert_identity_scope(ctx, bytes, start, relation_record_index) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        }),
                 ),
                 (261, "264") if scope.class_tag.as_str() == "414" => (
                     crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
                     None,
-                    exact_component_insert_identity_scope(bytes, start, relation_record_index)?,
+                    (match exact_component_insert_identity_scope(ctx, bytes, start, relation_record_index) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        }),
                 ),
                 (257 | 267, "264") if scope.class_tag.as_str() == "414" => (
                     crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
                     None,
-                    exact_component_insert_identity_scope_shifted(
+                    (match exact_component_insert_identity_scope_shifted(ctx,
                         bytes,
                         start,
                         relation_record_index,
-                    )?,
+                    ) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        }),
                 ),
                 (389, "264") if scope.class_tag.as_str() == "414" => {
-                    exact_component_insert_scope_414_264_389(bytes, start, relation_record_index)?
+                    match exact_component_insert_scope_414_264_389(ctx, bytes, start, relation_record_index) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        }
                 }
                 (257, "262") if scope.class_tag.as_str() == "283" => {
-                    exact_component_insert_scope_283_262_257(bytes, start, relation_record_index)?
+                    match exact_component_insert_scope_283_262_257(ctx, bytes, start, relation_record_index) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        }
                 }
                 (385, "262") if scope.class_tag.as_str() == "283" => {
-                    exact_component_insert_scope_283_262_385(bytes, start, relation_record_index)?
+                    match exact_component_insert_scope_283_262_385(ctx, bytes, start, relation_record_index) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        }
                 }
                 _ => return None,
             };
         let relation_at = records.first_at_or_after(0, relation_record_index)?;
         let (carrier_record_index, placements) = if scope.frame_length() == 404 {
             if relation_at >= start
-                || next_indexed_record_offset(bytes, relation_at + 1)? != relation_at + 58
+                || (match next_indexed_record_offset(ctx, bytes, relation_at + 1) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        }) != relation_at + 58
                 || bytes.get(relation_at + 11..relation_at + 21)? != [0; 10]
                 || bytes.get(relation_at + 21) != Some(&1)
                 || bytes.get(relation_at + 26..relation_at + 32)? != [0; 6]
@@ -316,24 +360,41 @@ pub(super) fn exact_component_insert_construction(
             }
             let carrier_record_index = View::u32_le_at(bytes, relation_at + 22)?;
             let mut placements = Vec::new();
-            for &carrier_at in records
-                .offsets(carrier_record_index)
-                .iter()
-                .filter(|at| **at < relation_at)
-            {
-                for at in carrier_at + 11..relation_at {
-                    if let Err(error) = ctx.charge_work(76, "scan F3D component insert role") {
-                        return Some(Err(error));
-                    }
-                    let Some(after_role) = fixed_guid_end(bytes, at) else {
-                        continue;
+            let carrier_offsets = match ctx.admit_iter(
+                records.offsets(carrier_record_index), "scan F3D component carrier offsets",
+            ) {
+                Ok(offsets) => offsets,
+                Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+            };
+            for &carrier_at in carrier_offsets.filter(|at| **at < relation_at) {
+                let role_positions = match ctx.admit_iter(
+                    bytes.get(carrier_at + 11..relation_at).unwrap_or(&[]),
+                    "scan F3D component insert role positions",
+                ) {
+                    Ok(positions) => positions,
+                    Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+                };
+                for (relative, _) in role_positions.enumerate() {
+                    let at = carrier_at + 11 + relative;
+                    let after_role = match fixed_guid_end(ctx, bytes, at) {
+                        Ok(Some(value)) => value,
+                        Ok(None) => continue,
+                        Err(error) => return Some(Err(error)),
                     };
                     if bytes.get(after_role..after_role + 12)
                         != Some(&[0, 1, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0])
                     {
                         continue;
                     }
-                    for transform_at in carrier_at + 11..at {
+                    let transform_positions = match ctx.admit_iter(
+                        bytes.get(carrier_at + 11..at).unwrap_or(&[]),
+                        "scan F3D component insert transform positions",
+                    ) {
+                        Ok(positions) => positions,
+                        Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+                    };
+                    for (relative, _) in transform_positions.enumerate() {
+                        let transform_at = carrier_at + 11 + relative;
                         if let Err(error) =
                             ctx.charge_work(128, "match F3D component insert matrix")
                         {
@@ -366,14 +427,18 @@ pub(super) fn exact_component_insert_construction(
             (carrier_record_index, placements)
         } else if scope.class_tag.as_str() == "426" && scope.paired_class_tag.as_str() == "258" {
             let (carrier_record_index, role, role_offset) =
-                exact_component_insert_class_426_relation(
+                match exact_component_insert_class_426_relation(ctx,
                     bytes,
                     records,
                     relation_at,
                     start,
                     relation_record_index,
                     scope.record_index,
-                )?;
+                ) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
             let role = admitted!(role.to_retained(ctx, "retain F3D UTF-16 string"));
             (
                 carrier_record_index,
@@ -384,7 +449,11 @@ pub(super) fn exact_component_insert_construction(
             )
         } else {
             if relation_at >= start
-                || next_indexed_record_offset(bytes, relation_at + 1)? != relation_at + 57
+                || (match next_indexed_record_offset(ctx, bytes, relation_at + 1) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        }) != relation_at + 57
                 || bytes.get(relation_at + 11..relation_at + 21)? != [0; 10]
                 || bytes.get(relation_at + 21) != Some(&1)
                 || bytes.get(relation_at + 26..relation_at + 34)? != [0; 8]
@@ -490,9 +559,19 @@ pub(super) fn exact_component_insert_construction(
                 )
             } else {
                 let mut placements = Vec::new();
-                for at in carrier_at + 11..relation_at {
-                    let Some(after_role) = relaxed_guid_end(bytes, at) else {
-                        continue;
+                let role_positions = match ctx.admit_iter(
+                    bytes.get(carrier_at + 11..relation_at).unwrap_or(&[]),
+                    "scan F3D component insert role positions",
+                ) {
+                    Ok(positions) => positions,
+                    Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+                };
+                for (relative, _) in role_positions.enumerate() {
+                    let at = carrier_at + 11 + relative;
+                    let after_role = match relaxed_guid_end(ctx, bytes, at) {
+                        Ok(Some(value)) => value,
+                        Ok(None) => continue,
+                        Err(error) => return Some(Err(error)),
                     };
                     if bytes.get(after_role..after_role + 2) != Some(&[0, 0]) {
                         continue;
@@ -574,13 +653,15 @@ pub(super) fn exact_component_insert_construction(
 }
 
 fn exact_component_insert_class_426_relation<'a>(
+    ctx: &DecodeContext<'_>,
     bytes: &'a [u8],
     records: &IndexedRecordOffsets,
     relation_at: usize,
     scope_at: usize,
     relation_record_index: u32,
     scope_record_index: u32,
-) -> Option<(u32, crate::bytes::utf16::Utf16View<'a>, usize)> {
+) -> Result<Option<(u32, crate::bytes::utf16::Utf16View<'a>, usize)>, CodecError> {
+    (|| {
     let relation_end = relation_at + component_insert_relation_345::LEN;
     let (relation_class, relation_after_tag) =
         lp_ascii_filtered_view(bytes, relation_at, 3..=3, u8::is_ascii_digit)?;
@@ -588,7 +669,11 @@ fn exact_component_insert_class_426_relation<'a>(
         || relation_after_tag != relation_at + 7
         || View::u32_le_at(bytes, relation_after_tag)? != relation_record_index
         || relation_at >= scope_at
-        || next_indexed_record_offset(bytes, relation_at + 1)? != relation_end
+        || (match next_indexed_record_offset(ctx, bytes, relation_at + 1) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        }) != relation_end
         || bytes.get(
             relation_at + component_insert_relation_345::INDEXED_HEADER + 11
                 ..relation_at + component_insert_relation_345::FIRST_MARKER,
@@ -643,8 +728,16 @@ fn exact_component_insert_class_426_relation<'a>(
     if child_class != "393"
         || child_after_tag != child_at + 7
         || View::u32_le_at(bytes, child_after_tag)? != child_record_index
-        || next_indexed_record_offset(bytes, paired_at + 1)? != child_at
-        || next_indexed_record_offset(bytes, child_at + 1)? != child_end
+        || (match next_indexed_record_offset(ctx, bytes, paired_at + 1) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        }) != child_at
+        || (match next_indexed_record_offset(ctx, bytes, child_at + 1) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        }) != child_end
         || child_end != scope_at
         || bytes
             .get(child_at + 11..child_at + component_insert_relation_child_393::RELATION_MARKER)?
@@ -677,7 +770,9 @@ fn exact_component_insert_class_426_relation<'a>(
         relation_at,
         carrier_record_index,
     )?;
-    Some((carrier_record_index, role, role_offset))
+    (Some((carrier_record_index, role, role_offset))).map(Ok)
+
+    })().transpose()
 }
 
 fn exact_component_insert_carrier_334(
@@ -696,22 +791,26 @@ fn exact_component_insert_carrier_334(
         {
             return None;
         }
-        fixed_guid_end(
+        (match fixed_guid_end(ctx,
             bytes,
             carrier_at + component_carrier_334::COMPONENT_IDENTITY,
-        )?;
+        ) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        });
 
         let role_start = carrier_at + component_carrier_334::NEUTRON_ROLE;
-        Some(role_start)
+        Some(Ok(role_start))
     })();
-    let Some(role_start) = parsed else {
+    let Some(role_start) = parsed.transpose()? else {
         return Ok(None);
     };
     let Some((role, role_end)) = direct_utf16_role_until_tail(ctx, bytes, role_start, relation_at)?
     else {
         return Ok(None);
     };
-    Ok((|| {
+    (|| {
         if !crate::bytes::is_guid_prefix(&role)
             || role.as_bytes().get(36) != Some(&b'_')
             || !role.get(37..)?.starts_with("urn:")
@@ -722,9 +821,13 @@ fn exact_component_insert_carrier_334(
         {
             return None;
         }
-        fixed_guid_end(bytes, role_end + COMPONENT_CARRIER_ROLE_TAIL_BYTES)?;
-        Some((role, role_start))
-    })())
+        (match fixed_guid_end(ctx, bytes, role_end + COMPONENT_CARRIER_ROLE_TAIL_BYTES) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        });
+        Some(Ok((role, role_start)))
+    })().transpose()
 }
 
 const COMPONENT_CARRIER_ROLE_TAIL_BYTES: usize = 10;
@@ -759,7 +862,13 @@ fn direct_utf16_role_until_tail(
     let count = (end - start) / 2;
 
     let mut role = ctx.retained_string(count, "f3d component carrier role text")?;
-    for at in (start..end).step_by(2) {
+    let Some(role_bytes) = bytes.get(start..end) else {
+        return Ok(None);
+    };
+    for (relative, _) in ctx.admit_iter(
+        role_bytes, "scan F3D component carrier role code units",
+    )?.enumerate().step_by(2) {
+        let at = start + relative;
         let Some(unit) = View::u16_le_at(bytes, at) else {
             return Ok(None);
         };
@@ -772,14 +881,16 @@ fn direct_utf16_role_until_tail(
 }
 
 fn exact_component_insert_scope_283_262_257(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     relation_record_index: u32,
-) -> Option<(
+) -> Result<Option<(
     crate::records::sketch_placement::SketchPlacementMatrix,
     Option<usize>,
     u64,
-)> {
+)>, CodecError> {
+    (|| {
     if bytes.get(start + 11..start + 21)? != [0; 10]
         || bytes.get(
             start + component_scope_283_257::RELATION_MARKER
@@ -798,11 +909,15 @@ fn exact_component_insert_scope_283_262_257(
     {
         return None;
     }
-    let after_null_guid = fixed_utf16_ascii_eq(
+    let after_null_guid = match fixed_utf16_ascii_eq(ctx,
         bytes,
         start + component_scope_283_257::NULL_GUID_CODE_UNIT_COUNT,
         NULL_COMPONENT_INSERT_GUID,
-    )?;
+    ) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
     if after_null_guid != start + component_scope_283_257::REFERENCE_COUNT - 3
         || View::u32_le_at(bytes, start + component_scope_283_257::REFERENCE_COUNT)? != 1
         || bytes.get(start + component_scope_283_257::REFERENCE_MARKER) != Some(&1)
@@ -818,22 +933,26 @@ fn exact_component_insert_scope_283_262_257(
     {
         return None;
     }
-    Some((
+    (Some((
         crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
         None,
         View::u64_le_at(bytes, start + component_scope_283_257::OCCURRENCE_IDENTITY)?,
-    ))
+    ))).map(Ok)
+
+    })().transpose()
 }
 
 fn exact_component_insert_scope_283_262_385(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     relation_record_index: u32,
-) -> Option<(
+) -> Result<Option<(
     crate::records::sketch_placement::SketchPlacementMatrix,
     Option<usize>,
     u64,
-)> {
+)>, CodecError> {
+    (|| {
     if bytes.get(start + 11..start + 21)? != [0; 10]
         || bytes.get(start + 44..start + 52)? != [1, 0, 0, 0, 0, 0, 0, 0]
         || bytes.get(start + 38..start + 44)? != [0; 6]
@@ -850,11 +969,15 @@ fn exact_component_insert_scope_283_262_385(
     }
     let transform_at = start + component_scope_283_385::TRANSFORM;
     let transform = rigid_transform_at(bytes, transform_at)?;
-    let after_null_guid = fixed_utf16_ascii_eq(
+    let after_null_guid = match fixed_utf16_ascii_eq(ctx,
         bytes,
         start + component_scope_283_385::NULL_GUID_CODE_UNIT_COUNT,
         NULL_COMPONENT_INSERT_GUID,
-    )?;
+    ) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
     if after_null_guid != start + component_scope_283_385::REFERENCE_COUNT - 3
         || View::u32_le_at(bytes, start + component_scope_283_385::REFERENCE_COUNT)? != 1
         || bytes.get(start + component_scope_283_385::REFERENCE_MARKER) != Some(&1)
@@ -870,20 +993,24 @@ fn exact_component_insert_scope_283_262_385(
     {
         return None;
     }
-    Some((
+    (Some((
         transform,
         Some(transform_at),
         View::u64_le_at(bytes, start + component_scope_283_385::OCCURRENCE_IDENTITY)?,
-    ))
+    ))).map(Ok)
+
+    })().transpose()
 }
 
 const NULL_COMPONENT_INSERT_GUID: &str = "00000000-0000-0000-0000-000000000000";
 
 fn exact_component_insert_identity_scope(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     relation_record_index: u32,
-) -> Option<u64> {
+) -> Result<Option<u64>, CodecError> {
+    (|| {
     const NULL_GUID: &str = "00000000-0000-0000-0000-000000000000";
     if bytes.get(start + 11..start + 20)? != [0; 9]
         || bytes.get(start + 20..start + 25)? != [1, 0, 0, 0, 0]
@@ -905,22 +1032,30 @@ fn exact_component_insert_identity_scope(
     {
         return None;
     }
-    let after_opaque_guid = fixed_utf16_ascii_eq(
+    let after_opaque_guid = match fixed_utf16_ascii_eq(ctx,
         bytes,
         start + component_identity_scope::OPAQUE_CODE_UNIT_COUNT,
         NULL_GUID,
-    )?;
+    ) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
     if after_opaque_guid != start + component_identity_scope::OPAQUE_UTF16_PAYLOAD + 72 {
         return None;
     }
-    View::u64_le_at(bytes, start + component_identity_scope::OCCURRENCE_IDENTITY)
+    (View::u64_le_at(bytes, start + component_identity_scope::OCCURRENCE_IDENTITY)).map(Ok)
+
+    })().transpose()
 }
 
 fn exact_component_insert_identity_scope_shifted(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     relation_record_index: u32,
-) -> Option<u64> {
+) -> Result<Option<u64>, CodecError> {
+    (|| {
     if bytes.get(start + 11..start + 21)? != [0; 10]
         || bytes.get(start + 29..start + 33)? != [0; 4]
         || bytes.get(start + component_identity_shifted::RELATION_MARKER) != Some(&1)
@@ -936,29 +1071,37 @@ fn exact_component_insert_identity_scope_shifted(
     {
         return None;
     }
-    let after_null_guid = fixed_utf16_ascii_eq(
+    let after_null_guid = match fixed_utf16_ascii_eq(ctx,
         bytes,
         start + component_identity_shifted::NULL_GUID_CODE_UNIT_COUNT,
         NULL_COMPONENT_INSERT_GUID,
-    )?;
+    ) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
     if after_null_guid != start + component_identity_shifted::LEN {
         return None;
     }
-    View::u64_le_at(
+    (View::u64_le_at(
         bytes,
         start + component_identity_shifted::OCCURRENCE_IDENTITY,
-    )
+    )).map(Ok)
+
+    })().transpose()
 }
 
 fn exact_component_insert_scope_414_264_389(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     relation_record_index: u32,
-) -> Option<(
+) -> Result<Option<(
     crate::records::sketch_placement::SketchPlacementMatrix,
     Option<usize>,
     u64,
-)> {
+)>, CodecError> {
+    (|| {
     if bytes.get(start + 11..start + 20)? != [0; 9]
         || bytes.get(start + 20..start + 25)? != [1, 0, 0, 0, 0]
         || bytes.get(start + 33..start + 37)? != [0; 4]
@@ -975,19 +1118,25 @@ fn exact_component_insert_scope_414_264_389(
     }
     let transform_at = start + component_matrix_414::TRANSFORM;
     let transform = rigid_transform_at(bytes, transform_at)?;
-    let after_null_guid = fixed_utf16_ascii_eq(
+    let after_null_guid = match fixed_utf16_ascii_eq(ctx,
         bytes,
         start + component_matrix_414::NULL_GUID_CODE_UNIT_COUNT,
         NULL_COMPONENT_INSERT_GUID,
-    )?;
+    ) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
     if after_null_guid != start + component_matrix_414::LEN {
         return None;
     }
-    Some((
+    (Some((
         transform,
         Some(transform_at),
         View::u64_le_at(bytes, start + component_matrix_414::OCCURRENCE_IDENTITY)?,
-    ))
+    ))).map(Ok)
+
+    })().transpose()
 }
 
 fn legacy_component_insert_placements(
@@ -1010,22 +1159,45 @@ fn legacy_component_insert_placements(
         return Ok(Vec::new());
     }
     let mut placements = Vec::new();
-    for first_at in carrier_at + 11..relation_at {
-        ctx.charge_work(152, "scan F3D legacy component insert role")?;
-        let Some(role_at) = fixed_guid_end(bytes, first_at) else {
-            continue;
-        };
-        let Some(after_role) = fixed_guid_end(bytes, role_at) else {
-            continue;
-        };
+    let candidate_start = carrier_at.checked_add(11).ok_or_else(|| {
+        ctx.refuse_codec_limit(
+            "F3D legacy component insert candidate offset overflow",
+            u64::MAX - 1,
+            u64::MAX,
+        )
+    })?;
+    let candidate_starts = bytes.get(candidate_start..relation_at).unwrap_or(&[]);
+    for (relative, _) in ctx
+        .admit_iter(candidate_starts, "scan F3D legacy component insert candidate starts")?
+        .enumerate()
+    {
+        let first_at = candidate_start.checked_add(relative).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "F3D legacy component insert candidate offset overflow",
+                u64::MAX - 1,
+                u64::MAX,
+            )
+        })?;
+        let role_at = match fixed_guid_end(ctx, bytes, first_at) {
+                        Ok(Some(value)) => value,
+                        Ok(None) => continue,
+                        Err(error) => return Err(error),
+                    };
+        let after_role = match fixed_guid_end(ctx, bytes, role_at) {
+                        Ok(Some(value)) => value,
+                        Ok(None) => continue,
+                        Err(error) => return Err(error),
+                    };
         if bytes.get(after_role..after_role + 14)
             != Some(&[1, 2, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0])
         {
             continue;
         }
-        let Some(after_asset_guid) = fixed_guid_end(bytes, after_role + 14) else {
-            continue;
-        };
+        let after_asset_guid = match fixed_guid_end(ctx, bytes, after_role + 14) {
+                        Ok(Some(value)) => value,
+                        Ok(None) => continue,
+                        Err(error) => return Err(error),
+                    };
         let Some((asset_identity, after_asset_identity, _asset_reservation)) =
             lp_utf16_bounded_scoped(
                 ctx,
@@ -1124,7 +1296,11 @@ pub(super) fn exact_copy_paste_component_operation(
         let copied_transform = rigid_transform_at(bytes, copied_transform_offset)?;
         let relation_at = records.first_at_or_after(0, relation_record_index)?;
         if relation_at >= start
-            || next_indexed_record_offset(bytes, relation_at + 1)? != relation_at + 57
+            || (match next_indexed_record_offset(ctx, bytes, relation_at + 1) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        }) != relation_at + 57
             || bytes.get(relation_at + 11..relation_at + 21)? != [0; 10]
             || bytes.get(relation_at + 21) != Some(&1)
             || bytes.get(relation_at + 26..relation_at + 34)? != [0; 8]
@@ -1200,7 +1376,9 @@ pub(super) fn bind_component_pattern_occurrences(
         return Ok(());
     };
     let mut component_guid = None;
-    for (ordinal, frame) in instances.frames().enumerate().skip(1) {
+    let mut validate_frame = |ordinal: usize,
+                              frame: &patterns::DesignPatternInstance|
+     -> Result<bool, CodecError> {
         let expected_ordinal = u32::try_from(ordinal)
             .ok()
             .and_then(|value| value.checked_add(1))
@@ -1214,7 +1392,7 @@ pub(super) fn bind_component_pattern_occurrences(
         let Some(candidate) =
             unique_pattern_occurrence(ctx, stream, frame, expected_ordinal, occurrences)?
         else {
-            return Ok(());
+            return Ok(false);
         };
         if let Some(first_guid) = component_guid {
             if !candidate
@@ -1222,11 +1400,63 @@ pub(super) fn bind_component_pattern_occurrences(
                 .as_str()
                 .eq_ignore_ascii_case(first_guid)
             {
-                return Ok(());
+                return Ok(false);
             }
         } else {
             component_guid = Some(candidate.component_guid.as_str());
         }
+        Ok(true)
+    };
+    let mut valid_frames = true;
+    match instances {
+        DesignRectangularPatternInstances::Bodies(frames) => {
+            for (ordinal, frame) in ctx
+                .admit_iter(frames, "scan F3D body pattern frames")?
+                .enumerate()
+                .skip(1)
+            {
+                if !validate_frame(ordinal, frame)? {
+                    valid_frames = false;
+                    break;
+                }
+            }
+        }
+        DesignRectangularPatternInstances::Components { seed, generated, .. } => {
+            for (ordinal, frame) in ctx
+                .admit_iter(
+                    std::slice::from_ref(&seed.instance),
+                    "scan F3D component pattern seed frame",
+                )?
+                .enumerate()
+                .skip(1)
+            {
+                if !validate_frame(ordinal, frame)? {
+                    valid_frames = false;
+                    break;
+                }
+            }
+            if valid_frames {
+                for (generated_ordinal, instance) in ctx
+                    .admit_iter(generated, "scan F3D generated component pattern frames")?
+                    .enumerate()
+                {
+                    let ordinal = generated_ordinal.checked_add(1).ok_or_else(|| {
+                        ctx.refuse_codec_limit(
+                            "F3D pattern occurrence ordinal overflow",
+                            u64::from(u32::MAX),
+                            u64_from_index(generated_ordinal),
+                        )
+                    })?;
+                    if !validate_frame(ordinal, &instance.instance)? {
+                        valid_frames = false;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    if !valid_frames {
+        return Ok(());
     }
     let Some(component_guid) = component_guid else {
         return Ok(());
@@ -1265,7 +1495,9 @@ pub(super) fn bind_component_pattern_occurrences(
         return Ok(());
     };
     let mut generated = Vec::new();
-    for (ordinal, frame) in instances.frames().enumerate().skip(1) {
+    let mut append_generated = |ordinal: usize,
+                                frame: &patterns::DesignPatternInstance|
+     -> Result<(), CodecError> {
         let expected_ordinal = u32::try_from(ordinal)
             .ok()
             .and_then(|value| value.checked_add(1))
@@ -1276,11 +1508,10 @@ pub(super) fn bind_component_pattern_occurrences(
                     u64_from_index(ordinal),
                 )
             })?;
-        let candidate =
-            unique_pattern_occurrence(ctx, stream, frame, expected_ordinal, occurrences)?
-                .ok_or_else(|| {
-                    CodecError::malformed("F3D pattern occurrence changed during binding")
-                })?;
+        let candidate = unique_pattern_occurrence(ctx, stream, frame, expected_ordinal, occurrences)?
+            .ok_or_else(|| {
+                CodecError::malformed("F3D pattern occurrence changed during binding")
+            })?;
         ctx.reserve_vec(
             &mut generated,
             1,
@@ -1292,6 +1523,43 @@ pub(super) fn bind_component_pattern_occurrences(
                 .occurrence_guid
                 .try_clone_for_decode(ctx, "retain F3D pattern GUID")?,
         });
+        Ok(())
+    };
+    match instances {
+        DesignRectangularPatternInstances::Bodies(frames) => {
+            for (ordinal, frame) in ctx
+                .admit_iter(frames, "collect F3D body pattern instances")?
+                .enumerate()
+                .skip(1)
+            {
+                append_generated(ordinal, frame)?;
+            }
+        }
+        DesignRectangularPatternInstances::Components { seed, generated: rows, .. } => {
+            for (ordinal, frame) in ctx
+                .admit_iter(
+                    std::slice::from_ref(&seed.instance),
+                    "skip F3D component pattern seed frame",
+                )?
+                .enumerate()
+                .skip(1)
+            {
+                append_generated(ordinal, frame)?;
+            }
+            for (generated_ordinal, instance) in ctx
+                .admit_iter(rows, "collect F3D generated component pattern instances")?
+                .enumerate()
+            {
+                let ordinal = generated_ordinal.checked_add(1).ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "F3D pattern occurrence ordinal overflow",
+                        u64::from(u32::MAX),
+                        u64_from_index(generated_ordinal),
+                    )
+                })?;
+                append_generated(ordinal, &instance.instance)?;
+            }
+        }
     }
     let bound = DesignRectangularPatternInstances::Components {
         component_guid: seed

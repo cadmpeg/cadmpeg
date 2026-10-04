@@ -408,3 +408,41 @@ fn scope_variants_that_differ_in_a_payload_float_are_not_equivalent() {
         with_test_ctx(|ctx| admit_history_bound_scope_variants(ctx, &mut different, &[])).is_err()
     );
 }
+
+#[test]
+fn history_scope_admission_iterators_refuse_at_each_source_boundary() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let mut scopes = thicken_variants(-1.0, -1.0);
+    with_test_ctx(|ctx| admit_history_bound_scope_variants(ctx, &mut scopes, &[]))
+        .expect("equal Thicken envelopes are admitted");
+    assert_eq!(scopes.len(), 1);
+    assert_eq!(scopes[0].byte_offset(), 200);
+
+    for (operation, additional) in [
+        ("scan F3D scope admission identities", Some(2)),
+        ("scan F3D scope admission groups", None),
+        ("scan F3D scope admission history candidates", Some(2)),
+        ("scan F3D equivalent scope admission candidates", Some(1)),
+        ("select F3D latest equivalent scope envelope", Some(1)),
+        ("mark F3D retained scope admission candidate", Some(2)),
+        ("count F3D retained scope admission candidates", Some(2)),
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |ctx| {
+                let mut scopes = thicken_variants(-1.0, -1.0);
+                admit_history_bound_scope_variants(ctx, &mut scopes, &[])
+            },
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == operation
+                    && additional.map_or(true, |expected| limit.additional == expected)
+        ));
+    }
+}

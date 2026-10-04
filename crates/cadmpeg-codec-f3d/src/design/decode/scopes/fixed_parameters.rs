@@ -4,6 +4,7 @@
 use super::shared_frames::exact_fixed_scalar;
 use super::shared_frames::marked_record_reference;
 use super::shared_frames::FixedScalarFrame;
+use super::parameter_scope::reference_members;
 use crate::bytes::lp_ascii_filtered_view;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::design_feature_family;
@@ -27,36 +28,48 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::{NonZeroReal, PositiveReal};
 
 pub(super) fn exact_fixed_extrude_parameters(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     parameters: &[DesignParameter],
     parameter_owners: &[crate::records::parameters::DesignParameterOwner],
-) -> Option<DesignFixedExtrudeParameters> {
+) -> Result<Option<DesignFixedExtrudeParameters>, CodecError> {
     if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Extrude)
         || scope
             .extrude_prologue()
             .and_then(DesignExtrudePrologue::extent)
             != Some(DesignExtrudeExtent::OneSidedDistance)
     {
-        return None;
+        return Ok(None);
     }
     let mut fixed_lanes = [None; 2];
     let mut fixed_count = 0;
     let mut embedded_distance = None;
-    for record_index in scope.reference_members().values() {
-        if let Some(scalar) = exact_fixed_scalar(bytes, records, *record_index)
+    for record_index in reference_members(
+        ctx,
+        scope.reference_members(),
+        "scan F3D fixed Extrude scope references",
+    )? {
+        if let Some(scalar) = exact_fixed_scalar(ctx, bytes, records, record_index)?
             .filter(|scalar| scalar.owner_record_index == Some(scope.record_index))
         {
-            let slot = fixed_lanes.get_mut(fixed_count)?;
-            *slot = Some((*record_index, scalar));
+            let Some(slot) = fixed_lanes.get_mut(fixed_count) else {
+                return Ok(None);
+            };
+            *slot = Some((record_index, scalar));
             fixed_count += 1;
         }
-        if let Some(scalar) =
-            exact_embedded_extrude_distance(bytes, records, *record_index, scope.record_index)
+        if let Some(scalar) = exact_embedded_extrude_distance(
+            ctx,
+            bytes,
+            records,
+            record_index,
+            scope.record_index,
+        )?
         {
-            if embedded_distance.replace((*record_index, scalar)).is_some() {
-                return None;
+            if embedded_distance.replace((record_index, scalar)).is_some() {
+                return Ok(None);
             }
         }
     }
@@ -72,28 +85,31 @@ pub(super) fn exact_fixed_extrude_parameters(
     for (record_index, lane) in fixed_lanes.into_iter().flatten() {
         let ordinal = usize::from(lane.ordinal);
         if ordinal >= seen_fixed_ordinals.len() || seen_fixed_ordinals[ordinal] {
-            return None;
+            return Ok(None);
         }
         seen_fixed_ordinals[ordinal] = true;
-        let source_kind = parameter_owners
-            .iter()
+        let owner = ctx
+            .admit_iter(parameter_owners, "find F3D fixed Extrude parameter owner")?
             .find(|owner| {
                 native_stream(owner.id()) == native_stream(&scope.id)
                     && owner.scope_record_index() == scope.record_index
                     && owner.record_index() == record_index
-            })
-            .and_then(|owner| {
-                parameters
-                    .iter()
-                    .find(|parameter| {
-                        native_stream(&parameter.id) == native_stream(&scope.id)
-                            && parameter.record_index == owner.parameter_record_index()
-                    })
-                    .map(crate::records::parameters::DesignParameter::source_kind)
             });
+        let source_kind = if let Some(owner) = owner {
+            ctx.admit_iter(parameters, "find F3D fixed Extrude owner parameter")?
+                .find(|parameter| {
+                    native_stream(&parameter.id) == native_stream(&scope.id)
+                        && parameter.record_index == owner.parameter_record_index()
+                })
+                .map(crate::records::parameters::DesignParameter::source_kind)
+        } else {
+            None
+        };
         match source_kind {
             Some("AlongDistance") if along_distance.is_none() => {
-                let value = NonZeroReal::new(lane.value.get())?;
+                let Some(value) = NonZeroReal::new(lane.value.get()) else {
+                    return Ok(None);
+                };
                 along_distance = Some(DesignFixedExtrudeDistance::FixedScalar(
                     DesignFixedExtrudeScalar {
                         value,
@@ -110,10 +126,12 @@ pub(super) fn exact_fixed_extrude_parameters(
                 });
             }
             Some("AlongDistance") if along_distance.is_some() && lane.value.get() == 0.0 => {}
-            Some(_) => return None,
+            Some(_) => return Ok(None),
             None => match lane.ordinal {
                 0 if along_distance.is_none() && lane.value.get() != 0.0 => {
-                    let value = NonZeroReal::new(lane.value.get())?;
+                    let Some(value) = NonZeroReal::new(lane.value.get()) else {
+                        return Ok(None);
+                    };
                     along_distance = Some(DesignFixedExtrudeDistance::FixedScalar(
                         DesignFixedExtrudeScalar {
                             value,
@@ -130,26 +148,27 @@ pub(super) fn exact_fixed_extrude_parameters(
                         value_offset: lane.value_offset,
                     });
                 }
-                _ => return None,
+                _ => return Ok(None),
             },
         }
     }
     if along_distance.is_none() && taper_angle.is_none() {
-        return None;
+        return Ok(None);
     }
-    Some(DesignFixedExtrudeParameters {
+    Ok(Some(DesignFixedExtrudeParameters {
         along_distance,
         taper_angle,
-    })
+    }))
 }
 
 fn exact_embedded_extrude_distance(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     record_index: u32,
     scope_record_index: u32,
-) -> Option<FixedScalarFrame<PositiveReal>> {
-    let mut candidates = records.frames(record_index).filter_map(|(start, end)| {
+) -> Result<Option<FixedScalarFrame<PositiveReal>>, CodecError> {
+    let mut candidates = records.frames(ctx, record_index)?.filter_map(|(start, end)| {
         (end.checked_sub(start)? == 100).then_some(())?;
         let (_, after_tag) = lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
         let first_auxiliary = record_index.checked_add(1)?;
@@ -181,8 +200,10 @@ fn exact_embedded_extrude_distance(
             value_offset: u64::try_from(start + 51).ok()?,
         })
     });
-    let candidate = candidates.next()?;
-    candidates.next().is_none().then_some(candidate)
+    let Some(candidate) = candidates.next() else {
+        return Ok(None);
+    };
+    Ok(candidates.next().is_none().then_some(candidate))
 }
 
 pub(super) fn exact_fixed_fillet_parameters(
@@ -198,17 +219,21 @@ pub(super) fn exact_fixed_fillet_parameters(
         return Ok(None);
     }
     let mut lanes = Vec::new();
-    for record_index in scope.reference_members().values() {
-        if let Some(scalar) = exact_fixed_scalar(bytes, records, *record_index)
+    for record_index in reference_members(
+        ctx,
+        scope.reference_members(),
+        "scan F3D fixed Fillet scope references",
+    )? {
+        if let Some(scalar) = exact_fixed_scalar(ctx, bytes, records, record_index)?
             .filter(|scalar| scalar.owner_record_index == Some(scope.record_index))
         {
             ctx.reserve_vec(&mut lanes, 1, "f3d fixed Fillet scalar lanes")?;
-            lanes.push((*record_index, scalar));
+            lanes.push((record_index, scalar));
         }
     }
     if lanes.is_empty()
-        || lanes
-            .iter()
+        || ctx
+            .admit_iter(&lanes, "validate F3D fixed Fillet scalar ordinals")?
             .enumerate()
             .any(|(ordinal, (_, scalar))| usize::from(scalar.ordinal) != ordinal)
     {
@@ -237,10 +262,15 @@ pub(super) fn exact_fixed_fillet_parameters(
         };
         groups.push(value);
     } else if lanes.len() % 2 == 0 {
-        for pair in lanes.chunks_exact(2) {
+        let mut admitted_lanes =
+            ctx.admit_iter(&lanes, "group F3D fixed Fillet scalar lanes")?;
+        while let Some(tangency_lane) = admitted_lanes.next() {
+            let Some(constant_lane) = admitted_lanes.next() else {
+                return Ok(None);
+            };
             let Some(value) = group(
-                Some(&pair[0]),
-                DesignFixedFilletLaw::Constant(scalar(&pair[1])),
+                Some(tangency_lane),
+                DesignFixedFilletLaw::Constant(scalar(constant_lane)),
             ) else {
                 return Ok(None);
             };
@@ -255,10 +285,16 @@ pub(super) fn exact_fixed_fillet_parameters(
             intermediate_count,
             "f3d fixed Fillet intermediate rows",
         )?;
-        for pair in lanes[3..].chunks_exact(2) {
+        let mut admitted_lanes = ctx.admit_iter(
+            &lanes[3..],
+            "collect F3D fixed Fillet intermediate lane pairs",
+        )?;
+        while let (Some(radius_lane), Some(parameter_lane)) =
+            (admitted_lanes.next(), admitted_lanes.next())
+        {
             intermediate.push(DesignFixedFilletIntermediate {
-                radius: scalar(&pair[0]),
-                parameter: scalar(&pair[1]),
+                radius: scalar(radius_lane),
+                parameter: scalar(parameter_lane),
             });
         }
         let Some(value) = group(
@@ -277,33 +313,43 @@ pub(super) fn exact_fixed_fillet_parameters(
 }
 
 pub(super) fn exact_fixed_chamfer_parameters(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     parameter_owners: &[DesignParameterOwner],
-) -> Option<DesignFixedChamferParameters> {
+) -> Result<Option<DesignFixedChamferParameters>, CodecError> {
     if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Chamfer) {
-        return None;
+        return Ok(None);
     }
     let stream = native_stream(&scope.id);
-    if parameter_owners.iter().any(|owner| {
-        stream.is_some()
-            && native_stream(owner.id()) == stream
-            && owner.scope_record_index() == scope.record_index
-    }) {
-        return None;
+    if ctx
+        .admit_iter(parameter_owners, "find F3D Chamfer parameter owners")?
+        .any(|owner| {
+            stream.is_some()
+                && native_stream(owner.id()) == stream
+                && owner.scope_record_index() == scope.record_index
+        })
+    {
+        return Ok(None);
     }
     let mut lanes = [None; 2];
     let mut lane_count = 0;
-    for record_index in scope.reference_members().values() {
-        if let Some(scalar) = exact_fixed_scalar(bytes, records, *record_index)
+    for record_index in reference_members(
+        ctx,
+        scope.reference_members(),
+        "scan F3D fixed Chamfer scope references",
+    )? {
+        if let Some(scalar) = exact_fixed_scalar(ctx, bytes, records, record_index)?
             .filter(|scalar| scalar.owner_record_index == Some(scope.record_index))
         {
             if usize::from(scalar.ordinal) != lane_count {
-                return None;
+                return Ok(None);
             }
-            let slot = lanes.get_mut(lane_count)?;
-            *slot = Some((*record_index, scalar));
+            let Some(slot) = lanes.get_mut(lane_count) else {
+                return Ok(None);
+            };
+            *slot = Some((record_index, scalar));
             lane_count += 1;
         }
     }
@@ -314,30 +360,54 @@ pub(super) fn exact_fixed_chamfer_parameters(
             value_offset: scalar.value_offset,
         })
     });
-    let first = distances.next()??;
-    Some(match distances.next() {
+    let first = match distances.next() {
+        Some(Some(first)) => first,
+        _ => return Ok(None),
+    };
+    Ok(Some(match distances.next() {
         Some(Some(second)) => DesignFixedChamferParameters::TwoDistances { first, second },
         None => DesignFixedChamferParameters::EqualDistance { distance: first },
-        Some(None) => return None,
-    })
+        Some(None) => return Ok(None),
+    }))
 }
 
 pub(super) fn unique_revolve_angle_owner<'a>(
+    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     parameter_owners: &'a [DesignParameterOwner],
     record_index: Option<u32>,
-) -> Option<&'a DesignParameterOwner> {
-    let mut candidates = parameter_owners.iter().filter(|owner| {
-        native_stream(owner.id()) == native_stream(&scope.id)
-            && owner.scope_record_index() == scope.record_index
-            && scope
-                .reference_members()
-                .values()
-                .any(|value| value == &owner.record_index())
-            && record_index.is_none_or(|index| owner.record_index() == index)
-            && owner.local_ordinal() == 0
-            && owner.evaluated_value().get() > 0.0
+) -> Result<Option<&'a DesignParameterOwner>, CodecError> {
+    let mut candidates = parameter_owners.iter().filter_map(|owner| {
+        if native_stream(owner.id()) != native_stream(&scope.id)
+            || owner.scope_record_index() != scope.record_index
+        {
+            return None;
+        }
+        let is_reference = match reference_members(
+            ctx,
+            scope.reference_members(),
+            "find F3D revolve angle owner reference",
+        ) {
+            Ok(mut references) => references.any(|value| value == owner.record_index()),
+            Err(error) => return Some(Err(error)),
+        };
+        if !is_reference
+            || !record_index.is_none_or(|index| owner.record_index() == index)
+            || owner.local_ordinal() != 0
+            || !(owner.evaluated_value().get() > 0.0)
+        {
+            return None;
+        }
+        Some(Ok(owner))
     });
-    let angle = candidates.next()?;
-    candidates.next().is_none().then_some(angle)
+    let angle = match candidates.next() {
+        Some(Ok(owner)) => owner,
+        Some(Err(error)) => return Err(error),
+        None => return Ok(None),
+    };
+    match candidates.next() {
+        Some(Ok(_)) => Ok(None),
+        Some(Err(error)) => Err(error),
+        None => Ok(Some(angle)),
+    }
 }

@@ -4994,9 +4994,10 @@ fn extend_related_design_records(
         &native.design_parameter_scopes,
     )?;
     crate::design::decode::operands::disambiguate_fixed_fillet_parameters(
+        ctx,
         &mut native.design_parameter_scopes,
         &native.design_parameter_owners,
-    );
+    )?;
     let mut existing = ctx.collect_hash_set(
         native.design_record_headers.iter().filter_map(|record| {
             Some((crate::ids::native_stream(&record.id)?, record.record_index))

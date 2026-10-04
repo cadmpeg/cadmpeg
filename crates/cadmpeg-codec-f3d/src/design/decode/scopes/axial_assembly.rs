@@ -2,6 +2,7 @@
 //! Bind axial assembly operand targets and joint-origin frames from assemblies.
 
 use super::combine::take_external_reference_identity;
+use super::parameter_scope::reference_members;
 use super::shared_frames::exact_indexed_header_at;
 use super::shared_frames::exact_same_segment_record_reference;
 use super::shared_frames::marked_record_reference;
@@ -31,7 +32,7 @@ pub(super) fn bind_joint_origin_frames_from_assemblies(
 ) -> Result<(), CodecError> {
     let mut candidates = Vec::new();
     let mut envelopes = Vec::new();
-    for scope in scopes.iter() {
+    for scope in ctx.admit_iter(&*scopes, "scan F3D joint-origin source scopes")? {
         if scope.kind() != scope::DesignFeatureKind::Assemble {
             continue;
         }
@@ -66,8 +67,8 @@ pub(super) fn bind_joint_origin_frames_from_assemblies(
         scope.kind() == scope::DesignFeatureKind::JointOrigin
             && scope.joint_origin_frame().is_none()
     }) {
-        let mut matches = candidates
-            .iter()
+        let mut matches = ctx
+            .admit_iter(&candidates, "find F3D joint-origin frame candidates")?
             .filter(|(record_index, ..)| *record_index == scope.record_index);
         let Some((_, transform, transform_offset, reference)) = matches.next() else {
             continue;
@@ -96,8 +97,8 @@ pub(super) fn bind_joint_origin_frames_from_assemblies(
         }
     }
     let mut resolved_origins = HashMap::new();
-    for scope in scopes
-        .iter()
+    for scope in ctx
+        .admit_iter(&*scopes, "scan F3D resolved joint-origin scopes")?
         .filter(|scope| scope.kind() == scope::DesignFeatureKind::JointOrigin)
     {
         let Some(transform) = scope.joint_origin_transform() else {
@@ -108,7 +109,10 @@ pub(super) fn bind_joint_origin_frames_from_assemblies(
         }
         resolved_origins.insert(scope.record_index, transform);
     }
-    for (assembly_record_index, joint_origin_record_index, transform) in envelopes {
+    for (assembly_record_index, joint_origin_record_index, transform) in ctx
+        .admit_iter(&envelopes, "scan F3D joint-origin assembly envelopes")?
+        .copied()
+    {
         if resolved_origins.get(&joint_origin_record_index) != Some(&transform) {
             continue;
         }
@@ -140,7 +144,10 @@ pub(super) fn bind_axial_assembly_operand_targets(
     scopes: &mut [DesignParameterScope],
 ) -> Result<(), CodecError> {
     let mut bindings = Vec::new();
-    for (ordinal, scope) in scopes.iter().enumerate() {
+    for (ordinal, scope) in ctx
+        .admit_iter(&*scopes, "scan F3D axial assembly scopes")?
+        .enumerate()
+    {
         if !matches!(scope.frame_length(), 705 | 772) {
             continue;
         }
@@ -267,23 +274,28 @@ fn exact_assembly_axial_component_operand(
     scope: &DesignParameterScope,
     frame: &DesignAssemblyOperandFrame,
 ) -> Result<Option<AxialComponentOperand>, CodecError> {
-    if !matches!(scope.frame_length(), 705 | 772)
-        || scope
-            .reference_members()
-            .values()
-            .filter(|record_index| **record_index == frame.reference_record_index)
-            .count()
-            != 1
-    {
+    if !matches!(scope.frame_length(), 705 | 772) {
+        return Ok(None);
+    }
+    let matching_reference_count = reference_members(
+        ctx,
+        scope.reference_members(),
+        "count F3D axial scope references",
+    )?
+    .filter(|record_index| *record_index == frame.reference_record_index)
+    .count();
+    if matching_reference_count != 1 {
         return Ok(None);
     }
     let Some(search_start) = usize::try_from(scope.paired_byte_offset()).ok() else {
         return Ok(None);
     };
     let mut candidate = None;
-    for start in records
-        .offsets(frame.reference_record_index)
-        .iter()
+    for start in ctx
+        .admit_iter(
+            records.offsets(frame.reference_record_index),
+            "scan F3D axial component candidate offsets",
+        )?
         .copied()
         .filter(|start| *start >= search_start)
     {
@@ -336,23 +348,43 @@ fn exact_assembly_axial_component_operand_at(
             [first_axis_record_index, first_selector_record_index],
             [second_axis_record_index, second_selector_record_index],
         ] {
-            if scope
-                .reference_members()
-                .values()
-                .zip(scope.reference_members().values().skip(1))
-                .filter(|(first, second)| [**first, **second] == pair)
-                .count()
-                != 1
-                || pair.iter().any(|record_index| {
-                    scope
-                        .reference_members()
-                        .values()
-                        .filter(|member| *member == record_index)
-                        .count()
-                        != 1
-                })
-            {
+            let references = match reference_members(
+                ctx,
+                scope.reference_members(),
+                "count F3D paired axial scope references",
+            ) {
+                Ok(references) => references,
+                Err(error) => return Some(Err(error)),
+            };
+            let next_references = match reference_members(
+                ctx,
+                scope.reference_members(),
+                "count F3D paired axial scope references",
+            ) {
+                Ok(references) => references,
+                Err(error) => return Some(Err(error)),
+            };
+            let paired_reference_count = references
+                .zip(next_references.skip(1))
+                .filter(|(first, second)| [*first, *second] == pair)
+                .count();
+            if paired_reference_count != 1 {
                 return None;
+            }
+            for record_index in pair {
+                let member_count = match reference_members(
+                    ctx,
+                    scope.reference_members(),
+                    "count F3D axial scope member references",
+                ) {
+                    Ok(references) => references
+                        .filter(|member| *member == record_index)
+                        .count(),
+                    Err(error) => return Some(Err(error)),
+                };
+                if member_count != 1 {
+                    return None;
+                }
             }
         }
         let search_start = usize::try_from(scope.paired_byte_offset()).ok()?;

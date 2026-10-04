@@ -7,7 +7,8 @@ use crate::bytes::lp_ascii_filtered_view;
 use crate::bytes::take_reference;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::records::feature::extrude::DesignExtrudeOperation;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 
 pub(in crate::design::decode) fn exact_indexed_header_at(
@@ -47,11 +48,12 @@ pub(super) struct FixedScalarFrame<T = FiniteReal> {
 }
 
 pub(super) fn exact_fixed_scalar(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     record_index: u32,
-) -> Option<FixedScalarFrame> {
-    let mut candidates = records.frames(record_index).filter_map(|(start, end)| {
+) -> Result<Option<FixedScalarFrame>, CodecError> {
+    let mut candidates = records.frames(ctx, record_index)?.filter_map(|(start, end)| {
         let frame_length = end.checked_sub(start)?;
         matches!(frame_length, 100 | 103 | 104 | 105).then_some(())?;
         if frame_length == 100 || frame_length == 103 {
@@ -88,8 +90,8 @@ pub(super) fn exact_fixed_scalar(
             value_offset: u64::try_from(start + 40).ok()?,
         })
     });
-    let candidate = candidates.next()?;
-    candidates.next().is_none().then_some(candidate)
+    let Some(candidate) = candidates.next() else { return Ok(None); };
+    Ok(candidates.next().is_none().then_some(candidate))
 }
 
 pub(in crate::design::decode) fn marked_reference(bytes: &[u8], at: usize) -> Option<u32> {

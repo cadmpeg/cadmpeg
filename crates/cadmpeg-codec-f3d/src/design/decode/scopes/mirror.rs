@@ -5,6 +5,7 @@ use crate::bytes::lp_utf16_bounded_charged;
 use cadmpeg_core::decode::u64_from_index;
 
 use super::shared_frames::marked_record_reference;
+use super::parameter_scope::reference_members;
 use crate::container::ContainerScan;
 use crate::design::decode::operands::parse_face_operand;
 use crate::design::decode::sketch::next_indexed_record_offset;
@@ -29,7 +30,7 @@ use crate::records::parameters::DesignParameterOwner;
 use crate::records::recipes::ConstructionRecipe;
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use cadmpeg_core::container::ContainerRole;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::PositiveReal;
 use std::collections::HashMap;
@@ -41,21 +42,32 @@ use std::collections::HashMap;
 /// Its exact compact scalar envelope carries count two and has no decoded
 /// Design-parameter backlink.
 fn exact_legacy_mirror_scope_count(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-) -> Option<(u32, u64)> {
+) -> Result<Option<(u32, u64)>, CodecError> {
+    (|| {
     if (scope.class_tag.as_str(), scope.paired_class_tag.as_str()) != ("441", "267") {
         return None;
     }
-    let count_record_index = *scope.reference_members().values().nth(3)?;
+    let count_record_index = match reference_members(
+        ctx, scope.reference_members(), "find F3D Mirror count reference",
+    ) {
+        Ok(mut references) => references.nth(3)?,
+        Err(error) => return Some(Err(error)),
+    };
     let [start, paired] = records.offsets(count_record_index) else {
         return None;
     };
     if paired.checked_sub(*start)? != mirror_441_count::LEN {
         return None;
     }
-    let (paired_class_tag, paired_after_tag) = borrowed_ascii_tag(bytes, *paired)?;
+    let (paired_class_tag, paired_after_tag) = match borrowed_ascii_tag(ctx, bytes, *paired) {
+        Ok(Some(tag)) => tag,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     if paired_class_tag != b"267"
         || paired_after_tag != paired.checked_add(7)?
         || View::u32_le_at(bytes, paired_after_tag) != Some(count_record_index)
@@ -63,7 +75,11 @@ fn exact_legacy_mirror_scope_count(
         return None;
     }
     let frame = bytes.get(*start..*paired)?;
-    let owner = crate::design::decode::parameters::parse_parameter_owner(frame)?;
+    let owner = match crate::design::decode::parameters::parse_parameter_owner(ctx, frame) {
+        Ok(Some(owner)) => owner,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     if owner.class_tag.as_str() != "426"
         || owner.record_index != count_record_index
         || owner.scope_record_index != scope.record_index
@@ -80,12 +96,13 @@ fn exact_legacy_mirror_scope_count(
     {
         return None;
     }
-    Some((
+    Some(Ok((
         count_record_index,
         owner
             .evaluated_value_offset
             .absolute(u64::try_from(*start).ok()?)?,
-    ))
+    )))
+    })().transpose()
 }
 
 /// Parse a legacy Mirror scalar lane.
@@ -95,9 +112,11 @@ fn exact_legacy_mirror_scope_count(
 /// references naming the adjacent legacy records. The class pair selects the
 /// generation-specific scalar marker; the remaining tail offsets are shared.
 fn exact_legacy_mirror_scope_tolerance(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     scope: &DesignParameterScope,
-) -> Option<(PositiveReal, u64, DesignMirrorScopeTolerance)> {
+) -> Result<Option<(PositiveReal, u64, DesignMirrorScopeTolerance)>, CodecError> {
+    (|| {
     let (
         tail_length,
         previous_state,
@@ -160,7 +179,13 @@ fn exact_legacy_mirror_scope_tolerance(
         ),
         _ => return None,
     };
-    let kind_code_units = scope.kind_name().encode_utf16().count();
+    let kind_code_units = match ctx.admit_iter(
+        scope.kind_name(), "count F3D Mirror kind UTF-16 units",
+    ) {
+        // UTF-16 unit count does not exceed the UTF-8 byte count.
+        Ok(characters) => characters.encode_utf16().count(),
+        Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+    };
     let kind_end = usize::try_from(scope.kind_offset())
         .ok()?
         .checked_add(kind_code_units.checked_mul(2)?)?;
@@ -205,7 +230,7 @@ fn exact_legacy_mirror_scope_tolerance(
     {
         return None;
     }
-    Some((
+    Some(Ok((
         value,
         u64::try_from(value_offset).ok()?,
         DesignMirrorScopeTolerance {
@@ -220,7 +245,8 @@ fn exact_legacy_mirror_scope_tolerance(
             second_reference,
             second_reference_offset: u64::try_from(second_reference_offset).ok()?,
         },
-    ))
+    )))
+    })().transpose()
 }
 
 /// Count matching records without retaining the input-sized run.
@@ -250,7 +276,7 @@ pub(crate) fn bind_mirror_constructions(
     recipes: &[ConstructionRecipe],
 ) -> Result<(), CodecError> {
     let mut headers_by_record = HashMap::new();
-    for header in headers {
+    for header in ctx.admit_iter(headers, "scan F3D Mirror record headers")? {
         let Some(stream) = native_stream(&header.id) else {
             continue;
         };
@@ -311,21 +337,22 @@ pub(crate) fn bind_mirror_constructions(
         let Some(plane_header) = headers_by_record.get(&(stream.as_str(), *plane_member)) else {
             continue;
         };
-        let work_plane = compact_feature_reference(ctx, bytes, plane_header)?.and_then(
-            |(plane_reference, plane_reference_offset)| {
-                plane_reference
-                    .checked_add(1)
-                    .filter(|record_index| {
-                        scopes.iter().any(|scope| {
-                            native_stream(&scope.id) == Some(stream.as_str())
-                                && scope.record_index == *record_index
-                                && scope.kind() == scope::DesignFeatureKind::WorkPlane
-                                && scope.work_plane_frame().is_some()
-                        })
-                    })
-                    .map(|record_index| (record_index, plane_reference_offset))
-            },
-        );
+        let work_plane = match compact_feature_reference(ctx, bytes, plane_header)? {
+            Some((plane_reference, plane_reference_offset)) => {
+                match plane_reference.checked_add(1) {
+                    Some(record_index) if ctx.admit_iter(
+                        &*scopes, "find F3D Mirror work-plane scope",
+                    )?.any(|scope| {
+                        native_stream(&scope.id) == Some(stream.as_str())
+                            && scope.record_index == record_index
+                            && scope.kind() == scope::DesignFeatureKind::WorkPlane
+                            && scope.work_plane_frame().is_some()
+                    }) => Some((record_index, plane_reference_offset)),
+                    _ => None,
+                }
+            }
+            None => None,
+        };
         let face_recipe = {
             let records =
                 cached_owned_record_offsets(ctx, &mut record_offset_index, &stream, bytes)?;
@@ -373,14 +400,15 @@ pub(crate) fn bind_mirror_constructions(
             _ if seed_group.role() != DesignOperandRole::BODIES_B => None,
             [crate::records::identity::Located { value: member, .. }] => {
                 match headers_by_record.get(&(stream.as_str(), *member)) {
-                    Some(header) => compact_feature_reference(ctx, bytes, header)?.filter(
-                        |(record_index, _)| {
-                            scopes.iter().any(|scope| {
-                                native_stream(&scope.id) == Some(stream.as_str())
-                                    && scope.record_index == *record_index
-                            })
-                        },
-                    ),
+                    Some(header) => match compact_feature_reference(ctx, bytes, header)? {
+                        Some((record_index, offset)) if ctx.admit_iter(
+                            &*scopes, "find F3D Mirror seed-feature scope",
+                        )?.any(|scope| {
+                            native_stream(&scope.id) == Some(stream.as_str())
+                                && scope.record_index == record_index
+                        }) => Some((record_index, offset)),
+                        _ => None,
+                    },
                     None => None,
                 }
             }
@@ -399,8 +427,8 @@ pub(crate) fn bind_mirror_constructions(
                 && owner.local_ordinal() == 0
                 && owner.evaluated_value().get() == 2.0
         }));
-        let inline_count = exact_legacy_mirror_scope_count(bytes, records, &scopes[index]);
-        let inline_tolerance = exact_legacy_mirror_scope_tolerance(bytes, &scopes[index]);
+        let inline_count = exact_legacy_mirror_scope_count(ctx, bytes, records, &scopes[index])?;
+        let inline_tolerance = exact_legacy_mirror_scope_tolerance(ctx, bytes, &scopes[index])?;
         let tolerance = unique_match(
             owners
                 .iter()
@@ -469,7 +497,10 @@ pub(crate) fn bind_mirror_constructions(
     Ok(())
 }
 
-fn borrowed_ascii_tag(bytes: &[u8], at: usize) -> Option<(&[u8], usize)> {
+fn borrowed_ascii_tag<'bytes>(
+    ctx: &DecodeContext<'_>, bytes: &'bytes [u8], at: usize,
+) -> Result<Option<(&'bytes [u8], usize)>, CodecError> {
+    (|| {
     let count = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
     if count > 2000 {
         return None;
@@ -477,7 +508,12 @@ fn borrowed_ascii_tag(bytes: &[u8], at: usize) -> Option<(&[u8], usize)> {
     let start = at.checked_add(4)?;
     let end = start.checked_add(count)?;
     let raw = bytes.get(start..end)?;
-    raw.iter().all(u8::is_ascii_graphic).then_some((raw, end))
+    let graphic = match ctx.admit_iter(raw, "validate F3D Mirror ASCII tag") {
+        Ok(mut bytes) => bytes.all(u8::is_ascii_graphic),
+        Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+    };
+    graphic.then_some(Ok((raw, end)))
+    })().transpose()
 }
 
 fn compact_feature_reference(
@@ -518,12 +554,32 @@ fn compact_feature_reference(
     {
         return Ok(None);
     }
-    Ok((|| {
-        let paired_at = next_indexed_record_offset(bytes, after_context_id + 8)?;
-        let nested_one_at = next_indexed_record_offset(bytes, paired_at + 11)?;
-        let nested_two_at = next_indexed_record_offset(bytes, nested_one_at + 11)?;
-        let identity_at = next_indexed_record_offset(bytes, nested_two_at + 11)?;
-        let next_at = next_indexed_record_offset(bytes, identity_at + 11)?;
+    (|| {
+        let paired_at = match next_indexed_record_offset(ctx, bytes, after_context_id + 8) {
+            Ok(Some(at)) => at,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let nested_one_at = match next_indexed_record_offset(ctx, bytes, paired_at + 11) {
+            Ok(Some(at)) => at,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let nested_two_at = match next_indexed_record_offset(ctx, bytes, nested_one_at + 11) {
+            Ok(Some(at)) => at,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let identity_at = match next_indexed_record_offset(ctx, bytes, nested_two_at + 11) {
+            Ok(Some(at)) => at,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let next_at = match next_indexed_record_offset(ctx, bytes, identity_at + 11) {
+            Ok(Some(at)) => at,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         for (offset, expected) in [
             (paired_at, header.record_index),
             (nested_one_at, header.record_index.checked_add(1)?),
@@ -531,7 +587,11 @@ fn compact_feature_reference(
             (identity_at, header.record_index.checked_add(3)?),
             (next_at, header.record_index.checked_add(4)?),
         ] {
-            let (_, after_tag) = borrowed_ascii_tag(bytes, offset)?;
+            let (_, after_tag) = match borrowed_ascii_tag(ctx, bytes, offset) {
+                Ok(Some(tag)) => tag,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
             if View::u32_le_at(bytes, after_tag)? != expected {
                 return None;
             }
@@ -542,11 +602,11 @@ fn compact_feature_reference(
         {
             return None;
         }
-        Some((
+        Some(Ok((
             View::u32_le_at(bytes, identity_at + 21)?,
             u64::try_from(identity_at + 21).ok()?,
-        ))
-    })())
+        )))
+    })().transpose()
 }
 
 #[cfg(test)]

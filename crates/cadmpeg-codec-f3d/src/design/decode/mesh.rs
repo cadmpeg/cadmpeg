@@ -310,13 +310,13 @@ impl MeshBody {
             "f3d mesh body identifier",
         )?;
         let mut placed_vertices = ctx.collection_vec(vertices.len(), "f3d placed mesh vertices")?;
-        for point in vertices {
-            placed_vertices.push(transform.transform_point(point)?);
+        for point in ctx.admit_iter(&vertices, "place F3D mesh vertices")? {
+            placed_vertices.push(transform.transform_point(*point)?);
         }
         let placed_normals = if let Some(normals) = corner_normals {
             let mut placed = ctx.collection_vec(normals.len(), "f3d placed mesh normals")?;
-            for normal in normals {
-                placed.push(transform.transform_normal(normal)?);
+            for normal in ctx.admit_iter(&normals, "place F3D mesh corner normals")? {
+                placed.push(transform.transform_normal(*normal)?);
             }
             Some(placed)
         } else {
@@ -924,9 +924,17 @@ fn parse_mesh_wrapper_record(
     parsed.ok_or_else(|| malformed_frame(ctx, "mesh-wrapper", frame.entity_id))
 }
 
-fn scene_state_mask_is_exact(mask: &[u8]) -> bool {
-    mask.len() == 49
-        && mask.iter().enumerate().all(|(index, byte)| {
+fn scene_state_mask_is_exact(
+    ctx: &DecodeContext<'_>,
+    mask: &[u8],
+) -> Result<bool, CodecError> {
+    if mask.len() != 49 {
+        return Ok(false);
+    }
+    Ok(ctx
+        .admit_iter(mask, "validate F3D mesh scene-state mask")?
+        .enumerate()
+        .all(|(index, byte)| {
             *byte
                 == match index {
                     6 | 14 | 22 | 30 | 38 | 46 => 0xef,
@@ -934,7 +942,7 @@ fn scene_state_mask_is_exact(mask: &[u8]) -> bool {
                     48 => 0x01,
                     _ => 0xff,
                 }
-        })
+        }))
 }
 
 enum SceneBoundsPayload {
@@ -943,25 +951,33 @@ enum SceneBoundsPayload {
     Present(DesignMeshSceneBounds),
 }
 
-fn parse_scene_footer(record: &[u8], at: usize) -> SceneBoundsPayload {
+fn parse_scene_footer(
+    ctx: &DecodeContext<'_>,
+    record: &[u8],
+    at: usize,
+) -> Result<SceneBoundsPayload, CodecError> {
     if at.checked_add(SCENE_FOOTER_BYTES) != Some(record.len()) || record.get(at) != Some(&1) {
-        return SceneBoundsPayload::Invalid;
+        return Ok(SceneBoundsPayload::Invalid);
     }
     let Some(payload_at) = at.checked_add(1) else {
-        return SceneBoundsPayload::Invalid;
+        return Ok(SceneBoundsPayload::Invalid);
     };
-    parse_scene_bounds_payload(record, payload_at)
+    parse_scene_bounds_payload(ctx, record, payload_at)
 }
 
-fn parse_scene_bounds_payload(record: &[u8], payload_at: usize) -> SceneBoundsPayload {
+fn parse_scene_bounds_payload(
+    ctx: &DecodeContext<'_>,
+    record: &[u8],
+    payload_at: usize,
+) -> Result<SceneBoundsPayload, CodecError> {
     let Some(payload) = record.get(payload_at..) else {
-        return SceneBoundsPayload::Invalid;
+        return Ok(SceneBoundsPayload::Invalid);
     };
-    if scene_state_mask_is_exact(payload) {
-        return SceneBoundsPayload::Absent;
+    if scene_state_mask_is_exact(ctx, payload)? {
+        return Ok(SceneBoundsPayload::Absent);
     }
     if payload.len() != 49 || payload[48] != 1 {
-        return SceneBoundsPayload::Invalid;
+        return Ok(SceneBoundsPayload::Invalid);
     }
     let mut values = [0.0; 6];
     for (ordinal, value) in values.iter_mut().enumerate() {
@@ -969,10 +985,10 @@ fn parse_scene_bounds_payload(record: &[u8], payload_at: usize) -> SceneBoundsPa
             .checked_mul(8)
             .and_then(|relative| payload_at.checked_add(relative))
         else {
-            return SceneBoundsPayload::Invalid;
+            return Ok(SceneBoundsPayload::Invalid);
         };
         let Some(parsed) = View::f64_le_at(record, offset) else {
-            return SceneBoundsPayload::Invalid;
+            return Ok(SceneBoundsPayload::Invalid);
         };
         *value = parsed;
     }
@@ -980,8 +996,8 @@ fn parse_scene_bounds_payload(record: &[u8], payload_at: usize) -> SceneBoundsPa
         [values[0], values[1], values[2]],
         [values[3], values[4], values[5]],
     ) {
-        Ok(bounds) => SceneBoundsPayload::Present(bounds),
-        Err(_) => SceneBoundsPayload::Invalid,
+        Ok(bounds) => Ok(SceneBoundsPayload::Present(bounds)),
+        Err(_) => Ok(SceneBoundsPayload::Invalid),
     }
 }
 
@@ -1005,7 +1021,7 @@ fn parse_mesh_scene_state_record(
     if record.get(scene_state::ZERO_RUN_34..scene_state::FOOTER_MARKER) != Some(&[0; 34]) {
         return Err(malformed_frame(ctx, "mesh-scene-state", frame.entity_id));
     }
-    let bounds = match parse_scene_footer(record, scene_state::FOOTER_MARKER) {
+    let bounds = match parse_scene_footer(ctx, record, scene_state::FOOTER_MARKER)? {
         SceneBoundsPayload::Invalid => {
             return Err(malformed_frame(ctx, "mesh-scene-state", frame.entity_id))
         }
@@ -1030,7 +1046,7 @@ fn parse_scene_node_record(
     )?;
     let record = &bytes[frame.start..frame.end];
     let identity = record_identity(ctx, record, frame, "mesh-scene-node")?;
-    let parsed = (|| {
+    let parsed = (|| -> Option<Result<MeshSceneNodeRecord, CodecError>> {
         (record.get(scene_node::ZERO_RUN_14..scene_node::CONSTANT_TWO_A) == Some(&[0; 14])
             && View::u32_le_at(record, scene_node::CONSTANT_TWO_A) == Some(2)
             && View::u32_le_at(record, scene_node::CONSTANT_TWO_B) == Some(2)
@@ -1039,13 +1055,22 @@ fn parse_scene_node_record(
         let (bounds, transform) = if record.len() == scene_node::LEN
             && record.get(scene_node::ZERO_RUN_24..scene_node::FOOTER_MARKER) == Some(&[0; 24])
         {
-            (parse_scene_footer(record, scene_node::FOOTER_MARKER), None)
+            (
+                match parse_scene_footer(ctx, record, scene_node::FOOTER_MARKER) {
+                    Ok(bounds) => bounds,
+                    Err(error) => return Some(Err(error)),
+                },
+                None,
+            )
         } else if record.len() == placed_scene_node::LEN
             && record.get(placed_scene_node::ZERO_RUN_25..placed_scene_node::TRANSFORM)
                 == Some(&[0; 25])
         {
             (
-                parse_scene_bounds_payload(record, placed_scene_node::FOOTER_MASK),
+                match parse_scene_bounds_payload(ctx, record, placed_scene_node::FOOTER_MASK) {
+                    Ok(bounds) => bounds,
+                    Err(error) => return Some(Err(error)),
+                },
                 Some(MeshAffineTransform::parse(
                     record,
                     placed_scene_node::TRANSFORM,
@@ -1059,8 +1084,9 @@ fn parse_scene_node_record(
             SceneBoundsPayload::Absent => None,
             SceneBoundsPayload::Present(bounds) => Some(bounds),
         };
-        Some(MeshSceneNodeRecord {
-            node: DesignMeshSceneNode::new(identity, bounds, transform).ok()?,
+        let node = DesignMeshSceneNode::new(identity, bounds, transform).ok()?;
+        Some(Ok(MeshSceneNodeRecord {
+            node,
             state_record_index: exact_local_record_index(
                 record,
                 scene_node::SCENE_STATE_REFERENCE,
@@ -1069,9 +1095,13 @@ fn parse_scene_node_record(
                 record,
                 scene_node::AUXILIARY_RECORD_REFERENCE,
             )?,
-        })
+        }))
     })();
-    parsed.ok_or_else(|| malformed_frame(ctx, "mesh-scene-node", frame.entity_id))
+    match parsed {
+        Some(Ok(record)) => Ok(record),
+        Some(Err(error)) => Err(error),
+        None => Err(malformed_frame(ctx, "mesh-scene-node", frame.entity_id)),
+    }
 }
 
 fn parse_typed_identity(
@@ -1285,7 +1315,7 @@ fn typed_frame_map<'a>(
     let mut out = HashMap::new();
 
     ctx.reserve_map(&mut out, frames.len(), "f3d mesh frame-map entries")?;
-    for frame in frames {
+    for frame in ctx.admit_iter(&frames, "index F3D mesh primary frames")? {
         let index = u32::try_from(frame.entity_id).map_err(|_| {
             crate::design::text::malformed_design(
                 ctx,
@@ -1295,7 +1325,7 @@ fn typed_frame_map<'a>(
                 ),
             )
         })?;
-        if out.insert(index, frame).is_some() {
+        if out.insert(index, *frame).is_some() {
             return Err(crate::design::text::malformed_design(
                 ctx,
                 format_args!("F3D Design {record_kind} record index {index} is not unique"),
@@ -1346,7 +1376,7 @@ fn mesh_collection_indices(
         collections.len(),
         "f3d mesh collection indices",
     )?;
-    for collection in collections {
+    for collection in ctx.admit_iter(collections, "index F3D mesh collections")? {
         indices.insert(collection.collection.record().record_index());
     }
     Ok(indices)
@@ -1358,7 +1388,7 @@ fn mesh_filename_entries<'a>(
 ) -> Result<HashMap<String, &'a MeshTextureFilenameEntry>, CodecError> {
     let mut entries = HashMap::new();
     ctx.reserve_map(&mut entries, filenames.len(), "f3d mesh filename entries")?;
-    for entry in filenames {
+    for entry in ctx.admit_iter(filenames, "index F3D mesh texture filenames")? {
         entries.insert(entry.resource_guid.as_str().to_ascii_uppercase(), entry);
     }
     Ok(entries)
@@ -1532,14 +1562,18 @@ where
         "mesh-texture-filename",
     )?;
     let mut owner_records = Vec::new();
-    for frame in typed_primary_frames(
+    let collection_owner_frames = typed_primary_frames(
         ctx,
         bytes,
         meta,
         MESH_COLLECTION_OWNER_TYPE_GUID,
         "mesh-collection-owner",
+    )?;
+    for frame in ctx.admit_iter(
+        &collection_owner_frames,
+        "scan F3D mesh collection owner frames",
     )? {
-        if let Some(owner) = parse_mesh_collection_owner_record(ctx, bytes, frame)? {
+        if let Some(owner) = parse_mesh_collection_owner_record(ctx, bytes, *frame)? {
             if collection_record_indices.contains(&owner.collection_record_index) {
                 ctx.push_vec(&mut owner_records, owner, "f3d mesh collection owners")?;
             }
@@ -1566,24 +1600,36 @@ where
     let mut features = ctx.collection_vec(collections.len(), "f3d mesh graph features")?;
     for collection in collections {
         let stream_error = |invariant| malformed_mesh_graph(ctx, &stream, invariant);
-        let mut candidate_scopes = scopes
-            .iter()
-            .filter(|(_, scope)| scope.body_records == collection.body_records)
-            .filter(|(scope_index, _)| {
-                collection.body_records.iter().all(|body_index| {
-                    bodies.get(body_index).is_some_and(|body| {
-                        body.scope_record_index == **scope_index
-                            && body.collection_record_index
-                                == collection.collection.record().record_index()
+        let mut candidate = None;
+        let mut second_candidate = None;
+        for (scope_index, scope) in
+            ctx.admit_iter(&scopes, "find F3D mesh collection scopes")?
+        {
+            if scope.body_records != collection.body_records
+                || !ctx
+                    .admit_iter(
+                        &collection.body_records,
+                        "match F3D mesh collection body links",
+                    )?
+                    .all(|body_index| {
+                        bodies.get(body_index).is_some_and(|body| {
+                            body.scope_record_index == *scope_index
+                                && body.collection_record_index
+                                    == collection.collection.record().record_index()
+                        })
                     })
-                })
-            })
-            .map(|(record_index, _)| *record_index);
-        let candidate = candidate_scopes.next();
-        let second_candidate = candidate_scopes.next();
+            {
+                continue;
+            }
+            if candidate.is_some() {
+                second_candidate = Some(*scope_index);
+                break;
+            }
+            candidate = Some(*scope_index);
+        }
         let Some(scope_record_index) = candidate.filter(|_| second_candidate.is_none()) else {
             let mut scope_lists = Vec::new();
-            for (index, scope) in &scopes {
+            for (index, scope) in ctx.admit_iter(&scopes, "format F3D mesh scope diagnostics")? {
                 let mut body_records = ctx
                     .collection_vec(scope.body_records.len(), "f3d mesh diagnostic scope bodies")?;
                 body_records.extend_from_slice(&scope.body_records);
@@ -1594,7 +1640,10 @@ where
                 )?;
             }
             let mut body_links = Vec::new();
-            for index in &collection.body_records {
+            for index in ctx.admit_iter(
+                &collection.body_records,
+                "format F3D mesh body-link diagnostics",
+            )? {
                 if let Some(body) = bodies.get(index) {
                     ctx.push_vec(
                         &mut body_links,
@@ -1635,7 +1684,7 @@ where
         let mut filename_entries = mesh_filename_entries(ctx, &texture_table.filenames)?;
         let mut textures =
             ctx.collection_vec(texture_table.flags.len(), "f3d mesh texture resources")?;
-        for flag in &texture_table.flags {
+        for flag in ctx.admit_iter(&texture_table.flags, "project F3D mesh texture flags")? {
             let filename_entry = filename_entries
                 .remove(&flag.resource_guid.as_str().to_ascii_uppercase())
                 .ok_or_else(|| {
@@ -1672,7 +1721,10 @@ where
 
         let mut feature_bodies =
             ctx.collection_vec(collection.body_records.len(), "f3d mesh feature bodies")?;
-        for body_record_index in &collection.body_records {
+        for body_record_index in ctx.admit_iter(
+            &collection.body_records,
+            "project F3D mesh collection bodies",
+        )? {
             let body = bodies.remove(body_record_index).ok_or_else(|| {
                 stream_error("each collection body reference targets one unused mesh body")
             })?;
@@ -1779,9 +1831,8 @@ fn decode_mesh_design_records(
     scan: &ContainerScan,
 ) -> Result<Vec<Vec<DesignMeshFeature>>, CodecError> {
     let mut out = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
+    for entry in ctx
+        .admit_iter(&scan.entries, "scan F3D mesh design streams")?
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let Some(meta) = metadata_for_bulk_stream(ctx, scan, &entry.name)? else {
@@ -1829,11 +1880,13 @@ fn flatten_mesh_features(
     ctx: &DecodeContext<'_>,
     design_records: Vec<Vec<DesignMeshFeature>>,
 ) -> Result<Vec<DesignMeshFeature>, CodecError> {
-    let feature_count = design_records.iter().try_fold(0_usize, |count, design| {
+    let feature_count = ctx
+        .admit_iter(&design_records, "count F3D mesh design features")?
+        .try_fold(0_usize, |count, design| {
         count
             .checked_add(design.len())
             .ok_or_else(|| ctx.refuse_codec_limit("f3d mesh feature count", u64::MAX - 1, u64::MAX))
-    })?;
+        })?;
 
     let mut features = Vec::new();
     ctx.reserve_vec(&mut features, feature_count, "f3d mesh decoded features")?;
@@ -1858,27 +1911,37 @@ fn mesh_feature_id_charged(
 }
 
 fn resolve_mesh_body(
+    ctx: &DecodeContext<'_>,
     records: &[Vec<DesignMeshFeature>],
     entry_name: &str,
     fusion_uuid: &str,
-) -> Option<(usize, usize, usize)> {
+) -> Result<Option<(usize, usize, usize)>, CodecError> {
     let mut joined = None;
-    for (design_ordinal, design) in records.iter().enumerate() {
-        for (feature_ordinal, feature) in design.iter().enumerate() {
-            for (body_ordinal, body) in feature.bodies().iter().enumerate() {
+    for (design_ordinal, design) in ctx
+        .admit_iter(records, "join F3D mesh design records")?
+        .enumerate()
+    {
+        for (feature_ordinal, feature) in ctx
+            .admit_iter(design, "join F3D mesh feature records")?
+            .enumerate()
+        {
+            for (body_ordinal, body) in ctx
+                .admit_iter(feature.bodies(), "join F3D mesh body records")?
+                .enumerate()
+            {
                 if body.tessellation_id.is_none()
                     && body.entry.name() == entry_name
                     && body.guid.value().eq_ignore_ascii_case(fusion_uuid)
                 {
                     if joined.is_some() {
-                        return None;
+                        return Ok(None);
                     }
                     joined = Some((design_ordinal, feature_ordinal, body_ordinal));
                 }
             }
         }
     }
-    joined
+    Ok(joined)
 }
 
 /// Decode every mesh body: one per `.paramesh` container joined to the
@@ -1889,9 +1952,8 @@ pub(crate) fn decode_mesh_bodies(
 ) -> Result<MeshDecode, CodecError> {
     let mut design_records = decode_mesh_design_records(ctx, scan)?;
     let mut outcomes = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
+    for entry in ctx
+        .admit_iter(&scan.entries, "scan F3D ParaMesh assets")?
         .filter(|entry| scan.is_design_asset_entry(entry, ContainerRole::Paramesh))
     {
         let container = match scan
@@ -1916,7 +1978,7 @@ pub(crate) fn decode_mesh_bodies(
         let name = &entry.name;
         let base = name.rsplit('/').next().unwrap_or(name);
         let Some((design_ordinal, feature_ordinal, body_ordinal)) =
-            resolve_mesh_body(&design_records, base, &container.fusion_uuid)
+            resolve_mesh_body(ctx, &design_records, base, &container.fusion_uuid)?
         else {
             ctx.push_vec(
                 &mut outcomes,
@@ -1962,20 +2024,25 @@ pub(crate) fn decode_mesh_bodies(
             "f3d mesh container outcomes",
         )?;
     }
-    for body in design_records
-        .iter()
-        .flatten()
-        .flat_map(crate::records::mesh::DesignMeshFeature::bodies)
-        .filter(|body| body.tessellation_id.is_none())
-    {
-        ctx.push_vec(
-            &mut outcomes,
-            MeshContainerOutcome::Missing {
-                entry_name: ctx
-                    .copy_retained_text(body.entry.name(), "f3d missing mesh entry name")?,
-            },
-            "f3d mesh container outcomes",
-        )?;
+    for design in ctx.admit_iter(&design_records, "scan F3D mesh designs for missing bodies")? {
+        for feature in ctx.admit_iter(design, "scan F3D mesh features for missing bodies")? {
+            for body in ctx.admit_iter(
+                feature.bodies(),
+                "scan F3D mesh feature bodies for missing bodies",
+            )? {
+                if body.tessellation_id.is_some() {
+                    continue;
+                }
+                ctx.push_vec(
+                    &mut outcomes,
+                    MeshContainerOutcome::Missing {
+                        entry_name: ctx
+                            .copy_retained_text(body.entry.name(), "f3d missing mesh entry name")?,
+                    },
+                    "f3d mesh container outcomes",
+                )?;
+            }
+        }
     }
     let features = flatten_mesh_features(ctx, design_records)?;
     Ok(MeshDecode { outcomes, features })
@@ -2887,7 +2954,10 @@ mod tests {
         assert_eq!(body.scene_auxiliary_record.record_index(), 106);
         assert_eq!(body.owner_record.record_index(), 111);
         assert_eq!(
-            resolve_mesh_body(&[design], ENTRY_NAME, FUSION_UUID),
+            crate::design::test_support::with_test_decode_context(|ctx| {
+                resolve_mesh_body(ctx, &[design], ENTRY_NAME, FUSION_UUID)
+            })
+            .expect("mesh body join"),
             Some((0, 0, 0))
         );
     }
@@ -3433,6 +3503,24 @@ mod tests {
     }
 
     #[test]
+    fn mesh_scene_state_mask_refusal_propagates_through_parser() {
+        let graph = synthetic_mesh_graph(false);
+        let frame = sole_typed_frame(&graph, MESH_SCENE_STATE_TYPE_GUID);
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "validate F3D mesh scene-state mask",
+            0,
+            |ctx| parse_mesh_scene_state_record(ctx, &graph.bytes, frame).map(|_| ()),
+        );
+        assert!(matches!(
+            error,
+            CodecError::ResourceLimit(refusal)
+                if refusal.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                    && refusal.operation == "validate F3D mesh scene-state mask"
+        ));
+    }
+
+    #[test]
     fn mesh_scene_node_rejects_a_mutated_fixed_lane() {
         let mut graph = synthetic_mesh_graph(false);
         let start = sole_typed_frame(&graph, SCENE_NODE_TYPE_GUID).start;
@@ -3731,12 +3819,16 @@ mod tests {
             &mut no_asset,
         )
         .expect("mesh graph");
-        assert!(resolve_mesh_body(
-            &[design.clone(), design],
-            "ParaMeshGeometry.11111111-2222-4333-8444-555555555555.paramesh",
-            "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE"
-        )
-        .is_none());
+        let joined = crate::design::test_support::with_test_decode_context(|ctx| {
+            resolve_mesh_body(
+                ctx,
+                &[design.clone(), design],
+                "ParaMeshGeometry.11111111-2222-4333-8444-555555555555.paramesh",
+                "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE",
+            )
+        })
+        .expect("ambiguous mesh join result");
+        assert!(joined.is_none());
     }
 
     #[test]

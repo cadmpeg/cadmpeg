@@ -41,14 +41,17 @@ pub(crate) fn decode_body_members(
     prefix.extend_from_slice(&0u16.to_le_bytes());
     prefix.extend_from_slice(&10u32.to_le_bytes());
     prefix.extend_from_slice(b"BodiesRoot");
-    for entry in scan
-        .entries
-        .iter()
+    for entry in ctx
+        .admit_iter(&scan.entries, "scan F3D body-member streams")?
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Some(start) = bytes
-            .windows(prefix.len())
+        let Some(window_size) = std::num::NonZeroUsize::new(prefix.len()) else {
+            continue;
+        };
+        let Some(start) = ctx
+            .admit_iter(bytes, "find F3D body-member marker")?
+            .windows(window_size)
             .position(|window| window == prefix)
         else {
             continue;
@@ -123,8 +126,8 @@ pub(crate) fn decode_body_bounds(
     entities: &[DesignEntityHeader],
 ) -> Result<Vec<DesignBodyBounds>, CodecError> {
     let mut out = Vec::new();
-    for entity in entities
-        .iter()
+    for entity in ctx
+        .admit_iter(entities, "scan F3D body-bound entities")?
         .filter(|entity| entity.module() == Some(DESIGN_MODULE_BODY))
     {
         let Some(stream) = native_stream(&entity.id) else {
@@ -161,10 +164,14 @@ pub(crate) fn decode_body_bounds(
         let mut record_offsets = [0; 3];
         let mut unique = true;
         for (ordinal, wanted) in record_indices.into_iter().enumerate() {
-            let mut matches = indexed_headers_in(bytes, start, end)
-                .filter(|(_, record_index)| *record_index == wanted)
-                .map(|(offset, _)| offset);
-            match (matches.next(), matches.next()) {
+            let mut matches = indexed_headers_in(ctx, bytes, start, end).filter_map(
+                |header| match header {
+                    Ok((offset, record_index)) if record_index == wanted => Some(Ok(offset)),
+                    Ok(_) => None,
+                    Err(error) => Some(Err(error)),
+                },
+            );
+            match (matches.next().transpose()?, matches.next().transpose()?) {
                 (Some(offset), None) => record_offsets[ordinal] = offset,
                 _ => {
                     unique = false;
@@ -182,37 +189,33 @@ pub(crate) fn decode_body_bounds(
         let Some(search_at) = third.checked_add(11) else {
             continue;
         };
-        let third_end = next_indexed_record_offset(bytes, search_at)
+        let third_end = next_indexed_record_offset(ctx, bytes, search_at)?
             .filter(|offset| *offset <= end)
             .unwrap_or(end);
         let intervals = [(first, second), (second, third), (third, third_end)];
-        let mut repeated = body_bound_candidates(bytes, intervals[0].0, intervals[0].1).filter_map(
-            |(marker_offset, values)| {
-                let frame = bytes.get(marker_offset..marker_offset + 49)?;
-                let mut value_offsets = [marker_offset + 1, 0, 0];
-                for (ordinal, (record_start, record_end)) in
-                    intervals.iter().copied().enumerate().skip(1)
-                {
-                    let mut matches = body_bound_candidates(bytes, record_start, record_end)
-                        .filter(|(offset, _)| {
-                            offset
-                                .checked_add(49)
-                                .and_then(|end| bytes.get(*offset..end))
-                                == Some(frame)
-                        })
-                        .map(|(offset, _)| offset + 1);
-                    value_offsets[ordinal] = match (matches.next(), matches.next()) {
-                        (Some(offset), None) => offset,
-                        _ => return None,
-                    };
-                }
-                Some((values, value_offsets))
-            },
-        );
-        let Some((values, value_offsets)) = repeated.next() else {
+        let mut candidates =
+            body_bound_candidates(ctx, bytes, intervals[0].0, intervals[0].1)?;
+        let Some((values, value_offsets)) = next_repeated_body_bound_candidate(
+            ctx,
+            bytes,
+            intervals,
+            &mut candidates,
+        )? else {
             continue;
         };
-        if repeated.any(|candidate| candidate.0 != values || candidate.1 != value_offsets) {
+        let mut has_conflicting_candidate = false;
+        while let Some(candidate) = next_repeated_body_bound_candidate(
+            ctx,
+            bytes,
+            intervals,
+            &mut candidates,
+        )? {
+            if candidate.0 != values || candidate.1 != value_offsets {
+                has_conflicting_candidate = true;
+                break;
+            }
+        }
+        if has_conflicting_candidate {
             continue;
         }
         let corner = |start: usize| {
@@ -267,11 +270,12 @@ pub(crate) fn decode_body_bounds(
     Ok(out)
 }
 
-fn indexed_headers_in(
-    bytes: &[u8],
+fn indexed_headers_in<'a>(
+    ctx: &'a DecodeContext<'_>,
+    bytes: &'a [u8],
     mut position: usize,
     end: usize,
-) -> impl Iterator<Item = (usize, u32)> + '_ {
+) -> impl Iterator<Item = Result<(usize, u32), CodecError>> + 'a {
     std::iter::from_fn(move || {
         while position + 11 <= end {
             let at = position;
@@ -282,28 +286,80 @@ fn indexed_headers_in(
             let Some(class_tag) = bytes.get(at + 4..at + 7) else {
                 continue;
             };
-            if !class_tag.iter().all(u8::is_ascii_digit) {
+            let class_tag_is_ascii_digit = match ctx.admit_iter(
+                class_tag,
+                "validate F3D body-bound indexed class tag",
+            ) {
+                Ok(mut class_tag) => class_tag.all(u8::is_ascii_digit),
+                Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+            };
+            if !class_tag_is_ascii_digit {
                 continue;
             }
             let Some(record_index) = View::u32_le_at(bytes, at + 7) else {
                 continue;
             };
-            return Some((at, record_index));
+            return Some(Ok((at, record_index)));
         }
         None
     })
 }
 
-fn body_bound_candidates(
-    bytes: &[u8],
+fn next_repeated_body_bound_candidate<'bytes>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'bytes [u8],
+    intervals: [(usize, usize); 3],
+    candidates: &mut impl Iterator<Item = (usize, [FiniteReal; 6])>,
+) -> Result<Option<([FiniteReal; 6], [usize; 3])>, CodecError> {
+    while let Some((marker_offset, values)) = candidates.next() {
+        let Some(frame) = bytes.get(marker_offset..marker_offset + 49) else {
+            continue;
+        };
+        let mut value_offsets = [marker_offset + 1, 0, 0];
+        let mut complete = true;
+        for (ordinal, (record_start, record_end)) in
+            intervals.iter().copied().enumerate().skip(1)
+        {
+            let mut matches = body_bound_candidates(ctx, bytes, record_start, record_end)?
+                .filter(|(offset, _)| {
+                    offset
+                        .checked_add(49)
+                        .and_then(|end| bytes.get(*offset..end))
+                        == Some(frame)
+                })
+                .map(|(offset, _)| offset + 1);
+            match (matches.next(), matches.next()) {
+                (Some(offset), None) => value_offsets[ordinal] = offset,
+                _ => {
+                    complete = false;
+                    break;
+                }
+            }
+        }
+        if complete {
+            return Ok(Some((values, value_offsets)));
+        }
+    }
+    Ok(None)
+}
+
+fn body_bound_candidates<'bytes>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'bytes [u8],
     start: usize,
     end: usize,
-) -> impl Iterator<Item = (usize, [FiniteReal; 6])> + '_ {
-    end.checked_sub(48)
-        .into_iter()
-        .flat_map(move |last| start..last)
-        .filter_map(move |offset| {
-            if bytes.get(offset) != Some(&1) {
+) -> Result<impl Iterator<Item = (usize, [FiniteReal; 6])> + 'bytes, CodecError> {
+    let positions = end
+        .checked_sub(48)
+        .and_then(|last| bytes.get(start..last))
+        .unwrap_or_default();
+    Ok(ctx
+        .admit_iter(positions, "scan F3D body-bound candidate offsets")?
+        .enumerate()
+        .filter_map(move |(relative_offset, marker)| {
+            // Relative offsets stay inside bytes[start..last], where last <= end <= bytes.len().
+            let offset = start + relative_offset;
+            if *marker != 1 {
                 return None;
             }
             let values = [
@@ -317,7 +373,7 @@ fn body_bound_candidates(
             ((0..3).all(|axis| values[axis] >= values[axis + 3])
                 && (0..3).any(|axis| values[axis] > values[axis + 3]))
             .then_some((offset, values))
-        })
+        }))
 }
 
 pub(super) fn decode_stream(
@@ -347,7 +403,7 @@ pub(super) fn decode_stream(
             if !framed_name {
                 continue;
             }
-            let parsed_design_id = recipe_design_id(bytes, offset, name);
+            let parsed_design_id = recipe_design_id(ctx, bytes, offset, name)?;
             let design = parsed_design_id
                 .map(|(value, design_id_at)| -> Result<_, CodecError> {
                     let selector = design_id_at
@@ -418,37 +474,69 @@ pub(super) fn decode_stream(
     Ok(())
 }
 
-fn recipe_design_id<'a>(bytes: &'a [u8], offset: usize, name: &[u8]) -> Option<(&'a str, usize)> {
-    let id_end = offset.checked_sub(20)?;
+fn recipe_design_id<'a>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'a [u8],
+    offset: usize,
+    name: &[u8],
+) -> Result<Option<(&'a str, usize)>, CodecError> {
+    let Some(id_end) = offset.checked_sub(20) else {
+        return Ok(None);
+    };
     for length in 1..=8usize {
         let Some(length_at) = id_end.checked_sub(4 + length) else {
             continue;
         };
-        if let Some((id, value_offset)) = ascii_id_at(bytes, length_at) {
+        if let Some((id, value_offset)) = ascii_id_at(ctx, bytes, length_at)? {
             if value_offset.checked_add(id.len()) == Some(id_end) {
-                return Some((id, value_offset));
+                return Ok(Some((id, value_offset)));
             }
         }
     }
     if offset >= 23 {
-        let candidate = bytes.get(offset - 23..offset - 20)?;
-        if candidate.iter().all(u8::is_ascii_digit) {
-            return Some((std::str::from_utf8(candidate).ok()?, offset - 23));
+        let Some(candidate) = bytes.get(offset - 23..offset - 20) else {
+            return Ok(None);
+        };
+        if ctx
+            .admit_iter(candidate, "scan F3D body recipe Design ID")?
+            .all(u8::is_ascii_digit)
+        {
+            let Ok(id) = std::str::from_utf8(candidate) else {
+                return Ok(None);
+            };
+            return Ok(Some((id, offset - 23)));
         }
     }
-    ascii_id_at(bytes, offset + name.len() + 8)
+    ascii_id_at(ctx, bytes, offset + name.len() + 8)
 }
 
-fn ascii_id_at(bytes: &[u8], length_offset: usize) -> Option<(&str, usize)> {
-    let length = usize::try_from(View::u32_le_at(bytes, length_offset)?).ok()?;
+fn ascii_id_at<'bytes>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'bytes [u8],
+    length_offset: usize,
+) -> Result<Option<(&'bytes str, usize)>, CodecError> {
+    let Some(length_value) = View::u32_le_at(bytes, length_offset) else {
+        return Ok(None);
+    };
+    let Ok(length) = usize::try_from(length_value) else {
+        return Ok(None);
+    };
     if !(1..=8).contains(&length) {
-        return None;
+        return Ok(None);
     }
-    let value = bytes.get(length_offset + 4..length_offset + 4 + length)?;
-    if !value.iter().all(u8::is_ascii_alphanumeric) {
-        return None;
+    let Some(value) = bytes.get(length_offset + 4..length_offset + 4 + length) else {
+        return Ok(None);
+    };
+    if !ctx
+        .admit_iter(value, "scan F3D body recipe ID")?
+        .all(u8::is_ascii_alphanumeric)
+    {
+        return Ok(None);
     }
-    Some((std::str::from_utf8(value).ok()?, length_offset + 4))
+    let Ok(value) = std::str::from_utf8(value) else {
+        return Ok(None);
+    };
+    Ok(Some((value, length_offset + 4)))
 }
 
 /// One `(asm_body_key, entity_suffix)` pair from a Design `BulkStream` BREP
@@ -482,17 +570,40 @@ struct BodyMapRecord {
     bindings: Vec<BodyBinding>,
 }
 
-fn entity_has_type(meta: &crate::metastream::MetaStream, entity: u64, type_guid: &str) -> bool {
-    meta.types.iter().any(|design_type| {
-        design_type
+fn entity_has_type(
+    ctx: &DecodeContext<'_>,
+    meta: &crate::metastream::MetaStream,
+    entity: u64,
+    type_guid: &str,
+) -> Result<bool, CodecError> {
+    for design_type in ctx.admit_iter(&meta.types, "scan F3D Design type registrations")? {
+        if !design_type
             .type_guid
             .as_str()
             .eq_ignore_ascii_case(type_guid)
-            && design_type
-                .entities
-                .values()
-                .any(|registered| *registered == entity)
-    })
+        {
+            continue;
+        }
+        let entities = &design_type.entities;
+        if ctx
+            .admit_iter(
+                entities.unlocated_values().unwrap_or(&[]),
+                "scan F3D unlocated Design entity registrations",
+            )?
+            .copied()
+            .chain(
+                ctx.admit_iter(
+                    entities.located_rows().unwrap_or(&[]),
+                    "scan F3D located Design entity registrations",
+                )?
+                .map(|registered| registered.value),
+            )
+            .any(|registered| registered == entity)
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 #[derive(Clone, Copy)]
@@ -575,15 +686,19 @@ fn local_reference_candidates(
 }
 
 fn reference_has_type(
+    ctx: &DecodeContext<'_>,
     meta: &crate::metastream::MetaStream,
     reference: &LocalReferenceCandidate,
     expected_type_guid: &str,
-) -> bool {
-    reference
+) -> Result<bool, CodecError> {
+    if reference
         .inline_type_guid
         .as_deref()
-        .is_none_or(|guid| guid.eq_ignore_ascii_case(expected_type_guid))
-        && entity_has_type(meta, reference.target, expected_type_guid)
+        .is_some_and(|guid| !guid.eq_ignore_ascii_case(expected_type_guid))
+    {
+        return Ok(false);
+    }
+    entity_has_type(ctx, meta, reference.target, expected_type_guid)
 }
 
 /// Parse every exactly framed sibling body-map record that binds an `.smb`
@@ -595,7 +710,10 @@ fn snapshot_body_map_records(
 ) -> Result<Vec<BodyMapRecord>, CodecError> {
     let frames = crate::metastream::primary_record_frames(ctx, meta, bytes.len())?;
     let mut primary_by_entity = HashMap::new();
-    for (ordinal, frame) in frames.iter().enumerate() {
+    for (ordinal, frame) in ctx
+        .admit_iter(&frames, "scan F3D snapshot body-map frames")?
+        .enumerate()
+    {
         if !primary_by_entity.contains_key(&frame.entity_id) {
             ctx.reserve_map(
                 &mut primary_by_entity,
@@ -606,7 +724,10 @@ fn snapshot_body_map_records(
         primary_by_entity.insert(frame.entity_id, ordinal);
     }
     let mut out = Vec::new();
-    for (type_ordinal, design_type) in meta.types.iter().enumerate() {
+    for (type_ordinal, design_type) in ctx
+        .admit_iter(&meta.types, "scan F3D snapshot body-map types")?
+        .enumerate()
+    {
         if !design_type
             .type_guid
             .as_str()
@@ -646,7 +767,21 @@ fn snapshot_body_map_records(
                 CodecError::malformed("F3D Design snapshot body-map class tag is not three digits")
             })?
             .to_string();
-        for &entity in design_type.entities.values() {
+        let entities = &design_type.entities;
+        let entity_ids = ctx
+            .admit_iter(
+                entities.unlocated_values().unwrap_or(&[]),
+                "scan F3D unlocated snapshot body-map entities",
+            )?
+            .copied()
+            .chain(
+                ctx.admit_iter(
+                    entities.located_rows().unwrap_or(&[]),
+                    "scan F3D located snapshot body-map entities",
+                )?
+                .map(|entity| entity.value),
+            );
+        for entity in entity_ids {
             let Some(&frame_ordinal) = primary_by_entity.get(&entity) else {
                 return Err(crate::design::text::malformed_design(
                     ctx,
@@ -693,21 +828,29 @@ fn parse_snapshot_body_map_frame(
     let Some(companion_at) = start.checked_add(21) else {
         return Ok(None);
     };
-    for companion in local_reference_candidates(ctx, bytes, companion_at, true)? {
+    let companions = local_reference_candidates(ctx, bytes, companion_at, true)?;
+    for companion in ctx.admit_iter(&companions, "scan F3D snapshot body-list references")? {
         let reserved_count = 2 - companion.padding.trailing_zeros();
         let Some(reserved_end) = companion.end.checked_add(reserved_count) else {
             continue;
         };
         if companion.target != companion_entity
             || !reference_has_type(
+                ctx,
                 meta,
                 &companion,
                 crate::design::body::SNAPSHOT_BODY_LIST_TYPE_GUID,
-            )
-            || !bytes
-                .get(companion.end..reserved_end)
-                .is_some_and(|reserved| reserved.iter().all(|byte| *byte == 0))
+            )?
         {
+            continue;
+        }
+        let reserved_is_zeroes = if let Some(reserved) = bytes.get(companion.end..reserved_end) {
+            ctx.admit_iter(reserved, "scan F3D snapshot body-map reserved bytes")?
+                .all(|byte| *byte == 0)
+        } else {
+            false
+        };
+        if !reserved_is_zeroes {
             continue;
         }
         let count_at = reserved_end;
@@ -728,29 +871,52 @@ fn parse_snapshot_body_map_frame(
         let Some(pairs) = bytes.get(pairs_start..pairs_end) else {
             continue;
         };
-        if pairs.chunks_exact(16).any(|pair| {
-            View::u64_le_at(pair, 8).is_none_or(|body_entity| {
-                !entity_has_type(
-                    meta,
-                    body_entity,
-                    crate::design::presentation::BODY_PRESENTATION_TYPE_GUID,
-                )
-            })
-        }) {
+        let Some(pair_size) = std::num::NonZeroUsize::new(16) else {
+            continue;
+        };
+        let mut has_untyped_body = false;
+        for pair in ctx
+            .admit_iter(pairs, "scan F3D snapshot body-map pairs")?
+            .chunks(pair_size)
+        {
+            let Some(body_entity) = View::u64_le_at(pair, 8) else {
+                has_untyped_body = true;
+                break;
+            };
+            if !entity_has_type(
+                ctx,
+                meta,
+                body_entity,
+                crate::design::presentation::BODY_PRESENTATION_TYPE_GUID,
+            )? {
+                has_untyped_body = true;
+                break;
+            }
+        }
+        if has_untyped_body {
             continue;
         }
-        for container in local_reference_candidates(ctx, bytes, pairs_end, false)? {
+        let containers = local_reference_candidates(ctx, bytes, pairs_end, false)?;
+        for container in ctx.admit_iter(&containers, "scan F3D snapshot BREP container references")? {
             let reserved_count = 3 - container.padding.trailing_zeros();
             let Some(reserved_end) = container.end.checked_add(reserved_count) else {
                 continue;
             };
             if !reference_has_type(
+                ctx,
                 meta,
                 &container,
                 crate::design::presentation::BREP_CONTAINER_TYPE_GUID,
-            ) || !bytes
-                .get(container.end..reserved_end)
-                .is_some_and(|reserved| reserved.iter().all(|byte| *byte == 0))
+            )? {
+                continue;
+            }
+            let reserved_is_zeroes = if let Some(reserved) = bytes.get(container.end..reserved_end) {
+                ctx.admit_iter(reserved, "scan F3D snapshot BREP container padding")?
+                    .all(|byte| *byte == 0)
+            } else {
+                false
+            };
+            if !reserved_is_zeroes
             {
                 continue;
             }
@@ -784,7 +950,11 @@ fn parse_snapshot_body_map_frame(
             let mut bindings = Vec::new();
 
             ctx.reserve_vec(&mut bindings, count, "f3d snapshot body-map pairs")?;
-            for (ordinal, pair) in pairs.chunks_exact(16).enumerate() {
+            for (ordinal, pair) in ctx
+                .admit_iter(pairs, "scan F3D snapshot body-map pair payload")?
+                .chunks(pair_size)
+                .enumerate()
+            {
                 let mut pair = View::over_retained(pair);
                 bindings.push(BodyBinding {
                     asm_key: pair.req_u64_le()?,
@@ -816,7 +986,10 @@ fn body_map_records(
     let record_frames = crate::metastream::primary_record_frames(ctx, meta, bytes.len())?;
 
     let mut primary_by_entity = HashMap::<u64, Option<usize>>::new();
-    for (ordinal, record) in meta.records.iter().enumerate() {
+    for (ordinal, record) in ctx
+        .admit_iter(&meta.records, "scan F3D body-map records")?
+        .enumerate()
+    {
         if !primary_by_entity.contains_key(&record.entity_id) {
             ctx.reserve_map(&mut primary_by_entity, 1, "f3d body-map primary index")?;
         }
@@ -828,7 +1001,10 @@ fn body_map_records(
 
     let mut out = Vec::new();
     let mut typed_entities = HashSet::new();
-    for (type_ordinal, design_type) in meta.types.iter().enumerate() {
+    for (type_ordinal, design_type) in ctx
+        .admit_iter(&meta.types, "scan F3D body-map carrier types")?
+        .enumerate()
+    {
         if !design_type
             .type_guid
             .as_str()
@@ -869,7 +1045,21 @@ fn body_map_records(
             })?;
         let class_tag = class_tag.to_string();
 
-        for &entity_id in design_type.entities.values() {
+        let entities = &design_type.entities;
+        let entity_ids = ctx
+            .admit_iter(
+                entities.unlocated_values().unwrap_or(&[]),
+                "scan F3D unlocated body-map carrier entities",
+            )?
+            .copied()
+            .chain(
+                ctx.admit_iter(
+                    entities.located_rows().unwrap_or(&[]),
+                    "scan F3D located body-map carrier entities",
+                )?
+                .map(|entity| entity.value),
+            );
+        for entity_id in entity_ids {
             if typed_entities.contains(&entity_id) {
                 return Err(crate::design::text::malformed_design(
                     ctx,
@@ -953,16 +1143,27 @@ pub(crate) fn body_bindings(
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BodyBinding>, CodecError> {
     let records = body_map_records(ctx, bytes, meta)?;
-    let count = records.iter().try_fold(0usize, |total, record| {
+    let count = ctx
+        .admit_iter(&records, "count F3D body-map pair records")?
+        .try_fold(0usize, |total, record| {
         total
             .checked_add(record.bindings.len())
             .ok_or_else(|| ctx.refuse_codec_limit("f3d flattened body-map pair count", 0, 1))
-    })?;
+        })?;
 
     let mut bindings = Vec::new();
     ctx.reserve_vec(&mut bindings, count, "f3d flattened body-map pairs")?;
-    for record in records {
-        bindings.extend(record.bindings);
+    for record in ctx.admit_iter(&records, "flatten F3D body-map records")? {
+        bindings.extend(
+            record
+                .bindings
+                .iter()
+                .map(|binding| BodyBinding {
+                    asm_key: binding.asm_key,
+                    asm_key_offset: binding.asm_key_offset,
+                    entity_suffix: binding.entity_suffix,
+                }),
+        );
     }
     Ok(bindings)
 }
@@ -989,9 +1190,8 @@ pub(crate) fn design_model_blob_names(
     let mut model_names = Vec::new();
     let mut carrier_counts = HashMap::<String, usize>::new();
     let mut saw_design_stream = false;
-    for entry in scan
-        .entries
-        .iter()
+    for entry in ctx
+        .admit_iter(&scan.entries, "scan F3D Design body-map streams")?
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         saw_design_stream = true;
@@ -1003,16 +1203,21 @@ pub(crate) fn design_model_blob_names(
         };
         let modern = body_map_records(ctx, bytes, &metadata)?;
         let snapshots = snapshot_body_map_records(ctx, bytes, &metadata)?;
-        for record in modern.iter().chain(&snapshots) {
-            if !record.blob_name.is_empty() {
-                if let Some(count) = carrier_counts.get_mut(&record.blob_name) {
-                    *count += 1;
-                } else {
-                    let name =
-                        ctx.copy_retained_text(&record.blob_name, "f3d body-map carrier name")?;
+        for (records, operation) in [
+            (&modern, "scan F3D modern body-map records"),
+            (&snapshots, "scan F3D snapshot body-map records"),
+        ] {
+            for record in ctx.admit_iter(records, operation)? {
+                if !record.blob_name.is_empty() {
+                    if let Some(count) = carrier_counts.get_mut(&record.blob_name) {
+                        *count += 1;
+                    } else {
+                        let name = ctx
+                            .copy_retained_text(&record.blob_name, "f3d body-map carrier name")?;
 
-                    ctx.reserve_map(&mut carrier_counts, 1, "f3d body-map carrier counts")?;
-                    carrier_counts.insert(name, 1);
+                        ctx.reserve_map(&mut carrier_counts, 1, "f3d body-map carrier counts")?;
+                        carrier_counts.insert(name, 1);
+                    }
                 }
             }
         }
@@ -1021,8 +1226,8 @@ pub(crate) fn design_model_blob_names(
         } else {
             &modern
         };
-        for record in selected
-            .iter()
+        for record in ctx
+            .admit_iter(selected, "scan F3D selected body-map records")?
             .filter(|record| !record.blob_name.is_empty())
         {
             let name = ctx.copy_retained_text(&record.blob_name, "f3d selected body-map name")?;
@@ -1033,10 +1238,13 @@ pub(crate) fn design_model_blob_names(
     }
 
     let mut archive_counts = HashMap::<String, usize>::new();
-    for entry in scan.entries.iter().filter(|entry| {
-        scan.belongs_to_design_asset(&entry.name)
-            && matches!(entry.role, ContainerRole::BrepSmb | ContainerRole::BrepSmbh)
-    }) {
+    for entry in ctx
+        .admit_iter(&scan.entries, "scan F3D archive BREP entries")?
+        .filter(|entry| {
+            scan.belongs_to_design_asset(&entry.name)
+                && matches!(entry.role, ContainerRole::BrepSmb | ContainerRole::BrepSmbh)
+        })
+    {
         let basename = entry.name.rsplit('/').next().unwrap_or(&entry.name);
         if let Some(count) = archive_counts.get_mut(basename) {
             *count += 1;
@@ -1088,9 +1296,12 @@ fn parse_body_map_frame(
     else {
         return Ok(None);
     };
-    if !bytes
-        .get(start + indexed_design_record_header::LEN..count_at)
-        .is_some_and(|prefix| prefix.iter().all(|byte| *byte == 0))
+    let Some(prefix) = bytes.get(start + indexed_design_record_header::LEN..count_at) else {
+        return Ok(None);
+    };
+    if !ctx
+        .admit_iter(prefix, "scan F3D body-map header padding")?
+        .all(|byte| *byte == 0)
     {
         return Ok(None);
     }
@@ -1141,12 +1352,14 @@ fn parse_body_map_frame(
         .then_some((name_at, blob_name)))
     };
     let mut typed_name = None;
-    for reference in local_reference_candidates(ctx, bytes, pairs_end, true)? {
+    let references = local_reference_candidates(ctx, bytes, pairs_end, true)?;
+    for reference in ctx.admit_iter(&references, "scan F3D body-map tail references")? {
         if !reference_has_type(
+            ctx,
             meta,
             &reference,
             crate::design::presentation::BREP_CONTAINER_TYPE_GUID,
-        ) {
+        )? {
             continue;
         }
         if let Some(name) = decode_name(reference.end)? {
@@ -1215,9 +1428,8 @@ pub(crate) fn decode_design_body_bindings(
 ) -> Result<Vec<DesignBodyBinding>, CodecError> {
     let active_basename = active_brep_entry.and_then(|entry| entry.rsplit('/').next());
     let mut out = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
+    for entry in ctx
+        .admit_iter(&scan.entries, "scan F3D Design body binding streams")?
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -1226,12 +1438,13 @@ pub(crate) fn decode_design_body_bindings(
         else {
             continue;
         };
-        for record in selected_body_map_records(ctx, bytes, &metadata)? {
+        let records = selected_body_map_records(ctx, bytes, &metadata)?;
+        for record in ctx.admit_iter(&records, "scan F3D selected body-map records")? {
             let pair_count = u32::try_from(record.bindings.len())
                 .map_err(|_| CodecError::malformed("F3D Design body map exceeds u32::MAX pairs"))?;
             let mut source_bodies = Vec::new();
             if pair_count != 0 {
-                for key in body_keys.iter().filter(|key| {
+                for key in ctx.admit_iter(body_keys, "scan F3D source BREP body keys")?.filter(|key| {
                     key.source_brep.as_deref().map_or_else(
                         || active_basename == Some(record.blob_name.as_str()),
                         |source| source == record.blob_name,
@@ -1241,7 +1454,13 @@ pub(crate) fn decode_design_body_bindings(
                     source_bodies.push(key);
                 }
             }
-            for (ordinal, binding) in (0..pair_count).zip(&record.bindings) {
+            for (ordinal, binding) in ctx
+                .admit_iter(&record.bindings, "scan F3D body-map pair bindings")?
+                .enumerate()
+            {
+                let ordinal = u32::try_from(ordinal).map_err(|_| {
+                    CodecError::malformed("F3D Design body-map pair ordinal exceeds u32::MAX")
+                })?;
                 let body = crate::brep::resolve_body_selector(
                     ctx,
                     source_bodies.iter().copied(),
@@ -1311,7 +1530,7 @@ pub(crate) fn bind_body_bounds(
             continue;
         };
         let mut matches = Vec::new();
-        for binding in bindings {
+        for binding in ctx.admit_iter(bindings, "scan F3D body bounds bindings")? {
             if binding.entity_suffix != bounds.entity_suffix()
                 || stream != native_scope_charged(ctx, binding.stream())?
             {
@@ -1333,7 +1552,10 @@ pub(crate) fn bind_body_bounds(
             "sort f3d design body 6",
         )?;
         let mut ids = Vec::new();
-        for binding in matches {
+        for binding in ctx
+            .admit_iter(&matches, "scan F3D matched body bounds bindings")?
+            .copied()
+        {
             ctx.charge_work(
                 u64_from_index(binding.id().len())
                     .checked_mul(8)
@@ -1377,9 +1599,8 @@ pub(crate) fn decode_all_body_visibility(
     scan: &ContainerScan,
 ) -> Result<HashMap<(String, u64), DecodedBodyVisibility>, CodecError> {
     let mut out = HashMap::new();
-    for entry in scan
-        .entries
-        .iter()
+    for entry in ctx
+        .admit_iter(&scan.entries, "scan F3D body visibility streams")?
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -1389,15 +1610,19 @@ pub(crate) fn decode_all_body_visibility(
             continue;
         };
         let hidden_by_entity = typed_browser_node_hidden_flags(ctx, bytes, &metadata)?;
-        for record in selected_body_map_records(ctx, bytes, &metadata)? {
-            for binding in record.bindings {
+        let records = selected_body_map_records(ctx, bytes, &metadata)?;
+        for record in ctx.admit_iter(&records, "scan F3D visibility body-map records")? {
+            for binding in ctx
+                .admit_iter(&record.bindings, "scan F3D visibility body-map bindings")?
+            {
                 let Some(node) = hidden_by_entity.get(&binding.entity_suffix) else {
                     continue;
                 };
-                ctx.charge_work(u64_from_index(out.len()), "f3d visibility duplicate lookup")?;
-                let existing = out.keys().any(|(name, asm_key)| {
-                    name == &record.blob_name && *asm_key == binding.asm_key
-                });
+                let existing = ctx
+                    .admit_iter(&out, "find F3D duplicate body visibility key")?
+                    .any(|((name, asm_key), _)| {
+                        name == &record.blob_name && *asm_key == binding.asm_key
+                    });
                 let key = ctx.copy_retained_text(&record.blob_name, "f3d visibility BREP name")?;
                 let stream = ctx.copy_retained_text(&entry.name, "f3d visibility stream")?;
                 if !existing {
@@ -1434,7 +1659,7 @@ fn typed_browser_node_hidden_flags(
     let nodes = crate::design::decode::presentation::browser_node_records(ctx, bytes, meta)?;
     let presentations = crate::design::decode::presentation::body_presentations(ctx, bytes, meta)?;
     let mut nodes_by_entity = HashMap::<u64, Vec<_>>::new();
-    for node in &nodes {
+    for node in ctx.admit_iter(&nodes, "scan F3D browser visibility nodes")? {
         ctx.push_hash_group(
             &mut nodes_by_entity,
             node.entity_suffix,
@@ -1445,11 +1670,11 @@ fn typed_browser_node_hidden_flags(
     }
 
     let mut out = HashMap::new();
-    for (entity_suffix, candidates) in nodes_by_entity {
+    for (entity_suffix, candidates) in ctx.admit_iter(&nodes_by_entity, "scan F3D browser nodes by entity")? {
         let mut linked = Vec::new();
-        for node in presentations
-            .iter()
-            .filter(|presentation| presentation.entity_suffix == entity_suffix)
+        for node in ctx
+            .admit_iter(&presentations, "scan F3D browser node presentations")?
+            .filter(|presentation| presentation.entity_suffix == *entity_suffix)
             .filter_map(|presentation| presentation.browser_node.as_ref())
         {
             ctx.reserve_vec(&mut linked, 1, "f3d linked browser visibility nodes")?;
@@ -1476,7 +1701,7 @@ fn typed_browser_node_hidden_flags(
         if let Some(node) = selected {
             ctx.reserve_map(&mut out, 1, "f3d selected browser visibility")?;
             out.insert(
-                entity_suffix,
+                *entity_suffix,
                 BrowserNodeVisibility {
                     byte_offset: node.hidden_offset,
                     hidden: node.hidden,
@@ -1497,7 +1722,8 @@ pub(crate) fn scanned_browser_node_entities(
 ) -> Result<HashMap<String, u64>, CodecError> {
     let mut entities = HashMap::new();
     let mut ambiguous = std::collections::HashSet::new();
-    for record in scan_browser_node_identities(ctx, bytes)? {
+    let records = scan_browser_node_identities(ctx, bytes)?;
+    for record in ctx.admit_iter(&records, "index F3D browser node identities")? {
         let key = record.guid.to_ascii_lowercase();
         if let Some(previous) = entities.get(&key) {
             if *previous != record.entity_suffix && !ambiguous.contains(&key) {
@@ -1529,8 +1755,9 @@ fn scan_browser_node_identities(
     let mut out = Vec::new();
     let mut at = 0usize;
     while at + 4 + GUID_BYTES + 3 + 8 <= bytes.len() {
+        let guid_bytes = &bytes[at + 4..at + 4 + GUID_BYTES];
         if View::u32_le_at(bytes, at) != Some(GUID_CHARS_U32)
-            || !is_utf16_guid(&bytes[at + 4..at + 4 + GUID_BYTES])
+            || !is_utf16_guid(ctx, guid_bytes)?
         {
             at += 1;
             continue;
@@ -1539,7 +1766,13 @@ fn scan_browser_node_identities(
         if bytes.get(flag_at + 1..flag_at + 3) == Some(&[0x01, 0x01]) {
             if let (0 | 1, Some(member)) = (bytes[flag_at], View::u64_le_at(bytes, flag_at + 3)) {
                 let mut guid = ctx.retained_string(GUID_CHARS, "retain F3D browser node GUID")?;
-                for pair in bytes[at + 4..at + 4 + GUID_BYTES].chunks_exact(2) {
+                let Some(unit_width) = std::num::NonZeroUsize::new(2) else {
+                    return Err(CodecError::malformed("F3D UTF-16 code unit width is zero"));
+                };
+                for pair in ctx
+                    .admit_iter(guid_bytes, "scan F3D browser node UTF-16 GUID")?
+                    .chunks(unit_width)
+                {
                     guid.push(char::from(pair[0]));
                 }
                 ctx.reserve_vec(&mut out, 1, "collect F3D browser node identities")?;
@@ -1554,10 +1787,15 @@ fn scan_browser_node_identities(
     Ok(out)
 }
 
-fn is_utf16_guid(bytes: &[u8]) -> bool {
-    bytes
-        .chunks_exact(2)
-        .all(|pair| pair[1] == 0 && (pair[0].is_ascii_hexdigit() || pair[0] == b'-'))
+fn is_utf16_guid(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<bool, CodecError> {
+    let Some(unit_width) = std::num::NonZeroUsize::new(2) else {
+        return Ok(false);
+    };
+    Ok(ctx
+        .admit_iter(bytes, "validate F3D browser node UTF-16 GUID")?
+        .chunks(unit_width)
+        .filter(|pair| pair.len() == 2)
+        .all(|pair| pair[1] == 0 && (pair[0].is_ascii_hexdigit() || pair[0] == b'-')))
 }
 
 #[cfg(test)]
@@ -2937,7 +3175,11 @@ mod tests {
         for value in values {
             bytes.extend_from_slice(&value.to_le_bytes());
         }
-        let candidates = body_bound_candidates(&bytes, 0, bytes.len()).collect::<Vec<_>>();
+        let candidates = crate::design::test_support::with_test_decode_context(|ctx| {
+            body_bound_candidates(ctx, &bytes, 0, bytes.len())
+                .unwrap()
+                .collect::<Vec<_>>()
+        });
         assert_eq!(
             candidates
                 .into_iter()
@@ -2947,9 +3189,12 @@ mod tests {
         );
 
         bytes[0] = 0;
-        assert!(body_bound_candidates(&bytes, 0, bytes.len())
-            .next()
-            .is_none());
+        assert!(crate::design::test_support::with_test_decode_context(|ctx| {
+            body_bound_candidates(ctx, &bytes, 0, bytes.len())
+                .unwrap()
+                .next()
+                .is_none()
+        }));
     }
 
     #[test]
@@ -3210,6 +3455,59 @@ mod tests {
     }
 
     #[test]
+    fn decoded_body_bounds_propagate_indexed_class_tag_work_refusal() {
+        const ENTRY: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
+        const OPERATION: &str = "validate F3D body-bound indexed class tag";
+        let mut bulk = Vec::new();
+        indexed_header(&mut bulk, *b"256", 7);
+        bulk.extend_from_slice(&[0; 5]);
+        for record_index in [8, 9, 10] {
+            indexed_header(&mut bulk, *b"257", record_index);
+            bulk.push(1);
+            for value in [4.0_f64, 6.0, 1.5, -1.0, 0.0, -0.25] {
+                bulk.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        let entity = crate::records::entity_header::DesignEntityHeader {
+            id: format!("{}:design-entity-header#0", crate::ids::native_scope(ENTRY)),
+            byte_offset: 0,
+            entity_id: crate::records::identity::DesignEntityId::try_from("0_7".to_owned())
+                .unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned())
+                .unwrap(),
+            optional_slot_present: false,
+            registration: crate::records::entity_header::DesignEntityRegistration::new(
+                Some(DESIGN_MODULE_BODY.to_owned()),
+                None,
+                crate::records::identity::ReferenceRun::unlocated(Vec::new()),
+            )
+            .unwrap(),
+        };
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+        write_synthetic_manifests(&mut zip, stored);
+        zip.start_file(ENTRY, stored).unwrap();
+        zip.write_all(&bulk).unwrap();
+        let archive = zip.finish().unwrap().into_inner();
+        with_scan(&archive, |scan| {
+            let error = crate::test_support::resource_refusal_at(
+                ResourceDimension::WorkUnits,
+                OPERATION,
+                0,
+                |ctx| {
+                    super::decode_body_bounds(ctx, scan, std::slice::from_ref(&entity)).map(|_| ())
+                },
+            );
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == ResourceDimension::WorkUnits
+                        && limit.operation == OPERATION
+            ));
+        });
+    }
+
+    #[test]
     fn a_recipe_marker_before_the_record_index_word_states_no_record_index() {
         // The family marker opens at offset four, so the stream holds no index
         // word sixteen bytes before it.
@@ -3461,7 +3759,13 @@ mod tests {
             let mut bytes = Vec::new();
             bytes.extend_from_slice(&u32::try_from(length).unwrap().to_le_bytes());
             bytes.extend_from_slice(&b"12345678"[..length]);
-            let (id, offset) = super::ascii_id_at(&bytes, 0).unwrap();
+        let (id, offset) = super::ascii_id_at(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            0,
+        )
+        .expect("service decode context")
+        .unwrap();
             assert_eq!(offset, 4);
             assert_eq!(id.as_ptr(), bytes[4..].as_ptr());
             assert_eq!(id, std::str::from_utf8(&b"12345678"[..length]).unwrap());

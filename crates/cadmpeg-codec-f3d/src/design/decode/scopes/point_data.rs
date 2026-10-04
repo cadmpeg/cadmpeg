@@ -13,24 +13,35 @@ use crate::records::feature::work_geometry::DesignWorkPointRule;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use std::collections::HashMap;
+
+use super::parameter_scope::reference_members;
 use std::ops::RangeInclusive;
 
 /// Type GUID of the point-data class a `WorkPoint` scope references. Every
 /// record of this class carries the `point3d` member sequence below.
 const POINT_DATA_TYPE_GUID: &str = "69EE2FA7-BCC7-449E-9CA9-976CEFDFED44";
 
-fn graphic_ascii_end(bytes: &[u8], at: usize, bounds: RangeInclusive<usize>) -> Option<usize> {
-    let length = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
-    if !bounds.contains(&length) {
-        return None;
-    }
-    let start = at.checked_add(4)?;
-    let end = start.checked_add(length)?;
-    bytes
-        .get(start..end)?
-        .iter()
-        .all(u8::is_ascii_graphic)
-        .then_some(end)
+fn graphic_ascii_end(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    at: usize,
+    bounds: RangeInclusive<usize>,
+) -> Result<Option<usize>, CodecError> {
+    let parsed = (|| {
+        let length = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
+        if !bounds.contains(&length) {
+            return None;
+        }
+        let start = at.checked_add(4)?;
+        let end = start.checked_add(length)?;
+        let text = bytes.get(start..end)?;
+        let is_graphic = match ctx.admit_iter(text, "validate F3D point-data ASCII field") {
+            Ok(mut admitted) => admitted.all(u8::is_ascii_graphic),
+            Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+        };
+        is_graphic.then_some(Ok(end))
+    })();
+    parsed.transpose()
 }
 
 /// The base class level of a point-data record, read under one record version.
@@ -63,7 +74,11 @@ fn point_data_level(
 ) -> Result<Option<PointDataLevel>, CodecError> {
     (|| {
         let body = bytes.get(..end)?;
-        let mut cursor = payload_prologue(bytes, start, end)?;
+        let mut cursor = match payload_prologue(ctx, bytes, start, end) {
+            Ok(Some(cursor)) => cursor,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         if version >= 2 {
             cursor = cursor.checked_add(4)?;
         }
@@ -134,38 +149,50 @@ pub(super) fn exact_work_point_construction(
         ctx,
         bytes,
         records,
-        scope.reference_members().values(),
+        reference_members(
+            ctx,
+            scope.reference_members(),
+            "scan F3D WorkPoint scope references",
+        )?,
         stream_types,
     )
 }
 
-pub(in crate::design::decode) fn exact_point_data_construction<'a>(
+pub(in crate::design::decode) fn exact_point_data_construction(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
-    point_record_indices: impl IntoIterator<Item = &'a u32>,
+    point_record_indices: impl Iterator<Item = u32>,
     stream_types: &HashMap<u64, (&str, u32)>,
 ) -> Result<Option<DesignWorkPointConstruction>, CodecError> {
     (|| {
         let mut candidate = None;
         for record_index in point_record_indices {
-            for (start, paired) in records.frames(*record_index) {
-                let Some(after_tag) = graphic_ascii_end(bytes, start, 0..=2000) else {
-                    continue;
+            let frames = match records.frames(ctx, record_index) {
+                Ok(frames) => frames,
+                Err(error) => return Some(Err(error)),
+            };
+            for (start, paired) in frames {
+                let after_tag = match graphic_ascii_end(ctx, bytes, start, 0..=2000) {
+                    Ok(Some(after_tag)) => after_tag,
+                    Ok(None) => continue,
+                    Err(error) => return Some(Err(error)),
                 };
-                if View::u32_le_at(bytes, after_tag) != Some(*record_index) {
+                if View::u32_le_at(bytes, after_tag) != Some(record_index) {
                     continue;
                 }
                 // A class tag is `256` plus an index into the segment's own type
                 // table, so it names a different class in every segment and cannot
                 // select the point-data class. The type GUID can.
-                let stored = stream_types.get(&u64::from(*record_index)).copied();
+                let stored = stream_types.get(&u64::from(record_index)).copied();
                 if stored.is_some_and(|(type_guid, _)| type_guid != POINT_DATA_TYPE_GUID) {
                     continue;
                 }
                 // The payload begins after the record name that closes the header.
-                let Some(payload_at) = graphic_ascii_end(bytes, after_tag + 8, 0..=256) else {
-                    continue;
+                let payload_at = match graphic_ascii_end(ctx, bytes, after_tag + 8, 0..=256) {
+                    Ok(Some(payload_at)) => payload_at,
+                    Ok(None) => continue,
+                    Err(error) => return Some(Err(error)),
                 };
                 let versions = match stored {
                     Some((_, version)) => [Some(version), None, None, None],
@@ -196,7 +223,7 @@ pub(in crate::design::decode) fn exact_point_data_construction<'a>(
                 };
                 if let Some(position) = finite_reals_at(bytes, level.position_at) {
                     let construction = DesignWorkPointConstruction {
-                        point_record_index: *record_index,
+                        point_record_index: record_index,
                         point_record_byte_offset: u64::try_from(start).ok()?,
                         position,
                         position_offset: u64::try_from(level.position_at).ok()?,

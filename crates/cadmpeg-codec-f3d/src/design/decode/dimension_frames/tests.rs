@@ -83,6 +83,46 @@ use std::collections::{HashMap, HashSet};
 
 const TEST_LINEAR_TOLERANCE: f64 = 1.0e-6;
 
+fn paired_recipe_reference_frame(prefix: &[u8]) -> bool {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::dimension_frames::is_paired_recipe_reference_frame(ctx, prefix)
+            .expect("paired recipe reference admission")
+    })
+}
+
+fn grouped_recipe_reference_frame(prefix: &[u8]) -> bool {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::dimension_frames::is_grouped_recipe_reference_frame(ctx, prefix)
+            .expect("grouped recipe reference admission")
+    })
+}
+
+#[test]
+fn recipe_reference_predicates_propagate_work_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let prefix = [0; 30];
+    for paired in [true, false] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = if paired {
+            super::is_paired_recipe_reference_frame(&ctx, &prefix)
+        } else {
+            super::is_grouped_recipe_reference_frame(&ctx, &prefix)
+        }
+        .expect_err("header admission must refuse");
+        assert!(matches!(
+            error,
+            CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "validate F3D recipe reference header"
+        ));
+    }
+}
+
 #[test]
 fn recipe_program_words_refuse_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -276,14 +316,17 @@ fn dimension_recipe_uses_its_immediate_indexed_record_boundary() {
     bytes.extend_from_slice(&[0; 9]);
 
     assert_eq!(
-        indexed_record_containing(&bytes, 5, bytes.len(), recipe_offset),
+        indexed_record_containing(&ctx, &bytes, 5, bytes.len(), recipe_offset).unwrap(),
         Some((5, "415", 40, next_offset))
     );
     assert_eq!(
-        indexed_record_containing(&bytes, 5, bytes.len(), next_offset + 11),
+        indexed_record_containing(&ctx, &bytes, 5, bytes.len(), next_offset + 11).unwrap(),
         Some((next_offset, "423", 41, bytes.len()))
     );
-    assert_eq!(indexed_record_containing(&bytes, 6, bytes.len(), 7), None);
+    assert_eq!(
+        indexed_record_containing(&ctx, &bytes, 6, bytes.len(), 7).unwrap(),
+        None
+    );
     assert_eq!(
         contiguous_i32_program(&ctx, &[u8::MAX; 8], 0, 8)
             .transpose()
@@ -692,7 +735,7 @@ fn face_recipe_decodes_paired_packed_reference_runs() {
         )
         .expect("recipe references")
     });
-    assert!(crate::design::decode::dimension_frames::is_paired_recipe_reference_frame(&prefix));
+    assert!(paired_recipe_reference_frame(&prefix));
     assert_eq!(references.len(), 4);
     assert_eq!(
         references
@@ -732,7 +775,7 @@ fn face_recipe_decodes_paired_packed_reference_runs() {
     let mut invalid_header = prefix.clone();
     invalid_header[0] = 1;
     assert!(
-        !crate::design::decode::dimension_frames::is_paired_recipe_reference_frame(&invalid_header)
+        !paired_recipe_reference_frame(&invalid_header)
     );
 
     let mut trailing = prefix.clone();
@@ -744,7 +787,7 @@ fn face_recipe_decodes_paired_packed_reference_runs() {
         .expect("recipe references")
     })
     .is_empty());
-    assert!(!crate::design::decode::dimension_frames::is_paired_recipe_reference_frame(&trailing));
+    assert!(!paired_recipe_reference_frame(&trailing));
 
     let mut mismatched_selector = prefix.clone();
     mismatched_selector[second_operand_at..second_operand_at + 4]
@@ -768,7 +811,7 @@ fn face_recipe_decodes_paired_packed_reference_runs() {
         .expect("recipe references")
     })
     .is_empty());
-    assert!(!crate::design::decode::dimension_frames::is_paired_recipe_reference_frame(&prefix));
+    assert!(!paired_recipe_reference_frame(&prefix));
 }
 
 #[test]
@@ -811,7 +854,7 @@ fn face_recipe_decodes_five_group_reference_sequence() {
         )
         .expect("recipe references")
     });
-    assert!(crate::design::decode::dimension_frames::is_grouped_recipe_reference_frame(&prefix));
+    assert!(grouped_recipe_reference_frame(&prefix));
     assert_eq!(
         references
             .iter()
@@ -904,7 +947,7 @@ fn face_recipe_decodes_five_group_reference_sequence() {
         .expect("recipe references")
     })
     .is_empty());
-    assert!(!crate::design::decode::dimension_frames::is_grouped_recipe_reference_frame(&trailing));
+    assert!(!grouped_recipe_reference_frame(&trailing));
 }
 
 #[test]
@@ -937,7 +980,7 @@ fn face_recipe_decodes_dynamic_group_reference_sequence() {
         )
         .expect("recipe references")
     });
-    assert!(crate::design::decode::dimension_frames::is_grouped_recipe_reference_frame(&prefix));
+    assert!(grouped_recipe_reference_frame(&prefix));
     assert_eq!(
         references
             .iter()
