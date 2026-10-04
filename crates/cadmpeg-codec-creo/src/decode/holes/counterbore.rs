@@ -129,10 +129,11 @@ pub(in crate::decode) fn counterbore_dimensions(
     };
     let source_spans = [source_span(first_source), source_span(second_source)];
     if source_spans.iter().any(Option::is_some) {
-        Ok(counterbore_envelope_dimension_values(
+        counterbore_envelope_dimension_values(
+            ctx,
             dimension_tables(),
             &source_spans,
-        ))
+        )
     } else {
         Ok(counterbore_unenveloped_dimension_values(dimension_tables()))
     }
@@ -211,23 +212,24 @@ fn counterbore_values_agree(candidate: (f64, f64, f64), first: (f64, f64, f64)) 
 }
 
 pub(in crate::decode) fn counterbore_envelope_dimension_values<'a>(
+    ctx: &DecodeContext<'_>,
     tables: impl Iterator<Item = &'a crate::feature::definitions::FeatureDimensionTable>,
     source_spans: &[Option<[[Option<PositiveLength>; 2]; 3]>],
-) -> Option<(f64, f64, f64)> {
+) -> Result<Option<(f64, f64, f64)>, CodecError> {
     let [first_source, second_source] = source_spans else {
-        return None;
+        return Ok(None);
     };
-    let cylinder_diameter_matches = |diameter: f64, spans: [[Option<PositiveLength>; 2]; 3]| {
-        (0..3)
-            .filter(|axis| {
-                spans[*axis].into_iter().flatten().any(|span| {
+    let cylinder_diameter_matches = |diameter: f64, spans: [[Option<PositiveLength>; 2]; 3]| -> Result<bool, CodecError> {
+        Ok(ctx.admit_iter(&spans, "creo counterbore diameter axis count")?
+            .filter(|spans| {
+                (**spans).into_iter().flatten().any(|span| {
                     (FiniteReal::new(span.get()))
                         .zip(FiniteReal::new(diameter))
                         .is_some_and(|(first, second)| approximately_equal(first, second))
                 })
             })
             .count()
-            == 2
+            == 2)
     };
     let counterbore_matches =
         |diameter: f64, depth: f64, spans: [[Option<PositiveLength>; 2]; 3]| {
@@ -255,31 +257,39 @@ pub(in crate::decode) fn counterbore_envelope_dimension_values<'a>(
                     })
                 })
         };
-    let candidates = tables.filter_map(|table| {
-        let (bore_diameter, counterbore_diameter, counterbore_depth) =
-            counterbore_envelope_dimension_tuple(table)?;
+    let mut first_candidate = None;
+    for table in tables {
+        let Some((bore_diameter, counterbore_diameter, counterbore_depth)) =
+            counterbore_envelope_dimension_tuple(table) else { continue; };
         let matches = match (first_source, second_source) {
             (Some(first), Some(second)) => {
-                [
-                    cylinder_diameter_matches(bore_diameter, *first)
+                let alternatives = [
+                    cylinder_diameter_matches(bore_diameter, *first)?
                         && counterbore_matches(counterbore_diameter, counterbore_depth, *second),
-                    cylinder_diameter_matches(bore_diameter, *second)
+                    cylinder_diameter_matches(bore_diameter, *second)?
                         && counterbore_matches(counterbore_diameter, counterbore_depth, *first),
-                ]
-                .into_iter()
-                .filter(|matches| *matches)
+                ];
+                ctx.admit_iter(&alternatives, "creo counterbore envelope alternative count")?
+                .filter(|matches| **matches)
                 .count()
                     == 1
             }
             (Some(spans), None) | (None, Some(spans)) => {
-                cylinder_diameter_matches(bore_diameter, *spans)
+                cylinder_diameter_matches(bore_diameter, *spans)?
                     != counterbore_matches(counterbore_diameter, counterbore_depth, *spans)
             }
             (None, None) => false,
         };
-        matches.then_some((bore_diameter, counterbore_diameter, counterbore_depth))
-    });
-    unique_counterbore_dimension_tuple(candidates)
+        if matches {
+            let candidate = (bore_diameter, counterbore_diameter, counterbore_depth);
+            if let Some(first) = first_candidate {
+                if !counterbore_tuples_approximately_equal(candidate, first) { return Ok(None); }
+            } else {
+                first_candidate = Some(candidate);
+            }
+        }
+    }
+    Ok(first_candidate)
 }
 
 pub(in crate::decode) fn counterbore_unenveloped_dimension_values<'a>(
@@ -331,16 +341,6 @@ fn counterbore_envelope_dimension_tuple(
         PositiveLength::new(2.0 * counterbore_radius)?.get(),
         signed_counterbore_depth.abs(),
     ))
-}
-
-fn unique_counterbore_dimension_tuple(
-    candidates: impl Iterator<Item = (f64, f64, f64)>,
-) -> Option<(f64, f64, f64)> {
-    let mut candidates = candidates;
-    let first = candidates.next()?;
-    candidates
-        .all(|candidate| counterbore_tuples_approximately_equal(candidate, first))
-        .then_some(first)
 }
 
 fn counterbore_tuples_approximately_equal(

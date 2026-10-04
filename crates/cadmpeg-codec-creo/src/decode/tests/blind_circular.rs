@@ -364,11 +364,11 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
     };
 
     assert_eq!(
-        compact_simple_hole_cylinder_id(
+        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx,
             107,
             std::slice::from_ref(&table),
             std::slice::from_ref(&row),
-        ),
+        )).expect("admitted surface roster"),
         Some(117)
     );
     let mut exact_class_203_plane = table.clone();
@@ -383,45 +383,45 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
         offset: 0,
     };
     assert_eq!(
-        compact_simple_hole_cylinder_id(
+        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx,
             107,
             std::slice::from_ref(&exact_class_203_plane),
             &[topology_plane, row.clone()],
-        ),
+        )).expect("admitted surface roster"),
         Some(117)
     );
     table.entries[2].payload = crate::feature::entity::EntryPayload::Source { entity: None };
-    assert!(compact_simple_hole_cylinder_id(
+    assert!(crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx,
         107,
         std::slice::from_ref(&table),
         std::slice::from_ref(&row),
-    )
+    )).expect("admitted surface roster")
     .is_none());
     table.entries[2].payload = crate::feature::entity::EntryPayload::Source { entity: Some(0) };
     table.table_class_id = 28;
-    assert!(compact_simple_hole_cylinder_id(
+    assert!(crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx,
         107,
         std::slice::from_ref(&table),
         std::slice::from_ref(&row),
-    )
+    )).expect("admitted surface roster")
     .is_none());
     table.table_class_id = 29;
     table.entries[3].payload = crate::feature::entity::EntryPayload::Plain {
         class: crate::feature::entity::PlainClass::new(201).expect("201 is not the source class"),
     };
-    assert!(compact_simple_hole_cylinder_id(
+    assert!(crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx,
         107,
         std::slice::from_ref(&table),
         std::slice::from_ref(&row),
-    )
+    )).expect("admitted surface roster")
     .is_none());
     table.entries[3].payload = crate::feature::entity::EntryPayload::Source { entity: None };
     table.mark_surface_ids([109, 117]);
-    assert!(compact_simple_hole_cylinder_id(
+    assert!(crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx,
         107,
         std::slice::from_ref(&table),
         std::slice::from_ref(&row),
-    )
+    )).expect("admitted surface roster")
     .is_none());
 
     let mut extended = crate::feature::entity::FeatureEntityTable::new(
@@ -454,7 +454,7 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
     };
     let rows = [plane.clone(), row.clone()];
     assert_eq!(
-        compact_simple_hole_cylinder_id(107, std::slice::from_ref(&extended), &rows),
+        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx, 107, std::slice::from_ref(&extended), &rows)).expect("admitted surface roster"),
         Some(117)
     );
     let mut class_203_plane = extended.clone();
@@ -463,15 +463,15 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
     second_topology_plane.id = 112;
     let second_topology_rows = [second_topology_plane, row];
     assert_eq!(
-        compact_simple_hole_cylinder_id(
+        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx,
             107,
             std::slice::from_ref(&class_203_plane),
             &second_topology_rows,
-        ),
+        )).expect("admitted surface roster"),
         Some(117)
     );
     extended.mark_surface_ids([109, 117, 120]);
-    assert!(compact_simple_hole_cylinder_id(107, std::slice::from_ref(&extended), &rows).is_none());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx, 107, std::slice::from_ref(&extended), &rows)).expect("admitted surface roster").is_none());
 }
 
 #[test]

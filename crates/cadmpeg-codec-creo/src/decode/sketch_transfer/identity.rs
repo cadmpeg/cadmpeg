@@ -20,17 +20,10 @@ pub(in super::super) fn section_entity_external_ids(
     };
     let ambiguous_segment_ids = ambiguous_section_segment_external_ids(ctx, definition)?;
     let unique_saved_ids = unique_saved_section_internal_ids(ctx, definition)?;
-    for external_id in semantic_saved_section_entities(definition)
+    for internal_id in semantic_saved_section_entities(definition)
         .filter_map(|entity| saved_section_entity_identity(entity).0)
-        .filter_map(|internal_id| {
-            saved_section_external_id(
-                order,
-                &unique_saved_ids,
-                &ambiguous_segment_ids,
-                internal_id,
-            )
-        })
     {
+        let Some(external_id) = saved_section_external_id(ctx, order, &unique_saved_ids, &ambiguous_segment_ids, internal_id)? else { continue; };
         ctx.insert_btree_set(
             &mut ids,
             external_id,
@@ -180,9 +173,10 @@ pub(in super::super) fn unresolved_saved_section_entity(
     let (internal_id, offset, kind) = saved_section_entity_identity(saved);
     let unique_internal_id = internal_id.filter(|id| unique_saved_ids.contains(id));
     let external_id = if let Some(internal_id) = unique_internal_id {
-        definition.order_table.as_ref().and_then(|order| {
-            saved_section_external_id(order, unique_saved_ids, ambiguous_segment_ids, internal_id)
-        })
+        match definition.order_table.as_ref() {
+            Some(order) => saved_section_external_id(ctx, order, unique_saved_ids, ambiguous_segment_ids, internal_id)?,
+            None => None,
+        }
     } else {
         None
     };
@@ -352,14 +346,11 @@ pub(in super::super) fn materialized_saved_section_external_ids(
         if !unique_saved_ids.contains(&internal_id) {
             continue;
         }
-        if let Some(external_id) = definition.order_table.as_ref().and_then(|order| {
-            saved_section_external_id(
-                order,
-                &unique_saved_ids,
-                &ambiguous_segment_ids,
-                internal_id,
-            )
-        }) {
+        let external_id = match definition.order_table.as_ref() {
+            Some(order) => saved_section_external_id(ctx, order, &unique_saved_ids, &ambiguous_segment_ids, internal_id)?,
+            None => None,
+        };
+        if let Some(external_id) = external_id {
             ctx.insert_btree_set(
                 &mut external_ids,
                 external_id,
@@ -371,14 +362,15 @@ pub(in super::super) fn materialized_saved_section_external_ids(
 }
 
 pub(in super::super) fn saved_section_external_id(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     order: &crate::feature::definitions::FeatureOrderTable,
     unique_saved_ids: &BTreeSet<u32>,
     ambiguous_segment_ids: &BTreeSet<u32>,
     internal_id: u32,
-) -> Option<u32> {
-    unique_saved_ids.contains(&internal_id).then_some(())?;
-    let external_id = order.external_id(internal_id)?;
-    (!ambiguous_segment_ids.contains(&external_id)).then_some(external_id)
+) -> Result<Option<u32>, cadmpeg_core::CodecError> {
+    if !unique_saved_ids.contains(&internal_id) { return Ok(None); }
+    let Some(external_id) = order.external_id(ctx, internal_id)? else { return Ok(None); };
+    Ok((!ambiguous_segment_ids.contains(&external_id)).then_some(external_id))
 }
 
 #[cfg(test)]

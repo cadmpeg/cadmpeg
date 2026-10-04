@@ -67,7 +67,7 @@ fn section_line_entity_fixed_coordinate_with_mode(
             }
             _ => continue,
         };
-        if !section_skamp_is_line(definition, first) || !section_skamp_is_line(definition, second) {
+        if !section_skamp_is_line(ctx, definition, first)? || !section_skamp_is_line(ctx, definition, second)? {
             continue;
         }
         for (entity_id, neighbor) in [
@@ -206,7 +206,7 @@ fn section_line_direct_fixed_coordinates_with_mode(
     }
     if saved_section_line_witness_allowed(definition, entity_id) {
         if let Some(crate::feature::definitions::FeatureSavedEntity::Line(line)) =
-            section_saved_entity(definition, entity_id)
+            section_saved_entity(ctx, definition, entity_id)?
         {
             let [[Some(x0), Some(y0), _], [Some(x1), Some(y1), _]] = line.endpoints else {
                 return Ok(coordinates);
@@ -243,9 +243,9 @@ pub(in crate::decode) fn section_skamp_point_on_line(
     definition: &crate::feature::definitions::FeatureDefinition,
     skamp: &crate::feature::definitions::FeatureSkamp,
 ) -> Result<Option<(u32, u32, SectionAxis)>, CodecError> {
-    let pair = (|| {
+    let pair = (|| -> Result<Option<_>, cadmpeg_core::CodecError> {
         let [first, second] = skamp.items.as_slice() else {
-            return None;
+            return Ok(None);
         };
         let selected_point_id = |item: &crate::feature::definitions::FeatureSkampItem| {
             section_skamp_selected_point_id(definition, item).or_else(|| {
@@ -266,7 +266,7 @@ pub(in crate::decode) fn section_skamp_point_on_line(
                 })
             })
         };
-        match skamp.kind {
+        Ok(match skamp.kind {
             3 => [(first, second), (second, first)].into_iter().find_map(
                 |(line_item, point_item)| {
                     let line = line_for_item(line_item)?;
@@ -278,25 +278,23 @@ pub(in crate::decode) fn section_skamp_point_on_line(
                     .then_some((line, selected_point_id(point_item)?))
                 },
             ),
-            9 => [(first, second), (second, first)].into_iter().find_map(
-                |(line_item, point_item)| {
-                    let line = line_for_item(line_item)?;
+            9 => ctx.find_map(&[(first, second), (second, first)], |(line_item, point_item)| -> Result<Option<_>, cadmpeg_core::CodecError> {
+                    let line = match line_for_item(line_item) { Some(value) => value, None => return Ok(None) };
                     if line_item.sense != 0
                         || point_item.sense != 0
                         || !matches!(
                             line.kind,
                             crate::feature::definitions::FeatureSegmentKind::Line(_)
                         )
-                        || !section_skamp_is_point(definition, point_item)
+                        || !section_skamp_is_point(ctx, definition, point_item)?
                     {
-                        return None;
+                        return Ok(None);
                     }
-                    Some((line, selected_point_id(point_item)?))
-                },
-            ),
+                    Ok(Some((line, (match selected_point_id(point_item) { Some(value) => value, None => return Ok(None) }))))
+                }, "creo section directed point selection")?,
             _ => None,
-        }
-    })();
+        })
+    })()?;
     let Some(pair) = pair else {
         return Ok(None);
     };
@@ -316,11 +314,11 @@ pub(in crate::decode) fn section_skamp_saved_point_on_line(
     definition: &crate::feature::definitions::FeatureDefinition,
     skamp: &crate::feature::definitions::FeatureSkamp,
 ) -> Result<Option<(u32, SectionAxis, f64)>, CodecError> {
-    let selected = (|| {
+    let selected = (|| -> Result<Option<_>, cadmpeg_core::CodecError> {
         let [first, second] = skamp.items.as_slice() else {
-            return None;
+            return Ok(None);
         };
-        let (line_item, point_id) = match skamp.kind {
+        let (line_item, point_id) = match match skamp.kind {
             3 => [(first, second), (second, first)].into_iter().find_map(
                 |(line_item, point_item)| {
                     if line_item.sense != 0 {
@@ -332,32 +330,30 @@ pub(in crate::decode) fn section_skamp_saved_point_on_line(
                     ))
                 },
             ),
-            9 => [(first, second), (second, first)].into_iter().find_map(
-                |(line_item, point_item)| {
+            9 => ctx.find_map(&[(first, second), (second, first)], |(line_item, point_item)| -> Result<Option<_>, cadmpeg_core::CodecError> {
                     if line_item.sense != 0
                         || point_item.sense != 0
-                        || !section_skamp_is_point(definition, point_item)
+                        || !section_skamp_is_point(ctx, definition, point_item)?
                     {
-                        return None;
+                        return Ok(None);
                     }
-                    Some((
-                        line_item,
-                        section_skamp_selected_point_id(definition, point_item)?,
-                    ))
-                },
-            ),
+                    Ok(Some((
+                        *line_item,
+                        (match section_skamp_selected_point_id(definition, point_item) { Some(value) => value, None => return Ok(None) }),
+                    )))
+                }, "creo section directed point selection")?,
             _ => None,
-        }?;
+        } { Some(value) => value, None => return Ok(None) };
         if !saved_section_entity_fallback_allowed(definition, line_item.entity_id) {
-            return None;
+            return Ok(None);
         }
         let crate::feature::definitions::FeatureSavedEntity::Line(line) =
-            section_saved_entity(definition, line_item.entity_id)?
+            (match section_saved_entity(ctx, definition, line_item.entity_id)? { Some(value) => value, None => return Ok(None) })
         else {
-            return None;
+            return Ok(None);
         };
-        Some((line_item, point_id, line))
-    })();
+        Ok(Some((line_item, point_id, line)))
+    })()?;
     let Some((line_item, point_id, line)) = selected else {
         return Ok(None);
     };
@@ -393,7 +389,7 @@ pub(super) fn section_skamp_axis_symmetry(
     let (14, [axis_item, first_item, second_item]) = (skamp.kind, skamp.items.as_slice()) else {
         return Ok(None);
     };
-    if axis_item.sense != 0 || !section_skamp_is_line(definition, axis_item) {
+    if axis_item.sense != 0 || !section_skamp_is_line(ctx, definition, axis_item)? {
         return Ok(None);
     }
     let unique_row = unique_decoded_section_segment(definition, axis_item.entity_id);
@@ -405,44 +401,34 @@ pub(super) fn section_skamp_axis_symmetry(
     else {
         return Ok(None);
     };
-    Ok((|| {
-        let axis =
-            if let Some(segment) = unique_section_skamp_segment(definition, axis_item.entity_id) {
-                SectionSymmetryAxis::Point(segment.point_ids()[0])
-            } else if let Some(segment) = unique_row {
-                SectionSymmetryAxis::Point(segment.point_ids()[0])
-            } else {
-                if !saved_section_line_witness_allowed(definition, axis_item.entity_id) {
-                    return None;
-                }
-                let crate::feature::definitions::FeatureSavedEntity::Line(line) =
-                    section_saved_entity(definition, axis_item.entity_id)?
-                else {
-                    return None;
-                };
-                SectionSymmetryAxis::Value(saved_line_fixed_coordinate_value(line, coordinate)?)
-            };
-        Some((
-            axis,
-            section_skamp_incidence_point(definition, first_item)?,
-            section_skamp_incidence_point(definition, second_item)?,
-            coordinate,
-        ))
-    })())
+    let axis = if let Some(segment) = unique_section_skamp_segment(definition, axis_item.entity_id) {
+        SectionSymmetryAxis::Point(segment.point_ids()[0])
+    } else if let Some(segment) = unique_row {
+        SectionSymmetryAxis::Point(segment.point_ids()[0])
+    } else {
+        if !saved_section_line_witness_allowed(definition, axis_item.entity_id) { return Ok(None); }
+        let Some(crate::feature::definitions::FeatureSavedEntity::Line(line)) = section_saved_entity(ctx, definition, axis_item.entity_id)? else { return Ok(None); };
+        let Some(value) = saved_line_fixed_coordinate_value(line, coordinate) else { return Ok(None); };
+        SectionSymmetryAxis::Value(value)
+    };
+    let Some(first) = section_skamp_incidence_point(ctx, definition, first_item)? else { return Ok(None); };
+    let Some(second) = section_skamp_incidence_point(ctx, definition, second_item)? else { return Ok(None); };
+    Ok(Some((axis, first, second, coordinate)))
 }
 
 pub(super) fn section_skamp_point_symmetry(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     skamp: &crate::feature::definitions::FeatureSkamp,
-) -> Option<(u32, SectionPointSource, SectionPointSource)> {
+) -> Result<Option<(u32, SectionPointSource, SectionPointSource)>, cadmpeg_core::CodecError> {
     let (14, [center, first, second]) = (skamp.kind, skamp.items.as_slice()) else {
-        return None;
+        return Ok(None);
     };
-    Some((
-        section_skamp_point_entity_id(definition, center)?,
-        section_skamp_incidence_point(definition, first)?,
-        section_skamp_incidence_point(definition, second)?,
-    ))
+    Ok(Some((
+        (match section_skamp_point_entity_id(definition, center) { Some(value) => value, None => return Ok(None) }),
+        (match section_skamp_incidence_point(ctx, definition, first)? { Some(value) => value, None => return Ok(None) }),
+        (match section_skamp_incidence_point(ctx, definition, second)? { Some(value) => value, None => return Ok(None) }),
+    )))
 }
 
 fn saved_line_fixed_coordinate_value(
@@ -595,37 +581,41 @@ pub(in crate::decode) fn section_skamp_selected_point_id_with_ordinary_segment(
 }
 
 fn section_skamp_selected_point(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     item: &crate::feature::definitions::FeatureSkampItem,
-) -> Option<SectionPointSource> {
-    section_skamp_selected_point_id(definition, item)
-        .map(SectionPointSource::Point)
-        .or_else(|| saved_section_point(definition, item).map(SectionPointSource::Value))
+) -> Result<Option<SectionPointSource>, cadmpeg_core::CodecError> {
+    match section_skamp_selected_point_id(definition, item).map(SectionPointSource::Point) {
+        Some(point) => Ok(Some(point)),
+        None => Ok(saved_section_point(ctx, definition, item)?.map(SectionPointSource::Value)),
+    }
 }
 
 pub(in crate::decode) fn section_skamp_incidence_point(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     item: &crate::feature::definitions::FeatureSkampItem,
-) -> Option<SectionPointSource> {
-    section_skamp_selected_point(definition, item).or_else(|| {
+) -> Result<Option<SectionPointSource>, cadmpeg_core::CodecError> {
+    Ok(section_skamp_selected_point(ctx, definition, item)?.or_else(|| {
         section_skamp_selected_point_id_with_ordinary_segment(
             definition,
             item,
             unique_decoded_section_segment(definition, item.entity_id),
         )
         .map(SectionPointSource::Point)
-    })
+    }))
 }
 
 fn saved_section_point(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     item: &crate::feature::definitions::FeatureSkampItem,
-) -> Option<cadmpeg_ir::units::FiniteVector<2>> {
+) -> Result<Option<cadmpeg_ir::units::FiniteVector<2>>, cadmpeg_core::CodecError> {
     if !saved_section_entity_fallback_allowed(definition, item.entity_id) {
-        return None;
+        return Ok(None);
     }
     let coordinates = match (
-        section_saved_entity(definition, item.entity_id)?,
+        (match section_saved_entity(ctx, definition, item.entity_id)? { Some(value) => value, None => return Ok(None) }),
         item.sense,
     ) {
         (crate::feature::definitions::FeatureSavedEntity::Line(line), 2) => line.endpoints[0],
@@ -635,15 +625,15 @@ fn saved_section_point(
         (crate::feature::definitions::FeatureSavedEntity::Arc(arc), 4) => arc.center,
         (crate::feature::definitions::FeatureSavedEntity::Circle(circle), 4) => circle.center,
         (crate::feature::definitions::FeatureSavedEntity::Conic(conic), 4) => {
-            let frame = conic.local_system?;
+            let frame = match conic.local_system { Some(value) => value, None => return Ok(None) };
             [Some(frame[9]), Some(frame[10]), Some(frame[11])]
         }
-        _ => return None,
+        _ => return Ok(None),
     };
     let [Some(u), Some(v), _] = coordinates else {
-        return None;
+        return Ok(None);
     };
-    cadmpeg_ir::units::FiniteVector::new([u, v])
+    Ok(cadmpeg_ir::units::FiniteVector::new([u, v]))
 }
 
 #[cfg(test)]
@@ -1093,7 +1083,7 @@ mod tests {
             ],
             offset: 0,
         };
-        let Some((center, first, second)) = section_skamp_point_symmetry(&definition, &skamp)
+        let Some((center, first, second)) = crate::decode::with_test_decode_ctx(|ctx| section_skamp_point_symmetry(ctx, &definition, &skamp)).expect("admitted section lookup")
         else {
             panic!("point-symmetry sources");
         };
@@ -1105,7 +1095,7 @@ mod tests {
         duplicate.segments.as_mut().expect("segments").rows.insert(
             crate::feature::segment_rows::SegmentRow::Ordinary(line(10, [6, 7])),
         );
-        assert!(section_skamp_point_symmetry(&duplicate, &skamp).is_none());
+        assert!(crate::decode::with_test_decode_ctx(|ctx| section_skamp_point_symmetry(ctx, &duplicate, &skamp)).expect("admitted section lookup").is_none());
 
         let mut cross_family = definition;
         cross_family
@@ -1120,7 +1110,7 @@ mod tests {
                     offset: 99,
                 },
             ));
-        assert!(section_skamp_point_symmetry(&cross_family, &skamp).is_none());
+        assert!(crate::decode::with_test_decode_ctx(|ctx| section_skamp_point_symmetry(ctx, &cross_family, &skamp)).expect("admitted section lookup").is_none());
     }
 
     #[test]

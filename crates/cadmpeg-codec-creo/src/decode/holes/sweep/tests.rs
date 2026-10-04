@@ -35,11 +35,11 @@ fn compact_simple_hole_rejects_duplicate_materialized_roster_id() {
     };
 
     assert_eq!(
-        super::compact_simple_hole_cylinder_id(
+        crate::decode::with_test_decode_ctx(|ctx| super::compact_simple_hole_cylinder_id(ctx,
             107,
             std::slice::from_ref(&table),
             std::slice::from_ref(&row),
-        ),
+        )).expect("admitted surface roster"),
         Some(117)
     );
 
@@ -48,11 +48,11 @@ fn compact_simple_hole_rejects_duplicate_materialized_roster_id() {
         .entries
         .push(crate::feature::entity::dummy_table_entry(117));
     assert_eq!(
-        super::compact_simple_hole_cylinder_id(
+        crate::decode::with_test_decode_ctx(|ctx| super::compact_simple_hole_cylinder_id(ctx,
             107,
             std::slice::from_ref(&duplicate),
             std::slice::from_ref(&row),
-        ),
+        )).expect("admitted surface roster"),
         None
     );
 }
@@ -71,33 +71,33 @@ fn circular_sweep_requires_an_exact_materialized_surface_roster() {
     )
     .with_surface_ids([46, 51]);
 
-    assert!(super::has_exact_materialized_surface_roster(
+    assert!(crate::decode::with_test_decode_ctx(|ctx| super::has_exact_materialized_surface_roster(ctx,
         &table,
         &[46, 51]
-    ));
-    assert!(!super::has_exact_materialized_surface_roster(
+    )).expect("admitted surface roster"));
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| super::has_exact_materialized_surface_roster(ctx,
         &table,
         &[46, 46]
-    ));
+    )).expect("admitted surface roster"));
 
     let mut duplicate = table.clone();
     duplicate
         .entries
         .push(crate::feature::entity::dummy_table_entry(51));
-    assert!(!super::has_exact_materialized_surface_roster(
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| super::has_exact_materialized_surface_roster(ctx,
         &duplicate,
         &[46, 51]
-    ));
+    )).expect("admitted surface roster"));
 
     let mut extra = table;
     extra
         .entries
         .push(crate::feature::entity::dummy_table_entry(54));
     extra.mark_surface_id(54);
-    assert!(!super::has_exact_materialized_surface_roster(
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| super::has_exact_materialized_surface_roster(ctx,
         &extra,
         &[46, 51]
-    ));
+    )).expect("admitted surface roster"));
 }
 
 #[test]

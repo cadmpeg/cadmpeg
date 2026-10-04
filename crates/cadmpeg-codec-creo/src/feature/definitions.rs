@@ -780,40 +780,27 @@ impl FeatureOrderTable {
     }
 
     /// Resolve a generated-entity position to its section entity identifier.
-    pub(crate) fn external_id(&self, internal_id: u32) -> Option<u32> {
-        self.is_complete().then_some(())?;
-        let mut matches = self
-            .rows
-            .iter()
-            .filter(|row| row.internal_id == internal_id);
-        let row = matches.next()?;
-        (matches.next().is_none()
-            && self
-                .rows
-                .iter()
-                .filter(|candidate| candidate.external_id == row.external_id)
-                .count()
-                == 1)
-            .then_some(row.external_id)
+    pub(crate) fn external_id(&self, ctx: &DecodeContext<'_>, internal_id: u32) -> Result<Option<u32>, CodecError> {
+        if !self.is_complete() { return Ok(None); }
+        let mut matches = self.rows.iter().filter(|row| row.internal_id == internal_id);
+        let Some(row) = matches.next() else { return Ok(None); };
+        if matches.next().is_some() { return Ok(None); }
+        Ok((ctx.admit_iter(&self.rows, "creo order external ID count")?
+            .filter(|candidate| candidate.external_id == row.external_id).count() == 1)
+            .then_some(row.external_id))
     }
 
     /// Resolve a section entity identifier to its generated-entity position.
-    pub(crate) fn internal_id(&self, external_id: u32) -> Option<u32> {
-        self.is_complete().then_some(())?;
-        let mut matches = self
-            .rows
-            .iter()
-            .filter(|row| row.external_id == external_id);
-        let row = matches.next()?;
-        (matches.next().is_none()
-            && self
-                .rows
-                .iter()
-                .filter(|candidate| candidate.internal_id == row.internal_id)
-                .count()
-                == 1)
-            .then_some(row.internal_id)
+    pub(crate) fn internal_id(&self, ctx: &DecodeContext<'_>, external_id: u32) -> Result<Option<u32>, CodecError> {
+        if !self.is_complete() { return Ok(None); }
+        let mut matches = self.rows.iter().filter(|row| row.external_id == external_id);
+        let Some(row) = matches.next() else { return Ok(None); };
+        if matches.next().is_some() { return Ok(None); }
+        Ok((ctx.admit_iter(&self.rows, "creo order internal ID count")?
+            .filter(|candidate| candidate.internal_id == row.internal_id).count() == 1)
+            .then_some(row.internal_id))
     }
+
 }
 
 /// Defined value of a one-byte binary section flag.
@@ -6869,8 +6856,8 @@ fn saved_positional_generated_entities(
     let mut generated_storage = ctx.reserve_scoped(0, "Creo saved generated lookup storage")?;
     let mut generated_segments = BTreeMap::new();
     for row in &order_table.rows {
-        if order_table.internal_id(row.external_id) != Some(row.internal_id)
-            || order_table.external_id(row.internal_id) != Some(row.external_id)
+        if order_table.internal_id(ctx, row.external_id)? != Some(row.internal_id)
+            || order_table.external_id(ctx, row.internal_id)? != Some(row.external_id)
         {
             continue;
         }
@@ -8725,8 +8712,9 @@ pub(crate) fn bind_section_owners(
         if claimed_owner_ids.contains(&owner_id) {
             continue;
         }
-        let matches = ordered_operations
-            .windows(2)
+        let width = std::num::NonZeroUsize::new(2).ok_or_else(|| ctx.refuse_codec_limit("creo section owner operation window", u64::MAX, u64::MAX))?;
+        let matches = ctx.admit_iter(&ordered_operations, "creo section owner operation count")?
+            .windows(width)
             .filter(|pair| {
                 pair[0].feature_id == owner_id
                     && pair[0].recipe.resolved().is_some()

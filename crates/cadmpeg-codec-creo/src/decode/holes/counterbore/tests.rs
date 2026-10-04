@@ -492,10 +492,10 @@ fn overflowing_corner_spans_do_not_match_counterbore_dimensions() {
     let spans = super::paired_corner_envelope_axis_spans(corners, corners)
         .expect("finite counterbore corner coordinates");
 
-    assert!(super::counterbore_envelope_dimension_values(
+    assert!(crate::decode::with_test_decode_ctx(|ctx| super::counterbore_envelope_dimension_values(ctx,
         std::iter::once(&table),
         &[Some(spans), None],
-    )
+    )).expect("admitted counterbore envelope values")
     .is_none());
 }
 

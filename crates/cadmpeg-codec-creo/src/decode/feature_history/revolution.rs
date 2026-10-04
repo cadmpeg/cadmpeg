@@ -196,20 +196,21 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
         };
         let spline_bindings = match definition.order_table.as_ref() {
             None => BTreeMap::new(),
-            Some(order) => ordered_family_surface_bindings_for_feature(
-                ctx,
-                &scan.surfaces.rows,
-                feature_id,
-                &scan.features.entity_tables,
-                order,
-                semantic_saved_section_entities(definition).filter_map(|entity| match entity {
-                    crate::feature::definitions::FeatureSavedEntity::Spline(spline) => {
-                        order.external_id(spline.entity_id?)
+            Some(order) => {
+                let mut external_id_storage = ctx.reserve_scoped(0, "creo revolution spline external ID storage")?;
+                let mut external_ids = Vec::new();
+                for entity in semantic_saved_section_entities(definition) {
+                    let crate::feature::definitions::FeatureSavedEntity::Spline(spline) = entity else { continue; };
+                    let Some(internal_id) = spline.entity_id else { continue; };
+                    if let Some(external_id) = order.external_id(ctx, internal_id)? {
+                        external_id_storage.with_storage(|| ctx.push_vec(&mut external_ids, external_id, "creo revolution spline external IDs"))?;
                     }
-                    _ => None,
-                }),
-                crate::surface::SurfaceKind::Spline,
-            )?,
+                }
+                ordered_family_surface_bindings_for_feature(
+                    ctx, &scan.surfaces.rows, feature_id, &scan.features.entity_tables, order,
+                    external_ids, crate::surface::SurfaceKind::Spline,
+                )?
+            }
         };
         for segment in complete_section_segment_rows(ctx, definition)?
             .iter()
@@ -225,16 +226,19 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
             };
             let native_surface = match segment.kind {
                 crate::feature::definitions::FeatureSegmentKind::Line(_) => {
-                    definition.order_table.as_ref().and_then(|order| {
+                    match definition.order_table.as_ref() {
+                        Some(order) =>
                         ordered_analytic_surface_id_for_feature(
+                            ctx,
                             &scan.surfaces.rows,
                             &scan.features.entity_tables,
                             feature_id,
                             order,
                             segment.external_id,
                             &surface,
-                        )
-                    })
+                        )?,
+                        None => None,
+                    }
                 }
                 crate::feature::definitions::FeatureSegmentKind::Arc(_) => {
                     arc_bindings.get(&segment.external_id).copied()
@@ -308,7 +312,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 semantic_saved_section_entities(definition)
                     .filter_map(saved_section_entity_geometry)
             {
-                let Some(external_id) = order.external_id(internal_id) else {
+                let Some(external_id) = order.external_id(ctx, internal_id)? else {
                     continue;
                 };
                 let Some(surface) = revolved_section_surface(transform, &section_geometry, &axis)
@@ -316,13 +320,14 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                     continue;
                 };
                 let Some(native_surface) = ordered_analytic_surface_id_for_feature(
+                    ctx,
                     &scan.surfaces.rows,
                     &scan.features.entity_tables,
                     feature_id,
                     order,
                     external_id,
                     &surface,
-                ) else {
+                )? else {
                     continue;
                 };
                 let surface_id = crate::identity::compose_checked::<SurfaceId>(
@@ -428,11 +433,11 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 }
                 continue;
             };
-            let native_surface = definition
-                .order_table
-                .as_ref()
-                .and_then(|order| order.external_id(spline.entity_id?))
-                .and_then(|external_id| spline_bindings.get(&external_id).copied());
+            let native_surface = match (definition.order_table.as_ref(), spline.entity_id) {
+                (Some(order), Some(internal_id)) => order.external_id(ctx, internal_id)?
+                    .and_then(|external_id| spline_bindings.get(&external_id).copied()),
+                _ => None,
+            };
             let Some(native_surface) = native_surface else {
                 continue;
             };

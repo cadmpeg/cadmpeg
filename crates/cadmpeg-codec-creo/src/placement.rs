@@ -744,19 +744,22 @@ fn definition_local_frame_transform(
 }
 
 fn generated_datum_plane_equation(
+    ctx: &DecodeContext<'_>,
     sketch_id: u32,
     reference_id: u32,
     reference_normal: [f64; 3],
     sources: &PlacementSources<'_>,
-) -> Option<SignedPlaneEquation> {
-    let datum_ids = sources
-        .geometry_tables
-        .iter()
-        .filter_map(|table| table.kind.datum_ids())
-        .flatten()
-        .filter(|id| **id == sketch_id)
-        .count();
-    (datum_ids == 1).then_some(())?;
+) -> Result<Option<SignedPlaneEquation>, CodecError> {
+    let mut datum_ids = 0usize;
+    for table in ctx.admit_iter(sources.geometry_tables, "creo generated datum table scan")? {
+        if let Some(ids) = table.kind.datum_ids() {
+            let matches = ctx.admit_iter(ids, "creo generated datum ID count")?
+                .filter(|id| **id == sketch_id).count();
+            datum_ids = datum_ids.checked_add(matches).ok_or_else(|| ctx.refuse_codec_limit("creo generated datum ID count", u64::MAX, u64::MAX))?;
+        }
+    }
+    if datum_ids != 1 { return Ok(None); }
+    Ok((|| {
     let mut datums = sources
         .datums
         .iter()
@@ -849,6 +852,7 @@ fn generated_datum_plane_equation(
                 (!ambiguous).then_some(equation?)
             }),
     )
+    })())
 }
 
 fn feature_generated_plane_equation(
@@ -995,7 +999,7 @@ fn zero_offset_standard_section_plane_equation(
         return Ok(None);
     };
     let mut instructions = placement_instructions(ctx, definition)?;
-    Ok((|| {
+    let Some(()) = (|| {
         let instruction = instructions.next()?;
         instructions
             .all(|candidate| {
@@ -1018,14 +1022,13 @@ fn zero_offset_standard_section_plane_equation(
             && instruction.member1 == 0
             && instruction.member2 == 0)
             .then_some(())?;
-        let datum_tables = sources
-            .geometry_tables
-            .iter()
-            .filter(|table| {
-                table.feature_id == feature_id && table.kind.datum_ids() == Some(&[sketch_id])
-            })
-            .count();
-        (datum_tables == 1).then_some(())?;
+        Some(())
+    })() else { return Ok(None); };
+    let datum_tables = ctx.admit_iter(sources.geometry_tables, "creo standard section datum table count")?
+        .filter(|table| table.feature_id == feature_id && table.kind.datum_ids() == Some(&[sketch_id]))
+        .count();
+    if datum_tables != 1 { return Ok(None); }
+    Ok((|| {
         let mut tables = entity_tables
             .iter()
             .filter(|table| table.feature_id == feature_id)
@@ -1070,6 +1073,7 @@ fn zero_offset_standard_section_plane_equation(
 }
 
 fn circular_profile_aligned_origin(
+    ctx: &DecodeContext<'_>,
     definition: &FeatureDefinition,
     feature_id: u32,
     sketch_plane: SignedPlaneEquation,
@@ -1077,7 +1081,8 @@ fn circular_profile_aligned_origin(
     v_axis: [f64; 3],
     sources: &PlacementSources<'_>,
     entity_tables: &[FeatureEntityTable],
-) -> Option<[f64; 3]> {
+) -> Result<Option<[f64; 3]>, CodecError> {
+    let Some((table, profile_external_id, order)) = (|| {
     let table = exactly_one(
         entity_tables
             .iter()
@@ -1091,10 +1096,10 @@ fn circular_profile_aligned_origin(
             }),
     )?;
     let profile_external_id = table.entries[2].source_entity_id()?;
-    let profile_internal_id = definition
-        .order_table
-        .as_ref()?
-        .internal_id(profile_external_id)?;
+    Some((table, profile_external_id, definition.order_table.as_ref()?))
+    })() else { return Ok(None); };
+    let Some(profile_internal_id) = order.internal_id(ctx, profile_external_id)? else { return Ok(None); };
+    Ok((|| {
     let circle = exactly_one(
         definition
             .saved_section
@@ -1154,6 +1159,7 @@ fn circular_profile_aligned_origin(
         add(profile_center, scale(u_axis, -center_u)),
         scale(v_axis, -center_v),
     ))
+    })())
 }
 
 /// Resolve feature frames whose sketch and orientation references reduce to
@@ -1221,9 +1227,10 @@ pub(crate) fn resolve(
                 sources.outline_planes,
             );
             if let Some(sketch) = direct_sketch {
-                let mut reference = direct_reference.or_else(|| {
-                    generated_datum_plane_equation(reference_id, sketch_id, sketch.normal, sources)
-                });
+                let mut reference = match direct_reference {
+                    Some(reference) => Some(reference),
+                    None => generated_datum_plane_equation(ctx, reference_id, sketch_id, sketch.normal, sources)?,
+                };
                 if reference.is_none() {
                     reference = feature_generated_plane_equation(
                         ctx,
@@ -1250,11 +1257,12 @@ pub(crate) fn resolve(
                 }
             } else if let Some(reference) = direct_reference {
                 let sketch = match generated_datum_plane_equation(
+                    ctx,
                     sketch_id,
                     reference_id,
                     reference.normal,
                     sources,
-                ) {
+                )? {
                     Some(sketch) => Some(sketch),
                     None => zero_offset_standard_section_plane_equation(
                         ctx,
@@ -1346,11 +1354,10 @@ pub(crate) fn resolve(
             scale(sketch_normal, sketch_factor),
             scale(reference_normal, reference_factor),
         );
-        let origin = definition
-            .identity
-            .owner_feature_id()
-            .and_then(|feature_id| {
+        let origin = match definition.identity.owner_feature_id() {
+            Some(feature_id) =>
                 circular_profile_aligned_origin(
+                    ctx,
                     definition,
                     feature_id,
                     SignedPlaneEquation {
@@ -1361,9 +1368,9 @@ pub(crate) fn resolve(
                     reference_axis,
                     sources,
                     entity_tables,
-                )
-            })
-            .unwrap_or(intersection_origin);
+                )?,
+            None => None,
+        }.unwrap_or(intersection_origin);
         let direct_transform = FeatureSectionTransform::new(
             definition.identity.id(),
             definition.identity.owner_feature_id(),

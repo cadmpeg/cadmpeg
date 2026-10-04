@@ -234,7 +234,7 @@ fn numerical_ranges_saved_section_arc_rejects_different_tiny_radii() {
             offset: 0,
         };
         assert_eq!(
-            saved_section_arc_carrier(&definition, &segment).is_some(),
+            crate::decode::with_test_decode_ctx(|ctx| saved_section_arc_carrier(ctx, &definition, &segment)).expect("admitted saved section geometry").is_some(),
             factor == 1.0
         );
     }
@@ -337,14 +337,14 @@ fn saved_arc_carrier_definition(
 #[test]
 fn saved_arc_nonfinite_stored_radius_is_not_a_carrier() {
     let (definition, segment) = saved_arc_carrier_definition([Some(0.0); 3], Some(f64::INFINITY));
-    assert!(saved_section_arc_carrier(&definition, &segment).is_none());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| saved_section_arc_carrier(ctx, &definition, &segment)).expect("admitted saved section geometry").is_none());
 }
 
 #[test]
 fn saved_arc_nonfinite_stored_center_is_not_a_carrier() {
     let (definition, segment) =
         saved_arc_carrier_definition([Some(f64::NAN), Some(0.0), Some(0.0)], Some(2.0));
-    assert!(saved_section_arc_carrier(&definition, &segment).is_none());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| saved_section_arc_carrier(ctx, &definition, &segment)).expect("admitted saved section geometry").is_none());
 }
 
 #[test]
@@ -359,5 +359,5 @@ fn saved_arc_overflowing_endpoint_radius_is_not_geometry() {
     };
     arc.endpoints[0] = [Some(f64::MAX), Some(f64::MAX), Some(0.0)];
     arc.endpoints[1] = [Some(0.0), Some(2.0), Some(0.0)];
-    assert!(saved_section_arc(&definition, &segment).is_none());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| saved_section_arc(ctx, &definition, &segment)).expect("admitted saved section geometry").is_none());
 }

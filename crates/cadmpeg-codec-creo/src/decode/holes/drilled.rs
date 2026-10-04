@@ -37,9 +37,10 @@ pub(in crate::decode) fn stepped_hole_form(
         .iter()
         .filter(|table| table.feature_id == feature_id && table.table_class_id == 29)
     {
-        let paired = paired_hole_replay_surfaces_by_source(ctx, feature_id, table, rows)?
-            .as_ref()
-            .is_some_and(paired_hole_replay_is_counterbore);
+        let paired = match paired_hole_replay_surfaces_by_source(ctx, feature_id, table, rows)? {
+            Some(generated) => paired_hole_replay_is_counterbore(ctx, &generated)?,
+            None => false,
+        };
         if paired || split_patch_table_is_counterbore(ctx, feature_id, table, rows)? {
             candidates += 1;
         }
@@ -48,38 +49,27 @@ pub(in crate::decode) fn stepped_hole_form(
 }
 
 fn paired_hole_replay_is_counterbore(
+    ctx: &DecodeContext<'_>,
     generated_by_source: &BTreeMap<u32, ReplaySurfacePair>,
-) -> bool {
-    let cylinder_sources = generated_by_source
-        .values()
-        .map(|pair| [pair.first, pair.second])
-        .filter(|entries| {
-            matches!(
-                entries,
-                [
-                    Some(crate::surface::SurfaceKind::Cylinder),
-                    Some(crate::surface::SurfaceKind::Cylinder)
-                ]
-            )
-        })
-        .count();
-    let planar_support_sources = generated_by_source
-        .values()
-        .map(|pair| [pair.first, pair.second])
-        .filter(|entries| {
-            entries
-                .iter()
-                .filter(|kind| **kind == Some(crate::surface::SurfaceKind::Plane))
-                .count()
-                == 1
-                && entries.iter().filter(|kind| kind.is_none()).count() == 1
-        })
-        .count();
-    let has_cone = generated_by_source
-        .values()
-        .flat_map(|pair| [pair.first, pair.second])
-        .any(|kind| kind == Some(crate::surface::SurfaceKind::Cone));
-    cylinder_sources == 2 && planar_support_sources == 1 && !has_cone
+) -> Result<bool, CodecError> {
+    let mut cylinder_sources = 0usize;
+    let mut planar_support_sources = 0usize;
+    let mut has_cone = false;
+    for (_, pair) in ctx.admit_iter(generated_by_source, "creo paired-hole source count")? {
+        let entries = [pair.first, pair.second];
+        if matches!(entries, [Some(crate::surface::SurfaceKind::Cylinder), Some(crate::surface::SurfaceKind::Cylinder)]) {
+            cylinder_sources = cylinder_sources.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("creo paired-hole source count", u64::MAX, u64::MAX))?;
+        }
+        let plane_count = ctx.admit_iter(&entries, "creo paired-hole plane count")?
+            .filter(|kind| matches!(kind, Some(crate::surface::SurfaceKind::Plane))).count();
+        if plane_count == 1 && ctx.admit_iter(&entries, "creo paired-hole absent count")?
+            .filter(|kind| kind.is_none()).count() == 1 {
+            planar_support_sources = planar_support_sources.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("creo paired-hole source count", u64::MAX, u64::MAX))?;
+        }
+        has_cone |= matches!(pair.first, Some(crate::surface::SurfaceKind::Cone))
+            || matches!(pair.second, Some(crate::surface::SurfaceKind::Cone));
+    }
+    Ok(cylinder_sources == 2 && planar_support_sources == 1 && !has_cone)
 }
 
 fn split_patch_table_is_counterbore(
@@ -192,11 +182,25 @@ fn split_patch_table_is_counterbore(
         return Ok(false);
     }
     let cylinder_id_count = cylinder_ids_by_source.values().map(Vec::len).sum::<usize>();
-    let cylinder_ids = || cylinder_ids_by_source.values().flatten();
-    let unique_cylinder_id_count = cylinder_ids()
-        .enumerate()
-        .filter(|(index, id)| cylinder_ids().take(*index).all(|previous| previous != *id))
-        .count();
+    let mut unique_cylinder_id_count = 0usize;
+    let mut index = 0usize;
+    for (_, ids) in ctx.admit_iter(&cylinder_ids_by_source, "creo split-patch cylinder groups")? {
+        for id in ctx.admit_iter(ids, "creo split-patch cylinder IDs")? {
+            let mut previous_index = 0usize;
+            let mut seen = false;
+            'previous: for (_, previous_ids) in ctx.admit_iter(&cylinder_ids_by_source, "creo split-patch prior cylinder groups")? {
+                for previous in ctx.admit_iter(previous_ids, "creo split-patch prior cylinder IDs")? {
+                    if previous_index == index { break 'previous; }
+                    if previous == id { seen = true; break 'previous; }
+                    previous_index = previous_index.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("creo split-patch cylinder index", u64::MAX, u64::MAX))?;
+                }
+            }
+            if !seen {
+                unique_cylinder_id_count = unique_cylinder_id_count.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("creo split-patch cylinder count", u64::MAX, u64::MAX))?;
+            }
+            index = index.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("creo split-patch cylinder index", u64::MAX, u64::MAX))?;
+        }
+    }
     if plane_ids_by_source.len() != 1 {
         return Ok(false);
     }
@@ -295,9 +299,7 @@ fn paired_hole_replay_surfaces_by_source(
     }
     if !(source_zero_count <= 1
         && framed_class_200_count
-            == table
-                .entries
-                .iter()
+            == ctx.admit_iter(&table.entries, "creo paired-hole class count")?
                 .filter(|entry| entry.class_id() == 200)
                 .count())
     {
@@ -368,16 +370,14 @@ pub(in crate::decode) fn simple_drilled_hole_recipe<'a>(
         else {
             continue;
         };
-        let paired = |kind| {
-            generated_by_source
-                .values()
-                .map(|pair| [pair.first, pair.second])
+        let paired = |kind| -> Result<usize, CodecError> {
+            Ok(ctx.admit_iter(&generated_by_source, "creo drilled paired source count")?
+                .map(|(_, pair)| [pair.first, pair.second])
                 .filter(|entries| entries.as_slice() == [Some(kind), Some(kind)])
-                .count()
+                .count())
         };
-        let rowless = generated_by_source
-            .values()
-            .map(|pair| [pair.first, pair.second])
+        let rowless = ctx.admit_iter(&generated_by_source, "creo drilled rowless source count")?
+            .map(|(_, pair)| [pair.first, pair.second])
             .filter(|entries| entries.as_slice() == [None, None])
             .count();
         let dimension_family = match rowless {
@@ -385,8 +385,8 @@ pub(in crate::decode) fn simple_drilled_hole_recipe<'a>(
             3 => SimpleDrilledDimensionFamily::ExternalId4Depth,
             _ => continue,
         };
-        if paired(crate::surface::SurfaceKind::Cone) == 1
-            && paired(crate::surface::SurfaceKind::Cylinder) == 1
+        if paired(crate::surface::SurfaceKind::Cone)? == 1
+            && paired(crate::surface::SurfaceKind::Cylinder)? == 1
             && generated_by_source.len() == rowless + 2
         {
             if candidate.is_some() {
@@ -874,11 +874,13 @@ pub(in crate::decode) fn paired_corner_envelope_axis_spans(
 }
 
 pub(in crate::decode) fn simple_drilled_hole_dimensions(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     observed_envelope_spans: Option<[[Option<PositiveLength>; 2]; 3]>,
     family: SimpleDrilledDimensionFamily,
-) -> Option<(f64, f64, f64)> {
+) -> Result<Option<(f64, f64, f64)>, CodecError> {
     simple_drilled_hole_dimension_values(
+        ctx,
         scan.features
             .definitions
             .iter()
@@ -890,32 +892,25 @@ pub(in crate::decode) fn simple_drilled_hole_dimensions(
 }
 
 pub(in crate::decode) fn simple_drilled_hole_dimension_values<'a>(
+    ctx: &DecodeContext<'_>,
     tables: impl Iterator<Item = &'a crate::feature::definitions::FeatureDimensionTable>,
     observed_envelope_spans: Option<[[Option<PositiveLength>; 2]; 3]>,
     family: SimpleDrilledDimensionFamily,
-) -> Option<(f64, f64, f64)> {
+) -> Result<Option<(f64, f64, f64)>, CodecError> {
     let depth_external_id = family.depth_external_id();
-    let has_simple_drilled_signature =
-        |table: &crate::feature::definitions::FeatureDimensionTable| {
-            [(0, 2), (1, 10), (depth_external_id, 2)].into_iter().all(
-                |(external_id, dimension_type)| {
-                    table
-                        .rows
-                        .iter()
-                        .filter(|row| {
-                            row.external_id == external_id && row.dimension_type == dimension_type
-                        })
-                        .count()
-                        == 1
-                },
-            )
-        };
     let mut first: Option<(f64, f64, f64)> = None;
-    for table in tables
-        .filter(|table| feature_dimension_table_complete(table) && table.rows.len() == 3)
-        .filter(|table| has_simple_drilled_signature(table))
-    {
-        let candidate =
+    for table in tables.filter(|table| feature_dimension_table_complete(table) && table.rows.len() == 3) {
+        let mut signature_matches = true;
+        for (external_id, dimension_type) in [(0, 2), (1, 10), (depth_external_id, 2)] {
+            if ctx.admit_iter(&table.rows, "creo drilled dimension signature count")?
+                .filter(|row| row.external_id == external_id && row.dimension_type == dimension_type)
+                .count() != 1 {
+                signature_matches = false;
+                break;
+            }
+        }
+        if !signature_matches { continue; }
+        let Some(candidate) =
             (|| {
                 let value = |external_id, dimension_type| {
                     let row = exactly_one(table.rows.iter().filter(|row| {
@@ -937,7 +932,7 @@ pub(in crate::decode) fn simple_drilled_hole_dimension_values<'a>(
                 let drill_point_angle = value(1, 10)?;
                 (drill_point_angle > 0.0 && drill_point_angle < std::f64::consts::PI)
                     .then_some(Some((bore_diameter, drill_point_angle, blind_depth)))
-            })()?;
+            })() else { return Ok(None); };
         let Some(candidate) = candidate else {
             continue;
         };
@@ -950,12 +945,12 @@ pub(in crate::decode) fn simple_drilled_hole_dimension_values<'a>(
                         .zip(FiniteReal::new(first))
                         .is_some_and(|(first, second)| approximately_equal(first, second))
                 });
-            agrees.then_some(())?;
+            if !agrees { return Ok(None); }
         } else {
             first = Some(candidate);
         }
     }
-    first
+    Ok(first)
 }
 
 pub(in crate::decode) fn dimension_pair_matches_envelope_spans(

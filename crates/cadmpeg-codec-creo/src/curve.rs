@@ -5087,9 +5087,11 @@ impl ExpressionValue for DimensionProbeValue {
                         )?;
                         Some(
                             cadmpeg_core::convert::f64_from_index(
-                                value
-                                    .find(needle)
-                                    .map_or(0, |byte| value[..byte].chars().count() + 1),
+                                match value.find(needle) {
+                                    Some(byte) => ctx.admit_iter(&value[..byte], "creo dimension text search prefix count")?
+                                        .count().checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("creo dimension text search prefix count", u64::MAX, u64::MAX))?,
+                                    None => 0,
+                                },
                             )
                             .ok_or_else(|| {
                                 cadmpeg_core::CodecError::malformed(
@@ -5136,11 +5138,7 @@ impl ExpressionValue for DimensionProbeValue {
                             {
                                 return Ok(None);
                             }
-                            ctx.charge_work(
-                                cadmpeg_core::decode::u64_from_index(value.len()),
-                                "creo dimension text extract work",
-                            )?;
-                            let character_count = value.chars().count();
+                            let character_count = ctx.admit_iter(value, "creo dimension text extract work")?.count();
                             if position
                                 > cadmpeg_core::convert::f64_from_index(character_count)
                                     .ok_or_else(|| {
@@ -5197,12 +5195,8 @@ impl ExpressionValue for DimensionProbeValue {
             (CreoMathFunction::StringLength, [value]) => {
                 let value = match value.text_value() {
                     Some(value) => {
-                        ctx.charge_work(
-                            cadmpeg_core::decode::u64_from_index(value.len()),
-                            "creo dimension text length work",
-                        )?;
                         Some(
-                            cadmpeg_core::convert::f64_from_index(value.chars().count())
+                            cadmpeg_core::convert::f64_from_index(ctx.admit_iter(value, "creo dimension text length work")?.count())
                                 .ok_or_else(|| {
                                     cadmpeg_core::CodecError::malformed(
                                         "Creo numeric value cannot be represented exactly",
@@ -5532,9 +5526,11 @@ impl ExpressionValue for CurveExpressionValue {
                     cadmpeg_core::decode::u64_from_index(value.len()),
                     "creo relation text search work",
                 )?;
-                let position = value
-                    .find(needle)
-                    .map_or(0, |byte| value[..byte].chars().count() + 1);
+                let position = match value.find(needle) {
+                    Some(byte) => ctx.admit_iter(&value[..byte], "creo relation text search prefix count")?
+                        .count().checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("creo relation text search prefix count", u64::MAX, u64::MAX))?,
+                    None => 0,
+                };
                 Ok(Self::number(
                     cadmpeg_core::convert::f64_from_index(position).ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed(
@@ -5551,11 +5547,7 @@ impl ExpressionValue for CurveExpressionValue {
                 {
                     return Ok(None);
                 }
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(value.len()),
-                    "creo relation extract scan",
-                )?;
-                let character_count = value.chars().count();
+                let character_count = ctx.admit_iter(value.as_str(), "creo relation extract scan")?.count();
                 if position.get()
                     > cadmpeg_core::convert::f64_from_index(character_count).ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed(
@@ -5612,12 +5604,8 @@ impl ExpressionValue for CurveExpressionValue {
                 )?)))
             }
             (CreoMathFunction::StringLength, [String(value)]) => {
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(value.len()),
-                    "creo relation text length work",
-                )?;
                 Ok(Self::number(
-                    cadmpeg_core::convert::f64_from_index(value.chars().count()).ok_or_else(
+                    cadmpeg_core::convert::f64_from_index(ctx.admit_iter(value.as_str(), "creo relation text length work")?.count()).ok_or_else(
                         || {
                             cadmpeg_core::CodecError::malformed(
                                 "Creo numeric value cannot be represented exactly",

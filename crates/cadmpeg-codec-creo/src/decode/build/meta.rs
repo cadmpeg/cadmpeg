@@ -250,7 +250,7 @@ pub(super) fn source_meta(
                                 crate::legacy::StringPayload::Array { .. }
                             )),
                         elements
-                            .checked_add(record.payload.element_count())
+                            .checked_add(record.payload.element_count(ctx)?)
                             .ok_or_else(|| {
                                 ctx.refuse_codec_limit(
                                     "creo legacy string element count",

@@ -447,11 +447,11 @@ impl StringPayload {
     }
 
     /// Number of logical string elements represented by this payload.
-    pub(crate) fn element_count(&self) -> usize {
-        match self {
+    pub(crate) fn element_count(&self, ctx: &DecodeContext<'_>) -> Result<usize, CodecError> {
+        Ok(match self {
             Self::Scalar { .. } => 1,
-            Self::Array { values, .. } => values.iter().filter(|value| value.is_ok()).count(),
-        }
+            Self::Array { values, .. } => ctx.admit_iter(values, "creo legacy string element count")?.filter(|value| value.is_ok()).count(),
+        })
     }
 
     /// Number of elements whose character encoding remains uninterpreted.

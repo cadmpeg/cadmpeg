@@ -404,13 +404,15 @@ pub(in super::super) fn schema_feature_definition(
             &scan.features.entity_tables,
             &scan.surfaces.rows,
         )?;
-        let drilled_dimensions = drilled_recipe.and_then(|recipe| {
-            simple_drilled_hole_dimensions(
+        let drilled_dimensions = match drilled_recipe {
+            Some(recipe) => simple_drilled_hole_dimensions(
+                ctx,
                 scan,
                 simple_drilled_hole_envelope_spans(scan, recipe.table),
                 recipe.dimension_family,
-            )
-        });
+            )?,
+            None => None,
+        };
         let drilled_placement =
             drilled_recipe
                 .zip(drilled_dimensions)
@@ -419,10 +421,11 @@ pub(in super::super) fn schema_feature_definition(
                 });
         let placement = feature_outline_planes(ctx, scan, feature_id)?.and_then(hole_placement);
         let compact_cylinder_id = compact_simple_hole_cylinder_id(
+            ctx,
             feature_id,
             &scan.features.entity_tables,
             &scan.surfaces.rows,
-        );
+        )?;
         let mut solved = simple_hole_geometry(ctx, scan, feature_id)?;
         if solved.is_none() {
             solved = compact_simple_hole_geometry(ctx, scan, feature_id)?;

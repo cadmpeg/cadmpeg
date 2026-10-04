@@ -969,7 +969,7 @@ fn type_10_strings_decode_null_bytes_and_direct_element_arrays() {
         }
     );
     assert!(persistence.string_values[4].payload.is_complete());
-    assert_eq!(persistence.string_values[4].payload.element_count(), 2);
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| persistence.string_values[4].payload.element_count(ctx)).expect("admitted string element count"), 2);
     assert_eq!(
         persistence.string_values[3]
             .payload

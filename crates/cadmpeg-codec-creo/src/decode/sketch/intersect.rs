@@ -277,11 +277,11 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
         let Some(segment) = segments.unique_segment(external_id) else {
             continue;
         };
-        let Some(carrier) = saved_section_arc_carrier(definition, segment) else {
+        let Some(carrier) = saved_section_arc_carrier(ctx, definition, segment)? else {
             continue;
         };
         let ([center_u, center_v], radius) = carrier.raw();
-        let Some(arc) = saved_section_arc_record(definition, segment) else {
+        let Some(arc) = saved_section_arc_record(ctx, definition, segment)? else {
             continue;
         };
         for (vertex, endpoint) in trim.vertices.into_iter().zip(arc.endpoints) {
@@ -527,12 +527,12 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
                 continue;
             };
             let Some(SketchGeometryDefinition::Line { start, end }) =
-                (resolved_section_segment_geometry_with_missing_line(
+                (resolved_section_segment_geometry_with_missing_line(ctx,
                     definition,
                     points,
                     segment,
                     missing_line.as_ref(),
-                ))
+                )?)
                 .map(SketchGeometry::into_definition)
             else {
                 continue;
@@ -672,12 +672,12 @@ pub(in crate::decode) fn trimmed_section_segment_geometry_with_missing_line(
     if let Some(SketchGeometryDefinition::Line {
         start: carrier_start,
         end: carrier_end,
-    }) = (resolved_section_segment_geometry_with_missing_line(
+    }) = (resolved_section_segment_geometry_with_missing_line(ctx,
         definition,
         points,
         segment,
         missing_line,
-    ))
+    )?)
     .map(SketchGeometry::into_definition)
     {
         let scale = [
@@ -710,8 +710,10 @@ pub(in crate::decode) fn trimmed_section_segment_geometry_with_missing_line(
         {
             return Ok(None);
         }
-    } else if let Some(carrier) = section_arc_carrier(radii, points, segment)
-        .or_else(|| saved_section_arc_carrier(definition, segment))
+    } else if let Some(carrier) = match section_arc_carrier(radii, points, segment) {
+        Some(carrier) => Some(carrier),
+        None => saved_section_arc_carrier(ctx, definition, segment)?,
+    }
     {
         let ([center_u, center_v], radius) = carrier.raw();
         let first = [start[0] - center_u, start[1] - center_v];

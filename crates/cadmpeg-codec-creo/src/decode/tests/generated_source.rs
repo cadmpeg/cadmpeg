@@ -164,14 +164,14 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
         Some(42)
     );
     assert_eq!(
-        ordered_analytic_surface_id_for_feature(
+        crate::decode::with_test_decode_ctx(|ctx| ordered_analytic_surface_id_for_feature(ctx,
             &rows,
             std::slice::from_ref(&table),
             17,
             &order,
             10,
             &cone,
-        ),
+        )).expect("admitted order identity"),
         None
     );
     assert_eq!(
@@ -179,25 +179,25 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
         None
     );
     assert_eq!(
-        ordered_analytic_surface_id_for_feature(
+        crate::decode::with_test_decode_ctx(|ctx| ordered_analytic_surface_id_for_feature(ctx,
             &rows,
             std::slice::from_ref(&table),
             17,
             &order,
             8,
             &cylinder,
-        ),
+        )).expect("admitted order identity"),
         Some(41)
     );
     assert_eq!(
-        ordered_analytic_surface_id_for_feature(
+        crate::decode::with_test_decode_ctx(|ctx| ordered_analytic_surface_id_for_feature(ctx,
             &rows,
             std::slice::from_ref(&table),
             17,
             &order,
             9,
             &cylinder,
-        ),
+        )).expect("admitted order identity"),
         None
     );
     let mut first_table = table.clone();
@@ -235,14 +235,14 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
         .expect("valid TorusSurface fixture"),
     ));
     assert_eq!(
-        ordered_analytic_surface_id_for_feature(
+        crate::decode::with_test_decode_ctx(|ctx| ordered_analytic_surface_id_for_feature(ctx,
             &rows,
             std::slice::from_ref(&table),
             17,
             &order,
             9,
             &torus,
-        ),
+        )).expect("admitted order identity"),
         Some(43)
     );
     assert_eq!(
@@ -775,16 +775,16 @@ fn simple_drilled_dimensions_require_complete_agreeing_tables() {
     let second = table(4.2, angle, -25.0);
 
     assert_eq!(
-        simple_drilled_hole_dimension_values([&first, &second].into_iter(), None, id2),
+        crate::decode::with_test_decode_ctx(|ctx| simple_drilled_hole_dimension_values(ctx, [&first, &second].into_iter(), None, id2)).expect("admitted drilled dimension values"),
         Some((8.4, angle, 25.0))
     );
     let conflicting = table(5.0, angle, -25.0);
     assert_eq!(
-        simple_drilled_hole_dimension_values([&first, &conflicting].into_iter(), None, id2),
+        crate::decode::with_test_decode_ctx(|ctx| simple_drilled_hole_dimension_values(ctx, [&first, &conflicting].into_iter(), None, id2)).expect("admitted drilled dimension values"),
         None
     );
     assert_eq!(
-        simple_drilled_hole_dimension_values(
+        crate::decode::with_test_decode_ctx(|ctx| simple_drilled_hole_dimension_values(ctx,
             [&first, &conflicting].into_iter(),
             Some(admitted_spans([
                 [Some(8.4), None],
@@ -792,11 +792,11 @@ fn simple_drilled_dimensions_require_complete_agreeing_tables() {
                 [Some(100.0), None],
             ])),
             id2,
-        ),
+        )).expect("admitted drilled dimension values"),
         Some((8.4, angle, 25.0))
     );
     assert_eq!(
-        simple_drilled_hole_dimension_values(
+        crate::decode::with_test_decode_ctx(|ctx| simple_drilled_hole_dimension_values(ctx,
             [&first, &conflicting].into_iter(),
             Some(admitted_spans([
                 [Some(12.0), None],
@@ -804,25 +804,25 @@ fn simple_drilled_dimensions_require_complete_agreeing_tables() {
                 [Some(100.0), None],
             ])),
             id2,
-        ),
+        )).expect("admitted drilled dimension values"),
         None
     );
     let mut other_layout = table(5.0, angle, -30.0);
     other_layout.rows[2].external_id = 4;
     assert_eq!(
-        simple_drilled_hole_dimension_values([&first, &other_layout].into_iter(), None, id2),
+        crate::decode::with_test_decode_ctx(|ctx| simple_drilled_hole_dimension_values(ctx, [&first, &other_layout].into_iter(), None, id2)).expect("admitted drilled dimension values"),
         Some((8.4, angle, 25.0))
     );
     assert_eq!(
-        simple_drilled_hole_dimension_values(
+        crate::decode::with_test_decode_ctx(|ctx| simple_drilled_hole_dimension_values(ctx,
             [&first, &other_layout].into_iter(),
             None,
             SimpleDrilledDimensionFamily::ExternalId4Depth,
-        ),
+        )).expect("admitted drilled dimension values"),
         Some((10.0, angle, 30.0))
     );
     assert_eq!(
-        simple_drilled_hole_dimension_values(
+        crate::decode::with_test_decode_ctx(|ctx| simple_drilled_hole_dimension_values(ctx,
             [&first, &other_layout].into_iter(),
             Some(admitted_spans([
                 [Some(8.4), None],
@@ -830,16 +830,16 @@ fn simple_drilled_dimensions_require_complete_agreeing_tables() {
                 [Some(100.0), None],
             ])),
             id2,
-        ),
+        )).expect("admitted drilled dimension values"),
         Some((8.4, angle, 25.0))
     );
     let invalid_angle = table(4.2, std::f64::consts::PI, -25.0);
     assert_eq!(
-        simple_drilled_hole_dimension_values([&invalid_angle].into_iter(), None, id2),
+        crate::decode::with_test_decode_ctx(|ctx| simple_drilled_hole_dimension_values(ctx, [&invalid_angle].into_iter(), None, id2)).expect("admitted drilled dimension values"),
         None
     );
     assert_eq!(
-        simple_drilled_hole_dimension_values(
+        crate::decode::with_test_decode_ctx(|ctx| simple_drilled_hole_dimension_values(ctx,
             [&first, &invalid_angle].into_iter(),
             Some(admitted_spans([
                 [Some(8.4), None],
@@ -847,12 +847,12 @@ fn simple_drilled_dimensions_require_complete_agreeing_tables() {
                 [Some(100.0), None],
             ])),
             id2,
-        ),
+        )).expect("admitted drilled dimension values"),
         None
     );
     let invalid_other_angle = table(5.0, std::f64::consts::PI, -25.0);
     assert_eq!(
-        simple_drilled_hole_dimension_values(
+        crate::decode::with_test_decode_ctx(|ctx| simple_drilled_hole_dimension_values(ctx,
             [&first, &invalid_other_angle].into_iter(),
             Some(admitted_spans([
                 [Some(8.4), None],
@@ -860,12 +860,12 @@ fn simple_drilled_dimensions_require_complete_agreeing_tables() {
                 [Some(100.0), None],
             ])),
             id2,
-        ),
+        )).expect("admitted drilled dimension values"),
         Some((8.4, angle, 25.0))
     );
     let adjacent_diameter = table(0.125, angle, -0.5);
     assert_eq!(
-        simple_drilled_hole_dimension_values(
+        crate::decode::with_test_decode_ctx(|ctx| simple_drilled_hole_dimension_values(ctx,
             [&adjacent_diameter].into_iter(),
             Some(admitted_spans([
                 [Some(6.375), None],
@@ -873,7 +873,7 @@ fn simple_drilled_dimensions_require_complete_agreeing_tables() {
                 [None, Some(0.25)],
             ])),
             id2,
-        ),
+        )).expect("admitted drilled dimension values"),
         Some((0.25, angle, 0.5))
     );
 }
@@ -1347,18 +1347,18 @@ fn counterbore_envelope_family_accepts_signed_depth_and_optional_drill_angle() {
         admitted_spans([[Some(120.0), None], [Some(8.0), None], [None, Some(120.0)]]);
     let first = table(8.0);
     assert_eq!(
-        counterbore_envelope_dimension_values(
+        crate::decode::with_test_decode_ctx(|ctx| counterbore_envelope_dimension_values(ctx,
             std::iter::once(&first),
             &[Some(bore_spans), Some(counterbore_spans)],
-        ),
+        )).expect("admitted counterbore envelope values"),
         Some((40.0, 120.0, 8.0))
     );
     let signed_depth = table(-8.0);
     assert_eq!(
-        counterbore_envelope_dimension_values(
+        crate::decode::with_test_decode_ctx(|ctx| counterbore_envelope_dimension_values(ctx,
             std::iter::once(&signed_depth),
             &[Some(bore_spans), Some(counterbore_spans)],
-        ),
+        )).expect("admitted counterbore envelope values"),
         Some((40.0, 120.0, 8.0))
     );
     assert_eq!(
@@ -1366,20 +1366,20 @@ fn counterbore_envelope_family_accepts_signed_depth_and_optional_drill_angle() {
         Some((40.0, 120.0, 8.0))
     );
     assert_eq!(
-        counterbore_envelope_dimension_values(
+        crate::decode::with_test_decode_ctx(|ctx| counterbore_envelope_dimension_values(ctx,
             std::iter::once(&first),
             &[Some(counterbore_spans), Some(bore_spans)],
-        ),
+        )).expect("admitted counterbore envelope values"),
         Some((40.0, 120.0, 8.0))
     );
     let mut without_drill_angle = table(8.0);
     without_drill_angle.declared_count = 4;
     without_drill_angle.rows.retain(|row| row.external_id != 2);
     assert_eq!(
-        counterbore_envelope_dimension_values(
+        crate::decode::with_test_decode_ctx(|ctx| counterbore_envelope_dimension_values(ctx,
             std::iter::once(&without_drill_angle),
             &[Some(bore_spans), Some(counterbore_spans)],
-        ),
+        )).expect("admitted counterbore envelope values"),
         Some((40.0, 120.0, 8.0))
     );
     let mut shifted_four_row = without_drill_angle.clone();
@@ -1389,10 +1389,10 @@ fn counterbore_envelope_family_accepts_signed_depth_and_optional_drill_angle() {
         }
     }
     assert_eq!(
-        counterbore_envelope_dimension_values(
+        crate::decode::with_test_decode_ctx(|ctx| counterbore_envelope_dimension_values(ctx,
             std::iter::once(&shifted_four_row),
             &[None, Some(counterbore_spans)],
-        ),
+        )).expect("admitted counterbore envelope values"),
         Some((40.0, 120.0, 8.0))
     );
     let one_sided_counterbore_spans = paired_corner_envelope_axis_spans(
@@ -1401,17 +1401,17 @@ fn counterbore_envelope_family_accepts_signed_depth_and_optional_drill_angle() {
     )
     .expect("finite one-sided envelope pair");
     assert_eq!(
-        counterbore_envelope_dimension_values(
+        crate::decode::with_test_decode_ctx(|ctx| counterbore_envelope_dimension_values(ctx,
             std::iter::once(&shifted_four_row),
             &[None, Some(one_sided_counterbore_spans)],
-        ),
+        )).expect("admitted counterbore envelope values"),
         Some((40.0, 120.0, 8.0))
     );
     assert_eq!(
-        counterbore_envelope_dimension_values(
+        crate::decode::with_test_decode_ctx(|ctx| counterbore_envelope_dimension_values(ctx,
             std::iter::once(&shifted_four_row),
             &[Some(bore_spans), None],
-        ),
+        )).expect("admitted counterbore envelope values"),
         Some((40.0, 120.0, 8.0))
     );
     let dual_role_spans = admitted_spans([
@@ -1419,10 +1419,10 @@ fn counterbore_envelope_family_accepts_signed_depth_and_optional_drill_angle() {
         [Some(40.0), Some(120.0)],
         [Some(8.0), None],
     ]);
-    assert!(counterbore_envelope_dimension_values(
+    assert!(crate::decode::with_test_decode_ctx(|ctx| counterbore_envelope_dimension_values(ctx,
         std::iter::once(&shifted_four_row),
         &[Some(dual_role_spans), None],
-    )
+    )).expect("admitted counterbore envelope values")
     .is_none());
     let mut invalid_drill_angle = table(8.0);
     invalid_drill_angle
@@ -1431,23 +1431,23 @@ fn counterbore_envelope_family_accepts_signed_depth_and_optional_drill_angle() {
         .find(|row| row.external_id == 2)
         .expect("the five-row test table has a drill-angle row")
         .value = crate::feature::definitions::DimensionValue::Resolved(std::f64::consts::PI);
-    assert!(counterbore_envelope_dimension_values(
+    assert!(crate::decode::with_test_decode_ctx(|ctx| counterbore_envelope_dimension_values(ctx,
         std::iter::once(&invalid_drill_angle),
         &[Some(bore_spans), Some(counterbore_spans)],
-    )
+    )).expect("admitted counterbore envelope values")
     .is_none());
     let conflicting = table(9.0);
     assert_eq!(
-        counterbore_envelope_dimension_values(
+        crate::decode::with_test_decode_ctx(|ctx| counterbore_envelope_dimension_values(ctx,
             [&first, &conflicting].into_iter(),
             &[Some(bore_spans), Some(counterbore_spans)],
-        ),
+        )).expect("admitted counterbore envelope values"),
         Some((40.0, 120.0, 8.0))
     );
-    assert!(counterbore_envelope_dimension_values(
+    assert!(crate::decode::with_test_decode_ctx(|ctx| counterbore_envelope_dimension_values(ctx,
         std::iter::once(&conflicting),
         &[Some(bore_spans), Some(counterbore_spans)],
-    )
+    )).expect("admitted counterbore envelope values")
     .is_none());
     assert!(
         counterbore_unenveloped_dimension_values([&signed_depth, &conflicting].into_iter())

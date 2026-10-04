@@ -3026,8 +3026,8 @@ pub(crate) fn counted_row_bounds(
     let mut result = Vec::new();
     for frame in std::iter::once(Ok(first)).chain(frames) {
         let frame = frame?;
-        let selected_count = candidates
-            .iter()
+        let selected_count = ctx
+            .admit_iter(&candidates, "creo counted surface row count")?
             .filter(|row| row.offset >= frame.start && row.offset < frame.end)
             .count();
         if selected_count == frame.count {
@@ -3067,8 +3067,8 @@ pub(crate) fn complete_surface_array_bounds(
     for frame in std::iter::once(Ok(first)).chain(frames) {
         let frame = frame?;
         if frame.count != 0
-            && rows
-                .iter()
+            && ctx
+                .admit_iter(&rows, "creo complete surface row count")?
                 .filter(|row| row.offset >= frame.start && row.offset < frame.end)
                 .count()
                 == frame.count
@@ -3248,8 +3248,8 @@ fn rows_with_boundaries(
         let mut saw_framed_candidate = false;
         for frame in std::iter::once(Ok(first)).chain(frames) {
             let frame = frame?;
-            let selected_count = result
-                .iter()
+            let selected_count = ctx
+                .admit_iter(&result, "creo framed surface row count")?
                 .filter(|row| row.offset >= frame.start && row.offset < frame.end)
                 .count();
             saw_framed_candidate |= selected_count != 0;
@@ -4373,7 +4373,7 @@ fn inline_surface_body(
     let standard_envelope = decode_inline_surface_envelope(kind, body, cache);
     let four_bound_envelope = decode_inline_four_bound_cylinder_envelope(kind, body, cache);
     let referenced_envelope = decode_inline_referenced_cylinder_envelope(kind, body, cache);
-    let selector_envelope = decode_inline_selector_cylinder_envelope(kind, body, cache);
+    let selector_envelope = decode_inline_selector_cylinder_envelope(ctx, kind, body, cache)?;
     let Some(envelope) = standard_envelope
         .or(four_bound_envelope)
         .or(referenced_envelope)
@@ -4535,15 +4535,12 @@ fn inline_surface_suffix_body(
                         .iter()
                         .all(|candidate| *candidate == Some(*first))
                 });
-            let carrier = inline_suffix_witness(kind, body, local_start, cache)
-                .filter(|witness| {
-                    inline_suffix_witness_agrees(
-                        *witness,
-                        &carriers[..carrier_count],
-                        geometric_interpretation_count,
-                    )
-                })
-                .or(carrier);
+            let carrier = match inline_suffix_witness(kind, body, local_start, cache) {
+                Some(witness) if inline_suffix_witness_agrees(
+                    ctx, witness, &carriers[..carrier_count], geometric_interpretation_count,
+                )? => Some(witness),
+                _ => carrier,
+            };
             let layout = InlineSurfaceBody {
                 terminal_close,
                 carrier,
@@ -4633,17 +4630,18 @@ fn decode_11_10_13_cylinder_witness(
 }
 
 fn inline_suffix_witness_agrees(
+    ctx: &DecodeContext<'_>,
     witness: InlineSurfaceCarrier,
     candidates: &[Option<InlineSurfaceCarrier>],
     interpretation_count: usize,
-) -> bool {
+) -> Result<bool, CodecError> {
     if candidates.is_empty() || candidates.len() != interpretation_count {
-        return false;
+        return Ok(false);
     }
-    match witness {
+    Ok(match witness {
         InlineSurfaceCarrier::Cylinder { frame: witness, .. } => {
-            let matching = candidates
-                .iter()
+            let matching = ctx
+                .admit_iter(candidates, "creo inline witness carrier count")?
                 .flatten()
                 .filter(|candidate| {
                     let InlineSurfaceCarrier::Cylinder {
@@ -4690,7 +4688,7 @@ fn inline_suffix_witness_agrees(
         InlineSurfaceCarrier::Torus(_)
         | InlineSurfaceCarrier::CylinderBounds(_)
         | InlineSurfaceCarrier::Tabulated { .. } => false,
-    }
+    })
 }
 
 fn decode_inline_surface_envelope(
@@ -4789,10 +4787,12 @@ fn decode_inline_four_bound_cylinder_envelope(
 }
 
 fn decode_inline_selector_cylinder_envelope(
+    ctx: &DecodeContext<'_>,
     kind: SurfaceKind,
     body: &[u8],
     cache: &scalar::ScalarCache,
-) -> Option<InlineSurfaceEnvelope> {
+) -> Result<Option<InlineSurfaceEnvelope>, CodecError> {
+    let candidate = (|| {
     (kind == SurfaceKind::Cylinder).then_some(())?;
     let selector_end = |cursor: usize| match body.get(cursor..) {
         Some([0x00, 0x11, 0x13, ..]) => Some(cursor + 3),
@@ -4836,17 +4836,18 @@ fn decode_inline_selector_cylinder_envelope(
     let mut radial = (0..3).filter(|axis| *axis != axis_index);
     let radial_axes = [radial.next()?, radial.next()?];
     radial.next().is_none().then_some(())?;
-    (radial_axes
-        .into_iter()
-        .filter(|axis| spans[*axis].is_none())
-        .count()
-        <= 1)
-        .then_some(())?;
-    Some(InlineSurfaceEnvelope {
+    Some((InlineSurfaceEnvelope {
         axial: [first_axial, second_axial],
         corners,
         close,
-    })
+    }, radial_axes, spans))
+    })();
+    let Some((envelope, radial_axes, spans)) = candidate else {
+        return Ok(None);
+    };
+    let absent = ctx.admit_iter(&radial_axes, "creo selector envelope radial count")?
+        .filter(|axis| spans[**axis].is_none()).count();
+    Ok((absent <= 1).then_some(envelope))
 }
 
 fn decode_inline_referenced_cylinder_envelope(
@@ -6934,7 +6935,7 @@ fn plane_envelope_compound_close(
         slots
             .slots
             .push((Some(positive_value), &body[positive_start..positive_end]));
-        let axis_aligned = plane_envelope_has_one_held_coordinate(&slots.slots, pairs);
+        let axis_aligned = plane_envelope_has_one_held_coordinate(ctx, &slots.slots, pairs)?;
         if axis_aligned || plane_envelope_boundary_has_local_system(ctx, body, offset, cache)? {
             return Ok(Some(offset));
         }
@@ -6943,14 +6944,17 @@ fn plane_envelope_compound_close(
 }
 
 fn plane_envelope_has_one_held_coordinate(
+    ctx: &DecodeContext<'_>,
     slots: &[(Option<f64>, &[u8])],
     pairs: [[usize; 2]; 3],
-) -> bool {
-    pairs
-        .into_iter()
-        .filter(|[first, second]| slots[*first].1 == slots[*second].1)
-        .count()
-        == 1
+) -> Result<bool, CodecError> {
+    let mut count = 0usize;
+    for [first, second] in ctx.admit_iter(&pairs, "creo plane envelope held coordinate count")? {
+        if ctx.equal_bytes(slots[*first].1, slots[*second].1, "creo plane envelope held coordinate bytes")? {
+            count = count.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("creo plane envelope held coordinate count", u64::MAX, u64::MAX))?;
+        }
+    }
+    Ok(count == 1)
 }
 
 fn plane_envelope_boundary_has_local_system(

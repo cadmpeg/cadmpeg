@@ -558,15 +558,15 @@ fn relation_incidence_loci(
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     relation_id: u32,
-) -> Option<[SketchLocus; 2]> {
-    let incidence = relation_incidence(definition, relation_id)?;
+) -> Result<Option<[SketchLocus; 2]>, cadmpeg_core::CodecError> {
+    let incidence = match relation_incidence(definition, relation_id) { Some(value) => value, None => return Ok(None) };
     let [first, second] = incidence.items.as_slice() else {
-        return None;
+        return Ok(None);
     };
-    Some([
-        section_skamp_locus(ctx, refusal, definition, sketch, first)?,
-        section_skamp_locus(ctx, refusal, definition, sketch, second)?,
-    ])
+    Ok(Some([
+        (match section_skamp_locus(ctx, refusal, definition, sketch, first)? { Some(value) => value, None => return Ok(None) }),
+        (match section_skamp_locus(ctx, refusal, definition, sketch, second)? { Some(value) => value, None => return Ok(None) }),
+    ]))
 }
 
 fn section_angular_entities(
@@ -583,8 +583,8 @@ fn section_angular_entities(
     let Some(order_table) = definition.order_table.as_ref() else {
         return Ok(None);
     };
-    let external_id = |internal_id| {
-        let external_id = order_table.external_id(internal_id)?;
+    let external_id = |internal_id| -> Result<Option<u32>, cadmpeg_core::CodecError> {
+        let Some(external_id) = order_table.external_id(ctx, internal_id)? else { return Ok(None); };
         let matching_segments = segments
             .iter()
             .filter(|segment| {
@@ -595,9 +595,9 @@ fn section_angular_entities(
                     )
             })
             .count();
-        (known_entities.contains(&external_id) && matching_segments == 1).then_some(external_id)
+        Ok((known_entities.contains(&external_id) && matching_segments == 1).then_some(external_id))
     };
-    let [first, second] = [first_internal, second_internal].map(external_id);
+    let [first, second] = [external_id(first_internal)?, external_id(second_internal)?];
     let [Some(first), Some(second)] = [first, second] else {
         return Ok(None);
     };
@@ -2358,8 +2358,8 @@ pub(in super::super) fn section_dimension_constraints(
     for (relation_index, relation) in relations.rows.iter().enumerate() {
         let mut coordinate_refusal = None;
         let locus_refusal = Cell::new(None);
-        let candidate = (|| {
-            Some({
+        let candidate = (|| -> Result<Option<_>, cadmpeg_core::CodecError> {
+            Ok(Some({
                 let unique_relation_id = feature_relation_table_complete(relations)
                     && relations
                         .rows
@@ -2372,15 +2372,15 @@ pub(in super::super) fn section_dimension_constraints(
                     .as_ref()
                     .zip(usize::try_from(relation.dimension_id).ok())
                 {
-                    Some((dimensions, ordinal)) => capture_constraint_refusal(
+                    Some((dimensions, ordinal)) => match capture_constraint_refusal(
                         &mut coordinate_refusal,
                         resolved_feature_dimension_parameter_admitted(
                             ctx, sketch, dimensions, ordinal,
                         ),
-                    )?,
+                    ) { Some(value) => value, None => return Ok(None) },
                     None => None,
                 };
-                let parameter = capture_constraint_refusal(
+                let parameter = match capture_constraint_refusal(
                     &mut coordinate_refusal,
                     dimension
                         .as_ref()
@@ -2389,39 +2389,39 @@ pub(in super::super) fn section_dimension_constraints(
                                 .try_clone_for_decode(ctx, "creo section dimension parameter copy")
                         })
                         .transpose(),
-                )?;
+                ) { Some(value) => value, None => return Ok(None) };
                 let joined_incidence_link = unique_relation_id
                     .then(|| joined_relation_incidence_link(definition, relation.relation_id))
                     .flatten();
                 let joined_incidence = joined_incidence_link.map(|(_, incidence)| incidence);
-                let typed = (|| {
-                    unique_relation_id.then_some(())?;
-                    let (dimension, _) = dimension.as_ref()?;
-                    let parameter = capture_constraint_refusal(
+                let typed = (|| -> Result<Option<_>, cadmpeg_core::CodecError> {
+                    (match unique_relation_id.then_some(()) { Some(value) => value, None => return Ok(None) });
+                    let (dimension, _) = match dimension.as_ref() { Some(value) => value, None => return Ok(None) };
+                    let parameter = match capture_constraint_refusal(
                         &mut coordinate_refusal,
-                        parameter
-                            .as_ref()?
+                        (match parameter
+                            .as_ref() { Some(value) => value, None => return Ok(None) })
                             .try_clone_for_decode(ctx, "creo typed dimension parameter copy"),
-                    )?;
+                    ) { Some(value) => value, None => return Ok(None) };
                     if relation.relation_type == 1
                         && dimension.unit() == crate::feature::definitions::DimensionUnit::Radians
                     {
-                        let [first, second] = capture_constraint_refusal(
+                        let [first, second] = match match capture_constraint_refusal(
                             &mut coordinate_refusal,
                             section_angular_entities(
                                 ctx,
                                 definition,
                                 sketch,
                                 &segments,
-                                relation.operand_vectors?,
+                                match relation.operand_vectors { Some(value) => value, None => return Ok(None) },
                                 &known_entities,
                             ),
-                        )??;
-                        return Some(SketchConstraintDefinitionInput::Angle {
+                        ) { Some(value) => value, None => return Ok(None) } { Some(value) => value, None => return Ok(None) };
+                        return Ok(Some(SketchConstraintDefinitionInput::Angle {
                             first,
                             second,
                             parameter,
-                        });
+                        }));
                     }
                     if relation.relation_type == 0
                         && matches!(relation.sign, 0 | 1 | 0xf6)
@@ -2429,28 +2429,28 @@ pub(in super::super) fn section_dimension_constraints(
                             == crate::feature::definitions::DimensionUnit::SchemaDefined
                         && dimension.value.resolved() == Some(0.0)
                     {
-                        let vectors = relation.operand_vectors?;
+                        let vectors = match relation.operand_vectors { Some(value) => value, None => return Ok(None) };
                         if section_linear_distance_vectors(vectors) {
                             let [Some(first_id), Some(second_id), _, _] = vectors[0] else {
-                                return None;
+                                return Ok(None);
                             };
-                            let incidence = joined_incidence?;
+                            let incidence = match joined_incidence { Some(value) => value, None => return Ok(None) };
                             let [item] = incidence.items.as_slice() else {
-                                return None;
+                                return Ok(None);
                             };
                             if !section_skamp_active(incidence.status) {
-                                return None;
+                                return Ok(None);
                             }
                             let expected_coordinate = match incidence.kind {
                                 1 => 1,
                                 2 => 0,
-                                _ => return None,
+                                _ => return Ok(None),
                             };
                             if item.sense != 0 {
-                                return None;
+                                return Ok(None);
                             }
                             let measured =
-                                unique_decoded_section_segment(definition, item.entity_id)?;
+                                match unique_decoded_section_segment(definition, item.entity_id) { Some(value) => value, None => return Ok(None) };
                             if matches!(
                                 measured.kind,
                                 crate::feature::definitions::FeatureSegmentKind::Line(_)
@@ -2459,43 +2459,43 @@ pub(in super::super) fn section_dimension_constraints(
                                 && measured.vertical_horizontal == Some(expected_coordinate)
                                 && known_entities.contains(&measured.external_id)
                             {
-                                let entity = capture_constraint_refusal(
+                                let entity = match match capture_constraint_refusal(
                                     &mut coordinate_refusal,
                                     sketch_entity_id_admitted(ctx, sketch, measured.external_id),
-                                )??;
-                                return Some(if incidence.kind == 1 {
+                                ) { Some(value) => value, None => return Ok(None) } { Some(value) => value, None => return Ok(None) };
+                                return Ok(Some(if incidence.kind == 1 {
                                     SketchConstraintDefinitionInput::Horizontal { entity }
                                 } else {
                                     SketchConstraintDefinitionInput::Vertical { entity }
-                                });
+                                }));
                             }
                         }
                     }
                     if dimension.unit() != crate::feature::definitions::DimensionUnit::Millimeters {
-                        return None;
+                        return Ok(None);
                     }
                     if matches!(relation.relation_type, 5 | 6) && relation.sign == 1 {
-                        let segment = section_radius_relation_arc(definition, relation)?;
-                        return Some(circular_dimension_constraint(
-                            capture_constraint_refusal(
+                        let segment = match section_radius_relation_arc(definition, relation) { Some(value) => value, None => return Ok(None) };
+                        return Ok(Some(circular_dimension_constraint(
+                            match match capture_constraint_refusal(
                                 &mut coordinate_refusal,
                                 sketch_entity_id_admitted(ctx, sketch, segment.external_id),
-                            )??,
+                            ) { Some(value) => value, None => return Ok(None) } { Some(value) => value, None => return Ok(None) },
                             parameter,
                             dimension.dimension_type,
-                        ));
+                        )));
                     }
                     if relation.relation_type == 14
                         && relation.sign == 1
                         && matches!(dimension.dimension_type, 1..=5)
-                        && relation.operand_vectors?[1] == [Some(0); 4]
-                        && relation.operand_vectors?[2] == [Some(15), Some(0), Some(0), Some(0)]
+                        && (match relation.operand_vectors { Some(value) => value, None => return Ok(None) })[1] == [Some(0); 4]
+                        && (match relation.operand_vectors { Some(value) => value, None => return Ok(None) })[2] == [Some(15), Some(0), Some(0), Some(0)]
                     {
-                        let vectors = relation.operand_vectors?;
+                        let vectors = match relation.operand_vectors { Some(value) => value, None => return Ok(None) };
                         let [Some(radius_id), Some(0), Some(0), Some(0)] = vectors[0] else {
-                            return None;
+                            return Ok(None);
                         };
-                        let (external_id, _) = crate::decode::uniqueness::exactly_one(
+                        let (external_id, _) = match crate::decode::uniqueness::exactly_one(
                             segments
                                 .iter()
                                 .filter(|segment| {
@@ -2515,19 +2515,19 @@ pub(in super::super) fn section_dimension_constraints(
                                         }),
                                 )
                                 .filter(|(_, radius_ref)| *radius_ref == Some(radius_id)),
-                        )?;
-                        known_entities.contains(&external_id).then_some(())?;
-                        return Some(circular_dimension_constraint(
-                            capture_constraint_refusal(
+                        ) { Some(value) => value, None => return Ok(None) };
+                        (match known_entities.contains(&external_id).then_some(()) { Some(value) => value, None => return Ok(None) });
+                        return Ok(Some(circular_dimension_constraint(
+                            match match capture_constraint_refusal(
                                 &mut coordinate_refusal,
                                 sketch_entity_id_admitted(ctx, sketch, external_id),
-                            )??,
+                            ) { Some(value) => value, None => return Ok(None) } { Some(value) => value, None => return Ok(None) },
                             parameter,
                             dimension.dimension_type,
-                        ));
+                        )));
                     }
                     if relation.relation_type != 0 || !matches!(relation.sign, 0 | 1 | 0xf6) {
-                        return None;
+                        return Ok(None);
                     }
                     if let Some(vectors) = relation.operand_vectors {
                         if section_linear_distance_vectors(vectors) {
@@ -2544,7 +2544,7 @@ pub(in super::super) fn section_dimension_constraints(
                                     Ok(coordinate) => coordinate,
                                     Err(error) => {
                                         coordinate_refusal = Some(error);
-                                        return None;
+                                        return Ok(None);
                                     }
                                 };
                                 let measured = crate::decode::uniqueness::exactly_one(
@@ -2559,40 +2559,40 @@ pub(in super::super) fn section_dimension_constraints(
                                         crate::feature::definitions::FeatureSegmentKind::Line(_)
                                     ) && known_entities.contains(&measured.external_id)
                                     {
-                                        let entity = capture_constraint_refusal(
+                                        let entity = match match capture_constraint_refusal(
                                             &mut coordinate_refusal,
                                             sketch_entity_id_admitted(
                                                 ctx,
                                                 sketch,
                                                 measured.external_id,
                                             ),
-                                        )??;
+                                        ) { Some(value) => value, None => return Ok(None) } { Some(value) => value, None => return Ok(None) };
                                         let [first, second] =
                                             if measured.point_ids() == [first_id, second_id] {
                                                 [
-                                                    SketchLocus::Start(capture_constraint_refusal(
+                                                    SketchLocus::Start(match capture_constraint_refusal(
                                                         &mut coordinate_refusal,
                                                         entity.try_clone_for_decode(
                                                             ctx,
                                                             "creo dimension locus entity copy",
                                                         ),
-                                                    )?),
+                                                    ) { Some(value) => value, None => return Ok(None) }),
                                                     SketchLocus::End(entity),
                                                 ]
                                             } else {
                                                 [
-                                                    SketchLocus::End(capture_constraint_refusal(
+                                                    SketchLocus::End(match capture_constraint_refusal(
                                                         &mut coordinate_refusal,
                                                         entity.try_clone_for_decode(
                                                             ctx,
                                                             "creo dimension locus entity copy",
                                                         ),
-                                                    )?),
+                                                    ) { Some(value) => value, None => return Ok(None) }),
                                                     SketchLocus::Start(entity),
                                                 ]
                                             };
                                         if let Some(coordinate) = coordinate {
-                                            return Some(match coordinate {
+                                            return Ok(Some(match coordinate {
                                                 SectionAxis::U => {
                                                     SketchConstraintDefinitionInput::HorizontalDistance {
                                                         first,
@@ -2607,22 +2607,22 @@ pub(in super::super) fn section_dimension_constraints(
                                                         parameter,
                                                     }
                                                 }
-                                            });
+                                            }));
                                         }
                                     }
                                 }
                                 if let (Some(coordinate), Some(first), Some(second)) = (
                                     coordinate,
-                                    capture_constraint_refusal(
+                                    (match capture_constraint_refusal(
                                         &mut coordinate_refusal,
                                         section_point_locus(ctx, definition, sketch, first_id),
-                                    )?,
-                                    capture_constraint_refusal(
+                                    ) { Some(value) => value, None => return Ok(None) }),
+                                    (match capture_constraint_refusal(
                                         &mut coordinate_refusal,
                                         section_point_locus(ctx, definition, sketch, second_id),
-                                    )?,
+                                    ) { Some(value) => value, None => return Ok(None) }),
                                 ) {
-                                    return Some(match coordinate {
+                                    return Ok(Some(match coordinate {
                                         SectionAxis::U => {
                                             SketchConstraintDefinitionInput::HorizontalDistance {
                                                 first,
@@ -2637,7 +2637,7 @@ pub(in super::super) fn section_dimension_constraints(
                                                 parameter,
                                             }
                                         }
-                                    });
+                                    }));
                                 }
                             }
                         }
@@ -2648,37 +2648,37 @@ pub(in super::super) fn section_dimension_constraints(
                         definition,
                         sketch,
                         relation.relation_id,
-                    ) {
-                        return Some(SketchConstraintDefinitionInput::DistanceLoci {
+                    )? {
+                        return Ok(Some(SketchConstraintDefinitionInput::DistanceLoci {
                             first,
                             second,
                             parameter,
-                        });
+                        }));
                     }
                     if let Some(incidence) =
                         joined_incidence.filter(|incidence| !section_skamp_active(incidence.status))
                     {
                         if let [first, second] = incidence.items.as_slice() {
                             if let (Some(first), Some(second)) = (
-                                section_skamp_locus(ctx, &locus_refusal, definition, sketch, first),
+                                section_skamp_locus(ctx, &locus_refusal, definition, sketch, first)?,
                                 section_skamp_locus(
                                     ctx,
                                     &locus_refusal,
                                     definition,
                                     sketch,
                                     second,
-                                ),
+                                )?,
                             ) {
-                                return Some(SketchConstraintDefinitionInput::DistanceLoci {
+                                return Ok(Some(SketchConstraintDefinitionInput::DistanceLoci {
                                     first,
                                     second,
                                     parameter,
-                                });
+                                }));
                             }
                         }
                         if !incidence.items.is_empty() {
-                            return Some(SketchConstraintDefinitionInput::Distance {
-                                entities: capture_constraint_refusal(
+                            return Ok(Some(SketchConstraintDefinitionInput::Distance {
+                                entities: (match capture_constraint_refusal(
                                     &mut coordinate_refusal,
                                     joined_relation_incidence_entities(
                                         ctx,
@@ -2686,66 +2686,66 @@ pub(in super::super) fn section_dimension_constraints(
                                         sketch,
                                         relation.relation_id,
                                     ),
-                                )?,
+                                ) { Some(value) => value, None => return Ok(None) }),
                                 parameter,
-                            });
+                            }));
                         }
                     }
-                    let entities = capture_constraint_refusal(
+                    let entities = match capture_constraint_refusal(
                         &mut coordinate_refusal,
                         relation_incidence_entities(ctx, definition, sketch, relation.relation_id),
-                    )?;
-                    (!entities.is_empty()).then_some(SketchConstraintDefinitionInput::Distance {
+                    ) { Some(value) => value, None => return Ok(None) };
+                    Ok((!entities.is_empty()).then_some(SketchConstraintDefinitionInput::Distance {
                         entities,
                         parameter,
-                    })
-                })();
+                    }))
+                })()?;
                 let active =
                     joined_incidence.map(|incidence| section_skamp_active(incidence.status));
                 if coordinate_refusal.is_some() {
-                    return None;
+                    return Ok(None);
                 }
                 let constraint_definition = match typed {
                     Some(typed) => typed,
-                    None => capture_constraint_refusal(
+                    None => match match capture_constraint_refusal(
                         &mut coordinate_refusal,
                         native_section_dimension_constraint_definition(
                             ctx, definition, sketch, relation,
                         ),
-                    )??,
+                    ) { Some(value) => value, None => return Ok(None) } { Some(value) => value, None => return Ok(None) },
                 };
                 (
                     SketchConstraint {
                         id: if unique_relation_id {
-                            capture_constraint_refusal(
+                            match match capture_constraint_refusal(
                                 &mut coordinate_refusal,
                                 sketch_constraint_id_admitted(
                                     ctx,
                                     sketch,
                                     format_args!("relation:{}", relation.relation_id),
                                 ),
-                            )??
+                            ) { Some(value) => value, None => return Ok(None) } { Some(value) => value, None => return Ok(None) }
                         } else {
-                            capture_constraint_refusal(
+                            match match capture_constraint_refusal(
                                 &mut coordinate_refusal,
                                 sketch_constraint_id_admitted(
                                     ctx,
                                     sketch,
                                     format_args!("relation:offset:{}", relation.offset),
                                 ),
-                            )??
+                            ) { Some(value) => value, None => return Ok(None) } { Some(value) => value, None => return Ok(None) }
                         },
-                        sketch: capture_constraint_refusal(
+                        sketch: (match capture_constraint_refusal(
                             &mut coordinate_refusal,
                             sketch.try_clone_for_decode(
                                 ctx,
                                 "creo section dimension sketch identity",
                             ),
-                        )?,
-                        definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+                        ) { Some(value) => value, None => return Ok(None) }),
+                        definition: (match cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
                             constraint_definition,
                         )
-                        .ok()?,
+                        .ok() { Some(value) => value, None => return Ok(None) }),
                         name: None,
                         driving: None,
                         active,
@@ -2755,16 +2755,16 @@ pub(in super::super) fn section_dimension_constraints(
                         label_distance: None,
                         label_position: None,
                         metadata: None,
-                        native_ref: Some(capture_constraint_refusal(
+                        native_ref: Some(match capture_constraint_refusal(
                             &mut coordinate_refusal,
                             sketch_native_ref_admitted(ctx, sketch),
-                        )?),
+                        ) { Some(value) => value, None => return Ok(None) }),
                     },
                     relation.offset,
                     relation_index,
                 )
-            })
-        })();
+            }))
+        })()?;
         if let Some(error) = locus_refusal.into_inner() {
             return Err(error);
         }
