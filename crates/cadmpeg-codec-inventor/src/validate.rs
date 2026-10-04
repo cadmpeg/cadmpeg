@@ -142,7 +142,12 @@ pub(crate) fn validate_native(
                 "collect expected Inventor arena names",
             )
         })?;
-    if actual_arenas != expected_arenas {
+    if !equal_hash_sets(
+        ctx,
+        &actual_arenas,
+        &expected_arenas,
+        "compare Inventor native arena names",
+    )? {
         let (mut missing, _missing_storage) =
             ctx.with_scoped_storage("collect missing Inventor arenas", || {
                 ctx.try_collect_vec(
@@ -818,14 +823,15 @@ fn validate_sketches(
                 list_references,
                 "resolve Inventor PmDc sketch entity references",
             )?;
-            references_storage.with_storage(|| {
-                ctx.reserve_vec(
-                    &mut references,
-                    list_references.len(),
-                    "collect Inventor PmDc sketch entity references",
-                )
-            })?;
-            references.extend(admitted.map(|reference| reference.index()));
+            for reference in admitted.map(|reference| reference.index()) {
+                references_storage.with_storage(|| {
+                    ctx.push_vec(
+                        &mut references,
+                        reference,
+                        "collect Inventor PmDc sketch entity references",
+                    )
+                })?;
+            }
             Ok(())
         };
         match &entity.kind {
@@ -973,14 +979,15 @@ fn validate_sketches(
             "resolve Inventor PmDc reference-map entries",
         )?;
         for (key, value) in reference_entries {
-            references_storage.with_storage(|| {
-                ctx.reserve_vec(
-                    &mut references,
-                    2,
-                    "collect Inventor PmDc sketch-constraint references",
-                )
-            })?;
-            references.extend([key.index(), value.index()]);
+            for reference in [key.index(), value.index()] {
+                references_storage.with_storage(|| {
+                    ctx.push_vec(
+                        &mut references,
+                        reference,
+                        "collect Inventor PmDc sketch-constraint references",
+                    )
+                })?;
+            }
         }
         match &constraint.kind {
             PmDcSketchConstraintKind::Coincident { first, second }
@@ -991,14 +998,15 @@ fn validate_sketches(
                 let extra = [first.index(), second.index()];
                 let admitted =
                     ctx.admit_iter(&extra, "resolve Inventor PmDc sketch-constraint references")?;
-                references_storage.with_storage(|| {
-                    ctx.reserve_vec(
-                        &mut references,
-                        extra.len(),
-                        "collect Inventor PmDc sketch-constraint references",
-                    )
-                })?;
-                references.extend(admitted);
+                for &reference in admitted {
+                    references_storage.with_storage(|| {
+                        ctx.push_vec(
+                            &mut references,
+                            reference,
+                            "collect Inventor PmDc sketch-constraint references",
+                        )
+                    })?;
+                }
             }
             PmDcSketchConstraintKind::Horizontal { entity, .. }
             | PmDcSketchConstraintKind::Vertical { entity, .. }
@@ -1026,14 +1034,15 @@ fn validate_sketches(
                 let extra = [first.index(), second.index(), parameter.index()];
                 let admitted =
                     ctx.admit_iter(&extra, "resolve Inventor PmDc sketch-constraint references")?;
-                references_storage.with_storage(|| {
-                    ctx.reserve_vec(
-                        &mut references,
-                        extra.len(),
-                        "collect Inventor PmDc sketch-constraint references",
-                    )
-                })?;
-                references.extend(admitted);
+                for &reference in admitted {
+                    references_storage.with_storage(|| {
+                        ctx.push_vec(
+                            &mut references,
+                            reference,
+                            "collect Inventor PmDc sketch-constraint references",
+                        )
+                    })?;
+                }
             }
             PmDcSketchConstraintKind::Diameter {
                 reference, entity, ..
@@ -1041,27 +1050,29 @@ fn validate_sketches(
                 let extra = [reference.index(), entity.index()];
                 let admitted =
                     ctx.admit_iter(&extra, "resolve Inventor PmDc sketch-constraint references")?;
-                references_storage.with_storage(|| {
-                    ctx.reserve_vec(
-                        &mut references,
-                        extra.len(),
-                        "collect Inventor PmDc sketch-constraint references",
-                    )
-                })?;
-                references.extend(admitted);
+                for &reference in admitted {
+                    references_storage.with_storage(|| {
+                        ctx.push_vec(
+                            &mut references,
+                            reference,
+                            "collect Inventor PmDc sketch-constraint references",
+                        )
+                    })?;
+                }
             }
             PmDcSketchConstraintKind::CircleCenter { entity, center } => {
                 let extra = [entity.index(), center.index()];
                 let admitted =
                     ctx.admit_iter(&extra, "resolve Inventor PmDc sketch-constraint references")?;
-                references_storage.with_storage(|| {
-                    ctx.reserve_vec(
-                        &mut references,
-                        extra.len(),
-                        "collect Inventor PmDc sketch-constraint references",
-                    )
-                })?;
-                references.extend(admitted);
+                for &reference in admitted {
+                    references_storage.with_storage(|| {
+                        ctx.push_vec(
+                            &mut references,
+                            reference,
+                            "collect Inventor PmDc sketch-constraint references",
+                        )
+                    })?;
+                }
             }
         }
         let token = constraint.identity.segment_token.as_str();
@@ -1504,14 +1515,15 @@ fn validate_features(
                     item_references,
                     "resolve Inventor PmDc feature-property references",
                 )?;
-                references_storage.with_storage(|| {
-                    ctx.reserve_vec(
-                        &mut references,
-                        item_references.len(),
-                        "collect Inventor PmDc feature-property references",
-                    )
-                })?;
-                references.extend(admitted.map(|reference| reference.index()));
+                for reference in admitted.map(|reference| reference.index()) {
+                    references_storage.with_storage(|| {
+                        ctx.push_vec(
+                            &mut references,
+                            reference,
+                            "collect Inventor PmDc feature-property references",
+                        )
+                    })?;
+                }
             }
             PmDcFeaturePropertyKind::SurfaceBody { body } => {
                 references_storage.with_storage(|| {
@@ -1539,14 +1551,15 @@ fn validate_features(
                 let extra = [transform.index(), point.index(), value.index()];
                 let admitted =
                     ctx.admit_iter(&extra, "resolve Inventor PmDc placement references")?;
-                references_storage.with_storage(|| {
-                    ctx.reserve_vec(
-                        &mut references,
-                        extra.len(),
-                        "collect Inventor PmDc feature-property references",
-                    )
-                })?;
-                references.extend(admitted);
+                for &reference in admitted {
+                    references_storage.with_storage(|| {
+                        ctx.push_vec(
+                            &mut references,
+                            reference,
+                            "collect Inventor PmDc feature-property references",
+                        )
+                    })?;
+                }
             }
             PmDcFeaturePropertyKind::FilletEdgeSet {
                 edges,
@@ -1562,14 +1575,15 @@ fn validate_features(
                 ];
                 let admitted =
                     ctx.admit_iter(&extra, "resolve Inventor PmDc fillet-edge references")?;
-                references_storage.with_storage(|| {
-                    ctx.reserve_vec(
-                        &mut references,
-                        extra.len(),
-                        "collect Inventor PmDc feature-property references",
-                    )
-                })?;
-                references.extend(admitted);
+                for &reference in admitted {
+                    references_storage.with_storage(|| {
+                        ctx.push_vec(
+                            &mut references,
+                            reference,
+                            "collect Inventor PmDc feature-property references",
+                        )
+                    })?;
+                }
             }
             PmDcFeaturePropertyKind::Enumeration { .. }
             | PmDcFeaturePropertyKind::WideEnumeration { .. }
@@ -2980,7 +2994,12 @@ fn validate_databases(
             )?;
         }
     }
-    if storage != states {
+    if !equal_hash_sets(
+        ctx,
+        &storage,
+        &states,
+        "compare Inventor database state bands",
+    )? {
         push_finding(
             ctx,
             findings,
@@ -3201,7 +3220,17 @@ fn validate_segments(
             ctx.get_hash_map(&sections_by_token, token, "find Inventor metadata sections")?;
         let actual_types =
             ctx.get_hash_map(&types_by_token, token, "find Inventor metadata types")?;
-        let sections_match = actual_sections == Some(&expected_sections);
+        let sections_match = actual_sections
+            .map(|actual| {
+                equal_hash_sets(
+                    ctx,
+                    actual,
+                    &expected_sections,
+                    "compare Inventor metadata sections",
+                )
+            })
+            .transpose()?
+            .unwrap_or(false);
         let type_count = cadmpeg_core::decode::u64_from_index(actual_types.map_or(0, HashSet::len));
         if !sections_match || type_count != meta.type_count {
             push_finding(
@@ -3371,7 +3400,12 @@ where
         |record| Ok(issue_token(record)),
         format_args!("segment {member} state"),
     )?;
-    if states != *pairs {
+    if !equal_hash_sets(
+        ctx,
+        &states,
+        pairs,
+        "compare Inventor segment states",
+    )? {
         push_finding(
             ctx,
             findings,
@@ -3769,7 +3803,12 @@ fn validate_ufrx(
                 )
             },
         )?;
-        model_state_ordinals == expected_ordinals
+        equal_hash_sets(
+            ctx,
+            &model_state_ordinals,
+            &expected_ordinals,
+            "compare Inventor UFRxDoc model-state ordinals",
+        )?
     } else {
         false
     };
@@ -4114,6 +4153,26 @@ where
     Ok(())
 }
 
+fn equal_hash_sets<T>(
+    ctx: &DecodeContext<'_>,
+    left: &HashSet<T>,
+    right: &HashSet<T>,
+    operation: &'static str,
+) -> Result<bool, CodecError>
+where
+    T: Eq + std::hash::Hash + DecodeCost,
+{
+    if left.len() != right.len() {
+        return Ok(false);
+    }
+    for value in ctx.admit_iter(left, operation)? {
+        if !ctx.contains_hash_set(right, value, operation)? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 fn increment_hash_count<K: Eq + std::hash::Hash + DecodeCost>(
     ctx: &DecodeContext<'_>,
     counts: &mut HashMap<K, u64>,
@@ -4153,3 +4212,6 @@ fn finding(check: Check, message: String, entity: Option<String>) -> Finding {
         entity,
     }
 }
+
+#[cfg(test)]
+mod tests;
